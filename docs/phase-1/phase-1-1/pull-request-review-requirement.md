@@ -6,14 +6,21 @@
 
 ## The blocker
 
-The Phase 1-1 pull request reports:
+Pull request #1 (`chore/p1-01-development-readiness` → `develop`) reported, before it was
+merged by the owner:
 
 > At least 1 approving review is required by reviewers with write access.
 
 The repository currently has one person with write access: Eng. Ezzaldeen Al-Bitar, who
 authored the change. GitHub does not count a pull request author's own approval. With one
 write-access collaborator and a one-approval rule, **no pull request in this repository can
-ever be merged** — the rule is unsatisfiable rather than merely strict.
+ever be merged through the normal path** — the rule is unsatisfiable rather than merely
+strict.
+
+Pull request #1 has since been merged by the owner and `develop` is at `01bda69`. How that
+merge satisfied or bypassed the rule was not observed from this environment and is not
+assumed here. The requirement still applies to every subsequent pull request, including the
+secret-scan fix, so it remains unresolved rather than moot.
 
 **No approving review exists.** This document does not claim one, and none may be claimed
 unless GitHub itself shows it.

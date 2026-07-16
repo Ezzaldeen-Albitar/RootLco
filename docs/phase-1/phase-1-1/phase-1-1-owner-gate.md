@@ -34,9 +34,16 @@ verified in served CSS; a full passing quality gate; 13 ADRs; and governance doc
 1. **Branch protection** on `main` and `develop` — decided (ADR-006) but not applied; no
    GitHub CLI or token was available and installing/authenticating was forbidden this run.
    Manual settings are listed in [security-readiness.md](./security-readiness.md).
-2. **Pull request** `chore/p1-01-development-readiness` → `develop` — not created, same
-   constraint. Compare URL:
-   `https://github.com/Ezzaldeen-Albitar/RootLco/compare/develop...chore/p1-01-development-readiness?expand=1`
+2. **Pull request** — **superseded by events (2026-07-16).** Pull request #1
+   (`chore/p1-01-development-readiness` → `develop`) was created and **merged** by the
+   owner; `develop` is now at merge commit `01bda69` and carries the full Phase 1-1
+   delivery. Branch protection likewise **has been applied** by the owner: the pull request
+   reported required status checks and a required approving review. Two follow-on defects
+   were found and are tracked separately:
+   [github-required-checks.md](./github-required-checks.md) (required checks reference job
+   IDs that GitHub never reports) and
+   [pull-request-review-requirement.md](./pull-request-review-requirement.md) (a
+   one-approval rule with a single write-access collaborator is unsatisfiable).
 
 ## Conditional items requiring owner action
 
