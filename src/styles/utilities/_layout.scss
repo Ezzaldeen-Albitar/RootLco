@@ -1,0 +1,25 @@
+// ============================================================================
+// Global layout utilities. DELIBERATELY TINY.
+//
+// This is not a utility framework: if Tailwind is adopted (open decision,
+// ADR-013), utility classes come from Tailwind and this file must not grow
+// into a parallel one. Only utilities needed before that decision live here.
+// All spacing is logical (inline/block), so RTL and LTR both work unchanged.
+// ============================================================================
+
+// Centred page container at the default content width.
+.u-container {
+  inline-size: 100%;
+  max-inline-size: var(--content-default);
+  padding-inline: var(--space-4);
+  margin-inline: auto;
+}
+
+// Vertical rhythm between stacked children.
+.u-stack > * + * {
+  margin-block-start: var(--space-4);
+}
+
+.u-stack-tight > * + * {
+  margin-block-start: var(--space-2);
+}

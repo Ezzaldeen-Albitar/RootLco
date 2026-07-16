@@ -1,0 +1,60 @@
+{
+  "extends": ["stylelint-config-standard-scss"],
+  "ignoreFiles": ["node_modules/**", ".next/**", "coverage/**", "out/**"],
+  "rules": {
+    "max-nesting-depth": [
+      2,
+      {
+        "ignore": ["blockless-at-rules", "pseudo-classes"],
+        "message": "Keep SCSS nesting shallow (max 2). Deep nesting couples styles to DOM shape. (docs/standards/styling-and-sass.md)"
+      }
+    ],
+    "declaration-no-important": [
+      true,
+      {
+        "message": "!important requires a documented reason. Add a stylelint-disable comment explaining why. (docs/standards/styling-and-sass.md)"
+      }
+    ],
+    "selector-max-id": 0,
+    "selector-max-compound-selectors": 3,
+    "declaration-property-value-disallowed-list": [
+      {
+        "/^text-align$/": ["left", "right"],
+        "/^float$/": ["left", "right"],
+        "/^clear$/": ["left", "right"]
+      },
+      {
+        "message": "Use logical values (start/end, inline-start/inline-end) so Arabic RTL and English LTR both work. (ADR-013)"
+      }
+    ],
+    "property-disallowed-list": [
+      [
+        "margin-left",
+        "margin-right",
+        "padding-left",
+        "padding-right",
+        "border-left",
+        "border-right",
+        "left",
+        "right"
+      ],
+      {
+        "message": "Use CSS logical properties (margin-inline-*, padding-inline-*, border-inline-*, inset-inline-*) so RTL and LTR both work without overrides. (ADR-013)"
+      }
+    ],
+    "scss/load-no-partial-leading-underscore": true,
+    "scss/comment-no-empty": null,
+    "at-rule-disallowed-list": [
+      ["import"],
+      {
+        "message": "Sass @import is deprecated. Use @use / @forward. (ADR-013)"
+      }
+    ],
+    "selector-class-pattern": [
+      "^(u-[a-z][a-z0-9-]*|[a-z][a-zA-Z0-9]*)$",
+      {
+        "message": "Class names are camelCase for SCSS Modules (styles.itemLabel) or u-prefixed kebab-case for the small global utility set (.u-stack-tight)."
+      }
+    ]
+  }
+}
