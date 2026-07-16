@@ -19,7 +19,7 @@ This is the decision record for the Phase 1-1 gate. The allowed decisions are:
 ## What is submitted
 
 The complete evidence corpus in this directory, summarised by the
-[readiness checklist](./readiness-checklist.md): **33 Complete · 3 Conditional · 2 Blocked ·
+[readiness checklist](./readiness-checklist.md): **34 Complete · 2 Conditional · 2 Blocked ·
 1 disclosed as not executed**, with every claim traceable through the
 [evidence register](./evidence-register.md) and the
 [completion report](./phase-1-1-completion-report.md).

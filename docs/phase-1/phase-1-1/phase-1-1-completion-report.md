@@ -9,7 +9,7 @@ RootLco founders · **Branch:** `chore/p1-01-development-readiness`
 The Phase 1-1 technical readiness work is complete, subject to the conditional and blocked
 items listed below. Every completion claim in this report is backed by a row in the
 [evidence register](./evidence-register.md) and by the
-[readiness checklist](./readiness-checklist.md) (33 Complete, 3 Conditional, 2 Blocked,
+[readiness checklist](./readiness-checklist.md) (34 Complete, 2 Conditional, 2 Blocked,
 1 disclosed as not executed).
 
 **The Phase 1-1 gate is not approved.** Approval belongs exclusively to the owners on

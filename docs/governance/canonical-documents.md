@@ -37,9 +37,9 @@ without duplication.
       "internalVersion": "1.0-rc2",
       "internalStatus": "Draft for owner review — not approved for execution",
       "relativePath": "../RootLco_Phase_1_Development_Plan_recovered_v01.docx",
-      "sha256": "fe2c48877f4ed7c2b17565dc18f53610643fe421fd9f308c0e7994f50c251aac",
-      "bytes": 1159180,
-      "lastVerifiedModified": "2026-07-16T13:07:04Z",
+      "sha256": "af49dd91c5fd588c09947e407ec32aa5346b5044d46326b5367d8154b215c30c",
+      "bytes": 1161062,
+      "lastVerifiedModified": "2026-07-16T13:20:25Z",
       "committedToGit": false
     },
     {
@@ -49,9 +49,9 @@ without duplication.
       "internalVersion": "0.3",
       "internalStatus": "Corrected canonical review baseline — pending owner review and approval",
       "relativePath": "../documentation/RootLco_Master_Project_Documentation.docx",
-      "sha256": "8c92eb401ecd6e1114c65208a2ffb02484f6d1b8617235ef9ec6b95e0b49fadb",
-      "bytes": 4478344,
-      "lastVerifiedModified": "2026-07-16T12:17:05Z",
+      "sha256": "b1008a73d0f12fa62c41549a20d4ba030f326ba3e11bbe137f48dcb340cdbadc",
+      "bytes": 4478674,
+      "lastVerifiedModified": "2026-07-16T13:17:48Z",
       "committedToGit": false
     }
   ]
@@ -60,9 +60,11 @@ without duplication.
 
 <!-- canonical-documents:end -->
 
-> The hashes above are recorded **after** the Phase 1-1 documentation updates were applied
-> to the canonical documents and both were confirmed to open in Microsoft Word without a
-> repair prompt.
+> The hashes above are recorded **after** the Phase 1-1 execution-evidence updates of
+> 16 July 2026 (Appendix B.4 in the Phase 1 plan; the technology-stack and related-document
+> updates in the Master document) were applied in place and both documents were confirmed to
+> open in Microsoft Word without a repair prompt (Phase 1 plan: 707 pages, 245 tables,
+> 3 diagrams; Master: 228 pages, 51 tables, 47 diagrams).
 
 ## Authority split
 
