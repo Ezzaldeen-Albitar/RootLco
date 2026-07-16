@@ -53,6 +53,14 @@ following decisions require **joint final business approval** by both owners:
 
 Neither owner approves gated business decisions alone.
 
+> **Status update (2026-07-16):** the concentration described in this record is now
+> governed by the owner-approved
+> [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md) and the
+> Owner-Approved Combined-Role Model in the
+> [Phase 1-1 owner gate](./phase-1-1-owner-gate.md). The gap statements in sections 4 and 5
+> below remain true and disclosed; the policy accepts the risk for the current foundation
+> stages, it does not remove it.
+
 ## 4. QA ownership — honest statement
 
 - Technical tests (lint, typecheck, format, stylelint, Vitest suite, build, container

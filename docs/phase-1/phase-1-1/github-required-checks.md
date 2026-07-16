@@ -1,7 +1,9 @@
 # GitHub Required Status Checks — Exact Names
 
 **Date:** 2026-07-16 · **Owner:** Eng. Ezzaldeen Al-Bitar (repository administrator) ·
-**Related:** ADR-006 (Git Branching and Protected Main)
+**Related:** ADR-006 (Git Branching and Protected Main);
+[solo-developer-review-policy.md](../../governance/solo-developer-review-policy.md)
+(approving-review count is 0 under that policy; required CI checks remain mandatory)
 
 ## The problem
 

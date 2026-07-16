@@ -4,7 +4,15 @@
 
 Accepted by owner instruction (branching model and the single authorised bootstrap exception).
 
-Branch protection enforcement on `main` is **Blocked** — it cannot be applied from the current workstation and has not been applied.
+**Status update (2026-07-16):** branch rules were applied by the repository administrator
+in the GitHub UI (pull requests #1–#3 merged through them). Review operates under the
+owner-approved
+[Solo Developer Review Policy](../governance/solo-developer-review-policy.md): required
+approving reviews are temporarily **0** (a PR author cannot approve their own work and no
+second write-access reviewer exists), while pull requests, required CI checks,
+conversation resolution, force-push blocking, and branch-deletion blocking remain
+mandatory. The independent-approver weakness recorded under Consequences below therefore
+remains true and owner-accepted, not resolved.
 
 ## Context
 

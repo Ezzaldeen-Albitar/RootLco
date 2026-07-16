@@ -152,9 +152,9 @@ These statements are recorded openly. None of them may be softened or omitted in
 - **No security audit, code audit, or third-party security review has been performed.**
 - **No compliance certification is claimed.** No ISO, SOC, PCI DSS, GDPR, or equivalent certification, attestation, or readiness assessment exists for this product or for RootLco in connection with it. Any document suggesting otherwise is incorrect (see P1-01-SEC-005, verification that no secrets or fabricated compliance claims exist).
 - **No security testing has passed**, because none has been designed or executed.
-- **Independent QA ownership is not assigned.** Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar, who is also the technical owner and implementer. This is a self-verification gap. It is recorded as a risk and a conditional-gate item, and it is not mitigated by anything in this document.
-- **Security ownership verification is outstanding** — see P1-01-SEC-003, which requires either verification of security ownership or the recording of P1-EC-016 as blocking.
-- **Branch protection is Blocked, not applied.** The GitHub CLI is not installed and no GitHub token is available in the working environment. Branch protection rules and pull-request enforcement therefore cannot be configured from here and have not been configured. `main` and `develop` are currently unprotected.
+- **Independent QA ownership is not assigned.** Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar, who is also the technical owner and implementer. This operates under the owner-approved [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md) (2026-07-16): the risk is owner-accepted and disclosed, and it is still a self-verification gap — nothing in this document mitigates it or presents it as independent review.
+- **Security review is an owner-authorized self-review.** Under the same policy, Eng. Ezzaldeen Al-Bitar holds security implementation and review authority. P1-EC-016 (independent security reviewer before production release) remains open.
+- **Branch protection status (updated 2026-07-16).** Branch rules were applied by the repository administrator in the GitHub UI (pull requests #1–#3 merged through them). Under the Solo Developer Review Policy the required approving-review count is 0 while pull requests, required CI checks, conversation resolution, force-push blocking, and branch-deletion blocking remain enabled. The live ruleset is not inspectable from the build environment (no GitHub CLI or token); this statement reflects the owner-approved policy state.
 - **Repository access control review** is tracked under P1-01-SEC-004 (classification of the Phase 1 plan set sensitivity and repository access control) and is not complete.
 - **The two canonical Word documents** (`RootLco_Phase_1_Development_Plan_recovered_v01.docx` and `RootLco_Master_Project_Documentation.docx`) reside outside this repository, in the parent folder, by owner decision, and are deliberately not committed. Documentation held in Git is a working aid and must never be treated as a replacement canonical copy. Handling of those files, including their storage and backup, is the owner's responsibility and is outside the controls described here.
 
@@ -168,11 +168,11 @@ Zoom Vehicle Inspection and Evaluation Services is outside Phase 1 and is future
 
 ## 11. Ownership and Review
 
-| Role                                                         | Holder                                                |
-| ------------------------------------------------------------ | ----------------------------------------------------- |
-| Technical and IT owner                                       | Eng. Ezzaldeen Al-Bitar (GitHub: `Ezzaldeen-Albitar`) |
-| Product owners / final business approval authority (jointly) | Eng. Ezzaldeen Al-Bitar; Eng. Bilal Jradat            |
-| Independent QA owner                                         | **Not assigned** — recorded gap                       |
-| Security contact channel                                     | **Open item** — see Section 2                         |
+| Role                                                         | Holder                                                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Technical and IT owner                                       | Eng. Ezzaldeen Al-Bitar (GitHub: `Ezzaldeen-Albitar`)                                                                           |
+| Product owners / final business approval authority (jointly) | Eng. Ezzaldeen Al-Bitar; Eng. Bilal Jradat                                                                                      |
+| Independent QA owner                                         | **Not assigned** — owner-accepted gap under the [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md) |
+| Security contact channel                                     | **Open item** — see Section 2                                                                                                   |
 
 This policy describes intended controls and current state. Where a control is not yet implemented, that is stated. This document confers no assurance, warranty, or certification of any kind.

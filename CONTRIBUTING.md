@@ -69,9 +69,15 @@ Rules:
 - The description must list the Phase 1 task identifiers covered, the Definition of Done items satisfied, and any item deliberately left open.
 - Review is required from the technical owner. Changes affecting architecture, schema, security posture or tenancy boundaries additionally require product-owner acknowledgement.
 - Reviewers verify the rules in sections 5 to 12 of this document, not only code style.
-- The author must not merge their own pull request without a recorded review.
+- Review currently operates under the owner-approved
+  [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md)
+  (2026-07-16): the required approving-review count is temporarily **0** because the sole
+  write-access collaborator is the author and GitHub does not count self-approval. The
+  author performs and **documents** a technical self-review in the pull request; that
+  self-review must never be presented as an independent review. Pull requests, successful
+  CI, and conversation resolution remain mandatory.
 
-**Current constraint.** The GitHub CLI is not installed in the working environment and no GitHub token is available. Branch protection rules and pull request creation are therefore **Blocked** at present. They are described here as the required process; they must not be described anywhere as applied or enforced until they demonstrably are.
+**Status note (2026-07-16).** Branch rules were applied by the repository administrator and pull requests #1–#3 were merged through them. The build environment still has no GitHub CLI or API token, so ruleset changes and PR creation remain manual owner actions performed in the GitHub UI.
 
 ## 4. Required checks
 
@@ -92,7 +98,7 @@ Rules:
 - A check that has not been executed is reported as not executed. It is never reported as passing.
 - Failing checks are fixed, not skipped, disabled or annotated away.
 - `@ts-ignore`, `@ts-expect-error`, `eslint-disable` and equivalent suppressions require an explicit justification in the pull request and reviewer agreement.
-- Independent QA ownership is **not assigned**. Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar. This is a recorded gap and a conditional-gate item; it must remain visible in the risk record and must never be presented as independent verification.
+- Independent QA ownership is **not assigned**. Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar under the owner-approved [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md). This is a recorded, owner-accepted gap; it must remain visible in the risk record and must never be presented as independent verification.
 
 ## 4a. Styling rules
 
@@ -209,17 +215,17 @@ The platform is multi-tenant, multi-company and multi-branch, and its behaviour 
 
 ## 11. No direct push to main
 
-- Protection of `main` is decided policy — Blocked as an applied control until an administrator applies the GitHub rules manually. No contributor pushes to `main` directly, and no contributor pushes to `develop` directly for substantive change.
-- All work reaches `develop` through a reviewed pull request from a working branch.
+- Protection of `main` is decided policy and was applied by the repository administrator (pull requests #1–#3 merged through it). No contributor pushes to `main` directly, and no contributor pushes to `develop` directly for substantive change.
+- All work reaches `develop` through a pull request from a working branch, reviewed under the [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md).
 - `main` is updated only by a reviewed promotion from `develop`, performed by the technical owner.
 - History on `main` and `develop` is not rewritten. No force push, no amend of published commits, no rebase of shared branches.
-- Enforcement note: branch protection is **Blocked** at present because the GitHub CLI is not installed and no GitHub token is available. Until the protection rules are demonstrably configured, this rule is enforced by discipline and review, and must be recorded as such — never as an applied technical control.
+- Enforcement note: the required-check names in the ruleset must match the names GitHub actually reports — see [github-required-checks.md](docs/phase-1/phase-1-1/github-required-checks.md). The live ruleset is administered in the GitHub UI; the build environment has no GitHub CLI or token and cannot inspect or change it.
 
 ## 12. Phase discipline
 
-- The current phase is **Phase 1-1: Source-of-Truth Validation and Development Readiness** (35 tasks: 5 SEC, 10 QA, 4 DO, 16 DOC).
-- **Phase 1-1 is not passed. Phase 1-2 has not started.**
-- **Phase 1-2 work must not be merged until the product owners record a Go or a Conditional Go on the Phase 1-1 gate.** A branch containing Phase 1-2 work may exist; it may not be merged into `develop` or `main` before that decision is recorded.
+- The current phase is **Phase 1-2: Database Architecture and Engineering Standards**. Phase 1-1 closed with a recorded owner **Go** on 2026-07-16 ([gate record](docs/phase-1/phase-1-1/phase-1-1-owner-gate.md)).
+- **Phase 1-3 has not started and must not start** until the owners record a Go or Conditional Go on the Phase 1-2 Database Standards Gate.
+- Phase 1-2 establishes standards and shared foundation only: **no business-domain tables** (tenants, companies, branches, users, customers, vehicles, appointments, inspections, quotations, work orders, inventory, invoices, payments) may be created or merged during Phase 1-2.
 - A Conditional Go carries conditions. Those conditions bind subsequent work and must be referenced in the pull requests that discharge them.
 - Only the **Local** environment is being implemented. Development, Staging and Production are **Planned — not provisioned**. Docker-based local development is accepted by owner instruction.
 - No cloud provider, production region or deployment platform has been approved. Any reference to one is **Proposed** or **Open**, never approved. Do not merge code, configuration or documentation that presumes an approved target.

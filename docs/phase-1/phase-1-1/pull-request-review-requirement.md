@@ -80,13 +80,16 @@ protection and simply blocks all work.
 
 ## Decision record — owners only
 
-| Field                     | Value                                                 |
-| ------------------------- | ----------------------------------------------------- |
-| Option chosen             | ☐ A (add reviewer) ☐ B (temporary zero-approval rule) |
-| Decided by                | ______________________________                        |
-| Date                      | ______________________________                        |
-| If B: revert-to-1 trigger | ______________________________                        |
+| Field                     | Value                                                                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Option chosen             | ☑ **B (temporary zero-approval rule)** — formalized as the [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md)                      |
+| Decided by                | Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (RootLco founders)                                                                                                 |
+| Date                      | 2026-07-16 (communicated in the owners' Phase 1-2 authorization; recorded at their direction)                                                                    |
+| If B: revert-to-1 trigger | A second qualified developer or reviewer with write access joins the project (Option A remains the preferred end state and still requires C3 — Bilal's username) |
 
-> Nothing in this file has been applied. Repository rules could not be modified from the
-> build environment: no GitHub CLI is installed and no API token is available. No ruleset
-> change, no collaborator addition, and no approving review is claimed.
+> Applied state: the owners state that the required approving-review count is set to zero
+> while pull requests, required CI checks, conversation resolution, force-push blocking,
+> and branch-deletion blocking all remain enabled. The live GitHub ruleset was not
+> inspected from the build environment (no GitHub CLI or API token is used there); keeping
+> it aligned with this decision is the repository administrator's responsibility. No
+> approving review is claimed for any merged pull request.
