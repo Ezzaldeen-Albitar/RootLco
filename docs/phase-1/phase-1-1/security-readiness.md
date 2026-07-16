@@ -27,14 +27,14 @@ files and all untracked files that were staged to be committed.
 
 Pattern classes scanned:
 
-| Class                          | Pattern intent                                    |
-| ------------------------------ | ------------------------------------------------- |
-| JWTs                           | `eyJ`-prefixed three-segment tokens               |
-| Supabase secret keys           | `sb_secret_` prefixes                             |
-| AWS access keys                | `AKIA` prefixes                                   |
-| GitHub tokens                  | `ghp_` / `gho_` / `ghs_` / `github_pat_` prefixes |
-| Private keys                   | `-----BEGIN ... PRIVATE KEY-----` blocks          |
-| Database URLs with credentials | `postgres://user:password@...` forms              |
+| Class                          | Pattern intent                                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| JWTs                           | `eyJ`-prefixed three-segment tokens                                                                                         |
+| Supabase secret keys           | `sb_secret_` prefixes                                                                                                       |
+| AWS access keys                | `AKIA` prefixes                                                                                                             |
+| GitHub tokens                  | `ghp_` / `gho_` / `ghs_` / `github_pat_` prefixes                                                                           |
+| Private keys                   | `-----BEGIN ... PRIVATE KEY-----` blocks                                                                                    |
+| Database URLs with credentials | `postgres://user:password@...` forms <!-- pragma: allowlist secret -- describes the detector's own shape; no credential --> |
 
 **Result: CLEAN.** No match in any tracked file or any untracked file
 intended for commit.

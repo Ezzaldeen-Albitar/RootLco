@@ -40,11 +40,11 @@ verified in served CSS; a full passing quality gate; 13 ADRs; and governance doc
 
 ## Conditional items requiring owner action
 
-| #   | Item                                                                                                            | Why it matters                                                               |
-| --- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| C1  | Independent QA ownership is not assigned; all tests were executed by the technical owner                        | The person who built the work also verified it — no independent check exists |
-| C2  | Independent security reviewer / exception authority / incident contact not evidenced (P1-01-SEC-003; P1-EC-016) | Security review of the technical owner's own work is currently self-review   |
-| C3  | Eng. Bilal Jradat's GitHub username required                                                                    | CODEOWNERS and review enforcement cannot include him until supplied          |
+| #   | Item                                                                                                            | Why it matters                                                                                                                                                                                                                                                                                   |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C1  | Independent QA ownership is not assigned; all tests were executed by the technical owner                        | **Addressed by owner decision** — see "Owner-Approved Combined-Role Model" below. Residual risk stands and is disclosed: the person who built the work also verified it, so this is an owner-authorized self-review, not an independent check                                                    |
+| C2  | Independent security reviewer / exception authority / incident contact not evidenced (P1-01-SEC-003; P1-EC-016) | **Addressed by owner decision** — see "Owner-Approved Combined-Role Model" below, which assigns Security Implementation and Review Authority to Eng. Ezzaldeen Al-Bitar. Residual risk stands: this is self-review. P1-EC-016 remains open for an independent reviewer before production release |
+| C3  | Eng. Bilal Jradat's GitHub username required                                                                    | CODEOWNERS and review enforcement cannot include him until supplied. Directly blocks the pull-request approval requirement — see [pull-request-review-requirement.md](./pull-request-review-requirement.md)                                                                                      |
 
 ## Risks
 
@@ -87,5 +87,28 @@ only; it is not a decision and confers no authority.
 - Decision: ☐ Go ☐ Conditional Go ☐ No-Go ☐ Return for Evidence
 - Conditions (if any): ____________________________________________
 - Signature: ______________________________ Date: ________________
+
+## Owner-Approved Combined-Role Model
+
+Due to the current team size, Eng. Ezzaldeen Al-Bitar is assigned the
+following responsibilities during the current foundation stages:
+
+- Technical Lead
+- Software Architect
+- Development Owner
+- DevOps Owner
+- Database Engineering Owner
+- Security Implementation and Review Authority
+- QA Execution and Review Authority
+- Repository Administrator
+
+The RootLco founders, Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat,
+have explicitly approved this combined-role model.
+
+The current review is an owner-authorized technical self-review and
+must not be represented as an independent external review.
+
+Independent QA or security review may be introduced later before
+production release or when the team expands.
 
 _Phase 1-2 remains blocked until both decisions above are recorded as Go or Conditional Go._
