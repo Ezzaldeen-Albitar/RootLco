@@ -1,0 +1,81 @@
+# Architecture Decision Register
+
+This file is the Architecture Decision Register produced by Phase 1-1 task P1-01-DOC-014. It is the register itself, not a summary of one held elsewhere. Each Architecture Decision Record listed in the index below is an entry in this register, and the thirteen ADR files in this directory are its complete contents at the date of writing. The register records what has been decided, by whom, and with what status; it does not record that any decision has been implemented, tested, or verified. Nothing in this register asserts that Phase 1-1 has been passed, that any environment beyond Local exists, or that any approval has been granted beyond those explicitly attributed to a named decision owner in the record concerned.
+
+## ADR index
+
+| ADR                                                                       | Title                                             | Status                                                                                                                                                                                                                                                                                     | Decision Owner                                                                                                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [ADR-001](./ADR-001-modular-monolith-architecture.md)                     | Modular Monolith Architecture                     | Accepted by owner instruction. Covers the internal application structure only; hosting provider, production region, and deployment platform remain Open and are out of scope for the record.                                                                                               | Eng. Ezzaldeen Al-Bitar (technical and IT owner)                                                                                                                   |
+| [ADR-002](./ADR-002-next-js-and-typescript-application-stack.md)          | Next.js and TypeScript Application Stack          | Accepted by owner instruction — for the application framework, runtime library, language, strict type checking, source layout, and import alias. Open — for the styling framework, which was deliberately not selected in Phase 1-1.                                                       | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for business, scope and commercial dimensions                         |
+| [ADR-003](./ADR-003-supabase-and-postgresql-data-platform.md)             | Supabase and PostgreSQL Data Platform             | Accepted by owner instruction — for the data platform technology selection (PostgreSQL, Supabase, Row-Level Security, and the official Supabase CLI Docker-based local stack as the Local environment). Open — for the hosted Supabase project, its cloud region, and its commercial plan. | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the open commercial and scope matters                             |
+| [ADR-004](./ADR-004-mandatory-row-level-security-direction.md)            | Mandatory Row-Level Security Direction            | Accepted by owner instruction. The decision recorded is the direction only; implementation and verification have not occurred and are not claimed.                                                                                                                                         | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for business and commercial aspects                                   |
+| [ADR-005](./ADR-005-database-first-delivery-sequence.md)                  | Database-First Delivery Sequence                  | Accepted by owner instruction. Proposed — in respect of the target platform of the Deployment, Go-Live and Hypercare stages, because no hosting provider, production region, or deployment platform has been approved.                                                                     | Eng. Ezzaldeen Al-Bitar (technical sequencing decision); joint owners for the business and commercial dimensions                                                   |
+| [ADR-006](./ADR-006-git-branching-and-protected-main.md)                  | Git Branching and Protected Main                  | Accepted by owner instruction (branching model and the single authorised bootstrap exception). Branch protection enforcement on `main` is **Blocked** — it cannot be applied from the current workstation and has not been applied.                                                        | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for promotion of `develop` to `main` and any relaxation of protection |
+| [ADR-007](./ADR-007-docker-based-local-development.md)                    | Docker-Based Local Development                    | Accepted by owner instruction. Applies to the local development environment only; container hosting for Development, Staging and Production remains Open, as no cloud provider, region or deployment platform has been approved.                                                           | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the still-Open hosting questions                                  |
+| [ADR-008](./ADR-008-configuration-driven-tenant-onboarding.md)            | Configuration-Driven Tenant Onboarding            | Accepted by owner instruction. Limited to the technical onboarding mechanism for tenants, companies and branches; it does not decide the hosting provider, production region or deployment platform, all of which remain Open.                                                             | Eng. Ezzaldeen Al-Bitar (technical mechanism); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the business, scope and commercial element              |
+| [ADR-009](./ADR-009-benzene-as-first-configured-pilot-tenant.md)          | Benzene as First Configured Pilot Tenant          | Accepted by owner instruction. Nothing in the record implies that Phase 1-1 has been passed, that any environment beyond Local exists, or that any pilot has been provisioned.                                                                                                             | Eng. Ezzaldeen Al-Bitar (technical elements); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the business, scope and commercial elements              |
+| [ADR-010](./ADR-010-zoom-excluded-from-phase-1.md)                        | Zoom Excluded from Phase 1                        | Accepted by owner instruction                                                                                                                                                                                                                                                              | Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly)                                                                                                            |
+| [ADR-011](./ADR-011-product-name-remains-pending-final-approval.md)       | Product Name Remains Pending Final Approval       | Accepted by owner instruction                                                                                                                                                                                                                                                              | Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly)                                                                                                            |
+| [ADR-012](./ADR-012-local-first-environment-with-controlled-promotion.md) | Local-First Environment with Controlled Promotion | Accepted by owner instruction — for the local-first scope of Phase 1-1 only. Every element of promotion beyond Local — the hosting provider, the production region, and the deployment platform — is **Proposed / Open**.                                                                  | Eng. Ezzaldeen Al-Bitar (technical scope); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the business, scope and commercial scope                    |
+| [ADR-013](./ADR-013-sass-and-scss-styling-architecture.md)                | Sass and SCSS Styling Architecture                | Accepted by owner instruction — for the Sass/SCSS styling foundation, token architecture, and RTL/LTR conventions. The division of responsibility with a utility framework or component library is binding if and when one is adopted; that adoption itself remains Open (ADR-002).        | Eng. Ezzaldeen Al-Bitar (technical and IT owner)                                                                                                                   |
+
+All thirteen records carry the date 2026-07-16.
+
+## Status vocabulary
+
+The register uses a closed vocabulary. Any status not in this list is an error in the record and should be corrected rather than reinterpreted.
+
+- **Accepted by owner instruction** — the decision has been taken by a named decision owner and is binding on subsequent work. Acceptance of a decision is not a claim that the decision has been implemented, tested, or verified.
+- **Proposed** — a position has been drafted and recorded but no owner has accepted it. It carries no authority and must not be cited as approval.
+- **Open** — the question is genuinely undecided. No owner has taken a position, and the record exists to state that fact plainly rather than to imply a default.
+- **Superseded** — the record has been replaced by a later ADR. The superseded record is retained and its replacement is named within it; it is never deleted.
+
+**Blocked** is used for a decided action that tooling currently prevents. It appears once in this register, in ADR-006: branch protection on `main` has been decided by its owner but has not been applied, because the current workstation has neither the GitHub CLI nor a token with which to apply it. Blocked is distinct from Open. Open means nobody has decided; Blocked means the decision exists and its execution is obstructed. A Blocked item requires tooling or access to unblock it, not a decision. Branch protection has not been applied.
+
+A record may carry a compound status where different aspects of the same subject sit at different points in this vocabulary — ADR-002, ADR-003, ADR-005, ADR-006 and ADR-012 each do. The compound status is reproduced in the index above and is authoritative in the record itself.
+
+## Identifier provenance
+
+Identifiers such as OIR-01, ASM-01, P1-OOS-026, P1-EC-016, and the phase ranges Phase 1-2..1-12, Phase 1-13..1-24, Phase 1-25..1-32 and Phase 1-39 are cited throughout these records. They are defined in the canonical Word documents, which live outside this repository by owner decision and are recorded in [../governance/canonical-documents.md](../governance/canonical-documents.md).
+
+State this plainly: those identifiers are **not substantiated by any file inside this repository**. A reader cannot resolve them by searching the repository, and no file here defines them. They are genuine identifiers with a genuine source; the source is simply not held here. The canonical documents are authoritative for them. Where a citation in an ADR appears to reference something absent from the repository, the correct action is to consult the canonical documents named in the governance record above, not to treat the identifier as invented or to remove it.
+
+This arrangement is an owner decision about where the canonical documentation lives. It is recorded here so that the register does not imply repository-internal evidence that does not exist.
+
+## How to add an ADR
+
+1. **Take the next number.** The highest number in use is ADR-013, so the next record is ADR-014. Numbers are never reused, including for superseded records.
+2. **Name the file** `ADR-0NN-short-kebab-case-title.md` in this directory, matching the convention of the existing thirteen.
+3. **Use the mandatory heading template**, in this order, with every heading present:
+
+   ```
+   # ADR-0NN: Title
+
+   ## Status
+   ## Context
+   ## Decision
+   ## Alternatives Considered
+   ## Consequences
+   ## Security Impact
+   ## Operational Impact
+   ## Related Phase 1 Task and Requirement IDs
+   ## Decision Owner
+   ## Date
+   ```
+
+4. **Set the Status** using only the vocabulary defined above. If different aspects of the subject sit at different statuses, say so explicitly rather than choosing the more favourable one.
+5. **Name the Decision Owner** for each aspect. Technical decisions and business, scope or commercial decisions may have different owners; where they do, attribute them separately.
+6. **Supersede rather than delete.** To reverse or replace a decision, write a new ADR that names the record it supersedes, and change the superseded record's Status to Superseded with a link to its replacement. Do not delete or silently rewrite an existing record.
+7. **Update this index in the same commit** as the new or superseded record. The register is only accurate if the index and the records move together.
+
+## What is NOT decided
+
+The following are genuinely open across the set. No owner approval exists for any of them, and no record in this register may be cited as approving any of them.
+
+- **The hosted Supabase project, its cloud region, and its commercial plan** — Open (ADR-003). The Local development environment uses the official Supabase CLI Docker stack; no hosted project has been created or approved.
+- **The deployment platform and any cloud provider** — Open (ADR-001, ADR-005, ADR-007, ADR-008, ADR-012). No hosting provider, production region, or deployment platform has been approved. Only the Local environment is being implemented.
+- **Adoption of a utility framework or component library (for example Tailwind CSS or shadcn/ui)** — Open (ADR-002). Neither is installed. The Sass/SCSS styling foundation itself is now decided (ADR-013); if a framework or component library is later adopted, the division of responsibility recorded in ADR-013 and docs/standards/styling-and-sass.md applies to it.
+- **The final product name** — Open (ADR-011). The platform is described only by the temporary descriptive title "Commercial Multi-Tenant Automotive CRM and ERP Platform", and the placeholder convention [PRODUCT NAME — Pending Final Approval] applies until the joint product owners grant final naming approval.
+
+Separately, and not to be confused with the above: branch protection on `main` is **Blocked**, not Open. It has been decided and has not been applied. See ADR-006 and the status vocabulary section.
