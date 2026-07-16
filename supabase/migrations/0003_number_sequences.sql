@@ -63,7 +63,7 @@ COMMENT ON TABLE shared.number_sequences IS
 COMMENT ON COLUMN shared.number_sequences.prefix_template IS
   'Literal prefix rendered before the padded value. Supported token: {period} (replaced by the current period key, empty when period_reset_rule = never).';
 COMMENT ON COLUMN shared.number_sequences.next_value IS
-  'Next value to issue. Read and advanced ONLY under SELECT ... FOR UPDATE by shared.next_display_number(). Rolled-back allocations leave gaps by design (gap tolerance is documented in the number-sequence standard).';
+  'Next value to issue. Read and advanced ONLY under SELECT ... FOR UPDATE by shared.next_display_number(). Allocation is transactional: a rollback also rolls back the increment, so the number is re-issued to the next caller (no duplicate, no gap). Gaps that arise at business level (voided documents, period resets) are tolerated and never renumbered — see the number-sequence standard.';
 COMMENT ON COLUMN shared.number_sequences.current_period IS
   'Period key of the last allocation for period-resetting sequences (e.g. 2026, 2026-07). NULL for never-resetting sequences.';
 
@@ -144,8 +144,12 @@ GRANT UPDATE (next_value, current_period) ON shared.number_sequences TO app_runt
 --    * SECURITY INVOKER: runs with the caller's rights — RLS applies in full;
 --      this function is NOT an RLS bypass.
 --    * Runs in the CALLER's transaction: the issued number commits or rolls
---      back atomically with the business change that consumed it. A rollback
---      discards the number → gaps are possible and tolerated by design.
+--      back atomically with the business change that consumed it. On rollback
+--      the increment also rolls back, so the number is simply re-issued to the
+--      next caller — no duplicate and no gap from rollbacks. The trade-off is
+--      serialisation on the sequence row (documented in the standard). Gaps
+--      from later business events (voided documents, period resets) are
+--      tolerated and never renumbered.
 --    * SELECT ... FOR UPDATE serialises concurrent allocation per sequence
 --      row: two transactions can never read the same next_value.
 --    * The tenant is taken EXCLUSIVELY from the server-resolved context —
