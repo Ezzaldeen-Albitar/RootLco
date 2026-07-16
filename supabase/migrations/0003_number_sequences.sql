@@ -55,7 +55,11 @@ CREATE TABLE shared.number_sequences (
   -- A branch-scoped sequence must state its company: branch without company is
   -- an undefined scope in the org model.
   CONSTRAINT ck_number_sequences_branch_requires_company
-    CHECK (branch_id IS NULL OR company_id IS NOT NULL)
+    CHECK (branch_id IS NULL OR company_id IS NOT NULL),
+  -- A never-resetting sequence has no period, ever. Closes the rewind bypass
+  -- where a writer invents a period change to satisfy the regression guard.
+  CONSTRAINT ck_number_sequences_never_has_no_period
+    CHECK (period_reset_rule <> 'never' OR current_period IS NULL)
 );
 
 COMMENT ON TABLE shared.number_sequences IS
@@ -76,6 +80,10 @@ CREATE TRIGGER tg_number_sequences_touch_metadata
 -- Integrity guard: next_value may only move backwards when the period key
 -- changes (a legitimate period reset). Blocks accidental or malicious
 -- rewinding that would re-issue already-issued numbers within a tenant.
+-- Hardened against the fake-period bypass: a never-resetting sequence may not
+-- change current_period at all (also CHECK-constrained above), so a writer
+-- holding the UPDATE column grant cannot invent a period change to sneak a
+-- rewind past the guard.
 CREATE OR REPLACE FUNCTION shared.guard_number_sequence_regression()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -83,6 +91,12 @@ SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
+  IF NEW.period_reset_rule = 'never'
+     AND NEW.current_period IS DISTINCT FROM OLD.current_period THEN
+    RAISE EXCEPTION 'number_sequences: a never-resetting sequence has no period to change (sequence %, tenant %)',
+      OLD.sequence_code, OLD.tenant_id
+      USING ERRCODE = 'check_violation';
+  END IF;
   IF NEW.next_value < OLD.next_value
      AND NEW.current_period IS NOT DISTINCT FROM OLD.current_period THEN
     RAISE EXCEPTION 'number_sequences: next_value may not decrease without a period change (sequence %, tenant %)',
@@ -97,6 +111,9 @@ CREATE TRIGGER tg_number_sequences_guard_regression
   BEFORE UPDATE ON shared.number_sequences
   FOR EACH ROW
   EXECUTE FUNCTION shared.guard_number_sequence_regression();
+
+-- Trigger functions need no caller EXECUTE; strip the PostgreSQL PUBLIC default.
+REVOKE EXECUTE ON FUNCTION shared.guard_number_sequence_regression() FROM PUBLIC;
 
 -- ----------------------------------------------------------------------------
 -- 2. Row-Level Security: enabled AND forced (the table owner is not exempt
@@ -230,12 +247,17 @@ BEGIN
       current_period = v_period
   WHERE id = v_row.id;
 
+  -- Zero-pad to pad_width, WIDENING (never truncating) once the value outgrows
+  -- the pad: plain lpad(text, n) truncates on the right when length(text) > n,
+  -- which would render colliding display numbers at 10^pad_width. greatest()
+  -- keeps the full value in that case. pad_width = 0 means no padding.
   display_number :=
     replace(v_row.prefix_template, '{period}', COALESCE(v_period, ''))
-    || CASE
-         WHEN v_row.pad_width > 0 THEN lpad(sequence_value::text, v_row.pad_width, '0')
-         ELSE sequence_value::text
-       END;
+    || lpad(
+         sequence_value::text,
+         greatest(v_row.pad_width, length(sequence_value::text)),
+         '0'
+       );
 
   RETURN;
 END;
@@ -244,4 +266,7 @@ $$;
 COMMENT ON FUNCTION shared.next_display_number(text, uuid, uuid) IS
   'Allocates the next display number for a tenant-scoped sequence inside the caller''s transaction. SECURITY INVOKER (RLS applies). SELECT ... FOR UPDATE serialises concurrent allocation. Rollback discards the number (gap-tolerant by design). Tenant comes from iam.current_tenant_id() only — never from a parameter.';
 
+-- Strip the PostgreSQL PUBLIC-EXECUTE default so the explicit grant below is
+-- the ONLY execute path: allocation is an app_runtime capability, full stop.
+REVOKE EXECUTE ON FUNCTION shared.next_display_number(text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION shared.next_display_number(text, uuid, uuid) TO app_runtime;

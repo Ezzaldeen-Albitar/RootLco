@@ -22,7 +22,7 @@ granted, and what evidence exists that the rules hold. It is implemented by
 migration `supabase/migrations/0002_base_schemas.sql` (role archetypes, schema
 grants) and practised by `supabase/migrations/0003_number_sequences.sql`
 (per-object and column-level grants). Every behavioural claim in this document
-was verified on 2026-07-16 by the database test suite (62 tests passing via
+was verified on 2026-07-16 by the database test suite (68 tests passing via
 `npm run test:db`) or by direct inspection of `pg_roles` on the local Supabase
 stack (PostgreSQL 17.6, DB port 54322).
 
@@ -229,12 +229,25 @@ all. The column list gives two independent refusals for a tenant re-pointing
 attempt: the missing column grant **and** the policy `WITH CHECK` — verified
 as SQLSTATE `42501` in `tests/db/rls.test.ts`.
 
-### 5.4 Function level: explicit `EXECUTE`
+### 5.4 Function level: explicit `EXECUTE` (with the PUBLIC default revoked)
 
-`EXECUTE` is granted explicitly per function signature, never left to
-`PUBLIC` defaults. Practised examples:
+PostgreSQL grants `EXECUTE` on every newly created function to `PUBLIC` by
+default — an explicit grant on top of that default changes nothing. **Binding
+rule: the migration that creates a function must `REVOKE EXECUTE ... FROM
+PUBLIC` and then grant explicitly.** (This gap was found by the Phase 1-2
+adversarial review — the original drafts granted without revoking, so any role
+could execute the allocator — and was fixed in migrations 0002/0003 before
+merge; the denial is now verified by tests: an unprivileged login and
+`app_readonly` both receive SQLSTATE `42501` calling the allocator.)
+Practised examples:
 
 ```sql
+REVOKE EXECUTE ON FUNCTION
+  iam.current_tenant_id(),
+  iam.current_user_id(),
+  iam.allowed_company_ids(),
+  iam.allowed_branch_ids()
+FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION
   iam.current_tenant_id(),
   iam.current_user_id(),
@@ -242,22 +255,28 @@ GRANT EXECUTE ON FUNCTION
   iam.allowed_branch_ids()
 TO app_runtime, app_readonly;                                   -- migration 0002
 
+REVOKE EXECUTE ON FUNCTION shared.next_display_number(text, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION shared.next_display_number(text, uuid, uuid)
 TO app_runtime;                                                  -- migration 0003
 ```
+
+Trigger functions (`shared.touch_row_metadata()`,
+`shared.guard_number_sequence_regression()`) are invoked by triggers, not by
+callers: their `PUBLIC` default is revoked and **no** role receives `EXECUTE`.
 
 Note the asymmetry is intentional: `app_readonly` may read context but is not
 granted the allocator — allocation is a write.
 
 ### 5.5 Summary of the current grant surface (Phase 1-2, verified)
 
-| Object                                             | `app_runtime`                                   | `app_readonly` |
-| -------------------------------------------------- | ----------------------------------------------- | -------------- |
-| Schemas `org`, `iam`, `shared`, `crm`, `veh`       | USAGE                                           | USAGE          |
-| `shared.number_sequences`                          | SELECT; UPDATE (`next_value`, `current_period`) | SELECT         |
-| `iam.current_tenant_id()` etc. (4 context readers) | EXECUTE                                         | EXECUTE        |
-| `shared.next_display_number(text, uuid, uuid)`     | EXECUTE                                         | —              |
-| Everything else                                    | —                                               | —              |
+| Object                                                                       | `app_runtime`                                   | `app_readonly` |
+| ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------- |
+| Schemas `org`, `iam`, `shared`, `crm`, `veh`                                 | USAGE                                           | USAGE          |
+| `shared.number_sequences`                                                    | SELECT; UPDATE (`next_value`, `current_period`) | SELECT         |
+| `iam.current_tenant_id()` etc. (4 context readers)                           | EXECUTE                                         | EXECUTE        |
+| `shared.next_display_number(text, uuid, uuid)`                               | EXECUTE                                         | —              |
+| Trigger functions (`touch_row_metadata`, `guard_number_sequence_regression`) | — (PUBLIC revoked; trigger-invoked only)        | —              |
+| Everything else                                                              | —                                               | —              |
 
 ---
 
@@ -349,7 +368,7 @@ Binding rules:
 
 ### 8.1 Evidence (all measured 2026-07-16)
 
-- 62/62 database tests passing via `npm run test:db` (vitest + `pg` driver)
+- 68/68 database tests passing via `npm run test:db` (vitest + `pg` driver)
   against the local stack; the same suite runs in CI against a clean
   `postgres:17-alpine` container after all migrations are applied by
   `scripts/db/apply-migrations.mjs`.

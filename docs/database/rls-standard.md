@@ -308,7 +308,7 @@ test):
 ## 7. Testing requirements (what "proven" means)
 
 Every RLS claim in this platform must be backed by a test that satisfies all of
-the following. The current suite (62 tests, all passing on 2026-07-16 via
+the following. The current suite (68 tests, all passing on 2026-07-16 via
 `npm run test:db`, vitest + `pg`) satisfies them for `shared.number_sequences`
 and the pattern fixtures.
 

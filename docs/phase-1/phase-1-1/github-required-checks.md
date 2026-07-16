@@ -26,11 +26,12 @@ This is a configuration mismatch, not a CI failure. Nothing in the workflow is b
 
 Read from `.github/workflows/ci.yml` (workflow `name: CI`):
 
-| Job ID (YAML key) | Job display name (`name:`)       | Check-run name reported to GitHub | Shown in the PR UI as                 |
-| ----------------- | -------------------------------- | --------------------------------- | ------------------------------------- |
-| `quality`         | `Lint, types, tests, build`      | `Lint, types, tests, build`       | `CI / Lint, types, tests, build`      |
-| `docker`          | `Docker build validation`        | `Docker build validation`         | `CI / Docker build validation`        |
-| `secrets`         | `Secret and sensitive-file scan` | `Secret and sensitive-file scan`  | `CI / Secret and sensitive-file scan` |
+| Job ID (YAML key) | Job display name (`name:`)          | Check-run name reported to GitHub   | Shown in the PR UI as                    |
+| ----------------- | ----------------------------------- | ----------------------------------- | ---------------------------------------- |
+| `quality`         | `Lint, types, tests, build`         | `Lint, types, tests, build`         | `CI / Lint, types, tests, build`         |
+| `docker`          | `Docker build validation`           | `Docker build validation`           | `CI / Docker build validation`           |
+| `database`        | `Database migrations and RLS tests` | `Database migrations and RLS tests` | `CI / Database migrations and RLS tests` |
+| `secrets`         | `Secret and sensitive-file scan`    | `Secret and sensitive-file scan`    | `CI / Secret and sensitive-file scan`    |
 
 The **check-run name is the job display name**. The `CI / ` prefix visible in the pull
 request's checks list is the workflow name shown as the source; the ruleset matches on the
@@ -50,13 +51,18 @@ changed.** The repository administrator must apply the following for `main` and 
 1. **Settings → Rules → Rulesets** → open the ruleset that targets the branch.
 2. **Require status checks to pass** → ensure it is enabled.
 3. **Remove the stale hand-entered names**: `quality`, `docker`, `secrets`.
-4. **Add** the three checks by searching and selecting them:
+4. **Add** the four checks by searching and selecting them:
    - `Lint, types, tests, build`
    - `Docker build validation`
+   - `Database migrations and RLS tests` _(added by Phase 1-2 — carries the migration
+     immutability, clean-database replay, RLS-isolation, and business-table scope
+     controls; with required approving reviews at 0 under the Solo Developer Review
+     Policy, required status checks are the only technical merge gate, so this check
+     is not optional)_
    - `Secret and sensitive-file scan`
 5. Keep **Require branches to be up to date before merging** enabled.
 6. **Save** the ruleset.
-7. Confirm on an open pull request that the three checks now report a result rather than
+7. Confirm on an open pull request that the four checks now report a result rather than
    showing "Waiting for status to be reported".
 
 If a check does not appear in the search box, it is because GitHub has not yet observed a

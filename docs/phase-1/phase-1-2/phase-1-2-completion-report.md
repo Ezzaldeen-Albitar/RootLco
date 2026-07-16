@@ -41,7 +41,7 @@ retention, sensitive-data classification, or test fixtures.
 
 ### Verification (all executed, none fabricated)
 
-- **62 database tests in 5 suites — all passing** (`npm run test:db`), every isolation
+- **68 database tests in 5 suites — all passing** (`npm run test:db`), every isolation
   assertion executed as a non-owner runtime login: default deny, tenant A↔B isolation,
   no-context sessions see nothing, runtime cannot INSERT/DELETE/ALTER/bypass
   (`row_security=off` errors), FORCE RLS locks out a non-BYPASSRLS owner, composite-FK /
@@ -51,7 +51,7 @@ retention, sensitive-data classification, or test fixtures.
   commit/rollback consistency.
 - **Full application gate:** `npm run verify` exit 0 (lint, types, format, SCSS,
   browser-secrets scan, 28 unit tests, production build).
-- **Three clean-database resets** during the phase; Supabase health REST 200 / Auth 200 /
+- **Four clean-database resets** during the phase; Supabase health REST 200 / Auth 200 /
   Studio 307; both CI secret scans clean when run locally over all tracked files.
 - **CI extended** with the `Database migrations and RLS tests` job (clean PostgreSQL 17
   container, migration-immutability assertion, full suite) — plus a recorded rehearsal
@@ -76,12 +76,16 @@ SECURITY, ADR-006, technical ownership, review-requirement decision record — O
 
 ## 3. Defects the phase's own review caught (and fixed before merge)
 
-| Defect                                                           | Impact if shipped                                               | Fix                                                         |
-| ---------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
-| `lpad()` truncates display numbers beyond `pad_width` (measured) | Colliding, falsified document numbers at 10^pad_width           | 0003 corrected pre-merge; regression test added (62nd test) |
-| Analytics container aborts `supabase start` on Windows           | Local stack unusable; Phase 1-1 vector crash-loop persisted     | `[analytics] enabled = false`, documented                   |
-| CRLF checkout broke the repo-wide Prettier gate                  | Every future Windows checkout fails `format:check`              | `.gitattributes` `eol=lf`, tree renormalized                |
-| Misleading gap/rollback wording in 0003 comments                 | Standard would have documented behaviour the code does not have | Wording corrected; behaviour pinned by the rollback test    |
+| Defect                                                                      | Impact if shipped                                               | Fix                                                                                                  |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `lpad()` truncates display numbers beyond `pad_width` (measured)            | Colliding, falsified document numbers at 10^pad_width           | 0003 corrected pre-merge; widening regression test added                                             |
+| Analytics container aborts `supabase start` on Windows                      | Local stack unusable; Phase 1-1 vector crash-loop persisted     | `[analytics] enabled = false`, documented                                                            |
+| CRLF checkout broke the repo-wide Prettier gate                             | Every future Windows checkout fails `format:check`              | `.gitattributes` `eol=lf`, tree renormalized                                                         |
+| Misleading gap/rollback wording in 0003 comments                            | Standard would have documented behaviour the code does not have | Wording corrected; behaviour pinned by the rollback test                                             |
+| PostgreSQL PUBLIC-EXECUTE default: any role could call the allocator        | "Explicit grants only" claim was false; least privilege broken  | `REVOKE ... FROM PUBLIC` in 0002/0003; 2 denial tests added                                          |
+| Regression guard bypassable via an invented period change                   | A writer could rewind a counter and re-issue numbers            | Guard hardened + new CHECK constraint; negative test added                                           |
+| CI migration-immutability step failed open on git errors                    | A broken comparison would print OK and pass                     | Fail-closed: `\|\| true` removed, base-ref existence verified                                        |
+| Evidence drift: pad-overflow fix initially committed only in docs, not code | Branch would have shipped a defect its docs called fixed        | Caught by the adversarial review; code+tests+docs land together (disclosed in the evidence register) |
 
 ## 4. Honest limits and open items
 

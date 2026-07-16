@@ -12,7 +12,7 @@ technical self-review, not an independent review) ·
 **Tasks:** P1-02-DB-004 / P1-02-DB-019 ·
 **Implemented by:** [`supabase/migrations/0003_number_sequences.sql`](../../supabase/migrations/0003_number_sequences.sql) ·
 **Verified by:** [`tests/db/number-sequences.test.ts`](../../tests/db/number-sequences.test.ts)
-(part of the 62-test suite, all passing on 2026-07-16 via `npm run test:db`) ·
+(part of the 68-test suite, all passing on 2026-07-16 via `npm run test:db`) ·
 **Related:** [Database Architecture](./database-architecture.md) ·
 [RLS Standard](./rls-standard.md) ·
 [Role and Grant Standard](./role-and-grant-standard.md) ·
@@ -84,22 +84,23 @@ only by NOT NULL / the scope checks below. This gap is recorded in the table's
 
 ### 2.2 Constraints (named per the [Naming Standard](./database-naming-standard.md))
 
-| Constraint                                    | Kind        | Rule                                                                                                                                                                      |
-| --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pk_number_sequences`                         | PRIMARY KEY | `(id)`                                                                                                                                                                    |
-| `uq_number_sequences_scope`                   | UNIQUE      | `NULLS NOT DISTINCT (tenant_id, sequence_code, company_id, branch_id)` — exactly one row per scope (see §3). Doubles as the tenant-leading access index (index standard). |
-| `ck_number_sequences_code_format`             | CHECK       | `sequence_code ~ '^[a-z][a-z0-9_]{1,62}$'` — snake_case, 2–63 chars.                                                                                                      |
-| `ck_number_sequences_next_value_positive`     | CHECK       | `next_value >= 1`                                                                                                                                                         |
-| `ck_number_sequences_pad_width_range`         | CHECK       | `pad_width BETWEEN 0 AND 18`                                                                                                                                              |
-| `ck_number_sequences_period_reset_rule`       | CHECK       | `period_reset_rule IN ('never','yearly','monthly','daily')`                                                                                                               |
-| `ck_number_sequences_branch_requires_company` | CHECK       | `branch_id IS NULL OR company_id IS NOT NULL`                                                                                                                             |
+| Constraint                                    | Kind        | Rule                                                                                                                                                                                                               |
+| --------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pk_number_sequences`                         | PRIMARY KEY | `(id)`                                                                                                                                                                                                             |
+| `uq_number_sequences_scope`                   | UNIQUE      | `NULLS NOT DISTINCT (tenant_id, sequence_code, company_id, branch_id)` — exactly one row per scope (see §3). Doubles as the tenant-leading access index (index standard).                                          |
+| `ck_number_sequences_code_format`             | CHECK       | `sequence_code ~ '^[a-z][a-z0-9_]{1,62}$'` — snake_case, 2–63 chars.                                                                                                                                               |
+| `ck_number_sequences_next_value_positive`     | CHECK       | `next_value >= 1`                                                                                                                                                                                                  |
+| `ck_number_sequences_pad_width_range`         | CHECK       | `pad_width BETWEEN 0 AND 18`                                                                                                                                                                                       |
+| `ck_number_sequences_period_reset_rule`       | CHECK       | `period_reset_rule IN ('never','yearly','monthly','daily')`                                                                                                                                                        |
+| `ck_number_sequences_never_has_no_period`     | CHECK       | `period_reset_rule <> 'never' OR current_period IS NULL` — a never-resetting sequence has no period, closing the rewind bypass where a writer invents a period change to satisfy the guard. Verified by test (§6). |
+| `ck_number_sequences_branch_requires_company` | CHECK       | `branch_id IS NULL OR company_id IS NOT NULL`                                                                                                                                                                      |
 
 ### 2.3 Triggers
 
-| Trigger                                | When          | Function                                    | Purpose                                                                                                                                                                 |
-| -------------------------------------- | ------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tg_number_sequences_touch_metadata`   | BEFORE UPDATE | `shared.touch_row_metadata()`               | Stamps `updated_at`/`updated_by`, advances `record_version` by exactly 1 (base metadata standard).                                                                      |
-| `tg_number_sequences_guard_regression` | BEFORE UPDATE | `shared.guard_number_sequence_regression()` | Blocks lowering `next_value` unless `current_period` changes (a legitimate period reset). Raises SQLSTATE `23514` (`check_violation`) otherwise. Verified by test (§6). |
+| Trigger                                | When          | Function                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------- | ------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tg_number_sequences_touch_metadata`   | BEFORE UPDATE | `shared.touch_row_metadata()`               | Stamps `updated_at`/`updated_by`, advances `record_version` by exactly 1 (base metadata standard).                                                                                                                                                                                                                                                                                     |
+| `tg_number_sequences_guard_regression` | BEFORE UPDATE | `shared.guard_number_sequence_regression()` | Blocks lowering `next_value` unless `current_period` changes legitimately; on never-resetting sequences ANY `current_period` change is rejected (hardening from the Phase 1-2 adversarial review — the UPDATE column grant covers both columns, so a writer could otherwise invent a period change to sneak a rewind past the guard). Raises SQLSTATE `23514`. Verified by tests (§6). |
 
 The regression guard exists because rewinding a counter re-issues numbers that
 may already appear on issued documents — a falsification risk, not merely a
@@ -273,7 +274,7 @@ to the next caller:
 
 ## 6. Verified behaviour (test evidence, 2026-07-16)
 
-All evidence below comes from the database test suite (**62 tests, all passing on 2026-07-16**, `npm run test:db`, vitest + `pg` against the local
+All evidence below comes from the database test suite (**68 tests, all passing on 2026-07-16**, `npm run test:db`, vitest + `pg` against the local
 Supabase PostgreSQL 17.6). Every isolation and allocation assertion runs as
 the login `rootlco_test_runtime` (member of `app_runtime`, created by the
 harness, never by migrations) — **never as `postgres`**, which carries

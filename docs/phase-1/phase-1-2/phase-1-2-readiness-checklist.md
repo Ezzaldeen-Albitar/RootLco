@@ -40,18 +40,18 @@ recorded with reason) · **Blocked** · **Not executed (disclosed)**.
 | 23  | P1-02-SEC-003 | Role model, non-owner runtime, Supabase-role honesty | Complete     | [role-and-grant-standard.md](../../database/role-and-grant-standard.md); measured role attributes recorded                                       |
 | 24  | P1-02-SEC-004 | Sensitive-data classification standard               | Complete     | Retention/sensitive-data standard; dictionary carries mandatory classification fields                                                            |
 | 25  | P1-02-QA-001  | Clean migration application testing                  | Complete     | `supabase db reset` runs (recorded); CI runner + clean-DB guard; foundation suite                                                                |
-| 26  | P1-02-QA-002  | RLS default-deny and isolation tests                 | Complete     | `tests/db/rls.test.ts` — 16 passing tests as non-owner role                                                                                      |
+| 26  | P1-02-QA-002  | RLS default-deny and isolation tests                 | Complete     | `tests/db/rls.test.ts` — 18 passing tests as non-owner role                                                                                      |
 | 27  | P1-02-QA-003  | No-context / runtime-bypass tests                    | Complete     | Same suite: no-context 0 rows; row_security=off errors; ALTER denied                                                                             |
 | 28  | P1-02-QA-004  | Constraint template tests (positive and negative)    | Complete     | `tests/db/constraints.test.ts` — 12 passing tests                                                                                                |
-| 29  | P1-02-QA-005  | Number-allocation concurrency tests                  | Complete     | 50 parallel workers (approved baseline met — not reduced); mixed rollback consistency; 13 passing tests                                          |
+| 29  | P1-02-QA-005  | Number-allocation concurrency tests                  | Complete     | 50 parallel workers (approved baseline met — not reduced); mixed rollback consistency; number-sequences suite: 13 passing tests                  |
 | 30  | P1-02-DO-001  | Migration validation CI                              | Complete     | `Database migrations and RLS tests` job; defective-migration rehearsal evidence                                                                  |
 | 31  | P1-02-DO-002  | Environment separation                               | Complete     | Local Supabase (54322) vs CI service container; separate throwaway credentials; no cloud environments claimed (ADR-012)                          |
 | 32  | P1-02-DO-003  | Pipeline failure rehearsal                           | Complete     | [rehearsal-defective-migration.md](./rehearsal-defective-migration.md) — exit 1 observed; defective file never committed                         |
 | 33  | P1-02-DOC-003 | Data dictionary                                      | Complete     | [data-dictionary.md](../../database/data-dictionary.md) — schema + populated foundation objects                                                  |
 | 34  | P1-02-DOC-*   | Controlled document set + evidence + gate package    | Complete     | 12 standards, initial audit, this checklist, evidence register, completion report, traceability, owner gate                                      |
 
-**Summary: 33 Complete (of which 1 Complete-Doc by canonical design) · 1 pending the
-owners (the gate decision itself).**
+**Summary: 34 items — 33 Complete · 1 Complete-Doc (by canonical design) · 0 Blocked ·
+0 Not executed. The gate decision itself is pending the owners.**
 
 Items that are **not** claimed:
 

@@ -311,7 +311,7 @@ blocks it. Retention classes (operational / evidence-audit / personal-data / tem
 secret), and the rule that retention periods are **jurisdiction-configured, never
 hard-coded** (no Jordan-specific or any other jurisdictional assumption in schema) are
 specified in
-[data-retention-and-classification-standard.md](data-retention-and-classification-standard.md).
+[retention-and-sensitive-data-standard.md](retention-and-sensitive-data-standard.md).
 No plaintext secrets may be stored in business tables.
 
 ## 8. The status-history pattern
@@ -360,7 +360,7 @@ Phase 1-2 because no business operation exists to be idempotent yet.
 
 ## 9. Data-type standard (summary)
 
-Full standard: [data-type-standard.md](data-type-standard.md). The binding summary:
+The data-type rules are owned by THIS document (this section is the full standard; no separate data-type-standard.md exists). The binding rules:
 
 | Concern                       | Rule                                                                                                    | Rationale                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -383,7 +383,7 @@ by every object in migrations 0001–0003.
 Index rules (tenant-owned indexes normally **lead with `tenant_id`**; deviations
 require a written justification in the migration; no duplicate indexes; search indexes
 must not enable cross-tenant search) are specified in
-[index-standard.md](index-standard.md). The
+this document (this section is the full index standard; no separate index-standard.md exists). The
 `UNIQUE NULLS NOT DISTINCT (tenant_id, sequence_code, company_id, branch_id)`
 constraint on `shared.number_sequences` doubles as its tenant-leading access index.
 
@@ -428,19 +428,19 @@ Full standard: [number-sequence-standard.md](number-sequence-standard.md).
 This document consolidates; the companions bind at full depth. All are authored in
 Phase 1-2 under the same header block and review policy.
 
-| Standard                          | Scope                                                                             | Link                                                                                           |
-| --------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Naming standard                   | Identifiers, prefixes, 63-byte limit and shortening rule                          | [database-naming-standard.md](database-naming-standard.md)                                     |
-| Data-type standard                | Types, money, time, citext, jsonb, state sets                                     | [data-type-standard.md](data-type-standard.md)                                                 |
-| RLS standard                      | Policy templates, context contract, evidence rules                                | [rls-standard.md](rls-standard.md)                                                             |
-| Role and grant standard           | Role archetypes, measured Supabase role attributes, least-privilege grants        | [role-and-grant-standard.md](role-and-grant-standard.md)                                       |
-| Migration standard                | Naming rule `^(\d{4}                                                              | \d{14})_[a-z0-9_]+\.sql$`, forward-only discipline, immutability, CI enforcement               | [migration-standard.md](migration-standard.md) |
-| Number-sequence standard          | Display numbers, rollback/gap semantics, provisioning                             | [number-sequence-standard.md](number-sequence-standard.md)                                     |
-| Index standard                    | Tenant-leading indexes, justification rule, search limits                         | [index-standard.md](index-standard.md)                                                         |
-| Data retention and classification | Retention classes, sensitivity classes, legal hold, controlled deletion           | [data-retention-and-classification-standard.md](data-retention-and-classification-standard.md) |
-| Seed-data standard                | The four seed classes, idempotency, environment awareness                         | [seed-data-standard.md](seed-data-standard.md)                                                 |
-| Database testing standard         | Harness, fixture schema `p1_02_test`, deterministic fixture UUIDs, evidence rules | [database-testing-standard.md](database-testing-standard.md)                                   |
-| PostgreSQL extension register     | Installed extensions, purpose, approval, removal implications                     | [postgresql-extension-register.md](postgresql-extension-register.md)                           |
+| Standard                          | Scope                                                                             | Link                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Naming standard                   | Identifiers, prefixes, 63-byte limit and shortening rule                          | [database-naming-standard.md](database-naming-standard.md)                           |
+| Data-type standard                | Types, money, time, citext, jsonb, state sets                                     | §9 of this document (owned here — no standalone file)                                |
+| RLS standard                      | Policy templates, context contract, evidence rules                                | [rls-standard.md](rls-standard.md)                                                   |
+| Role and grant standard           | Role archetypes, measured Supabase role attributes, least-privilege grants        | [role-and-grant-standard.md](role-and-grant-standard.md)                             |
+| Migration standard                | Naming rule `^(\d{4}                                                              | \d{14})_[a-z0-9_]+\.sql$`, forward-only discipline, immutability, CI enforcement     | [migration-standard.md](migration-standard.md) |
+| Number-sequence standard          | Display numbers, rollback/gap semantics, provisioning                             | [number-sequence-standard.md](number-sequence-standard.md)                           |
+| Index standard                    | Tenant-leading indexes, justification rule, search limits                         | §10 of this document (owned here — no standalone file)                               |
+| Data retention and classification | Retention classes, sensitivity classes, legal hold, controlled deletion           | [retention-and-sensitive-data-standard.md](retention-and-sensitive-data-standard.md) |
+| Seed-data standard                | The four seed classes, idempotency, environment awareness                         | [seed-standard.md](seed-standard.md)                                                 |
+| Database test-fixture standard    | Harness, fixture schema `p1_02_test`, deterministic fixture UUIDs, evidence rules | [../testing/database-test-fixtures.md](../testing/database-test-fixtures.md)         |
+| PostgreSQL extension register     | Installed extensions, purpose, approval, removal implications                     | [postgresql-extension-register.md](postgresql-extension-register.md)                 |
 
 Seed classes, summarised for architectural completeness: (1) platform reference data;
 (2) tenant-provisioning templates; (3) tenant-specific controlled provisioning — the
@@ -464,7 +464,7 @@ intentionally empty of rows (governance comments only) and stays that way in Pha
 - `shared.number_sequences` with named constraints, forced RLS, `sel_`/`upd_` tenant
   policies, column-restricted grants, the regression-guard trigger, and
   `shared.next_display_number()`.
-- 61 database tests passing on 2026-07-16 via `npm run test:db` (vitest + pg), with
+- 68 database tests passing on 2026-07-16 via `npm run test:db` (vitest + pg), with
   every isolation assertion executed as `rootlco_test_runtime` (member of
   `app_runtime`) — never as a BYPASSRLS role. The disposable fixture schema
   `p1_02_test` is created and dropped by the suite; deterministic fixture tenants are
@@ -473,7 +473,7 @@ intentionally empty of rows (governance comments only) and stays that way in Pha
   build, Docker build validation, the database job (postgres:17-alpine service
   container; migration-immutability assertion on PRs; clean-database application via
   [scripts/db/apply-migrations.mjs](../../scripts/db/apply-migrations.mjs), which
-  refuses non-empty databases; the 62-test suite), and the secret scan (per-line
+  refuses non-empty databases; the 68-test suite), and the secret scan (per-line
   `pragma: allowlist secret` markers with justification, no directory exclusions). A
   defective-migration rehearsal was executed and recorded in
   [rehearsal-defective-migration.md](../phase-1/phase-1-2/rehearsal-defective-migration.md);

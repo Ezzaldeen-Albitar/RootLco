@@ -254,7 +254,7 @@ A migration is accepted only if the **entire chain** applies to an empty databas
   rows in Phase 1-2 — governance comments only — and must stay that way).
 - **In CI:** the `Database migrations and RLS tests` job starts a fresh
   `postgres:17-alpine` service container and runs `npm run db:apply-migrations`
-  (`scripts/db/apply-migrations.mjs`), followed by the 62-test database suite
+  (`scripts/db/apply-migrations.mjs`), followed by the 68-test database suite
   (`npm run test:db`), which passed in full on 2026-07-16.
 
 The CI runner carries a **clean-database guard**: before applying anything it checks

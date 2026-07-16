@@ -16,7 +16,7 @@ technical self-review, never to be described as independent review) ·
 [Number Sequence Standard](./number-sequence-standard.md) ·
 [Role and Grant Standard](./role-and-grant-standard.md) ·
 [Naming Standard](./database-naming-standard.md) ·
-[Retention and Deletion Standard](./data-retention-and-deletion-standard.md)
+[Retention and Sensitive-Data Standard](./retention-and-sensitive-data-standard.md)
 
 Verified basis: PostgreSQL 17.6 (Supabase local stack, DB port 54322), migrations
 `0001`–`0003` under `supabase/migrations/`, and the database test suite — **all 61
@@ -428,7 +428,7 @@ WHERE tenant_id = $1 AND idempotency_key = $2;
   `SELECT` to `app_readonly`.
 - **Expiry and cleanup** belong to the _temporary_ retention class: removal of
   expired rows runs as the controlled, audited deletion job defined in the
-  [Retention and Deletion Standard](./data-retention-and-deletion-standard.md)
+  [Retention and Sensitive-Data Standard](./retention-and-sensitive-data-standard.md)
   — never ad-hoc SQL, honouring legal hold. `expires_at` (e.g. 24 hours for
   API idempotency windows) is a per-operation configuration value, never a
   hard-coded jurisdictional assumption.
@@ -441,7 +441,7 @@ WHERE tenant_id = $1 AND idempotency_key = $2;
 ## 9. Verification evidence and honest gaps
 
 **Evidence (2026-07-16, real system).** Migrations `0001`–`0003` applied to a
-clean database; 61/62 tests passing via `npm run test:db`. Directly relevant to
+clean database; 68/68 tests passing via `npm run test:db`. Directly relevant to
 this standard: transaction-local context evaporates at `ROLLBACK`; rolled-back
 allocation re-issues its number; 50-worker single-row concurrency with zero
 duplicates/loss; 30-allocation mixed commit/rollback run staying gapless; the

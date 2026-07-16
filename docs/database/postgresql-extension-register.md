@@ -111,7 +111,7 @@ SELECT encode(extensions.digest(v_canonical_request, 'sha256'), 'hex');
 | Necessity (honest)      | **Required.** PostgreSQL has no native way to express the approved non-overlap EXCLUDE template (P1-02-DB-011) without it. This is the only extension of the four with no native alternative for its purpose.                                                                                                                                                                                                                                                                                                                                      |
 | Provider availability   | PostgreSQL contrib and Supabase image; CI proves 0001 applies on `postgres:17-alpine`.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Portability impact      | Low-to-moderate: once EXCLUDE constraints reference its operator classes, any restore target must have btree_gist installed _before_ the constrained tables are created. Migration ordering (0001 first) guarantees this on replay.                                                                                                                                                                                                                                                                                                                |
-| Security considerations | Adds operator classes only — no functions callable by runtime roles, no new privilege surface. One design obligation: exclusion constraints are enforced across **all** rows of a table, independent of RLS visibility, so every tenant-owned EXCLUDE template must include `tenant_id WITH =` so that rows of different tenants never constrain each other. This behaviour is test-proven: the 62-test suite (all passing 2026-07-16 via `npm run test:db`) shows overlap rejected within a tenant (SQLSTATE `23P01`) and allowed across tenants. |
+| Security considerations | Adds operator classes only — no functions callable by runtime roles, no new privilege surface. One design obligation: exclusion constraints are enforced across **all** rows of a table, independent of RLS visibility, so every tenant-owned EXCLUDE template must include `tenant_id WITH =` so that rows of different tenants never constrain each other. This behaviour is test-proven: the 68-test suite (all passing 2026-07-16 via `npm run test:db`) shows overlap rejected within a tenant (SQLSTATE `23P01`) and allowed across tenants. |
 | Owner / approval        | Eng. Ezzaldeen Al-Bitar · Approved 2026-07-16, owner-recorded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Rollback / removal      | Roll-forward-only. `DROP EXTENSION btree_gist CASCADE` would drop every dependent EXCLUDE constraint, silently removing overlap protection — prohibited outside a gate-reviewed migration.                                                                                                                                                                                                                                                                                                                                                         |
 
@@ -210,17 +210,18 @@ accepted and evidenced.
 ## 9. Honest gaps and environment notes
 
 - **CI is plain PostgreSQL 17, not the Supabase stack.** The CI container
-  proves extension installability and runs the 62-test suite, but
+  proves extension installability and runs the 68-test suite, but
   Supabase-managed roles differ there (in `postgres:17`, `postgres` _is_ a
   superuser; in the Supabase stack it is not, but carries `BYPASSRLS`). This is
   documented and accepted — see the
   [Role and Grant Standard](./role-and-grant-standard.md). Nothing executed as
   `postgres` in either environment is ever presented as RLS evidence.
-- **Two of four extensions have no dependent database object in Phase 1-2**
-  (pgcrypto, pg_trgm — and citext has none either; only the _availability_ of
-  btree_gist is exercised, by the fixture-based EXCLUDE tests). This is stated
-  plainly rather than implied away: the register fixes the surface early; usage
-  arrives with the phases that own the consuming tables.
+- **None of the four extensions has a persistent dependent database object in
+  Phase 1-2** (pgcrypto, citext, and pg_trgm are entirely unused so far;
+  btree_gist availability is exercised only by the disposable fixture-based
+  EXCLUDE tests, which drop their objects). This is stated plainly rather than
+  implied away: the register fixes the surface early; persistent usage arrives
+  with the phases that own the consuming tables.
 - **No Development/Staging/Production environment exists** (ADR-012). The only
   databases are the local stack and the CI container, each with separate
   non-production credentials; production data is prohibited in both.

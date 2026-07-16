@@ -7,7 +7,7 @@
 **Status:** Controlled · **Task:** P1-02-DB-020 · **Date:** 2026-07-16 ·
 **Owner:** Eng. Ezzaldeen Al-Bitar ·
 **Reference implementation:** [`tests/db/helpers.ts`](../../tests/db/helpers.ts) and the
-five suites under `tests/db/` (62 tests passing on 2026-07-16 via `npm run test:db`)
+five suites under `tests/db/` (68 tests passing on 2026-07-16 via `npm run test:db`)
 
 ---
 

@@ -132,11 +132,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # Phase 1-2 (P1-02-DO-001..003): clean-database migration validation.
   #
-  # Runs the SAME migrations and the SAME 61-test database suite the developer
+  # Runs the SAME migrations and the SAME database test suite the developer
   # runs locally, against a fresh PostgreSQL 17 service container (matching the
   # Supabase local stack's major version). The suite includes default-deny RLS,
   # tenant A/B isolation as a non-owner runtime role, constraint templates,
   # 50-worker allocation concurrency, and the no-business-tables scope guard.
+  # (The exact test count lives in the evidence register, not in this comment.)
   #
   # The full Supabase stack is NOT started here: only the database engine is
   # required for schema validation, and the gap (Supabase-managed roles exist
@@ -187,8 +188,12 @@ jobs:
       - name: Assert applied migrations are immutable
         if: github.event_name == 'pull_request'
         run: |
+          set -euo pipefail
+          # Fail CLOSED: if the base ref cannot be resolved, this control must
+          # fail loudly rather than silently pass with an empty diff.
+          git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null
           changed="$(git diff --name-status --diff-filter=MDR \
-            "origin/${GITHUB_BASE_REF}...HEAD" -- supabase/migrations/ || true)"
+            "origin/${GITHUB_BASE_REF}...HEAD" -- supabase/migrations/)"
           if [ -n "${changed}" ]; then
             echo "::error::Migrations already on ${GITHUB_BASE_REF} were modified, renamed, or deleted. Migrations are immutable once merged — write a new forward migration instead."
             echo "${changed}"

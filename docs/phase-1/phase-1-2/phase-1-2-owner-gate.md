@@ -29,14 +29,14 @@ This is the decision record for the Phase 1-2 exit gate. The allowed decisions a
 The full package on branch `feature/p1-02-database-engineering-foundation`:
 
 - **Migrations 0001–0003** (extensions; schemas/roles/context; number sequences) —
-  applied to a clean PostgreSQL 17.6 three times during the phase.
-- **62 passing database tests** (RLS default-deny and tenant isolation as a non-owner
+  applied to a clean PostgreSQL 17.6 four times during the phase, most recently with the adversarial-review hardening (REVOKE of PUBLIC function EXECUTE; regression-guard CHECK).
+- **68 passing database tests** (RLS default-deny and tenant isolation as a non-owner
   runtime role; FORCE RLS; constraint templates positive+negative; append-only history;
   idempotency pattern; 50-worker allocation concurrency — the approved baseline, not
   reduced).
 - **Twelve controlled standards documents**, the populated data dictionary, and the
   evidence corpus: [initial audit](./initial-audit.md) ·
-  [readiness checklist](./phase-1-2-readiness-checklist.md) (33 Complete) ·
+  [readiness checklist](./phase-1-2-readiness-checklist.md) (34 items: 33 Complete · 1 Complete-Doc) ·
   [evidence register](./phase-1-2-evidence-register.md) ·
   [traceability register](./traceability.md) ·
   [defective-migration rehearsal](./rehearsal-defective-migration.md) ·

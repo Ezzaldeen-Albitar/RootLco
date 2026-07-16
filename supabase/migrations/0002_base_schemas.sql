@@ -158,9 +158,18 @@ COMMENT ON FUNCTION iam.current_user_id()     IS 'Reads app.user_id (actor attri
 COMMENT ON FUNCTION iam.allowed_company_ids() IS 'Reads app.company_ids (comma-separated UUIDs). NULL = no company narrowing set.';
 COMMENT ON FUNCTION iam.allowed_branch_ids()  IS 'Reads app.branch_ids (comma-separated UUIDs). NULL = no branch narrowing set.';
 
--- Context readers are safe for any application role (they expose only what the
--- session itself set). EXECUTE is granted explicitly rather than relying on
--- PUBLIC defaults.
+-- PostgreSQL grants EXECUTE on every new function to PUBLIC by default, which
+-- would make any explicit grant below meaningless. Revoke the default first —
+-- privileges on these functions exist ONLY as the explicit grants that follow.
+REVOKE EXECUTE ON FUNCTION
+  iam.current_tenant_id(),
+  iam.current_user_id(),
+  iam.allowed_company_ids(),
+  iam.allowed_branch_ids()
+FROM PUBLIC;
+
+-- Context readers expose only what the session itself set; they are granted to
+-- the application archetypes and to nothing else.
 GRANT EXECUTE ON FUNCTION
   iam.current_tenant_id(),
   iam.current_user_id(),
@@ -190,3 +199,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION shared.touch_row_metadata() IS 'BEFORE UPDATE trigger: sets updated_at/updated_by and advances record_version by exactly 1. Part of the base metadata standard (docs/database/database-architecture.md).';
+
+-- Trigger functions are invoked by triggers, not by callers: no role needs (or
+-- receives) EXECUTE. Revoke the PostgreSQL PUBLIC default so that stays true.
+REVOKE EXECUTE ON FUNCTION shared.touch_row_metadata() FROM PUBLIC;

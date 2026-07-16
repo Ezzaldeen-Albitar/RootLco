@@ -18,6 +18,35 @@ const MIGRATIONS_DIR = join(__dirname, '..', '..', 'supabase', 'migrations');
  *  during Phase 1-2. Anything else is a phase violation. */
 const ALLOWED_TABLES = new Set(['shared.number_sequences']);
 
+/** Extensions the PROJECT approved (extension register, migration 0001). */
+const APPROVED_EXTENSIONS = new Set(['pgcrypto', 'btree_gist', 'citext', 'pg_trgm']);
+/** Extensions the ENVIRONMENT itself ships: plpgsql is a PostgreSQL default;
+ *  the rest are pre-installed by the Supabase local image (absent in the plain
+ *  postgres:17 CI container). Environment-provided, not project-approved —
+ *  anything outside this union fails the register's "no unregistered
+ *  extension" rule. */
+const ENVIRONMENT_EXTENSIONS = new Set([
+  'plpgsql',
+  'pg_net',
+  'pg_stat_statements',
+  'supabase_vault',
+  'uuid-ossp',
+  'pg_graphql',
+  'pgjwt',
+  'pgsodium',
+]);
+
+/** The complete allow-list of routines permitted in module schemas. */
+const ALLOWED_ROUTINES = new Set([
+  'iam.allowed_branch_ids',
+  'iam.allowed_company_ids',
+  'iam.current_tenant_id',
+  'iam.current_user_id',
+  'shared.guard_number_sequence_regression',
+  'shared.next_display_number',
+  'shared.touch_row_metadata',
+]);
+
 let admin: Pool;
 
 beforeAll(async () => {
@@ -108,6 +137,52 @@ describe('database foundation', () => {
       expect(row.relrowsecurity, `${row.fq} must have RLS enabled`).toBe(true);
       expect(row.relforcerowsecurity, `${row.fq} must have RLS forced`).toBe(true);
     }
+  });
+
+  it('no extension exists outside the approved + environment allow-lists', async () => {
+    const { rows } = await admin.query('SELECT extname FROM pg_extension');
+    const unexpected = rows
+      .map((r) => r.extname as string)
+      .filter((e) => !APPROVED_EXTENSIONS.has(e) && !ENVIRONMENT_EXTENSIONS.has(e));
+    expect(
+      unexpected,
+      `Unregistered extensions (register them in docs/database/postgresql-extension-register.md first): ${unexpected.join(', ')}`
+    ).toEqual([]);
+  });
+
+  it('module schemas contain EXACTLY the approved routines — nothing more', async () => {
+    const { rows } = await admin.query(
+      `SELECT n.nspname || '.' || p.proname AS fq
+       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       ORDER BY 1`
+    );
+    expect(rows.map((r) => r.fq).sort()).toEqual([...ALLOWED_ROUTINES].sort());
+  });
+
+  it('module-schema tables carry EXACTLY the approved triggers and policies', async () => {
+    const triggers = await admin.query(
+      `SELECT t.tgname FROM pg_trigger t
+       JOIN pg_class c ON c.oid = t.tgrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND NOT t.tgisinternal
+       ORDER BY 1`
+    );
+    expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_number_sequences_guard_regression',
+      'tg_number_sequences_touch_metadata',
+    ]);
+    const policies = await admin.query(
+      `SELECT polname FROM pg_policy p
+       JOIN pg_class c ON c.oid = p.polrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       ORDER BY 1`
+    );
+    expect(policies.rows.map((r) => r.polname)).toEqual([
+      'sel_number_sequences_tenant',
+      'upd_number_sequences_tenant',
+    ]);
   });
 
   it('the iam context helpers exist and read transaction-local settings', async () => {

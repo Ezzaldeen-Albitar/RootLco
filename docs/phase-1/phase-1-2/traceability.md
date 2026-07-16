@@ -20,7 +20,7 @@ FR/NFR/BR cross-index is updated in the canonical documents themselves.
 | P1-02-DB-001  | ADR-003, ADR-005 | 0001–0003 (practice)        | naming assertions in `constraints`/`foundation`              | database/database-naming-standard.md                            |
 | P1-02-DB-002  | ADR-001, ADR-003 | 0002                        | `foundation` (schemas, ownership)                            | database/database-architecture.md                               |
 | P1-02-DB-003  | ADR-003          | 0003 (`gen_random_uuid()`)  | `foundation`, allocator tests                                | database/database-architecture.md (UUID section)                |
-| P1-02-DB-004  | ADR-008          | 0003                        | `number-sequences` (12 tests)                                | database/number-sequence-standard.md                            |
+| P1-02-DB-004  | ADR-008          | 0003                        | `number-sequences` (13 tests)                                | database/number-sequence-standard.md                            |
 | P1-02-DB-005  | ADR-001, ADR-004 | — (template, by design)     | `constraints` composite-FK positive/negative                 | database/database-architecture.md (scope columns)               |
 | P1-02-DB-006  | ADR-005          | 0002 (`touch_row_metadata`) | metadata trigger assertions in `number-sequences`            | database/database-architecture.md (base metadata)               |
 | P1-02-DB-007  | ADR-005          | 0003 (`record_version`)     | version-advance assertions                                   | database/transaction-and-concurrency-standard.md                |
@@ -37,7 +37,7 @@ FR/NFR/BR cross-index is updated in the canonical documents themselves.
 | P1-02-DB-018  | ADR-001, ADR-004 | 0002                        | `foundation` role/ownership assertions                       | database/role-and-grant-standard.md                             |
 | P1-02-DB-019  | ADR-008          | 0003                        | allocator + concurrency + widening-pad regression            | database/number-sequence-standard.md                            |
 | P1-02-DB-020  | ADR-004          | —                           | the harness itself (`tests/db/helpers.ts`)                   | testing/database-test-fixtures.md                               |
-| P1-02-SEC-001 | ADR-004          | 0003 (RLS+FORCE)            | `rls` (16 tests, runtime role)                               | database/rls-standard.md                                        |
+| P1-02-SEC-001 | ADR-004          | 0003 (RLS+FORCE)            | `rls` (18 tests, runtime role)                               | database/rls-standard.md                                        |
 | P1-02-SEC-002 | ADR-004          | 0002 (iam readers)          | context transaction-locality test                            | database/rls-standard.md (context contract)                     |
 | P1-02-SEC-003 | ADR-004          | 0002 (roles/grants)         | role-attribute + no-ownership assertions                     | database/role-and-grant-standard.md                             |
 | P1-02-SEC-004 | ADR-003          | —                           | —                                                            | database/retention-and-sensitive-data-standard.md               |

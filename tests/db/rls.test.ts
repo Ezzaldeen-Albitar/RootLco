@@ -168,6 +168,36 @@ describe('the runtime role cannot escape RLS', () => {
   });
 });
 
+describe('function privileges are explicit, not PUBLIC defaults', () => {
+  it('an unprivileged login cannot execute the allocator (PUBLIC EXECUTE revoked)', async () => {
+    // rootlco_test_owner holds NO archetype membership. Before the REVOKE
+    // ... FROM PUBLIC hardening, PostgreSQL's default would have let ANY role
+    // call shared.next_display_number(); now it is an app_runtime capability.
+    const owner = ownerClient();
+    await owner.connect();
+    try {
+      await owner.query('BEGIN');
+      await setContext(owner, { tenantId: TENANT_A });
+      await expectSqlState(
+        owner.query('SELECT * FROM shared.next_display_number($1)', ['rls_probe']),
+        '42501' // permission denied for function
+      );
+      await owner.query('ROLLBACK');
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it('app_readonly cannot execute the allocator either', async () => {
+    await withRolledBackTx(readonly, { tenantId: TENANT_A }, async (tx) => {
+      await expectSqlState(
+        tx.query('SELECT * FROM shared.next_display_number($1)', ['rls_probe']),
+        '42501'
+      );
+    });
+  });
+});
+
 describe('read-only archetype', () => {
   it('app_readonly member can read its tenant rows', async () => {
     await withRolledBackTx(readonly, { tenantId: TENANT_A }, async (tx) => {

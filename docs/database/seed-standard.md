@@ -200,7 +200,7 @@ Rules:
 - Test fixtures belong to the test harness under `tests/db/` — **never** to
   `supabase/seed.sql` and never to any migration. The harness owns their whole
   lifecycle.
-- As practised today (verified 2026-07-16, all 62 tests passing via
+- As practised today (verified 2026-07-16, all 68 tests passing via
   `npm run test:db`): the suite creates and drops a disposable fixture schema
   `p1_02_test`; fixture tenants use the deterministic UUIDs
   `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` (tenant A) and
@@ -314,7 +314,7 @@ unchanged through Phase 1-2.)
 Honest note on CI: the CI database job
 (`.github/workflows/ci.yml`, job “Database migrations and RLS tests”) applies
 all migrations to a clean `postgres:17-alpine` database via
-`scripts/db/apply-migrations.mjs` and runs the 62-test suite; it does **not**
+`scripts/db/apply-migrations.mjs` and runs the 68-test suite; it does **not**
 execute `supabase/seed.sql`. Seed-pipeline execution is currently exercised
 only by the local `npm run supabase:reset` flow. When `seed.sql` first gains
 rows, adding seed execution (or an equivalent assertion) to CI becomes a

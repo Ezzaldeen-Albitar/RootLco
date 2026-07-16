@@ -147,6 +147,22 @@ describe('allocation basics (as the runtime role)', () => {
     expect(ok.display_number).toBe('C-0001');
   });
 
+  it('WIDENS (never truncates) when a value outgrows pad_width', async () => {
+    // Regression test for the measured lpad-truncation defect: plain
+    // lpad('12345', 4, '0') returns '1234'. Values past 10^pad_width must
+    // render in full, or display numbers would collide.
+    await admin.query(
+      `UPDATE shared.number_sequences SET next_value = 12345
+       WHERE tenant_id = $1 AND sequence_code = 'ticket'`,
+      [TENANT_A]
+    );
+    const wide = await withCommittedTx(runtime, { tenantId: TENANT_A, userId: USER_A }, (tx) =>
+      allocate(tx, 'ticket')
+    );
+    expect(wide.display_number).toBe('T-12345'); // 5 digits through a pad of 4
+    expect(wide.sequence_value).toBe('12345');
+  });
+
   it('resets on period change and renders {period}', async () => {
     // Simulate "last allocation happened in an earlier period" (admin fixture
     // manipulation — the reset itself is then exercised as the runtime role).
@@ -189,6 +205,22 @@ describe('rollback behaviour (no duplicates, no corruption)', () => {
            WHERE sequence_code = 'ticket'`
         ),
         '23514' // check_violation raised by the guard trigger
+      );
+    });
+  });
+
+  it('the guard cannot be bypassed by inventing a period change (never-resetting sequence)', async () => {
+    // Adversarial-review hardening: with the UPDATE column grant covering both
+    // next_value and current_period, a writer could otherwise fake a "period
+    // reset" to sneak a rewind past the guard. On a 'never' sequence any
+    // current_period change is rejected (trigger + CHECK constraint).
+    await withRolledBackTx(runtime, { tenantId: TENANT_A }, async (tx) => {
+      await expectSqlState(
+        tx.query(
+          `UPDATE shared.number_sequences SET next_value = 1, current_period = 'fake'
+           WHERE sequence_code = 'ticket'`
+        ),
+        '23514'
       );
     });
   });
