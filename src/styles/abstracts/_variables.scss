@@ -1,0 +1,19 @@
+// ============================================================================
+// Compile-time configuration derived from the token maps.
+// Convenience variables for the most frequently used values, so day-to-day
+// SCSS reads cleanly without map.get() noise. Anything theme-dependent must
+// use the CSS custom property instead (var(--...)).
+// ============================================================================
+@use 'sass:map';
+@use 'tokens';
+
+$font-sans: map.get(tokens.$font-families, 'sans');
+$font-mono: map.get(tokens.$font-families, 'mono');
+$text-md: map.get(tokens.$font-sizes, 'md');
+$leading-normal: map.get(tokens.$line-heights, 'normal');
+$radius-md: map.get(tokens.$radius, 'md');
+$duration-base: map.get(tokens.$durations, 'base');
+
+// The single approved focus-ring recipe (see mixins.focus-ring).
+$focus-ring-width: map.get(tokens.$focus-ring, 'width');
+$focus-ring-offset: map.get(tokens.$focus-ring, 'offset');

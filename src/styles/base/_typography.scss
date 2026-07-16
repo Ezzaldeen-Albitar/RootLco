@@ -1,0 +1,51 @@
+// ============================================================================
+// Base typography. Element-level defaults only — no layout, no components.
+// Uses logical values (text-align comes from direction), so Arabic RTL and
+// English LTR both read correctly without overrides.
+// ============================================================================
+@use '../abstracts' as a;
+@use 'sass:map';
+
+body {
+  font-family: a.$font-sans;
+  font-size: a.$text-md;
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+}
+
+h1 {
+  font-size: map.get(a.$font-sizes, '2xl');
+  font-weight: map.get(a.$font-weights, 'bold');
+  line-height: map.get(a.$line-heights, 'tight');
+}
+
+h2 {
+  font-size: map.get(a.$font-sizes, 'xl');
+  font-weight: map.get(a.$font-weights, 'semibold');
+  line-height: map.get(a.$line-heights, 'tight');
+}
+
+h3 {
+  font-size: map.get(a.$font-sizes, 'lg');
+  font-weight: map.get(a.$font-weights, 'semibold');
+}
+
+small {
+  font-size: map.get(a.$font-sizes, 'sm');
+  color: var(--color-text-secondary);
+}
+
+code,
+pre {
+  font-family: a.$font-mono;
+  font-size: map.get(a.$font-sizes, 'sm');
+}
+
+a {
+  color: var(--color-interactive);
+  text-decoration-thickness: from-font;
+
+  &:hover {
+    color: var(--color-interactive-hover);
+  }
+}

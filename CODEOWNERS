@@ -1,0 +1,43 @@
+# =============================================================================
+# RootLco — Root Link Company
+# Code ownership. Only real, verified identities appear here.
+#
+# Eng. Ezzaldeen Al-Bitar is the technical and IT owner. His GitHub username is
+# verified from the repository remote (github.com/Ezzaldeen-Albitar/RootLco).
+#
+# Eng. Bilal Jradat is a product owner and a joint final business-approval
+# authority. His GitHub username is NOT KNOWN and has deliberately NOT been
+# invented. Business/scope approval is recorded in the Phase 1 owner gate
+# (docs/phase-1/phase-1-1/phase-1-1-owner-gate.md), not by a CODEOWNERS rule.
+# Adding him here requires his actual username -- see the open item in
+# docs/phase-1/phase-1-1/technical-ownership.md.
+#
+# NOTE: CODEOWNERS is only ENFORCED when branch protection requires review.
+# Branch protection is currently BLOCKED (no GitHub CLI, no token available in
+# the build environment), so this file is advisory until an administrator
+# applies the rules manually. It is not an applied technical control.
+# =============================================================================
+
+# Default owner for everything in the repository.
+*                               @Ezzaldeen-Albitar
+
+# Architecture decisions -- changes here alter the technical baseline.
+/docs/adr/                      @Ezzaldeen-Albitar
+
+# Canonical document reference record -- integrity of the external source of truth.
+/docs/governance/               @Ezzaldeen-Albitar
+
+# Phase 1 evidence and gate package.
+/docs/phase-1/                  @Ezzaldeen-Albitar
+
+# Security-sensitive surfaces.
+/SECURITY.md                    @Ezzaldeen-Albitar
+/.github/workflows/             @Ezzaldeen-Albitar
+/Dockerfile                     @Ezzaldeen-Albitar
+/docker-compose.yml             @Ezzaldeen-Albitar
+/.env.example                   @Ezzaldeen-Albitar
+/src/config/                    @Ezzaldeen-Albitar
+/src/lib/supabase/              @Ezzaldeen-Albitar
+
+# Database schema and migrations -- database-first delivery (ADR-005).
+/supabase/                      @Ezzaldeen-Albitar

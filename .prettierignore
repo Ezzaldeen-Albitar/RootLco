@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+build
+dist
+coverage
+package-lock.json
+supabase/.branches
+supabase/.temp
+*.docx
+*.pdf

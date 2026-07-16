@@ -1,0 +1,65 @@
+# =============================================================================
+# Keep the build context small and keep secrets OUT of the image.
+# Anything listed here is never sent to the Docker daemon.
+# =============================================================================
+
+# Secrets — the single most important entry in this file.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# VCS
+.git
+.gitignore
+.github
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+out
+build
+dist
+
+# Tests / coverage
+coverage
+.nyc_output
+test-results
+playwright-report
+
+# Caches
+.turbo
+.cache
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+
+# Local Supabase state (the CLI manages its own containers; not app image input)
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# Documentation and evidence — not needed at runtime
+docs
+*.md
+!README.md
+
+# Docker's own files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Editors / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Office lock files
+~$*

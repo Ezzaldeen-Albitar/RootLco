@@ -1,0 +1,6 @@
+// ============================================================================
+// Base layer: element-level foundations. Order matters — reset first.
+// ============================================================================
+@forward 'reset';
+@forward 'typography';
+@forward 'accessibility';

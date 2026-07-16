@@ -1,0 +1,25 @@
+// ============================================================================
+// Global accessibility styling.
+// ============================================================================
+@use '../abstracts' as a;
+
+// One platform-wide keyboard focus indicator (WCAG 2.4.7). Elements with
+// bespoke focus treatment must still use the same mixin, never invent a new
+// recipe.
+:focus-visible {
+  outline: a.$focus-ring-width solid var(--color-focus-ring);
+  outline-offset: a.$focus-ring-offset;
+}
+
+// Respect the user's reduced-motion setting globally: collapse animation and
+// smooth-scroll to effectively instant for users who asked for that.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important; // stylelint-disable-line declaration-no-important -- documented: user preference must defeat any authored motion
+    transition-duration: 0.01ms !important; // stylelint-disable-line declaration-no-important -- documented: user preference must defeat any authored motion
+    animation-duration: 0.01ms !important; // stylelint-disable-line declaration-no-important -- documented: user preference must defeat any authored motion
+    animation-iteration-count: 1 !important; // stylelint-disable-line declaration-no-important -- documented: user preference must defeat any authored motion
+  }
+}
