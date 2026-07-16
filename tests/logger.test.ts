@@ -5,7 +5,7 @@ describe('log redaction', () => {
   it('redacts secret-ish keys at the top level', () => {
     const out = redact({
       SUPABASE_SERVICE_ROLE_KEY: 'sk_live_do_not_log',
-      DATABASE_URL: 'postgresql://postgres:pw@localhost:54322/postgres',
+      DATABASE_URL: 'postgresql://postgres:pw@localhost:54322/postgres', // pragma: allowlist secret -- fake fixture proving DATABASE_URL is redacted
       safeField: 'visible',
     }) as Record<string, unknown>;
     expect(out.SUPABASE_SERVICE_ROLE_KEY).toBe('[REDACTED]');

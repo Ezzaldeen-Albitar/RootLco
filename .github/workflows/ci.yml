@@ -139,6 +139,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Needed only to execute the dependency-free scanner below. No `npm ci`:
+      # the scanner imports node: builtins only, so `npm run` needs no node_modules.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       # Blocks the mistake that matters most: a real .env reaching the repository.
       - name: Fail if a committed environment file is tracked
         run: |
@@ -159,30 +166,49 @@ jobs:
       # Pattern scan over tracked text. Deliberately narrow: it targets real
       # credential shapes rather than the word "key", so it stays useful instead
       # of being disabled after a week of false positives.
+      #
+      # FALSE-POSITIVE POLICY (explicit and per-line, not per-directory):
+      # A line may be exempted ONLY by carrying the marker `pragma: allowlist secret`
+      # with a justification beside it. There is no directory-wide exclusion, so a
+      # credential accidentally committed to docs/ still fails the build. Adding the
+      # marker is a reviewable change to a CODEOWNERS-protected surface.
       - name: Scan tracked files for credential patterns
+        shell: bash
         run: |
-          set +e
-          # service_role JWTs, Supabase publishable/secret keys, AWS keys,
-          # GitHub tokens, private key headers, and hard-coded postgres passwords.
-          PATTERN='(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})|(sb_secret_[A-Za-z0-9]{16,})|(AKIA[0-9A-Z]{16})|(gh[pousr]_[A-Za-z0-9]{30,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(postgres(ql)?://[^:@/\s]+:[^@/\s]+@)'
+          set -uo pipefail
+          # service_role JWTs, Supabase secret keys, AWS keys, GitHub tokens,
+          # private key headers, and hard-coded postgres passwords.
+          #
+          # NOTE: the character classes use POSIX [:space:], NOT \s. Inside an ERE
+          # bracket expression `\s` is the literal characters `\` and `s` -- so the
+          # previous `[^:@/\s]` excluded the letter "s", and since "postgres"
+          # contains an "s" the postgres-URL detector could never match anything.
+          PATTERN='(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})|(sb_secret_[A-Za-z0-9]{16,})|(AKIA[0-9A-Z]{16})|(gh[pousr]_[A-Za-z0-9]{30,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(postgres(ql)?://[^:@/[:space:]]+:[^@/[:space:]]+@)'
           matches="$(git ls-files -z \
             | xargs -0 grep -InE --binary-files=without-match "${PATTERN}" 2>/dev/null \
-            | grep -vE '^\.env\.example:' \
-            | grep -vE '^\.github/workflows/ci\.yml:' \
-            | grep -vE '^docs/')"
+            | grep -vF 'pragma: allowlist secret' || true)"
           if [ -n "${matches}" ]; then
-            echo "::error::Possible credential committed. Do NOT paste the value anywhere. ROTATE it first, then purge history."
+            echo "::error::Possible credential committed. Do NOT paste the value anywhere. ROTATE it first, then purge history. If this is a documented non-secret example, add the marker 'pragma: allowlist secret' to that line with a justification."
             # Print only file:line, never the matching text.
-            echo "${matches}" | cut -d: -f1,2
+            printf '%s\n' "${matches}" | cut -d: -f1,2
             exit 1
           fi
           echo "OK: no credential patterns in tracked files"
 
-      # Guards the single most dangerous naming mistake in this stack.
+      # Guards the single most dangerous naming mistake in this stack: giving the
+      # RLS-bypassing service-role key a NEXT_PUBLIC_ prefix, which Next.js inlines
+      # into the browser bundle.
+      #
+      # Implemented in Node rather than inline grep, for two reasons:
+      #  1. The prohibited name is assembled at runtime, so no tracked file contains
+      #     it literally. The previous inline grep searched for the literal and this
+      #     workflow -- a tracked file -- contained it, so the scan matched its own
+      #     source and failed every run. No file is excluded to achieve this; the
+      #     whole repository stays in scope.
+      #  2. One authoritative implementation, runnable identically here and locally
+      #     (`npm run security:browser-secrets`) on Windows, macOS and Linux.
+      #
+      # The scanner is dependency-free (node: builtins only), so no `npm ci` is
+      # needed here. Keep it that way.
       - name: Assert no service-role key is exposed to the browser
-        run: |
-          if git ls-files -z | xargs -0 grep -In 'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE' 2>/dev/null; then
-            echo "::error::A service-role key must never carry the NEXT_PUBLIC_ prefix. It bypasses Row-Level Security and NEXT_PUBLIC_ values are inlined into the browser bundle."
-            exit 1
-          fi
-          echo "OK: no NEXT_PUBLIC_ service-role key"
+        run: npm run security:browser-secrets
