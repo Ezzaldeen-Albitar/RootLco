@@ -1,0 +1,93 @@
+# =============================================================================
+# RootLco — local development. P1-01-DO-002.
+#
+# SCOPE: this file runs the Next.js application container ONLY.
+#
+# Supabase (PostgreSQL, Auth, Storage, Studio) is NOT redefined here. It is run
+# by the official Supabase CLI, which orchestrates its own Docker containers:
+#
+#     npm run supabase:start
+#
+# Hand-rolling a Supabase stack in this file would drift from the official
+# service versions and is explicitly rejected in ADR-003. `npm run dev:up` starts
+# both: this compose project, then the Supabase CLI stack.
+#
+# NO SECRETS IN THIS FILE. Values come from .env.local at runtime.
+# =============================================================================
+
+name: rootlco
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev # Phase 1-1 uses the development stage
+    image: rootlco/web:dev
+    container_name: rootlco-web
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: '1'
+      WATCHPACK_POLLING: 'true' # bind-mount file events are unreliable on Windows/WSL2
+      # ---------------------------------------------------------------------
+      # TWO HOSTNAMES, ONE SUPABASE.
+      #
+      # Supabase is published by the CLI on the HOST at 127.0.0.1:54321. Inside
+      # this container, 127.0.0.1 means THIS CONTAINER, not the host -- so the
+      # server-side code must reach the host instead.
+      #
+      #   server-side (in container) -> http://host.docker.internal:54321
+      #   browser      (on host)     -> http://127.0.0.1:54321
+      #
+      # Both must be set: a single value cannot satisfy both callers. The
+      # `extra_hosts` entry below makes host.docker.internal resolve on Linux,
+      # where it is not provided automatically. See docs/phase-1/phase-1-1/docker-runbook.md.
+      # ---------------------------------------------------------------------
+      # Supabase URL/key/app-env come from .env.local via env_file below.
+      # They are deliberately NOT declared here: an `environment:` entry always
+      # overrides env_file, so an empty `${VAR:-}` substitution here would
+      # silently blank the values a developer put in .env.local.
+      SUPABASE_INTERNAL_URL: ${SUPABASE_INTERNAL_URL:-http://host.docker.internal:54321}
+    env_file:
+      # Optional: absent on a fresh clone until `cp .env.example .env.local`.
+      - path: .env.local
+        required: false
+    extra_hosts:
+      # Docker Desktop (Windows/macOS) provides this automatically; Linux does not.
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      # Source bind-mount for hot reload. Relative path -- never hard-code a
+      # machine-specific absolute path, so this stays portable across
+      # Windows, macOS and Linux.
+      - .:/app
+      # Named volumes MASK the bind-mount for these two paths. This is deliberate:
+      #  - node_modules: host binaries (Windows) would be wrong for Alpine/Linux.
+      #  - .next:        build cache over a bind-mount is very slow on Windows.
+      # This is also the honest answer to "is Docker faster?" -- it is not
+      # automatically faster; these volumes are what keep it acceptable. (ADR-007)
+      - web_node_modules:/app/node_modules
+      - web_next_cache:/app/.next
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      start_period: 40s # first dev compile is slow; do not flap during it
+      retries: 3
+    # Bounded so a runaway dev server cannot consume the whole host.
+    # Measured host: 12 CPUs / ~16.5 GB. Tune in Docker Desktop if you change these.
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+    stop_grace_period: 10s # allow Next.js to shut down cleanly before SIGKILL
+    init: true # PID 1 reaper so Ctrl-C / stop actually terminates children
+
+volumes:
+  web_node_modules:
+    name: rootlco_web_node_modules
+  web_next_cache:
+    name: rootlco_web_next_cache
