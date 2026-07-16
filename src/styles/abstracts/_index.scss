@@ -1,0 +1,20 @@
+// ============================================================================
+// Public surface of the abstracts layer.
+//
+// SCSS Modules and style partials load everything they need with ONE line,
+// using a RELATIVE path (the TypeScript "@/" alias is not reliable inside
+// Sass under Turbopack — see docs/standards/styling-and-sass.md):
+//
+//     @use '../styles/abstracts' as a;     // from src/app/*
+//     @use '../abstracts' as a;            // from a sibling styles layer
+//
+// Only what is forwarded here is part of the styling API. Abstracts are
+// declarations only (variables, maps, functions, mixins) — @use-ing this file
+// must never emit a single byte of CSS.
+// ============================================================================
+@forward 'tokens';
+@forward 'variables';
+@forward 'breakpoints';
+@forward 'functions';
+@forward 'mixins';
+@forward 'direction';

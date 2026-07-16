@@ -1,0 +1,47 @@
+// ============================================================================
+// RTL / LTR foundation.
+//
+// The platform is bilingual (Arabic RTL, English LTR). The FIRST tool is CSS
+// logical properties — margin-inline, padding-inline, inset-inline,
+// border-inline, text-align: start/end — which need no helper at all and are
+// direction-correct by construction. Stylelint enforces this by rejecting the
+// physical margin-left/right and padding-left/right longhands.
+//
+// The mixins below are the ESCAPE HATCH for the minority of cases logical
+// properties cannot express (directional icons, asymmetric decorations,
+// direction-dependent transforms). If you reach for @include rtl before
+// trying a logical property, stop and try the logical property first.
+// ============================================================================
+
+/// Applies rules only when the component is rendered in a right-to-left
+/// context. Uses :dir() so nested direction switches behave correctly, with
+/// an html[dir] fallback for engines without :dir() support.
+@mixin rtl {
+  &:dir(rtl) {
+    @content;
+  }
+
+  html[dir='rtl'] & {
+    @content;
+  }
+}
+
+/// Counterpart for rules that must apply only in left-to-right contexts.
+@mixin ltr {
+  &:dir(ltr) {
+    @content;
+  }
+
+  html[dir='ltr'] & {
+    @content;
+  }
+}
+
+/// Mirrors a directional glyph (arrows, chevrons, "next/back" icons) in RTL.
+/// Text, logos, clocks and numerals must NOT be mirrored — apply this only to
+/// glyphs whose meaning is directional.
+@mixin mirror-in-rtl {
+  @include rtl {
+    transform: scaleX(-1);
+  }
+}

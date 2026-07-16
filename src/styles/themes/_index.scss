@@ -1,0 +1,6 @@
+// ============================================================================
+// Theme layer. Only the default (neutral, pending-brand-approval) theme exists
+// in Phase 1-1. An approved brand or dark theme is added as a sibling partial
+// that re-assigns the same custom properties.
+// ============================================================================
+@forward 'default';

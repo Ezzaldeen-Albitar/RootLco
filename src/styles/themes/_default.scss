@@ -1,0 +1,49 @@
+// ============================================================================
+// Default theme — emits the runtime CSS custom properties under :root.
+//
+// GENERATED FROM the compile-time token maps in abstracts/_tokens.scss, so the
+// Sass maps and the custom properties cannot drift apart.
+//
+// Colours are NEUTRAL DEFAULTS PENDING BRAND APPROVAL (ADR-013). A future
+// approved theme adds a sibling file (e.g. _brand.scss) that re-assigns these
+// same custom properties — component code never changes.
+// ============================================================================
+@use 'sass:map';
+@use '../abstracts/tokens';
+
+:root {
+  // Colour roles -------------------------------------------------------------
+  @each $name, $value in tokens.$colors {
+    --color-#{$name}: #{$value};
+  }
+
+  --color-focus-ring: #{map.get(tokens.$focus-ring, 'color')};
+
+  // Spacing ------------------------------------------------------------------
+  @each $step, $value in tokens.$space {
+    --space-#{$step}: #{$value};
+  }
+
+  // Radius / shadows ----------------------------------------------------------
+  @each $name, $value in tokens.$radius {
+    --radius-#{$name}: #{$value};
+  }
+
+  @each $name, $value in tokens.$shadows {
+    --shadow-#{$name}: #{$value};
+  }
+
+  // Motion ---------------------------------------------------------------------
+  @each $name, $value in tokens.$durations {
+    --duration-#{$name}: #{$value};
+  }
+
+  // Sizing -----------------------------------------------------------------------
+  @each $name, $value in tokens.$content-widths {
+    --content-#{$name}: #{$value};
+  }
+
+  @each $name, $value in tokens.$control-heights {
+    --control-#{$name}: #{$value};
+  }
+}
