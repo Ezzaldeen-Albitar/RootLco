@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Ezzaldeen-Albitar/RootLco/blob/develop/SECURITY.md
+    about: Do not open a public issue for a suspected security vulnerability. Contact the technical owner privately using the details in SECURITY.md on the develop branch.
