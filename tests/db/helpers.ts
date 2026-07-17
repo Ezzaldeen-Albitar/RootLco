@@ -167,6 +167,54 @@ export async function withCommittedTx<T>(
   }
 }
 
+/**
+ * Provisions the deterministic org fixtures (Phase 1-3) as admin:
+ * reference rows the fixtures depend on, plus tenants A and B. Idempotent
+ * (natural-key/id conflict targets), so every suite may call it in beforeAll.
+ * Admin-provisioned — never RLS evidence.
+ */
+export async function ensureOrgFixtures(admin: Pool): Promise<void> {
+  const SYS = '00000000-0000-4000-8000-000000000001';
+  await admin.query(
+    `INSERT INTO shared.languages (locale_code, name, direction, created_by)
+     VALUES ('en', 'English', 'ltr', $1), ('ar', 'Arabic', 'rtl', $1)
+     ON CONFLICT (locale_code) DO NOTHING`,
+    [SYS]
+  );
+  await admin.query(
+    `INSERT INTO shared.timezones (zone_name, created_by)
+     VALUES ('UTC', $1), ('Asia/Amman', $1)
+     ON CONFLICT (zone_name) DO NOTHING`,
+    [SYS]
+  );
+  await admin.query(
+    `INSERT INTO shared.currencies (code, name, minor_unit, created_by)
+     VALUES ('USD', 'United States Dollar', 2, $1), ('JOD', 'Jordanian Dinar', 3, $1)
+     ON CONFLICT (code) DO NOTHING`,
+    [SYS]
+  );
+  await admin.query(
+    `INSERT INTO org.tenants (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
+     VALUES
+       ($1, 'tenant_a', 'Fixture Tenant A', 'active', 'en', 'UTC', $3),
+       ($2, 'tenant_b', 'Fixture Tenant B', 'active', 'ar', 'UTC', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [TENANT_A, TENANT_B, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1, $2, 'company_a1', 'Fixture Company A1', 'USD', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A1, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1, $2, $3, 'branch_a1', 'Fixture Branch A1', 'UTC', $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A1, TENANT_A, COMPANY_A1, USER_A]
+  );
+}
+
 /** Removes every fixture row/object the harness may have created. */
 export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(`DROP SCHEMA IF EXISTS ${FIXTURE_SCHEMA} CASCADE`);
@@ -174,6 +222,58 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
+  await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.company_settings WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tax_rates WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM org.tax_classes WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tenant_feature_overrides WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.storage_locations WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.warehouses WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM org.departments WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.cost_centers WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.branch_status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.branches WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM org.legal_companies WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tenant_subscriptions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tenant_status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tenants WHERE id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  // Test-created platform fixtures use the fx_ prefix by convention.
+  await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM org.feature_flags WHERE flag_code LIKE 'fx\\_%'`);
 }
 
 /** Error-code convenience: `42501` insufficient_privilege, etc. */

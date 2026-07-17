@@ -27,7 +27,7 @@ worked when I tried it" are not evidence.
 
 ## 2. Current real coverage (2026-07-16, all runs recorded)
 
-The **68-test database security suite** (`npm run test:db`, 5 suites) — every isolation
+The **database security suite** (`npm run test:db` — 68 tests in 5 suites at Phase 1-2; **194 tests in 13 suites since Phase 1-3**, 2026-07-17) — every isolation
 assertion executed as a **non-owner runtime login** (`rootlco_test_runtime`), never as
 `postgres`, which carries BYPASSRLS in the local stack (measured):
 

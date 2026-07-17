@@ -14,6 +14,7 @@ import {
   adminPool,
   runtimePool,
   runtimeClient,
+  ensureOrgFixtures,
   ensureTestLogins,
   cleanFixtures,
   withCommittedTx,
@@ -48,6 +49,9 @@ beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
   await cleanFixtures(admin);
+  // Phase 1-3: sequence scope columns now carry real org FKs, so the fixture
+  // tenants/company/branch must exist before sequences reference them.
+  await ensureOrgFixtures(admin);
   await admin.query(
     `INSERT INTO shared.number_sequences
        (tenant_id, sequence_code, prefix_template, pad_width, period_reset_rule, created_by)

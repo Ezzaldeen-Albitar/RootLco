@@ -137,3 +137,429 @@ inventory, invoices, payments, Benzene provisioning records) — Phase 1-3+ adds
 **with** their dictionary rows. `shared.idempotency_keys` is a documented, test-pinned
 pattern ([transaction standard](./transaction-and-concurrency-standard.md)) and is
 deliberately not created in Phase 1-2.
+
+---
+
+## Phase 1-3 — organizational schema (generated from the live catalog, 2026-07-17)
+
+Every table below was read from information_schema on the applied database, so
+types, nullability, and defaults cannot drift from reality. Scope, retention
+class, and per-column classification are the review-owned columns.
+Classification vocabulary: public | internal | restricted | secret. NO column
+in this phase is classified secret, and none may be: secrets are prohibited in
+business tables (retention/sensitive-data standard). Masking and export-audit
+enforcement for restricted columns is mapped to Phase 1-14 (backend) and is
+NOT claimed implemented here.
+
+### `shared.currencies`
+
+**Scope:** platform-reference · **Retention class:** reference · Platform reference: ISO 4217 currencies. PK exception: natural code.
+
+| Column           | Type                     | Null | Default        | Classification |
+| ---------------- | ------------------------ | ---- | -------------- | -------------- |
+| `code`           | text                     | NO   | —              | internal       |
+| `name`           | text                     | NO   | —              | internal       |
+| `minor_unit`     | smallint                 | NO   | —              | internal       |
+| `status`         | text                     | NO   | 'active'::text | internal       |
+| `record_version` | integer                  | NO   | 1              | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()          | internal       |
+| `created_by`     | uuid                     | NO   | —              | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —              | internal       |
+| `updated_by`     | uuid                     | YES  | —              | internal       |
+
+### `shared.timezones`
+
+**Scope:** platform-reference · **Retention class:** reference · Approval list over the IANA database; no offset column by design.
+
+| Column           | Type                     | Null | Default        | Classification |
+| ---------------- | ------------------------ | ---- | -------------- | -------------- |
+| `zone_name`      | text                     | NO   | —              | internal       |
+| `status`         | text                     | NO   | 'active'::text | internal       |
+| `record_version` | integer                  | NO   | 1              | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()          | internal       |
+| `created_by`     | uuid                     | NO   | —              | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —              | internal       |
+| `updated_by`     | uuid                     | YES  | —              | internal       |
+
+### `shared.languages`
+
+**Scope:** platform-reference · **Retention class:** reference · Approved locales; direction ltr|rtl (Arabic-first product).
+
+| Column           | Type                     | Null | Default        | Classification |
+| ---------------- | ------------------------ | ---- | -------------- | -------------- |
+| `locale_code`    | text                     | NO   | —              | internal       |
+| `name`           | text                     | NO   | —              | internal       |
+| `direction`      | text                     | NO   | —              | internal       |
+| `status`         | text                     | NO   | 'active'::text | internal       |
+| `record_version` | integer                  | NO   | 1              | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()          | internal       |
+| `created_by`     | uuid                     | NO   | —              | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —              | internal       |
+| `updated_by`     | uuid                     | YES  | —              | internal       |
+
+### `org.tenants`
+
+**Scope:** root · **Retention class:** operational · ROOT scope object — no tenant_id by design; closed, never deleted.
+
+| Column             | Type                     | Null | Default              | Classification |
+| ------------------ | ------------------------ | ---- | -------------------- | -------------- |
+| `id`               | uuid                     | NO   | gen_random_uuid()    | internal       |
+| `tenant_code`      | text                     | NO   | —                    | internal       |
+| `display_name`     | text                     | NO   | —                    | internal       |
+| `status`           | text                     | NO   | 'provisioning'::text | internal       |
+| `default_locale`   | text                     | NO   | —                    | internal       |
+| `default_timezone` | text                     | NO   | —                    | internal       |
+| `record_version`   | integer                  | NO   | 1                    | internal       |
+| `created_at`       | timestamp with time zone | NO   | now()                | internal       |
+| `created_by`       | uuid                     | NO   | —                    | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                    | internal       |
+| `updated_by`       | uuid                     | YES  | —                    | internal       |
+
+### `org.tenant_status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only tenant lifecycle evidence; reason mandatory.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+
+### `org.feature_flags`
+
+**Scope:** platform · **Retention class:** operational · Platform feature register; tenants never modify.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `flag_code`       | text                     | NO   | —                 | internal       |
+| `name`            | text                     | NO   | —                 | internal       |
+| `description`     | text                     | YES  | —                 | internal       |
+| `default_enabled` | boolean                  | NO   | false             | internal       |
+| `status`          | text                     | NO   | 'active'::text    | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `org.subscription_plans`
+
+**Scope:** platform · **Retention class:** operational · Versioned effective-dated plan catalogue; drafts hidden from app roles.
+
+| Column                 | Type                     | Null | Default           | Classification |
+| ---------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                   | uuid                     | NO   | gen_random_uuid() | internal       |
+| `plan_code`            | text                     | NO   | —                 | internal       |
+| `name`                 | text                     | NO   | —                 | internal       |
+| `description`          | text                     | YES  | —                 | internal       |
+| `entitlement_document` | jsonb                    | NO   | '{}'::jsonb       | internal       |
+| `capacity_limits`      | jsonb                    | NO   | '{}'::jsonb       | internal       |
+| `status`               | text                     | NO   | 'draft'::text     | internal       |
+| `effective_from`       | timestamp with time zone | NO   | —                 | internal       |
+| `effective_to`         | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`       | integer                  | NO   | 1                 | internal       |
+| `created_at`           | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`           | uuid                     | NO   | —                 | internal       |
+| `updated_at`           | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`           | uuid                     | YES  | —                 | internal       |
+
+### `org.tenant_subscriptions`
+
+**Scope:** tenant · **Retention class:** operational · Assignment history; active intervals non-overlapping per tenant.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `plan_id`        | uuid                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'draft'::text     | internal       |
+| `effective_from` | timestamp with time zone | NO   | —                 | internal       |
+| `effective_to`   | timestamp with time zone | YES  | —                 | internal       |
+| `assigned_by`    | uuid                     | NO   | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.legal_companies`
+
+**Scope:** tenant · **Retention class:** operational · Companies; composite candidate key (tenant_id, id) for all children.
+
+| Column                    | Type                     | Null | Default           | Classification |
+| ------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                      | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`               | uuid                     | NO   | —                 | internal       |
+| `company_code`            | text                     | NO   | —                 | internal       |
+| `legal_name`              | text                     | NO   | —                 | internal       |
+| `registration_number`     | text                     | YES  | —                 | restricted     |
+| `tax_registration_number` | text                     | YES  | —                 | restricted     |
+| `base_currency_code`      | text                     | NO   | —                 | internal       |
+| `status`                  | text                     | NO   | 'active'::text    | internal       |
+| `record_version`          | integer                  | NO   | 1                 | internal       |
+| `created_at`              | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`              | uuid                     | NO   | —                 | internal       |
+| `updated_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`              | uuid                     | YES  | —                 | internal       |
+| `deleted_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`              | uuid                     | YES  | —                 | internal       |
+| `archived_at`             | timestamp with time zone | YES  | —                 | internal       |
+| `archived_by`             | uuid                     | YES  | —                 | internal       |
+
+### `org.branches`
+
+**Scope:** tenant/company · **Retention class:** operational · Branches; composite FK carries the tenant; (tenant, company, id) for children.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `branch_code`    | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `address_line1`  | text                     | YES  | —                 | restricted     |
+| `address_line2`  | text                     | YES  | —                 | restricted     |
+| `city`           | text                     | YES  | —                 | restricted     |
+| `region`         | text                     | YES  | —                 | restricted     |
+| `postal_code`    | text                     | YES  | —                 | restricted     |
+| `country_code`   | text                     | YES  | —                 | internal       |
+| `timezone_name`  | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`     | uuid                     | YES  | —                 | internal       |
+| `archived_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `archived_by`    | uuid                     | YES  | —                 | internal       |
+
+### `org.branch_status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only branch lifecycle evidence.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `branch_id`      | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+
+### `org.departments`
+
+**Scope:** tenant/company/branch · **Retention class:** operational · Branch child; live-code uniqueness (archive frees the code).
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `company_id`      | uuid                     | NO   | —                 | internal       |
+| `branch_id`       | uuid                     | NO   | —                 | internal       |
+| `department_code` | text                     | NO   | —                 | internal       |
+| `name`            | text                     | NO   | —                 | internal       |
+| `status`          | text                     | NO   | 'active'::text    | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+| `deleted_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`      | uuid                     | YES  | —                 | internal       |
+| `archived_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `archived_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.warehouses`
+
+**Scope:** tenant/company/branch · **Retention class:** operational · Structure only — NO stock columns in this phase.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `branch_id`      | uuid                     | NO   | —                 | internal       |
+| `warehouse_code` | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `warehouse_type` | text                     | NO   | 'general'::text   | internal       |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`     | uuid                     | YES  | —                 | internal       |
+| `archived_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `archived_by`    | uuid                     | YES  | —                 | internal       |
+
+### `org.storage_locations`
+
+**Scope:** tenant/company/branch/warehouse · **Retention class:** operational · Warehouse child; full composite FK; no quantity columns.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `branch_id`      | uuid                     | NO   | —                 | internal       |
+| `warehouse_id`   | uuid                     | NO   | —                 | internal       |
+| `location_code`  | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`     | uuid                     | YES  | —                 | internal       |
+| `archived_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `archived_by`    | uuid                     | YES  | —                 | internal       |
+
+### `org.cost_centers`
+
+**Scope:** tenant/company · **Retention class:** operational · Effective-dated; overlapping validity per code rejected.
+
+| Column             | Type                     | Null | Default           | Classification |
+| ------------------ | ------------------------ | ---- | ----------------- | -------------- |
+| `id`               | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`        | uuid                     | NO   | —                 | internal       |
+| `company_id`       | uuid                     | NO   | —                 | internal       |
+| `cost_center_code` | text                     | NO   | —                 | internal       |
+| `name`             | text                     | NO   | —                 | internal       |
+| `status`           | text                     | NO   | 'active'::text    | internal       |
+| `effective_from`   | date                     | NO   | —                 | internal       |
+| `effective_to`     | date                     | YES  | —                 | internal       |
+| `record_version`   | integer                  | NO   | 1                 | internal       |
+| `created_at`       | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`       | uuid                     | NO   | —                 | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`       | uuid                     | YES  | —                 | internal       |
+| `deleted_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`       | uuid                     | YES  | —                 | internal       |
+
+### `org.company_settings`
+
+**Scope:** tenant/company · **Retention class:** operational · Versioned append-only configuration; NO secrets permitted.
+
+| Column           | Type                     | Null | Default           | Classification                          |
+| ---------------- | ------------------------ | ---- | ----------------- | --------------------------------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal                                |
+| `tenant_id`      | uuid                     | NO   | —                 | internal                                |
+| `company_id`     | uuid                     | NO   | —                 | internal                                |
+| `setting_key`    | text                     | NO   | —                 | internal                                |
+| `setting_value`  | jsonb                    | NO   | —                 | internal (restricted when is_sensitive) |
+| `value_type`     | text                     | NO   | —                 | internal                                |
+| `is_sensitive`   | boolean                  | NO   | false             | internal (restricted when is_sensitive) |
+| `version`        | integer                  | NO   | —                 | internal                                |
+| `effective_from` | timestamp with time zone | NO   | now()             | internal                                |
+| `record_version` | integer                  | NO   | 1                 | internal                                |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal                                |
+| `created_by`     | uuid                     | NO   | —                 | internal                                |
+
+### `org.branch_settings`
+
+**Scope:** tenant/company/branch · **Retention class:** operational · Versioned append-only configuration; NO secrets permitted.
+
+| Column           | Type                     | Null | Default           | Classification                          |
+| ---------------- | ------------------------ | ---- | ----------------- | --------------------------------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal                                |
+| `tenant_id`      | uuid                     | NO   | —                 | internal                                |
+| `company_id`     | uuid                     | NO   | —                 | internal                                |
+| `branch_id`      | uuid                     | NO   | —                 | internal                                |
+| `setting_key`    | text                     | NO   | —                 | internal                                |
+| `setting_value`  | jsonb                    | NO   | —                 | internal (restricted when is_sensitive) |
+| `value_type`     | text                     | NO   | —                 | internal                                |
+| `is_sensitive`   | boolean                  | NO   | false             | internal (restricted when is_sensitive) |
+| `version`        | integer                  | NO   | —                 | internal                                |
+| `effective_from` | timestamp with time zone | NO   | now()             | internal                                |
+| `record_version` | integer                  | NO   | 1                 | internal                                |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal                                |
+| `created_by`     | uuid                     | NO   | —                 | internal                                |
+
+### `org.tax_classes`
+
+**Scope:** tenant/company · **Retention class:** operational · Company-scoped tax classes; nothing seeded (OIR-04 open).
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `tax_class_code` | text                     | NO   | —                 | restricted     |
+| `name`           | text                     | NO   | —                 | restricted     |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.tax_rates`
+
+**Scope:** tenant/company · **Retention class:** operational · NUMERIC(9,6) fraction in [0,1]; active rates non-overlapping.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `tax_class_id`   | uuid                     | NO   | —                 | internal       |
+| `rate`           | numeric                  | NO   | —                 | restricted     |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `effective_from` | date                     | NO   | —                 | internal       |
+| `effective_to`   | date                     | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.tenant_feature_overrides`
+
+**Scope:** tenant · **Retention class:** operational · Platform-assigned interval overrides; history preserved.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `flag_code`      | text                     | NO   | —                 | internal       |
+| `enabled`        | boolean                  | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `effective_from` | timestamp with time zone | NO   | —                 | internal       |
+| `effective_to`   | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+
+### `shared.idempotency_keys`
+
+**Scope:** platform (nullable tenant) · **Retention class:** temporary · Idempotency records; same-transaction write; app roles: none.
+
+| Column                | Type                     | Null | Default           | Classification |
+| --------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                  | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`           | uuid                     | YES  | —                 | internal       |
+| `operation`           | text                     | NO   | —                 | internal       |
+| `idempotency_key`     | text                     | NO   | —                 | internal       |
+| `request_fingerprint` | text                     | NO   | —                 | internal       |
+| `response_document`   | jsonb                    | NO   | —                 | internal       |
+| `created_at`          | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`          | uuid                     | NO   | —                 | internal       |
+| `expires_at`          | timestamp with time zone | YES  | —                 | internal       |

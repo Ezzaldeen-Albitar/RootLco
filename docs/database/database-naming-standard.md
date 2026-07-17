@@ -105,6 +105,21 @@ Additional column rules:
 
 - The primary key of every table is `id uuid` (default `gen_random_uuid()`, which is
   **native** in PostgreSQL 13+ — pgcrypto is not registered for UUID generation).
+  **Exception — platform reference tables (added 2026-07-17, Phase 1-3, by owner
+  instruction).** A platform reference table whose rows are identified by a stable,
+  externally-governed natural code uses that code as its primary key instead of a
+  surrogate `id uuid`. This exception is **limited to Class 1 platform reference data**
+  (see the [Seed Standard](./seed-standard.md) §3.1) and currently covers exactly
+  `shared.currencies` (`code`), `shared.timezones` (`zone_name`), and
+  `shared.languages` (`locale_code`). It exists because: the Phase 1-3 instruction
+  requires an ISO currency-code primary key and names the referencing column
+  `base_currency_code` (a `_code` reference, not `_id`); the seed standard already
+  requires stable natural keys as idempotent `ON CONFLICT` targets and illustrates
+  `shared.currencies` with `ON CONFLICT (code)`. **It does not extend to tenant-owned
+  or business tables**, which keep `id uuid` — their natural keys stay `UNIQUE`
+  constraints, because business codes are tenant-scoped, editable, and reusable after
+  soft delete. Recorded here openly rather than left as a silent contradiction between
+  two binding documents.
   UUIDs are internal identifiers only: they are **never** authorization tokens and
   **never** public display numbers; knowledge of an ID never grants access. Human-facing
   numbers come from `shared.next_display_number()` (see the
@@ -207,7 +222,7 @@ Pattern: **`<prefix>_<table>_<columns-or-purpose>`**.
 | Prefix | Constraint kind   | Real example (migration `0003`)                                                                                                                                                                             |
 | ------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pk_`  | PRIMARY KEY       | `pk_number_sequences`                                                                                                                                                                                       |
-| `fk_`  | FOREIGN KEY       | Phase 1-3+ illustration: `fk_number_sequences_tenant_id` (no FK exists yet — see the honest note below)                                                                                                     |
+| `fk_`  | FOREIGN KEY       | Real examples (Phase 1-3): `fk_number_sequences_tenant`, `fk_branches_company`, `fk_storage_locations_warehouse`                                                                                            |
 | `uq_`  | UNIQUE constraint | `uq_number_sequences_scope`                                                                                                                                                                                 |
 | `ck_`  | CHECK             | `ck_number_sequences_code_format`, `ck_number_sequences_next_value_positive`, `ck_number_sequences_pad_width_range`, `ck_number_sequences_period_reset_rule`, `ck_number_sequences_branch_requires_company` |
 | `ex_`  | EXCLUDE           | Phase 1-3+ illustration below                                                                                                                                                                               |
@@ -226,9 +241,10 @@ ALTER TABLE veh.resource_bookings
   EXCLUDE USING gist (tenant_id WITH =, resource_id WITH =, during WITH &&);
 ```
 
-**Honest note:** `shared.number_sequences.tenant_id`/`company_id`/`branch_id` currently
-have **no** foreign keys — `org.*` tables do not exist until Phase 1-3, and the FKs are
-added then. The `fk_` examples here are naming templates, not existing objects.
+**Status (2026-07-17):** the note that once stood here — `shared.number_sequences` scope
+columns having no foreign keys — is resolved: Phase 1-3 created `org.*` and attached the
+composite FKs (`20260717106000_shared_number_sequences_org_fks.sql`). The `fk_` examples
+above are now real objects.
 
 ## 10. Indexes
 
