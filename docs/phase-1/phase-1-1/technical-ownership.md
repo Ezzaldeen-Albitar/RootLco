@@ -45,13 +45,33 @@ following decisions require **joint final business approval** by both owners:
 - Business decisions, including product naming ([PRODUCT NAME — Pending Final Approval]
   remains undecided — OIR-01/ASM-01) and brand/visual identity (no visual identity is
   approved; all current colours are neutral defaults — OIR-06).
-- Phase-gate approval, including the Phase 1-1 exit decision against the entry criteria
-  register (P1-EC-001..022, defined in the canonical Phase 1 plan).
 - Commercial and pilot decisions, including all decisions concerning Benzene Vehicle
   Services (بنزين لخدمات المركبات) as the first configured pilot tenant. Benzene is a
   customer, never an owner, and is onboarded by configuration only.
+- Material financial commitments; pricing, contracts, and customer commitments;
+  production go-live; migration of real customer data; acceptance of unresolved
+  Critical or High security risks; and major architecture changes with material
+  business or financial impact.
 
 Neither owner approves gated business decisions alone.
+
+> **Phase-gate update (2026-07-17).** The Phase 1-1 exit decision was taken jointly by
+> both founders (recorded in the [Phase 1-1 gate](./phase-1-1-owner-gate.md)). From
+> 2026-07-17, **routine technical phase gates** no longer require a repeated joint
+> decision: under the
+> [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md),
+> Eng. Ezzaldeen Al-Bitar is the delegated technical and execution authority, and the
+> pull-request merge into `develop` with green mandatory CI is the recorded technical
+> approval event. The joint-approval list above is exactly the set of decisions that
+> remain reserved to both founders.
+
+> **Status update (2026-07-16):** the concentration described in this record is now
+> governed by the owner-approved
+> [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md) and the
+> Owner-Approved Combined-Role Model in the
+> [Phase 1-1 owner gate](./phase-1-1-owner-gate.md). The gap statements in sections 4 and 5
+> below remain true and disclosed; the policy accepts the risk for the current foundation
+> stages, it does not remove it.
 
 ## 4. QA ownership — honest statement
 

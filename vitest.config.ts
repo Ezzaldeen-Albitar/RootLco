@@ -5,6 +5,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Database tests need a running local PostgreSQL (Supabase stack or the CI
+    // service container) and run separately via `npm run test:db`
+    // (vitest.config.db.ts). Keeping them out of the default suite keeps
+    // `npm test` green in environments without a database.
+    exclude: ['tests/db/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'json-summary'],

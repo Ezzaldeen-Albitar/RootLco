@@ -129,6 +129,84 @@ jobs:
             exit 1
           fi
 
+  # ---------------------------------------------------------------------------
+  # Phase 1-2 (P1-02-DO-001..003): clean-database migration validation.
+  #
+  # Runs the SAME migrations and the SAME database test suite the developer
+  # runs locally, against a fresh PostgreSQL 17 service container (matching the
+  # Supabase local stack's major version). The suite includes default-deny RLS,
+  # tenant A/B isolation as a non-owner runtime role, constraint templates,
+  # 50-worker allocation concurrency, and the no-business-tables scope guard.
+  # (The exact test count lives in the evidence register, not in this comment.)
+  #
+  # The full Supabase stack is NOT started here: only the database engine is
+  # required for schema validation, and the gap (Supabase-managed roles exist
+  # locally but not in this container) is documented honestly in
+  # docs/database/migration-standard.md. NO real credential exists below —
+  # these are throwaway values for a container that lives for one CI run.
+  # ---------------------------------------------------------------------------
+  database:
+    name: Database migrations and RLS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container, not a credential
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value as above
+    steps:
+      - name: Checkout (full history — needed for the immutability diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies (locked)
+        run: npm ci
+
+      # Applied migrations are immutable (migration standard). A pull request
+      # may only ADD migration files; editing or deleting one that exists on
+      # the target branch fails here.
+      - name: Assert applied migrations are immutable
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          # Fail CLOSED: if the base ref cannot be resolved, this control must
+          # fail loudly rather than silently pass with an empty diff.
+          git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null
+          changed="$(git diff --name-status --diff-filter=MDR \
+            "origin/${GITHUB_BASE_REF}...HEAD" -- supabase/migrations/)"
+          if [ -n "${changed}" ]; then
+            echo "::error::Migrations already on ${GITHUB_BASE_REF} were modified, renamed, or deleted. Migrations are immutable once merged — write a new forward migration instead."
+            echo "${changed}"
+            exit 1
+          fi
+          echo "OK: no existing migration was modified"
+
+      - name: Apply all migrations to a clean database
+        run: npm run db:apply-migrations
+
+      - name: Run the database test suite (RLS, constraints, concurrency)
+        run: npm run test:db
+
   secrets:
     name: Secret and sensitive-file scan
     runs-on: ubuntu-latest

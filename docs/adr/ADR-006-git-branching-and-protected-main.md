@@ -4,7 +4,15 @@
 
 Accepted by owner instruction (branching model and the single authorised bootstrap exception).
 
-Branch protection enforcement on `main` is **Blocked** — it cannot be applied from the current workstation and has not been applied.
+**Status update (2026-07-16):** branch rules were applied by the repository administrator
+in the GitHub UI (pull requests #1–#3 merged through them). Review operates under the
+owner-approved
+[Solo Developer Review Policy](../governance/solo-developer-review-policy.md): required
+approving reviews are temporarily **0** (a PR author cannot approve their own work and no
+second write-access reviewer exists), while pull requests, required CI checks,
+conversation resolution, force-push blocking, and branch-deletion blocking remain
+mandatory. The independent-approver weakness recorded under Consequences below therefore
+remains true and owner-accepted, not resolved.
 
 ## Context
 
@@ -103,6 +111,15 @@ The repository is private and classified "Confidential — Commercial Product an
 Eng. Ezzaldeen Al-Bitar (technical and IT owner) — branching model, bootstrap exception, and branch protection requirement, as technical decisions.
 
 Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) — any decision to promote `develop` to `main` as a release, which is a business and commercial decision, and any future decision to relax the protection of `main`.
+
+> **Status update (2026-07-17).** Under the
+> [Standing Technical Authorization Policy](../governance/standing-technical-authorization-policy.md),
+> the merge of a routine technical phase's pull request into `develop` by
+> Eng. Ezzaldeen Al-Bitar — with mandatory CI green — is the recorded technical
+> approval event for that phase's gate; no repeated per-phase owner ceremony is
+> required. Everything else in this ADR is unchanged: pull requests, required CI,
+> conversation resolution, force-push and deletion blocking all remain binding, and the
+> promotion of `develop` to `main` as a release remains a joint founder decision.
 
 ## Date
 

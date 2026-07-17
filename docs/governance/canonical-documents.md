@@ -1,7 +1,7 @@
 # Canonical Documents — Controlled Reference Record
 
 **Status:** Active · **Owner:** Eng. Ezzaldeen Al-Bitar (technical and IT owner) ·
-**Last verified:** 2026-07-16 · **Task:** P1-01-DOC-001, P1-01-DO-003
+**Last verified:** 2026-07-17 · **Task:** P1-01-DOC-001, P1-01-DO-003
 
 ---
 
@@ -28,7 +28,7 @@ without duplication.
 ```json
 {
   "recordVersion": 1,
-  "lastVerified": "2026-07-16",
+  "lastVerified": "2026-07-17",
   "documents": [
     {
       "filename": "RootLco_Phase_1_Development_Plan_recovered_v01.docx",
@@ -46,12 +46,12 @@ without duplication.
       "filename": "RootLco_Master_Project_Documentation.docx",
       "authority": "Business truth",
       "purpose": "Governs business vision, scope, requirements, business rules, use cases, architecture, security, testing strategy and product direction.",
-      "internalVersion": "0.3",
-      "internalStatus": "Corrected canonical review baseline — pending owner review and approval",
+      "internalVersion": "0.4",
+      "internalStatus": "Phase 1-1 closure, Phase 1-2 evidence, and the adopted security baseline recorded — pending owner review and approval",
       "relativePath": "../documentation/RootLco_Master_Project_Documentation.docx",
-      "sha256": "b1008a73d0f12fa62c41549a20d4ba030f326ba3e11bbe137f48dcb340cdbadc",
-      "bytes": 4478674,
-      "lastVerifiedModified": "2026-07-16T13:17:48Z",
+      "sha256": "a0af84d580ef9119f9a539fe9af9d5d4c83fab2260e44e5008dfb84bc48d490d",
+      "bytes": 4100399,
+      "lastVerifiedModified": "2026-07-17T07:56:36Z",
       "committedToGit": false
     }
   ]
@@ -60,11 +60,23 @@ without duplication.
 
 <!-- canonical-documents:end -->
 
-> The hashes above are recorded **after** the Phase 1-1 execution-evidence updates of
-> 16 July 2026 (Appendix B.4 in the Phase 1 plan; the technology-stack and related-document
-> updates in the Master document) were applied in place and both documents were confirmed to
-> open in Microsoft Word without a repair prompt (Phase 1 plan: 707 pages, 245 tables,
-> 3 diagrams; Master: 228 pages, 51 tables, 47 diagrams).
+> **Phase 1 plan:** the recorded hash is the post-Phase-1-1 state of 16 July 2026 (Appendix
+> B.4 applied in place; confirmed to open in Microsoft Word without a repair prompt — 707
+> pages, 245 tables, 3 diagrams). The prepared Phase 1-2 update (Appendix B.5, revision
+> 1.0-rc3) is **not yet applied**: an open Microsoft Word session holds a write lock on the
+> file, and the lock is never forced. Per the synchronization policy below, this pending
+> state blocks nothing; the update is applied, validated, and re-hashed here at the next
+> available documentation window.
+>
+> **Master:** updated in place on 17 July 2026 to internal revision 0.4 (Phase 1-1 closure,
+> Phase 1-2 execution evidence, the Solo Developer Review Policy, and the adopted
+> OWASP-based security baseline). The edit was applied by validated XML surgery on
+> `word/document.xml` (the same method as the verified 16 July updates): all content probes
+> found and the XML parsed with zero errors before writing. Confirmation that the file opens
+> in Microsoft Word without a repair prompt is **pending** — a Word session was open on the
+> other canonical document at update time, so the check is performed when the owner next
+> opens the file. A pre-update backup exists at
+> `../_archive/p1-02-execution-backup-2026-07-16/` (SHA-256 verified at backup time).
 
 ## Authority split
 
@@ -116,3 +128,24 @@ Exit codes: `0` verified · `1` missing/changed · `2` reference record unreadab
 3. Confirm it opens in Microsoft Word **without a repair prompt**.
 4. Recalculate the hash and update this record.
 5. Commit the record change on the relevant working branch with an explanation.
+
+## Synchronization policy (2026-07-17 — Standing Technical Authorization §7)
+
+Canonical DOCX synchronization is an **administrative post-merge task, not a routine
+technical-phase blocker**. A locked canonical document must not block implementation,
+CI, pull request review, merge, the phase gate, or the start of the next authorized
+technical phase.
+
+When a canonical DOCX is locked by an open Microsoft Word session:
+
+1. **Continue all repository tasks.** Nothing waits on the lock.
+2. **Record the synchronization as pending** in this document (which update, prepared
+   where, blocked by what).
+3. **Prepare the exact update safely**: backup taken and hash-verified, the edit
+   scripted and XML-validated before any write.
+4. **Never kill or force-close Microsoft Word.** Do not wait indefinitely and do not
+   run a long-lived watcher; simply proceed with other work.
+5. **Apply the update at the next available documentation window**, then validate,
+   re-hash, and update this record in the same commit.
+6. Final synchronization is required only **before production release or formal
+   external delivery** — at that point a pending synchronization becomes a blocker.

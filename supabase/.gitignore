@@ -6,3 +6,12 @@
 .env.keys
 .env.local
 .env.*.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.secrets/
