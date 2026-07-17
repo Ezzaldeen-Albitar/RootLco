@@ -878,3 +878,35 @@ credential authority. Contact fields are classified `restricted`.
 | `detail`         | text                     | YES  | —                 | internal       |
 | `correlation_id` | uuid                     | YES  | —                 | internal       |
 | `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+
+### `shared.status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Generic append-only status transitions; actor/occurred server-stamped; SELECT-only for app roles.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+
+### `shared.status_evidence`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Evidence-reference placeholder (no Phase-1-5 FK); `evidence_ref` is a placeholder string.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `status_history_id` | uuid                     | NO   | —                 | internal       |
+| `evidence_type`     | text                     | NO   | —                 | internal       |
+| `evidence_ref`      | text                     | NO   | —                 | internal       |
+| `note`              | text                     | YES  | —                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |

@@ -255,6 +255,15 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // shared.status_history cascades its status_evidence; idempotency keys too.
+  await admin.query('DELETE FROM shared.status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.idempotency_keys WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

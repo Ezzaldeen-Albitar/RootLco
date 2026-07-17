@@ -69,6 +69,9 @@ const ALLOWED_TABLES = new Set([
   'iam.audit_record_details',
   'iam.audit_integrity_links',
   'iam.security_events',
+  // Phase 1-4 generic status history (P1-04-DB-018).
+  'shared.status_history',
+  'shared.status_evidence',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -139,6 +142,8 @@ const ALLOWED_ROUTINES = new Set([
   'iam.audit_hash',
   'iam.audit_append',
   'iam.audit_verify_chain',
+  // Phase 1-4 (P1-04-DB-018): generic status-history server-stamp.
+  'shared.stamp_status_history',
 ]);
 
 let admin: Pool;
@@ -299,6 +304,7 @@ describe('database foundation', () => {
       'tg_roles_touch_metadata',
       'tg_sensitive_data_permissions_immutable',
       'tg_sensitive_data_permissions_touch_metadata',
+      'tg_status_history_stamp',
       'tg_storage_locations_immutable',
       'tg_storage_locations_parent_warehouse_live',
       'tg_storage_locations_touch_metadata',
@@ -367,6 +373,8 @@ describe('database foundation', () => {
       'sel_role_permissions_tenant',
       'sel_roles_tenant',
       'sel_sensitive_data_permissions_tenant',
+      'sel_status_evidence_tenant',
+      'sel_status_history_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
       'sel_tax_classes_scope',
