@@ -43,13 +43,13 @@ completion report). Five self-caught defects fixed pre-PR
 
 ## Gate conditions (Standing Technical Authorization §2) — status as of 2026-07-17
 
-| #   | Condition                                                              | Status                                                                                                                                                                                                                              |
-| --- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | All mandatory CI checks green on the pull request                      | **Pending** — PR #12 was merged into `develop`, so a CI run exists on that pull request, but this session has no authenticated GitHub access and received no owner-verified CI evidence; the run's result is **not confirmed here** |
-| 2   | No unresolved Critical security finding                                | **Satisfied** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md))                                                                                                            |
-| 3   | No unresolved High finding without an approved, time-bounded exception | **Satisfied** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty                                                                                                                      |
-| 4   | Documented technical self-review completed by Eng. Ezzaldeen Al-Bitar  | **Satisfied** — [evidence register](./phase-1-3-evidence-register.md), incl. the adversarial pass and rehearsals                                                                                                                    |
-| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar          | **Satisfied** — PR #12 merged into `develop` on 2026-07-17 (merge `c11f6bf9ea345c230534e0ffdbe71a1bcc56a022`, base `3d8e7cc`, source `417b532`), verified by `git merge-base --is-ancestor 417b532 origin/develop`                  |
+| #   | Condition                                                              | Status                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | All mandatory CI checks green on the pull request                      | **Satisfied (Owner-verified)** — the repository owner inspected PR #12 in GitHub and confirmed all four mandatory checks (lint/types/tests/build; Docker build validation; database migrations and RLS tests; secret and sensitive-file scan) passed on the final Phase 1-3 source commit. This environment did not independently query GitHub; a merge alone is never CI proof (standing policy §2.1) |
+| 2   | No unresolved Critical security finding                                | **Satisfied** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md))                                                                                                                                                                                                                                                                               |
+| 3   | No unresolved High finding without an approved, time-bounded exception | **Satisfied** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty                                                                                                                                                                                                                                                                                         |
+| 4   | Documented technical self-review completed by Eng. Ezzaldeen Al-Bitar  | **Satisfied** — [evidence register](./phase-1-3-evidence-register.md), incl. the adversarial pass and rehearsals                                                                                                                                                                                                                                                                                       |
+| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar          | **Satisfied** — PR #12 merged into `develop` on 2026-07-17 (merge `c11f6bf9ea345c230534e0ffdbe71a1bcc56a022`, base `3d8e7cc`, source `417b532`), verified by `git merge-base --is-ancestor 417b532 origin/develop`                                                                                                                                                                                     |
 
 Additional gate requirements verified: no expired exception; no cross-tenant
 isolation failure in 194 tests; no runtime BYPASSRLS; no tenant-owned table
@@ -57,22 +57,34 @@ without forced RLS (catalog-asserted).
 
 ## Decision record
 
-**Current status: PENDING — blocked solely on condition 1 (verified mandatory
-CI evidence).** Condition 5 (merge into `develop`) is now satisfied by PR #12;
-conditions 2–4 were already satisfied. The record completes automatically as
-**Go — Technical Gate Passed**, from evidenced facts, once condition 1 is
-evidenced — an authenticated CI result, or the owner's Owner-verified
-confirmation under standing policy §2.1. A merge alone is never that evidence.
+**Decision: Go — Technical Gate Passed.** All five Standing Technical
+Authorization §2 conditions are satisfied — CI is **Owner-verified**, the merge
+into `develop` is **Proven** from git, and conditions 2–4 hold. Under the
+standing policy the merge by Eng. Ezzaldeen Al-Bitar is the recorded technical
+approval event; no further checkbox, signature, or approval from
+Eng. Bilal Jradat is required.
 
-- **Decision:** _pending — becomes_ **Go — Technical Gate Passed** _on CI evidence_
+- **Decision:** **Go — Technical Gate Passed**
 - **Technical authority:** Eng. Ezzaldeen Al-Bitar
-- **Evidence:** mandatory CI (provenance-labelled) + the recorded merge below
-- **Merge into `develop`:** PR #12, merge commit
-  `c11f6bf9ea345c230534e0ffdbe71a1bcc56a022`, 2026-07-17T17:15:55+03:00
+- **Review model:** Owner-authorized technical self-review (never independent review)
+- **CI evidence provenance:** **Owner-verified** — the owner inspected PR #12's
+  four mandatory checks in GitHub on the final Phase 1-3 source commit; this
+  execution environment did not independently observe the GitHub Actions run
+- **Mandatory checks:** lint/types/tests/build · Docker build validation ·
+  database migrations and RLS tests · secret and sensitive-file scan
+- **Implementation source SHA:** `417b53280e9ce91c91c1321c902ebc3e2a154f33`
+- **Implementation merge SHA:** `c11f6bf9ea345c230534e0ffdbe71a1bcc56a022`
+  (PR #12), target `develop`, merge date 2026-07-17T17:15:55+03:00
   (author Eng. Ezzaldeen Al-Bitar; committer GitHub)
-- **Final Phase 1-3 source SHA:** `417b53280e9ce91c91c1321c902ebc3e2a154f33`
-- **CI evidence / final decision date:** _pending — recorded at completion once
-  condition 1 is evidenced_
+- **Follow-up corrections commit:** `227be2aa3ffbca4019650ed4b3526b0ad86c4279`
+  (PR #16), contained in `develop`
+- **Local validation SHA:** `c92ab4dc0b5e1c4428da57da20bc41aa9b103486`
+  (`origin/develop`) — clean-room `supabase db reset` (0001→…107000 + seeds) and
+  **194/194** database tests green as a non-owner runtime login, plus lint,
+  typecheck, format, style, unit tests, build, and browser-secret /
+  scope-exclusion / canonical-doc scans all green (2026-07-17)
+- **Decision date:** 2026-07-17
+- **Canonical DOCX:** Pending — non-blocking administrative synchronization
 
 ## Canonical document synchronization (administrative — does not block)
 
