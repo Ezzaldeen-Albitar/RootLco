@@ -340,6 +340,12 @@ BEGIN
     v_expected_seq := v_expected_seq + 1;
   END LOOP;
 
+  -- Every record must be linked: a forged record inserted without a chain link
+  -- (fabrication, not alteration) shows up as more records than links.
+  IF (SELECT count(*) FROM iam.audit_records WHERE tenant_id = p_tenant) <> (v_expected_seq - 1) THEN
+    RETURN jsonb_build_object('ok', false, 'first_bad_seq', v_expected_seq - 1, 'reason', 'orphan_record');
+  END IF;
+
   RETURN jsonb_build_object('ok', true, 'verified_through', v_expected_seq - 1);
 END;
 $$;

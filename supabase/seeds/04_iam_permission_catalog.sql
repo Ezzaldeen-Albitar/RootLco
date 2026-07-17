@@ -10,7 +10,7 @@
 --
 -- Rules honoured: idempotent (re-runnable with no duplicates); stable additive
 --   permission codes with risk levels; explicit allow effect; NO wildcard
---   permission; NO Benzene-specific role or assignment; NO real user; NO
+--   permission; NO pilot-specific role or assignment; NO real user; NO
 --   password or credential; authorization is by permission, never role name.
 -- ============================================================================
 

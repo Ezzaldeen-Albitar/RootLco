@@ -165,6 +165,21 @@ describe('iam.audit_verify_chain — tamper and gap detection', () => {
     expect(v.first_bad_seq).toBe(1);
   });
 
+  it('detects a forged record inserted with no chain link (orphan)', async () => {
+    await append();
+    await append();
+    expect((await verify()).ok).toBe(true);
+    // A privileged writer fabricates a record with a fresh seq but no link.
+    await admin.query(
+      `INSERT INTO iam.audit_records (tenant_id, seq, actor_kind, action, entity_type)
+       VALUES ($1, 99, 'system', 'forged', 'iam.test')`,
+      [TENANT_A]
+    );
+    const v = await verify();
+    expect(v.ok).toBe(false);
+    expect(v.reason).toBe('orphan_record');
+  });
+
   it('detects a missing record (seq gap)', async () => {
     await append();
     await append();

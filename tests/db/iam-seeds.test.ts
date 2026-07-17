@@ -9,7 +9,16 @@ import { join } from 'node:path';
 import type { Pool } from 'pg';
 import { adminPool, cleanFixtures, ensureTestLogins } from './helpers';
 
-const SEED = join(__dirname, '..', '..', 'supabase', 'seeds', '04_iam_permission_catalog.sql');
+const SEEDS_DIR = join(__dirname, '..', '..', 'supabase', 'seeds');
+const SEED = join(SEEDS_DIR, '04_iam_permission_catalog.sql');
+// Applied in dependency order so the suite is self-sufficient in CI (where the
+// migration runner does NOT apply seeds); all seeds are idempotent.
+const SEED_FILES = [
+  '01_reference_data.sql',
+  '02_benzene_pilot_provisioning.sql',
+  '03_local_test_tenant.sql',
+  '04_iam_permission_catalog.sql',
+];
 
 let admin: Pool;
 
@@ -17,6 +26,9 @@ beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
   await cleanFixtures(admin); // clear any tenant A/B leftovers from other suites
+  for (const f of SEED_FILES) {
+    await admin.query(readFileSync(join(SEEDS_DIR, f), 'utf8'));
+  }
 });
 
 afterAll(async () => {
