@@ -43,6 +43,9 @@ const ALLOWED_TABLES = new Set([
   'org.tax_classes',
   'org.tax_rates',
   'org.tenant_feature_overrides',
+  // Phase 1-3 (P1-03-DB-022): the Phase 1-2 idempotency pattern, promoted to a
+  // permanent platform table (no application-role access at all).
+  'shared.idempotency_keys',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -94,6 +97,8 @@ const ALLOWED_ROUTINES = new Set([
   // override > plan > default feature-resolution precedence.
   'org.validate_setting_value',
   'org.resolve_feature_enabled',
+  // Phase 1-3 (P1-03-DB-022): atomic organization provisioning (platform-only).
+  'org.provision_organization',
 ]);
 
 let admin: Pool;
