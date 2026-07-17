@@ -21,7 +21,7 @@ implementation**. Phase 1-2 gate record contained in `develop` via PR #11.
 
 | Claim                                               | Evidence                                                                                                                                                                                                    |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Seven Phase 1-3 migrations apply cleanly from empty | `supabase db reset` executed after EVERY increment (≥7 clean applies), 0001→0003→100000..107000 + seeds                                                                                                     |
+| Eight Phase 1-3 migrations apply cleanly from empty | `supabase db reset` executed after EVERY increment (≥8 clean applies), 0001→0003→100000..107000 + seeds                                                                                                     |
 | 14-digit timestamp naming per the standard          | Filename-rule test + CI runner rule; the brief's illustrative 0004-style names were rejected as violating the standard (initial audit §4)                                                                   |
 | Rollback classes recorded and rehearsed             | [phase-1-3-migration-classification.md](../../database/phase-1-3-migration-classification.md); `106000` genuinely rolled back (3 FKs + 2 indexes dropped) and re-applied with zero data effect, suite green |
 | Merged migrations 0001–0003 untouched               | `git diff origin/develop -- supabase/migrations/0001* 0002* 0003*` empty                                                                                                                                    |
@@ -94,9 +94,12 @@ later-phase table, no Zoom object, no secret, migrations 0001–0003 untouched.
 
 The `Database migrations and RLS tests` job now exercises all Phase 1-3
 migrations and suites (seeds rehearse inside the provisioning suite); the secrets
-job gained the scope-exclusion guard step. **No GitHub Actions run exists for
-this branch yet** — the first run happens on the pull request, and CI is not
-claimed green until that run reports.
+job gained the scope-exclusion guard step. Phase 1-3 was merged into `develop`
+via PR #12 (merge `c11f6bf`, 2026-07-17), so a CI run exists on that pull
+request — but this session has no authenticated GitHub access and received no
+owner-verified CI evidence, so that run's result is **not verified here**. CI is
+not claimed green until it is evidenced (an authenticated result or the owner's
+Owner-verified confirmation).
 
 ## 8. Canonical documents
 

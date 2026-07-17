@@ -32,7 +32,7 @@ assertion caught four gaps (evidence register §4).
 
 | Rehearsal                                          | Result                                                                                                                                                           |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean apply, empty database (`supabase db reset`)  | 0001→0003→all seven Phase 1-3 migrations + all three seed files, repeatedly, exit 0                                                                              |
+| Clean apply, empty database (`supabase db reset`)  | 0001→0003→all eight Phase 1-3 migrations + all three seed files, repeatedly, exit 0                                                                              |
 | Deliberately defective migration (never committed) | `RUNNER_EXIT=1` — "syntax error at end of input"                                                                                                                 |
 | Populated-database guard                           | `GUARD_EXIT=1` — "Refusing to run: module schemas already exist"                                                                                                 |
 | Rollback-safe class test (`106000`)                | constraints/indexes dropped and re-applied on a scratch pass without data effect                                                                                 |

@@ -21,7 +21,7 @@ package, and two-tenant isolation proof.
 
 ## 2. What was delivered (all applied and verified on PostgreSQL 17.6)
 
-- **Seven timestamped migrations** (`20260717100000`–`107000`) creating
+- **Eight timestamped migrations** (`20260717100000`–`107000`) creating
   **21 new tables** (17 in the org schema; 3 reference + 1 idempotency in shared), 13 new functions/guards, 39 new triggers, 39 new RLS policies — every table with RLS enabled
   **and forced**; every grant explicit; DELETE granted to no application role
   anywhere; all codes immutable by trigger.
@@ -66,8 +66,11 @@ code. Each fix is itself test-covered or re-rehearsed.
 
 ## 4. Honest limits and open items
 
-1. **No GitHub Actions run exists for this branch** — the PR run is the proof;
-   CI is not called green until it reports.
+1. **Remote CI not verified in this session.** Phase 1-3 was merged into
+   `develop` via PR #12 (merge `c11f6bf`, 2026-07-17), so a CI run exists on that
+   pull request — but this environment has no authenticated GitHub access and
+   received no owner-verified CI evidence, so the run's result is not confirmed
+   here. CI is not called green until it is evidenced.
 2. **Solo review** throughout; P1-EC-016 (independent security review) open.
 3. **OIR-04 open** — production currency/tax policy pending; only the
    documented testing subset is seeded; zero tax rows seeded.
@@ -90,8 +93,10 @@ object. No secret (scans clean).
 
 ## 6. Recommendation
 
-Submit the branch through the pull-request gate. Under the Standing Technical
-Authorization Policy the gate then closes automatically on proven facts —
-green mandatory CI plus the merge — recorded in
-[phase-1-3-owner-gate.md](./phase-1-3-owner-gate.md). This report confers no
-approval by itself.
+The branch was submitted and merged into `develop` via PR #12 (merge
+`c11f6bf`, 2026-07-17). Under the Standing Technical Authorization Policy the
+gate closes automatically on proven facts — verified mandatory CI plus the
+merge — recorded in [phase-1-3-owner-gate.md](./phase-1-3-owner-gate.md). The
+merge is done; the gate remains **Pending solely on verified CI evidence**,
+which this session cannot obtain (no authenticated GitHub access). This report
+confers no approval by itself.
