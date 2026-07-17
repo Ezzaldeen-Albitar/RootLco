@@ -510,6 +510,6 @@ it before implementing against any row.
 
 - Requirement summaries are paraphrases; only the pinned upstream release is authoritative.
 - Every verification recorded here is owner-authorized self-review under the Solo Developer Review Policy; no independent verification exists (P1-EC-016 remains open).
-- “Verified” rows rest on the local test runs recorded in the Phase 1-2 evidence register; no GitHub Actions run exists for this branch yet.
+- “Verified” rows rest on the local test runs recorded in the Phase 1-2 evidence register. The Phase 1-2 pull request has since run and merged; its four mandatory checks are recorded as Owner-verified (inspected in GitHub by the owner), not read from the build environment.
 - Applicability and phase assignments reflect the 2026-07-17 understanding of the canonical Phase 1 plan and are re-judged at each phase gate; a future phase may lawfully re-classify a row, recording why.
 - This matrix makes no statement about Zoom Vehicle Inspection and Evaluation Services, which is outside Phase 1.

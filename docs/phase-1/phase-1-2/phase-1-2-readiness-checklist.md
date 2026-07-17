@@ -57,12 +57,13 @@ Items that are **not** claimed:
 
 - **No independent review** — everything above is owner-authorized self-review
   (P1-EC-016 remains open).
-- **The CI result is owner-stated, not observed here.** At the time this checklist was
+- **The CI result is Owner-verified, not observed here.** At the time this checklist was
   written no GitHub Actions run had executed on the branch, and the locally-run
   equivalents were the only CI evidence. Pull request #5 has since run and merged, and
-  the repository administrator states all four mandatory checks passed on its final
-  source commit `dae6681`; the authoritative run results live in GitHub Actions and were
-  never read from the build environment (no CLI, no token).
+  the repository owner **inspected its four mandatory checks in GitHub** and confirms
+  they passed on the final source commit `dae6681`. The authoritative run results live in
+  GitHub Actions and were never read from the build environment (no CLI, no token); no
+  claim is made that this environment queried GitHub.
 
 **Gate status (updated 2026-07-17):** the Phase 1-2 exit gate recorded
 **Go — Technical Gate Passed**; Phase 1-3 is authorized. See

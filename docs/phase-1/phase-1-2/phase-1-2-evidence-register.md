@@ -64,25 +64,25 @@ was itself owner-authorized self-review tooling, not an independent human review
 
 ## 5. CI and rehearsal
 
-| Claim                                            | Evidence                                                                                                           |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Workflow YAML valid, 4 jobs                      | Parsed with a real YAML parser: quality, docker, database, secrets; job display names recorded for the ruleset     |
-| Defective migration fails the pipeline           | [rehearsal-defective-migration.md](./rehearsal-defective-migration.md): RUNNER_EXIT=1; broken file never committed |
-| Clean-database guard works                       | Runner refused the populated rehearsal DB: GUARD_EXIT=1                                                            |
-| **No GitHub Actions run exists for this branch** | True when written (2026-07-16). Superseded 2026-07-17 — see §5.1 below                                             |
+| Claim                                                                    | Evidence                                                                                                           |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Workflow YAML valid, 4 jobs                                              | Parsed with a real YAML parser: quality, docker, database, secrets; job display names recorded for the ruleset     |
+| Defective migration fails the pipeline                                   | [rehearsal-defective-migration.md](./rehearsal-defective-migration.md): RUNNER_EXIT=1; broken file never committed |
+| Clean-database guard works                                               | Runner refused the populated rehearsal DB: GUARD_EXIT=1                                                            |
+| **No GitHub Actions run existed when this row was written (2026-07-16)** | Superseded 2026-07-17: pull request #5 ran and merged — see §5.1 below                                             |
 
 ### 5.1 The pull-request CI run (recorded 2026-07-17, provenance stated)
 
 Pull request #5 merged the Phase 1-2 branch into `develop` on 2026-07-17 (merge commit
 `e5fa5bf`; final source commit `dae6681`).
 
-| Claim                                                        | Evidence and its provenance                                                                                                                                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The merge happened                                           | **Proven from the git graph**: `git merge-base --is-ancestor dae6681 origin/develop` succeeds; `origin/develop`'s tree is byte-identical to the branch head                                      |
-| All four mandatory checks passed on `dae6681`                | **Owner-stated, not observed here.** Reported by the repository administrator on 2026-07-17. The build environment holds no GitHub credentials (an unauthenticated fetch of the private PR 404s) |
-| Where the authoritative result lives                         | GitHub Actions. Nothing in this repository is a substitute for it                                                                                                                                |
-| **A merge is not treated as evidence of CI**                 | Stated plainly: the ruleset's required-check names may still be the stale ones, so a merge could proceed without the four checks being enforced. Condition 1 rests on the owner's statement only |
-| Local equivalents of every CI step passed on the merged tree | §6 below, executed 2026-07-16 — corroboration, not the remote run                                                                                                                                |
+| Claim                                                        | Evidence and its provenance                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The merge happened                                           | **Proven from the git graph**: `git merge-base --is-ancestor dae6681 origin/develop` succeeds; `origin/develop`'s tree is byte-identical to the branch head                                                                                                                     |
+| All four mandatory checks passed on `dae6681`                | **Owner-verified, not observed here.** The repository owner inspected PR #5's checks directly in GitHub and confirms all four passed (2026-07-17). The build environment holds no GitHub credentials (an unauthenticated fetch of the private PR 404s) and never queried GitHub |
+| Where the authoritative result lives                         | GitHub Actions. Nothing in this repository is a substitute for it                                                                                                                                                                                                               |
+| **A merge is not treated as evidence of CI**                 | Stated plainly: the ruleset's required-check names may still be the stale ones, so a merge could proceed without the four checks being enforced. Condition 1 rests on the owner's direct inspection only                                                                        |
+| Local equivalents of every CI step passed on the merged tree | §6 below, executed 2026-07-16 — corroboration, not the remote run                                                                                                                                                                                                               |
 
 ## 6. Quality gates (application repo)
 

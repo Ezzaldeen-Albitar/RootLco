@@ -56,8 +56,10 @@ retention, sensitive-data classification, or test fixtures.
 - **CI extended** with the `Database migrations and RLS tests` job (clean PostgreSQL 17
   container, migration-immutability assertion, full suite) — plus a recorded rehearsal
   proving a deliberately defective migration fails the pipeline (exit 1) and that the
-  runner refuses non-empty databases. **No GitHub Actions run exists for this branch
-  yet**; that proof arrives with the pull request.
+  runner refuses non-empty databases. That proof arrived with pull request #5, whose
+  four mandatory checks the owner inspected in GitHub and confirms passed on the final
+  source commit `dae6681` (**Owner-verified**, 2026-07-17 — not read from the build
+  environment).
 
 ### Standards (twelve controlled documents)
 
@@ -104,8 +106,10 @@ with an owner-approved time-bounded exception) binds this and every later phase 
 
 ## 4. Honest limits and open items
 
-1. **No GitHub Actions run on this branch yet** — local equivalents of every CI step
-   pass; the PR run is the remaining proof. CI must not be called green until it is.
+1. **CI is Owner-verified, not read here.** Local equivalents of every CI step passed,
+   and pull request #5 ran and merged on 2026-07-17; the owner inspected its four
+   mandatory checks in GitHub and confirms they passed on `dae6681`. The build
+   environment holds no GitHub credentials and never queried GitHub.
 2. **Solo review** — every result in this report is owner-authorized self-review.
 3. **FK deferral** — `shared.number_sequences` scope columns gain their composite FKs in
    Phase 1-3 when `org.*` exists (recorded in the table comment and data dictionary).
@@ -142,5 +146,6 @@ see [phase-1-2-owner-gate.md](./phase-1-2-owner-gate.md).
 > [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md).
 > Section 5's statement that no work had reached `main` or `develop` describes this
 > report's assembly date and is now historical: the work is in both. The CI conclusions
-> are owner-stated, not observed from the build environment, and everything here remains
+> are Owner-verified (the owner inspected them in GitHub), not observed from the build
+> environment, and everything here remains
 > owner-authorized self-review.

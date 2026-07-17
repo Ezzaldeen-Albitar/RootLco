@@ -64,22 +64,29 @@ gate would otherwise have been stuck indefinitely on a technicality.
 Each of the five conditions is recorded with **the provenance of its evidence**, using
 exactly one of these labels:
 
-| Label            | Meaning                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Proven**       | Established by a command run in the build environment (for example `git merge-base --is-ancestor`).          |
-| **Owner-stated** | Reported by the repository administrator, not observed here. The authoritative source is named alongside it. |
+| Label              | Meaning                                                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Proven**         | Established by a command run in the build environment (for example `git merge-base --is-ancestor`).                                                 |
+| **Owner-verified** | Checked directly by the repository administrator at the authoritative source (for example the pull request's checks in GitHub) and reported here.   |
+| **Owner-stated**   | Reported by the repository administrator without a statement that the source was inspected. Weaker than Owner-verified; the source is named anyway. |
 
-Both are admissible evidence for a routine technical gate. **They are not equivalent,
-and a record must never present one as the other.** An owner-stated fact carries the
-administrator's authority, not the build environment's verification, and the record must
-say so in place — as must every downstream document that repeats it.
+All three are admissible evidence for a routine technical gate. **They are not
+equivalent, and a record must never present one as another.** An owner-verified fact
+carries the administrator's authority and their direct inspection of the source; it does
+**not** carry the build environment's verification, because the build environment did not
+observe it. The record must say so in place — as must every downstream document that
+repeats it.
 
 Rules:
 
 - Where authenticated access exists, the check conclusions are **read** from the pull
   request and recorded as Proven. Reading them is always preferred to being told them.
-- Where it does not, the repository administrator may supply the conclusions, recorded
-  as **Owner-stated** with the date and the commit they apply to.
+- Where it does not, the repository administrator may inspect the pull request's checks
+  directly and supply the conclusions, recorded as **Owner-verified** with the date, the
+  commit they apply to, and how they were checked.
+- **No agent or automated process may describe an owner-supplied fact as its own
+  observation.** A record must never imply that this environment queried GitHub when the
+  administrator did.
 - **A merge is never evidence of CI.** Required-check enforcement can be absent,
   misconfigured (see [github-required-checks.md](../phase-1/phase-1-1/github-required-checks.md)),
   or bypassed by an administrator, so a merge proves only that a merge happened.
@@ -190,9 +197,9 @@ every gate; the phase evidence register documents the self-review (condition 4).
 - The live GitHub ruleset is administered in the GitHub UI; the build environment holds
   no GitHub credentials. "Merged" is therefore proven from the git graph (`develop`
   containing the branch head), while "CI green" is taken from the pull request's
-  recorded check results — read directly where authenticated access exists, or supplied
-  by the repository administrator and labelled **Owner-stated** where it does not
-  (§2.1). The authoritative run results always live in GitHub Actions.
+  recorded check results — read directly where authenticated access exists, or inspected
+  in GitHub by the repository administrator and labelled **Owner-verified** where it does
+  not (§2.1). The authoritative run results always live in GitHub Actions.
 
 ## 10. Revocation and review
 

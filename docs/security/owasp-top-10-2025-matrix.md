@@ -63,6 +63,6 @@ already implemented and test-verified — that verified evidence is cited in the
 - Category rows are awareness-level; only the ASVS matrix carries requirement-level
   verification.
 - All evidence cited is owner-authorized self-review; no independent verification
-  exists; no GitHub Actions run exists for this branch yet.
+  exists. CI evidence for the Phase 1-2 pull request is Owner-verified (the owner inspected the checks in GitHub); it was not read from the build environment.
 - This matrix makes no statement about Zoom Vehicle Inspection and Evaluation Services
   (outside Phase 1).

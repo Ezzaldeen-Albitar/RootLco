@@ -68,8 +68,10 @@ Run records live in the
    `Docker build validation` · `Database migrations and RLS tests` ·
    `Secret and sensitive-file scan`) are required checks per
    [github-required-checks.md](../phase-1/phase-1-1/github-required-checks.md).
-   **Honesty point: no GitHub Actions run exists for the Phase 1-2 branch yet** — local
-   equivalents of every step passed; the PR run is the outstanding proof.
+   **Honesty point on the Phase 1-2 run:** local equivalents of every step passed, and
+   pull request #5 has since run and merged (2026-07-17). Its four check conclusions are
+   **Owner-verified** — inspected in GitHub by the repository owner, not read from the
+   build environment, which holds no GitHub credentials.
 
 ## 4. Test types and their owners
 

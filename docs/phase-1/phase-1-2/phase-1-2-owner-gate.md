@@ -75,11 +75,12 @@ The full package on branch `feature/p1-02-database-engineering-foundation`:
 
 ## What was weighed (stated plainly)
 
-1. **The pull request's CI run was the outstanding proof.** Every check passed locally,
-   and at assembly time no GitHub Actions run existed. PR #5 has since been merged and
-   the administrator has stated that all four mandatory checks completed successfully on
-   its final source commit — closing condition 1 on an owner statement rather than on an
-   observation made from the build environment (see the provenance note below).
+1. **The pull request's CI run was the outstanding proof — it has since been supplied.**
+   Every check passed locally, and at assembly time no GitHub Actions run existed. PR #5
+   has since run and merged, and the owner inspected its four mandatory checks in GitHub
+   and confirms they passed on the final source commit `dae6681`. Condition 1 closes on
+   that **Owner-verified** evidence, not on an observation made from the build
+   environment (see the provenance note below).
 2. **Everything is self-reviewed** under the owner-approved policies. The review did
    find and fix real defects before merge (pad-overflow truncation,
    analytics-container failure, CRLF gate breakage, PUBLIC-EXECUTE revocation,
@@ -103,33 +104,34 @@ A stale hand-entered name in the ruleset blocks the merge silently — see
 
 ## Gate conditions (Standing Technical Authorization §2) — status as of 2026-07-17
 
-| #   | Condition                                                              | Status                                                                                                                                                                                                              |
-| --- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | All mandatory CI checks green on the pull request                      | **Satisfied (owner-stated)** — the repository administrator states that all four mandatory checks completed successfully on PR #5's final Phase 1-2 source commit `dae6681`, supplied 2026-07-17. Provenance below. |
-| 2   | No unresolved Critical security finding                                | **Satisfied** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md) §5)                                                                                         |
-| 3   | No unresolved High finding without an approved, time-bounded exception | **Satisfied** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty                                                                                                      |
-| 4   | Documented technical self-review completed by Eng. Ezzaldeen Al-Bitar  | **Satisfied** — [evidence register](./phase-1-2-evidence-register.md) (incl. the four-lens adversarial pass, §4.1) and the readiness checklist                                                                      |
-| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar          | **Satisfied** — PR #5 merged 2026-07-17 14:02:36 +0300 by `Ezzaldeen-Albitar`; merge commit `e5fa5bf`; final source head `dae6681` proven an ancestor of `origin/develop` via `git merge-base --is-ancestor`        |
+| #   | Condition                                                              | Status                                                                                                                                                                                                                                         |
+| --- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | All mandatory CI checks green on the pull request                      | **Satisfied (Owner-verified)** — the repository owner inspected PR #5's checks directly in GitHub and confirms all four mandatory checks completed successfully on the final Phase 1-2 source commit `dae6681` (2026-07-17). Provenance below. |
+| 2   | No unresolved Critical security finding                                | **Satisfied** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md) §5)                                                                                                                    |
+| 3   | No unresolved High finding without an approved, time-bounded exception | **Satisfied** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty                                                                                                                                 |
+| 4   | Documented technical self-review completed by Eng. Ezzaldeen Al-Bitar  | **Satisfied** — [evidence register](./phase-1-2-evidence-register.md) (incl. the four-lens adversarial pass, §4.1) and the readiness checklist                                                                                                 |
+| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar          | **Satisfied** — PR #5 merged 2026-07-17 14:02:36 +0300 by `Ezzaldeen-Albitar`; merge commit `e5fa5bf`; final source head `dae6681` proven an ancestor of `origin/develop` via `git merge-base --is-ancestor`                                   |
 
 ### Provenance of the condition-1 evidence (stated precisely)
 
 What closed condition 1, and what did not:
 
-- **The CI conclusions are owner-stated, not machine-verified from this environment.**
-  The repository administrator, Eng. Ezzaldeen Al-Bitar, states that all four mandatory
-  checks — `Lint, types, tests, build` · `Docker build validation` ·
+- **The CI conclusions are Owner-verified, not machine-verified from this environment.**
+  The repository owner, Eng. Ezzaldeen Al-Bitar, **inspected pull request #5's checks
+  directly in GitHub** and confirms that all four mandatory checks —
+  `Lint, types, tests, build` · `Docker build validation` ·
   `Database migrations and RLS tests` · `Secret and sensitive-file scan` — completed
-  successfully on PR #5's final Phase 1-2 source commit `dae6681`. The build environment
+  successfully on the final Phase 1-2 source commit `dae6681`. The build environment
   holds no GitHub credentials (no CLI, no token; an unauthenticated fetch of the private
-  pull request returns HTTP 404), so no check-run conclusion was read here. **The
-  authoritative run results live in GitHub Actions.** This mirrors the provenance
-  convention already used for PRs #1–#3 in [SECURITY.md](../../../SECURITY.md) §7.
+  pull request returns HTTP 404), so **no check-run conclusion was read here and no
+  claim is made that this environment queried GitHub.** The verification is the owner's;
+  the authoritative run results live in GitHub Actions.
 - **The merge did not close this condition.** A successful merge is not evidence of
   green CI: the required-check names in
   [github-required-checks.md](../phase-1-1/github-required-checks.md) may still be the
   stale ones (`quality`, `docker`, `secrets` — names GitHub never reports), so a merge
   could proceed without the four checks being enforced. Condition 1 rests on the owner's
-  statement above, and on nothing else.
+  direct inspection above, and on nothing else.
 - **Local runs are corroboration, not the evidence.** Every CI step was executed locally
   on the merged tree and passed (recorded in the
   [evidence register](./phase-1-2-evidence-register.md)). That is local evidence; the
@@ -137,20 +139,21 @@ What closed condition 1, and what did not:
 
 **On the authority for closing condition 1 this way — stated without dressing it up.**
 The Standing Technical Authorization Policy, as written on 2026-07-17, did **not**
-provide for closure on an owner statement. Its §2 said the record is completed against
-verified facts and "if the facts cannot be verified, the record stays pending", and its
-§9 said "CI green" is verified from the pull request's recorded check results. Those
-sentences assumed an access this environment does not have. The sentence naming the
-administrator-supplied path was **this gate document's own** (recorded at `31fb699`),
-not the policy's, and a self-authored sentence is not governance authority.
+provide for closure on evidence the build environment cannot read. Its §2 said the record
+is completed against verified facts and "if the facts cannot be verified, the record
+stays pending", and its §9 said "CI green" is verified from the pull request's recorded
+check results. Those sentences assumed an access this environment does not have. The
+sentence naming the administrator-supplied path was **this gate document's own**
+(recorded at `31fb699`), not the policy's, and a self-authored sentence is not governance
+authority.
 
 That gap has been closed the honest way rather than by reinterpretation: the policy now
 carries **§2.1 Evidence provenance**, added by owner instruction on 2026-07-17, which
-admits owner-stated conclusions, requires the **Proven** / **Owner-stated** labels used
-in the table above, and forbids closing a condition by citing a rule that does not
-exist. Condition 1 is closed under that amended clause, with its provenance on the face
-of the record. It is not a claim of independent verification, and it is not a claim that
-this environment observed the run.
+defines the **Proven** / **Owner-verified** / **Owner-stated** labels used in the table
+above, forbids any agent describing an owner-supplied fact as its own observation, and
+forbids closing a condition by citing a rule that does not exist. Condition 1 is closed
+under that amended clause, with its provenance on the face of the record. It is not a
+claim of independent review, and it is not a claim that this environment observed the run.
 
 ## Decision record
 
@@ -159,12 +162,18 @@ this environment observed the run.
 - **Decision:** **Go — Technical Gate Passed**
 - **Technical authority:** Eng. Ezzaldeen Al-Bitar (delegated technical and execution
   authority, [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md) §1)
-- **Decision evidence:** successful mandatory CI (owner-stated, see provenance above) and
-  the pull request merge into `develop`
-- **Merge date:** 2026-07-17 (PR #5 merged 14:02:36 +0300 by `Ezzaldeen-Albitar`)
-- **Merge commit:** `e5fa5bf9bcc43ba62a0b6c0c0fd558bf0a539db8`
+- **CI evidence:** all four mandatory pull request #5 checks were **visually verified as
+  successful by the repository owner** in GitHub, on the final Phase 1-2 source commit
+  `dae6681` (**Owner-verified**, 2026-07-17 — not read by the build environment; see the
+  provenance note above)
+- **Phase 1-2 merge commit:** `e5fa5bf9bcc43ba62a0b6c0c0fd558bf0a539db8`
+- **Merge date:** **2026-07-17 14:02:36 +0300**
+- **Merge target:** `develop`
+- **Review model:** owner-authorized technical self-review
+  ([Solo Developer Review Policy](../../governance/solo-developer-review-policy.md)) —
+  never independent review
 - **Final Phase 1-2 source commit:** `dae668196e002245f71d4dc3698f444996f6c74a`
-  (proven an ancestor of `origin/develop` and of `origin/main` via
+  (**Proven** an ancestor of `origin/develop` and of `origin/main` via
   `git merge-base --is-ancestor`)
 - **Environment template status:** `.env.example` restored, tracked, not ignored, and
   placeholder-only — **verified present in both `origin/develop` and `origin/main`**
