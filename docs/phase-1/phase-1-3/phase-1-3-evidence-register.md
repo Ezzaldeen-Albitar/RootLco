@@ -31,8 +31,8 @@ implementation**. Phase 1-2 gate record contained in `develop` via PR #11.
 Final state: **194 tests, 13 files, all passing** on a clean reset —
 Phase 1-2 regression fully preserved (foundation 14, rls 18, constraints 12,
 patterns 11, number-sequences 13) plus Phase 1-3: org-tenants 21,
-org-subscriptions 19, org-hierarchy 24, org-structure 17, org-settings 17,
-org-sequences 4, org-provisioning 13, org-security 10. Every isolation assertion
+org-subscriptions 19, org-hierarchy 26, org-structure 17, org-settings 17,
+org-sequences 4, org-provisioning 13, org-security 9. Every isolation assertion
 runs as the NON-OWNER runtime login; owner behaviour is never RLS evidence.
 
 ## 4. Defects found and fixed BY this phase's own controls (self-review with teeth)
