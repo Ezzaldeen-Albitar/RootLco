@@ -4,7 +4,7 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status:** Adopted by owner instruction (2026-07-17); merged with the Phase 1-2 pull request (#5), which passed its Database Standards Gate on 2026-07-17 ·
+**Status:** Adopted by owner instruction (2026-07-17); merges with the Phase 1-2 pull request — the Phase 1-2 exit gate is not decided ·
 **Owner:** Eng. Ezzaldeen Al-Bitar ·
 **Review:** [Solo Developer Review Policy](../governance/solo-developer-review-policy.md)
 
@@ -510,6 +510,6 @@ it before implementing against any row.
 
 - Requirement summaries are paraphrases; only the pinned upstream release is authoritative.
 - Every verification recorded here is owner-authorized self-review under the Solo Developer Review Policy; no independent verification exists (P1-EC-016 remains open).
-- “Verified” rows rest on the local test runs recorded in the Phase 1-2 evidence register. The Phase 1-2 pull request has since run and merged; its four mandatory checks are recorded as Owner-verified (inspected in GitHub by the owner), not read from the build environment.
+- “Verified” rows rest on the local test runs recorded in the Phase 1-2 evidence register; no GitHub Actions run exists for this branch yet.
 - Applicability and phase assignments reflect the 2026-07-17 understanding of the canonical Phase 1 plan and are re-judged at each phase gate; a future phase may lawfully re-classify a row, recording why.
 - This matrix makes no statement about Zoom Vehicle Inspection and Evaluation Services, which is outside Phase 1.

@@ -4,7 +4,7 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status:** Adopted by owner instruction (2026-07-17); merged with the Phase 1-2 pull request (#5), which passed its Database Standards Gate on 2026-07-17 ·
+**Status:** Adopted by owner instruction (2026-07-17); merges with the Phase 1-2 pull request — the Phase 1-2 exit gate is not decided ·
 **Owner:** Eng. Ezzaldeen Al-Bitar ·
 **Review:** [Solo Developer Review Policy](../governance/solo-developer-review-policy.md)
 
@@ -188,11 +188,8 @@ single exact phase number only when that phase's instruction is issued.
 
 - Every verification recorded in this package is **owner-authorized self-review**; no
   independent verification exists (P1-EC-016 remains open).
-- **CI evidence for the Phase 1-2 pull request is Owner-verified, not read here.** Pull
-  request #5 ran and merged on 2026-07-17; the owner inspected its four mandatory checks
-  in GitHub and confirms they passed on the final source commit `dae6681`. The build
-  environment holds no GitHub credentials and did not query GitHub. The authoritative
-  results live in GitHub Actions.
+- **No GitHub Actions run exists for the Phase 1-2 branch yet** — CI-enforced gates are
+  `Implemented — not verified` until the pull request's first run.
 - No penetration test, external audit, or compliance certification exists
   ([SECURITY.md §9](../../SECURITY.md)).
 - OWASP SAMM v2.0.3 is pinned as the future maturity model; **no SAMM assessment has
