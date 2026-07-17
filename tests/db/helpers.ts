@@ -201,6 +201,18 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [TENANT_A, TENANT_B, USER_A]
   );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1, $2, 'company_a1', 'Fixture Company A1', 'USD', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A1, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1, $2, $3, 'branch_a1', 'Fixture Branch A1', 'UTC', $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A1, TENANT_A, COMPANY_A1, USER_A]
+  );
 }
 
 /** Removes every fixture row/object the harness may have created. */
@@ -211,6 +223,15 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_B,
   ]);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
+  await admin.query('DELETE FROM org.branch_status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.branches WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM org.legal_companies WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM org.tenant_subscriptions WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

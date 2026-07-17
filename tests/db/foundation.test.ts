@@ -31,6 +31,9 @@ const ALLOWED_TABLES = new Set([
   'org.feature_flags',
   'org.subscription_plans',
   'org.tenant_subscriptions',
+  'org.legal_companies',
+  'org.branches',
+  'org.branch_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -71,6 +74,10 @@ const ALLOWED_ROUTINES = new Set([
   // register, and deterministic point-in-time subscription resolution.
   'org.validate_plan_documents',
   'org.current_subscription_plan_id',
+  // Phase 1-3 (P1-03-DB-005..007): live-parent guard for new branches and the
+  // atomic branch lifecycle transition (runtime-executable, RLS-scoped).
+  'org.guard_parent_company_live',
+  'org.change_branch_status',
 ]);
 
 let admin: Pool;
@@ -195,10 +202,15 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_branches_immutable',
+      'tg_branches_parent_company_live',
+      'tg_branches_touch_metadata',
       'tg_currencies_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_languages_touch_metadata',
+      'tg_legal_companies_immutable',
+      'tg_legal_companies_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
       'tg_subscription_plans_immutable',
@@ -219,15 +231,23 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
+      'ins_branch_status_history_tenant',
+      'ins_branches_scope',
+      'ins_legal_companies_tenant',
+      'sel_branch_status_history_tenant',
+      'sel_branches_scope',
       'sel_currencies_all',
       'sel_feature_flags_all',
       'sel_languages_all',
+      'sel_legal_companies_tenant',
       'sel_number_sequences_tenant',
       'sel_subscription_plans_published',
       'sel_tenant_status_history_tenant',
       'sel_tenant_subscriptions_tenant',
       'sel_tenants_self',
       'sel_timezones_all',
+      'upd_branches_scope',
+      'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
     ]);
   });
