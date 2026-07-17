@@ -134,3 +134,13 @@ The engineering workstream recommends submitting this branch through the pull-re
 gate and, subject to a green CI run on the actual pull request, recording the Phase 1-2
 Database Standards Gate decision. The recommendation confers no approval by itself —
 see [phase-1-2-owner-gate.md](./phase-1-2-owner-gate.md).
+
+> **Outcome (2026-07-17).** That is what happened. Pull request #5 merged into `develop`
+> (merge commit `e5fa5bf`; final source commit `dae6681`), the administrator stated that
+> all four mandatory checks passed on that commit, and the gate recorded
+> **Go — Technical Gate Passed** under the
+> [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md).
+> Section 5's statement that no work had reached `main` or `develop` describes this
+> report's assembly date and is now historical: the work is in both. The CI conclusions
+> are owner-stated, not observed from the build environment, and everything here remains
+> owner-authorized self-review.

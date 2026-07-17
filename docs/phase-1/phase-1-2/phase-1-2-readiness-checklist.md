@@ -55,7 +55,15 @@ recorded with reason) · **Blocked** · **Not executed (disclosed)**.
 
 Items that are **not** claimed:
 
-- No GitHub Actions run has executed on this branch yet — CI results are claimed only
-  for the locally-run equivalents; the PR run is the outstanding proof.
-- No independent review — everything above is owner-authorized self-review.
-- Phase 1-2 exit gate is **not decided**; Phase 1-3 remains blocked.
+- **No independent review** — everything above is owner-authorized self-review
+  (P1-EC-016 remains open).
+- **The CI result is owner-stated, not observed here.** At the time this checklist was
+  written no GitHub Actions run had executed on the branch, and the locally-run
+  equivalents were the only CI evidence. Pull request #5 has since run and merged, and
+  the repository administrator states all four mandatory checks passed on its final
+  source commit `dae6681`; the authoritative run results live in GitHub Actions and were
+  never read from the build environment (no CLI, no token).
+
+**Gate status (updated 2026-07-17):** the Phase 1-2 exit gate recorded
+**Go — Technical Gate Passed**; Phase 1-3 is authorized. See
+[phase-1-2-owner-gate.md](./phase-1-2-owner-gate.md).
