@@ -58,6 +58,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-4 scoped grants (P1-04-DB-008..009).
   'iam.role_grants',
   'iam.grant_scopes',
+  // Phase 1-4 approval limits and sensitive-data permissions (P1-04-DB-010..011).
+  'iam.approval_limits',
+  'iam.sensitive_data_permissions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -243,6 +246,8 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_approval_limits_immutable',
+      'tg_approval_limits_touch_metadata',
       'tg_branch_settings_immutable',
       'tg_branch_settings_validate_value',
       'tg_branch_status_history_stamp',
@@ -274,6 +279,8 @@ describe('database foundation', () => {
       'tg_role_permissions_touch_metadata',
       'tg_roles_immutable',
       'tg_roles_touch_metadata',
+      'tg_sensitive_data_permissions_immutable',
+      'tg_sensitive_data_permissions_touch_metadata',
       'tg_storage_locations_immutable',
       'tg_storage_locations_parent_warehouse_live',
       'tg_storage_locations_touch_metadata',
@@ -321,6 +328,7 @@ describe('database foundation', () => {
       'ins_tax_classes_scope',
       'ins_tax_rates_scope',
       'ins_warehouses_scope',
+      'sel_approval_limits_tenant',
       'sel_branch_settings_scope',
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
@@ -337,6 +345,7 @@ describe('database foundation', () => {
       'sel_role_grants_tenant',
       'sel_role_permissions_tenant',
       'sel_roles_tenant',
+      'sel_sensitive_data_permissions_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
       'sel_tax_classes_scope',

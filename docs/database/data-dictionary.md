@@ -735,3 +735,44 @@ credential authority. Contact fields are classified `restricted`.
 | `department_id` | uuid                     | YES  | —                 | internal       |
 | `created_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`    | uuid                     | NO   | —                 | internal       |
+
+### `iam.approval_limits`
+
+**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4); non-overlapping; identity/amount immutable.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `role_id`        | uuid                     | YES  | —                 | internal       |
+| `user_id`        | uuid                     | YES  | —                 | internal       |
+| `limit_type`     | text                     | NO   | —                 | internal       |
+| `amount`         | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`  | text                     | NO   | —                 | internal       |
+| `effective_from` | date                     | NO   | —                 | internal       |
+| `effective_to`   | date                     | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.sensitive_data_permissions`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Role permission to view/export/mask_override a classification; effective-dated, non-overlapping; identity immutable.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `role_id`         | uuid                     | NO   | —                 | internal       |
+| `classification`  | text                     | NO   | —                 | internal       |
+| `permission_kind` | text                     | NO   | —                 | internal       |
+| `effective_from`  | date                     | NO   | —                 | internal       |
+| `effective_to`    | date                     | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
