@@ -176,3 +176,14 @@ Zoom Vehicle Inspection and Evaluation Services is outside Phase 1 and is future
 | Security contact channel                                     | **Open item** — see Section 2                                                                                                   |
 
 This policy describes intended controls and current state. Where a control is not yet implemented, that is stated. This document confers no assurance, warranty, or certification of any kind.
+
+---
+
+## 12. Application-Security Baseline
+
+By owner instruction of 2026-07-17, the repository carries a formal application-security baseline under [docs/security/](docs/security/security-baseline.md), pinning **OWASP ASVS v5.0.0** (Level 2 as the general verification target; Level 3 selectively for high-risk workflows), **OWASP Top 10:2025**, **OWASP API Security Top 10:2023**, **NIST SSDF v1.1**, and **OWASP SAMM v2.0.3** (as a future maturity model — no assessment performed).
+
+- The [ASVS matrix](docs/security/owasp-asvs-5-matrix.md) enumerates all 345 requirements of the pinned edition with per-row status; a requirement is never marked Verified without named test evidence.
+- The verified Phase 1-2 database-security controls are recorded as RL-SEC-DB-001..014 in [security-baseline.md](docs/security/security-baseline.md) §9.
+- A [Security Gate](docs/security/security-baseline.md) binds every phase exit gate: no unresolved Critical findings; no unresolved High findings without a documented, owner-approved, time-bounded exception in the [exceptions register](docs/security/security-exceptions-register.md) (currently empty).
+- **This baseline is an adoption and tracking instrument. It is not — and must never be represented as — an OWASP compliance claim, certification, or attestation.** The non-claims in §9 above remain fully in force.

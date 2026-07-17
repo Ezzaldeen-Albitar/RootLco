@@ -45,6 +45,15 @@ The full package on branch `feature/p1-02-database-engineering-foundation`:
   untouched).
 - **Phase 1-1 closure** and the Solo Developer Review Policy, recorded and
   cross-referenced.
+- **The security-baseline package** (owner instruction, 2026-07-17): ten controlled
+  documents under `docs/security/`, pinning OWASP ASVS v5.0.0 (Level 2 target; selective
+  Level 3), OWASP Top 10:2025, OWASP API Security Top 10:2023, NIST SSDF v1.1, and OWASP
+  SAMM v2.0.3 (future) — including a **345-row ASVS requirement matrix built from the
+  pinned upstream tag** with honesty-validated statuses, the verified database controls
+  RL-SEC-DB-001..014 with named test evidence, and an empty security-exceptions
+  register. **No OWASP compliance is claimed.** The
+  [Security Gate](../../security/security-baseline.md) applies at this gate: zero known
+  unresolved Critical or High findings; zero exceptions.
 
 ## What the owners should weigh (stated plainly)
 

@@ -56,3 +56,22 @@ Companion governance artefacts of this phase: Phase 1-1 gate closure
 [solo-developer-review-policy.md](../../governance/solo-developer-review-policy.md),
 [initial-audit.md](./initial-audit.md), and the branch's logical commit series
 (`git log develop..feature/p1-02-database-engineering-foundation`).
+
+## Security-baseline upgrade (owner instruction, 2026-07-17)
+
+| Instruction item                                                                                                                     | Artifact                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Pin ASVS v5.0.0 · Top 10:2025 · API Top 10:2023 · NIST SSDF v1.1 · SAMM v2.0.3                                                       | [security-baseline.md](../../security/security-baseline.md) §2                                    |
+| ASVS Level 2 target + selective Level 3 for named high-risk workflows                                                                | [security-baseline.md](../../security/security-baseline.md) §3; recorded per row in the matrix    |
+| Full ASVS requirement matrix (required columns; six statuses; evidence-gated Verified)                                               | [owasp-asvs-5-matrix.md](../../security/owasp-asvs-5-matrix.md) — 345 rows from the pinned tag    |
+| OWASP Top 10:2025 matrix                                                                                                             | [owasp-top-10-2025-matrix.md](../../security/owasp-top-10-2025-matrix.md)                         |
+| OWASP API Security Top 10:2023 matrix                                                                                                | [owasp-api-top-10-2023-matrix.md](../../security/owasp-api-top-10-2023-matrix.md)                 |
+| Threat-modeling standard                                                                                                             | [threat-modeling-standard.md](../../security/threat-modeling-standard.md)                         |
+| Secure-coding standard                                                                                                               | [secure-coding-standard.md](../../security/secure-coding-standard.md)                             |
+| Security-testing standard                                                                                                            | [security-testing-standard.md](../../security/security-testing-standard.md)                       |
+| Vulnerability-management standard                                                                                                    | [vulnerability-management-standard.md](../../security/vulnerability-management-standard.md)       |
+| Dependency and supply-chain standard                                                                                                 | [dependency-and-supply-chain-standard.md](../../security/dependency-and-supply-chain-standard.md) |
+| Security exceptions register (starts empty; required fields defined)                                                                 | [security-exceptions-register.md](../../security/security-exceptions-register.md)                 |
+| Security Gate (no Critical; High needs owner-approved time-bounded exception; every applicable control mapped to requirement + test) | [security-baseline.md](../../security/security-baseline.md) §8                                    |
+| Database controls implemented and verified with test evidence                                                                        | [security-baseline.md](../../security/security-baseline.md) §9 (RL-SEC-DB-001..014)               |
+| No OWASP compliance claim                                                                                                            | [security-baseline.md](../../security/security-baseline.md) §4; every matrix restates it          |

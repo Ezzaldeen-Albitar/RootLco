@@ -74,6 +74,21 @@ Phase 1-1 formally closed (owners' **Go**, 2026-07-16, recorded at their directi
 the **Solo Developer Review Policy** recorded and cross-referenced (CONTRIBUTING,
 SECURITY, ADR-006, technical ownership, review-requirement decision record — Option B).
 
+### Security baseline (added by owner instruction, 2026-07-17)
+
+Ten controlled documents under `docs/security/` pin the application-security baseline:
+**OWASP ASVS v5.0.0 at Level 2** (Level 3 selectively for tenant administration,
+privileged access, financial operations, exports, audit evidence, integration
+credentials, backup/recovery), **OWASP Top 10:2025**, **OWASP API Security Top
+10:2023**, **NIST SSDF v1.1**, and **OWASP SAMM v2.0.3** as a future maturity model.
+The ASVS matrix enumerates **all 345 requirements fetched from the pinned upstream
+tag**, each judged with a six-status vocabulary in which `Verified` is impossible
+without named test evidence (enforced by the generator). The Phase 1-2 database
+controls are recorded as **RL-SEC-DB-001..014** with their test evidence; the
+[Security Gate](../../security/security-baseline.md) (no unresolved Critical; High only
+with an owner-approved time-bounded exception) binds this and every later phase gate.
+**No OWASP compliance or certification is claimed.**
+
 ## 3. Defects the phase's own review caught (and fixed before merge)
 
 | Defect                                                                      | Impact if shipped                                               | Fix                                                                                                  |
