@@ -1,0 +1,23 @@
+# =============================================================================
+# RootLco — line-ending policy.
+#
+# Every text file is stored AND checked out with LF, on every platform.
+#
+# Why this exists: Prettier enforces LF (endOfLine: lf). On a Windows clone
+# with core.autocrlf=true, a plain `git pull` checked the whole tree out with
+# CRLF and `npm run format:check` failed on every file — see the Phase 1-2
+# evidence register. eol=lf here makes checkouts deterministic regardless of
+# any developer's local autocrlf setting; text=auto leaves true binaries alone.
+# =============================================================================
+* text=auto eol=lf
+
+# Explicit binaries (belt and braces; git's auto-detection also catches these).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary
+*.docx binary

@@ -1,7 +1,8 @@
 # Phase 1-1 Owner Gate
 
 **Phase:** 1-1 — Source-of-Truth Validation and Development Readiness ·
-**Gate package assembled:** 2026-07-16 · **Task:** P1-01-DOC-016
+**Gate package assembled:** 2026-07-16 · **Task:** P1-01-DOC-016 ·
+**Gate status:** **CLOSED — Go recorded 2026-07-16** (see the decision record below)
 
 ## Purpose and rules
 
@@ -81,19 +82,45 @@ only; it is not a decision and confers no authority.
 
 ---
 
-## Decision record — to be completed by the owners only
+## Decision record — completed by the owners
+
+> Recording note: the decisions below were made by the RootLco owners and communicated in
+> the owners' Phase 1-2 authorization instruction of 2026-07-16. They are recorded here at
+> the owners' direction. No handwritten or cryptographic signature exists or is claimed;
+> per the owners' instruction, a recorded owner decision in the controlled Markdown and
+> canonical documents is sufficient for the current workflow.
 
 **Eng. Ezzaldeen Al-Bitar** — Technical and IT Owner; Product Owner
 
-- Decision: ☐ Go ☐ Conditional Go ☐ No-Go ☐ Return for Evidence
-- Conditions (if any): ____________________________________________
-- Signature: ______________________________ Date: ________________
+- Decision: ☑ **Go** ☐ Conditional Go ☐ No-Go ☐ Return for Evidence
+- Conditions (if any): none — C1/C2 are resolved by the Owner-Approved Combined-Role Model
+  and the [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md);
+  C3 (Eng. Bilal Jradat's GitHub username) remains an open item but no longer blocks merges
+- Signature: none (recorded decision — see recording note) · Date: 2026-07-16
 
 **Eng. Bilal Jradat** — Product Owner
 
-- Decision: ☐ Go ☐ Conditional Go ☐ No-Go ☐ Return for Evidence
-- Conditions (if any): ____________________________________________
-- Signature: ______________________________ Date: ________________
+- Decision: ☑ **Go** ☐ Conditional Go ☐ No-Go ☐ Return for Evidence
+- Conditions (if any): none (as above)
+- Signature: none (recorded decision — see recording note) · Date: 2026-07-16
+
+## Closure record (2026-07-16)
+
+- **Phase 1-1 is approved and closed.**
+- **Phase 1-2 is authorized to begin** (Database Architecture and Engineering Standards).
+- **Phase 1-3 remains blocked** until the Phase 1-2 exit gate (Database Standards Gate)
+  passes.
+- The Phase 1-1 pull request (#1) was reviewed by the technical owner and **merged into
+  `develop`** (merge commit `01bda69`); the follow-on CI secret-scan fix merged as PR #3
+  (`46c6de2`) and `develop` was promoted to `main` by the owner as PR #2 (`7617121`).
+- **CI passed before merge** (owner-stated; the merges are observable in the git history,
+  the CI run results live in GitHub Actions).
+- Branch rules require **Pull Requests and successful CI checks**; the required
+  approving-review count is **0** under the owner-approved
+  [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md), with
+  conversation resolution required and force pushes and branch deletion blocked.
+- **No business-domain database work was performed in Phase 1-1** — at closure,
+  `supabase/migrations/` is empty and `supabase/seed.sql` contains no rows.
 
 ## Owner-Approved Combined-Role Model
 
@@ -118,4 +145,24 @@ must not be represented as an independent external review.
 Independent QA or security review may be introduced later before
 production release or when the team expands.
 
-_Phase 1-2 remains blocked until both decisions above are recorded as Go or Conditional Go._
+_Both owner decisions above are recorded as **Go** (2026-07-16). Phase 1-2 is authorized.
+Phase 1-3 remains blocked until the Phase 1-2 gate records a Go.
+The review model governing Phase 1-2 work is the
+[Solo Developer Review Policy](../../governance/solo-developer-review-policy.md)._
+
+---
+
+## Governance note (2026-07-17)
+
+This record is historical and stands as written: Phase 1-1 was decided by both founders
+with a manual dual-owner record. **From 2026-07-17 onward, routine technical phase
+gates no longer use this dual manual format.** Under the
+[Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md),
+a routine technical gate is recorded automatically as **Go — Technical Gate Passed**
+when CI is green, no unresolved Critical/High findings exist (without an approved
+exception), the documented technical self-review is complete, and Eng. Ezzaldeen
+Al-Bitar merges the pull request into `develop` — the merge is the recorded approval
+event. Decisions reserved to the founders jointly (major commercial scope, material
+financial commitments, pricing/contracts, production go-live, real customer-data
+migration, Critical/High risk acceptance, major architecture changes with material
+business impact) are unchanged and still require explicit approval.

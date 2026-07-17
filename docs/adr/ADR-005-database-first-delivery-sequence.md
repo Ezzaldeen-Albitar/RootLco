@@ -143,6 +143,14 @@ Repository sensitivity and access control are classified under P1-01-SEC-004; th
 
 **Gate condition.** Phase 1-2 cannot begin until Phase 1-1's 22 entry criteria are satisfied (P1-01-DOC-012) and verified (P1-01-QA-009). Phase 1-1 is not passed. Nothing in this record advances that state.
 
+> **Status update (2026-07-17).** Phase 1-1 subsequently closed with a recorded owner
+> Go (2026-07-16). From 2026-07-17, the stage gates of this sequence are decided for
+> routine technical phases under the
+> [Standing Technical Authorization Policy](../governance/standing-technical-authorization-policy.md):
+> green mandatory CI plus the pull-request merge into `develop` by the delegated
+> technical authority constitutes the gate decision (**Go — Technical Gate Passed**),
+> with escalation to the founders only for the reserved decisions listed there.
+
 ## Related Phase 1 Task and Requirement IDs
 
 | ID                 | Relationship to this decision                                                                 |
