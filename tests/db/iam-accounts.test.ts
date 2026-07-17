@@ -197,11 +197,10 @@ describe('iam.user_profiles — one per user, tenant-scoped', () => {
   it('rejects a second profile for the same user', async () => {
     await withRolledBackTx(admin, { userId: ACTOR }, (c) =>
       expectSqlState(
-        c.query(`INSERT INTO iam.user_profiles (user_id, tenant_id, created_by) VALUES ($1,$2,$3)`, [
-          ACC_A1,
-          TENANT_A,
-          ACTOR,
-        ]),
+        c.query(
+          `INSERT INTO iam.user_profiles (user_id, tenant_id, created_by) VALUES ($1,$2,$3)`,
+          [ACC_A1, TENANT_A, ACTOR]
+        ),
         '23505'
       )
     );
@@ -210,11 +209,10 @@ describe('iam.user_profiles — one per user, tenant-scoped', () => {
   it('rejects a profile whose tenant does not match the account (cross-tenant FK)', async () => {
     await withRolledBackTx(admin, { userId: ACTOR }, (c) =>
       expectSqlState(
-        c.query(`INSERT INTO iam.user_profiles (user_id, tenant_id, created_by) VALUES ($1,$2,$3)`, [
-          ACC_A2,
-          TENANT_B,
-          ACTOR,
-        ]),
+        c.query(
+          `INSERT INTO iam.user_profiles (user_id, tenant_id, created_by) VALUES ($1,$2,$3)`,
+          [ACC_A2, TENANT_B, ACTOR]
+        ),
         '23503'
       )
     );
@@ -252,7 +250,11 @@ describe('iam.change_user_status — atomic, attributed, append-only', () => {
          WHERE user_id = $1 ORDER BY occurred_at DESC LIMIT 1`,
         [ACC_A1]
       );
-      expect(hist.rows[0]).toMatchObject({ from_state: 'invited', to_state: 'active', actor_id: ACTOR });
+      expect(hist.rows[0]).toMatchObject({
+        from_state: 'invited',
+        to_state: 'active',
+        actor_id: ACTOR,
+      });
     });
   });
 
