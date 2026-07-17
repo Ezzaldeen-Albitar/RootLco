@@ -4,7 +4,7 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status:** Adopted by owner instruction (2026-07-17); merges with the Phase 1-2 pull request — the Phase 1-2 exit gate is not decided ·
+**Status:** Adopted by owner instruction (2026-07-17); merged with the Phase 1-2 pull request (#5), which passed its Database Standards Gate on 2026-07-17 ·
 **Owner:** Eng. Ezzaldeen Al-Bitar ·
 **Review:** [Solo Developer Review Policy](../governance/solo-developer-review-policy.md)
 
@@ -59,4 +59,4 @@ compliance claim**. Focus texts are paraphrases.
 - No API exists; nothing in this matrix is verified at the API layer, and no row may be
   upgraded without API-level test evidence.
 - All cited evidence is database-layer, owner-authorized self-review; no independent
-  verification exists; no GitHub Actions run exists for this branch yet.
+  verification exists. CI evidence for the Phase 1-2 pull request is Owner-verified (the owner inspected the checks in GitHub); it was not read from the build environment.

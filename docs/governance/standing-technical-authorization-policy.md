@@ -54,6 +54,48 @@ The gate record is completed against **verified facts** (the merge commit reacha
 from `develop`; the required checks green on the pull request) — never against
 intention. If the facts cannot be verified, the record stays pending.
 
+### 2.1 Evidence provenance (added 2026-07-17 by owner instruction)
+
+This section was added after the Phase 1-2 gate exposed a gap: as first written, the
+policy assumed the check results would always be readable from the pull request
+(§9), and said nothing about what to do when they are not. They were not, and the
+gate would otherwise have been stuck indefinitely on a technicality.
+
+Each of the five conditions is recorded with **the provenance of its evidence**, using
+exactly one of these labels:
+
+| Label              | Meaning                                                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Proven**         | Established by a command run in the build environment (for example `git merge-base --is-ancestor`).                                                 |
+| **Owner-verified** | Checked directly by the repository administrator at the authoritative source (for example the pull request's checks in GitHub) and reported here.   |
+| **Owner-stated**   | Reported by the repository administrator without a statement that the source was inspected. Weaker than Owner-verified; the source is named anyway. |
+
+All three are admissible evidence for a routine technical gate. **They are not
+equivalent, and a record must never present one as another.** An owner-verified fact
+carries the administrator's authority and their direct inspection of the source; it does
+**not** carry the build environment's verification, because the build environment did not
+observe it. The record must say so in place — as must every downstream document that
+repeats it.
+
+Rules:
+
+- Where authenticated access exists, the check conclusions are **read** from the pull
+  request and recorded as Proven. Reading them is always preferred to being told them.
+- Where it does not, the repository administrator may inspect the pull request's checks
+  directly and supply the conclusions, recorded as **Owner-verified** with the date, the
+  commit they apply to, and how they were checked.
+- **No agent or automated process may describe an owner-supplied fact as its own
+  observation.** A record must never imply that this environment queried GitHub when the
+  administrator did.
+- **A merge is never evidence of CI.** Required-check enforcement can be absent,
+  misconfigured (see [github-required-checks.md](../phase-1/phase-1-1/github-required-checks.md)),
+  or bypassed by an administrator, so a merge proves only that a merge happened.
+- No condition may be closed by inference, by assumption, or by citing a rule that does
+  not exist. **A cited authority must be quoted from a document that actually contains
+  it.** If a needed rule is absent, the honest act is to amend this policy openly and
+  say when and why — not to attribute the rule to it retroactively. This clause exists
+  because that error was made and caught during the Phase 1-2 closeout.
+
 ## 3. What is NOT required for a routine technical gate
 
 - A repeated checkbox decision.
@@ -153,8 +195,11 @@ every gate; the phase evidence register documents the self-review (condition 4).
 - The automatic gate record documents that the defined conditions were met; it is not a
   claim of external scrutiny.
 - The live GitHub ruleset is administered in the GitHub UI; the build environment holds
-  no GitHub credentials, so "CI green" is verified from the pull request's recorded
-  check results and "merged" from the git graph (`develop` containing the branch head).
+  no GitHub credentials. "Merged" is therefore proven from the git graph (`develop`
+  containing the branch head), while "CI green" is taken from the pull request's
+  recorded check results — read directly where authenticated access exists, or inspected
+  in GitHub by the repository administrator and labelled **Owner-verified** where it does
+  not (§2.1). The authoritative run results always live in GitHub Actions.
 
 ## 10. Revocation and review
 
