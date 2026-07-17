@@ -25,9 +25,12 @@ const ALLOWED_TABLES = new Set([
   'shared.currencies',
   'shared.timezones',
   'shared.languages',
-  // Phase 1-3 organizational backbone (P1-03-DB-001..002).
+  // Phase 1-3 organizational backbone (P1-03-DB-001..004, P1-03-DB-015).
   'org.tenants',
   'org.tenant_status_history',
+  'org.feature_flags',
+  'org.subscription_plans',
+  'org.tenant_subscriptions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -64,6 +67,10 @@ const ALLOWED_ROUTINES = new Set([
   // atomic tenant lifecycle transition (status UPDATE + history INSERT, one tx).
   'org.guard_immutable_columns',
   'org.change_tenant_status',
+  // Phase 1-3 (P1-03-DB-003/004): plan-document validation against the feature
+  // register, and deterministic point-in-time subscription resolution.
+  'org.validate_plan_documents',
+  'org.current_subscription_plan_id',
 ]);
 
 let admin: Pool;
@@ -189,9 +196,16 @@ describe('database foundation', () => {
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
       'tg_currencies_touch_metadata',
+      'tg_feature_flags_immutable',
+      'tg_feature_flags_touch_metadata',
       'tg_languages_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_subscription_plans_immutable',
+      'tg_subscription_plans_touch_metadata',
+      'tg_subscription_plans_validate_documents',
+      'tg_tenant_subscriptions_immutable',
+      'tg_tenant_subscriptions_touch_metadata',
       'tg_tenants_immutable_columns',
       'tg_tenants_touch_metadata',
       'tg_timezones_touch_metadata',
@@ -206,9 +220,12 @@ describe('database foundation', () => {
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
       'sel_currencies_all',
+      'sel_feature_flags_all',
       'sel_languages_all',
       'sel_number_sequences_tenant',
+      'sel_subscription_plans_published',
       'sel_tenant_status_history_tenant',
+      'sel_tenant_subscriptions_tenant',
       'sel_tenants_self',
       'sel_timezones_all',
       'upd_number_sequences_tenant',

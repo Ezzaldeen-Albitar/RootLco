@@ -211,11 +211,18 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_B,
   ]);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
+  await admin.query('DELETE FROM org.tenant_subscriptions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM org.tenant_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,
   ]);
   await admin.query('DELETE FROM org.tenants WHERE id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  // Test-created platform fixtures use the fx_ prefix by convention.
+  await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM org.feature_flags WHERE flag_code LIKE 'fx\\_%'`);
 }
 
 /** Error-code convenience: `42501` insufficient_privilege, etc. */
