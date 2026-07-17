@@ -25,6 +25,9 @@ const ALLOWED_TABLES = new Set([
   'shared.currencies',
   'shared.timezones',
   'shared.languages',
+  // Phase 1-3 organizational backbone (P1-03-DB-001..002).
+  'org.tenants',
+  'org.tenant_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -57,6 +60,10 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-3 (P1-03-DB-013): validates shared.timezones.zone_name against the
   // IANA database PostgreSQL already ships, keeping that the single source of truth.
   'shared.validate_timezone_name',
+  // Phase 1-3 (P1-03-DB-001/002): reusable immutable-column guard and the
+  // atomic tenant lifecycle transition (status UPDATE + history INSERT, one tx).
+  'org.guard_immutable_columns',
+  'org.change_tenant_status',
 ]);
 
 let admin: Pool;
@@ -185,6 +192,8 @@ describe('database foundation', () => {
       'tg_languages_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_tenants_immutable_columns',
+      'tg_tenants_touch_metadata',
       'tg_timezones_touch_metadata',
       'tg_timezones_validate_zone_name',
     ]);
@@ -199,6 +208,8 @@ describe('database foundation', () => {
       'sel_currencies_all',
       'sel_languages_all',
       'sel_number_sequences_tenant',
+      'sel_tenant_status_history_tenant',
+      'sel_tenants_self',
       'sel_timezones_all',
       'upd_number_sequences_tenant',
     ]);
