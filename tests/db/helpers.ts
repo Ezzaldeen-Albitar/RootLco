@@ -224,6 +224,12 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   ]);
   // Phase 1-4 iam fixtures: children first, then accounts (all reference
   // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
+  // role_grants first: deleting it cascades grant_scopes (which reference org
+  // companies/branches/departments) and precedes the user/role/org deletes.
+  await admin.query('DELETE FROM iam.role_grants WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

@@ -55,6 +55,9 @@ const ALLOWED_TABLES = new Set([
   'iam.permissions',
   'iam.roles',
   'iam.role_permissions',
+  // Phase 1-4 scoped grants (P1-04-DB-008..009).
+  'iam.role_grants',
+  'iam.grant_scopes',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -114,6 +117,8 @@ const ALLOWED_ROUTINES = new Set([
   // server-stamp trigger that forbids forged user-history attribution.
   'iam.change_user_status',
   'iam.stamp_user_status_history',
+  // Phase 1-4 (P1-04-DB-009): deferred scoped-grant integrity.
+  'iam.enforce_scoped_grant_has_scope',
 ]);
 
 let admin: Pool;
@@ -254,6 +259,7 @@ describe('database foundation', () => {
       'tg_departments_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
+      'tg_grant_scopes_require_scope',
       'tg_languages_touch_metadata',
       'tg_legal_companies_immutable',
       'tg_legal_companies_touch_metadata',
@@ -261,6 +267,9 @@ describe('database foundation', () => {
       'tg_number_sequences_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
+      'tg_role_grants_immutable',
+      'tg_role_grants_require_scope',
+      'tg_role_grants_touch_metadata',
       'tg_role_permissions_immutable',
       'tg_role_permissions_touch_metadata',
       'tg_roles_immutable',
@@ -320,10 +329,12 @@ describe('database foundation', () => {
       'sel_currencies_all',
       'sel_departments_scope',
       'sel_feature_flags_all',
+      'sel_grant_scopes_tenant',
       'sel_languages_all',
       'sel_legal_companies_tenant',
       'sel_number_sequences_tenant',
       'sel_permissions_all',
+      'sel_role_grants_tenant',
       'sel_role_permissions_tenant',
       'sel_roles_tenant',
       'sel_storage_locations_scope',

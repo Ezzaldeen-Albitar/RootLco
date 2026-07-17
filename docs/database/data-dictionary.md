@@ -695,3 +695,43 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.role_grants`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `user_id`        | uuid                     | NO   | —                 | internal       |
+| `role_id`        | uuid                     | NO   | —                 | internal       |
+| `scope_mode`     | text                     | NO   | 'unrestricted'    | internal       |
+| `status`         | text                     | NO   | 'active'::text    | internal       |
+| `valid_from`     | timestamp with time zone | NO   | now()             | internal       |
+| `valid_to`       | timestamp with time zone | YES  | —                 | internal       |
+| `granted_by`     | uuid                     | NO   | —                 | internal       |
+| `approval_ref`   | text                     | YES  | —                 | internal       |
+| `revoked_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `revoke_reason`  | text                     | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.grant_scopes`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only.
+
+| Column          | Type                     | Null | Default           | Classification |
+| --------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`            | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`     | uuid                     | NO   | —                 | internal       |
+| `grant_id`      | uuid                     | NO   | —                 | internal       |
+| `scope_type`    | text                     | NO   | —                 | internal       |
+| `company_id`    | uuid                     | YES  | —                 | internal       |
+| `branch_id`     | uuid                     | YES  | —                 | internal       |
+| `department_id` | uuid                     | YES  | —                 | internal       |
+| `created_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`    | uuid                     | NO   | —                 | internal       |
