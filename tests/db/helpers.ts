@@ -222,6 +222,24 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Phase 1-4 iam fixtures: children first, then accounts (all reference
+  // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
+  await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_employee_links WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_profiles WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_accounts WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
   await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
     TENANT_A,

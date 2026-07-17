@@ -563,3 +563,82 @@ NOT claimed implemented here.
 | `created_at`          | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`          | uuid                     | NO   | —                 | internal       |
 | `expires_at`          | timestamp with time zone | YES  | —                 | internal       |
+
+## Phase 1-4 — identity, authorization, security, and audit (generated from the live catalog, 2026-07-18)
+
+Credentials are never stored in these tables; the identity provider is the
+credential authority. Contact fields are classified `restricted`.
+
+### `iam.user_accounts`
+
+**Scope:** tenant · **Retention class:** operational · One account per principal; external identity by reference only; lifecycle via `iam.change_user_status()`.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `identity_provider` | text                     | NO   | —                 | internal       |
+| `provider_subject`  | text                     | NO   | —                 | restricted     |
+| `email`             | citext                   | NO   | —                 | restricted     |
+| `display_name`      | text                     | NO   | —                 | internal       |
+| `status`            | text                     | NO   | 'invited'::text   | internal       |
+| `mfa_required`      | boolean                  | NO   | false             | internal       |
+| `deleted_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+### `iam.user_profiles`
+
+**Scope:** tenant · **Retention class:** personal-data · One profile per account (PK = `user_id`); contact fields restricted.
+
+| Column           | Type                     | Null | Default | Classification |
+| ---------------- | ------------------------ | ---- | ------- | -------------- |
+| `user_id`        | uuid                     | NO   | —       | internal       |
+| `tenant_id`      | uuid                     | NO   | —       | internal       |
+| `full_name`      | text                     | YES  | —       | restricted     |
+| `phone_contact`  | text                     | YES  | —       | restricted     |
+| `locale_code`    | text                     | YES  | —       | internal       |
+| `timezone_name`  | text                     | YES  | —       | internal       |
+| `avatar_ref`     | text                     | YES  | —       | internal       |
+| `record_version` | integer                  | NO   | 1       | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()   | internal       |
+| `created_by`     | uuid                     | NO   | —       | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —       | internal       |
+| `updated_by`     | uuid                     | YES  | —       | internal       |
+
+### `iam.user_employee_links`
+
+**Scope:** tenant · **Retention class:** operational · Effective-dated employee-reference placeholder (no Phase 1-9 FK); intervals per user cannot overlap.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `user_id`        | uuid                     | NO   | —                 | internal       |
+| `employee_ref`   | text                     | NO   | —                 | internal       |
+| `valid_from`     | date                     | NO   | —                 | internal       |
+| `valid_to`       | date                     | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.user_status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only lifecycle evidence; `actor_id`/`occurred_at` server-stamped; reason mandatory.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `user_id`        | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |

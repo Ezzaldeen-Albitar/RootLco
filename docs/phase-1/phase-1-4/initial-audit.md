@@ -27,18 +27,18 @@ Standing Technical Authorization Policy §2.1.
 
 ## 2. Reusable objects (do NOT duplicate)
 
-| Object | Source | Phase 1-4 use |
-| --- | --- | --- |
-| Schemas `org iam shared crm veh` | 0002 | extend `iam` and `shared`; never touch `crm`/`veh` |
-| Roles `app_runtime`, `app_readonly` (NOLOGIN, NOBYPASSRLS) | 0002 | grant new objects per-object only |
-| `iam.current_tenant_id()`, `iam.current_user_id()` | 0002 | **reuse verbatim** in every policy and helper |
-| `iam.allowed_company_ids()`, `iam.allowed_branch_ids()` | 0002 | keep; add `current_company_ids()`/`current_branch_ids()` as forward-compatible wrappers (§19.B) |
-| `shared.touch_row_metadata()` | 0002 | reuse as the BEFORE UPDATE metadata trigger |
-| `org.guard_immutable_columns()` (TG_ARGV) | 20260717101000 | reuse for immutable identity/grant columns |
-| append-only history + server-stamp trigger pattern | 20260717101000/103000 | reuse for `iam.user_status_history` and audit |
-| `shared.idempotency_keys` (RLS forced, no policies/grants) | 20260717107000 | **reuse** (§19.A) — do not create a second idempotency table |
-| Test harness (`rootlco_test_runtime` non-owner login, `setContext`, `withRolledBackTx`, `expectSqlState`) | tests/db/helpers.ts | all isolation assertions run as the non-owner runtime login |
-| Exact allow-list guards (tables/routines/triggers/policies) | tests/db/foundation.test.ts | extend all four lists every increment |
+| Object                                                                                                    | Source                      | Phase 1-4 use                                                                                   |
+| --------------------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------- |
+| Schemas `org iam shared crm veh`                                                                          | 0002                        | extend `iam` and `shared`; never touch `crm`/`veh`                                              |
+| Roles `app_runtime`, `app_readonly` (NOLOGIN, NOBYPASSRLS)                                                | 0002                        | grant new objects per-object only                                                               |
+| `iam.current_tenant_id()`, `iam.current_user_id()`                                                        | 0002                        | **reuse verbatim** in every policy and helper                                                   |
+| `iam.allowed_company_ids()`, `iam.allowed_branch_ids()`                                                   | 0002                        | keep; add `current_company_ids()`/`current_branch_ids()` as forward-compatible wrappers (§19.B) |
+| `shared.touch_row_metadata()`                                                                             | 0002                        | reuse as the BEFORE UPDATE metadata trigger                                                     |
+| `org.guard_immutable_columns()` (TG_ARGV)                                                                 | 20260717101000              | reuse for immutable identity/grant columns                                                      |
+| append-only history + server-stamp trigger pattern                                                        | 20260717101000/103000       | reuse for `iam.user_status_history` and audit                                                   |
+| `shared.idempotency_keys` (RLS forced, no policies/grants)                                                | 20260717107000              | **reuse** (§19.A) — do not create a second idempotency table                                    |
+| Test harness (`rootlco_test_runtime` non-owner login, `setContext`, `withRolledBackTx`, `expectSqlState`) | tests/db/helpers.ts         | all isolation assertions run as the non-owner runtime login                                     |
+| Exact allow-list guards (tables/routines/triggers/policies)                                               | tests/db/foundation.test.ts | extend all four lists every increment                                                           |
 
 ## 3. Migration numbering (Proven)
 
@@ -96,19 +96,19 @@ logic. No Zoom object.
 
 ## 6. Expected task → evidence map (targets; marked Complete only on real evidence)
 
-| Task group | Increment | Evidence target |
-| --- | --- | --- |
-| P1-04-DB-001..004 | A | `iam.user_accounts/user_profiles/user_employee_links/user_status_history` + tests |
-| P1-04-DB-005..007 | B | `iam.roles/permissions/role_permissions` + deny-precedence tests |
-| P1-04-DB-008..009 | C | `iam.role_grants/grant_scopes` + deferred-scope + cross-tenant tests |
-| P1-04-DB-010..011 | D | `iam.approval_limits/sensitive_data_permissions` + overlap/point-in-time tests |
-| P1-04-DB-012..013 | E | `iam.login_audit/user_sessions` (hashes only) + ownership tests |
-| P1-04-DB-014..017, 022 | F | audit tables + `iam.audit_append`/hash/verify + chain/concurrency/tamper tests |
-| P1-04-DB-018..019 | G | `shared.status_history/status_evidence` + idempotency reuse |
-| P1-04-DB-020..021 | H | `iam.has_permission`/`has_permission_in_scope` + context helpers + spoof tests |
-| P1-04-DB-023..024, SEC-001..003 | I | indexes, permission-gated RLS, runtime grants, escalation-denial tests |
-| P1-04-DB-025 | J | permission catalog + baseline-role seeds (idempotent, no real users) |
-| P1-04-SEC/QA/DO/DOC | K/L | security notes, QA suites, CI, docs, traceability, adversarial review, clean-room |
+| Task group                      | Increment | Evidence target                                                                   |
+| ------------------------------- | --------- | --------------------------------------------------------------------------------- |
+| P1-04-DB-001..004               | A         | `iam.user_accounts/user_profiles/user_employee_links/user_status_history` + tests |
+| P1-04-DB-005..007               | B         | `iam.roles/permissions/role_permissions` + deny-precedence tests                  |
+| P1-04-DB-008..009               | C         | `iam.role_grants/grant_scopes` + deferred-scope + cross-tenant tests              |
+| P1-04-DB-010..011               | D         | `iam.approval_limits/sensitive_data_permissions` + overlap/point-in-time tests    |
+| P1-04-DB-012..013               | E         | `iam.login_audit/user_sessions` (hashes only) + ownership tests                   |
+| P1-04-DB-014..017, 022          | F         | audit tables + `iam.audit_append`/hash/verify + chain/concurrency/tamper tests    |
+| P1-04-DB-018..019               | G         | `shared.status_history/status_evidence` + idempotency reuse                       |
+| P1-04-DB-020..021               | H         | `iam.has_permission`/`has_permission_in_scope` + context helpers + spoof tests    |
+| P1-04-DB-023..024, SEC-001..003 | I         | indexes, permission-gated RLS, runtime grants, escalation-denial tests            |
+| P1-04-DB-025                    | J         | permission catalog + baseline-role seeds (idempotent, no real users)              |
+| P1-04-SEC/QA/DO/DOC             | K/L       | security notes, QA suites, CI, docs, traceability, adversarial review, clean-room |
 
 ## 7. Open items carried
 

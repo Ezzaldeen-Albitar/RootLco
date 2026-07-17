@@ -46,6 +46,11 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-3 (P1-03-DB-022): the Phase 1-2 idempotency pattern, promoted to a
   // permanent platform table (no application-role access at all).
   'shared.idempotency_keys',
+  // Phase 1-4 identity foundation (P1-04-DB-001..004). Registered explicitly.
+  'iam.user_accounts',
+  'iam.user_profiles',
+  'iam.user_employee_links',
+  'iam.user_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -101,6 +106,10 @@ const ALLOWED_ROUTINES = new Set([
   'org.resolve_feature_enabled',
   // Phase 1-3 (P1-03-DB-022): atomic organization provisioning (platform-only).
   'org.provision_organization',
+  // Phase 1-4 (P1-04-DB-004): atomic account lifecycle transition and the
+  // server-stamp trigger that forbids forged user-history attribution.
+  'iam.change_user_status',
+  'iam.stamp_user_status_history',
 ]);
 
 let admin: Pool;
@@ -263,6 +272,13 @@ describe('database foundation', () => {
       'tg_tenants_touch_metadata',
       'tg_timezones_touch_metadata',
       'tg_timezones_validate_zone_name',
+      'tg_user_accounts_immutable',
+      'tg_user_accounts_touch_metadata',
+      'tg_user_employee_links_immutable',
+      'tg_user_employee_links_touch_metadata',
+      'tg_user_profiles_immutable',
+      'tg_user_profiles_touch_metadata',
+      'tg_user_status_history_stamp',
       'tg_warehouses_immutable',
       'tg_warehouses_parent_branch_live',
       'tg_warehouses_touch_metadata',
@@ -306,6 +322,10 @@ describe('database foundation', () => {
       'sel_tenant_subscriptions_tenant',
       'sel_tenants_self',
       'sel_timezones_all',
+      'sel_user_accounts_tenant',
+      'sel_user_employee_links_tenant',
+      'sel_user_profiles_tenant',
+      'sel_user_status_history_tenant',
       'sel_warehouses_scope',
       'upd_branches_scope',
       'upd_cost_centers_scope',
