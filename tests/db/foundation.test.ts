@@ -34,6 +34,10 @@ const ALLOWED_TABLES = new Set([
   'org.legal_companies',
   'org.branches',
   'org.branch_status_history',
+  'org.departments',
+  'org.warehouses',
+  'org.storage_locations',
+  'org.cost_centers',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -78,6 +82,9 @@ const ALLOWED_ROUTINES = new Set([
   // atomic branch lifecycle transition (runtime-executable, RLS-scoped).
   'org.guard_parent_company_live',
   'org.change_branch_status',
+  // Phase 1-3 (P1-03-DB-008..010): dead parents reject new children.
+  'org.guard_parent_branch_live',
+  'org.guard_parent_warehouse_live',
 ]);
 
 let admin: Pool;
@@ -205,7 +212,12 @@ describe('database foundation', () => {
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',
+      'tg_cost_centers_immutable',
+      'tg_cost_centers_touch_metadata',
       'tg_currencies_touch_metadata',
+      'tg_departments_immutable',
+      'tg_departments_parent_branch_live',
+      'tg_departments_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_languages_touch_metadata',
@@ -213,6 +225,9 @@ describe('database foundation', () => {
       'tg_legal_companies_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_storage_locations_immutable',
+      'tg_storage_locations_parent_warehouse_live',
+      'tg_storage_locations_touch_metadata',
       'tg_subscription_plans_immutable',
       'tg_subscription_plans_touch_metadata',
       'tg_subscription_plans_validate_documents',
@@ -222,6 +237,9 @@ describe('database foundation', () => {
       'tg_tenants_touch_metadata',
       'tg_timezones_touch_metadata',
       'tg_timezones_validate_zone_name',
+      'tg_warehouses_immutable',
+      'tg_warehouses_parent_branch_live',
+      'tg_warehouses_touch_metadata',
     ]);
     const policies = await admin.query(
       `SELECT polname FROM pg_policy p
@@ -233,22 +251,34 @@ describe('database foundation', () => {
     expect(policies.rows.map((r) => r.polname)).toEqual([
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
+      'ins_cost_centers_scope',
+      'ins_departments_scope',
       'ins_legal_companies_tenant',
+      'ins_storage_locations_scope',
+      'ins_warehouses_scope',
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
+      'sel_cost_centers_scope',
       'sel_currencies_all',
+      'sel_departments_scope',
       'sel_feature_flags_all',
       'sel_languages_all',
       'sel_legal_companies_tenant',
       'sel_number_sequences_tenant',
+      'sel_storage_locations_scope',
       'sel_subscription_plans_published',
       'sel_tenant_status_history_tenant',
       'sel_tenant_subscriptions_tenant',
       'sel_tenants_self',
       'sel_timezones_all',
+      'sel_warehouses_scope',
       'upd_branches_scope',
+      'upd_cost_centers_scope',
+      'upd_departments_scope',
       'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
+      'upd_storage_locations_scope',
+      'upd_warehouses_scope',
     ]);
   });
 
