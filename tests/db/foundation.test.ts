@@ -16,7 +16,16 @@ const MIGRATIONS_DIR = join(__dirname, '..', '..', 'supabase', 'migrations');
 
 /** The complete allow-list of tables permitted to exist in module schemas
  *  during Phase 1-2. Anything else is a phase violation. */
-const ALLOWED_TABLES = new Set(['shared.number_sequences']);
+const ALLOWED_TABLES = new Set([
+  // Phase 1-2 foundation.
+  'shared.number_sequences',
+  // Phase 1-3 platform reference data (P1-03-DB-013). Registered explicitly:
+  // this allow-list IS the scope guard, so every new table is a deliberate entry
+  // rather than something that slipped in unnoticed.
+  'shared.currencies',
+  'shared.timezones',
+  'shared.languages',
+]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
 const APPROVED_EXTENSIONS = new Set(['pgcrypto', 'btree_gist', 'citext', 'pg_trgm']);
@@ -45,6 +54,9 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_number_sequence_regression',
   'shared.next_display_number',
   'shared.touch_row_metadata',
+  // Phase 1-3 (P1-03-DB-013): validates shared.timezones.zone_name against the
+  // IANA database PostgreSQL already ships, keeping that the single source of truth.
+  'shared.validate_timezone_name',
 ]);
 
 let admin: Pool;
@@ -169,8 +181,12 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_currencies_touch_metadata',
+      'tg_languages_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_timezones_touch_metadata',
+      'tg_timezones_validate_zone_name',
     ]);
     const policies = await admin.query(
       `SELECT polname FROM pg_policy p
@@ -180,7 +196,10 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
+      'sel_currencies_all',
+      'sel_languages_all',
       'sel_number_sequences_tenant',
+      'sel_timezones_all',
       'upd_number_sequences_tenant',
     ]);
   });

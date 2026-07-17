@@ -105,6 +105,21 @@ Additional column rules:
 
 - The primary key of every table is `id uuid` (default `gen_random_uuid()`, which is
   **native** in PostgreSQL 13+ — pgcrypto is not registered for UUID generation).
+  **Exception — platform reference tables (added 2026-07-17, Phase 1-3, by owner
+  instruction).** A platform reference table whose rows are identified by a stable,
+  externally-governed natural code uses that code as its primary key instead of a
+  surrogate `id uuid`. This exception is **limited to Class 1 platform reference data**
+  (see the [Seed Standard](./seed-standard.md) §3.1) and currently covers exactly
+  `shared.currencies` (`code`), `shared.timezones` (`zone_name`), and
+  `shared.languages` (`locale_code`). It exists because: the Phase 1-3 instruction
+  requires an ISO currency-code primary key and names the referencing column
+  `base_currency_code` (a `_code` reference, not `_id`); the seed standard already
+  requires stable natural keys as idempotent `ON CONFLICT` targets and illustrates
+  `shared.currencies` with `ON CONFLICT (code)`. **It does not extend to tenant-owned
+  or business tables**, which keep `id uuid` — their natural keys stay `UNIQUE`
+  constraints, because business codes are tenant-scoped, editable, and reusable after
+  soft delete. Recorded here openly rather than left as a silent contradiction between
+  two binding documents.
   UUIDs are internal identifiers only: they are **never** authorization tokens and
   **never** public display numbers; knowledge of an ID never grants access. Human-facing
   numbers come from `shared.next_display_number()` (see the
