@@ -127,7 +127,7 @@ CREATE TRIGGER tg_tenants_touch_metadata
 
 CREATE TRIGGER tg_tenants_immutable_columns
   BEFORE UPDATE ON org.tenants
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_code', 'created_at', 'created_by');
 
 -- ----------------------------------------------------------------------------
 -- 3. org.tenant_status_history (P1-03-DB-002) — append-only evidence.

@@ -108,7 +108,7 @@ CREATE TRIGGER tg_legal_companies_touch_metadata
 
 CREATE TRIGGER tg_legal_companies_immutable
   BEFORE UPDATE ON org.legal_companies
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_code', 'created_at', 'created_by');
 
 -- ----------------------------------------------------------------------------
 -- 2. org.branches (P1-03-DB-006)
@@ -173,7 +173,7 @@ CREATE TRIGGER tg_branches_touch_metadata
 
 CREATE TRIGGER tg_branches_immutable
   BEFORE UPDATE ON org.branches
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_code', 'created_at', 'created_by');
 
 -- A new branch may not be attached to a soft-deleted or archived company.
 -- (A CHECK cannot subquery; RLS alone would not stop it; the FK alone would
@@ -246,6 +246,44 @@ COMMENT ON TABLE org.branch_status_history IS
 
 CREATE INDEX ix_branch_status_history_tenant_branch_occurred
   ON org.branch_status_history (tenant_id, branch_id, occurred_at);
+
+-- Attribution and timestamp are SERVER-STAMPED, never caller-supplied. The
+-- atomic org.change_branch_status() is the intended writer and (SECURITY
+-- INVOKER) needs the runtime INSERT grant; without this trigger a runtime
+-- session could INSERT a history row directly, attributing a transition to an
+-- arbitrary actor_id and backdating occurred_at (both demonstrated in the
+-- Phase 1-3 adversarial review). This BEFORE INSERT trigger overwrites both
+-- from the session context, so a forged row can only ever be attributed to the
+-- acting user and stamped now(). Residual, recorded honestly in the RLS matrix:
+-- a self-attributed, now()-stamped direct insert can still record a transition
+-- the branches table does not reflect (history and the branch UPDATE are
+-- separate statements); the Phase 1-14 backend becomes the sole authoritative
+-- writer. No SECURITY DEFINER is introduced.
+CREATE OR REPLACE FUNCTION org.stamp_branch_history()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.actor_id := iam.current_user_id();
+  IF NEW.actor_id IS NULL THEN
+    RAISE EXCEPTION 'branch status history requires an actor in the session context'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.occurred_at := now();
+  RETURN NEW;
+END;
+$$;
+
+COMMENT ON FUNCTION org.stamp_branch_history() IS
+  'BEFORE INSERT trigger on org.branch_status_history: server-stamps actor_id from iam.current_user_id() and occurred_at from now(), overwriting caller-supplied values so a direct INSERT cannot spoof attribution or backdate a transition (P1-03-DB-007, adversarial-review hardening).';
+
+REVOKE EXECUTE ON FUNCTION org.stamp_branch_history() FROM PUBLIC;
+
+CREATE TRIGGER tg_branch_status_history_stamp
+  BEFORE INSERT ON org.branch_status_history
+  FOR EACH ROW EXECUTE FUNCTION org.stamp_branch_history();
 
 -- ----------------------------------------------------------------------------
 -- 4. Atomic branch transition (P1-03-DB-007). SECURITY INVOKER: it runs under
@@ -371,6 +409,8 @@ CREATE POLICY sel_branch_status_history_tenant ON org.branch_status_history
   FOR SELECT TO app_runtime, app_readonly
   USING (tenant_id = iam.current_tenant_id());
 
+-- INSERT stays tenant-scoped; actor_id and occurred_at are server-stamped by
+-- tg_branch_status_history_stamp above (a caller cannot spoof either).
 CREATE POLICY ins_branch_status_history_tenant ON org.branch_status_history
   FOR INSERT TO app_runtime
   WITH CHECK (tenant_id = iam.current_tenant_id());

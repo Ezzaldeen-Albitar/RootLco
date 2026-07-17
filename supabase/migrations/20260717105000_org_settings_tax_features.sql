@@ -122,7 +122,7 @@ CREATE TRIGGER tg_company_settings_validate_value
   FOR EACH ROW EXECUTE FUNCTION org.validate_setting_value();
 CREATE TRIGGER tg_company_settings_immutable
   BEFORE UPDATE ON org.company_settings
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'setting_key', 'setting_value', 'value_type', 'version');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'setting_key', 'setting_value', 'value_type', 'version', 'effective_from', 'is_sensitive', 'created_at', 'created_by', 'record_version');
 
 CREATE TABLE org.branch_settings (
   id             uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -159,7 +159,7 @@ CREATE TRIGGER tg_branch_settings_validate_value
   FOR EACH ROW EXECUTE FUNCTION org.validate_setting_value();
 CREATE TRIGGER tg_branch_settings_immutable
   BEFORE UPDATE ON org.branch_settings
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'setting_key', 'setting_value', 'value_type', 'version');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'setting_key', 'setting_value', 'value_type', 'version', 'effective_from', 'is_sensitive', 'created_at', 'created_by', 'record_version');
 
 -- ----------------------------------------------------------------------------
 -- 3. Tax foundation (P1-03-DB-014). NUMERIC only; zero seeded rules; OIR-04
@@ -202,7 +202,7 @@ CREATE TRIGGER tg_tax_classes_touch_metadata
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
 CREATE TRIGGER tg_tax_classes_immutable
   BEFORE UPDATE ON org.tax_classes
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'tax_class_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'tax_class_code', 'created_at', 'created_by');
 
 CREATE TABLE org.tax_rates (
   id             uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -250,9 +250,11 @@ CREATE INDEX ix_tax_rates_tenant_company_class
 CREATE TRIGGER tg_tax_rates_touch_metadata
   BEFORE UPDATE ON org.tax_rates
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
+-- rate and effective_from are immutable: a rate change is a NEW effective-dated
+-- row (close the old one via effective_to), never an in-place rewrite of history.
 CREATE TRIGGER tg_tax_rates_immutable
   BEFORE UPDATE ON org.tax_rates
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'tax_class_id');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'tax_class_id', 'rate', 'effective_from', 'created_at', 'created_by');
 
 -- ----------------------------------------------------------------------------
 -- 4. org.tenant_feature_overrides (P1-03-DB-015) + deterministic resolution.

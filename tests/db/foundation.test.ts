@@ -86,10 +86,12 @@ const ALLOWED_ROUTINES = new Set([
   // register, and deterministic point-in-time subscription resolution.
   'org.validate_plan_documents',
   'org.current_subscription_plan_id',
-  // Phase 1-3 (P1-03-DB-005..007): live-parent guard for new branches and the
-  // atomic branch lifecycle transition (runtime-executable, RLS-scoped).
+  // Phase 1-3 (P1-03-DB-005..007): live-parent guard for new branches, the
+  // atomic branch lifecycle transition (runtime-executable, RLS-scoped), and
+  // the server-stamp trigger that forbids forged branch-history attribution.
   'org.guard_parent_company_live',
   'org.change_branch_status',
+  'org.stamp_branch_history',
   // Phase 1-3 (P1-03-DB-008..010): dead parents reject new children.
   'org.guard_parent_branch_live',
   'org.guard_parent_warehouse_live',
@@ -225,6 +227,7 @@ describe('database foundation', () => {
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
       'tg_branch_settings_immutable',
       'tg_branch_settings_validate_value',
+      'tg_branch_status_history_stamp',
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',

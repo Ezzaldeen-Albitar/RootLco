@@ -27,7 +27,7 @@ environment).
 | RLS everywhere + policy matrix                                                  | DB-018, SEC-001/002    | Complete                                                        |
 | Data classification + dictionary coverage assertion                             | SEC-003                | Complete                                                        |
 | Abuse cases                                                                     | SEC-004                | Complete                                                        |
-| Test suites (isolation/uniqueness/archive/contract/subs/seeds/migrations)       | QA-001..007            | Complete — 190/190                                              |
+| Test suites (isolation/uniqueness/archive/contract/subs/seeds/migrations)       | QA-001..007            | Complete — 194/194                                              |
 | Provisioning + idempotency + failure injection                                  | DB-020, DB-022         | Complete                                                        |
 | CI extension + negative rehearsals R1–R4                                        | DO-001                 | Complete (repo side)                                            |
 | Documentation set (dictionary, ERD, runbook, matrix, classification, registers) | DOC-001..003           | Complete                                                        |

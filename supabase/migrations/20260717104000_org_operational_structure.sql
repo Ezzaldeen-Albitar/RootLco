@@ -146,7 +146,7 @@ CREATE TRIGGER tg_departments_touch_metadata
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
 CREATE TRIGGER tg_departments_immutable
   BEFORE UPDATE ON org.departments
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'department_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'department_code', 'created_at', 'created_by');
 CREATE TRIGGER tg_departments_parent_branch_live
   BEFORE INSERT ON org.departments
   FOR EACH ROW EXECUTE FUNCTION org.guard_parent_branch_live();
@@ -199,7 +199,7 @@ CREATE TRIGGER tg_warehouses_touch_metadata
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
 CREATE TRIGGER tg_warehouses_immutable
   BEFORE UPDATE ON org.warehouses
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'warehouse_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'warehouse_code', 'created_at', 'created_by');
 CREATE TRIGGER tg_warehouses_parent_branch_live
   BEFORE INSERT ON org.warehouses
   FOR EACH ROW EXECUTE FUNCTION org.guard_parent_branch_live();
@@ -254,7 +254,7 @@ CREATE TRIGGER tg_storage_locations_touch_metadata
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
 CREATE TRIGGER tg_storage_locations_immutable
   BEFORE UPDATE ON org.storage_locations
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'warehouse_id', 'location_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'branch_id', 'warehouse_id', 'location_code', 'created_at', 'created_by');
 CREATE TRIGGER tg_storage_locations_parent_warehouse_live
   BEFORE INSERT ON org.storage_locations
   FOR EACH ROW EXECUTE FUNCTION org.guard_parent_warehouse_live();
@@ -311,7 +311,7 @@ CREATE TRIGGER tg_cost_centers_touch_metadata
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();
 CREATE TRIGGER tg_cost_centers_immutable
   BEFORE UPDATE ON org.cost_centers
-  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'cost_center_code');
+  FOR EACH ROW EXECUTE FUNCTION org.guard_immutable_columns('tenant_id', 'company_id', 'cost_center_code', 'effective_from', 'created_at', 'created_by');
 
 -- ----------------------------------------------------------------------------
 -- 6. Row-Level Security — enabled AND forced on all four; standard scope

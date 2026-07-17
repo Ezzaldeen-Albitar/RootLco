@@ -144,7 +144,7 @@ These are the controls Phase 1-2 actually delivered, with their honest statuses.
 ## 9a. Phase 1-3 organizational-security controls (added 2026-07-17)
 
 Phase 1-3 extended the verified database-control surface from one foundation
-table to the 17-table organizational backbone. Statuses follow the same rule:
+table to the full organizational schema (21 new tables). Statuses follow the same rule:
 Verified only with named executable test evidence, run as the non-owner runtime
 login. Application-layer ASVS requirements remain honestly Planned — no backend
 or frontend exists.
@@ -166,7 +166,7 @@ or frontend exists.
 
 Gate requirements at the Phase 1-3 gate: zero unresolved Critical, zero
 unresolved High, no exception in the register, no expired exception, no
-cross-tenant failure in 190 tests, no runtime BYPASSRLS, no tenant-owned table
+cross-tenant failure in 194 tests, no runtime BYPASSRLS, no tenant-owned table
 without forced RLS — all held on 2026-07-17. The abuse-case register lives in
 [phase-1-3-org-rls-policy-matrix.md](./phase-1-3-org-rls-policy-matrix.md).
 

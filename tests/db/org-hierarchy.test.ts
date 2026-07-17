@@ -338,4 +338,69 @@ describe('org.change_branch_status — atomic, runtime-executable, append-only h
       );
     });
   });
+
+  it('a direct history insert cannot spoof the actor or backdate — the trigger server-stamps both', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      const { rows } = await c.query(
+        `INSERT INTO org.branch_status_history (tenant_id, branch_id, from_state, to_state, reason, actor_id, occurred_at)
+         VALUES ($1, $2, 'active', 'inactive', 'attempted forgery', '99999999-9999-4999-8999-999999999999', '2000-01-01T00:00:00Z')
+         RETURNING actor_id, occurred_at`,
+        [TENANT_A, BRANCH_A1]
+      );
+      // The spoofed actor and backdate were overwritten from the session context.
+      expect(rows[0].actor_id).toBe(USER_A);
+      expect(new Date(rows[0].occurred_at).getFullYear()).toBeGreaterThanOrEqual(2026);
+    });
+  });
+
+  it('a direct history insert with no session user is rejected (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A }, async (c) => {
+      await expectSqlState(
+        c.query(
+          `INSERT INTO org.branch_status_history (tenant_id, branch_id, from_state, to_state, reason, actor_id)
+           VALUES ($1, $2, 'active', 'inactive', 'no actor', $3)`,
+          [TENANT_A, BRANCH_A1, USER_A]
+        ),
+        '23514'
+      );
+    });
+  });
+});
+
+describe('org.legal_companies — creation attribution is immutable (adversarial-review fix)', () => {
+  it('a runtime session cannot rewrite created_by or created_at (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`UPDATE org.legal_companies SET created_by = $1 WHERE id = $2`, [
+          USER_B,
+          COMPANY_A1,
+        ]),
+        '23514'
+      );
+    });
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`UPDATE org.legal_companies SET created_at = now() WHERE id = $1`, [COMPANY_A1]),
+        '23514'
+      );
+    });
+  });
+
+  it('a legitimate field update still works and stamps updated_by (attribution intact)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      const before = await c.query('SELECT created_by FROM org.legal_companies WHERE id = $1', [
+        COMPANY_A1,
+      ]);
+      await c.query(`UPDATE org.legal_companies SET legal_name = 'Renamed Co' WHERE id = $1`, [
+        COMPANY_A1,
+      ]);
+      const after = await c.query(
+        'SELECT created_by, updated_by, legal_name FROM org.legal_companies WHERE id = $1',
+        [COMPANY_A1]
+      );
+      expect(after.rows[0].created_by).toBe(before.rows[0].created_by); // unchanged
+      expect(after.rows[0].updated_by).toBe(USER_A); // trigger-stamped
+      expect(after.rows[0].legal_name).toBe('Renamed Co');
+    });
+  });
 });

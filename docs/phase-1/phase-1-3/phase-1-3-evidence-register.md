@@ -28,10 +28,10 @@ implementation**. Phase 1-2 gate record contained in `develop` via PR #11.
 
 ## 3. Test suite (Proven)
 
-Final state: **190 tests, 13 files, all passing** on a clean reset —
+Final state: **194 tests, 13 files, all passing** on a clean reset —
 Phase 1-2 regression fully preserved (foundation 14, rls 18, constraints 12,
 patterns 11, number-sequences 13) plus Phase 1-3: org-tenants 21,
-org-subscriptions 19, org-hierarchy 20, org-structure 17, org-settings 17,
+org-subscriptions 19, org-hierarchy 24, org-structure 17, org-settings 17,
 org-sequences 4, org-provisioning 13, org-security 10. Every isolation assertion
 runs as the NON-OWNER runtime login; owner behaviour is never RLS evidence.
 
@@ -64,6 +64,31 @@ runs as the NON-OWNER runtime login; owner behaviour is never RLS evidence.
 | R2 populated-database guard         | `GUARD_EXIT=1` — "Refusing to run: module schemas already exist"                     |
 | R3 FORCE RLS removed from one table | suite exit 1 — "org.legal_companies must have RLS forced: expected false to be true" |
 | R4 tracked pilot literal in `src/`  | guard exit 1 naming `src/lib/rehearsal-violation.ts:1`                               |
+
+## 6.1 Structured adversarial review (2026-07-17)
+
+A four-lens adversarial review (tenancy/security · data integrity · scope ·
+evidence/honesty), each finding put to an independent skeptic that ran real
+queries against the live database, returned **10 raw findings; 6 survived
+refutation**. Every survivor was fixed before this record was finalized and
+re-verified as the non-owner runtime login:
+
+| #   | Severity | Finding                                                                                                                                                                     | Disposition                                                                                                                                                                                                                                                                                                                                            |
+| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | major    | `org.branch_status_history` accepted forged rows from a runtime session — spoofed `actor_id`, backdated `occurred_at` (both reproduced live)                                | **Fixed.** New BEFORE INSERT trigger `org.stamp_branch_history()` server-stamps `actor_id := iam.current_user_id()` (raises if null) and `occurred_at := now()`; re-probed — actor overwritten to the session user, timestamp to now(). Residual (self-attributed direct insert vs branch state) recorded in the RLS matrix. Two negative tests added. |
+| 2   | major    | `app_runtime` held table-wide UPDATE, so a tenant session could rewrite `created_at`/`created_by` (reproduced live) — regression from the Phase 1-2 column-grant discipline | **Fixed.** `created_at`/`created_by` added to the immutable guard on all nine updatable org tables; re-probed — now 23514. Two tests added (denial + legitimate-update-keeps-attribution).                                                                                                                                                             |
+| 3   | major    | Object inventory misstated (17 tables/31 triggers vs actual 21/38/39)                                                                                                       | **Fixed** across completion report, owner gate, baseline.                                                                                                                                                                                                                                                                                              |
+| 4   | major    | Evidence-register per-file breakdown summed to 189, not the stated total                                                                                                    | **Fixed** — reconciled to 194 after the hardening tests.                                                                                                                                                                                                                                                                                               |
+| 5   | minor    | Effective-dated `tax_rates.rate`/`effective_from` and `cost_centers.effective_from` were editable in place (weaker than the "new row, not overwrite" model)                 | **Fixed.** Added to the immutable guards — a rate change is now a new effective-dated row.                                                                                                                                                                                                                                                             |
+| 6   | minor    | Settings "immutable even to admin" originally omitted `effective_from`/`is_sensitive`/`created_*`                                                                           | **Fixed.** Guard extended to pin all identity/value/metadata columns.                                                                                                                                                                                                                                                                                  |
+
+Refuted/not-actioned (4): the remaining raw findings were doc-wording nuances
+already corrected in the same pass (security-testing-standard coverage line,
+data-dictionary intro, policy-matrix DELETE phrasing) or did not survive
+scrutiny. The clean categories the review confirmed: tenant isolation holds
+under every probe, composite FKs make cross-tenant references FK violations,
+no SECURITY DEFINER exists, no float in module schemas, no forbidden
+later-phase table, no Zoom object, no secret, migrations 0001–0003 untouched.
 
 ## 7. CI (honest status)
 

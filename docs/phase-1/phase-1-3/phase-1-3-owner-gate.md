@@ -31,7 +31,7 @@ policy §5 escalation applies instead of the automatic record.
 ## What is submitted
 
 The full package on `feature/p1-03-organization-structure-schema`: seven
-timestamped migrations (17 tables, RLS forced everywhere), 190 passing tests in
+timestamped migrations (21 new tables, RLS forced everywhere), 194 passing tests in
 13 files (122 new; all isolation as a non-owner runtime login), atomic
 provisioning with injection-proven rollback and idempotency, the controlled
 pilot package + fictional second tenant, CI scope-exclusion guard with four
@@ -52,7 +52,7 @@ completion report). Five self-caught defects fixed pre-PR
 | 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar          | **Pending** — the branch is pushed; the PR is not opened or merged                                                       |
 
 Additional gate requirements verified: no expired exception; no cross-tenant
-isolation failure in 190 tests; no runtime BYPASSRLS; no tenant-owned table
+isolation failure in 194 tests; no runtime BYPASSRLS; no tenant-owned table
 without forced RLS (catalog-asserted).
 
 ## Decision record

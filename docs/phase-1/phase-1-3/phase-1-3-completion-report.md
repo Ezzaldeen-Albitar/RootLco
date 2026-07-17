@@ -22,8 +22,7 @@ package, and two-tenant isolation proof.
 ## 2. What was delivered (all applied and verified on PostgreSQL 17.6)
 
 - **Seven timestamped migrations** (`20260717100000`–`107000`) creating
-  **17 new tables** (3 reference, 14 organizational/platform), 12 functions/
-  guards, 31 module triggers, 41 RLS policies — every table with RLS enabled
+  **21 new tables** (17 in the org schema; 3 reference + 1 idempotency in shared), 13 new functions/guards, 39 new triggers, 39 new RLS policies — every table with RLS enabled
   **and forced**; every grant explicit; DELETE granted to no application role
   anywhere; all codes immutable by trigger.
 - **Structural tenancy:** composite candidate keys and FKs carry the tenant
@@ -39,8 +38,8 @@ package, and two-tenant isolation proof.
   byte-identical replay, fingerprint-conflict rejection, and zero
   tenant-specific logic — the pilot exists only as a controlled Class 3 seed
   package, with a fictional second tenant proving the path is generic.
-- **190 tests in 13 files** — the 68 Phase 1-2 tests preserved unchanged plus
-  122 new ones, every isolation assertion as a non-owner runtime login, plus
+- **194 tests in 13 files** — the 68 Phase 1-2 tests preserved unchanged plus
+  126 new ones, every isolation assertion as a non-owner runtime login, plus
   catalog-level assertions that bind FUTURE tables: tenant-column invariant,
   FK-index coverage, no-duplicate-indexes, DELETE-nowhere, dictionary coverage,
   and the Phase 1-4 structural contract by constraint name.
