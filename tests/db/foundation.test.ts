@@ -64,6 +64,11 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-4 login audit and session metadata (P1-04-DB-012..013).
   'iam.login_audit',
   'iam.user_sessions',
+  // Phase 1-4 audit subsystem (P1-04-DB-014..017).
+  'iam.audit_records',
+  'iam.audit_record_details',
+  'iam.audit_integrity_links',
+  'iam.security_events',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -127,6 +132,13 @@ const ALLOWED_ROUTINES = new Set([
   'iam.enforce_scoped_grant_has_scope',
   // Phase 1-4 (P1-04-DB-012): server-stamp of login-audit timestamps.
   'iam.stamp_login_audit',
+  // Phase 1-4 audit subsystem (P1-04-DB-014..022): masking, canonical
+  // serialization, SHA-256 hashing, the sole append writer, and chain verify.
+  'iam.audit_mask',
+  'iam.audit_canonical',
+  'iam.audit_hash',
+  'iam.audit_append',
+  'iam.audit_verify_chain',
 ]);
 
 let admin: Pool;

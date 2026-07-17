@@ -816,3 +816,65 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`      | uuid                     | NO   | —                 | internal       |
 | `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `iam.audit_records`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only audit event header; per-tenant `seq`; platform-only (no app grant).
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `seq`            | bigint                   | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | YES  | —                 | internal       |
+| `actor_kind`     | text                     | NO   | —                 | internal       |
+| `action`         | text                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | YES  | —                 | internal       |
+| `company_id`     | uuid                     | YES  | —                 | internal       |
+| `branch_id`      | uuid                     | YES  | —                 | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+| `request_ref`    | text                     | YES  | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+
+### `iam.audit_record_details`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Field-level changes; restricted/secret values stored MASKED; no raw restricted value.
+
+| Column                 | Type | Null | Default           | Classification |
+| ---------------------- | ---- | ---- | ----------------- | -------------- |
+| `id`                   | uuid | NO   | gen_random_uuid() | internal       |
+| `tenant_id`            | uuid | NO   | —                 | internal       |
+| `audit_record_id`      | uuid | NO   | —                 | internal       |
+| `field_name`           | text | NO   | —                 | internal       |
+| `old_value_masked`     | text | YES  | —                 | restricted     |
+| `new_value_masked`     | text | YES  | —                 | restricted     |
+| `value_classification` | text | NO   | —                 | internal       |
+
+### `iam.audit_integrity_links`
+
+**Scope:** tenant · **Retention class:** immutable-financial-history · Per-tenant SHA-256 chain; 32-byte prev/record hashes; gap or alteration is detectable.
+
+| Column            | Type   | Null | Default           | Classification |
+| ----------------- | ------ | ---- | ----------------- | -------------- |
+| `id`              | uuid   | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid   | NO   | —                 | internal       |
+| `audit_record_id` | uuid   | NO   | —                 | internal       |
+| `seq`             | bigint | NO   | —                 | internal       |
+| `prev_hash`       | bytea  | NO   | —                 | internal       |
+| `record_hash`     | bytea  | NO   | —                 | internal       |
+
+### `iam.security_events`
+
+**Scope:** tenant (nullable) · **Retention class:** evidence-audit · Payload-free security log; no sensitive payload; append-only, platform-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `event_type`     | text                     | NO   | —                 | internal       |
+| `severity`       | text                     | NO   | 'info'::text      | internal       |
+| `actor_id`       | uuid                     | YES  | —                 | internal       |
+| `detail`         | text                     | YES  | —                 | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
