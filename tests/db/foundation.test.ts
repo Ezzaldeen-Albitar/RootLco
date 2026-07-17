@@ -16,7 +16,37 @@ const MIGRATIONS_DIR = join(__dirname, '..', '..', 'supabase', 'migrations');
 
 /** The complete allow-list of tables permitted to exist in module schemas
  *  during Phase 1-2. Anything else is a phase violation. */
-const ALLOWED_TABLES = new Set(['shared.number_sequences']);
+const ALLOWED_TABLES = new Set([
+  // Phase 1-2 foundation.
+  'shared.number_sequences',
+  // Phase 1-3 platform reference data (P1-03-DB-013). Registered explicitly:
+  // this allow-list IS the scope guard, so every new table is a deliberate entry
+  // rather than something that slipped in unnoticed.
+  'shared.currencies',
+  'shared.timezones',
+  'shared.languages',
+  // Phase 1-3 organizational backbone (P1-03-DB-001..004, P1-03-DB-015).
+  'org.tenants',
+  'org.tenant_status_history',
+  'org.feature_flags',
+  'org.subscription_plans',
+  'org.tenant_subscriptions',
+  'org.legal_companies',
+  'org.branches',
+  'org.branch_status_history',
+  'org.departments',
+  'org.warehouses',
+  'org.storage_locations',
+  'org.cost_centers',
+  'org.company_settings',
+  'org.branch_settings',
+  'org.tax_classes',
+  'org.tax_rates',
+  'org.tenant_feature_overrides',
+  // Phase 1-3 (P1-03-DB-022): the Phase 1-2 idempotency pattern, promoted to a
+  // permanent platform table (no application-role access at all).
+  'shared.idempotency_keys',
+]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
 const APPROVED_EXTENSIONS = new Set(['pgcrypto', 'btree_gist', 'citext', 'pg_trgm']);
@@ -45,6 +75,32 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_number_sequence_regression',
   'shared.next_display_number',
   'shared.touch_row_metadata',
+  // Phase 1-3 (P1-03-DB-013): validates shared.timezones.zone_name against the
+  // IANA database PostgreSQL already ships, keeping that the single source of truth.
+  'shared.validate_timezone_name',
+  // Phase 1-3 (P1-03-DB-001/002): reusable immutable-column guard and the
+  // atomic tenant lifecycle transition (status UPDATE + history INSERT, one tx).
+  'org.guard_immutable_columns',
+  'org.change_tenant_status',
+  // Phase 1-3 (P1-03-DB-003/004): plan-document validation against the feature
+  // register, and deterministic point-in-time subscription resolution.
+  'org.validate_plan_documents',
+  'org.current_subscription_plan_id',
+  // Phase 1-3 (P1-03-DB-005..007): live-parent guard for new branches, the
+  // atomic branch lifecycle transition (runtime-executable, RLS-scoped), and
+  // the server-stamp trigger that forbids forged branch-history attribution.
+  'org.guard_parent_company_live',
+  'org.change_branch_status',
+  'org.stamp_branch_history',
+  // Phase 1-3 (P1-03-DB-008..010): dead parents reject new children.
+  'org.guard_parent_branch_live',
+  'org.guard_parent_warehouse_live',
+  // Phase 1-3 (P1-03-DB-012/015): typed settings validation and the
+  // override > plan > default feature-resolution precedence.
+  'org.validate_setting_value',
+  'org.resolve_feature_enabled',
+  // Phase 1-3 (P1-03-DB-022): atomic organization provisioning (platform-only).
+  'org.provision_organization',
 ]);
 
 let admin: Pool;
@@ -169,8 +225,47 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_branch_settings_immutable',
+      'tg_branch_settings_validate_value',
+      'tg_branch_status_history_stamp',
+      'tg_branches_immutable',
+      'tg_branches_parent_company_live',
+      'tg_branches_touch_metadata',
+      'tg_company_settings_immutable',
+      'tg_company_settings_validate_value',
+      'tg_cost_centers_immutable',
+      'tg_cost_centers_touch_metadata',
+      'tg_currencies_touch_metadata',
+      'tg_departments_immutable',
+      'tg_departments_parent_branch_live',
+      'tg_departments_touch_metadata',
+      'tg_feature_flags_immutable',
+      'tg_feature_flags_touch_metadata',
+      'tg_languages_touch_metadata',
+      'tg_legal_companies_immutable',
+      'tg_legal_companies_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_storage_locations_immutable',
+      'tg_storage_locations_parent_warehouse_live',
+      'tg_storage_locations_touch_metadata',
+      'tg_subscription_plans_immutable',
+      'tg_subscription_plans_touch_metadata',
+      'tg_subscription_plans_validate_documents',
+      'tg_tax_classes_immutable',
+      'tg_tax_classes_touch_metadata',
+      'tg_tax_rates_immutable',
+      'tg_tax_rates_touch_metadata',
+      'tg_tenant_feature_overrides_immutable',
+      'tg_tenant_subscriptions_immutable',
+      'tg_tenant_subscriptions_touch_metadata',
+      'tg_tenants_immutable_columns',
+      'tg_tenants_touch_metadata',
+      'tg_timezones_touch_metadata',
+      'tg_timezones_validate_zone_name',
+      'tg_warehouses_immutable',
+      'tg_warehouses_parent_branch_live',
+      'tg_warehouses_touch_metadata',
     ]);
     const policies = await admin.query(
       `SELECT polname FROM pg_policy p
@@ -180,8 +275,47 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
+      'ins_branch_settings_scope',
+      'ins_branch_status_history_tenant',
+      'ins_branches_scope',
+      'ins_company_settings_scope',
+      'ins_cost_centers_scope',
+      'ins_departments_scope',
+      'ins_legal_companies_tenant',
+      'ins_storage_locations_scope',
+      'ins_tax_classes_scope',
+      'ins_tax_rates_scope',
+      'ins_warehouses_scope',
+      'sel_branch_settings_scope',
+      'sel_branch_status_history_tenant',
+      'sel_branches_scope',
+      'sel_company_settings_scope',
+      'sel_cost_centers_scope',
+      'sel_currencies_all',
+      'sel_departments_scope',
+      'sel_feature_flags_all',
+      'sel_languages_all',
+      'sel_legal_companies_tenant',
       'sel_number_sequences_tenant',
+      'sel_storage_locations_scope',
+      'sel_subscription_plans_published',
+      'sel_tax_classes_scope',
+      'sel_tax_rates_scope',
+      'sel_tenant_feature_overrides_tenant',
+      'sel_tenant_status_history_tenant',
+      'sel_tenant_subscriptions_tenant',
+      'sel_tenants_self',
+      'sel_timezones_all',
+      'sel_warehouses_scope',
+      'upd_branches_scope',
+      'upd_cost_centers_scope',
+      'upd_departments_scope',
+      'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
+      'upd_storage_locations_scope',
+      'upd_tax_classes_scope',
+      'upd_tax_rates_scope',
+      'upd_warehouses_scope',
     ]);
   });
 
