@@ -141,6 +141,35 @@ These are the controls Phase 1-2 actually delivered, with their honest statuses.
 | RL-SEC-DB-013 | Migration security gate (immutability, clean-DB replay, defective-migration rehearsal) | `Verified` locally by rehearsal; the GitHub-enforced gate aspect is `Implemented — not verified` until the first PR run | [rehearsal-defective-migration.md](../phase-1/phase-1-2/rehearsal-defective-migration.md) (`RUNNER_EXIT=1`, `GUARD_EXIT=1`)                                                               |
 | RL-SEC-DB-014 | Dependency security gates                                                              | `Planned`                                                                                                               | [dependency-and-supply-chain-standard.md](./dependency-and-supply-chain-standard.md) — no SCA is configured yet; stated plainly                                                           |
 
+## 9a. Phase 1-3 organizational-security controls (added 2026-07-17)
+
+Phase 1-3 extended the verified database-control surface from one foundation
+table to the 17-table organizational backbone. Statuses follow the same rule:
+Verified only with named executable test evidence, run as the non-owner runtime
+login. Application-layer ASVS requirements remain honestly Planned — no backend
+or frontend exists.
+
+| Control                                                                 | Status   | Evidence (test :: suite)                                                                  |
+| ----------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| Tenant isolation across the full organizational hierarchy               | Verified | tests/db/org-tenants / org-hierarchy / org-structure / org-settings / org-provisioning    |
+| Structural cross-tenant impossibility (composite FKs)                   | Verified | tests/db/org-hierarchy :: cross-tenant FK 23503; org-structure; org-sequences             |
+| Object-level authorization foundation (RLS forced everywhere)           | Verified | tests/db/foundation :: forced-everywhere (catalog-wide, binds future tables)              |
+| Platform vs tenant administration separation                            | Verified | write denials on tenants/plans/flags/overrides/idempotency (42501, both layers)           |
+| Least privilege (no DELETE anywhere, no BYPASSRLS, no ownership)        | Verified | tests/db/org-security :: role posture + DELETE-nowhere                                    |
+| Configuration integrity (versioned, immutable settings)                 | Verified | tests/db/org-settings :: immutability vs runtime AND admin                                |
+| Audit history (append-only lifecycle evidence)                          | Verified | tests/db/org-tenants / org-hierarchy :: history denials + atomic pairing                  |
+| Provisioning integrity (atomic + idempotent)                            | Verified | tests/db/org-provisioning :: 3-step failure injection, replay, conflict                   |
+| Input/data validation (typed settings, entitlements, IANA, NUMERIC tax) | Verified | tests/db/org-settings / org-subscriptions :: validation negatives                         |
+| Secure defaults (deterministic provisioning state, default deny)        | Verified | tests/db/org-tenants :: deterministic default; no-context = zero rows                     |
+| Data classification of every new column                                 | Verified | tests/db/org-security :: dictionary-coverage assertion (fails on any unclassified column) |
+| Pilot hard-coding prevention                                            | Verified | zero-trace test + CI scope-exclusion guard (rehearsal R4 exit 1)                          |
+
+Gate requirements at the Phase 1-3 gate: zero unresolved Critical, zero
+unresolved High, no exception in the register, no expired exception, no
+cross-tenant failure in 190 tests, no runtime BYPASSRLS, no tenant-owned table
+without forced RLS — all held on 2026-07-17. The abuse-case register lives in
+[phase-1-3-org-rls-policy-matrix.md](./phase-1-3-org-rls-policy-matrix.md).
+
 ## 10. Phase ownership map
 
 Authority: the canonical Phase 1 Development Plan (Phases 1-1..1-39); ranges recorded in

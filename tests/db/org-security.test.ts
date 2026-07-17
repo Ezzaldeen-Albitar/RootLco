@@ -6,6 +6,8 @@
  * will FAIL the build for any future table that violates them — the guard is
  * the assertion, not reviewer attention.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { adminPool } from './helpers';
@@ -154,6 +156,32 @@ describe('role posture', () => {
       rows,
       'soft delete is an UPDATE; hard delete is never an application capability'
     ).toEqual([]);
+  });
+});
+
+describe('data-dictionary coverage (P1-03-DOC-001, P1-03-SEC-003)', () => {
+  it('every module-schema table AND column appears in the data dictionary', async () => {
+    const dict = readFileSync(
+      join(__dirname, '..', '..', 'docs', 'database', 'data-dictionary.md'),
+      'utf8'
+    );
+    const { rows } = await admin.query(
+      `SELECT table_schema, table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       ORDER BY 1, 2, 3`
+    );
+    const missing: string[] = [];
+    const seenTables = new Set<string>();
+    for (const r of rows) {
+      const fq = `${r.table_schema}.${r.table_name}`;
+      if (!seenTables.has(fq)) {
+        seenTables.add(fq);
+        if (!dict.includes(fq)) missing.push(`table ${fq}`);
+      }
+      if (!dict.includes(`\`${r.column_name}\``)) missing.push(`column ${fq}.${r.column_name}`);
+    }
+    expect(missing, `undocumented (unclassified) objects: ${missing.join(', ')}`).toEqual([]);
   });
 });
 

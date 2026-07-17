@@ -1,0 +1,68 @@
+%% RootLco — Phase 1-3 organizational ERD source (P1-03-DOC-002).
+%% Matches the implemented schema at migrations 20260717100000..107000.
+%% This file is the repository ERD SOURCE; the canonical Master document's
+%% Figure 4.9 synchronization is tracked in organization-schema-design.md §7.
+erDiagram
+  TENANTS ||--o{ TENANT_STATUS_HISTORY : "lifecycle evidence"
+  TENANTS ||--o{ TENANT_SUBSCRIPTIONS : "assignment history"
+  SUBSCRIPTION_PLANS ||--o{ TENANT_SUBSCRIPTIONS : "versioned catalogue"
+  FEATURE_FLAGS ||--o{ TENANT_FEATURE_OVERRIDES : "per-tenant override"
+  TENANTS ||--o{ TENANT_FEATURE_OVERRIDES : ""
+  TENANTS ||--o{ LEGAL_COMPANIES : "tenant_id"
+  LEGAL_COMPANIES ||--o{ BRANCHES : "(tenant_id, company_id)"
+  BRANCHES ||--o{ BRANCH_STATUS_HISTORY : "(tenant_id, branch_id)"
+  BRANCHES ||--o{ DEPARTMENTS : "(tenant, company, branch)"
+  BRANCHES ||--o{ WAREHOUSES : "(tenant, company, branch)"
+  WAREHOUSES ||--o{ STORAGE_LOCATIONS : "(tenant, company, branch, warehouse)"
+  LEGAL_COMPANIES ||--o{ COST_CENTERS : "(tenant_id, company_id)"
+  LEGAL_COMPANIES ||--o{ COMPANY_SETTINGS : "versioned rows"
+  BRANCHES ||--o{ BRANCH_SETTINGS : "versioned rows"
+  LEGAL_COMPANIES ||--o{ TAX_CLASSES : "(tenant_id, company_id)"
+  TAX_CLASSES ||--o{ TAX_RATES : "(tenant, company, class)"
+  CURRENCIES ||--o{ LEGAL_COMPANIES : "base_currency_code"
+  TIMEZONES ||--o{ BRANCHES : "timezone_name"
+  TIMEZONES ||--o{ TENANTS : "default_timezone"
+  LANGUAGES ||--o{ TENANTS : "default_locale"
+  TENANTS ||--o{ NUMBER_SEQUENCES : "tenant_id (P1-03 FK backfill)"
+  LEGAL_COMPANIES ||--o{ NUMBER_SEQUENCES : "(tenant, company) optional"
+  BRANCHES ||--o{ NUMBER_SEQUENCES : "(tenant, company, branch) optional"
+  TENANTS ||--o{ IDEMPOTENCY_KEYS : "nullable (platform ops)"
+
+  TENANTS {
+    uuid id PK
+    text tenant_code UK "immutable"
+    text status "provisioning|active|suspended|closed"
+    text default_locale FK
+    text default_timezone FK
+  }
+  LEGAL_COMPANIES {
+    uuid id PK
+    uuid tenant_id FK "candidate key (tenant_id, id)"
+    text company_code "active-unique per tenant"
+    text base_currency_code FK
+    text registration_number "restricted, nullable"
+  }
+  BRANCHES {
+    uuid id PK
+    uuid tenant_id FK
+    uuid company_id FK "composite parent"
+    text branch_code "active-unique per tenant+company"
+    text timezone_name FK
+  }
+  SUBSCRIPTION_PLANS {
+    uuid id PK
+    text plan_code "active versions non-overlapping"
+    jsonb entitlement_document "validated vs flags"
+    jsonb capacity_limits
+  }
+  TENANT_SUBSCRIPTIONS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid plan_id FK
+    tstzrange effective "active non-overlapping per tenant"
+  }
+  TAX_RATES {
+    uuid id PK
+    numeric rate "9,6 fraction 0..1 — never float"
+    daterange effective "active non-overlapping per class"
+  }
