@@ -197,12 +197,15 @@ describe('iam.audit_append — concurrency cannot fork the chain', () => {
 });
 
 describe('audit tables — platform-only (no runtime access in this increment)', () => {
-  it('runtime cannot read, write, or append audit rows', async () => {
+  it('an unauthorized runtime reads zero audit rows and cannot write or append', async () => {
     await append();
     const ctx = { tenantId: TENANT_A, userId: ACTOR };
-    await withRolledBackTx(runtime, ctx, (c) =>
-      expectSqlState(c.query(`SELECT * FROM iam.audit_records`), '42501')
+    // SELECT is granted (Increment I) but gated by iam.audit.view — ACTOR has no
+    // such permission, so the read returns zero rows (default deny).
+    const sel = await withRolledBackTx(runtime, ctx, (c) =>
+      c.query(`SELECT * FROM iam.audit_records`)
     );
+    expect(sel.rows).toHaveLength(0);
     await withRolledBackTx(runtime, ctx, (c) =>
       expectSqlState(
         c.query(`DELETE FROM iam.audit_records WHERE tenant_id=$1`, [TENANT_A]),
@@ -231,9 +234,12 @@ describe('iam.security_events — payload-free platform log', () => {
       [TENANT_A]
     );
     try {
-      await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACTOR }, (c) =>
-        expectSqlState(c.query(`SELECT * FROM iam.security_events`), '42501')
+      // SELECT is granted (Increment I) but gated by iam.audit.view; ACTOR has
+      // no such permission, so the read returns zero rows (default deny).
+      const sel = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACTOR }, (c) =>
+        c.query(`SELECT * FROM iam.security_events`)
       );
+      expect(sel.rows).toHaveLength(0);
     } finally {
       await admin.query(
         `DELETE FROM iam.security_events WHERE event_type IN ('brute_force','platform_probe')`
