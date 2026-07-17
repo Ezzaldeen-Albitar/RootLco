@@ -245,6 +245,9 @@ CREATE UNIQUE INDEX uq_storage_locations_warehouse_code_live
   WHERE deleted_at IS NULL AND archived_at IS NULL;
 CREATE INDEX ix_storage_locations_tenant_id_status
   ON org.storage_locations (tenant_id, status);
+-- FK-support: the full warehouse-composite reference path.
+CREATE INDEX ix_storage_locations_warehouse_scope
+  ON org.storage_locations (tenant_id, company_id, branch_id, warehouse_id);
 
 CREATE TRIGGER tg_storage_locations_touch_metadata
   BEFORE UPDATE ON org.storage_locations

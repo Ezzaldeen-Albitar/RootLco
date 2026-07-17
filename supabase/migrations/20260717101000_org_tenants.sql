@@ -116,6 +116,11 @@ COMMENT ON COLUMN org.tenants.tenant_code IS
 COMMENT ON COLUMN org.tenants.status IS
   'provisioning | active | suspended | closed. Deterministic initial state is provisioning (column default). Every transition goes through org.change_tenant_status(), which records the append-only history row in the same transaction. Queryable by the future session layer (Phase 1-4) to refuse suspended/closed tenants.';
 
+-- FK-support indexes for the platform-reference FKs (documented non-tenant-
+-- leading justification: they support reference FKs, not tenant query paths).
+CREATE INDEX ix_tenants_default_locale ON org.tenants (default_locale);
+CREATE INDEX ix_tenants_default_timezone ON org.tenants (default_timezone);
+
 CREATE TRIGGER tg_tenants_touch_metadata
   BEFORE UPDATE ON org.tenants
   FOR EACH ROW EXECUTE FUNCTION shared.touch_row_metadata();

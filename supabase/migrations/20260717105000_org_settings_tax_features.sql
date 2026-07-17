@@ -292,6 +292,10 @@ COMMENT ON TABLE org.tenant_feature_overrides IS
 
 CREATE INDEX ix_tenant_feature_overrides_tenant_flag
   ON org.tenant_feature_overrides (tenant_id, flag_code);
+-- FK-support for the platform-reference flag FK (documented non-tenant-leading
+-- justification: reference FK path, not a tenant query path).
+CREATE INDEX ix_tenant_feature_overrides_flag_code
+  ON org.tenant_feature_overrides (flag_code);
 
 CREATE TRIGGER tg_tenant_feature_overrides_immutable
   BEFORE UPDATE ON org.tenant_feature_overrides
