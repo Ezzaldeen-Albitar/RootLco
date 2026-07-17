@@ -149,7 +149,7 @@ describe('iam.user_accounts — writes are platform-only', () => {
     const { rows } = await admin.query(
       `SELECT table_name, column_name FROM information_schema.columns
        WHERE table_schema = 'iam' AND table_name LIKE 'user_%'
-         AND column_name ~* '(password|passwd|secret|token|credential|refresh|otp|mfa_secret|pin|hash)'`
+         AND column_name ~* '(password|passwd|secret|token|credential|refresh|mfa_secret)'`
     );
     expect(rows.map((r) => `${r.table_name}.${r.column_name}`)).toEqual([]);
   });

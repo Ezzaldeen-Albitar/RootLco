@@ -61,6 +61,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-4 approval limits and sensitive-data permissions (P1-04-DB-010..011).
   'iam.approval_limits',
   'iam.sensitive_data_permissions',
+  // Phase 1-4 login audit and session metadata (P1-04-DB-012..013).
+  'iam.login_audit',
+  'iam.user_sessions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -122,6 +125,8 @@ const ALLOWED_ROUTINES = new Set([
   'iam.stamp_user_status_history',
   // Phase 1-4 (P1-04-DB-009): deferred scoped-grant integrity.
   'iam.enforce_scoped_grant_has_scope',
+  // Phase 1-4 (P1-04-DB-012): server-stamp of login-audit timestamps.
+  'iam.stamp_login_audit',
 ]);
 
 let admin: Pool;
@@ -268,6 +273,7 @@ describe('database foundation', () => {
       'tg_languages_touch_metadata',
       'tg_legal_companies_immutable',
       'tg_legal_companies_touch_metadata',
+      'tg_login_audit_stamp',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
       'tg_permissions_immutable',
@@ -304,6 +310,8 @@ describe('database foundation', () => {
       'tg_user_employee_links_touch_metadata',
       'tg_user_profiles_immutable',
       'tg_user_profiles_touch_metadata',
+      'tg_user_sessions_immutable',
+      'tg_user_sessions_touch_metadata',
       'tg_user_status_history_stamp',
       'tg_warehouses_immutable',
       'tg_warehouses_parent_branch_live',
@@ -340,6 +348,7 @@ describe('database foundation', () => {
       'sel_grant_scopes_tenant',
       'sel_languages_all',
       'sel_legal_companies_tenant',
+      'sel_login_audit_own',
       'sel_number_sequences_tenant',
       'sel_permissions_all',
       'sel_role_grants_tenant',
@@ -358,6 +367,7 @@ describe('database foundation', () => {
       'sel_user_accounts_tenant',
       'sel_user_employee_links_tenant',
       'sel_user_profiles_tenant',
+      'sel_user_sessions_own',
       'sel_user_status_history_tenant',
       'sel_warehouses_scope',
       'upd_branches_scope',

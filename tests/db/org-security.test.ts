@@ -30,6 +30,7 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
 /** Tables whose tenant_id is nullable BY DESIGN (documented adaptation). */
 const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'shared.idempotency_keys', // platform-scope operations have no tenant yet
+  'iam.login_audit', // failed attempts against an unknown principal have no tenant
 ]);
 
 let admin: Pool;

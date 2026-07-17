@@ -776,3 +776,43 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`      | uuid                     | NO   | —                 | internal       |
 | `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `iam.login_audit`
+
+**Scope:** tenant (nullable) · **Retention class:** evidence-audit · Append-only auth events; occurred_at server-stamped; hashes only, no credentials; own-history read.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | YES  | —                 | internal       |
+| `user_id`         | uuid                     | YES  | —                 | internal       |
+| `event_type`      | text                     | NO   | —                 | internal       |
+| `ip_hash`         | text                     | YES  | —                 | restricted     |
+| `user_agent_hash` | text                     | YES  | —                 | restricted     |
+| `detail`          | text                     | YES  | —                 | internal       |
+| `correlation_id`  | uuid                     | YES  | —                 | internal       |
+| `occurred_at`     | timestamp with time zone | NO   | now()             | internal       |
+
+### `iam.user_sessions`
+
+**Scope:** tenant · **Retention class:** operational · Session METADATA (never tokens); session_ref opaque unique; hashes only; own-session read; identity immutable.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `user_id`         | uuid                     | NO   | —                 | internal       |
+| `session_ref`     | text                     | NO   | —                 | restricted     |
+| `ip_hash`         | text                     | YES  | —                 | restricted     |
+| `user_agent_hash` | text                     | YES  | —                 | restricted     |
+| `issued_at`       | timestamp with time zone | NO   | now()             | internal       |
+| `last_seen_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `expires_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `revoked_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `revoke_reason`   | text                     | YES  | —                 | internal       |
+| `correlation_id`  | uuid                     | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
