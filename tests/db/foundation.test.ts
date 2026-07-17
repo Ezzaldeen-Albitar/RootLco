@@ -144,6 +144,11 @@ const ALLOWED_ROUTINES = new Set([
   'iam.audit_verify_chain',
   // Phase 1-4 (P1-04-DB-018): generic status-history server-stamp.
   'shared.stamp_status_history',
+  // Phase 1-4 (P1-04-DB-020/021): context wrappers and permission resolution.
+  'iam.current_company_ids',
+  'iam.current_branch_ids',
+  'iam.has_permission',
+  'iam.has_permission_in_scope',
 ]);
 
 let admin: Pool;
