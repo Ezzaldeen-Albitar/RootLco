@@ -112,6 +112,15 @@ Eng. Ezzaldeen Al-Bitar (technical and IT owner) — branching model, bootstrap 
 
 Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) — any decision to promote `develop` to `main` as a release, which is a business and commercial decision, and any future decision to relax the protection of `main`.
 
+> **Status update (2026-07-17).** Under the
+> [Standing Technical Authorization Policy](../governance/standing-technical-authorization-policy.md),
+> the merge of a routine technical phase's pull request into `develop` by
+> Eng. Ezzaldeen Al-Bitar — with mandatory CI green — is the recorded technical
+> approval event for that phase's gate; no repeated per-phase owner ceremony is
+> required. Everything else in this ADR is unchanged: pull requests, required CI,
+> conversation resolution, force-push and deletion blocking all remain binding, and the
+> promotion of `develop` to `main` as a release remains a joint founder decision.
+
 ## Date
 
 2026-07-16

@@ -8,7 +8,8 @@
 Eng. Bilal Jradat (RootLco founders) · **Approval date:** 2026-07-16 ·
 **Recorded:** 2026-07-16, at the owners' direction ·
 **Related:** ADR-006; [phase-1-1-owner-gate.md](../phase-1/phase-1-1/phase-1-1-owner-gate.md);
-[pull-request-review-requirement.md](../phase-1/phase-1-1/pull-request-review-requirement.md)
+[pull-request-review-requirement.md](../phase-1/phase-1-1/pull-request-review-requirement.md);
+[standing-technical-authorization-policy.md](./standing-technical-authorization-policy.md)
 
 ---
 
@@ -70,6 +71,17 @@ policy is:
 > keeping the live GitHub ruleset aligned with this table, including the required-check
 > names documented in
 > [github-required-checks.md](../phase-1/phase-1-1/github-required-checks.md).
+
+## Standing technical authorization (2026-07-17)
+
+The [Standing Technical Authorization Policy](./standing-technical-authorization-policy.md)
+builds on this policy: for **routine technical phases**, the documented self-review
+required here, plus green mandatory CI, plus the pull-request merge into `develop` by
+Eng. Ezzaldeen Al-Bitar, **constitute the phase gate decision** — recorded
+automatically as **Go — Technical Gate Passed**, with the merge as the recorded
+approval event. No repeated checkbox, signature, separate owner-gate message, or
+per-phase approval from Eng. Bilal Jradat is required for routine technical work.
+Decisions reserved to the founders jointly (listed in that policy §5) are unchanged.
 
 ## Reversion trigger
 

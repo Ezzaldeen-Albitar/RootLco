@@ -64,8 +64,9 @@ without duplication.
 > B.4 applied in place; confirmed to open in Microsoft Word without a repair prompt — 707
 > pages, 245 tables, 3 diagrams). The prepared Phase 1-2 update (Appendix B.5, revision
 > 1.0-rc3) is **not yet applied**: an open Microsoft Word session holds a write lock on the
-> file, and the lock is never forced. The update is applied, validated, and re-hashed here
-> the moment the lock clears.
+> file, and the lock is never forced. Per the synchronization policy below, this pending
+> state blocks nothing; the update is applied, validated, and re-hashed here at the next
+> available documentation window.
 >
 > **Master:** updated in place on 17 July 2026 to internal revision 0.4 (Phase 1-1 closure,
 > Phase 1-2 execution evidence, the Solo Developer Review Policy, and the adopted
@@ -127,3 +128,24 @@ Exit codes: `0` verified · `1` missing/changed · `2` reference record unreadab
 3. Confirm it opens in Microsoft Word **without a repair prompt**.
 4. Recalculate the hash and update this record.
 5. Commit the record change on the relevant working branch with an explanation.
+
+## Synchronization policy (2026-07-17 — Standing Technical Authorization §7)
+
+Canonical DOCX synchronization is an **administrative post-merge task, not a routine
+technical-phase blocker**. A locked canonical document must not block implementation,
+CI, pull request review, merge, the phase gate, or the start of the next authorized
+technical phase.
+
+When a canonical DOCX is locked by an open Microsoft Word session:
+
+1. **Continue all repository tasks.** Nothing waits on the lock.
+2. **Record the synchronization as pending** in this document (which update, prepared
+   where, blocked by what).
+3. **Prepare the exact update safely**: backup taken and hash-verified, the edit
+   scripted and XML-validated before any write.
+4. **Never kill or force-close Microsoft Word.** Do not wait indefinitely and do not
+   run a long-lived watcher; simply proceed with other work.
+5. **Apply the update at the next available documentation window**, then validate,
+   re-hash, and update this record in the same commit.
+6. Final synchronization is required only **before production release or formal
+   external delivery** — at that point a pending synchronization becomes a blocker.

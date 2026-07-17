@@ -146,6 +146,23 @@ Independent QA or security review may be introduced later before
 production release or when the team expands.
 
 _Both owner decisions above are recorded as **Go** (2026-07-16). Phase 1-2 is authorized.
-Phase 1-3 remains blocked until the Phase 1-2 owner gate records a Go or Conditional Go.
+Phase 1-3 remains blocked until the Phase 1-2 gate records a Go.
 The review model governing Phase 1-2 work is the
 [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md)._
+
+---
+
+## Governance note (2026-07-17)
+
+This record is historical and stands as written: Phase 1-1 was decided by both founders
+with a manual dual-owner record. **From 2026-07-17 onward, routine technical phase
+gates no longer use this dual manual format.** Under the
+[Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md),
+a routine technical gate is recorded automatically as **Go — Technical Gate Passed**
+when CI is green, no unresolved Critical/High findings exist (without an approved
+exception), the documented technical self-review is complete, and Eng. Ezzaldeen
+Al-Bitar merges the pull request into `develop` — the merge is the recorded approval
+event. Decisions reserved to the founders jointly (major commercial scope, material
+financial commitments, pricing/contracts, production go-live, real customer-data
+migration, Critical/High risk acceptance, major architecture changes with material
+business impact) are unchanged and still require explicit approval.

@@ -67,7 +67,7 @@ Rules:
 - One pull request addresses one task or one coherent group of tasks. Mixed, unrelated changes are rejected.
 - The pull request must use the repository pull request template and complete every section of it.
 - The description must list the Phase 1 task identifiers covered, the Definition of Done items satisfied, and any item deliberately left open.
-- Review is required from the technical owner. Changes affecting architecture, schema, security posture or tenancy boundaries additionally require product-owner acknowledgement.
+- Review is required from the technical owner. Under the [Standing Technical Authorization Policy](docs/governance/standing-technical-authorization-policy.md) (2026-07-17), routine technical changes — including database schema, security implementation, and refactoring — are approved by the technical authority's documented self-review and merge; joint product-owner approval is required **only** for the reserved decisions listed in that policy (major commercial scope, material financial commitments, pricing/contracts, production go-live, real customer-data migration, Critical/High risk acceptance, and major architecture changes with material business or financial impact).
 - Reviewers verify the rules in sections 5 to 12 of this document, not only code style.
 - Review currently operates under the owner-approved
   [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md)
@@ -75,7 +75,10 @@ Rules:
   write-access collaborator is the author and GitHub does not count self-approval. The
   author performs and **documents** a technical self-review in the pull request; that
   self-review must never be presented as an independent review. Pull requests, successful
-  CI, and conversation resolution remain mandatory.
+  CI, and conversation resolution remain mandatory. For routine technical phases, the
+  merge itself is the recorded technical approval event and the phase gate records
+  **Go — Technical Gate Passed** automatically once CI is green and the merge lands —
+  see the [Standing Technical Authorization Policy](docs/governance/standing-technical-authorization-policy.md).
 
 **Status note (2026-07-16).** Branch rules were applied by the repository administrator and pull requests #1–#3 were merged through them. The build environment still has no GitHub CLI or API token, so ruleset changes and PR creation remain manual owner actions performed in the GitHub UI.
 
@@ -199,6 +202,7 @@ Documentation is part of the change, not a follow-up.
   These documents live **outside this repository, in the parent folder, by owner decision** and are deliberately not committed. Git documentation is a working record; it is **never** a replacement canonical copy and must not be described as one.
 
 - The pull request must state explicitly whether the canonical Word documents were updated, or record that the update is outstanding and who owns it. Silence is not acceptable.
+- Canonical DOCX synchronization is an **administrative post-merge task, not a merge blocker** (Standing Technical Authorization Policy §7): a locked canonical document never blocks implementation, CI, review, merge, or the next technical phase. The synchronization is recorded as pending in [canonical-documents.md](docs/governance/canonical-documents.md), prepared safely, applied at the next documentation window, and must be complete before production release or formal external delivery. Microsoft Word is never force-closed to take the lock.
 - Where the repository and the canonical documents disagree, the disagreement is raised to the product owners for resolution. Contributors do not resolve it unilaterally in either direction.
 - Documentation must not claim that a test passed, an environment exists, an approval was granted or a gate was cleared unless that is demonstrably true.
 
@@ -224,7 +228,7 @@ The platform is multi-tenant, multi-company and multi-branch, and its behaviour 
 ## 12. Phase discipline
 
 - The current phase is **Phase 1-2: Database Architecture and Engineering Standards**. Phase 1-1 closed with a recorded owner **Go** on 2026-07-16 ([gate record](docs/phase-1/phase-1-1/phase-1-1-owner-gate.md)).
-- **Phase 1-3 has not started and must not start** until the owners record a Go or Conditional Go on the Phase 1-2 Database Standards Gate.
+- **Phase 1-3 has not started and must not start** until the Phase 1-2 Database Standards Gate records **Go — Technical Gate Passed** — which happens automatically, under the [Standing Technical Authorization Policy](docs/governance/standing-technical-authorization-policy.md), when the Phase 1-2 pull request has green mandatory CI and is merged into `develop` ([gate record](docs/phase-1/phase-1-2/phase-1-2-owner-gate.md)).
 - Phase 1-2 establishes standards and shared foundation only: **no business-domain tables** (tenants, companies, branches, users, customers, vehicles, appointments, inspections, quotations, work orders, inventory, invoices, payments) may be created or merged during Phase 1-2.
 - A Conditional Go carries conditions. Those conditions bind subsequent work and must be referenced in the pull requests that discharge them.
 - Only the **Local** environment is being implemented. Development, Staging and Production are **Planned — not provisioned**. Docker-based local development is accepted by owner instruction.

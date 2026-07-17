@@ -111,7 +111,7 @@ Direction of travel, as approved technical direction:
 - The Supabase service-role key bypasses RLS by design. Its use must therefore be confined to narrowly scoped server-side paths, never exposed to a client bundle, and never used as a convenience route around a policy.
 - Application-layer filtering is not a substitute for RLS and does not satisfy this requirement.
 
-**Gate (status updated 2026-07-16):** Phase 1-1 closed with a recorded owner **Go** (`docs/phase-1/phase-1-1/phase-1-1-owner-gate.md`); Phase 1-2 established the RLS standard, the session-context contract, and the tested foundation — its exit gate (Database Standards Gate) is **not decided**. Tenant-isolation evidence to date is owner-authorized self-review under the Solo Developer Review Policy; **no independent verification exists** (P1-EC-016 remains open), and RLS coverage of every future business schema remains a binding obligation on the phase that creates it.
+**Gate (status updated 2026-07-17):** Phase 1-1 closed with a recorded owner **Go** (`docs/phase-1/phase-1-1/phase-1-1-owner-gate.md`); Phase 1-2 established the RLS standard, the session-context contract, and the tested foundation — its exit gate (Database Standards Gate) is **pending**, and under the [Standing Technical Authorization Policy](docs/governance/standing-technical-authorization-policy.md) it records **Go — Technical Gate Passed** automatically when the phase pull request has green mandatory CI and is merged into `develop`. Tenant-isolation evidence to date is owner-authorized self-review under the Solo Developer Review Policy; **no independent verification exists** (P1-EC-016 remains open), and RLS coverage of every future business schema remains a binding obligation on the phase that creates it.
 
 ---
 
@@ -174,6 +174,8 @@ Zoom Vehicle Inspection and Evaluation Services is outside Phase 1 and is future
 | Product owners / final business approval authority (jointly) | Eng. Ezzaldeen Al-Bitar; Eng. Bilal Jradat                                                                                      |
 | Independent QA owner                                         | **Not assigned** — owner-accepted gap under the [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md) |
 | Security contact channel                                     | **Open item** — see Section 2                                                                                                   |
+
+Routine technical phase gates are decided under the [Standing Technical Authorization Policy](docs/governance/standing-technical-authorization-policy.md) (2026-07-17): with mandatory CI green, no unresolved Critical finding, no unresolved High finding without an approved time-bounded exception, and the documented technical self-review complete, the pull-request merge into `develop` by Eng. Ezzaldeen Al-Bitar is the recorded technical approval event. Joint founder approval remains required for the reserved decisions listed in that policy — including **acceptance of any unresolved Critical or High security risk**, production go-live, and real customer-data migration.
 
 This policy describes intended controls and current state. Where a control is not yet implemented, that is stated. This document confers no assurance, warranty, or certification of any kind.
 

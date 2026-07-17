@@ -93,3 +93,12 @@ protection and simply blocks all work.
 > inspected from the build environment (no GitHub CLI or API token is used there); keeping
 > it aligned with this decision is the repository administrator's responsibility. No
 > approving review is claimed for any merged pull request.
+
+> **Extension (2026-07-17).** The
+> [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
+> builds on Option B: for routine technical phases, the pull-request merge into
+> `develop` by Eng. Ezzaldeen Al-Bitar — with mandatory CI green and the documented
+> self-review complete — **is** the recorded technical approval event, and the phase
+> gate records **Go — Technical Gate Passed** automatically. No second GitHub reviewer
+> is required while no second technical reviewer exists. The revert-to-1 trigger above
+> is unchanged and retires both arrangements together.
