@@ -642,3 +642,56 @@ credential authority. Contact fields are classified `restricted`.
 | `actor_id`       | uuid                     | NO   | —                 | internal       |
 | `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `correlation_id` | uuid                     | YES  | —                 | internal       |
+
+### `iam.permissions`
+
+**Scope:** platform · **Retention class:** operational · Platform-owned permission catalog; read-only to app roles; code immutable.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `permission_code` | text                     | NO   | —                 | internal       |
+| `domain`          | text                     | NO   | —                 | internal       |
+| `description`     | text                     | NO   | —                 | internal       |
+| `risk_level`      | text                     | NO   | 'low'::text       | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `iam.roles`
+
+**Scope:** tenant · **Retention class:** operational · Tenant-scoped named permission bundles; `role_code`/`is_system` immutable; soft-delete.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `role_code`      | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `description`    | text                     | YES  | —                 | internal       |
+| `is_system`      | boolean                  | NO   | false             | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.role_permissions`
+
+**Scope:** tenant · **Retention class:** operational · Role→permission map with explicit `effect` (allow/deny); deny precedence persisted; mapped permission cannot be deleted.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `role_id`        | uuid                     | NO   | —                 | internal       |
+| `permission_id`  | uuid                     | NO   | —                 | internal       |
+| `effect`         | text                     | NO   | 'allow'::text     | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |

@@ -240,6 +240,13 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  await admin.query('DELETE FROM iam.role_permissions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.roles WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  // Global (non-tenant) test permission fixtures use the test. code prefix.
+  await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
   await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
     TENANT_A,

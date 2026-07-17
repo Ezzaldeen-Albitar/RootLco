@@ -51,6 +51,10 @@ const ALLOWED_TABLES = new Set([
   'iam.user_profiles',
   'iam.user_employee_links',
   'iam.user_status_history',
+  // Phase 1-4 authorization (P1-04-DB-005..007).
+  'iam.permissions',
+  'iam.roles',
+  'iam.role_permissions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -255,6 +259,12 @@ describe('database foundation', () => {
       'tg_legal_companies_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_permissions_immutable',
+      'tg_permissions_touch_metadata',
+      'tg_role_permissions_immutable',
+      'tg_role_permissions_touch_metadata',
+      'tg_roles_immutable',
+      'tg_roles_touch_metadata',
       'tg_storage_locations_immutable',
       'tg_storage_locations_parent_warehouse_live',
       'tg_storage_locations_touch_metadata',
@@ -313,6 +323,9 @@ describe('database foundation', () => {
       'sel_languages_all',
       'sel_legal_companies_tenant',
       'sel_number_sequences_tenant',
+      'sel_permissions_all',
+      'sel_role_permissions_tenant',
+      'sel_roles_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
       'sel_tax_classes_scope',

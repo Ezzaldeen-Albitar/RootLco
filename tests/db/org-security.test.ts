@@ -24,6 +24,7 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
   'shared.currencies', // Class 1 platform reference data
   'shared.timezones',
   'shared.languages',
+  'iam.permissions', // platform-owned permission catalogue (no tenant scope)
 ]);
 
 /** Tables whose tenant_id is nullable BY DESIGN (documented adaptation). */
