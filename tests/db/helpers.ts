@@ -223,6 +223,23 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_B,
   ]);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
+  await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.company_settings WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tax_rates WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM org.tax_classes WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM org.tenant_feature_overrides WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM org.storage_locations WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

@@ -38,6 +38,11 @@ const ALLOWED_TABLES = new Set([
   'org.warehouses',
   'org.storage_locations',
   'org.cost_centers',
+  'org.company_settings',
+  'org.branch_settings',
+  'org.tax_classes',
+  'org.tax_rates',
+  'org.tenant_feature_overrides',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -85,6 +90,10 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-3 (P1-03-DB-008..010): dead parents reject new children.
   'org.guard_parent_branch_live',
   'org.guard_parent_warehouse_live',
+  // Phase 1-3 (P1-03-DB-012/015): typed settings validation and the
+  // override > plan > default feature-resolution precedence.
+  'org.validate_setting_value',
+  'org.resolve_feature_enabled',
 ]);
 
 let admin: Pool;
@@ -209,9 +218,13 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_branch_settings_immutable',
+      'tg_branch_settings_validate_value',
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',
+      'tg_company_settings_immutable',
+      'tg_company_settings_validate_value',
       'tg_cost_centers_immutable',
       'tg_cost_centers_touch_metadata',
       'tg_currencies_touch_metadata',
@@ -231,6 +244,11 @@ describe('database foundation', () => {
       'tg_subscription_plans_immutable',
       'tg_subscription_plans_touch_metadata',
       'tg_subscription_plans_validate_documents',
+      'tg_tax_classes_immutable',
+      'tg_tax_classes_touch_metadata',
+      'tg_tax_rates_immutable',
+      'tg_tax_rates_touch_metadata',
+      'tg_tenant_feature_overrides_immutable',
       'tg_tenant_subscriptions_immutable',
       'tg_tenant_subscriptions_touch_metadata',
       'tg_tenants_immutable_columns',
@@ -249,15 +267,21 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
+      'ins_branch_settings_scope',
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
+      'ins_company_settings_scope',
       'ins_cost_centers_scope',
       'ins_departments_scope',
       'ins_legal_companies_tenant',
       'ins_storage_locations_scope',
+      'ins_tax_classes_scope',
+      'ins_tax_rates_scope',
       'ins_warehouses_scope',
+      'sel_branch_settings_scope',
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
+      'sel_company_settings_scope',
       'sel_cost_centers_scope',
       'sel_currencies_all',
       'sel_departments_scope',
@@ -267,6 +291,9 @@ describe('database foundation', () => {
       'sel_number_sequences_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
+      'sel_tax_classes_scope',
+      'sel_tax_rates_scope',
+      'sel_tenant_feature_overrides_tenant',
       'sel_tenant_status_history_tenant',
       'sel_tenant_subscriptions_tenant',
       'sel_tenants_self',
@@ -278,6 +305,8 @@ describe('database foundation', () => {
       'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
       'upd_storage_locations_scope',
+      'upd_tax_classes_scope',
+      'upd_tax_rates_scope',
       'upd_warehouses_scope',
     ]);
   });
