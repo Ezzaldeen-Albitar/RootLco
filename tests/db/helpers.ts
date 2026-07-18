@@ -222,6 +222,71 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Phase 1-4 iam fixtures: children first, then accounts (all reference
+  // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
+  // role_grants first: deleting it cascades grant_scopes (which reference org
+  // companies/branches/departments) and precedes the user/role/org deletes.
+  await admin.query('DELETE FROM iam.role_grants WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.approval_limits WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.sensitive_data_permissions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_sessions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.login_audit WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  // Audit records cascade their details and integrity links; security events too.
+  await admin.query('DELETE FROM iam.audit_records WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.security_events WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  // shared.status_history cascades its status_evidence; idempotency keys too.
+  await admin.query('DELETE FROM shared.status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.idempotency_keys WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_employee_links WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_profiles WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.user_accounts WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.role_permissions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM iam.roles WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  // Global (non-tenant) test permission fixtures use the test. code prefix.
+  await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
   // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
   await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
     TENANT_A,

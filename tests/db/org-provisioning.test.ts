@@ -23,6 +23,7 @@ const SEED_FILES = [
   '01_reference_data.sql',
   '02_benzene_pilot_provisioning.sql',
   '03_local_test_tenant.sql',
+  '04_iam_permission_catalog.sql',
 ];
 
 let admin: Pool;
