@@ -72,15 +72,20 @@ Synthetic examples (all `fx_`/synthetic identifiers, no real data):
 
 Exact credential-shaped example values (a full AWS access-key id, a
 three-segment JWT, a private-key header, a postgres URL with an inline
-password) are **intentionally not stored in tracked documentation**. Doing so
-would trip — correctly — the tracked-secret scanner
-(`npm run security:tracked-secrets`), which makes no exception for `docs/`. The
-redaction placeholders above stand in for those shapes. The real
-credential-shaped values that prove the sanitizer rejects them are
-**constructed at runtime inside the security tests**
-(`tests/db/shared-processed-errors.test.ts`) from non-matching fragments, so
-they exist only in memory during a test run and never as a literal in source
-control.
+password) are **intentionally not stored in tracked documentation**:
+
+- Repository secret scanners treat any such value as a potential real
+  credential; the tracked-secret scanner (`npm run security:tracked-secrets`)
+  makes no exception for `docs/` or `tests/`, so a literal here fails CI —
+  correctly. The redaction placeholders above stand in for those shapes.
+- The real credential-shaped values that prove the sanitizer rejects them are
+  **constructed at runtime inside the database security tests**
+  (`tests/db/shared-processed-errors.test.ts`) from non-matching fragments, so
+  they exist only in memory during a test run, never as a literal in source
+  control.
+- This policy **prevents future contributors from accidentally reintroducing a
+  credential literal**: the pattern to copy is "redact in docs, generate at
+  runtime in tests", and the scanner blocks any regression before merge.
 
 ## 4. HONEST boundary — surfaces with no sanitizer trigger
 

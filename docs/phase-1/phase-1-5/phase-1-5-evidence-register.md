@@ -54,20 +54,24 @@ retention classes, empty business tables, and idempotent counts.
 
 ## 4. Test suite (Proven)
 
-**488 tests in 36 files on the `83f0f70` tree.** The 311 pre-existing Phase
-1-2/1-3/1-4 tests are preserved (`org-provisioning` and `iam-seeds` refactored
-to ephemeral tenant fixtures at equal coverage); **169 new** Phase 1-5 tests in
-13 new files: shared-documents 16, shared-document-versions 14,
-shared-document-links 9, shared-retention 14, shared-message-templates 21,
-shared-outbound-messages 17, shared-event-outbox 13, shared-processed-errors
-15, shared-settings-localization 13, shared-search-metadata 11,
-shared-tags-notes-comments 15, shared-hardening 10, no-fake-data 1. Every
-isolation assertion runs as the NON-OWNER runtime login; worker assertions run
-as a dedicated test worker login. Suites ran green locally per increment
-(targeted runs against a freshly migrated database); today's re-run of the
-posture suites (foundation 14, org-security 9, shared-hardening 10,
-no-fake-data 1) passed **34/34**. The single-process **full**-suite run is a CI
-concern (§7).
+**490 tests in 36 files** — the authoritative runtime total of the full database
+suite on the current Phase 1-5 tree (the per-file counts are those the suite run
+prints, not a static grep). The **311** pre-existing Phase 1-2/1-3/1-4 tests are
+preserved (`org-provisioning` and `iam-seeds` were refactored to ephemeral
+tenant fixtures at equal coverage); the remaining **179** are new Phase 1-5
+tests across the thirteen new `shared-*`/`no-fake-data` database suites plus the
+runtime-credential-generator and sanitizer additions in `shared-processed-errors`.
+Every isolation assertion runs as the NON-OWNER runtime login; worker assertions
+run as a dedicated test worker login.
+
+The full suite was run **from an empty database in the CI order** (all 32
+migrations → `validate:seed-state` with the declared seeds applied twice →
+`test:db`): **490/490 green on three consecutive full runs.** Honesty note: one
+intermittent single-process batch failure was observed once across five full-batch
+runs and did not recur in the other four or in any isolated suite run; its
+identity could not be captured because it did not reproduce. CI's dedicated
+PostgreSQL container is the authority for the single-process full-suite result
+(§7).
 
 ## 5. Security properties proven by test
 
@@ -120,7 +124,7 @@ live database. **14 vectors; zero unresolved Critical/High.**
 The `Database migrations and RLS tests` job asserts merged-migration
 immutability on pull requests, applies all 32 migrations to a clean PostgreSQL
 17, runs `validate:seed-state` **before** `test:db`, then runs the full
-488-test suite. The secrets job runs the env-file/key-material checks, the
+490-test suite. The secrets job runs the env-file/key-material checks, the
 scope-exclusion guard, the credential-pattern scan, the browser-secret check,
 and the no-fake-data scan. **No GitHub Actions run exists for the final
 implementation SHA `83f0f70`** — CI on it is owner-verifiable once the E–M pull

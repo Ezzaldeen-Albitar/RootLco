@@ -119,6 +119,21 @@ afterAll(async () => {
   await admin.end();
 });
 
+// Dedicated, database-independent contract for the runtime generators. These
+// fail immediately if a future edit breaks the shapes the sanitizer/scanner
+// expect — before any DB interaction — so the generators are never trusted blind.
+describe('synthetic credential generators (no credential literals in source)', () => {
+  it('produces an AWS access-key-shaped id matching AKIA + 16 [A-Z0-9]', () => {
+    expect(buildSyntheticAwsAccessKeyId()).toMatch(/^AKIA[A-Z0-9]{16}$/);
+  });
+
+  it('produces a three-segment JWT-shaped value', () => {
+    const jwt = buildSyntheticJwt();
+    expect(jwt.split('.')).toHaveLength(3);
+    expect(jwt).toMatch(/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  });
+});
+
 describe('shared.processed_events — append-only atomic claims', () => {
   it('rejects duplicate (consumer_code, event_id) claims with 23505', async () => {
     const sql = `INSERT INTO shared.processed_events
