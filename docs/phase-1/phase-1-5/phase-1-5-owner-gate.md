@@ -25,7 +25,11 @@ pricing/contract, no material financial or scope change).
 ## What is submitted
 
 The full package on `feature/p1-05-shared-services-database` (final source
-commit `83f0f70`, base `69e0da1`): twelve timestamped migrations
+commit `da73b1f`, base `69e0da1`; the closeout-documentation commit `83f0f70`
+was followed by three test/security refinement commits — `15ab5b4` and
+`0c62144` (runtime-generated credential fixtures + canonical single-source
+secret scanner) and `da73b1f` (deterministic outbox-claim regression guard)):
+twelve timestamped migrations
 (`20260718100000`–`111000`) — Increments A–D already in `develop` via PR #24
 (merge `ee3b1de`), Increments E–L plus the Increment M structural seed on the
 branch — creating **22 tables, 22 functions, 51 triggers, 22 RLS policies,
@@ -42,13 +46,13 @@ accepted with documented residual risk — with details in the
 
 ## Gate conditions (Standing Technical Authorization §2) — status as of 2026-07-18
 
-| #   | Condition                                                                      | Status                                                                                                                                                                                                           |
-| --- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | All mandatory CI checks green on the final pull request                        | **Pending** — the pull request for Increments E–M has **not been opened**; the CI result on `83f0f70` is owner-verifiable once it runs, and no run is claimed today                                              |
-| 2   | No unresolved Critical security finding                                        | **Satisfied as of assembly** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md))                                                                          |
-| 3   | No unresolved High finding without an approved, time-bounded exception         | **Satisfied as of assembly** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty; the three accepted adversarial findings are Medium/Low and documented             |
-| 4   | Documented technical/security self-review completed by Eng. Ezzaldeen Al-Bitar | **Satisfied** — [initial-audit.md](./initial-audit.md) plus the [completion report](./phase-1-5-completion-report.md) including the 14-vector adversarial ledger (§9), each entry anchored to a real denial test |
-| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar                  | **Pending** — Increments A–D are in `develop` via PR #24 (`ee3b1de`), but the final Phase 1-5 pull request does not exist yet, so no merge of `83f0f70` can be recorded                                          |
+| #   | Condition                                                                      | Status                                                                                                                                                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | All mandatory CI checks green on the final pull request                        | **Satisfied** — [PR #26](https://github.com/Ezzaldeen-Albitar/RootLco/pull/26) ran all four required checks Successful on the exact final SHA `da73b1f`: _CI / Lint, types, tests, build_, _CI / Docker build validation_, _CI / Database migrations and RLS tests_, _CI / Secret and sensitive-file scan_ (owner-verified 2026-07-18) |
+| 2   | No unresolved Critical security finding                                        | **Satisfied as of assembly** — zero known ([vulnerability-management-standard.md](../../security/vulnerability-management-standard.md))                                                                                                                                                                                                |
+| 3   | No unresolved High finding without an approved, time-bounded exception         | **Satisfied as of assembly** — zero known; the [exceptions register](../../security/security-exceptions-register.md) is empty; the three accepted adversarial findings are Medium/Low and documented                                                                                                                                   |
+| 4   | Documented technical/security self-review completed by Eng. Ezzaldeen Al-Bitar | **Satisfied** — [initial-audit.md](./initial-audit.md) plus the [completion report](./phase-1-5-completion-report.md) including the 14-vector adversarial ledger (§9), each entry anchored to a real denial test                                                                                                                       |
+| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar                  | **Satisfied** — [PR #26](https://github.com/Ezzaldeen-Albitar/RootLco/pull/26) merged into `develop` by Eng. Ezzaldeen Al-Bitar as merge commit `4f68b6a` (parents `ee3b1de` + `da73b1f`, target `develop`); `da73b1f` verified an ancestor of `origin/develop` (2026-07-18)                                                           |
 
 Additional gate requirements already asserted by tests on the branch: RLS
 enabled and forced on every module table; every routine SECURITY INVOKER with
@@ -59,23 +63,34 @@ crm/veh object; clean-database business tables empty (no fake data).
 
 ## Decision record
 
-**Decision: Pending.** Conditions 2–4 are satisfied as of assembly; conditions
-1 and 5 are outstanding because the final pull request has not been opened.
-Under the standing policy the record completes automatically — and only — when
-the final PR's mandatory CI checks are green and the merge into `develop` by
-Eng. Ezzaldeen Al-Bitar exists in protected history. No signature or checkbox
-substitutes for those facts, and this document must be updated with the final
-source SHA, merge SHA, parents, target, date, and validation evidence at that
-time.
+**Decision: Go — Technical Gate Passed.** All five conditions are now satisfied
+on evidenced facts. The final source commit `da73b1f` was submitted as
+[PR #26](https://github.com/Ezzaldeen-Albitar/RootLco/pull/26) (base `develop`);
+all four mandatory CI checks ran **Successful on the exact final SHA `da73b1f`**;
+Eng. Ezzaldeen Al-Bitar merged the PR into `develop` as merge commit `4f68b6a`;
+and `da73b1f` is verified contained in `origin/develop`. The record completes
+from these facts under the standing policy — the merge is the recorded technical
+approval event, not a substitute for the underlying evidence.
 
-- **Decision:** **Pending**
-- **Technical authority:** Eng. Ezzaldeen Al-Bitar
+The closure-time intermittent-failure investigation is not a residual defect: the
+one observed over-selection in `shared-event-outbox` reproduced **only** on a
+locally dirtied database and **never** under any clean-database (CI-equivalent)
+condition across ≈50 controlled trials; the `Database migrations and RLS tests`
+required check — a fresh PostgreSQL container running the full suite — is green on
+`da73b1f`, and a deterministic regression guard was added. Full analysis in the
+[evidence register §4](./phase-1-5-evidence-register.md).
+
+- **Decision:** **Go — Technical Gate Passed**
+- **Technical authority:** Eng. Ezzaldeen Al-Bitar (technical / QA / security reviewer and repository administrator under the Standing Technical Authorization)
 - **Review model:** Owner-authorized technical/security self-review (never independent review)
-- **Final source SHA (candidate):** `83f0f70` (`83f0f7049150990aad1312bba740d7e0e62693a1`)
-- **CI evidence:** none claimed — owner-verifiable after the PR is opened
-- **Merge SHA / parents / target / date:** — (no final PR exists)
+- **Final source SHA:** `da73b1f` (`da73b1f7e814cac9bfcea25e101742bed5171cc8`)
+- **Pull request:** [#26](https://github.com/Ezzaldeen-Albitar/RootLco/pull/26) — base `develop`, head `feature/p1-05-shared-services-database`
+- **CI evidence:** all four required checks Successful on `da73b1f` — _CI / Lint, types, tests, build_, _CI / Docker build validation_, _CI / Database migrations and RLS tests_, _CI / Secret and sensitive-file scan_ (owner-verified on GitHub, 2026-07-18)
+- **Merge SHA / parents / target / date:** `4f68b6a` (`4f68b6a66ef3083e78c4dd4f3b43edfdc8d29d54`) · parents `ee3b1de` + `da73b1f` · target `develop` · 2026-07-18
+- **Containment:** `da73b1f` verified an ancestor of `origin/develop` (`git merge-base --is-ancestor` → contained; `origin/develop` at `4f68b6a`)
+- **Validation:** 491 database tests / 36 files green in the CI order (all migrations → `validate:seed-state` twice → `test:db`); clean-database business tables empty (no-fake-data); details in the [completion report](./phase-1-5-completion-report.md) and [evidence register](./phase-1-5-evidence-register.md)
 - **Critical findings:** zero unresolved · **High findings:** zero unresolved without approved exception · **Security exceptions:** none (register empty)
-- **Gate assembled:** 2026-07-18 · **Gate recorded:** —
+- **Gate assembled:** 2026-07-18 · **Gate recorded:** 2026-07-18
 
 ## Canonical document synchronization (administrative — does not block)
 
@@ -84,5 +99,8 @@ Phase 1 plan DOCX: **Pending — non-blocking administrative synchronization**
 
 ## Phase boundary
 
-**Phase 1-6 has not been started**, and must not begin until this gate records
-**Go** on evidenced facts and the closeout is contained in `origin/develop`.
+This gate now records **Go** on evidenced facts and the Phase 1-5 closeout is
+contained in `origin/develop` (`da73b1f` is an ancestor of `4f68b6a`), so the
+formal precondition for Phase 1-6 is met. **Phase 1-6 has nonetheless not been
+started** and remains out of scope for this closure; it begins only as a
+separate, explicitly authorized effort.
