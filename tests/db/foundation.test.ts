@@ -86,6 +86,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment E — governed message templates (P1-05-DB-007/008).
   'shared.message_templates',
   'shared.template_versions',
+  // Phase 1-5 Increment F — outbound message persistence (P1-05-DB-009/010).
+  'shared.outbound_messages',
+  'shared.delivery_attempts',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -176,6 +179,10 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_template_active_version',
   'shared.guard_template_version_lifecycle',
   'shared.guard_template_version_scope',
+  // Phase 1-5 (P1-05-DB-009/SEC-004): approved template scope and exact
+  // initial-state/transition enforcement for outbound messages.
+  'shared.guard_outbound_message_lifecycle',
+  'shared.guard_outbound_message_scope',
 ]);
 
 let admin: Pool;
@@ -339,6 +346,10 @@ describe('database foundation', () => {
       'tg_message_templates_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_outbound_messages_guard_lifecycle',
+      'tg_outbound_messages_guard_scope',
+      'tg_outbound_messages_immutable',
+      'tg_outbound_messages_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
       'tg_retention_classes_immutable',
@@ -416,6 +427,7 @@ describe('database foundation', () => {
       'sel_company_settings_scope',
       'sel_cost_centers_scope',
       'sel_currencies_all',
+      'sel_delivery_attempts_tenant',
       'sel_departments_scope',
       'sel_document_categories_visible',
       'sel_document_links_tenant',
@@ -431,6 +443,7 @@ describe('database foundation', () => {
       'sel_login_audit_own',
       'sel_message_templates_visible',
       'sel_number_sequences_tenant',
+      'sel_outbound_messages_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
       'sel_role_grants_tenant',

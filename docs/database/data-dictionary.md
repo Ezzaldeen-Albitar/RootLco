@@ -1104,3 +1104,57 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.outbound_messages`
+
+**Scope:** tenant · **Retention class:** operational · Tenant-scoped outbound-message envelope. Phase 1 channels are exactly `email` and `in_app`; purposes are exactly `transactional`, `marketing`, and `system`. A recipient is represented by a tenant-bound user and/or a 32-byte destination digest—never a plaintext external address. Only the rendered-content integrity digest is stored; rendering and transient content belong to the backend dispatch phase and are not persisted here. Optional template versions are approved and platform-or-same-tenant. Rows start `pending` and follow the guarded delivery lifecycle. Runtime SELECT-only.
+
+| Column                | Type                     | Null | Default           | Classification |
+| --------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                  | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`           | uuid                     | NO   | —                 | internal       |
+| `company_id`          | uuid                     | YES  | —                 | internal       |
+| `branch_id`           | uuid                     | YES  | —                 | internal       |
+| `template_version_id` | uuid                     | YES  | —                 | internal       |
+| `channel`             | text                     | NO   | —                 | internal       |
+| `purpose`             | text                     | NO   | —                 | internal       |
+| `recipient_digest`    | bytea                    | YES  | —                 | restricted     |
+| `recipient_user_id`   | uuid                     | YES  | —                 | restricted     |
+| `body_sha256`         | bytea                    | NO   | —                 | internal       |
+| `dedupe_key`          | text                     | NO   | —                 | internal       |
+| `consent_ref`         | text                     | YES  | —                 | restricted     |
+| `status`              | text                     | NO   | 'pending'         | internal       |
+| `retry_count`         | integer                  | NO   | 0                 | internal       |
+| `failure_class`       | text                     | YES  | —                 | internal       |
+| `queued_at`           | timestamp with time zone | YES  | —                 | internal       |
+| `sending_at`          | timestamp with time zone | YES  | —                 | internal       |
+| `sent_at`             | timestamp with time zone | YES  | —                 | internal       |
+| `delivered_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `failed_at`           | timestamp with time zone | YES  | —                 | internal       |
+| `cancelled_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`      | integer                  | NO   | 1                 | internal       |
+| `created_at`          | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`          | uuid                     | NO   | —                 | internal       |
+| `updated_at`          | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`          | uuid                     | YES  | —                 | internal       |
+
+### `shared.delivery_attempts`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only provider-neutral delivery-attempt evidence. Attempt numbers are unique per message, message ownership is tenant-bound structurally, and an `errored` attempt requires a sanitized non-blank summary. Provider payloads, secrets, stack traces, and plaintext recipient addresses are not stored. Runtime/readonly SELECT-only; no application UPDATE or DELETE grant/policy exists.
+
+| Column                 | Type                                                       | Null | Default           | Classification |
+| ---------------------- | ---------------------------------------------------------- | ---- | ----------------- | -------------- |
+| `id`                   | uuid                                                       | NO   | gen_random_uuid() | internal       |
+| `tenant_id`            | uuid                                                       | NO   | —                 | internal       |
+| `message_id`           | uuid                                                       | NO   | —                 | internal       |
+| `attempt_number`       | integer                                                    | NO   | —                 | internal       |
+| `provider_code`        | text                                                       | NO   | —                 | internal       |
+| `provider_message_ref` | text                                                       | YES  | —                 | internal       |
+| `status`               | text (`started` \| `accepted` \| `delivered` \| `errored`) | NO   | —                 | internal       |
+| `response_code`        | text                                                       | YES  | —                 | internal       |
+| `error_summary`        | text                                                       | YES  | —                 | internal       |
+| `details`              | jsonb                                                      | NO   | '{}'::jsonb       | restricted     |
+| `attempted_at`         | timestamp with time zone                                   | NO   | now()             | internal       |
+| `completed_at`         | timestamp with time zone                                   | YES  | —                 | internal       |
+| `created_at`           | timestamp with time zone                                   | NO   | now()             | internal       |
+| `created_by`           | uuid                                                       | NO   | —                 | internal       |
