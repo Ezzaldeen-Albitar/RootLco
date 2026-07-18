@@ -251,6 +251,21 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
          OR (tenant_id IS NULL AND error_code LIKE 'fx\\_%')`,
     [TENANT_A, TENANT_B]
   );
+  // Settings are append-only. Remove tenant fixtures and only fx_-prefixed
+  // platform rows; localization content must be removed before its key catalogue.
+  await admin.query(
+    `DELETE FROM shared.system_settings
+      WHERE tenant_id IN ($1, $2)
+         OR (scope = 'platform' AND setting_key LIKE 'fx\\_%')`,
+    [TENANT_A, TENANT_B]
+  );
+  await admin.query(
+    `DELETE FROM shared.localized_texts
+      WHERE key_id IN (
+        SELECT id FROM shared.localization_keys WHERE key_code LIKE 'fx\\_%'
+      )`
+  );
+  await admin.query(`DELETE FROM shared.localization_keys WHERE key_code LIKE 'fx\\_%'`);
   // Phase 1-4 iam fixtures: children first, then accounts (all reference
   // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
   // role_grants first: deleting it cascades grant_scopes (which reference org

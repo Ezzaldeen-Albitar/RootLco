@@ -26,6 +26,8 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
   'shared.languages',
   'iam.permissions', // platform-owned permission catalogue (no tenant scope)
   'shared.retention_classes', // platform retention definitions (no tenant scope)
+  'shared.localization_keys', // platform localization-key catalogue
+  'shared.localized_texts', // governed platform localization content
 ]);
 
 /** Tables whose tenant_id is nullable BY DESIGN (documented adaptation). */
@@ -38,6 +40,7 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'shared.template_versions', // mirrors its platform/tenant template tenant_id, including NULL
   'shared.processed_events', // platform consumers process platform-scope work without a tenant
   'shared.error_records', // errors can occur before tenant context is established
+  'shared.system_settings', // dual-scope: platform default (tenant NULL) OR tenant override
 ]);
 
 let admin: Pool;

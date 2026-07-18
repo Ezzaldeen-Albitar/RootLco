@@ -94,6 +94,10 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment H — consumer claims and durable error triage.
   'shared.processed_events',
   'shared.error_records',
+  // Phase 1-5 Increment I — immutable settings and governed localization.
+  'shared.system_settings',
+  'shared.localization_keys',
+  'shared.localized_texts',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -196,6 +200,10 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-5 Increment H — recursive error sanitization and lifecycle guard.
   'shared.guard_error_context_sanitized',
   'shared.guard_error_record_lifecycle',
+  // Phase 1-5 Increment I — setting resolution and localization lifecycle/reporting.
+  'shared.resolve_setting',
+  'shared.guard_localized_text_lifecycle',
+  'shared.missing_translations',
 ]);
 
 let admin: Pool;
@@ -360,6 +368,11 @@ describe('database foundation', () => {
       'tg_legal_companies_touch_metadata',
       'tg_legal_holds_immutable',
       'tg_legal_holds_touch_metadata',
+      'tg_localization_keys_immutable',
+      'tg_localization_keys_touch_metadata',
+      'tg_localized_texts_guard_lifecycle',
+      'tg_localized_texts_immutable',
+      'tg_localized_texts_touch_metadata',
       'tg_login_audit_stamp',
       'tg_message_templates_active_version',
       'tg_message_templates_immutable',
@@ -390,6 +403,8 @@ describe('database foundation', () => {
       'tg_subscription_plans_immutable',
       'tg_subscription_plans_touch_metadata',
       'tg_subscription_plans_validate_documents',
+      'tg_system_settings_immutable',
+      'tg_system_settings_validate_value',
       'tg_tax_classes_immutable',
       'tg_tax_classes_touch_metadata',
       'tg_tax_rates_immutable',
@@ -459,6 +474,8 @@ describe('database foundation', () => {
       'sel_languages_all',
       'sel_legal_companies_tenant',
       'sel_legal_holds_tenant',
+      'sel_localization_keys_all',
+      'sel_localized_texts_all',
       'sel_login_audit_admin',
       'sel_login_audit_own',
       'sel_message_templates_visible',
@@ -475,6 +492,7 @@ describe('database foundation', () => {
       'sel_status_history_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
+      'sel_system_settings_visible',
       'sel_tax_classes_scope',
       'sel_tax_rates_scope',
       'sel_template_versions_visible',

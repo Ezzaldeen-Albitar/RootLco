@@ -1262,3 +1262,110 @@ empty `search_path`, PUBLIC execute revoked):
 - `shared.guard_error_record_lifecycle()` enforces the initial open state,
   transition graph, required resolver attribution, server resolution timestamp,
   and terminal resolved state.
+
+### `shared.system_settings`
+
+**Scope:** platform + tenant · **Retention class:** operational · Immutable,
+versioned configuration rows. Platform defaults use `scope='platform'` with NULL
+`tenant_id`; tenant overrides use `scope='tenant'` with non-NULL `tenant_id`.
+Current resolution is highest tenant version, then highest platform version.
+Runtime/readonly SELECT and `shared.resolve_setting(text)` only. No secrets may be
+stored: `is_sensitive` classifies restricted content and does not encrypt it.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`          | text                     | NO   | —                 | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `setting_key`    | text                     | NO   | —                 | internal       |
+| `setting_value`  | jsonb                    | NO   | —                 | restricted     |
+| `value_type`     | text                     | NO   | —                 | internal       |
+| `is_sensitive`   | boolean                  | NO   | false             | internal       |
+| `version`        | integer                  | NO   | —                 | internal       |
+| `effective_from` | timestamp with time zone | NO   | now()             | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+
+`uq_system_settings_scope_key_version` is the non-partial `UNIQUE NULLS NOT
+DISTINCT (tenant_id, setting_key, version)` allocation referee and also covers
+the nullable tenant FK. `tg_system_settings_validate_value` reuses
+`org.validate_setting_value()`; `tg_system_settings_immutable` guards every
+column. There is deliberately no metadata-touch trigger and no update path.
+RLS policy: `sel_system_settings_visible`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-014,
+P1-05-QA-006; owner `shared`.
+
+### `shared.localization_keys`
+
+**Scope:** platform · **Retention class:** operational · Empty platform catalogue
+of stable localization keys. No `tenant_id` by design
+(`TENANT_COLUMN_EXCEPTIONS`). Runtime/readonly SELECT-only; no customer-facing
+wording is seeded.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `key_code`       | text                     | NO   | —                 | internal       |
+| `context`        | text                     | YES  | —                 | internal       |
+| `description`    | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'active'          | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`key_code` is unique and constrained to
+`^[a-z][a-z0-9_.]{1,126}$`; description is non-blank and status is
+active|deprecated. RLS policy: `sel_localization_keys_all`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-015,
+P1-05-QA-006; owner `shared`.
+
+### `shared.localized_texts`
+
+**Scope:** platform · **Retention class:** evidence-audit · Governed localization
+content with draft → approved → retired lifecycle. No `tenant_id` by design
+(`TENANT_COLUMN_EXCEPTIONS`). Approved identity/content is immutable. The partial
+unique `uq_localized_texts_one_approved` permits exactly one approved row per
+key/locale, so replacement requires retirement first. No text rows are seeded.
+Runtime/readonly SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `key_id`         | uuid                     | NO   | —                 | internal       |
+| `locale_code`    | text                     | NO   | —                 | internal       |
+| `version`        | integer                  | NO   | —                 | internal       |
+| `text_value`     | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'draft'           | internal       |
+| `approved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `approved_by`    | uuid                     | YES  | —                 | internal       |
+| `retired_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`uq_localized_texts_key_locale_version` covers the key FK by leading column;
+`ix_localized_texts_locale` covers the language FK. Pairing CHECKs require both
+approval stamps for approved/retired rows and `retired_at` exactly for retired
+rows. `shared.guard_localized_text_lifecycle()` enforces unstamped draft INSERT,
+draft→approved stamping, approved→retired stamping, and content immutability.
+RLS policy: `sel_localized_texts_all`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-015,
+P1-05-QA-006; owner `shared`.
+
+Increment I routines (migration `20260718108000`, all `SECURITY INVOKER`, empty
+`search_path`, PUBLIC execute revoked):
+
+- `shared.resolve_setting(text) → jsonb` derives tenant scope exclusively from
+  `iam.current_tenant_id()`, chooses the highest tenant version before the
+  highest platform version, and returns NULL when absent. EXECUTE is granted to
+  `app_runtime` and `app_readonly`.
+- `shared.guard_localized_text_lifecycle() → trigger` is trigger-only and
+  enforces localization initial state, transitions, stamps, and immutability.
+- `shared.missing_translations(text) → SETOF text` validates the locale against
+  `shared.languages` and returns active keys with no approved text for that
+  locale. EXECUTE is granted to `app_runtime` and `app_readonly`.
