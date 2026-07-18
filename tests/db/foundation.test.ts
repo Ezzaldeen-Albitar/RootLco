@@ -72,6 +72,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-4 generic status history (P1-04-DB-018).
   'shared.status_history',
   'shared.status_evidence',
+  // Phase 1-5 shared services — governed document metadata (P1-05-DB-001/002).
+  'shared.document_categories',
+  'shared.documents',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -149,6 +152,8 @@ const ALLOWED_ROUTINES = new Set([
   'iam.current_branch_ids',
   'iam.has_permission',
   'iam.has_permission_in_scope',
+  // Phase 1-5 (P1-05-DB-002): documents category-scope guard (platform-or-same-tenant).
+  'shared.guard_document_category_scope',
 ]);
 
 let admin: Pool;
@@ -289,6 +294,11 @@ describe('database foundation', () => {
       'tg_departments_immutable',
       'tg_departments_parent_branch_live',
       'tg_departments_touch_metadata',
+      'tg_document_categories_immutable',
+      'tg_document_categories_touch_metadata',
+      'tg_documents_category_scope',
+      'tg_documents_immutable',
+      'tg_documents_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_grant_scopes_require_scope',
@@ -370,6 +380,8 @@ describe('database foundation', () => {
       'sel_cost_centers_scope',
       'sel_currencies_all',
       'sel_departments_scope',
+      'sel_document_categories_visible',
+      'sel_documents_tenant',
       'sel_feature_flags_all',
       'sel_grant_scopes_tenant',
       'sel_languages_all',

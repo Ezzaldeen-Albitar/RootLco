@@ -264,6 +264,20 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Phase 1-5 shared services: documents reference org tenants/companies/branches
+  // and their category (all ON DELETE RESTRICT), so remove them before the org rows.
+  await admin.query('DELETE FROM shared.documents WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.document_categories WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  // Platform-scope test categories (tenant_id NULL) carry the fx_ code prefix.
+  await admin.query(
+    `DELETE FROM shared.document_categories WHERE scope = 'platform' AND category_code LIKE 'fx\\_%'`
+  );
   await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

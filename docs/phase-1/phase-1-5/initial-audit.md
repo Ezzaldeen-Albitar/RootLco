@@ -133,19 +133,36 @@ migration, wired into `config.toml` `[db.seed]` (and referenced by CI's seed reh
   platform), search_metadata, tags, entity_tags, notes, comments.
 - **Platform-level** (no `tenant_id`; registered in `TENANT_COLUMN_EXCEPTIONS`):
   `shared.localization_keys` (a platform key catalogue, exactly like `iam.permissions`).
-- **Dual-scope** (a nullable `company_id` scope column, platform-or-tenant): `document_categories`,
-  `message_templates`, `system_settings` use a **`scope` discriminator** (`platform` | `tenant`)
-  with a CHECK that ties `tenant_id` presence to the scope — the pattern proven by
-  `org.company_settings`/`org.feature_flags`. These keep `tenant_id` **NOT NULL** for tenant rows;
-  platform rows are held in a separate mechanism (see §2 note) rather than a nullable tenant_id,
-  to avoid widening the nullable-tenant exception set unnecessarily.
+- **Dual-scope** (one table holds a platform default OR a tenant override): `document_categories`,
+  `message_templates`, `system_settings`. These use an explicit **`scope` discriminator**
+  (`platform` | `tenant`) together with a **nullable `tenant_id`**, bound by a consistency CHECK —
+  `(scope='platform' AND tenant_id IS NULL) OR (scope='tenant' AND tenant_id IS NOT NULL)` — so a
+  platform row has `tenant_id` NULL and a tenant override has it NOT NULL. Uniqueness is enforced by
+  **two partial unique indexes** (platform code unique platform-wide; tenant code unique per tenant),
+  and cross-tenant references are blocked by a scope guard (documents may reference a platform
+  category or one owned by the same tenant only). Because platform rows carry `tenant_id` NULL, each
+  dual-scope table is a **documented `NULLABLE_TENANT_EXCEPTIONS` entry** (see §1.6) — this is the
+  approved design, not an avoidance of it.
 
-### 1.6 Nullable-tenant exceptions Phase 1-5 will add
+  > Correction (supersedes an earlier draft of this note): dual-scope tables deliberately use a
+  > nullable `tenant_id` + `scope` discriminator, and are registered as nullable-tenant exceptions.
+  > The earlier wording that platform rows would be "held in a separate mechanism … to avoid
+  > widening the nullable-tenant exception set" is withdrawn; a single table per policy envelope,
+  > with the consistency CHECK above, is the design carried by the Increment A migration.
 
-- `shared.error_records` — a durable error store must be able to record failures that occur
-  **before** a tenant context is established (startup, auth, cross-tenant infra). `tenant_id`
-  is nullable **by design**, registered in `NULLABLE_TENANT_EXCEPTIONS` with justification.
-  All other Phase 1-5 tenant tables are `tenant_id NOT NULL`.
+### 1.6 Nullable-tenant exceptions Phase 1-5 adds
+
+Each entry is registered in `NULLABLE_TENANT_EXCEPTIONS` (`tests/db/org-security.test.ts`) with a
+written justification and a table COMMENT; adding one is a reviewed decision.
+
+- `shared.document_categories` (Increment A) — **dual-scope**: `tenant_id` is NULL for a platform
+  default and NOT NULL for a tenant override, bound by the scope-consistency CHECK. `message_templates`
+  and `system_settings` follow the same pattern in Increments E and I.
+- `shared.error_records` (Increment H) — a durable error store must record failures that occur
+  **before** a tenant context is established (startup, auth, cross-tenant infra); `tenant_id` is
+  nullable **by design**.
+
+All other Phase 1-5 tenant tables are `tenant_id NOT NULL`.
 
 ---
 

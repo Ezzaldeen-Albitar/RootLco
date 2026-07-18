@@ -910,3 +910,53 @@ credential authority. Contact fields are classified `restricted`.
 | `note`              | text                     | YES  | —                 | internal       |
 | `created_at`        | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`        | uuid                     | NO   | —                 | internal       |
+
+## Phase 1-5 — shared services (documents; generated from the live catalog, 2026-07-18)
+
+### `shared.document_categories`
+
+**Scope:** platform + tenant · **Retention class:** operational · Dual-scope document policy envelope. A platform row (`tenant_id` NULL) is a shared default readable by every tenant; a tenant row is a tenant override. Category constraints are data, not upload implementation. Runtime SELECT-only.
+
+| Column                    | Type                     | Null | Default           | Classification |
+| ------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                      | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`                   | text                     | NO   | —                 | internal       |
+| `tenant_id`               | uuid                     | YES  | —                 | internal       |
+| `category_code`           | text                     | NO   | —                 | internal       |
+| `name`                    | text                     | NO   | —                 | internal       |
+| `description`             | text                     | YES  | —                 | internal       |
+| `allowed_content_types`   | text[]                   | NO   | —                 | internal       |
+| `max_size_bytes`          | bigint                   | NO   | —                 | internal       |
+| `default_classification`  | text                     | NO   | —                 | internal       |
+| `default_retention_class` | text                     | NO   | —                 | internal       |
+| `status`                  | text                     | NO   | 'active'          | internal       |
+| `deleted_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`          | integer                  | NO   | 1                 | internal       |
+| `created_at`              | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`              | uuid                     | NO   | —                 | internal       |
+| `updated_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`              | uuid                     | YES  | —                 | internal       |
+
+### `shared.documents`
+
+**Scope:** tenant · **Retention class:** operational (per-row `retention_class`) · Governed per-file metadata; no file bytes (object storage is later backend scope). Category must be platform-scoped or owned by the same tenant. `legal_hold` recorded here; enforcement in Increment D. Runtime SELECT-only.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `company_id`      | uuid                     | YES  | —                 | internal       |
+| `branch_id`       | uuid                     | YES  | —                 | internal       |
+| `category_id`     | uuid                     | NO   | —                 | internal       |
+| `title`           | text                     | NO   | —                 | restricted     |
+| `classification`  | text                     | NO   | —                 | internal       |
+| `retention_class` | text                     | NO   | —                 | internal       |
+| `legal_hold`      | boolean                  | NO   | false             | internal       |
+| `status`          | text                     | NO   | 'pending'         | internal       |
+| `archived_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
