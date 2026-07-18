@@ -71,9 +71,8 @@ enabled = true
 sql_paths = [
   "./seed.sql",
   "./seeds/01_reference_data.sql",
-  "./seeds/02_benzene_pilot_provisioning.sql",
-  "./seeds/03_local_test_tenant.sql",
   "./seeds/04_iam_permission_catalog.sql",
+  "./seeds/05_shared_reference.sql",
 ]
 
 [db.network_restrictions]

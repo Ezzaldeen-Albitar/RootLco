@@ -159,7 +159,8 @@ All three existing migrations are **roll-forward-only**, each for a stated reaso
   hashing); the database-level `search_path` setting is load-bearing for operator
   resolution.
 - **0002** — the schemas (`org`, `iam`, `shared`, `crm`, `veh`), roles
-  (`app_runtime`, `app_readonly`), and context functions become load-bearing the
+  (`app_runtime`, `app_readonly`; `app_worker` is added by Phase 1-5 Increment G),
+  and context functions become load-bearing the
   moment any later migration references them — which 0003 already does.
 - **0003** — once any display number has been issued, dropping
   `shared.number_sequences` loses allocation state and would permit duplicate
@@ -370,13 +371,13 @@ differs, and this difference is measured, not assumed:
 **Why it is accepted:**
 
 - Our migrations neither create nor modify any Supabase-managed role; they create only
-  `app_runtime` and `app_readonly` (both `NOLOGIN NOSUPERUSER NOBYPASSRLS …`), which
+  `app_runtime`, `app_readonly`, and `app_worker` (all `NOLOGIN NOSUPERUSER
+NOBYPASSRLS …`), which
   behave identically in both environments.
-- Every isolation assertion in the test suite runs as the harness-created login role
-  `rootlco_test_runtime` (a member of `app_runtime`), never as `postgres` — so the
-  evidence the suite produces does not depend on which flavour of `postgres` role the
-  environment has, and no BYPASSRLS-capable role's results are ever presented as RLS
-  evidence.
+- Tenant-session isolation assertions run as the harness-created
+  `rootlco_test_runtime`; worker-boundary and concurrency assertions run as
+  `rootlco_test_worker`. Both are constrained archetype members, never
+  `postgres`, so no BYPASSRLS-capable result is presented as RLS evidence.
 - Running the full Supabase stack in CI would add substantial time and moving parts to
   validate role differences our migrations deliberately do not touch.
 

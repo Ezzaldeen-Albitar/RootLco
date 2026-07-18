@@ -52,3 +52,9 @@ references are `file :: suite`.
 | P1-03-DOC-003 | [provisioning runbook](./tenant-provisioning-runbook.md)                         | executed end-to-end; **self-validated** (no second engineer)                                                      | Complete   |
 
 \* Complete as repository work; the remote CI run itself is the PR's to prove.
+
+## Phase 1-5 forward correction (2026-07-18)
+
+Historical P1-03 provisioning evidence remains valid for the generic function.
+Increment M moved the controlled tenant payload out of automatic seeds into a
+manual gated package and replaced seeded-tenant tests with ephemeral tenants.

@@ -52,13 +52,14 @@ stack (PostgreSQL 17.6, DB port 54322).
 
 ---
 
-## 2. The role model — three archetypes
+## 2. The role model — three application archetypes plus the owner
 
 | Archetype           | Role name                                                        | LOGIN | Owns objects                         | BYPASSRLS                             | Purpose                                                                        |
 | ------------------- | ---------------------------------------------------------------- | ----- | ------------------------------------ | ------------------------------------- | ------------------------------------------------------------------------------ |
 | Migration / owner   | `postgres` (Supabase local); `postgres` superuser (CI container) | yes   | yes — all schemas, tables, functions | yes (local: attribute; CI: superuser) | Applies migrations, owns everything, provisions and retires configuration rows |
 | Runtime application | `app_runtime`                                                    | no    | **never**                            | no                                    | The privilege envelope of the future application connection                    |
 | Read-only support   | `app_readonly`                                                   | no    | **never**                            | no                                    | Diagnostics and support reads; SELECT-only                                     |
+| Async worker        | `app_worker`                                                     | no    | **never**                            | no                                    | Cross-tenant infrastructure dispatch on explicitly enumerated worker tables    |
 
 ### 2.1 Migration / owner role
 
@@ -90,7 +91,7 @@ CREATE ROLE app_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
 Binding rules, each verified by a passing test:
 
 - **Must never own** a schema, table, or any other object. Verified:
-  `tests/db/foundation.test.ts` asserts `app_runtime`/`app_readonly` own zero
+  `tests/db/foundation.test.ts` asserts all three application archetypes own zero
   schemas and zero tables. Rationale: the FORCE RLS suite demonstrates that a
   table owner — even without `BYPASSRLS` — can still `ALTER` its own table and
   switch `FORCE ROW LEVEL SECURITY` off (`tests/db/rls.test.ts`, "honest
@@ -126,13 +127,34 @@ Created by migration 0002 with the identical restriction set
   reporting bypass — RLS applies in full, so a support session still requires
   a legitimate tenant context to see tenant rows.
 
+### 2.4 `app_worker` — the asynchronous infrastructure role
+
+Created by migration `20260718106000_shared_event_outbox.sql` with the same
+restriction set as the other application archetypes: `NOLOGIN NOSUPERUSER
+NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`.
+
+- Receives `USAGE` on only `shared` and `iam`, plus `EXECUTE` on
+  `iam.current_user_id()` for worker-table metadata triggers.
+- On `shared.event_outbox`, receives exactly `SELECT`, `INSERT`, and `UPDATE`;
+  it receives no `DELETE`. It alone receives `EXECUTE` on
+  `shared.claim_outbox_events`, `shared.complete_outbox_event`, and
+  `shared.fail_outbox_event`.
+- Its `wkr_event_outbox_all` policy deliberately uses `USING (true)` and
+  `WITH CHECK (true)`. Dispatch is infrastructure work spanning all tenants,
+  not a user session scoped to one tenant. This broad row surface is confined
+  to explicitly enumerated worker tables and does not grant `BYPASSRLS`.
+- A compromised future worker login can see or mutate every tenant's outbox
+  through those three table verbs. Its credential is therefore backend-only;
+  actual LOGIN provisioning remains Phase 1-13.
+
 ---
 
 ## 3. What our migrations do and do not manage
 
-Our migrations create and manage **only** `app_runtime` and `app_readonly`
-(guarded `CREATE ROLE ... IF NOT EXISTS` in migration 0002, because roles are
-cluster-wide and the migration must stay replayable).
+Our migrations create and manage exactly the three application archetypes:
+`app_runtime`, `app_readonly` (migration 0002), and `app_worker` (Increment G).
+Each creation is guarded by a catalog check because roles are cluster-wide and
+migration replay must remain safe.
 
 Supabase-managed roles (`postgres`, `supabase_admin`, `service_role`, `anon`,
 `authenticated`, `authenticator`, and the rest of the managed set) are **not
@@ -158,10 +180,11 @@ Inspected in `pg_roles` on the local Supabase stack (CLI 2.109.1, PostgreSQL
 
 Honest consequences, stated as binding rules:
 
-1. **RLS evidence must come from a non-bypassing role.** Every isolation
-   assertion in the test suite runs as `rootlco_test_runtime` (a member of
-   `app_runtime`) for exactly this reason. Presenting `postgres`-connection
-   results as RLS evidence is prohibited (see the
+1. **RLS evidence must come from a non-bypassing role.** Tenant-session
+   isolation assertions run as `rootlco_test_runtime`; worker-boundary and
+   all-tenant dispatch assertions run as `rootlco_test_worker`. Both are
+   constrained archetype members. Presenting `postgres`-connection results as
+   RLS evidence is prohibited (see the
    [RLS Standard](./rls-standard.md)).
 2. **Environment difference is real and documented.** In the plain
    `postgres:17` CI container, `postgres` **is** a superuser. CI therefore
@@ -185,10 +208,13 @@ Migration 0002 grants exactly:
 GRANT USAGE ON SCHEMA org, iam, shared, crm, veh TO app_runtime, app_readonly;
 ```
 
-Neither role holds `CREATE` on any schema, and
+Neither tenant-session role holds `CREATE` on any schema, and
 `REVOKE CREATE ON SCHEMA public FROM PUBLIC` keeps `public` from becoming an
 uncontrolled dumping ground. A runtime `CREATE TABLE` attempt fails with
 `42501` (verified).
+
+Increment G additionally grants `app_worker` `USAGE` on only `shared` and
+`iam`. It receives no schema `CREATE` and no blanket/default privilege.
 
 ### 5.2 Table level: per-object grants in the creating migration
 
@@ -267,7 +293,23 @@ callers: their `PUBLIC` default is revoked and **no** role receives `EXECUTE`.
 Note the asymmetry is intentional: `app_readonly` may read context but is not
 granted the allocator — allocation is a write.
 
-### 5.5 Summary of the current grant surface (Phase 1-2, verified)
+### 5.5 Worker grant surface added by Phase 1-5 Increment G
+
+| Object                                                          | `app_worker`           |
+| --------------------------------------------------------------- | ---------------------- |
+| Schemas `shared`, `iam`                                         | USAGE                  |
+| `iam.current_user_id()`                                         | EXECUTE                |
+| `shared.event_outbox`                                           | SELECT, INSERT, UPDATE |
+| `shared.claim_outbox_events(text, integer, interval)`           | EXECUTE                |
+| `shared.complete_outbox_event(uuid, text)`                      | EXECUTE                |
+| `shared.fail_outbox_event(uuid, text, text, interval, integer)` | EXECUTE                |
+| DELETE, DDL, ownership, other tables/functions                  | —                      |
+
+This exact surface is paired with the deliberately all-tenant
+`wkr_event_outbox_all` policy. `app_runtime` and `app_readonly` receive zero
+grant and zero policy on the outbox and its routines.
+
+### 5.6 Foundation grant surface (Phase 1-2, verified)
 
 | Object                                                                       | `app_runtime`                                   | `app_readonly` |
 | ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------- |
@@ -282,7 +324,7 @@ granted the allocator — allocation is a write.
 
 ## 6. How later phases attach real logins
 
-`app_runtime` and `app_readonly` are `NOLOGIN` archetypes: they define
+`app_runtime`, `app_readonly`, and `app_worker` are `NOLOGIN` archetypes: they define
 privilege envelopes, not connections. A phase that needs a real connection
 creates a `LOGIN` role and grants it the archetype — membership inherits, so
 every grant and every RLS policy addressed `TO app_runtime` applies to the
@@ -307,6 +349,8 @@ Binding rules for future application logins (Phase 1-3 and later):
   (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, and it must not own
   anything).
 - Support/diagnostic connections use a login granted `app_readonly`.
+- Infrastructure dispatch connections use a backend-only login granted
+  `app_worker`; credential handoff remains Phase 1-13.
 - Login roles and their credentials are provisioned per environment by
   operational tooling, never created by migrations and never committed.
   Local dev and CI use separate non-production credentials

@@ -82,3 +82,9 @@ Authorization Policy the Phase-1-4 gate closes automatically on proven facts —
 green mandatory CI plus the merge into `develop` — recorded in
 [phase-1-4-owner-gate.md](./phase-1-4-owner-gate.md). This report confers no
 approval by itself. **Phase 1-5 has not been started.**
+
+## Phase 1-5 forward correction (2026-07-18)
+
+This historical closeout remains unchanged. Increment M later converted seed 04
+to structural permissions only; its six baseline roles and mappings are now
+proven against a cascade-deleted ephemeral tenant.

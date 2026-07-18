@@ -107,3 +107,9 @@ Master document: revision 0.4 recorded (Phase 1-2). Phase 1 plan DOCX:
 synchronization **Pending — non-blocking administrative synchronization**
 (Word lock; no watcher; standing policy §7). Phase 1-3's canonical additions ride
 the same documentation window.
+
+## Phase 1-5 forward correction (2026-07-18)
+
+The recorded seeded-tenant evidence is historical. Increment M preserves the
+same generic-path, footprint, isolation, null-unknown, and replay assertions with
+ephemeral tenants and removes every tenant from clean seeded state.

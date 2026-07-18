@@ -29,3 +29,11 @@
 **Blockers to Go:** only #20 — the PR run and merge, which are external
 (no `gh` CLI / token in this environment). Everything else is satisfied and
 test-backed.
+
+## Phase 1-5 forward correction (2026-07-18)
+
+Item 14 records the Phase 1-4 evidence as it existed and is not rewritten.
+Increment M subsequently removed tenant roles from seed 04: only the structural
+permission catalog is seeded now. The same six-role and mapping assertions are
+preserved with an ephemerally provisioned tenant in `iam-seeds.test.ts`, followed
+by cascade cleanup. Clean seeded state contains no tenant roles.

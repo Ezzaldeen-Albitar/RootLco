@@ -100,3 +100,9 @@ merge — recorded in [phase-1-3-owner-gate.md](./phase-1-3-owner-gate.md). The
 merge is done; the gate remains **Pending solely on verified CI evidence**,
 which this session cannot obtain (no authenticated GitHub access). This report
 confers no approval by itself.
+
+## Phase 1-5 forward correction (2026-07-18)
+
+The Phase 1-3 completion record is not rewritten. Increment M converted the
+controlled provisioning artifact to a manual environment-gated JSON package and
+made all provisioning tests self-owned ephemeral fixtures.

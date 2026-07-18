@@ -49,12 +49,21 @@ beforeAll(async () => {
   await ensureOrgFixtures(admin);
 
   await admin.query(
+    // FORCE the deterministic values this suite's eligibility gates exercise,
+    // whether or not seed 05 (05_shared_reference.sql) already populated these
+    // classes. Seed 05 leaves periods NULL (owner-configured later); this suite
+    // tests the eligibility FUNCTION across finite/indefinite/no-delete cases and
+    // therefore sets its own known periods. class_code stays immutable; only the
+    // mutable period/deletion fields are overridden. (validate:seed-state is the
+    // authority on the seed's own governed values.)
     `INSERT INTO shared.retention_classes (class_code, description, min_retention_days, allows_deletion, created_by)
      VALUES
        ('operational','Operational working data',0,true,$1),
        ('evidence-audit','Evidence and audit',3650,true,$1),
        ('immutable-financial-history','Issued financial documents',NULL,false,$1)
-     ON CONFLICT (class_code) DO NOTHING`,
+     ON CONFLICT (class_code) DO UPDATE
+       SET min_retention_days = EXCLUDED.min_retention_days,
+           allows_deletion = EXCLUDED.allows_deletion`,
     [SYS]
   );
   await admin.query(

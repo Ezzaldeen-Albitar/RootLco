@@ -4,7 +4,8 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status:** Working document — opened at Phase 1-5 start ·
+**Status:** Working document — opened at Phase 1-5 start; superseded for
+closeout facts by the Phase 1-5 closeout set (see pointer below) ·
 **Owner:** Eng. Ezzaldeen Al-Bitar (technical/security self-review under the
 [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md) —
 not an independent review) ·
@@ -12,6 +13,20 @@ not an independent review) ·
 **Base:** `origin/develop` @ `69e0da1` (Phase 1-4 gate-record merge PR #20) ·
 **Tasks covered by this document:** P1-05-DOC-001 (initial audit); inputs to every
 P1-05-DB / P1-05-SEC / P1-05-QA task.
+
+> **Superseded-by pointer (2026-07-18, closeout):** this audit is the unaltered
+> opening record of Phase 1-5; nothing below has been rewritten. Final positions
+> are carried by
+> [phase-1-5-completion-report.md](./phase-1-5-completion-report.md) and
+> [phase-1-5-owner-gate.md](./phase-1-5-owner-gate.md). Where implementation
+> deliberately diverged from a plan recorded here, the completion report is
+> authoritative — notably §2's "no new database role" decision (superseded by
+> the constrained NOLOGIN `app_worker` archetype of migration
+> `20260718106000`), the planned function names of §3 (the shipped names are
+> `shared.claim_outbox_events` / `complete_outbox_event` / `fail_outbox_event`,
+> `shared.archive_document`, and `shared.document_deletion_eligibility`), and
+> §1.4's Increment M seed (shipped as `supabase/seeds/05_shared_reference.sql`
+> plus the controlled pilot-provisioning package).
 
 ---
 

@@ -33,11 +33,13 @@ permission. Authorization is by these codes, never by role name.
 | `iam.session.view_all`    | iam    | medium | View all tenant sessions       |
 | `iam.login.view_all`      | iam    | medium | View all tenant login history  |
 
-## Baseline roles (fictional tenant only — configuration-led)
+## Baseline roles (provisioning-time, configuration-led)
 
-Seeded **only** into the fictional `northwind_motors` tenant as illustrative
-`is_system` templates — no Benzene assignment, no real user, no credential.
-Tenant role definitions remain configuration-led per tenant.
+**Phase 1-5 forward correction (2026-07-18):** seed 04 now contains only the
+platform permission catalog. The representative six-role shape below is proven
+idempotently by `tests/db/iam-seeds.test.ts` against a cascade-deleted ephemeral
+tenant. No tenant role, user, grant, or credential is seeded. Tenant role
+definitions remain provisioning-time configuration per tenant.
 
 | Role                   | Representative permissions                                                                                  |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
