@@ -159,5 +159,32 @@ the database defines and access-controls the shapes only. Consent enforcement
 is a placeholder (`purpose`, `suppressed`, nullable `consent_ref`) until a
 consent source exists. `app_worker` is a NOLOGIN archetype; the credential
 handoff is Phase 1-13 scope. Payload/delivery-detail sanitization is a
-producer/worker obligation (ledger #12). The owner gate is **Pending**; Phase
-1-6 is **not started**.
+producer/worker obligation (ledger #12). Phase 1-6 is **not started**. The
+owner-gate status recorded at assembly (**Pending**) is superseded by the
+closure update in §10.
+
+## 10. Closure update (2026-07-18)
+
+The §1 and §8 statements written at assembly ("the E–M pull request is not yet
+opened" and "no GitHub Actions run exists for the final implementation SHA
+`83f0f70`") are now superseded by verified closure facts:
+
+- **Final implementation SHA: `da73b1f`.** The closeout-documentation commit
+  `83f0f70` was followed by three test/security refinement commits — `15ab5b4`
+  and `0c62144` (runtime-generated credential fixtures + the canonical
+  single-source secret scanner `scripts/check-tracked-secrets.mjs`) and
+  `da73b1f` (deterministic outbox-claim regression guard). `da73b1f` is the SHA
+  the gate is anchored to.
+- **Pull request:** [#26](https://github.com/Ezzaldeen-Albitar/RootLco/pull/26),
+  base `develop`, head `feature/p1-05-shared-services-database`.
+- **Hosted CI on the exact final SHA `da73b1f`:** all four required checks
+  Successful — _CI / Lint, types, tests, build_, _CI / Docker build
+  validation_, _CI / Database migrations and RLS tests_, and _CI / Secret and
+  sensitive-file scan_. The secret scan that previously failed now passes on the
+  exact final SHA (owner-verified on GitHub, 2026-07-18).
+- **Merge:** merged into `develop` by Eng. Ezzaldeen Al-Bitar as merge commit
+  `4f68b6a` (parents `ee3b1de` + `da73b1f`, target `develop`).
+- **Containment:** `da73b1f` verified an ancestor of `origin/develop`
+  (`git merge-base --is-ancestor` → contained; `origin/develop` tip `4f68b6a`).
+- **Gate:** recorded **Go — Technical Gate Passed** in
+  [phase-1-5-owner-gate.md](./phase-1-5-owner-gate.md).
