@@ -83,3 +83,9 @@ integration, audit-read access logging, and privileged-grant different-actor
 approval enforcement are Phase-1-14 — the DB defines and access-controls the
 shapes, it does not claim those runtime controls exist. A superuser/BYPASSRLS DB
 role can still write audit rows; the chain is the detection control.
+
+## Phase 1-5 forward correction (2026-07-18)
+
+The Phase 1-4 IAM seed counts above are historical evidence. Increment M strips
+tenant fixtures from seed 04 while retaining every catalog, role-shape, mapping,
+allow-only, idempotence, and no-user/grant assertion in ephemeral tests.

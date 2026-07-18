@@ -25,6 +25,7 @@
     "test:db": "vitest run --config vitest.config.db.ts",
     "test:integration": "npm run test:db",
     "db:apply-migrations": "node scripts/db/apply-migrations.mjs",
+    "validate:seed-state": "node scripts/db/validate-seed-state.mjs",
     "dev:up": "docker compose up -d --build && npm run supabase:start",
     "dev:down": "npm run supabase:stop && docker compose down",
     "dev:logs": "docker compose logs -f web",

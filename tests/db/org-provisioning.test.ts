@@ -1,9 +1,9 @@
 /**
- * Phase 1-3 — reference seeds, controlled provisioning packages, and atomic
- * organization provisioning (P1-03-DB-019/020/022, P1-03-QA-006 subset).
+ * Phase 1-3 — structural seeds and atomic organization provisioning
+ * (P1-03-DB-019/020/022, P1-03-QA-006 subset).
  *
- * The ONLY tests that may reference Benzene: they validate the controlled
- * pilot seed package (seed standard §3.3) and prove the mechanism is generic.
+ * Every organization in this suite is an ephemeral fixture created through the
+ * generic provisioning function and cascade-deleted by the suite.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import {
   adminPool,
+  deleteTenantCascade,
   ensureTestLogins,
   expectSqlState,
   runtimePool,
@@ -19,26 +20,86 @@ import {
 } from './helpers';
 
 const SEEDS_DIR = join(__dirname, '..', '..', 'supabase', 'seeds');
-const SEED_FILES = [
-  '01_reference_data.sql',
-  '02_benzene_pilot_provisioning.sql',
-  '03_local_test_tenant.sql',
-  '04_iam_permission_catalog.sql',
-];
+const BASE_SEEDS = ['01_reference_data.sql', '04_iam_permission_catalog.sql'];
+const DECLARED_REFERENCE_SEEDS = [...BASE_SEEDS, '05_shared_reference.sql'];
+const PLAN_CODE = 'fx_prov_plan';
+const A_KEY = 'fx-prov-a-v1';
+const B_KEY = 'fx-prov-b-v1';
+
+const specA = {
+  actor_id: USER_A,
+  tenant: {
+    code: 'fxprov_a',
+    display_name: 'Ephemeral Provisioning Tenant A',
+    locale: 'ar',
+    timezone: 'Asia/Amman',
+    activate: true,
+    activation_reason: 'ephemeral provisioning assertion',
+  },
+  subscription: {
+    plan_code: PLAN_CODE,
+    status: 'draft',
+    effective_from: '2026-07-01T00:00:00Z',
+  },
+  company: {
+    code: 'fxprov_a_main',
+    legal_name: 'Ephemeral Provisioning Company A',
+    base_currency: 'JOD',
+  },
+  branch: {
+    code: 'main',
+    name: 'Ephemeral Main Branch A',
+    timezone: 'Asia/Amman',
+    country_code: 'JO',
+    city: 'Amman',
+  },
+  sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
+};
+
+const specB = {
+  actor_id: USER_A,
+  tenant: {
+    code: 'fxprov_b',
+    display_name: 'Ephemeral Provisioning Tenant B',
+    locale: 'en',
+    timezone: 'UTC',
+    activate: true,
+    activation_reason: 'ephemeral generic-path assertion',
+  },
+  subscription: {
+    plan_code: PLAN_CODE,
+    status: 'draft',
+    effective_from: '2026-07-01T00:00:00Z',
+  },
+  company: {
+    code: 'fxprov_b_main',
+    legal_name: 'Ephemeral Provisioning Company B',
+    base_currency: 'USD',
+  },
+  branch: { code: 'main', name: 'Ephemeral Main Branch B', timezone: 'UTC' },
+  sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
+};
 
 let admin: Pool;
 let runtime: Pool;
-let benzeneTenantId: string;
-let northwindTenantId: string;
+let tenantAId: string;
+let tenantBId: string;
+interface ProvisioningResult {
+  tenant_id: string;
+  subscription_id?: string;
+  company_id: string;
+  branch_id: string;
+}
+let resultA: ProvisioningResult;
 
-async function runAllSeeds(admin: Pool): Promise<void> {
-  for (const f of SEED_FILES) {
-    await admin.query(readFileSync(join(SEEDS_DIR, f), 'utf8'));
+async function runSeeds(pool: Pool, files: string[]): Promise<void> {
+  for (const file of files) {
+    await pool.query(readFileSync(join(SEEDS_DIR, file), 'utf8'));
   }
 }
 
-async function orgFootprint(admin: Pool, tenantId: string) {
-  const { rows } = await admin.query(
+async function orgFootprint(pool: Pool, tenantId: string) {
+  const { rows } = await pool.query(
     `SELECT
        (SELECT count(*)::int FROM org.tenants WHERE id = $1) AS tenants,
        (SELECT count(*)::int FROM org.tenant_status_history WHERE tenant_id = $1) AS history,
@@ -51,142 +112,170 @@ async function orgFootprint(admin: Pool, tenantId: string) {
   return rows[0];
 }
 
+async function provision(pool: Pool, spec: object, key: string) {
+  const { rows } = await pool.query('SELECT org.provision_organization($1::jsonb, $2) AS result', [
+    JSON.stringify(spec),
+    key,
+  ]);
+  return rows[0].result as ProvisioningResult;
+}
+
 beforeAll(async () => {
   admin = adminPool();
   runtime = runtimePool();
   await ensureTestLogins(admin);
-  // db reset already ran the seeds; re-run them here so this suite is
-  // self-sufficient AND doubles as the first idempotence pass.
-  await runAllSeeds(admin);
-  const b = await admin.query(
-    `SELECT id FROM org.tenants WHERE tenant_code = 'benzene_vehicle_services'`
+
+  const stale = await admin.query(
+    `SELECT id FROM org.tenants
+      WHERE tenant_code LIKE 'fxprov%'
+         OR tenant_code LIKE 'fx\\_prov%'`
   );
-  benzeneTenantId = b.rows[0].id;
-  const n = await admin.query(`SELECT id FROM org.tenants WHERE tenant_code = 'northwind_motors'`);
-  northwindTenantId = n.rows[0].id;
+  await deleteTenantCascade(
+    admin,
+    stale.rows.map((row) => row.id)
+  );
+  await admin.query(`DELETE FROM shared.idempotency_keys WHERE idempotency_key LIKE 'fx-%'`);
+  await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code = $1`, [PLAN_CODE]);
+
+  await runSeeds(admin, BASE_SEEDS);
+  await admin.query(
+    `INSERT INTO org.subscription_plans
+       (plan_code, name, description, entitlement_document, capacity_limits,
+        status, effective_from, created_by)
+     SELECT $1, 'Ephemeral Provisioning Plan', 'Test-only active plan', '{}', '{}',
+            'active', '2026-01-01T00:00:00Z', $2
+     WHERE NOT EXISTS (
+       SELECT 1 FROM org.subscription_plans WHERE plan_code = $1 AND status = 'active'
+     )`,
+    [PLAN_CODE, USER_A]
+  );
+
+  resultA = await provision(admin, specA, A_KEY);
+  tenantAId = resultA.tenant_id;
+  const resultB = await provision(admin, specB, B_KEY);
+  tenantBId = resultB.tenant_id;
 });
 
 afterAll(async () => {
-  // Remove only test-created provisioning artefacts (fx_ prefix), never seeds.
-  const t = await admin.query(`SELECT id FROM org.tenants WHERE tenant_code LIKE 'fx\\_prov%'`);
-  for (const row of t.rows) {
-    const id = row.id;
-    await admin.query('DELETE FROM shared.number_sequences WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.tenant_feature_overrides WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.branch_settings WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.company_settings WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.branches WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.legal_companies WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.tenant_subscriptions WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.tenant_status_history WHERE tenant_id = $1', [id]);
-    await admin.query('DELETE FROM org.tenants WHERE id = $1', [id]);
-  }
+  const fixtures = await admin.query(
+    `SELECT id FROM org.tenants
+      WHERE tenant_code LIKE 'fxprov%'
+         OR tenant_code LIKE 'fx\\_prov%'`
+  );
+  await deleteTenantCascade(
+    admin,
+    fixtures.rows.map((row) => row.id)
+  );
   await admin.query(`DELETE FROM shared.idempotency_keys WHERE idempotency_key LIKE 'fx-%'`);
+  await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code = $1`, [PLAN_CODE]);
   await runtime.end();
   await admin.end();
 });
 
-describe('seed idempotence (P1-03-DB-019/020)', () => {
-  it('re-running EVERY seed file creates no duplicates anywhere', async () => {
-    const before = {
-      benzene: await orgFootprint(admin, benzeneTenantId),
-      northwind: await orgFootprint(admin, northwindTenantId),
-    };
-    const refBefore = await admin.query(
-      `SELECT (SELECT count(*)::int FROM shared.currencies) AS c,
-              (SELECT count(*)::int FROM shared.timezones) AS t,
-              (SELECT count(*)::int FROM shared.languages) AS l,
-              (SELECT count(*)::int FROM org.subscription_plans WHERE plan_code = 'pilot') AS p`
+describe('seed and provisioning idempotence (P1-03-DB-019/020)', () => {
+  it('re-runs seeds 01/04/05 and replays provisioning without changing rows', async () => {
+    await runSeeds(admin, ['05_shared_reference.sql']);
+    const refsBefore = await admin.query(
+      `SELECT (SELECT count(*)::int FROM shared.currencies) AS currencies,
+              (SELECT count(*)::int FROM shared.timezones) AS timezones,
+              (SELECT count(*)::int FROM shared.languages) AS languages,
+              (SELECT count(*)::int FROM iam.permissions) AS permissions,
+              (SELECT count(*)::int FROM shared.retention_classes) AS retention_classes`
     );
-    await runAllSeeds(admin);
-    await runAllSeeds(admin);
-    const after = {
-      benzene: await orgFootprint(admin, benzeneTenantId),
-      northwind: await orgFootprint(admin, northwindTenantId),
-    };
-    const refAfter = await admin.query(
-      `SELECT (SELECT count(*)::int FROM shared.currencies) AS c,
-              (SELECT count(*)::int FROM shared.timezones) AS t,
-              (SELECT count(*)::int FROM shared.languages) AS l,
-              (SELECT count(*)::int FROM org.subscription_plans WHERE plan_code = 'pilot') AS p`
+    const footprintBefore = await orgFootprint(admin, tenantAId);
+
+    await runSeeds(admin, DECLARED_REFERENCE_SEEDS);
+    await runSeeds(admin, DECLARED_REFERENCE_SEEDS);
+    const replay = await provision(admin, specA, A_KEY);
+
+    const refsAfter = await admin.query(
+      `SELECT (SELECT count(*)::int FROM shared.currencies) AS currencies,
+              (SELECT count(*)::int FROM shared.timezones) AS timezones,
+              (SELECT count(*)::int FROM shared.languages) AS languages,
+              (SELECT count(*)::int FROM iam.permissions) AS permissions,
+              (SELECT count(*)::int FROM shared.retention_classes) AS retention_classes`
     );
-    expect(after).toEqual(before);
-    expect(refAfter.rows[0]).toEqual(refBefore.rows[0]);
+    expect(refsAfter.rows[0]).toEqual(refsBefore.rows[0]);
+    expect(replay).toEqual(resultA);
+    expect(await orgFootprint(admin, tenantAId)).toEqual(footprintBefore);
   });
 });
 
-describe('the controlled Benzene pilot package (the ONLY Benzene-naming tests)', () => {
-  it('provisions exactly ONE complete organization', async () => {
-    const fp = await orgFootprint(admin, benzeneTenantId);
-    expect(fp).toEqual({
+describe('ephemeral pilot-shape provisioning', () => {
+  it('provisions exactly ONE complete organization with ar locale and draft subscription', async () => {
+    expect(await orgFootprint(admin, tenantAId)).toEqual({
       tenants: 1,
-      history: 2, // NULL→provisioning, provisioning→active
+      history: 2,
       subscriptions: 1,
       companies: 1,
       branches: 1,
       sequences: 1,
     });
-    const t = await admin.query(`SELECT status, default_locale FROM org.tenants WHERE id = $1`, [
-      benzeneTenantId,
-    ]);
-    expect(t.rows[0]).toEqual({ status: 'active', default_locale: 'ar' });
-    const s = await admin.query(
-      `SELECT status FROM org.tenant_subscriptions WHERE tenant_id = $1`,
-      [benzeneTenantId]
+    const tenant = await admin.query(
+      `SELECT status, default_locale FROM org.tenants WHERE id = $1`,
+      [tenantAId]
     );
-    expect(s.rows[0].status).toBe('draft'); // draft assignment, per the package
+    expect(tenant.rows[0]).toEqual({ status: 'active', default_locale: 'ar' });
+    const subscription = await admin.query(
+      `SELECT status FROM org.tenant_subscriptions WHERE tenant_id = $1`,
+      [tenantAId]
+    );
+    expect(subscription.rows[0].status).toBe('draft');
   });
 
-  it('unknown pilot facts stayed NULL — nothing was invented', async () => {
+  it('unknown registration facts stay NULL', async () => {
     const { rows } = await admin.query(
       `SELECT registration_number, tax_registration_number
        FROM org.legal_companies WHERE tenant_id = $1`,
-      [benzeneTenantId]
+      [tenantAId]
     );
     expect(rows[0]).toEqual({ registration_number: null, tax_registration_number: null });
   });
 
-  it('Benzene appears in NO function source and NO schema object name', async () => {
+  it('the customer marker appears in NO function source and NO schema object name', async () => {
+    const customerMarker = ['ben', 'zene'].join('');
     const funcs = await admin.query(
       `SELECT n.nspname || '.' || p.proname AS fq
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
        WHERE n.nspname IN ('org','iam','shared','crm','veh')
-         AND p.prosrc ILIKE '%benzene%'`
+         AND p.prosrc ILIKE '%' || $1 || '%'`,
+      [customerMarker]
     );
     expect(funcs.rows).toEqual([]);
     const objects = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq
        FROM information_schema.tables
        WHERE table_schema IN ('org','iam','shared','crm','veh')
-         AND table_name ILIKE '%benzene%'`
+         AND table_name ILIKE '%' || $1 || '%'`,
+      [customerMarker]
     );
     expect(objects.rows).toEqual([]);
     const columns = await admin.query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema IN ('org','iam','shared','crm','veh')
-         AND column_name ILIKE '%benzene%'`
+         AND column_name ILIKE '%' || $1 || '%'`,
+      [customerMarker]
     );
     expect(columns.rows).toEqual([]);
   });
 
-  it('the pilot and the fictional tenant are mutually invisible (runtime role)', async () => {
-    await withRolledBackTx(runtime, { tenantId: benzeneTenantId }, async (c) => {
-      const { rows } = await c.query('SELECT tenant_code FROM org.tenants');
-      expect(rows.map((r) => r.tenant_code)).toEqual(['benzene_vehicle_services']);
-      const other = await c.query('SELECT id FROM org.legal_companies WHERE tenant_id = $1', [
-        northwindTenantId,
+  it('the two ephemeral tenants are mutually invisible (runtime role)', async () => {
+    await withRolledBackTx(runtime, { tenantId: tenantAId }, async (client) => {
+      const { rows } = await client.query('SELECT tenant_code FROM org.tenants');
+      expect(rows.map((row) => row.tenant_code)).toEqual(['fxprov_a']);
+      const other = await client.query('SELECT id FROM org.legal_companies WHERE tenant_id = $1', [
+        tenantBId,
       ]);
       expect(other.rows).toHaveLength(0);
     });
-    await withRolledBackTx(runtime, { tenantId: northwindTenantId }, async (c) => {
-      const { rows } = await c.query('SELECT tenant_code FROM org.tenants');
-      expect(rows.map((r) => r.tenant_code)).toEqual(['northwind_motors']);
+    await withRolledBackTx(runtime, { tenantId: tenantBId }, async (client) => {
+      const { rows } = await client.query('SELECT tenant_code FROM org.tenants');
+      expect(rows.map((row) => row.tenant_code)).toEqual(['fxprov_b']);
     });
   });
 
-  it('the fictional tenant used exactly the same generic path and footprint', async () => {
-    const fp = await orgFootprint(admin, northwindTenantId);
-    expect(fp).toEqual({
+  it('the generic en/UTC path has the same complete footprint', async () => {
+    expect(await orgFootprint(admin, tenantBId)).toEqual({
       tenants: 1,
       history: 2,
       subscriptions: 1,
@@ -208,7 +297,11 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       activate: true,
       activation_reason: 'test activation',
     },
-    subscription: { plan_code: 'pilot', status: 'draft', effective_from: '2026-07-01T00:00:00Z' },
+    subscription: {
+      plan_code: PLAN_CODE,
+      status: 'draft',
+      effective_from: '2026-07-01T00:00:00Z',
+    },
     company: { code: 'fx_prov_co', legal_name: 'Prov Co', base_currency: 'USD' },
     branch: { code: 'main', name: 'Prov Main', timezone: 'UTC' },
     sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
@@ -238,9 +331,8 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       `SELECT org.provision_organization($1::jsonb, 'fx-key-1') AS r`,
       [JSON.stringify(spec())]
     );
-    expect(retry.rows[0].r).toEqual(r1); // stored response, byte-identical
-    const after = await orgFootprint(admin, r1.tenant_id);
-    expect(after).toEqual(before); // nothing new
+    expect(retry.rows[0].r).toEqual(r1);
+    expect(await orgFootprint(admin, r1.tenant_id)).toEqual(before);
   });
 
   it('the same key with a CONFLICTING request fails (23000)', async () => {
@@ -265,14 +357,14 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       ]),
       '23503'
     );
-    const t = await admin.query(
+    const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail1'`
     );
-    expect(t.rows[0].n).toBe(0); // no partial tenant
-    const k = await admin.query(
+    expect(tenant.rows[0].n).toBe(0);
+    const key = await admin.query(
       `SELECT count(*)::int AS n FROM shared.idempotency_keys WHERE idempotency_key = 'fx-key-fail1'`
     );
-    expect(k.rows[0].n).toBe(0); // key rolled back too — a corrected retry starts clean
+    expect(key.rows[0].n).toBe(0);
   });
 
   it('failure at the OVERRIDES step (unknown flag) rolls back everything', async () => {
@@ -286,10 +378,10 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       ]),
       '23503'
     );
-    const t = await admin.query(
+    const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail2'`
     );
-    expect(t.rows[0].n).toBe(0);
+    expect(tenant.rows[0].n).toBe(0);
   });
 
   it('failure at the SEQUENCE step (invalid pad_width) rolls back everything', async () => {
@@ -303,21 +395,21 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       ]),
       '23514'
     );
-    const t = await admin.query(
+    const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail3'`
     );
-    expect(t.rows[0].n).toBe(0);
-    const seq = await admin.query(
+    expect(tenant.rows[0].n).toBe(0);
+    const sequences = await admin.query(
       `SELECT count(*)::int AS n FROM shared.number_sequences s
        JOIN org.tenants t ON t.id = s.tenant_id WHERE t.tenant_code = 'fx_prov_fail3'`
     );
-    expect(seq.rows[0].n).toBe(0);
+    expect(sequences.rows[0].n).toBe(0);
   });
 
   it('a runtime session cannot execute the provisioning function (42501)', async () => {
-    await withRolledBackTx(runtime, { tenantId: northwindTenantId, userId: USER_A }, async (c) => {
+    await withRolledBackTx(runtime, { tenantId: tenantBId, userId: USER_A }, async (client) => {
       await expectSqlState(
-        c.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-escalate')`, [
+        client.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-escalate')`, [
           JSON.stringify(spec({ tenant: { ...spec().tenant, code: 'fx_prov_escalate' } })),
         ]),
         '42501'
@@ -326,8 +418,8 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
   });
 
   it('runtime has no access to the idempotency table at all (42501)', async () => {
-    await withRolledBackTx(runtime, { tenantId: northwindTenantId }, async (c) => {
-      await expectSqlState(c.query('SELECT count(*) FROM shared.idempotency_keys'), '42501');
+    await withRolledBackTx(runtime, { tenantId: tenantBId }, async (client) => {
+      await expectSqlState(client.query('SELECT count(*) FROM shared.idempotency_keys'), '42501');
     });
   });
 });

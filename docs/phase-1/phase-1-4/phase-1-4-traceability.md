@@ -68,3 +68,9 @@ initial-audit, schema-design, RLS matrix, permission-catalog reference, helper
 guide, audit-integrity design, security-event capture map, migration
 classification, evidence register, this matrix, readiness checklist, completion
 report, owner gate, data-dictionary extension. **Complete.**
+
+## Phase 1-5 forward correction (2026-07-18)
+
+DB-025's permission catalog remains seeded. Its historical baseline-role seed
+evidence is now preserved as equivalent ephemeral six-role/mapping coverage;
+tenant-scoped roles are no longer automatic seed data.

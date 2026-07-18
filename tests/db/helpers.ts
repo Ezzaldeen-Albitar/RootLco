@@ -230,34 +230,101 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
   );
 }
 
+/**
+ * Deletes tenant-owned rows in foreign-key dependency order, then the tenants.
+ * Callers remain responsible for platform-scope fixtures and idempotency rows
+ * whose tenant_id is NULL.
+ */
+export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Promise<void> {
+  if (tenantIds.length === 0) return;
+
+  const deleteFrom = async (table: string) => {
+    await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  };
+
+  await deleteFrom('shared.comments');
+  await deleteFrom('shared.notes');
+  await deleteFrom('shared.entity_tags');
+  await deleteFrom('shared.tags');
+  await deleteFrom('shared.search_metadata');
+  await deleteFrom('shared.system_settings');
+
+  await deleteFrom('shared.delivery_attempts');
+  await deleteFrom('shared.outbound_messages');
+  await admin.query(
+    `UPDATE shared.message_templates
+        SET active_version_id = NULL
+      WHERE tenant_id = ANY($1::uuid[])`,
+    [tenantIds]
+  );
+  await deleteFrom('shared.template_versions');
+  await deleteFrom('shared.message_templates');
+
+  await deleteFrom('shared.event_outbox');
+  await deleteFrom('shared.processed_events');
+  await deleteFrom('shared.error_records');
+
+  await deleteFrom('shared.legal_holds');
+  await deleteFrom('shared.document_links');
+  await deleteFrom('shared.file_scan_results');
+  await deleteFrom('shared.document_versions');
+  await deleteFrom('shared.documents');
+  await deleteFrom('shared.document_categories');
+
+  await deleteFrom('shared.status_history');
+  await deleteFrom('shared.idempotency_keys');
+
+  await deleteFrom('iam.role_grants');
+  await deleteFrom('iam.approval_limits');
+  await deleteFrom('iam.sensitive_data_permissions');
+  await deleteFrom('iam.user_sessions');
+  await deleteFrom('iam.login_audit');
+  await deleteFrom('iam.audit_records');
+  await deleteFrom('iam.security_events');
+  await deleteFrom('iam.user_status_history');
+  await deleteFrom('iam.user_employee_links');
+  await deleteFrom('iam.user_profiles');
+  await deleteFrom('iam.user_accounts');
+  await deleteFrom('iam.role_permissions');
+  await deleteFrom('iam.roles');
+
+  await deleteFrom('shared.number_sequences');
+  await deleteFrom('org.branch_settings');
+  await deleteFrom('org.company_settings');
+  await deleteFrom('org.tax_rates');
+  await deleteFrom('org.tax_classes');
+  await deleteFrom('org.tenant_feature_overrides');
+  await deleteFrom('org.storage_locations');
+  await deleteFrom('org.warehouses');
+  await deleteFrom('org.departments');
+  await deleteFrom('org.cost_centers');
+  await deleteFrom('org.branch_status_history');
+  await deleteFrom('org.branches');
+  await deleteFrom('org.legal_companies');
+  await deleteFrom('org.tenant_subscriptions');
+  await deleteFrom('org.tenant_status_history');
+  await admin.query('DELETE FROM org.tenants WHERE id = ANY($1::uuid[])', [tenantIds]);
+}
+
 /** Removes every fixture row/object the harness may have created. */
 export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(`DROP SCHEMA IF EXISTS ${FIXTURE_SCHEMA} CASCADE`);
-  await admin.query('DELETE FROM shared.number_sequences WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // Worker-owned delivery obligations must be removed before their org scope.
-  await admin.query('DELETE FROM shared.event_outbox WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
+  await deleteTenantCascade(admin, [TENANT_A, TENANT_B]);
   // Consumer claims use a fixture consumer prefix, including platform claims.
   // Error cleanup covers fixture tenants and pre-tenant platform fixture rows.
-  await admin.query(`DELETE FROM shared.processed_events WHERE consumer_code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM shared.processed_events
+      WHERE tenant_id IS NULL AND consumer_code LIKE 'fx\\_%'`
+  );
   await admin.query(
     `DELETE FROM shared.error_records
-      WHERE tenant_id IN ($1, $2)
-         OR (tenant_id IS NULL AND error_code LIKE 'fx\\_%')`,
-    [TENANT_A, TENANT_B]
+      WHERE tenant_id IS NULL AND error_code LIKE 'fx\\_%'`
   );
   // Settings are append-only. Remove tenant fixtures and only fx_-prefixed
   // platform rows; localization content must be removed before its key catalogue.
   await admin.query(
     `DELETE FROM shared.system_settings
-      WHERE tenant_id IN ($1, $2)
-         OR (scope = 'platform' AND setting_key LIKE 'fx\\_%')`,
-    [TENANT_A, TENANT_B]
+      WHERE scope = 'platform' AND setting_key LIKE 'fx\\_%'`
   );
   await admin.query(
     `DELETE FROM shared.localized_texts
@@ -266,200 +333,29 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
       )`
   );
   await admin.query(`DELETE FROM shared.localization_keys WHERE key_code LIKE 'fx\\_%'`);
-  // Generic annotations and search projections reference IAM and organization
-  // fixtures. Delete children first, then tags, then the independent projection.
-  await admin.query('DELETE FROM shared.comments WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.notes WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
-  await admin.query('DELETE FROM shared.entity_tags WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.tags WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
-  await admin.query('DELETE FROM shared.search_metadata WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // Phase 1-4 iam fixtures: children first, then accounts (all reference
-  // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
-  // role_grants first: deleting it cascades grant_scopes (which reference org
-  // companies/branches/departments) and precedes the user/role/org deletes.
-  await admin.query('DELETE FROM iam.role_grants WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.approval_limits WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.sensitive_data_permissions WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.user_sessions WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.login_audit WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // Audit records cascade their details and integrity links; security events too.
-  await admin.query('DELETE FROM iam.audit_records WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.security_events WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // shared.status_history cascades its status_evidence; idempotency keys too.
-  await admin.query('DELETE FROM shared.status_history WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.idempotency_keys WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // Phase 1-5 shared services: links/scan results -> versions -> documents ->
-  // categories reference org rows (all ON DELETE RESTRICT); remove inner rows first.
-  await admin.query('DELETE FROM shared.legal_holds WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.document_links WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.file_scan_results WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.document_versions WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.documents WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.document_categories WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
   // Platform-scope test categories (tenant_id NULL) carry the fx_ code prefix.
   await admin.query(
     `DELETE FROM shared.document_categories WHERE scope = 'platform' AND category_code LIKE 'fx\\_%'`
   );
-  // Outbound delivery evidence references messages, and messages may reference
-  // template versions. Remove both children before breaking/deleting templates.
-  await admin.query('DELETE FROM shared.delivery_attempts WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM shared.outbound_messages WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  // Message-template cleanup must break the active-version cycle first, then
-  // remove versions before identities. Cover tenant fixtures and platform fx_ rows.
+  // Platform message-template fixtures use the fx_ prefix.
   await admin.query(
     `UPDATE shared.message_templates
         SET active_version_id = NULL
-      WHERE tenant_id IN ($1, $2)
-         OR (scope = 'platform' AND template_code LIKE 'fx\\_%')`,
-    [TENANT_A, TENANT_B]
+      WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'`
   );
   await admin.query(
     `DELETE FROM shared.template_versions
-      WHERE tenant_id IN ($1, $2)
-         OR template_id IN (
-           SELECT id FROM shared.message_templates
-           WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'
-         )`,
-    [TENANT_A, TENANT_B]
+      WHERE template_id IN (
+        SELECT id FROM shared.message_templates
+        WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'
+      )`
   );
   await admin.query(
     `DELETE FROM shared.message_templates
-      WHERE tenant_id IN ($1, $2)
-         OR (scope = 'platform' AND template_code LIKE 'fx\\_%')`,
-    [TENANT_A, TENANT_B]
+      WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'`
   );
-  await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.user_employee_links WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.user_profiles WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.user_accounts WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.role_permissions WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM iam.roles WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
-  // Org fixtures: children first (FK RESTRICT), then the tenants themselves.
-  await admin.query('DELETE FROM org.branch_settings WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.company_settings WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.tax_rates WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
-  await admin.query('DELETE FROM org.tax_classes WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.tenant_feature_overrides WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.storage_locations WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.warehouses WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
-  await admin.query('DELETE FROM org.departments WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.cost_centers WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.branch_status_history WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.branches WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
-  await admin.query('DELETE FROM org.legal_companies WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.tenant_subscriptions WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.tenant_status_history WHERE tenant_id IN ($1, $2)', [
-    TENANT_A,
-    TENANT_B,
-  ]);
-  await admin.query('DELETE FROM org.tenants WHERE id IN ($1, $2)', [TENANT_A, TENANT_B]);
   // Test-created platform fixtures use the fx_ prefix by convention.
   await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code LIKE 'fx\\_%'`);
   await admin.query(`DELETE FROM org.feature_flags WHERE flag_code LIKE 'fx\\_%'`);

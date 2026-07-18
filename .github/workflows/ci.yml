@@ -204,6 +204,9 @@ jobs:
       - name: Apply all migrations to a clean database
         run: npm run db:apply-migrations
 
+      - name: Apply declared seeds twice and validate clean business state
+        run: npm run validate:seed-state
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 

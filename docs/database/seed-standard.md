@@ -150,25 +150,31 @@ This is configuration-as-data under
 row itself, its companies and branches, its instantiated sequence definitions,
 its jurisdiction-specific configuration.
 
+**Phase 1-5 operating model (owner decision 2026-07-18):** a Class-3 package is
+a controlled JSON data artifact under `supabase/packages/`, executed only by the
+generic, environment-gated administrative CLI after an exact tenant-code
+confirmation and a write-free dry run. It is never listed in `[db.seed]`, never
+runs in CI or on local reset, and must produce an operator-retained result log.
+
 Rules:
 
-- Class 3 runs on the **administrative path only**. This is already enforced in
+- Class 3 runs on the **manual administrative path only**. This is already enforced in
   the schema where it matters most: migration `0003` deliberately grants the
   runtime roles **no INSERT and no DELETE** on `shared.number_sequences` and
   defines no INSERT/DELETE policy — sequence provisioning is an administrative
   configuration action, not an application feature. Future provisioning follows
   the same posture (see the [Role and Grant Standard](./role-and-grant-standard.md)).
-- Every Class 3 package must be a controlled, reviewed, version-controlled
-  artefact with a named operator, an execution record, and idempotent
-  statements — never ad-hoc SQL typed into a console.
+- Every Class 3 package must be a controlled, reviewed, version-controlled data
+  artefact with a named operator, approved environment, exact confirmation,
+  dry-run review, execution record, and idempotent operation — never ad-hoc SQL
+  typed into a console and never an automatic seed.
 - A Class 3 package must instantiate Class 2 templates; it may override
   documented parameters (prefixes, pad widths) but must not invent structure.
 - **This is the only class in which Benzene Vehicle Services may ever appear**
   — see Section 7.
 
-Illustrative example — **future controlled provisioning package, Phase 1-3+**.
-The table exists today; the package does not, and no such package may be
-created in Phase 1-2:
+Historical Phase 1-2 illustration of the idempotency rule (the current
+implementation is the gated JSON-package model above):
 
 ```sql
 -- ILLUSTRATION (Phase 1-3+): controlled provisioning package for ONE tenant,
@@ -274,6 +280,12 @@ branch_id)`) is the practised example.
 
 ## 5. Current state of `supabase/seed.sql` (verified 2026-07-16)
 
+**Phase 1-5 forward correction (2026-07-18):** `[db.seed].sql_paths` now declares
+`seed.sql`, `01_reference_data.sql`, `04_iam_permission_catalog.sql`, and
+`05_shared_reference.sql`. Former tenant seeds 02 and 03 were removed. Seed 05
+adds exactly five tenant-neutral retention-class definitions; no declared seed
+creates a tenant, role, user, grant, or other business row.
+
 `supabase/seed.sql` is applied by `supabase db reset` **after all migrations**,
 configured in `supabase/config.toml` under `[db.seed]` with
 `sql_paths = ["./seed.sql"]`. It is **intentionally empty of rows**: it
@@ -311,14 +323,10 @@ there is nothing legitimate to seed; any row added to this file during Phase
 wording predates this phase; the emptiness requirement carries forward
 unchanged through Phase 1-2.)
 
-Honest note on CI: the CI database job
-(`.github/workflows/ci.yml`, job “Database migrations and RLS tests”) applies
-all migrations to a clean `postgres:17-alpine` database via
-`scripts/db/apply-migrations.mjs` and runs the 68-test suite; it does **not**
-execute `supabase/seed.sql`. Seed-pipeline execution is currently exercised
-only by the local `npm run supabase:reset` flow. When `seed.sql` first gains
-rows, adding seed execution (or an equivalent assertion) to CI becomes a
-required change and must be planned in that phase.
+Current CI note (forward-corrected 2026-07-18): after clean migrations, the
+database job runs `npm run validate:seed-state`. That command parses the declared
+paths, applies every seed twice, verifies exact retention definitions, proves all
+business tables empty, and proves per-table count idempotence before DB tests.
 
 ---
 
@@ -330,6 +338,11 @@ required change and must be planned in that phase.
 | 2 — Tenant-provisioning templates           | Nowhere (documented in standards only)               | Versioned template artefacts in the repository (data files or SQL fragments) consumed by the provisioning process — never merged into `seed.sql`                              | Provisioning tooling, administrative path                                               |
 | 3 — Tenant-specific controlled provisioning | Prohibited entirely                                  | Controlled provisioning packages per tenant, stored and reviewed in the repository, executed at onboarding with an execution record                                           | Administrative path only (runtime roles have no INSERT — practised in migration `0003`) |
 | 4 — Test fixtures                           | `tests/db/` harness (disposable schema `p1_02_test`) | Stays with the test harness; grows with new test suites                                                                                                                       | `npm run test:db` (vitest + pg)                                                         |
+
+Phase 1-5 current location note: Class 1 files are the declared structural SQL
+seeds (01, 04, 05); Class 3 lives in controlled JSON packages and is executed by
+the manual gated CLI; Class 4 provisioning fixtures are cascade-deleted by their
+own suites.
 
 Two boundaries in this table are load-bearing:
 
@@ -350,9 +363,8 @@ first pilot ([ADR-009](../adr/ADR-009-benzene-as-first-configured-pilot-tenant.m
 It is **not** the owner of the platform and **not** a special case in code or
 schema. The binding rules:
 
-- Benzene may appear **only** in a future Class 3 controlled
-  tenant-provisioning example or configuration package, created in the phase
-  that performs tenant onboarding — never earlier.
+- Benzene may appear **only** in its Class-3 controlled data package and the
+  associated operator/governance documentation.
 - Benzene must **never** appear in the Phase 1-2 base database: not in
   migrations, not in `seed.sql`, not in schema objects, not in RLS policies,
   not in functions, not in application logic, not as a default value, not as

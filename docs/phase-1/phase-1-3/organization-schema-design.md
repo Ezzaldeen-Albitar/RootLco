@@ -72,8 +72,11 @@ keys are the integrity layer; both are tested independently.
 
 ## 5. Provisioning register — pilot configuration status (nothing invented)
 
-The controlled package `supabase/seeds/02_benzene_pilot_provisioning.sql` uses only
-approved facts; everything unknown is NULL or explicitly draft:
+**Phase 1-5 forward correction (2026-07-18):** the controlled data now lives at
+`supabase/packages/pilot-provisioning.package.json` and is run manually through
+the generic gated CLI under `docs/database/pilot-provisioning-runbook.md`. It is
+not a seed and cannot run on reset or in CI. The package uses only approved facts;
+everything unknown is NULL or explicitly draft:
 
 | Item                             | Status                                              |
 | -------------------------------- | --------------------------------------------------- |
