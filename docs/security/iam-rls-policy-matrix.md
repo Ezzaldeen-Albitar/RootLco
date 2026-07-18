@@ -47,3 +47,28 @@ Database RLS does **not** log every SELECT; audit-read access logging is a
 Phase-1-14 backend responsibility. A residual is documented: a privileged DB
 role (superuser/BYPASSRLS) can read/alter rows — the chain detects alteration,
 and no application role holds such privilege.
+
+## Phase 1-5 addendum (2026-07-18) — shared-services controls that extend this matrix
+
+The full Phase 1-5 policy set (22 `shared.*` tables) is pinned by the exact
+allow-lists in `tests/db/foundation.test.ts`; recorded here are only the
+controls that extend the IAM story above. All other Phase 1-5 tables follow
+the standard `sel_<t>_tenant` same-tenant SELECT-only pattern (dual-scope
+tables additionally expose platform rows).
+
+| Table                                                         | Read policy (app roles)                                                                                             | Write                                                             | Notes                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `shared.search_metadata` · `shared.notes` · `shared.comments` | `sel_*`: same tenant **AND** (classification `public`/`internal` **OR** `iam.has_permission('iam.sensitive.view')`) | none                                                              | sensitive-read gate; restricted rows invisible without the permission                   |
+| `shared.event_outbox`                                         | none for `app_runtime`/`app_readonly` · `wkr_event_outbox_all` (`app_worker`, ALL, all-tenant **by design**)        | `app_worker` INSERT/UPDATE via claim/complete/fail; **no DELETE** | atomic `FOR UPDATE SKIP LOCKED` claims; wrong-claimant complete/fail raises             |
+| `shared.processed_events`                                     | none for `app_runtime`/`app_readonly` · `wkr_processed_events_all`                                                  | `app_worker` INSERT/SELECT (append-only)                          | per-consumer idempotency claim registry                                                 |
+| `shared.error_records`                                        | none for `app_runtime`/`app_readonly` · `wkr_error_records_all`                                                     | `app_worker` INSERT/SELECT/UPDATE; **no DELETE**                  | context screened by `tg_error_records_context_sanitized` (recursive key/value patterns) |
+
+`app_worker` is a NOLOGIN archetype whose entire privilege surface — the three
+tables above plus `shared.claim_outbox_events` / `complete_outbox_event` /
+`fail_outbox_event` and `iam.current_user_id()` — is asserted exactly in
+`tests/db/shared-hardening.test.ts`; its deliberate all-tenant policies are an
+accepted, documented decision
+([completion report §9](../phase-1/phase-1-5/phase-1-5-completion-report.md)).
+The sensitive-read gate is proven in `tests/db/shared-search-metadata.test.ts`
+and `tests/db/shared-tags-notes-comments.test.ts` (restricted rows hidden
+without `iam.sensitive.view`, visible with it).
