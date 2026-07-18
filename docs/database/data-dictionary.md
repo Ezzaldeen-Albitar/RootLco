@@ -1021,3 +1021,39 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.retention_classes`
+
+**Scope:** platform · **Retention class:** operational · Deterministic platform definition of each retention class: minimum retention period (NULL = indefinite) and whether physical deletion is ever permitted. Populated by structural seeds. Runtime SELECT-only.
+
+| Column               | Type                     | Null | Default | Classification |
+| -------------------- | ------------------------ | ---- | ------- | -------------- |
+| `class_code`         | text                     | NO   | —       | internal       |
+| `description`        | text                     | NO   | —       | internal       |
+| `min_retention_days` | integer                  | YES  | —       | internal       |
+| `allows_deletion`    | boolean                  | NO   | —       | internal       |
+| `record_version`     | integer                  | NO   | 1       | internal       |
+| `created_at`         | timestamp with time zone | NO   | now()   | internal       |
+| `created_by`         | uuid                     | NO   | —       | internal       |
+| `updated_at`         | timestamp with time zone | YES  | —       | internal       |
+| `updated_by`         | uuid                     | YES  | —       | internal       |
+
+### `shared.legal_holds`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Auditable per-document legal hold; an active hold (`released_at` NULL) blocks archival/deletion absolutely. Placing/releasing is a backend operation. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `placed_by`      | uuid                     | NO   | —                 | internal       |
+| `placed_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `released_by`    | uuid                     | YES  | —                 | internal       |
+| `released_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |

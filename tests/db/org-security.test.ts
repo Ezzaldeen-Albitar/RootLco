@@ -25,6 +25,7 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
   'shared.timezones',
   'shared.languages',
   'iam.permissions', // platform-owned permission catalogue (no tenant scope)
+  'shared.retention_classes', // platform retention definitions (no tenant scope)
 ]);
 
 /** Tables whose tenant_id is nullable BY DESIGN (documented adaptation). */

@@ -266,6 +266,10 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   ]);
   // Phase 1-5 shared services: links/scan results -> versions -> documents ->
   // categories reference org rows (all ON DELETE RESTRICT); remove inner rows first.
+  await admin.query('DELETE FROM shared.legal_holds WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM shared.document_links WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

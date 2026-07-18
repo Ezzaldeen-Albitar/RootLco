@@ -80,6 +80,9 @@ const ALLOWED_TABLES = new Set([
   'shared.file_scan_results',
   // Phase 1-5 Increment C — generic document links (P1-05-DB-005).
   'shared.document_links',
+  // Phase 1-5 Increment D — retention definitions and legal holds (P1-05-DB-006).
+  'shared.retention_classes',
+  'shared.legal_holds',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -163,6 +166,9 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_document_version_transition',
   // Phase 1-5 (P1-05-DB-005): link-derived access resolution primitive.
   'shared.document_ids_for_entity',
+  // Phase 1-5 (P1-05-DB-006): retention eligibility + controlled archival.
+  'shared.document_deletion_eligibility',
+  'shared.archive_document',
 ]);
 
 let admin: Pool;
@@ -318,11 +324,15 @@ describe('database foundation', () => {
       'tg_languages_touch_metadata',
       'tg_legal_companies_immutable',
       'tg_legal_companies_touch_metadata',
+      'tg_legal_holds_immutable',
+      'tg_legal_holds_touch_metadata',
       'tg_login_audit_stamp',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
+      'tg_retention_classes_immutable',
+      'tg_retention_classes_touch_metadata',
       'tg_role_grants_immutable',
       'tg_role_grants_require_scope',
       'tg_role_grants_touch_metadata',
@@ -402,10 +412,12 @@ describe('database foundation', () => {
       'sel_grant_scopes_tenant',
       'sel_languages_all',
       'sel_legal_companies_tenant',
+      'sel_legal_holds_tenant',
       'sel_login_audit_admin',
       'sel_login_audit_own',
       'sel_number_sequences_tenant',
       'sel_permissions_all',
+      'sel_retention_classes_all',
       'sel_role_grants_tenant',
       'sel_role_permissions_tenant',
       'sel_roles_tenant',
