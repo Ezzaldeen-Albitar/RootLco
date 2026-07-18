@@ -242,6 +242,12 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-6 CRM — delete crm children before crm.business_partners, and all
+  // crm rows before org.tenants (business_partners.tenant_id -> org.tenants).
+  // business_partners self-references via merged_into_id (ON DELETE RESTRICT);
+  // a single-statement delete removes a merged source and its survivor together.
+  await deleteFrom('crm.business_partners');
+
   await deleteFrom('shared.comments');
   await deleteFrom('shared.notes');
   await deleteFrom('shared.entity_tags');

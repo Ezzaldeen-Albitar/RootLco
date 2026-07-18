@@ -105,6 +105,8 @@ const ALLOWED_TABLES = new Set([
   'shared.entity_tags',
   'shared.notes',
   'shared.comments',
+  // Phase 1-6 CRM — party master (P1-06-DB-001).
+  'crm.business_partners',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -218,6 +220,8 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-5 Increment K — shared edit stamping and comment-parent guard.
   'shared.stamp_content_edit',
   'shared.guard_comment_parent',
+  // Phase 1-6 CRM — merge-redirect integrity guard (P1-06-DB-001).
+  'crm.guard_business_partner_merge',
 ]);
 
 let admin: Pool;
@@ -352,6 +356,9 @@ describe('database foundation', () => {
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',
+      'tg_business_partners_immutable',
+      'tg_business_partners_merge_guard',
+      'tg_business_partners_touch_metadata',
       'tg_comments_guard_parent',
       'tg_comments_immutable',
       'tg_comments_stamp_content_edit',
@@ -473,6 +480,7 @@ describe('database foundation', () => {
       'ins_branch_settings_scope',
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
+      'ins_business_partners_tenant',
       'ins_company_settings_scope',
       'ins_cost_centers_scope',
       'ins_departments_scope',
@@ -488,6 +496,7 @@ describe('database foundation', () => {
       'sel_branch_settings_scope',
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
+      'sel_business_partners_tenant',
       'sel_comments_tenant',
       'sel_company_settings_scope',
       'sel_cost_centers_scope',
@@ -543,6 +552,7 @@ describe('database foundation', () => {
       'sel_user_status_history_tenant',
       'sel_warehouses_scope',
       'upd_branches_scope',
+      'upd_business_partners_tenant',
       'upd_cost_centers_scope',
       'upd_departments_scope',
       'upd_legal_companies_tenant',

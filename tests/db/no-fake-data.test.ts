@@ -33,12 +33,12 @@ afterAll(async () => {
 });
 
 describe('no-fake-data — all business tables start empty', () => {
-  it('discovers every org/iam/shared base table and finds no business rows', async () => {
+  it('discovers every org/iam/shared/crm base table and finds no business rows', async () => {
     const catalog = await admin.query(
       `SELECT table_schema, table_name
          FROM information_schema.tables
         WHERE table_type = 'BASE TABLE'
-          AND table_schema IN ('org', 'iam', 'shared')
+          AND table_schema IN ('org', 'iam', 'shared', 'crm')
         ORDER BY table_schema, table_name`
     );
     const nonEmpty: string[] = [];
