@@ -42,11 +42,12 @@ applies.
 
 ## 3. Enforcement
 
-| Control            | Mechanism                                                                                                                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Static scan        | `npm run validate:no-fake-data` (`scripts/check-no-fake-data.mjs`) flags demo/mock/sample/fake business-record indicators outside a precise allow-list (tests, docs, this standard). Wired into CI (secrets job). |
-| Clean-DB invariant | `tests/db/no-fake-data.test.ts` asserts the shared-services business tables hold zero rows on a clean database.                                                                                                   |
-| API layer (future) | Every API returns real empty collections when no data exists, never mock rows; integration tests use ephemeral isolated data only.                                                                                |
+| Control            | Mechanism                                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Static scan        | `npm run validate:no-fake-data` (`scripts/check-no-fake-data.mjs`) flags demo/mock/sample/fake business-record indicators outside a precise allow-list (tests, docs, this standard). Wired into CI (secrets job).              |
+| Seed-state proof   | `npm run validate:seed-state` applies every `[db.seed]` path twice before fixture cleanup, asserts the exact five retention rows, discovers every org/iam/shared base table, and proves all other tables empty and idempotent. |
+| Clean-DB invariant | `tests/db/no-fake-data.test.ts` repeats the catalog-driven all-business-table emptiness invariant after its own fixture cleanup. A new table joins the business set automatically unless explicitly classified as structural.  |
+| API layer (future) | Every API returns real empty collections when no data exists, never mock rows; integration tests use ephemeral isolated data only.                                                                                             |
 
 ## 4. Phase 1-5 application
 
@@ -59,17 +60,12 @@ applies.
 - **Localization**: the schema supports `ar`/`en`; final UI wording is entered
   later (approved configuration/migration), never invented in the database phase.
 
-## 5. Known pending reconciliation
+## 5. Reconciliation resolved
 
-Pre-existing merged Phase 1-3/1-4 seeds
-`supabase/seeds/02_benzene_pilot_provisioning.sql` (real Benzene tenant) and
-`supabase/seeds/03_local_test_tenant.sql` (fictional "Northwind Motors" tenant)
-auto-provision business rows on `supabase db reset`, and merged tests
-(`tests/db/org-provisioning.test.ts`, `tests/db/iam-seeds.test.ts`) depend on
-them. They predate this standard and conflict with it. They are **allow-listed in
-the guard pending an explicit owner decision** and were **not removed
-unilaterally** (doing so would break approved tests and touch the real customer's
-provisioning). The owner must choose either to convert them to ephemeral,
-test-only provisioning (and rewrite those tests) or to record a documented
-exception here. Note: the CI database job runs migrations only (no seeds), so
-these seeds never populate the CI-validated database.
+**Owner decision (2026-07-18): RESOLVED.** Both tenant-creating seeds were
+converted out of the automatic seed pipeline. The fictional tenant was deleted
+completely. Pilot onboarding is now a manual, environment-gated Class-3 package
+run only by an authorized operator; it is never referenced by `[db.seed]`, local
+reset, CI, or application startup. Provisioning and baseline-role tests now create
+and cascade-delete their own ephemeral tenants. A clean migrated-and-seeded
+database therefore contains exactly zero tenants and zero business rows.

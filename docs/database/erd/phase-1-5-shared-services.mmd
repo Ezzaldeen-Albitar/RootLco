@@ -1,0 +1,233 @@
+%% RootLco — Phase 1-5 shared-services ERD source (P1-05-DOC-002, P1-05-DB-022).
+%% Matches the implemented schema at migrations 20260718100000..111000 (22 tables).
+%% This file is the repository ERD SOURCE; the canonical Master document's
+%% figure synchronization is tracked in shared-services-schema-design.md.
+%% Anchor entities (org.tenants / org.legal_companies / org.branches /
+%% iam.user_accounts / shared.languages) are Phase 1-3/1-4 objects shown only
+%% where a Phase 1-5 foreign key targets them.
+erDiagram
+  %% ---- Increment A: document categories and documents ----
+  TENANTS ||--o{ DOCUMENT_CATEGORIES : "tenant_id (NULL = platform)"
+  DOCUMENT_CATEGORIES ||--o{ DOCUMENTS : "category_id (platform-or-same-tenant guard)"
+  TENANTS ||--o{ DOCUMENTS : "tenant_id"
+  LEGAL_COMPANIES ||--o{ DOCUMENTS : "(tenant_id, company_id)"
+  BRANCHES ||--o{ DOCUMENTS : "(tenant, company, branch)"
+
+  %% ---- Increment B: versions and scan results ----
+  DOCUMENTS ||--o{ DOCUMENT_VERSIONS : "(tenant_id, document_id)"
+  DOCUMENT_VERSIONS ||--o{ FILE_SCAN_RESULTS : "(tenant_id, version_id)"
+
+  %% ---- Increment C: links and link-derived access ----
+  DOCUMENTS ||--o{ DOCUMENT_LINKS : "(tenant_id, document_id) -> generic entity"
+
+  %% ---- Increment D: retention and legal hold ----
+  RETENTION_CLASSES ||--o{ DOCUMENTS : "retention_class (reference)"
+  DOCUMENTS ||--o{ LEGAL_HOLDS : "(tenant_id, document_id)"
+
+  %% ---- Increment E: message templates ----
+  TENANTS ||--o{ MESSAGE_TEMPLATES : "tenant_id (NULL = platform)"
+  LANGUAGES ||--o{ MESSAGE_TEMPLATES : "locale_code"
+  MESSAGE_TEMPLATES ||--o{ TEMPLATE_VERSIONS : "template_id"
+  TEMPLATE_VERSIONS ||--o| MESSAGE_TEMPLATES : "(id, active_version_id) -> (template_id, id)"
+  USER_ACCOUNTS ||--o{ TEMPLATE_VERSIONS : "(tenant_id, approved_by)"
+
+  %% ---- Increment F: outbound messages and delivery ----
+  TENANTS ||--o{ OUTBOUND_MESSAGES : "tenant_id"
+  LEGAL_COMPANIES ||--o{ OUTBOUND_MESSAGES : "(tenant_id, company_id)"
+  BRANCHES ||--o{ OUTBOUND_MESSAGES : "(tenant, company, branch)"
+  TEMPLATE_VERSIONS ||--o{ OUTBOUND_MESSAGES : "template_version_id (approved, scoped)"
+  USER_ACCOUNTS ||--o{ OUTBOUND_MESSAGES : "(tenant_id, recipient_user_id)"
+  OUTBOUND_MESSAGES ||--o{ DELIVERY_ATTEMPTS : "(tenant_id, message_id) append-only"
+
+  %% ---- Increment G: transactional event outbox (worker-only) ----
+  TENANTS ||--o{ EVENT_OUTBOX : "tenant_id"
+  LEGAL_COMPANIES ||--o{ EVENT_OUTBOX : "(tenant_id, company_id)"
+  BRANCHES ||--o{ EVENT_OUTBOX : "(tenant, company, branch)"
+
+  %% ---- Increment H: processed events and error records (worker-only) ----
+  TENANTS ||--o{ PROCESSED_EVENTS : "tenant_id (NULL = platform consumer)"
+  TENANTS ||--o{ ERROR_RECORDS : "tenant_id (NULL = pre-context)"
+  LEGAL_COMPANIES ||--o{ ERROR_RECORDS : "(tenant_id, company_id)"
+  BRANCHES ||--o{ ERROR_RECORDS : "(tenant, company, branch)"
+
+  %% ---- Increment I: settings and localization ----
+  TENANTS ||--o{ SYSTEM_SETTINGS : "tenant_id (NULL = platform)"
+  LOCALIZATION_KEYS ||--o{ LOCALIZED_TEXTS : "key_id"
+  LANGUAGES ||--o{ LOCALIZED_TEXTS : "locale_code"
+
+  %% ---- Increment J: tenant-scoped search metadata ----
+  TENANTS ||--o{ SEARCH_METADATA : "tenant_id"
+  LEGAL_COMPANIES ||--o{ SEARCH_METADATA : "(tenant_id, company_id)"
+  BRANCHES ||--o{ SEARCH_METADATA : "(tenant, company, branch)"
+  LANGUAGES ||--o{ SEARCH_METADATA : "locale_code"
+
+  %% ---- Increment K: tags, notes, threaded comments ----
+  TENANTS ||--o{ TAGS : "tenant_id"
+  TAGS ||--o{ ENTITY_TAGS : "(tenant_id, tag_id) -> generic entity"
+  USER_ACCOUNTS ||--o{ ENTITY_TAGS : "(tenant_id, assigned_by)"
+  TENANTS ||--o{ NOTES : "tenant_id"
+  USER_ACCOUNTS ||--o{ NOTES : "(tenant_id, author_id)"
+  TENANTS ||--o{ COMMENTS : "tenant_id"
+  USER_ACCOUNTS ||--o{ COMMENTS : "(tenant_id, author_id)"
+  COMMENTS ||--o{ COMMENTS : "(tenant_id, parent_comment_id) same entity"
+
+  DOCUMENT_CATEGORIES {
+    uuid id PK
+    text scope "platform|tenant"
+    uuid tenant_id FK "NULL when platform (nullable exception)"
+    text category_code "partial-unique per scope"
+    text default_classification
+    text default_retention_class
+  }
+  DOCUMENTS {
+    uuid id PK
+    uuid tenant_id FK "candidate key (tenant_id, id)"
+    uuid category_id FK
+    text classification
+    text retention_class FK
+    boolean legal_hold "default false"
+    text status "pending|accepted|quarantined|archived"
+  }
+  DOCUMENT_VERSIONS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid document_id FK "(tenant_id, document_id)"
+    integer version_number "unique per document"
+    text storage_key "opaque metadata, not an auth token"
+    bytea sha256 "32 bytes"
+    text status "pending->accepted|quarantined|rejected"
+  }
+  FILE_SCAN_RESULTS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid version_id FK "(tenant_id, version_id)"
+    text scan_status "pending|clean|infected|error"
+  }
+  DOCUMENT_LINKS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid document_id FK "(tenant_id, document_id)"
+    text entity_type "schema.table token (generic)"
+    uuid entity_id
+    timestamptz deleted_at "soft delete"
+  }
+  RETENTION_CLASSES {
+    text class_code PK "5 platform reference rows"
+    boolean allows_deletion
+    integer min_retention_days "NULL = indefinite"
+  }
+  LEGAL_HOLDS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid document_id FK "one active hold per document"
+    timestamptz released_at "NULL = active"
+  }
+  MESSAGE_TEMPLATES {
+    uuid id PK
+    text scope "platform|tenant"
+    uuid tenant_id FK "NULL when platform (nullable exception)"
+    text channel "email|in_app"
+    text purpose "transactional|marketing|system"
+    text locale_code FK
+    uuid active_version_id FK "(id, active_version_id) approved-only"
+  }
+  TEMPLATE_VERSIONS {
+    uuid id PK
+    uuid tenant_id FK "mirrors template (nullable exception)"
+    uuid template_id FK "candidate key (template_id, id)"
+    bytea content_hash "32 bytes"
+    text status "draft->approved->retired (immutable once not draft)"
+  }
+  OUTBOUND_MESSAGES {
+    uuid id PK
+    uuid tenant_id FK
+    uuid template_version_id FK "approved + scoped guard"
+    bytea recipient_digest "32 bytes, or recipient_user_id"
+    uuid recipient_user_id FK "(tenant_id, recipient_user_id)"
+    bytea body_sha256 "content hash only; body not stored"
+    text dedupe_key "unique per tenant"
+    text status "pending|queued|sending|sent|delivered|failed|cancelled"
+  }
+  DELIVERY_ATTEMPTS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid message_id FK "(tenant_id, message_id)"
+    integer attempt_number "unique per message; append-only"
+    text status "started|accepted|delivered|errored"
+  }
+  EVENT_OUTBOX {
+    uuid id PK
+    uuid tenant_id FK
+    text event_key "unique per tenant"
+    integer schema_version
+    bigint aggregate_version
+    jsonb payload "object; no secrets"
+    text status "pending|claimed|published|dead_letter"
+    text claimed_by "worker claimant; SKIP LOCKED"
+  }
+  PROCESSED_EVENTS {
+    text consumer_code PK "PK (consumer_code, event_id)"
+    uuid event_id PK
+    uuid tenant_id FK "NULL = platform (nullable exception)"
+    text outcome "applied|skipped|failed"
+  }
+  ERROR_RECORDS {
+    uuid id PK
+    uuid tenant_id FK "NULL pre-context (nullable exception)"
+    text severity "info|warning|error|critical"
+    jsonb context "recursively sanitized"
+    text status "open->acknowledged->resolved"
+  }
+  SYSTEM_SETTINGS {
+    uuid id PK
+    text scope "platform|tenant"
+    uuid tenant_id FK "NULL when platform (nullable exception)"
+    text setting_key
+    integer version "immutable versioned rows"
+  }
+  LOCALIZATION_KEYS {
+    uuid id PK
+    text key_code UK "platform catalogue (no tenant)"
+    text status "active|deprecated"
+  }
+  LOCALIZED_TEXTS {
+    uuid id PK
+    uuid key_id FK
+    text locale_code FK
+    text status "draft->approved->retired; one approved per key/locale"
+  }
+  SEARCH_METADATA {
+    uuid id PK
+    uuid tenant_id FK
+    text entity_type
+    uuid entity_id
+    text field_code
+    text locale_code FK "identity: NULLS NOT DISTINCT"
+    text classification "sensitive-read gated"
+  }
+  TAGS {
+    uuid id PK
+    uuid tenant_id FK "tenant-only (no platform catalogue)"
+    text tag_code "active-unique per tenant"
+  }
+  ENTITY_TAGS {
+    uuid id PK
+    uuid tenant_id FK
+    uuid tag_id FK "(tenant_id, tag_id)"
+    text entity_type
+    uuid entity_id
+  }
+  NOTES {
+    uuid id PK
+    uuid tenant_id FK
+    uuid author_id FK "(tenant_id, author_id)"
+    text classification "sensitive-read gated"
+    text visibility "internal|customer_visible"
+  }
+  COMMENTS {
+    uuid id PK
+    uuid tenant_id FK "candidate key (tenant_id, id)"
+    uuid author_id FK "(tenant_id, author_id)"
+    uuid parent_comment_id FK "same tenant + entity guard"
+    text status "active|hidden"
+  }

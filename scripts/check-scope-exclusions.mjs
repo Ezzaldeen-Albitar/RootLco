@@ -5,8 +5,8 @@
  * Enforces two binding rules over every tracked file:
  *
  *  1. BENZENE IS DATA, NEVER CODE (ADR-008/ADR-009). The pilot tenant may be
- *     named only in documentation prose, the controlled provisioning seed
- *     package, and the explicit seed-validation tests. A hit anywhere else —
+ *     named only in documentation prose and the controlled provisioning data
+ *     package. A hit anywhere else —
  *     a migration, an RLS policy, a SQL helper, application logic, a generic
  *     test — fails the build.
  *
@@ -35,11 +35,9 @@ const RULES = [
       '.github/pull_request_template.md',
       'src/modules/README.md', // prohibitory prose
       'supabase/seed.sql', // binding seed rules (prohibitory prose)
-      'supabase/seeds/02_benzene_pilot_provisioning.sql', // THE controlled package
-      'supabase/config.toml', // sql_paths pointer to the package filename
+      'supabase/packages/pilot-provisioning.package.json', // controlled Class-3 data
+      'docs/database/pilot-provisioning-runbook.md', // controlled operator procedure
       'supabase/migrations/0003_number_sequences.sql', // merged Phase 1-2 prohibitory comment (immutable)
-      'tests/db/org-provisioning.test.ts', // explicit seed-validation tests
-      'tests/db/iam-seeds.test.ts', // explicit seed-validation test (Phase 1-4 catalog + baseline roles)
       'scripts/check-scope-exclusions.mjs', // this guard
     ],
   },

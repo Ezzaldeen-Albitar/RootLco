@@ -108,7 +108,11 @@ logic. No Zoom object.
 | P1-04-DB-020..021               | H         | `iam.has_permission`/`has_permission_in_scope` + context helpers + spoof tests    |
 | P1-04-DB-023..024, SEC-001..003 | I         | indexes, permission-gated RLS, runtime grants, escalation-denial tests            |
 | P1-04-DB-025                    | J         | permission catalog + baseline-role seeds (idempotent, no real users)              |
-| P1-04-SEC/QA/DO/DOC             | K/L       | security notes, QA suites, CI, docs, traceability, adversarial review, clean-room |
+
+> **Phase 1-5 forward correction (2026-07-18):** this audit row is historical.
+> Seed 04 now contains only the tenant-neutral permission catalog; baseline roles
+> and mappings are provisioning-time configuration proven with ephemeral tests.
+> | P1-04-SEC/QA/DO/DOC | K/L | security notes, QA suites, CI, docs, traceability, adversarial review, clean-room |
 
 ## 7. Open items carried
 

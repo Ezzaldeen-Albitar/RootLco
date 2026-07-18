@@ -124,10 +124,17 @@ Triggers on `shared.number_sequences`: `tg_number_sequences_touch_metadata`,
 
 ## 6. Roles (see [role-and-grant-standard.md](./role-and-grant-standard.md))
 
-| Role           | Kind                | Attributes (verified 2026-07-16)                        | Introduced |
-| -------------- | ------------------- | ------------------------------------------------------- | ---------- |
-| `app_runtime`  | runtime archetype   | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB | 0002       |
-| `app_readonly` | read-only archetype | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB | 0002       |
+| Role           | Kind                | Attributes                                                            | Introduced     |
+| -------------- | ------------------- | --------------------------------------------------------------------- | -------------- |
+| `app_runtime`  | runtime archetype   | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 0002           |
+| `app_readonly` | read-only archetype | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 0002           |
+| `app_worker`   | worker archetype    | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 20260718106000 |
+
+`app_worker` is the deliberately all-tenant infrastructure archetype on exactly
+enumerated worker tables. Increment G grants it only `shared`/`iam` schema
+USAGE, `iam.current_user_id()` EXECUTE, outbox SELECT/INSERT/UPDATE, and the
+three outbox lifecycle routines; it has no DELETE, ownership, DDL, or RLS
+bypass. An actual worker LOGIN remains Phase 1-13.
 
 ## 7. Explicitly not in this dictionary
 
@@ -1057,3 +1064,464 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.message_templates`
+
+**Scope:** platform + tenant · **Retention class:** operational · Dual-scope governed message-template identity. Platform rows are shared defaults; tenant rows are overrides. Phase 1 channels are restricted to `email` and `in_app`. An active version must belong to the template and be approved. Runtime SELECT-only; no customer-facing wording is seeded.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`             | text                     | NO   | —                 | internal       |
+| `tenant_id`         | uuid                     | YES  | —                 | internal       |
+| `template_code`     | text                     | NO   | —                 | internal       |
+| `name`              | text                     | NO   | —                 | internal       |
+| `channel`           | text                     | NO   | —                 | internal       |
+| `purpose`           | text                     | NO   | —                 | internal       |
+| `locale_code`       | text                     | NO   | —                 | internal       |
+| `description`       | text                     | YES  | —                 | internal       |
+| `active_version_id` | uuid                     | YES  | —                 | internal       |
+| `status`            | text                     | NO   | 'active'          | internal       |
+| `deleted_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+### `shared.template_versions`
+
+**Scope:** platform + tenant (mirrors template) · **Retention class:** evidence-audit · Governed template content with one-way draft → approved → retired lifecycle. Approved content is immutable, and an active version cannot be retired. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `template_id`    | uuid                     | NO   | —                 | internal       |
+| `version_number` | integer                  | NO   | —                 | internal       |
+| `subject`        | text                     | YES  | —                 | restricted     |
+| `body`           | text                     | NO   | —                 | restricted     |
+| `content_hash`   | bytea                    | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'draft'           | internal       |
+| `approved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `approved_by`    | uuid                     | YES  | —                 | internal       |
+| `retired_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.outbound_messages`
+
+**Scope:** tenant · **Retention class:** operational · Tenant-scoped outbound-message envelope. Phase 1 channels are exactly `email` and `in_app`; purposes are exactly `transactional`, `marketing`, and `system`. A recipient is represented by a tenant-bound user and/or a 32-byte destination digest—never a plaintext external address. Only the rendered-content integrity digest is stored; rendering and transient content belong to the backend dispatch phase and are not persisted here. Optional template versions are approved and platform-or-same-tenant. Rows start `pending` and follow the guarded delivery lifecycle. Runtime SELECT-only.
+
+| Column                | Type                     | Null | Default           | Classification |
+| --------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                  | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`           | uuid                     | NO   | —                 | internal       |
+| `company_id`          | uuid                     | YES  | —                 | internal       |
+| `branch_id`           | uuid                     | YES  | —                 | internal       |
+| `template_version_id` | uuid                     | YES  | —                 | internal       |
+| `channel`             | text                     | NO   | —                 | internal       |
+| `purpose`             | text                     | NO   | —                 | internal       |
+| `recipient_digest`    | bytea                    | YES  | —                 | restricted     |
+| `recipient_user_id`   | uuid                     | YES  | —                 | restricted     |
+| `body_sha256`         | bytea                    | NO   | —                 | internal       |
+| `dedupe_key`          | text                     | NO   | —                 | internal       |
+| `consent_ref`         | text                     | YES  | —                 | restricted     |
+| `status`              | text                     | NO   | 'pending'         | internal       |
+| `retry_count`         | integer                  | NO   | 0                 | internal       |
+| `failure_class`       | text                     | YES  | —                 | internal       |
+| `queued_at`           | timestamp with time zone | YES  | —                 | internal       |
+| `sending_at`          | timestamp with time zone | YES  | —                 | internal       |
+| `sent_at`             | timestamp with time zone | YES  | —                 | internal       |
+| `delivered_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `failed_at`           | timestamp with time zone | YES  | —                 | internal       |
+| `cancelled_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`      | integer                  | NO   | 1                 | internal       |
+| `created_at`          | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`          | uuid                     | NO   | —                 | internal       |
+| `updated_at`          | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`          | uuid                     | YES  | —                 | internal       |
+
+### `shared.delivery_attempts`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only provider-neutral delivery-attempt evidence. Attempt numbers are unique per message, message ownership is tenant-bound structurally, and an `errored` attempt requires a sanitized non-blank summary. Provider payloads, secrets, stack traces, and plaintext recipient addresses are not stored. Runtime/readonly SELECT-only; no application UPDATE or DELETE grant/policy exists.
+
+| Column                 | Type                                                       | Null | Default           | Classification |
+| ---------------------- | ---------------------------------------------------------- | ---- | ----------------- | -------------- |
+| `id`                   | uuid                                                       | NO   | gen_random_uuid() | internal       |
+| `tenant_id`            | uuid                                                       | NO   | —                 | internal       |
+| `message_id`           | uuid                                                       | NO   | —                 | internal       |
+| `attempt_number`       | integer                                                    | NO   | —                 | internal       |
+| `provider_code`        | text                                                       | NO   | —                 | internal       |
+| `provider_message_ref` | text                                                       | YES  | —                 | internal       |
+| `status`               | text (`started` \| `accepted` \| `delivered` \| `errored`) | NO   | —                 | internal       |
+| `response_code`        | text                                                       | YES  | —                 | internal       |
+| `error_summary`        | text                                                       | YES  | —                 | internal       |
+| `details`              | jsonb                                                      | NO   | '{}'::jsonb       | restricted     |
+| `attempted_at`         | timestamp with time zone                                   | NO   | now()             | internal       |
+| `completed_at`         | timestamp with time zone                                   | YES  | —                 | internal       |
+| `created_at`           | timestamp with time zone                                   | NO   | now()             | internal       |
+| `created_by`           | uuid                                                       | NO   | —                 | internal       |
+
+### `shared.event_outbox`
+
+**Scope:** tenant · **Retention class:** operational · Transactional integration-event envelope. Event identity is unique per tenant; company/branch scope is structurally tenant-bound. `app_worker` has deliberate all-tenant SELECT/INSERT/UPDATE through `wkr_event_outbox_all`, while runtime/readonly have zero access. Rows begin pending; atomic invoker routines claim due/stale work and complete, retry, or dead-letter it. Worker DELETE is absent.
+
+| Column              | Type                                                          | Null | Default           | Classification |
+| ------------------- | ------------------------------------------------------------- | ---- | ----------------- | -------------- |
+| `id`                | uuid                                                          | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                                                          | NO   | —                 | internal       |
+| `company_id`        | uuid                                                          | YES  | —                 | internal       |
+| `branch_id`         | uuid                                                          | YES  | —                 | internal       |
+| `event_key`         | text                                                          | NO   | —                 | internal       |
+| `event_type`        | text                                                          | NO   | —                 | internal       |
+| `aggregate_type`    | text                                                          | NO   | —                 | internal       |
+| `aggregate_id`      | uuid                                                          | NO   | —                 | internal       |
+| `schema_version`    | integer                                                       | NO   | —                 | internal       |
+| `aggregate_version` | bigint                                                        | NO   | —                 | internal       |
+| `producer`          | text                                                          | NO   | —                 | internal       |
+| `occurred_at`       | timestamp with time zone                                      | NO   | now()             | internal       |
+| `correlation_id`    | uuid                                                          | YES  | —                 | internal       |
+| `causation_id`      | uuid                                                          | YES  | —                 | internal       |
+| `payload`           | jsonb                                                         | NO   | '{}'::jsonb       | restricted     |
+| `headers`           | jsonb                                                         | NO   | '{}'::jsonb       | restricted     |
+| `status`            | text (`pending` \| `claimed` \| `published` \| `dead_letter`) | NO   | 'pending'         | internal       |
+| `available_at`      | timestamp with time zone                                      | NO   | now()             | internal       |
+| `attempt_count`     | integer                                                       | NO   | 0                 | internal       |
+| `claimed_at`        | timestamp with time zone                                      | YES  | —                 | internal       |
+| `claimed_by`        | text                                                          | YES  | —                 | internal       |
+| `published_at`      | timestamp with time zone                                      | YES  | —                 | internal       |
+| `last_error`        | text                                                          | YES  | —                 | internal       |
+| `created_at`        | timestamp with time zone                                      | NO   | now()             | internal       |
+| `created_by`        | uuid                                                          | NO   | —                 | internal       |
+
+Outbox routines (migration `20260718106000`, all `SECURITY INVOKER`, empty
+`search_path`, PUBLIC revoked, EXECUTE only to `app_worker`):
+
+- `shared.claim_outbox_events(text, integer, interval)` returns an unordered
+  set claimed with `FOR UPDATE SKIP LOCKED`; pending rows must be due and stale
+  claims must exceed the lease.
+- `shared.complete_outbox_event(uuid, text)` conditionally publishes only the
+  caller's claim, stamps `published_at`, and clears claim fields.
+- `shared.fail_outbox_event(uuid, text, text, interval, integer)` conditionally
+  schedules a retry or dead-letters at the maximum attempt count, always
+  clearing claim fields and retaining `last_error`.
+- `shared.guard_event_outbox_initial_state()` is trigger-only (no role EXECUTE)
+  and rejects any INSERT not pending, unstamped, error-free, and at attempt 0.
+
+### `shared.processed_events`
+
+**Scope:** platform + tenant · **Retention class:** evidence-audit · Append-only consumer atomic-claim registry. Consumers claim with `INSERT ... ON CONFLICT DO NOTHING RETURNING` and perform the side effect only when a row is returned. This is distinct from request-response replay in `shared.idempotency_keys`. `failed` is terminal and blocks reprocessing pending later-phase operator intervention. `app_worker` has SELECT/INSERT only; runtime/readonly have no access.
+
+| Column          | Type                     | Null | Default     | Classification |
+| --------------- | ------------------------ | ---- | ----------- | -------------- |
+| `consumer_code` | text                     | NO   | —           | internal       |
+| `event_id`      | uuid                     | NO   | —           | internal       |
+| `tenant_id`     | uuid                     | YES  | —           | internal       |
+| `processed_at`  | timestamp with time zone | NO   | now()       | internal       |
+| `outcome`       | text                     | NO   | —           | internal       |
+| `metadata`      | jsonb                    | NO   | '{}'::jsonb | internal       |
+| `created_at`    | timestamp with time zone | NO   | now()       | internal       |
+| `created_by`    | uuid                     | NO   | —           | internal       |
+
+### `shared.error_records`
+
+**Scope:** platform + tenant · **Retention class:** evidence-audit · Durable sanitized operational failures, including errors raised before tenant context exists. Company/branch scope is prohibited when `tenant_id` is NULL. Context is recursively screened for sensitive keys and JWT/AWS-access-key-shaped strings. Rows start open and may move open → acknowledged → resolved or open → resolved; resolved is terminal. Recorded facts are immutable, while guarded status/resolution fields are mutable. `app_worker` has SELECT/INSERT/UPDATE only; runtime/readonly have no access.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `company_id`     | uuid                     | YES  | —                 | internal       |
+| `branch_id`      | uuid                     | YES  | —                 | internal       |
+| `error_code`     | text                     | NO   | —                 | internal       |
+| `source`         | text                     | NO   | —                 | internal       |
+| `operation`      | text                     | NO   | —                 | internal       |
+| `severity`       | text                     | NO   | —                 | internal       |
+| `retryable`      | boolean                  | NO   | —                 | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+| `context`        | jsonb                    | NO   | '{}'::jsonb       | restricted     |
+| `status`         | text                     | NO   | 'open'            | internal       |
+| `resolved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `resolved_by`    | uuid                     | YES  | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Increment H trigger routines (migration `20260718107000`, `SECURITY INVOKER`,
+empty `search_path`, PUBLIC execute revoked):
+
+- `shared.guard_error_context_sanitized()` recursively walks every JSON object
+  and array node, rejecting sensitive key names and credential-shaped strings.
+- `shared.guard_error_record_lifecycle()` enforces the initial open state,
+  transition graph, required resolver attribution, server resolution timestamp,
+  and terminal resolved state.
+
+### `shared.system_settings`
+
+**Scope:** platform + tenant · **Retention class:** operational · Immutable,
+versioned configuration rows. Platform defaults use `scope='platform'` with NULL
+`tenant_id`; tenant overrides use `scope='tenant'` with non-NULL `tenant_id`.
+Current resolution is highest tenant version, then highest platform version.
+Runtime/readonly SELECT and `shared.resolve_setting(text)` only. No secrets may be
+stored: `is_sensitive` classifies restricted content and does not encrypt it.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`          | text                     | NO   | —                 | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `setting_key`    | text                     | NO   | —                 | internal       |
+| `setting_value`  | jsonb                    | NO   | —                 | restricted     |
+| `value_type`     | text                     | NO   | —                 | internal       |
+| `is_sensitive`   | boolean                  | NO   | false             | internal       |
+| `version`        | integer                  | NO   | —                 | internal       |
+| `effective_from` | timestamp with time zone | NO   | now()             | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+
+`uq_system_settings_scope_key_version` is the non-partial `UNIQUE NULLS NOT
+DISTINCT (tenant_id, setting_key, version)` allocation referee and also covers
+the nullable tenant FK. `tg_system_settings_validate_value` reuses
+`org.validate_setting_value()`; `tg_system_settings_immutable` guards every
+column. There is deliberately no metadata-touch trigger and no update path.
+RLS policy: `sel_system_settings_visible`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-014,
+P1-05-QA-006; owner `shared`.
+
+### `shared.localization_keys`
+
+**Scope:** platform · **Retention class:** operational · Empty platform catalogue
+of stable localization keys. No `tenant_id` by design
+(`TENANT_COLUMN_EXCEPTIONS`). Runtime/readonly SELECT-only; no customer-facing
+wording is seeded.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `key_code`       | text                     | NO   | —                 | internal       |
+| `context`        | text                     | YES  | —                 | internal       |
+| `description`    | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'active'          | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`key_code` is unique and constrained to
+`^[a-z][a-z0-9_.]{1,126}$`; description is non-blank and status is
+active|deprecated. RLS policy: `sel_localization_keys_all`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-015,
+P1-05-QA-006; owner `shared`.
+
+### `shared.localized_texts`
+
+**Scope:** platform · **Retention class:** evidence-audit · Governed localization
+content with draft → approved → retired lifecycle. No `tenant_id` by design
+(`TENANT_COLUMN_EXCEPTIONS`). Approved identity/content is immutable. The partial
+unique `uq_localized_texts_one_approved` permits exactly one approved row per
+key/locale, so replacement requires retirement first. No text rows are seeded.
+Runtime/readonly SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `key_id`         | uuid                     | NO   | —                 | internal       |
+| `locale_code`    | text                     | NO   | —                 | internal       |
+| `version`        | integer                  | NO   | —                 | internal       |
+| `text_value`     | text                     | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'draft'           | internal       |
+| `approved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `approved_by`    | uuid                     | YES  | —                 | internal       |
+| `retired_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`uq_localized_texts_key_locale_version` covers the key FK by leading column;
+`ix_localized_texts_locale` covers the language FK. Pairing CHECKs require both
+approval stamps for approved/retired rows and `retired_at` exactly for retired
+rows. `shared.guard_localized_text_lifecycle()` enforces unstamped draft INSERT,
+draft→approved stamping, approved→retired stamping, and content immutability.
+RLS policy: `sel_localized_texts_all`. Migration:
+`20260718108000_shared_settings_and_localization.sql`; refs P1-05-DB-015,
+P1-05-QA-006; owner `shared`.
+
+Increment I routines (migration `20260718108000`, all `SECURITY INVOKER`, empty
+`search_path`, PUBLIC execute revoked):
+
+- `shared.resolve_setting(text) → jsonb` derives tenant scope exclusively from
+  `iam.current_tenant_id()`, chooses the highest tenant version before the
+  highest platform version, and returns NULL when absent. EXECUTE is granted to
+  `app_runtime` and `app_readonly`.
+- `shared.guard_localized_text_lifecycle() → trigger` is trigger-only and
+  enforces localization initial state, transitions, stamps, and immutability.
+- `shared.missing_translations(text) → SETOF text` validates the locale against
+  `shared.languages` and returns active keys with no approved text for that
+  locale. EXECUTE is granted to `app_runtime` and `app_readonly`.
+
+### `shared.search_metadata`
+
+**Scope:** tenant · **Retention class:** operational · Rebuildable generic
+search projections. Source entities remain authoritative and later domains own
+normalization. Identity includes nullable locale through `UNIQUE NULLS NOT
+DISTINCT`; public/internal rows are tenant-readable, while restricted/secret
+rows additionally require `iam.sensitive.view`.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | YES  | —                 | internal       |
+| `branch_id`         | uuid                     | YES  | —                 | internal       |
+| `entity_type`       | text                     | NO   | —                 | internal       |
+| `entity_id`         | uuid                     | NO   | —                 | internal       |
+| `field_code`        | text                     | NO   | —                 | internal       |
+| `locale_code`       | text                     | YES  | —                 | internal       |
+| `normalized_value`  | text                     | NO   | —                 | restricted     |
+| `classification`    | text                     | NO   | 'internal'        | internal       |
+| `source_updated_at` | timestamp with time zone | NO   | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+`uq_search_metadata_identity` is the locale-inclusive upsert arbiter and covers
+the tenant FK. Non-partial company, three-column branch, and locale indexes cover
+the other FKs. `ix_search_metadata_normalized_value_trgm` uses
+`extensions.gin_trgm_ops`. Identity and creation metadata are immutable. RLS:
+`sel_search_metadata_tenant`. Migration `20260718109000`; refs P1-05-DB-016,
+P1-05-QA-006.
+
+### `shared.tags`
+
+**Scope:** tenant · **Retention class:** operational · Tenant-only vocabulary;
+there is no approved platform tag catalogue, so no nullable-tenant exception is
+widened. Live tag codes are unique per tenant and reusable after soft deletion.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `tag_code`       | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `color`          | text                     | YES  | —                 | internal       |
+| `status`         | text                     | NO   | 'active'          | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`uq_tags_tenant_id` covers the tenant FK and supplies the assignment parent
+key; `uq_tags_tenant_code_active` enforces live-code uniqueness. RLS:
+`sel_tags_tenant`. Migration `20260718110000`; ref P1-05-DB-017.
+
+### `shared.entity_tags`
+
+**Scope:** tenant · **Retention class:** operational · Soft-deletable generic
+tag assignments with tenant-bound tag and assigner FKs. Later domains validate
+the format-constrained generic entity identity.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `tag_id`         | uuid                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `assigned_by`    | uuid                     | NO   | —                 | internal       |
+| `assigned_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Non-partial indexes cover tag, assigner, tenant, and entity lookup.
+`uq_entity_tags_active` permits one live assignment and re-tagging after soft
+deletion. Everything except deletion/update metadata is immutable. RLS:
+`sel_entity_tags_tenant`. Migration `20260718110000`; ref P1-05-DB-017.
+
+### `shared.notes`
+
+**Scope:** tenant · **Retention class:** personal-data · Editable generic notes
+with optional company/branch scope and tenant-bound authors. Sensitive reads are
+classification-gated; runtime/readonly are SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | YES  | —                 | internal       |
+| `branch_id`      | uuid                     | YES  | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `author_id`      | uuid                     | NO   | —                 | restricted     |
+| `body`           | text                     | NO   | —                 | restricted     |
+| `classification` | text                     | NO   | 'internal'        | internal       |
+| `visibility`     | text                     | NO   | 'internal'        | internal       |
+| `edited_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Non-partial indexes cover company, three-column branch, author, tenant, and
+entity lookup. `shared.stamp_content_edit()` stamps `edited_at` when the editable
+restricted `body` changes. RLS: `sel_notes_tenant`. Migration `20260718110000`;
+refs P1-05-DB-018, P1-05-QA-007.
+
+### `shared.comments`
+
+**Scope:** tenant · **Retention class:** personal-data · Editable threaded
+comments. Parents must be live and share tenant/entity identity. Comments start
+active and unstamped, then may transition to hidden. Sensitive reads are
+classification-gated; runtime/readonly are SELECT-only.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | YES  | —                 | internal       |
+| `branch_id`         | uuid                     | YES  | —                 | internal       |
+| `entity_type`       | text                     | NO   | —                 | internal       |
+| `entity_id`         | uuid                     | NO   | —                 | internal       |
+| `parent_comment_id` | uuid                     | YES  | —                 | internal       |
+| `author_id`         | uuid                     | NO   | —                 | restricted     |
+| `body`              | text                     | NO   | —                 | restricted     |
+| `classification`    | text                     | NO   | 'internal'        | internal       |
+| `status`            | text                     | NO   | 'active'          | internal       |
+| `edited_at`         | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+`uq_comments_tenant_id` covers tenant and supplies the self-FK parent key.
+Non-partial indexes cover company, three-column branch, parent, author, and
+entity lookup. `shared.guard_comment_parent()` enforces initial state and live
+same-entity threading; `shared.stamp_content_edit()` stamps edits to restricted
+`body`. RLS: `sel_comments_tenant`. Migration `20260718110000`; refs
+P1-05-DB-018, P1-05-QA-007.
+
+Increment K routines are `SECURITY INVOKER`, use empty `search_path`, and revoke
+PUBLIC execute: `shared.stamp_content_edit()` is shared by notes/comments;
+`shared.guard_comment_parent()` enforces comment initial state and parent scope.

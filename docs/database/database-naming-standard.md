@@ -175,18 +175,21 @@ the timing — timing is visible in the definition.
 
 ## 8. RLS policies
 
-Pattern: **`<action>_<table>_<scope>`**, where `<action>` is one of exactly four
-prefixes distinguishing the four policy actions:
+Tenant-session pattern: **`<action>_<table>_<scope>`**, where `<action>` is one
+of four prefixes distinguishing the four policy actions. Infrastructure-worker
+policies use the separately reviewed `wkr_<table>_<scope>` form:
 
-| Prefix | Policy action |
-| ------ | ------------- |
-| `sel_` | `FOR SELECT`  |
-| `ins_` | `FOR INSERT`  |
-| `upd_` | `FOR UPDATE`  |
-| `del_` | `FOR DELETE`  |
+| Prefix | Policy action                                                        |
+| ------ | -------------------------------------------------------------------- |
+| `sel_` | `FOR SELECT`                                                         |
+| `ins_` | `FOR INSERT`                                                         |
+| `upd_` | `FOR UPDATE`                                                         |
+| `del_` | `FOR DELETE`                                                         |
+| `wkr_` | Enumerated worker policy (`FOR ALL` only when explicitly documented) |
 
-`FOR ALL` policies are prohibited: each action gets its own policy so that grants,
-`USING`, and `WITH CHECK` clauses stay reviewable per action.
+`FOR ALL` is prohibited for tenant-session policies. The `wkr_` class is the
+documented exception for all-tenant infrastructure work and must state exact
+table grants plus its `USING`/`WITH CHECK` rationale.
 
 Real examples (migration `0003`, on `shared.number_sequences` with RLS **enabled and
 forced**):
@@ -296,8 +299,9 @@ the CI migration runner (`scripts/db/apply-migrations.mjs`):
 ## 12. Database roles
 
 Named by function, prefixed with `app_` for application archetypes: `app_runtime`,
-`app_readonly` (migration `0002`; `NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
-NOREPLICATION NOBYPASSRLS`). Test-harness login roles are prefixed with the product
+`app_readonly` (migration `0002`) and `app_worker` (Phase 1-5 Increment G); all are
+`NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`.
+Test-harness login roles are prefixed with the product
 namespace and purpose (reference: `rootlco_test_runtime`, created by the test harness,
 never by migrations). Supabase-managed roles (`postgres`, `anon`, `authenticated`,
 `service_role`, `supabase_admin`) are not ours to rename or modify — see the

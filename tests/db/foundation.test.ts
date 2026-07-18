@@ -83,6 +83,28 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment D — retention definitions and legal holds (P1-05-DB-006).
   'shared.retention_classes',
   'shared.legal_holds',
+  // Phase 1-5 Increment E — governed message templates (P1-05-DB-007/008).
+  'shared.message_templates',
+  'shared.template_versions',
+  // Phase 1-5 Increment F — outbound message persistence (P1-05-DB-009/010).
+  'shared.outbound_messages',
+  'shared.delivery_attempts',
+  // Phase 1-5 Increment G — transactional integration-event delivery.
+  'shared.event_outbox',
+  // Phase 1-5 Increment H — consumer claims and durable error triage.
+  'shared.processed_events',
+  'shared.error_records',
+  // Phase 1-5 Increment I — immutable settings and governed localization.
+  'shared.system_settings',
+  'shared.localization_keys',
+  'shared.localized_texts',
+  // Phase 1-5 Increment J — tenant-scoped search projection metadata.
+  'shared.search_metadata',
+  // Phase 1-5 Increment K — tenant tags and generic entity annotations.
+  'shared.tags',
+  'shared.entity_tags',
+  'shared.notes',
+  'shared.comments',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -162,6 +184,10 @@ const ALLOWED_ROUTINES = new Set([
   'iam.has_permission_in_scope',
   // Phase 1-5 (P1-05-DB-002): documents category-scope guard (platform-or-same-tenant).
   'shared.guard_document_category_scope',
+  // Phase 1-5 Increment L: terminal-state INSERT bypass guards for documents
+  // and document versions; the merged version UPDATE transition is unchanged.
+  'shared.guard_document_initial_state',
+  'shared.guard_document_version_initial_state',
   // Phase 1-5 (P1-05-DB-003): document-version one-way lifecycle + clean-scan gate.
   'shared.guard_document_version_transition',
   // Phase 1-5 (P1-05-DB-005): link-derived access resolution primitive.
@@ -169,6 +195,29 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-5 (P1-05-DB-006): retention eligibility + controlled archival.
   'shared.document_deletion_eligibility',
   'shared.archive_document',
+  // Phase 1-5 (P1-05-DB-007/008): active-version, scope, and lifecycle guards.
+  'shared.guard_template_active_version',
+  'shared.guard_template_version_lifecycle',
+  'shared.guard_template_version_scope',
+  // Phase 1-5 (P1-05-DB-009/SEC-004): approved template scope and exact
+  // initial-state/transition enforcement for outbound messages.
+  'shared.guard_outbound_message_lifecycle',
+  'shared.guard_outbound_message_scope',
+  // Phase 1-5 Increment G — initial-state guard and atomic worker lifecycle.
+  'shared.guard_event_outbox_initial_state',
+  'shared.claim_outbox_events',
+  'shared.complete_outbox_event',
+  'shared.fail_outbox_event',
+  // Phase 1-5 Increment H — recursive error sanitization and lifecycle guard.
+  'shared.guard_error_context_sanitized',
+  'shared.guard_error_record_lifecycle',
+  // Phase 1-5 Increment I — setting resolution and localization lifecycle/reporting.
+  'shared.resolve_setting',
+  'shared.guard_localized_text_lifecycle',
+  'shared.missing_translations',
+  // Phase 1-5 Increment K — shared edit stamping and comment-parent guard.
+  'shared.stamp_content_edit',
+  'shared.guard_comment_parent',
 ]);
 
 let admin: Pool;
@@ -207,30 +256,32 @@ describe('database foundation', () => {
     for (const row of rows) expect(row.schema).toBe('extensions');
   });
 
-  it('defines app_runtime and app_readonly as constrained archetypes', async () => {
+  it('defines all three application roles as constrained archetypes', async () => {
     const { rows } = await admin.query(
-      `SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreaterole, rolcreatedb
-       FROM pg_roles WHERE rolname IN ('app_runtime','app_readonly') ORDER BY rolname`
+      `SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreaterole, rolcreatedb,
+              rolreplication
+       FROM pg_roles WHERE rolname IN ('app_runtime','app_readonly','app_worker') ORDER BY rolname`
     );
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     for (const role of rows) {
       expect(role.rolsuper).toBe(false);
       expect(role.rolbypassrls).toBe(false);
       expect(role.rolcanlogin).toBe(false);
       expect(role.rolcreaterole).toBe(false);
       expect(role.rolcreatedb).toBe(false);
+      expect(role.rolreplication).toBe(false);
     }
   });
 
   it('runtime roles own no schema and no table', async () => {
     const schemas = await admin.query(
       `SELECT nspname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner
-       WHERE r.rolname IN ('app_runtime','app_readonly')`
+       WHERE r.rolname IN ('app_runtime','app_readonly','app_worker')`
     );
     expect(schemas.rows).toHaveLength(0);
     const tables = await admin.query(
       `SELECT c.relname FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner
-       WHERE r.rolname IN ('app_runtime','app_readonly') AND c.relkind = 'r'`
+       WHERE r.rolname IN ('app_runtime','app_readonly','app_worker') AND c.relkind = 'r'`
     );
     expect(tables.rows).toHaveLength(0);
   });
@@ -301,6 +352,10 @@ describe('database foundation', () => {
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',
+      'tg_comments_guard_parent',
+      'tg_comments_immutable',
+      'tg_comments_stamp_content_edit',
+      'tg_comments_touch_metadata',
       'tg_company_settings_immutable',
       'tg_company_settings_validate_value',
       'tg_cost_centers_immutable',
@@ -313,11 +368,20 @@ describe('database foundation', () => {
       'tg_document_categories_touch_metadata',
       'tg_document_links_immutable',
       'tg_document_links_touch_metadata',
+      'tg_document_versions_guard_initial_state',
       'tg_document_versions_guard_transition',
       'tg_document_versions_immutable',
       'tg_documents_category_scope',
+      'tg_documents_guard_initial_state',
       'tg_documents_immutable',
       'tg_documents_touch_metadata',
+      'tg_entity_tags_immutable',
+      'tg_entity_tags_touch_metadata',
+      'tg_error_records_context_sanitized',
+      'tg_error_records_guard_lifecycle',
+      'tg_error_records_immutable',
+      'tg_error_records_touch_metadata',
+      'tg_event_outbox_guard_initial_state',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_grant_scopes_require_scope',
@@ -326,9 +390,24 @@ describe('database foundation', () => {
       'tg_legal_companies_touch_metadata',
       'tg_legal_holds_immutable',
       'tg_legal_holds_touch_metadata',
+      'tg_localization_keys_immutable',
+      'tg_localization_keys_touch_metadata',
+      'tg_localized_texts_guard_lifecycle',
+      'tg_localized_texts_immutable',
+      'tg_localized_texts_touch_metadata',
       'tg_login_audit_stamp',
+      'tg_message_templates_active_version',
+      'tg_message_templates_immutable',
+      'tg_message_templates_touch_metadata',
+      'tg_notes_immutable',
+      'tg_notes_stamp_content_edit',
+      'tg_notes_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
+      'tg_outbound_messages_guard_lifecycle',
+      'tg_outbound_messages_guard_scope',
+      'tg_outbound_messages_immutable',
+      'tg_outbound_messages_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
       'tg_retention_classes_immutable',
@@ -340,6 +419,8 @@ describe('database foundation', () => {
       'tg_role_permissions_touch_metadata',
       'tg_roles_immutable',
       'tg_roles_touch_metadata',
+      'tg_search_metadata_immutable',
+      'tg_search_metadata_touch_metadata',
       'tg_sensitive_data_permissions_immutable',
       'tg_sensitive_data_permissions_touch_metadata',
       'tg_status_history_stamp',
@@ -349,10 +430,18 @@ describe('database foundation', () => {
       'tg_subscription_plans_immutable',
       'tg_subscription_plans_touch_metadata',
       'tg_subscription_plans_validate_documents',
+      'tg_system_settings_immutable',
+      'tg_system_settings_validate_value',
+      'tg_tags_immutable',
+      'tg_tags_touch_metadata',
       'tg_tax_classes_immutable',
       'tg_tax_classes_touch_metadata',
       'tg_tax_rates_immutable',
       'tg_tax_rates_touch_metadata',
+      'tg_template_versions_guard_lifecycle',
+      'tg_template_versions_guard_scope',
+      'tg_template_versions_immutable',
+      'tg_template_versions_touch_metadata',
       'tg_tenant_feature_overrides_immutable',
       'tg_tenant_subscriptions_immutable',
       'tg_tenant_subscriptions_touch_metadata',
@@ -399,36 +488,48 @@ describe('database foundation', () => {
       'sel_branch_settings_scope',
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
+      'sel_comments_tenant',
       'sel_company_settings_scope',
       'sel_cost_centers_scope',
       'sel_currencies_all',
+      'sel_delivery_attempts_tenant',
       'sel_departments_scope',
       'sel_document_categories_visible',
       'sel_document_links_tenant',
       'sel_document_versions_tenant',
       'sel_documents_tenant',
+      'sel_entity_tags_tenant',
       'sel_feature_flags_all',
       'sel_file_scan_results_tenant',
       'sel_grant_scopes_tenant',
       'sel_languages_all',
       'sel_legal_companies_tenant',
       'sel_legal_holds_tenant',
+      'sel_localization_keys_all',
+      'sel_localized_texts_all',
       'sel_login_audit_admin',
       'sel_login_audit_own',
+      'sel_message_templates_visible',
+      'sel_notes_tenant',
       'sel_number_sequences_tenant',
+      'sel_outbound_messages_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
       'sel_role_grants_tenant',
       'sel_role_permissions_tenant',
       'sel_roles_tenant',
+      'sel_search_metadata_tenant',
       'sel_security_events_permitted',
       'sel_sensitive_data_permissions_tenant',
       'sel_status_evidence_tenant',
       'sel_status_history_tenant',
       'sel_storage_locations_scope',
       'sel_subscription_plans_published',
+      'sel_system_settings_visible',
+      'sel_tags_tenant',
       'sel_tax_classes_scope',
       'sel_tax_rates_scope',
+      'sel_template_versions_visible',
       'sel_tenant_feature_overrides_tenant',
       'sel_tenant_status_history_tenant',
       'sel_tenant_subscriptions_tenant',
@@ -450,6 +551,9 @@ describe('database foundation', () => {
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
       'upd_warehouses_scope',
+      'wkr_error_records_all',
+      'wkr_event_outbox_all',
+      'wkr_processed_events_all',
     ]);
   });
 

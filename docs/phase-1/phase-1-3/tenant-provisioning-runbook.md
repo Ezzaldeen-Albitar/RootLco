@@ -10,6 +10,12 @@ Eng. Ezzaldeen Al-Bitar on 2026-07-17 (evidence register §5). **No second engin
 has executed it**; it is written to be executable by one, and stays self-validated
 until an independent execution occurs.
 
+> **Phase 1-5 forward correction (2026-07-18):** automatic tenant seeds were
+> removed. The approved operational path is the controlled JSON package plus
+> `scripts/db/provision-organization.mjs`, governed by
+> [the pilot provisioning runbook](../../database/pilot-provisioning-runbook.md).
+> It never runs in `[db.seed]`, CI, local reset, or application startup.
+
 ## What provisioning is (and is not) in this phase
 
 Provisioning creates one complete organization — tenant, initial status history,
@@ -24,8 +30,9 @@ by tests.
 ## Prerequisites
 
 1. Local stack up: `npm run supabase:start` (or CI service container).
-2. All migrations applied to a clean database: `npm run supabase:reset`
-   (this also runs the seed pipeline, including the two example packages).
+2. All migrations applied to a clean database, followed by the declared
+   structural seeds: `npm run db:apply-migrations` then
+   `npm run validate:seed-state`.
 3. Reference data present (`shared.currencies/timezones/languages`) — the
    reference seed provides it; a spec referencing a missing currency/timezone
    fails the whole transaction by FK (that is the designed behaviour).
@@ -60,17 +67,11 @@ by tests.
 
 ## Procedure
 
-1. **Choose an idempotency key** — stable per provisioning intent, e.g.
-   `<tenant_code>-provisioning-v1`. Re-running with the same key + same spec is
-   always safe (replays the stored result, creates nothing).
-2. **Execute** on an admin connection:
-   ```sql
-   SELECT org.provision_organization('<spec jsonb>'::jsonb, '<key>');
-   ```
-   For a repeatable package, commit it as a seed file modeled on
-   `supabase/seeds/03_local_test_tenant.sql` (fictional example) or
-   `supabase/seeds/02_benzene_pilot_provisioning.sql` (the controlled pilot
-   package — the ONLY executable file that may name the pilot).
+1. **Use the reviewed package idempotency key.** Re-running the unchanged
+   package is safe: the stored response is replayed and nothing is created.
+2. **Dry-run, confirm, then execute** with the generic CLI as specified in the
+   current [pilot provisioning runbook](../../database/pilot-provisioning-runbook.md).
+   A Class-3 package is a manually gated data artifact, never a seed file.
 3. **Record the returned document** (`tenant_id`, `subscription_id`,
    `company_id`, `branch_id`) in the provisioning register
    ([organization-schema-design.md §5](./organization-schema-design.md)).

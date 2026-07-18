@@ -40,3 +40,12 @@ the merged `20260717104000` file is untouched.
 | Full DB suite on the fresh stack                    | 311/311 (all isolation as the non-owner runtime login)                                                                                                 |
 | Rollback-safe classes (`097000`, `098000`, seed 04) | functions/policies/grants and the idempotent seed re-applied with no data effect                                                                       |
 | Roll-forward recovery statement                     | roll-forward-only migrations recover via a corrective forward migration + restore-from-backup where data was lost; destructive rollback is NOT claimed |
+
+## Phase 1-5 forward correction (2026-07-18)
+
+The seed-04 row and rehearsal above are retained as Phase 1-4 historical evidence.
+Increment M removed its fictional-tenant roles and mappings; seed 04 now depends
+only on the IAM schema and inserts the tenant-neutral permission catalog. Baseline
+roles are provisioning-time tenant configuration, proven by ephemeral fixtures.
+Declared automatic seeds are now `seed.sql`, 01, 04, and 05; no automatic seed
+creates a tenant or business row.

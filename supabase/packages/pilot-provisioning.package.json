@@ -1,0 +1,50 @@
+{
+  "plan": {
+    "plan_code": "pilot",
+    "name": "Pilot Plan",
+    "description": "Generic pilot-phase plan. No billing, no pricing; entitlements deliberately empty until owner decisions exist.",
+    "entitlement_document": {},
+    "capacity_limits": {},
+    "status": "active",
+    "effective_from": "2026-01-01T00:00:00Z",
+    "created_by": "00000000-0000-4000-8000-000000000001"
+  },
+  "provisioning": {
+    "actor_id": "00000000-0000-4000-8000-000000000001",
+    "tenant": {
+      "code": "benzene_vehicle_services",
+      "display_name": "Benzene Vehicle Services",
+      "locale": "ar",
+      "timezone": "Asia/Amman",
+      "activate": true,
+      "activation_reason": "pilot tenant activated for local development and testing"
+    },
+    "subscription": {
+      "plan_code": "pilot",
+      "status": "draft",
+      "effective_from": "2026-07-01T00:00:00Z"
+    },
+    "company": {
+      "code": "benzene_main",
+      "legal_name": "Benzene Vehicle Services",
+      "base_currency": "JOD",
+      "registration_number": null,
+      "tax_registration_number": null
+    },
+    "branch": {
+      "code": "main",
+      "name": "Benzene Pilot Branch",
+      "timezone": "Asia/Amman",
+      "country_code": "JO",
+      "city": "Amman"
+    },
+    "sequences": [
+      {
+        "code": "org_document",
+        "prefix_template": "DOC-",
+        "pad_width": 6
+      }
+    ]
+  },
+  "idempotency_key": "benzene-pilot-provisioning-v1"
+}

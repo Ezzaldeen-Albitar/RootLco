@@ -1,67 +1,60 @@
 /**
- * No-fake-data policy — clean-database business-table emptiness.
+ * No-fake-data policy — catalog-driven clean business-state invariant.
  *
- * The RootLco permanent data policy: the application ships and starts with NO
- * fabricated business data. The migration layer must create zero business rows;
- * business tables are populated only by real users through real workflows (or,
- * transiently, by isolated automated tests that clean up after themselves).
- *
- * This suite removes any test leftovers (cleanFixtures) and then asserts that the
- * shared-services BUSINESS tables hold no rows. Structural reference tables
- * (retention_classes, currencies, languages, permissions, …) are intentionally
- * excluded — those hold approved system definitions, not business records.
+ * Every base table in org/iam/shared is a business table unless it appears in
+ * the exact structural-reference allow-list. New tables therefore join the
+ * empty set automatically and force an explicit classification review.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { adminPool, cleanFixtures } from './helpers';
 
-// Tables that MUST be empty on a clean database (no seed populates them; they are
-// filled only by real users or by isolated tests that clean up). Future-increment
-// tables are listed now and skipped until they exist (to_regclass IS NULL).
-const BUSINESS_TABLES = [
-  'shared.documents',
-  'shared.document_categories',
-  'shared.document_versions',
-  'shared.file_scan_results',
-  'shared.document_links',
-  'shared.legal_holds',
-  'shared.message_templates',
-  'shared.template_versions',
-  'shared.outbound_messages',
-  'shared.delivery_attempts',
-  'shared.event_outbox',
-  'shared.processed_events',
-  'shared.error_records',
-  'shared.search_metadata',
-  'shared.tags',
-  'shared.entity_tags',
-  'shared.notes',
-  'shared.comments',
-];
+const STRUCTURAL_REFERENCE = new Set([
+  'shared.currencies',
+  'shared.timezones',
+  'shared.languages',
+  'iam.permissions',
+  'shared.retention_classes',
+]);
 
 let admin: Pool;
 
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
 beforeAll(async () => {
   admin = adminPool();
-  await cleanFixtures(admin); // clear any ephemeral rows other suites may have left
+  await cleanFixtures(admin);
 });
 
 afterAll(async () => {
   await admin.end();
 });
 
-describe('no-fake-data — business tables start empty', () => {
-  it('every existing shared business table has zero rows', async () => {
+describe('no-fake-data — all business tables start empty', () => {
+  it('discovers every org/iam/shared base table and finds no business rows', async () => {
+    const catalog = await admin.query(
+      `SELECT table_schema, table_name
+         FROM information_schema.tables
+        WHERE table_type = 'BASE TABLE'
+          AND table_schema IN ('org', 'iam', 'shared')
+        ORDER BY table_schema, table_name`
+    );
     const nonEmpty: string[] = [];
-    for (const fq of BUSINESS_TABLES) {
-      const exists = await admin.query(`SELECT to_regclass($1) AS oid`, [fq]);
-      if (!exists.rows[0].oid) continue; // table not created yet (future increment)
-      const { rows } = await admin.query(`SELECT count(*)::int AS n FROM ${fq}`);
-      if (rows[0].n !== 0) nonEmpty.push(`${fq} (${rows[0].n} rows)`);
+    for (const table of catalog.rows) {
+      const fq = `${table.table_schema}.${table.table_name}`;
+      if (STRUCTURAL_REFERENCE.has(fq)) continue;
+      const { rows } = await admin.query(
+        `SELECT count(*)::int AS count FROM ${quoteIdentifier(
+          table.table_schema
+        )}.${quoteIdentifier(table.table_name)}`
+      );
+      if (rows[0].count !== 0) nonEmpty.push(`${fq} (${rows[0].count} rows)`);
     }
     expect(
       nonEmpty,
-      `business tables must be empty on a clean database (no fake/demo/seeded business data): ${nonEmpty.join(', ')}`
+      `business tables must be empty after fixture cleanup: ${nonEmpty.join(', ')}`
     ).toEqual([]);
   });
 });
