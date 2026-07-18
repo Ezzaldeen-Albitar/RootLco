@@ -18,7 +18,6 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
-  withCommittedTx,
   withRolledBackTx,
 } from './helpers';
 
