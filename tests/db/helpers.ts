@@ -266,6 +266,22 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
       )`
   );
   await admin.query(`DELETE FROM shared.localization_keys WHERE key_code LIKE 'fx\\_%'`);
+  // Generic annotations and search projections reference IAM and organization
+  // fixtures. Delete children first, then tags, then the independent projection.
+  await admin.query('DELETE FROM shared.comments WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.notes WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM shared.entity_tags WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.tags WHERE tenant_id IN ($1, $2)', [TENANT_A, TENANT_B]);
+  await admin.query('DELETE FROM shared.search_metadata WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   // Phase 1-4 iam fixtures: children first, then accounts (all reference
   // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
   // role_grants first: deleting it cascades grant_scopes (which reference org

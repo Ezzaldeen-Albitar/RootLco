@@ -1369,3 +1369,159 @@ Increment I routines (migration `20260718108000`, all `SECURITY INVOKER`, empty
 - `shared.missing_translations(text) → SETOF text` validates the locale against
   `shared.languages` and returns active keys with no approved text for that
   locale. EXECUTE is granted to `app_runtime` and `app_readonly`.
+
+### `shared.search_metadata`
+
+**Scope:** tenant · **Retention class:** operational · Rebuildable generic
+search projections. Source entities remain authoritative and later domains own
+normalization. Identity includes nullable locale through `UNIQUE NULLS NOT
+DISTINCT`; public/internal rows are tenant-readable, while restricted/secret
+rows additionally require `iam.sensitive.view`.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | YES  | —                 | internal       |
+| `branch_id`         | uuid                     | YES  | —                 | internal       |
+| `entity_type`       | text                     | NO   | —                 | internal       |
+| `entity_id`         | uuid                     | NO   | —                 | internal       |
+| `field_code`        | text                     | NO   | —                 | internal       |
+| `locale_code`       | text                     | YES  | —                 | internal       |
+| `normalized_value`  | text                     | NO   | —                 | restricted     |
+| `classification`    | text                     | NO   | 'internal'        | internal       |
+| `source_updated_at` | timestamp with time zone | NO   | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+`uq_search_metadata_identity` is the locale-inclusive upsert arbiter and covers
+the tenant FK. Non-partial company, three-column branch, and locale indexes cover
+the other FKs. `ix_search_metadata_normalized_value_trgm` uses
+`extensions.gin_trgm_ops`. Identity and creation metadata are immutable. RLS:
+`sel_search_metadata_tenant`. Migration `20260718109000`; refs P1-05-DB-016,
+P1-05-QA-006.
+
+### `shared.tags`
+
+**Scope:** tenant · **Retention class:** operational · Tenant-only vocabulary;
+there is no approved platform tag catalogue, so no nullable-tenant exception is
+widened. Live tag codes are unique per tenant and reusable after soft deletion.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `tag_code`       | text                     | NO   | —                 | internal       |
+| `name`           | text                     | NO   | —                 | internal       |
+| `color`          | text                     | YES  | —                 | internal       |
+| `status`         | text                     | NO   | 'active'          | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+`uq_tags_tenant_id` covers the tenant FK and supplies the assignment parent
+key; `uq_tags_tenant_code_active` enforces live-code uniqueness. RLS:
+`sel_tags_tenant`. Migration `20260718110000`; ref P1-05-DB-017.
+
+### `shared.entity_tags`
+
+**Scope:** tenant · **Retention class:** operational · Soft-deletable generic
+tag assignments with tenant-bound tag and assigner FKs. Later domains validate
+the format-constrained generic entity identity.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `tag_id`         | uuid                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `assigned_by`    | uuid                     | NO   | —                 | internal       |
+| `assigned_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Non-partial indexes cover tag, assigner, tenant, and entity lookup.
+`uq_entity_tags_active` permits one live assignment and re-tagging after soft
+deletion. Everything except deletion/update metadata is immutable. RLS:
+`sel_entity_tags_tenant`. Migration `20260718110000`; ref P1-05-DB-017.
+
+### `shared.notes`
+
+**Scope:** tenant · **Retention class:** personal-data · Editable generic notes
+with optional company/branch scope and tenant-bound authors. Sensitive reads are
+classification-gated; runtime/readonly are SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | YES  | —                 | internal       |
+| `branch_id`      | uuid                     | YES  | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `author_id`      | uuid                     | NO   | —                 | restricted     |
+| `body`           | text                     | NO   | —                 | restricted     |
+| `classification` | text                     | NO   | 'internal'        | internal       |
+| `visibility`     | text                     | NO   | 'internal'        | internal       |
+| `edited_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Non-partial indexes cover company, three-column branch, author, tenant, and
+entity lookup. `shared.stamp_content_edit()` stamps `edited_at` when the editable
+restricted `body` changes. RLS: `sel_notes_tenant`. Migration `20260718110000`;
+refs P1-05-DB-018, P1-05-QA-007.
+
+### `shared.comments`
+
+**Scope:** tenant · **Retention class:** personal-data · Editable threaded
+comments. Parents must be live and share tenant/entity identity. Comments start
+active and unstamped, then may transition to hidden. Sensitive reads are
+classification-gated; runtime/readonly are SELECT-only.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | YES  | —                 | internal       |
+| `branch_id`         | uuid                     | YES  | —                 | internal       |
+| `entity_type`       | text                     | NO   | —                 | internal       |
+| `entity_id`         | uuid                     | NO   | —                 | internal       |
+| `parent_comment_id` | uuid                     | YES  | —                 | internal       |
+| `author_id`         | uuid                     | NO   | —                 | restricted     |
+| `body`              | text                     | NO   | —                 | restricted     |
+| `classification`    | text                     | NO   | 'internal'        | internal       |
+| `status`            | text                     | NO   | 'active'          | internal       |
+| `edited_at`         | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+`uq_comments_tenant_id` covers tenant and supplies the self-FK parent key.
+Non-partial indexes cover company, three-column branch, parent, author, and
+entity lookup. `shared.guard_comment_parent()` enforces initial state and live
+same-entity threading; `shared.stamp_content_edit()` stamps edits to restricted
+`body`. RLS: `sel_comments_tenant`. Migration `20260718110000`; refs
+P1-05-DB-018, P1-05-QA-007.
+
+Increment K routines are `SECURITY INVOKER`, use empty `search_path`, and revoke
+PUBLIC execute: `shared.stamp_content_edit()` is shared by notes/comments;
+`shared.guard_comment_parent()` enforces comment initial state and parent scope.
