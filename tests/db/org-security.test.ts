@@ -34,6 +34,8 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'iam.login_audit', // failed attempts against an unknown principal have no tenant
   'iam.security_events', // platform-level security events have no tenant
   'shared.document_categories', // dual-scope: platform default (tenant NULL) OR tenant override
+  'shared.message_templates', // dual-scope: platform default (tenant NULL) OR tenant override
+  'shared.template_versions', // mirrors its platform/tenant template tenant_id, including NULL
 ]);
 
 let admin: Pool;

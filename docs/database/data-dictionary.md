@@ -1057,3 +1057,50 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.message_templates`
+
+**Scope:** platform + tenant · **Retention class:** operational · Dual-scope governed message-template identity. Platform rows are shared defaults; tenant rows are overrides. Phase 1 channels are restricted to `email` and `in_app`. An active version must belong to the template and be approved. Runtime SELECT-only; no customer-facing wording is seeded.
+
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`             | text                     | NO   | —                 | internal       |
+| `tenant_id`         | uuid                     | YES  | —                 | internal       |
+| `template_code`     | text                     | NO   | —                 | internal       |
+| `name`              | text                     | NO   | —                 | internal       |
+| `channel`           | text                     | NO   | —                 | internal       |
+| `purpose`           | text                     | NO   | —                 | internal       |
+| `locale_code`       | text                     | NO   | —                 | internal       |
+| `description`       | text                     | YES  | —                 | internal       |
+| `active_version_id` | uuid                     | YES  | —                 | internal       |
+| `status`            | text                     | NO   | 'active'          | internal       |
+| `deleted_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+
+### `shared.template_versions`
+
+**Scope:** platform + tenant (mirrors template) · **Retention class:** evidence-audit · Governed template content with one-way draft → approved → retired lifecycle. Approved content is immutable, and an active version cannot be retired. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `template_id`    | uuid                     | NO   | —                 | internal       |
+| `version_number` | integer                  | NO   | —                 | internal       |
+| `subject`        | text                     | YES  | —                 | restricted     |
+| `body`           | text                     | NO   | —                 | restricted     |
+| `content_hash`   | bytea                    | NO   | —                 | internal       |
+| `status`         | text                     | NO   | 'draft'           | internal       |
+| `approved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `approved_by`    | uuid                     | YES  | —                 | internal       |
+| `retired_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |

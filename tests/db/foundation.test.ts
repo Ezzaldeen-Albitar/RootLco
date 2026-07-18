@@ -83,6 +83,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment D — retention definitions and legal holds (P1-05-DB-006).
   'shared.retention_classes',
   'shared.legal_holds',
+  // Phase 1-5 Increment E — governed message templates (P1-05-DB-007/008).
+  'shared.message_templates',
+  'shared.template_versions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -169,6 +172,10 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-5 (P1-05-DB-006): retention eligibility + controlled archival.
   'shared.document_deletion_eligibility',
   'shared.archive_document',
+  // Phase 1-5 (P1-05-DB-007/008): active-version, scope, and lifecycle guards.
+  'shared.guard_template_active_version',
+  'shared.guard_template_version_lifecycle',
+  'shared.guard_template_version_scope',
 ]);
 
 let admin: Pool;
@@ -327,6 +334,9 @@ describe('database foundation', () => {
       'tg_legal_holds_immutable',
       'tg_legal_holds_touch_metadata',
       'tg_login_audit_stamp',
+      'tg_message_templates_active_version',
+      'tg_message_templates_immutable',
+      'tg_message_templates_touch_metadata',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
       'tg_permissions_immutable',
@@ -353,6 +363,10 @@ describe('database foundation', () => {
       'tg_tax_classes_touch_metadata',
       'tg_tax_rates_immutable',
       'tg_tax_rates_touch_metadata',
+      'tg_template_versions_guard_lifecycle',
+      'tg_template_versions_guard_scope',
+      'tg_template_versions_immutable',
+      'tg_template_versions_touch_metadata',
       'tg_tenant_feature_overrides_immutable',
       'tg_tenant_subscriptions_immutable',
       'tg_tenant_subscriptions_touch_metadata',
@@ -415,6 +429,7 @@ describe('database foundation', () => {
       'sel_legal_holds_tenant',
       'sel_login_audit_admin',
       'sel_login_audit_own',
+      'sel_message_templates_visible',
       'sel_number_sequences_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
@@ -429,6 +444,7 @@ describe('database foundation', () => {
       'sel_subscription_plans_published',
       'sel_tax_classes_scope',
       'sel_tax_rates_scope',
+      'sel_template_versions_visible',
       'sel_tenant_feature_overrides_tenant',
       'sel_tenant_status_history_tenant',
       'sel_tenant_subscriptions_tenant',

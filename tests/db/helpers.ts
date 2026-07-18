@@ -294,6 +294,30 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(
     `DELETE FROM shared.document_categories WHERE scope = 'platform' AND category_code LIKE 'fx\\_%'`
   );
+  // Message-template cleanup must break the active-version cycle first, then
+  // remove versions before identities. Cover tenant fixtures and platform fx_ rows.
+  await admin.query(
+    `UPDATE shared.message_templates
+        SET active_version_id = NULL
+      WHERE tenant_id IN ($1, $2)
+         OR (scope = 'platform' AND template_code LIKE 'fx\\_%')`,
+    [TENANT_A, TENANT_B]
+  );
+  await admin.query(
+    `DELETE FROM shared.template_versions
+      WHERE tenant_id IN ($1, $2)
+         OR template_id IN (
+           SELECT id FROM shared.message_templates
+           WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'
+         )`,
+    [TENANT_A, TENANT_B]
+  );
+  await admin.query(
+    `DELETE FROM shared.message_templates
+      WHERE tenant_id IN ($1, $2)
+         OR (scope = 'platform' AND template_code LIKE 'fx\\_%')`,
+    [TENANT_A, TENANT_B]
+  );
   await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,
