@@ -184,6 +184,10 @@ const ALLOWED_ROUTINES = new Set([
   'iam.has_permission_in_scope',
   // Phase 1-5 (P1-05-DB-002): documents category-scope guard (platform-or-same-tenant).
   'shared.guard_document_category_scope',
+  // Phase 1-5 Increment L: terminal-state INSERT bypass guards for documents
+  // and document versions; the merged version UPDATE transition is unchanged.
+  'shared.guard_document_initial_state',
+  'shared.guard_document_version_initial_state',
   // Phase 1-5 (P1-05-DB-003): document-version one-way lifecycle + clean-scan gate.
   'shared.guard_document_version_transition',
   // Phase 1-5 (P1-05-DB-005): link-derived access resolution primitive.
@@ -364,9 +368,11 @@ describe('database foundation', () => {
       'tg_document_categories_touch_metadata',
       'tg_document_links_immutable',
       'tg_document_links_touch_metadata',
+      'tg_document_versions_guard_initial_state',
       'tg_document_versions_guard_transition',
       'tg_document_versions_immutable',
       'tg_documents_category_scope',
+      'tg_documents_guard_initial_state',
       'tg_documents_immutable',
       'tg_documents_touch_metadata',
       'tg_entity_tags_immutable',

@@ -102,6 +102,7 @@ describe('foreign-key index coverage (P1-03-DB-017)', () => {
        WHERE NOT EXISTS (
          SELECT 1 FROM pg_index i
          WHERE i.indrelid = f.child_oid
+           AND i.indpred IS NULL
            -- the index's leading columns, as a set, cover the FK columns
            AND (SELECT array_agg(k ORDER BY k)
                   FROM unnest(f.conkey) k)
