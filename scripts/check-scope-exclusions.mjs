@@ -39,6 +39,7 @@ const RULES = [
       'supabase/config.toml', // sql_paths pointer to the package filename
       'supabase/migrations/0003_number_sequences.sql', // merged Phase 1-2 prohibitory comment (immutable)
       'tests/db/org-provisioning.test.ts', // explicit seed-validation tests
+      'tests/db/iam-seeds.test.ts', // explicit seed-validation test (Phase 1-4 catalog + baseline roles)
       'scripts/check-scope-exclusions.mjs', // this guard
     ],
   },
