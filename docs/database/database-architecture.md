@@ -222,19 +222,23 @@ transaction-local: it evaporates at ROLLBACK — proven by test.
 
 ### 5.3 Roles
 
-Migration 0002 creates the archetypes `app_runtime` and `app_readonly`
-(`NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`), with
-USAGE-only schema grants; every table/function privilege is an explicit per-object
-grant in the migration that creates the object. Full detail, including the **measured**
+Migration 0002 creates `app_runtime` and `app_readonly`; Phase 1-5 Increment G
+adds the third application archetype, `app_worker`. All are `NOLOGIN NOSUPERUSER
+NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`, with USAGE-only schema
+grants and explicit per-object privileges. `app_worker` is the deliberately
+all-tenant infrastructure surface on exactly enumerated worker tables through
+`wkr_` policies; it is not an RLS bypass and never owns objects. Full detail,
+including the **measured**
 attributes of Supabase-managed roles, is in
 [role-and-grant-standard.md](role-and-grant-standard.md). Two honest facts must be
 repeated wherever RLS evidence is discussed:
 
 - In the local Supabase stack, the `postgres` role is **not** a superuser but carries
   **BYPASSRLS** (plus CREATEROLE, CREATEDB). Nothing executed as `postgres` proves
-  anything about RLS. All isolation evidence in the test suite runs as the login
-  `rootlco_test_runtime`, a member of `app_runtime` created by the test harness (never
-  by migrations). `service_role` also carries BYPASSRLS — which is exactly why it must
+  anything about RLS. Tenant-session evidence runs as `rootlco_test_runtime`;
+  worker-boundary evidence runs as constrained `rootlco_test_worker`. Both are
+  created by the test harness, never migrations. `service_role` also carries
+  BYPASSRLS — which is exactly why it must
   never reach a browser.
 - FORCE RLS locks out even a non-BYPASSRLS table **owner** (proven with a fixture owner
   login), _but an owner can still ALTER its own table_ — recorded honestly as the
@@ -459,7 +463,7 @@ intentionally empty of rows (governance comments only) and stays that way in Pha
   `extensions`; database `search_path` set to `"$user", public, extensions`.
 - Schemas `org`, `iam`, `shared`, `crm`, `veh` (the last two reserved and empty);
   `public` hardened.
-- Roles `app_runtime` / `app_readonly` with USAGE-only schema grants; the four
+- Roles `app_runtime` / `app_readonly` / `app_worker` with USAGE-only schema grants; the four
   `iam.*` context readers; `shared.touch_row_metadata()`.
 - `shared.number_sequences` with named constraints, forced RLS, `sel_`/`upd_` tenant
   policies, column-restricted grants, the regression-guard trigger, and

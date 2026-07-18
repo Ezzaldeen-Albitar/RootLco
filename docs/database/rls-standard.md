@@ -77,10 +77,11 @@ still sees and affects zero rows (§7).
    migration. Blanket grants (`GRANT ALL`, `ALTER DEFAULT PRIVILEGES` sweeps) are
    prohibited (see the [role and grant standard](./role-and-grant-standard.md)).
 
-4. **Policies address role archetypes, never login users.** All policies are
-   written `TO app_runtime` and/or `TO app_readonly` — the NOLOGIN archetypes
-   created by migration 0002 (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
-NOBYPASSRLS`). Login roles obtain the behaviour through membership.
+4. **Policies address role archetypes, never login users.** Tenant-session
+   policies are written `TO app_runtime` and/or `TO app_readonly`; enumerated
+   infrastructure policies are written `TO app_worker`. All three are NOLOGIN,
+   constrained, non-bypassing archetypes. Login roles obtain behaviour through
+   membership.
 
 5. **Runtime roles must never own tables** (§6 explains why), and every RLS claim
    must be evidenced by tests running as a non-owner runtime role (§7).
@@ -159,10 +160,13 @@ fixed order, keeping the prefix and scope) and record the full name in a
 Existing examples (migration 0003): `sel_number_sequences_tenant`,
 `upd_number_sequences_tenant`.
 
+The separate `wkr_` prefix identifies an enumerated infrastructure-worker
+policy. It is never a synonym for a tenant policy.
+
 ### 5.2 The four command templates (tenant scope)
 
-Each command gets its **own** policy — a single `FOR ALL` policy is prohibited
-because it hides which commands are intentionally denied. In the templates,
+For tenant-session access, each command gets its **own** policy — a single
+`FOR ALL` policy is prohibited because it hides which commands are intentionally denied. In the templates,
 `<schema>.<table>` is a tenant-owned table with a `tenant_id uuid NOT NULL` column.
 
 ```sql
@@ -209,10 +213,30 @@ Not every table receives all four:
 - **Administratively provisioned tables** (e.g. `shared.number_sequences`) may
   deny INSERT and DELETE to runtime roles entirely, as migration 0003 does.
 
+### 5.3 Worker policy class
+
+Worker policies use `wkr_<table>_<scope>`. `wkr_event_outbox_all` is the
+reviewed exception to the ordinary one-policy-per-command rule:
+
+```sql
+CREATE POLICY wkr_event_outbox_all ON shared.event_outbox
+  FOR ALL TO app_worker
+  USING (true)
+  WITH CHECK (true);
+```
+
+`USING (true)` / `WITH CHECK (true)` is deliberate because an outbox dispatcher
+must claim delivery obligations across every tenant without adopting a user's
+tenant context. This is an infrastructure capability on an exactly enumerated
+worker table, not `BYPASSRLS`: `app_worker` remains non-owning and
+`NOBYPASSRLS`, receives only SELECT/INSERT/UPDATE, and cannot DELETE. Runtime
+and readonly roles receive neither policy nor grant. Any new `wkr_` policy must
+document its all-tenant exposure and exact verbs in the creating migration.
+
 Each deliberate absence must be recorded in a comment in the creating migration,
 as migration 0003 does.
 
-### 5.3 Company/branch narrowing variants
+### 5.4 Company/branch narrowing variants
 
 Where a table carries `company_id` (and optionally `branch_id`), the policy may
 narrow within the tenant using the allowed lists. The `IS NULL OR` form is
@@ -258,7 +282,7 @@ design) and validates its company/branch parameters against
 `iam.allowed_company_ids()` / `iam.allowed_branch_ids()` when those are set,
 raising `insufficient_privilege` on a mismatch.
 
-### 5.4 Grants that accompany the policies
+### 5.5 Grants that accompany the policies
 
 The creating migration must state the matching grants, at the narrowest workable
 width — column-restricted where possible. Migration 0003 is the model:
@@ -284,7 +308,8 @@ The following role attributes were **measured on the real local stack on
 | `supabase_admin`                                     | Superuser                                                               | Bypasses everything; never used as evidence.                                                                                                                                                                |
 | `service_role`                                       | `BYPASSRLS`                                                             | **Must never reach a browser or any client-side code.** A leaked `service_role` key nullifies every policy in this document. The CI secret-scan job exists in part to keep such keys out of client bundles. |
 | `anon`, `authenticated`                              | No bypass attributes                                                    | Subject to RLS.                                                                                                                                                                                             |
-| `app_runtime`, `app_readonly` (ours, migration 0002) | `NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` | The archetypes all policies address.                                                                                                                                                                        |
+| `app_runtime`, `app_readonly` (ours, migration 0002) | `NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` | Tenant-session archetypes.                                                                                                                                                                                  |
+| `app_worker` (ours, Phase 1-5 Increment G)           | `NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` | All-tenant access only through reviewed `wkr_` policies on enumerated infrastructure tables.                                                                                                                |
 
 In the plain `postgres:17` CI container, `postgres` **is** a superuser. This is an
 accepted, documented gap: CI runs plain PostgreSQL 17, not the full Supabase
@@ -312,13 +337,15 @@ the following. The current suite (68 tests, all passing on 2026-07-16 via
 `npm run test:db`, vitest + `pg`) satisfies them for `shared.number_sequences`
 and the pattern fixtures.
 
-1. **Non-owner execution.** Every isolation assertion runs as
+1. **Non-owner execution.** Every tenant-session isolation assertion runs as
    `rootlco_test_runtime` — a login role created **by the test harness, never by a
    migration**, holding nothing beyond `LOGIN` and membership in `app_runtime`.
    Results obtained as `postgres` are never presented as RLS evidence (it carries
    `BYPASSRLS` in the Supabase local stack — measured, §6). The read-only archetype
    is exercised via `rootlco_test_readonly`, and the FORCE-RLS owner demonstration
-   via `rootlco_test_owner` (a non-`BYPASSRLS` owner fixture).
+   via `rootlco_test_owner` (a non-`BYPASSRLS` owner fixture). Worker capability
+   and concurrency evidence runs as `rootlco_test_worker`, a constrained member
+   of `app_worker`, never as admin.
 2. **Default deny is asserted, not assumed:** with no context set, SELECT returns
    zero rows and UPDATE affects zero rows.
 3. **Transaction-locality is asserted:** context set with `set_config(..., true)`
@@ -377,22 +404,22 @@ The creating migration must satisfy every row; the reviewer (under the Solo
 Developer Review Policy) checks the migration and the accompanying tests against
 this list.
 
-| #   | Check                                                                                                                                                                                          | Reference            |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| 1   | `tenant_id uuid NOT NULL` present; composite FK `(tenant_id, parent_id) REFERENCES parent (tenant_id, id)` for every tenant-owned parent (Phase 1-3+, once parents exist)                      | §1, architecture doc |
-| 2   | `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` **and** `FORCE ROW LEVEL SECURITY` in the creating migration                                                                                       | §2.1                 |
-| 3   | Table owned by the migration/admin role — **never** by `app_runtime`/`app_readonly` or any role reachable from runtime code                                                                    | §6                   |
-| 4   | One policy per permitted command, named `sel_/ins_/upd_/del_<table>_<scope>`, addressed `TO app_runtime` (and `app_readonly` for SELECT)                                                       | §5.1–5.2             |
-| 5   | Every policy predicate anchors on `tenant_id = iam.current_tenant_id()`; UPDATE policies carry both `USING` and `WITH CHECK`                                                                   | §5.2                 |
-| 6   | Company/branch narrowing (where applicable) uses the `IS NULL OR ... = ANY (...)` form with `iam.allowed_company_ids()` / `iam.allowed_branch_ids()`                                           | §5.3                 |
-| 7   | No `FOR ALL` policy, no `USING (true)` fallback, no policy addressed to `PUBLIC`                                                                                                               | §2.2                 |
-| 8   | Grants are explicit, per-object, narrowest-width (column-restricted where possible); every deliberately absent policy/grant is recorded in a migration comment                                 | §5.4, §2.2           |
-| 9   | Soft-delete tables: no `del_` policy, no DELETE grant. Append-only tables: `ins_` + `sel_` only                                                                                                | §5.2                 |
-| 10  | Functions touching the table are `SECURITY INVOKER` with `SET search_path = ''`, or carry a written `SECURITY DEFINER` justification                                                           | §2.6                 |
-| 11  | Tests added in the same PR: default deny, transaction-local context, A↔B isolation, WITH CHECK re-pointing, denied commands (42501), all executed as `rootlco_test_runtime` — never `postgres` | §7                   |
-| 12  | Nothing executed as a `BYPASSRLS` role (`postgres`, `service_role`, `supabase_admin`) is presented as isolation evidence                                                                       | §6–7                 |
-| 13  | `service_role` (BYPASSRLS) is never exposed to browsers or client bundles; the CI secret-scan job guards this                                                                                  | §6                   |
-| 14  | Tenant-leading indexes per the index rules; any non-tenant-leading index carries a written justification in the migration                                                                      | Architecture doc     |
+| #   | Check                                                                                                                                                                     | Reference            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| 1   | `tenant_id uuid NOT NULL` present; composite FK `(tenant_id, parent_id) REFERENCES parent (tenant_id, id)` for every tenant-owned parent (Phase 1-3+, once parents exist) | §1, architecture doc |
+| 2   | `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` **and** `FORCE ROW LEVEL SECURITY` in the creating migration                                                                  | §2.1                 |
+| 3   | Table owned by the migration/admin role — **never** by `app_runtime`/`app_readonly`/`app_worker` or a reachable login                                                     | §6                   |
+| 4   | Tenant policies are per-command `sel_/ins_/upd_/del_`; enumerated infrastructure policies use reviewed `wkr_` names                                                       | §5.1–5.3             |
+| 5   | Tenant policy predicates anchor on `tenant_id = iam.current_tenant_id()`; only the documented worker class may use all-tenant predicates                                  | §5.2–5.3             |
+| 6   | Company/branch narrowing (where applicable) uses the `IS NULL OR ... = ANY (...)` form with `iam.allowed_company_ids()` / `iam.allowed_branch_ids()`                      | §5.4                 |
+| 7   | No policy addressed to `PUBLIC`; `FOR ALL` / `USING (true)` exists only for a documented `wkr_` infrastructure policy                                                     | §2.2, §5.3           |
+| 8   | Grants are explicit, per-object, narrowest-width (column-restricted where possible); every deliberately absent policy/grant is recorded in a migration comment            | §5.5, §2.2           |
+| 9   | Soft-delete tables: no `del_` policy, no DELETE grant. Append-only tables: `ins_` + `sel_` only                                                                           | §5.2                 |
+| 10  | Functions touching the table are `SECURITY INVOKER` with `SET search_path = ''`, or carry a written `SECURITY DEFINER` justification                                      | §2.6                 |
+| 11  | Tests use the matching constrained login: `rootlco_test_runtime` for tenant isolation and `rootlco_test_worker` for worker boundaries/concurrency — never `postgres`      | §7                   |
+| 12  | Nothing executed as a `BYPASSRLS` role (`postgres`, `service_role`, `supabase_admin`) is presented as isolation evidence                                                  | §6–7                 |
+| 13  | `service_role` (BYPASSRLS) is never exposed to browsers or client bundles; the CI secret-scan job guards this                                                             | §6                   |
+| 14  | Tenant-leading indexes per the index rules; any non-tenant-leading index carries a written justification in the migration                                                 | Architecture doc     |
 
 ---
 

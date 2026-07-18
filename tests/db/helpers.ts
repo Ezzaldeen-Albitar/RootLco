@@ -14,6 +14,10 @@
  *    every isolation assertion runs here. The login role is created by the
  *    harness (never by a migration) and holds no attribute beyond LOGIN.
  *
+ *  - WORKER connection (`rootlco_test_worker`, member of `app_worker`):
+ *    worker-boundary and all-tenant infrastructure assertions run here, never
+ *    on the admin connection.
+ *
  * Credentials are the public Supabase local-dev defaults, overridable via
  * DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD. They are not secrets;
  * no production credential is ever read here.
@@ -31,6 +35,8 @@ const ADMIN_PASSWORD = process.env.DB_PASSWORD ?? 'postgres';
 export const RUNTIME_LOGIN = 'rootlco_test_runtime';
 /** Login role for the read-only archetype. */
 export const READONLY_LOGIN = 'rootlco_test_readonly';
+/** Login role for the asynchronous worker archetype. */
+export const WORKER_LOGIN = 'rootlco_test_worker';
 /** Login role used to demonstrate FORCE RLS against a non-BYPASSRLS owner. */
 export const OWNER_LOGIN = 'rootlco_test_owner';
 /** Deliberately weak, deliberately fake, local test databases only. */
@@ -63,6 +69,10 @@ export function readonlyPool(): Pool {
   return new Pool(config(READONLY_LOGIN, TEST_LOGIN_PASSWORD));
 }
 
+export function workerPool(max = 5): Pool {
+  return new Pool(config(WORKER_LOGIN, TEST_LOGIN_PASSWORD, max));
+}
+
 export function ownerClient(): Client {
   return new Client(config(OWNER_LOGIN, TEST_LOGIN_PASSWORD));
 }
@@ -92,11 +102,16 @@ export async function ensureTestLogins(admin: Pool): Promise<void> {
         CREATE ROLE ${OWNER_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
           NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${WORKER_LOGIN}') THEN
+        CREATE ROLE ${WORKER_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+      END IF;
     END;
     $$;
   `);
   await admin.query(`GRANT app_runtime TO ${RUNTIME_LOGIN}`);
   await admin.query(`GRANT app_readonly TO ${READONLY_LOGIN}`);
+  await admin.query(`GRANT app_worker TO ${WORKER_LOGIN}`);
 }
 
 export interface SessionContext {
@@ -219,6 +234,11 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
 export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(`DROP SCHEMA IF EXISTS ${FIXTURE_SCHEMA} CASCADE`);
   await admin.query('DELETE FROM shared.number_sequences WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  // Worker-owned delivery obligations must be removed before their org scope.
+  await admin.query('DELETE FROM shared.event_outbox WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,
   ]);

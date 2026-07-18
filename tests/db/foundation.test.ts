@@ -89,6 +89,8 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment F — outbound message persistence (P1-05-DB-009/010).
   'shared.outbound_messages',
   'shared.delivery_attempts',
+  // Phase 1-5 Increment G — transactional integration-event delivery.
+  'shared.event_outbox',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -183,6 +185,11 @@ const ALLOWED_ROUTINES = new Set([
   // initial-state/transition enforcement for outbound messages.
   'shared.guard_outbound_message_lifecycle',
   'shared.guard_outbound_message_scope',
+  // Phase 1-5 Increment G — initial-state guard and atomic worker lifecycle.
+  'shared.guard_event_outbox_initial_state',
+  'shared.claim_outbox_events',
+  'shared.complete_outbox_event',
+  'shared.fail_outbox_event',
 ]);
 
 let admin: Pool;
@@ -221,30 +228,32 @@ describe('database foundation', () => {
     for (const row of rows) expect(row.schema).toBe('extensions');
   });
 
-  it('defines app_runtime and app_readonly as constrained archetypes', async () => {
+  it('defines all three application roles as constrained archetypes', async () => {
     const { rows } = await admin.query(
-      `SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreaterole, rolcreatedb
-       FROM pg_roles WHERE rolname IN ('app_runtime','app_readonly') ORDER BY rolname`
+      `SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreaterole, rolcreatedb,
+              rolreplication
+       FROM pg_roles WHERE rolname IN ('app_runtime','app_readonly','app_worker') ORDER BY rolname`
     );
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     for (const role of rows) {
       expect(role.rolsuper).toBe(false);
       expect(role.rolbypassrls).toBe(false);
       expect(role.rolcanlogin).toBe(false);
       expect(role.rolcreaterole).toBe(false);
       expect(role.rolcreatedb).toBe(false);
+      expect(role.rolreplication).toBe(false);
     }
   });
 
   it('runtime roles own no schema and no table', async () => {
     const schemas = await admin.query(
       `SELECT nspname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner
-       WHERE r.rolname IN ('app_runtime','app_readonly')`
+       WHERE r.rolname IN ('app_runtime','app_readonly','app_worker')`
     );
     expect(schemas.rows).toHaveLength(0);
     const tables = await admin.query(
       `SELECT c.relname FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner
-       WHERE r.rolname IN ('app_runtime','app_readonly') AND c.relkind = 'r'`
+       WHERE r.rolname IN ('app_runtime','app_readonly','app_worker') AND c.relkind = 'r'`
     );
     expect(tables.rows).toHaveLength(0);
   });
@@ -332,6 +341,7 @@ describe('database foundation', () => {
       'tg_documents_category_scope',
       'tg_documents_immutable',
       'tg_documents_touch_metadata',
+      'tg_event_outbox_guard_initial_state',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_grant_scopes_require_scope',
@@ -479,6 +489,7 @@ describe('database foundation', () => {
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
       'upd_warehouses_scope',
+      'wkr_event_outbox_all',
     ]);
   });
 

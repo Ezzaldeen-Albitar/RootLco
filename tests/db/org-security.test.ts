@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
-import { adminPool } from './helpers';
+import { adminPool, ensureTestLogins } from './helpers';
 
 /**
  * Documented platform/root exceptions to the tenant-column rule.
@@ -42,6 +42,7 @@ let admin: Pool;
 
 beforeAll(async () => {
   admin = adminPool();
+  await ensureTestLogins(admin);
 });
 
 afterAll(async () => {
@@ -130,13 +131,17 @@ describe('role posture', () => {
   it('application roles own no relation and carry no BYPASSRLS', async () => {
     const owned = await admin.query(
       `SELECT c.relname FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner
-       WHERE r.rolname IN ('app_runtime','app_readonly')`
+       WHERE r.rolname IN ('app_runtime','app_readonly','app_worker')`
     );
     expect(owned.rows).toEqual([]);
     const attrs = await admin.query(
       `SELECT rolname, rolbypassrls, rolsuper FROM pg_roles
-       WHERE rolname IN ('app_runtime','app_readonly','rootlco_test_runtime','rootlco_test_readonly')`
+       WHERE rolname IN (
+         'app_runtime','app_readonly','app_worker',
+         'rootlco_test_runtime','rootlco_test_readonly','rootlco_test_worker'
+       )`
     );
+    expect(attrs.rows).toHaveLength(6);
     for (const r of attrs.rows) {
       expect(r.rolbypassrls, `${r.rolname} must not BYPASSRLS`).toBe(false);
       expect(r.rolsuper, `${r.rolname} must not be superuser`).toBe(false);
@@ -156,7 +161,7 @@ describe('role posture', () => {
     const { rows } = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq FROM information_schema.role_table_grants
        WHERE table_schema IN ('org','iam','shared','crm','veh')
-         AND grantee IN ('app_runtime','app_readonly')
+         AND grantee IN ('app_runtime','app_readonly','app_worker')
          AND privilege_type = 'DELETE'`
     );
     expect(

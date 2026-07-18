@@ -124,10 +124,17 @@ Triggers on `shared.number_sequences`: `tg_number_sequences_touch_metadata`,
 
 ## 6. Roles (see [role-and-grant-standard.md](./role-and-grant-standard.md))
 
-| Role           | Kind                | Attributes (verified 2026-07-16)                        | Introduced |
-| -------------- | ------------------- | ------------------------------------------------------- | ---------- |
-| `app_runtime`  | runtime archetype   | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB | 0002       |
-| `app_readonly` | read-only archetype | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB | 0002       |
+| Role           | Kind                | Attributes                                                            | Introduced     |
+| -------------- | ------------------- | --------------------------------------------------------------------- | -------------- |
+| `app_runtime`  | runtime archetype   | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 0002           |
+| `app_readonly` | read-only archetype | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 0002           |
+| `app_worker`   | worker archetype    | NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION | 20260718106000 |
+
+`app_worker` is the deliberately all-tenant infrastructure archetype on exactly
+enumerated worker tables. Increment G grants it only `shared`/`iam` schema
+USAGE, `iam.current_user_id()` EXECUTE, outbox SELECT/INSERT/UPDATE, and the
+three outbox lifecycle routines; it has no DELETE, ownership, DDL, or RLS
+bypass. An actual worker LOGIN remains Phase 1-13.
 
 ## 7. Explicitly not in this dictionary
 
@@ -1158,3 +1165,49 @@ credential authority. Contact fields are classified `restricted`.
 | `completed_at`         | timestamp with time zone                                   | YES  | —                 | internal       |
 | `created_at`           | timestamp with time zone                                   | NO   | now()             | internal       |
 | `created_by`           | uuid                                                       | NO   | —                 | internal       |
+
+### `shared.event_outbox`
+
+**Scope:** tenant · **Retention class:** operational · Transactional integration-event envelope. Event identity is unique per tenant; company/branch scope is structurally tenant-bound. `app_worker` has deliberate all-tenant SELECT/INSERT/UPDATE through `wkr_event_outbox_all`, while runtime/readonly have zero access. Rows begin pending; atomic invoker routines claim due/stale work and complete, retry, or dead-letter it. Worker DELETE is absent.
+
+| Column              | Type                                                          | Null | Default           | Classification |
+| ------------------- | ------------------------------------------------------------- | ---- | ----------------- | -------------- |
+| `id`                | uuid                                                          | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                                                          | NO   | —                 | internal       |
+| `company_id`        | uuid                                                          | YES  | —                 | internal       |
+| `branch_id`         | uuid                                                          | YES  | —                 | internal       |
+| `event_key`         | text                                                          | NO   | —                 | internal       |
+| `event_type`        | text                                                          | NO   | —                 | internal       |
+| `aggregate_type`    | text                                                          | NO   | —                 | internal       |
+| `aggregate_id`      | uuid                                                          | NO   | —                 | internal       |
+| `schema_version`    | integer                                                       | NO   | —                 | internal       |
+| `aggregate_version` | bigint                                                        | NO   | —                 | internal       |
+| `producer`          | text                                                          | NO   | —                 | internal       |
+| `occurred_at`       | timestamp with time zone                                      | NO   | now()             | internal       |
+| `correlation_id`    | uuid                                                          | YES  | —                 | internal       |
+| `causation_id`      | uuid                                                          | YES  | —                 | internal       |
+| `payload`           | jsonb                                                         | NO   | '{}'::jsonb       | restricted     |
+| `headers`           | jsonb                                                         | NO   | '{}'::jsonb       | restricted     |
+| `status`            | text (`pending` \| `claimed` \| `published` \| `dead_letter`) | NO   | 'pending'         | internal       |
+| `available_at`      | timestamp with time zone                                      | NO   | now()             | internal       |
+| `attempt_count`     | integer                                                       | NO   | 0                 | internal       |
+| `claimed_at`        | timestamp with time zone                                      | YES  | —                 | internal       |
+| `claimed_by`        | text                                                          | YES  | —                 | internal       |
+| `published_at`      | timestamp with time zone                                      | YES  | —                 | internal       |
+| `last_error`        | text                                                          | YES  | —                 | internal       |
+| `created_at`        | timestamp with time zone                                      | NO   | now()             | internal       |
+| `created_by`        | uuid                                                          | NO   | —                 | internal       |
+
+Outbox routines (migration `20260718106000`, all `SECURITY INVOKER`, empty
+`search_path`, PUBLIC revoked, EXECUTE only to `app_worker`):
+
+- `shared.claim_outbox_events(text, integer, interval)` returns an unordered
+  set claimed with `FOR UPDATE SKIP LOCKED`; pending rows must be due and stale
+  claims must exceed the lease.
+- `shared.complete_outbox_event(uuid, text)` conditionally publishes only the
+  caller's claim, stamps `published_at`, and clears claim fields.
+- `shared.fail_outbox_event(uuid, text, text, interval, integer)` conditionally
+  schedules a retry or dead-letters at the maximum attempt count, always
+  clearing claim fields and retaining `last_error`.
+- `shared.guard_event_outbox_initial_state()` is trigger-only (no role EXECUTE)
+  and rejects any INSERT not pending, unstamped, error-free, and at attempt 0.
