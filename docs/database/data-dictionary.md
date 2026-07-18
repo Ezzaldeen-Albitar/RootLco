@@ -1211,3 +1211,54 @@ Outbox routines (migration `20260718106000`, all `SECURITY INVOKER`, empty
   clearing claim fields and retaining `last_error`.
 - `shared.guard_event_outbox_initial_state()` is trigger-only (no role EXECUTE)
   and rejects any INSERT not pending, unstamped, error-free, and at attempt 0.
+
+### `shared.processed_events`
+
+**Scope:** platform + tenant · **Retention class:** evidence-audit · Append-only consumer atomic-claim registry. Consumers claim with `INSERT ... ON CONFLICT DO NOTHING RETURNING` and perform the side effect only when a row is returned. This is distinct from request-response replay in `shared.idempotency_keys`. `failed` is terminal and blocks reprocessing pending later-phase operator intervention. `app_worker` has SELECT/INSERT only; runtime/readonly have no access.
+
+| Column          | Type                     | Null | Default     | Classification |
+| --------------- | ------------------------ | ---- | ----------- | -------------- |
+| `consumer_code` | text                     | NO   | —           | internal       |
+| `event_id`      | uuid                     | NO   | —           | internal       |
+| `tenant_id`     | uuid                     | YES  | —           | internal       |
+| `processed_at`  | timestamp with time zone | NO   | now()       | internal       |
+| `outcome`       | text                     | NO   | —           | internal       |
+| `metadata`      | jsonb                    | NO   | '{}'::jsonb | internal       |
+| `created_at`    | timestamp with time zone | NO   | now()       | internal       |
+| `created_by`    | uuid                     | NO   | —           | internal       |
+
+### `shared.error_records`
+
+**Scope:** platform + tenant · **Retention class:** evidence-audit · Durable sanitized operational failures, including errors raised before tenant context exists. Company/branch scope is prohibited when `tenant_id` is NULL. Context is recursively screened for sensitive keys and JWT/AWS-access-key-shaped strings. Rows start open and may move open → acknowledged → resolved or open → resolved; resolved is terminal. Recorded facts are immutable, while guarded status/resolution fields are mutable. `app_worker` has SELECT/INSERT/UPDATE only; runtime/readonly have no access.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | YES  | —                 | internal       |
+| `company_id`     | uuid                     | YES  | —                 | internal       |
+| `branch_id`      | uuid                     | YES  | —                 | internal       |
+| `error_code`     | text                     | NO   | —                 | internal       |
+| `source`         | text                     | NO   | —                 | internal       |
+| `operation`      | text                     | NO   | —                 | internal       |
+| `severity`       | text                     | NO   | —                 | internal       |
+| `retryable`      | boolean                  | NO   | —                 | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+| `context`        | jsonb                    | NO   | '{}'::jsonb       | restricted     |
+| `status`         | text                     | NO   | 'open'            | internal       |
+| `resolved_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `resolved_by`    | uuid                     | YES  | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+Increment H trigger routines (migration `20260718107000`, `SECURITY INVOKER`,
+empty `search_path`, PUBLIC execute revoked):
+
+- `shared.guard_error_context_sanitized()` recursively walks every JSON object
+  and array node, rejecting sensitive key names and credential-shaped strings.
+- `shared.guard_error_record_lifecycle()` enforces the initial open state,
+  transition graph, required resolver attribution, server resolution timestamp,
+  and terminal resolved state.

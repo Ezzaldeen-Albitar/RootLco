@@ -91,6 +91,9 @@ const ALLOWED_TABLES = new Set([
   'shared.delivery_attempts',
   // Phase 1-5 Increment G — transactional integration-event delivery.
   'shared.event_outbox',
+  // Phase 1-5 Increment H — consumer claims and durable error triage.
+  'shared.processed_events',
+  'shared.error_records',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -190,6 +193,9 @@ const ALLOWED_ROUTINES = new Set([
   'shared.claim_outbox_events',
   'shared.complete_outbox_event',
   'shared.fail_outbox_event',
+  // Phase 1-5 Increment H — recursive error sanitization and lifecycle guard.
+  'shared.guard_error_context_sanitized',
+  'shared.guard_error_record_lifecycle',
 ]);
 
 let admin: Pool;
@@ -341,6 +347,10 @@ describe('database foundation', () => {
       'tg_documents_category_scope',
       'tg_documents_immutable',
       'tg_documents_touch_metadata',
+      'tg_error_records_context_sanitized',
+      'tg_error_records_guard_lifecycle',
+      'tg_error_records_immutable',
+      'tg_error_records_touch_metadata',
       'tg_event_outbox_guard_initial_state',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
@@ -489,7 +499,9 @@ describe('database foundation', () => {
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
       'upd_warehouses_scope',
+      'wkr_error_records_all',
       'wkr_event_outbox_all',
+      'wkr_processed_events_all',
     ]);
   });
 

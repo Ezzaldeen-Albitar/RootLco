@@ -242,6 +242,15 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Consumer claims use a fixture consumer prefix, including platform claims.
+  // Error cleanup covers fixture tenants and pre-tenant platform fixture rows.
+  await admin.query(`DELETE FROM shared.processed_events WHERE consumer_code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM shared.error_records
+      WHERE tenant_id IN ($1, $2)
+         OR (tenant_id IS NULL AND error_code LIKE 'fx\\_%')`,
+    [TENANT_A, TENANT_B]
+  );
   // Phase 1-4 iam fixtures: children first, then accounts (all reference
   // org.tenants with ON DELETE RESTRICT, so they must go before the tenants).
   // role_grants first: deleting it cascades grant_scopes (which reference org

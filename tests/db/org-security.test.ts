@@ -36,6 +36,8 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'shared.document_categories', // dual-scope: platform default (tenant NULL) OR tenant override
   'shared.message_templates', // dual-scope: platform default (tenant NULL) OR tenant override
   'shared.template_versions', // mirrors its platform/tenant template tenant_id, including NULL
+  'shared.processed_events', // platform consumers process platform-scope work without a tenant
+  'shared.error_records', // errors can occur before tenant context is established
 ]);
 
 let admin: Pool;
