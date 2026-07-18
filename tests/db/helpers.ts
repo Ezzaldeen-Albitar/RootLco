@@ -264,6 +264,36 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
+  // Phase 1-5 shared services: links/scan results -> versions -> documents ->
+  // categories reference org rows (all ON DELETE RESTRICT); remove inner rows first.
+  await admin.query('DELETE FROM shared.legal_holds WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.document_links WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.file_scan_results WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.document_versions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.documents WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.document_categories WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  // Platform-scope test categories (tenant_id NULL) carry the fx_ code prefix.
+  await admin.query(
+    `DELETE FROM shared.document_categories WHERE scope = 'platform' AND category_code LIKE 'fx\\_%'`
+  );
   await admin.query('DELETE FROM iam.user_status_history WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

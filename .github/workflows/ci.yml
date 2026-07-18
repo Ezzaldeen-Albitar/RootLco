@@ -300,3 +300,11 @@ jobs:
       # needed here. Keep it that way.
       - name: Assert no service-role key is exposed to the browser
         run: npm run security:browser-secrets
+
+      # No fabricated business data ships or is auto-inserted (RootLco data
+      # policy). Static scan for demo/mock/sample/fake business-record
+      # indicators; the clean-database business-table-emptiness invariant is
+      # asserted by the database job's test suite (tests/db/no-fake-data.test.ts).
+      # Dependency-free (node: builtins only) — no `npm ci` needed.
+      - name: Assert no fake/demo business data is shipped
+        run: npm run validate:no-fake-data
