@@ -34,7 +34,7 @@ tables and four functions; the sensitive-read gate
 (`iam.has_permission('iam.sensitive.view')`) on search/notes/comments;
 hash-only outbound-message content; the permanent no-fake-data policy with the
 seed conversion (seeds 02/03 deleted; pilot provisioning as a manual gated
-package); forward corrections in Migration L; **490 database tests in 36
+package); forward corrections in Migration L; **491 database tests in 36
 files** (168 new Phase 1-5 tests); and the closeout documentation set. The
 adversarial self-review worked 14 vectors — 8 refuted, 3 fixed pre-PR, 3
 accepted with documented residual risk — with details in the

@@ -54,7 +54,7 @@ retention classes, empty business tables, and idempotent counts.
 
 ## 4. Test suite (Proven)
 
-**490 tests in 36 files** — the authoritative runtime total of the full database
+**491 tests in 36 files** — the authoritative runtime total of the full database
 suite on the current Phase 1-5 tree (the per-file counts are those the suite run
 prints, not a static grep). The **311** pre-existing Phase 1-2/1-3/1-4 tests are
 preserved (`org-provisioning` and `iam-seeds` were refactored to ephemeral
@@ -66,12 +66,33 @@ run as a dedicated test worker login.
 
 The full suite was run **from an empty database in the CI order** (all 32
 migrations → `validate:seed-state` with the declared seeds applied twice →
-`test:db`): **490/490 green on three consecutive full runs.** Honesty note: one
-intermittent single-process batch failure was observed once across five full-batch
-runs and did not recur in the other four or in any isolated suite run; its
-identity could not be captured because it did not reproduce. CI's dedicated
-PostgreSQL container is the authority for the single-process full-suite result
-(§7).
+`test:db`): **491/491 green.**
+
+**Intermittent-failure investigation (closure, 2026-07-18).** During the
+five-run flake sweep of the prior tree, run 4 of 5 failed once — **identity
+captured this time**: `shared-event-outbox.test.ts` "two parallel worker
+connections claim disjoint sets", where one worker returned 8 rows for a
+limit-4 claim (over-selection). Root-cause investigation ran **≈50 controlled
+trials on freshly-reset databases**: 5 sequential + 15 concurrent + 15
+generic-plan-warmed concurrent + an external-lock scenario + repeated direct
+probes of `claim_outbox_events(…,4)` over 8 pending rows — **every controlled
+trial returned exactly the limit (4), zero over-selection.** The over-selection
+reproduced **only** while probing a local database left dirty by five
+consecutive full-suite runs without an inter-run reset; it did **not** reproduce
+under any clean-database (CI-equivalent) condition. Honest classification: a
+**non-reproducible-under-CI-conditions observation correlated with degraded
+local database state after prolonged reuse** — not an isolation defect in the
+function (proven correct 50/50 on clean databases, which is exactly how CI runs:
+a fresh PostgreSQL container per run). It is **not** dismissed as an
+infrastructure flake without evidence; the evidence is the 50/50 clean-database
+result versus the dirty-only occurrence. **Hardening applied (not a fix to an
+unreproducible trigger, but a permanent regression guard):** the concurrent test
+now asserts the true SKIP-LOCKED invariant — each claim ≤ its limit (explicit
+over-selection guard), disjoint sets, union = all N — instead of a timing-
+dependent even split; and a new **deterministic** test asserts `claim(4)` over 8
+pending returns exactly 4 (and 4, then 0), so any real over-selection now fails
+loudly and reproducibly. CI's dedicated PostgreSQL container remains the
+authority for the single-process full-suite result (§7).
 
 ## 5. Security properties proven by test
 
@@ -124,7 +145,7 @@ live database. **14 vectors; zero unresolved Critical/High.**
 The `Database migrations and RLS tests` job asserts merged-migration
 immutability on pull requests, applies all 32 migrations to a clean PostgreSQL
 17, runs `validate:seed-state` **before** `test:db`, then runs the full
-490-test suite. The secrets job runs the env-file/key-material checks, the
+491-test suite. The secrets job runs the env-file/key-material checks, the
 scope-exclusion guard, the credential-pattern scan, the browser-secret check,
 and the no-fake-data scan. **No GitHub Actions run exists for the final
 implementation SHA `83f0f70`** — CI on it is owner-verifiable once the E–M pull

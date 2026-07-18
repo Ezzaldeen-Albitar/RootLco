@@ -170,14 +170,50 @@ describe('shared event-outbox worker lifecycle', () => {
       ]);
       const aIds = a.rows.map((row) => row.id as string);
       const bIds = b.rows.map((row) => row.id as string);
-      expect(aIds).toHaveLength(n / 2);
-      expect(bIds).toHaveLength(n / 2);
-      expect(aIds.filter((id) => bIds.includes(id))).toEqual([]);
-      expect([...aIds, ...bIds].sort()).toEqual([...ids].sort());
+      const limit = n / 2;
+      // SKIP LOCKED guarantees each claim returns AT MOST its limit and that the
+      // two claimed sets are disjoint. A claim returning MORE than its limit is a
+      // real over-selection defect, asserted against explicitly here (a clearer
+      // signal than an even-split assumption). With n pending rows and two
+      // limit-(n/2) claims that both run to completion, disjoint + union==all n
+      // together force the balanced n/2 each — without asserting a timing-
+      // dependent balance directly.
+      expect(
+        aIds.length,
+        `worker A over-claimed ${aIds.length} > limit ${limit}`
+      ).toBeLessThanOrEqual(limit);
+      expect(
+        bIds.length,
+        `worker B over-claimed ${bIds.length} > limit ${limit}`
+      ).toBeLessThanOrEqual(limit);
+      expect(aIds.filter((id) => bIds.includes(id))).toEqual([]); // disjoint, no double-claim
+      expect([...aIds, ...bIds].sort()).toEqual([...ids].sort()); // union == all n rows
     } finally {
       c1.release();
       c2.release();
     }
+  });
+
+  it('a single claim never returns more than its limit (deterministic over-selection guard)', async () => {
+    const ids = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => insertEvent(`evt.limit.${i}`))
+    );
+    const first = await worker.query(
+      `SELECT id FROM shared.claim_outbox_events('worker-limit', 4)`
+    );
+    expect(first.rows.length, `claim(4) over 8 pending returned ${first.rows.length}`).toBe(4);
+    const second = await worker.query(
+      `SELECT id FROM shared.claim_outbox_events('worker-limit-2', 4)`
+    );
+    expect(second.rows).toHaveLength(4);
+    const third = await worker.query(
+      `SELECT id FROM shared.claim_outbox_events('worker-limit-3', 4)`
+    );
+    expect(third.rows).toHaveLength(0);
+    // exactly the eight inserted rows, each claimed once (no over-selection, no loss)
+    expect([...first.rows, ...second.rows].map((r) => r.id as string).sort()).toEqual(
+      [...ids].sort()
+    );
   });
 
   it('reclaims a stale lease for a different claimant and increments the attempt again', async () => {

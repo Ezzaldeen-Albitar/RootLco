@@ -131,7 +131,7 @@ application grant, including every trigger guard and `shared.archive_document`):
    rejected by initial-state guards (`shared-hardening.test.ts`,
    `shared-event-outbox.test.ts`, `shared-processed-errors.test.ts`).
 
-The database suite holds 490 tests at commit `83f0f70`; CI on the final SHA is
+The database suite holds 491 tests at commit `83f0f70`; CI on the final SHA is
 owner-verifiable. The pull request is not yet opened and the owner gate is
 Pending.
 
