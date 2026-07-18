@@ -44,7 +44,7 @@ master, or Phase-1-5 schema.
 
 ## 3. Tests
 
-**311 tests in 24 files, all passing on a clean reset** — 194 Phase-1-2/1-3
+**311 tests in 23 files, all passing on a clean reset** — 194 Phase-1-2/1-3
 preserved plus **117 new** Phase-1-4 tests, every isolation assertion as the
 non-owner runtime login. Breakdown in the
 [evidence register §3](./phase-1-4-evidence-register.md).

@@ -26,13 +26,12 @@ is the additive `org.departments` composite key via a new forward migration.
 
 ## 3. Test suite (Proven)
 
-**311 tests in 24 files, all passing on a clean `supabase db reset`.** The 194
+**311 tests in 23 files, all passing on a clean `supabase db reset`.** The 194
 Phase 1-2/1-3 tests are preserved; **117 new** Phase-1-4 tests. Per new file:
 iam-accounts 19, iam-roles 14, iam-grants 13, iam-approvals 10, iam-sessions 10,
-iam-audit 12, shared-status 10, iam-permissions 15, iam-hardening 8, iam-seeds 7
-(= 118 across the ten files; the audit/hardening additions net to the 311 total
-with the shared org-provisioning seed extension). Every isolation assertion runs
-as the NON-OWNER runtime login.
+iam-audit 12, shared-status 10, iam-permissions 15, iam-hardening 7, iam-seeds 7
+(= 117 new across the ten files; with the 194 preserved Phase 1-2/1-3 tests this
+totals 311). Every isolation assertion runs as the NON-OWNER runtime login.
 
 ## 4. Security properties proven by test
 
