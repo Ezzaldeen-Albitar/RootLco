@@ -121,8 +121,16 @@ timestamp per increment:
 | E         | `20260718104000` | K         | `20260718110000` |
 | F         | `20260718105000` | L         | `20260718111000` |
 
-Increment M is a **seed** file (`supabase/seeds/05_shared_services_structural.sql`), not a
-migration, wired into `config.toml` `[db.seed]` (and referenced by CI's seed rehearsal).
+Increment M is **mandatory platform reference configuration only** (a
+`supabase/seeds/05_shared_services_structural.sql` seed file, not a migration, wired into
+`config.toml` `[db.seed]`). Under the permanent [no-fake-data standard](../../database/no-fake-data-standard.md)
+(reinterpreting P1-05-DB-021) it may seed **only** indispensable structural definitions —
+retention-class definitions and equally-structural catalogues — and **no** business data:
+no document categories, no message templates, no localized customer wording, no tenants, no
+operational content. Document categories and message templates start **empty** and are configured
+later through real administration flows; localization ships the `ar`/`en` schema without invented
+final wording. The clean database therefore has empty business tables, proven by
+`npm run validate:no-fake-data` and `tests/db/no-fake-data.test.ts`.
 
 ### 1.5 Platform-level vs tenant-level rules
 
@@ -261,10 +269,13 @@ is complete — stated in `notification-data-contract.md`.
 
 ### I. Customer-facing copy
 
-Seeds contain **structural placeholders only**, every copy field marked
-`pending owner-approved wording`. No final Arabic/English customer messages are invented. A CI
-guard (`security:customer-copy-guard`) fails the build if a seeded template body lacks the
-placeholder marker.
+**Superseded by the [no-fake-data standard](../../database/no-fake-data-standard.md).** No message
+templates or customer-facing copy are seeded at all — `message_templates`/`template_versions` start
+**empty** and are configured later through real administration flows. There is therefore no seeded
+template body to placeholder-mark; the template tables are proven with **ephemeral test inserts**
+only. No final Arabic/English customer messages are invented in the database phase. (The earlier plan
+to seed structural placeholders marked `pending owner-approved wording` is withdrawn: shipping no
+template rows is stricter and satisfies the policy directly.)
 
 ---
 
