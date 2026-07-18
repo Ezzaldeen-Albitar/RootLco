@@ -146,13 +146,19 @@ were fixed on the branch: prettier formatting of the opening docs
 
 ## 8. Tests
 
-The database suite at `83f0f70` totals **480 tests in 36 files** (311 in 23
-files at Phase 1-4 close): **168 new Phase 1-5 tests across twelve
-`shared-*` suites** plus the clean-state `no-fake-data.test.ts`, with the
-Phase 1-2..1-4 suites preserved and the provisioning/seed suites reworked for
-the package model. Isolation assertions run as the non-owner runtime login.
-**This report does not claim a green run it did not observe:** the CI result
-on final commit `83f0f70` is **owner-verifiable** on the pushed branch and is
+The database suite totals **487 tests in 36 files** (311 in 23 files at Phase
+1-4 close): **176 new Phase 1-5 tests** across twelve `shared-*` suites plus
+`no-fake-data.test.ts` and `provisioning-package.test.ts`, with the Phase
+1-2..1-4 suites preserved and the provisioning/seed suites reworked for the
+package model. Isolation assertions run as the non-owner runtime login.
+**Clean-room result (2026-07-18):** on a fresh apply of all 32 migrations from
+empty, followed by `validate:seed-state` (declared seeds applied twice) and
+then the full suite in the CI order, **487/487 passed** — the run surfaced and
+fixed one real defect (the retention suite's fixtures silently no-opped once
+seed 05 pre-populated the retention classes; it now forces its own test
+periods with `ON CONFLICT DO UPDATE`, robust to seed presence). **This report
+does not claim a GitHub Actions run it did not observe:** the hosted CI result
+on the final commit is **owner-verifiable** on the pushed branch and is
 claimed only by the owner gate once the pull-request run reports.
 
 ## 9. Adversarial review (self-review ledger, 2026-07-18)

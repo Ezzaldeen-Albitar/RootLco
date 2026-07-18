@@ -181,7 +181,7 @@ Behaviour claims above are exercised by the Phase 1-5 suites under `tests/db/`
 `shared-retention`, `shared-message-templates`, `shared-outbound-messages`,
 `shared-event-outbox`, `shared-processed-errors`,
 `shared-settings-localization`, `shared-search-metadata`,
-`shared-tags-notes-comments`, `shared-hardening`, plus `no-fake-data`) — 480
+`shared-tags-notes-comments`, `shared-hardening`, plus `no-fake-data`) — 487
 `it` blocks repo-wide at `83f0f70`. CI runs `validate:seed-state` before
 `test:db`; the pass status of the final SHA is owner-verifiable in the CI
 history. The adversarial review ledger (2026-07-18, 14 vectors, zero unresolved

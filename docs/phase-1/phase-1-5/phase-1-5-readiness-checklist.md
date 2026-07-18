@@ -10,7 +10,7 @@
 | 3   | Increments A–D merged into `develop` via PR #24 (`ee3b1de`); merged files untouched                                                        | ✅ CI immutability diff        |
 | 4   | 12 P1-5 migrations `20260718100000..111000` apply from empty in the full 32-file apply                                                     | ✅ (2026-07-18)                |
 | 5   | 22 tables / 92 indexes / 22 policies — exact allow-lists green                                                                             | ✅                             |
-| 6   | Full DB suite green on clean reset                                                                                                         | ✅ 480/480 (36 files)          |
+| 6   | Full DB suite green on clean reset                                                                                                         | ✅ 487/487 (36 files)          |
 | 7   | Seeds 02/03 deleted; declared seeds `seed.sql`/01/04/05 only; seed 05 = five retention classes                                             | ✅                             |
 | 8   | `validate:seed-state`: seeds applied twice, business tables empty, counts idempotent — wired before `test:db` in CI                        | ✅                             |
 | 9   | Pilot provisioning is a manual gated controlled package (package + script + runbook); no automatic seed creates a tenant                   | ✅                             |
@@ -41,7 +41,7 @@ test-backed locally.
   `docs/database/phase-1-5-migration-classification.md` (rehearsals);
   `npm run db:apply-migrations` / `supabase db reset`.
 - Items 5–6: `tests/db/foundation.test.ts` exact allow-lists;
-  `npm run test:db` (480 tests / 36 files).
+  `npm run test:db` (487 tests / 36 files).
 - Items 7–9: `supabase/config.toml` `[db.seed]`;
   `scripts/db/validate-seed-state.mjs`; the CI `database` job runs it before
   `test:db`; `supabase/packages/pilot-provisioning.package.json` +
