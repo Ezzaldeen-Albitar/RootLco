@@ -37,6 +37,7 @@
     "style:check": "stylelint \"src/**/*.scss\" --max-warnings 0",
     "style:fix": "stylelint \"src/**/*.scss\" --fix",
     "validate:canonical-docs": "node scripts/validate-canonical-documents.mjs",
+    "validate:no-fake-data": "node scripts/check-no-fake-data.mjs",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run style:check && npm run security:browser-secrets && npm run test && npm run build",
     "security:browser-secrets": "node scripts/check-browser-exposed-secrets.mjs",
     "security:scope-exclusions": "node scripts/check-scope-exclusions.mjs"

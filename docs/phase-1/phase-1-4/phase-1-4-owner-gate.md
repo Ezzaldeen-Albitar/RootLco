@@ -70,7 +70,7 @@ Eng. Bilal Jradat is required.
 - **Merge target:** `develop`
 - **Merge date:** 2026-07-18 (author/commit date `2026-07-18T09:40:13+03:00`)
 - **Merge author:** Eng. Ezzaldeen Al-Bitar (committer: GitHub)
-- **Validation SHA:** `edebde8` — the exact `origin/develop` tip re-validated on a temporary branch (clean `supabase db reset` applying all 13 migrations from empty, non-owner runtime login)
+- **Validation SHA:** `edebde8` — the exact `origin/develop` tip re-validated on a temporary branch (clean apply of all **20** migrations from empty — 3 Phase-1-2 (`0001`–`0003`) + 8 Phase-1-3 (`20260717100000`–`107000`) + 9 Phase-1-4 (`20260718090000`–`098000`), confirmed against the runner's `supabase_migrations.schema_migrations` ledger — non-owner runtime login). _Forward correction (Phase 1-5): the earlier "13 migrations" figure was a factual miscount of the migration total; no migration file changed, executable behaviour is unaffected. See `docs/phase-1/phase-1-5/initial-audit.md` §0._
 - **Database tests:** **311 passing in 23 files** on the validation SHA
 - **Critical findings:** zero unresolved · **High findings:** zero unresolved without approved exception · **Security exceptions:** none (register empty)
 - **Gate recorded:** 2026-07-18

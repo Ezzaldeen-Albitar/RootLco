@@ -72,6 +72,17 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-4 generic status history (P1-04-DB-018).
   'shared.status_history',
   'shared.status_evidence',
+  // Phase 1-5 shared services — governed document metadata (P1-05-DB-001/002).
+  'shared.document_categories',
+  'shared.documents',
+  // Phase 1-5 Increment B — versioned file metadata and scan results (P1-05-DB-003/004).
+  'shared.document_versions',
+  'shared.file_scan_results',
+  // Phase 1-5 Increment C — generic document links (P1-05-DB-005).
+  'shared.document_links',
+  // Phase 1-5 Increment D — retention definitions and legal holds (P1-05-DB-006).
+  'shared.retention_classes',
+  'shared.legal_holds',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -149,6 +160,15 @@ const ALLOWED_ROUTINES = new Set([
   'iam.current_branch_ids',
   'iam.has_permission',
   'iam.has_permission_in_scope',
+  // Phase 1-5 (P1-05-DB-002): documents category-scope guard (platform-or-same-tenant).
+  'shared.guard_document_category_scope',
+  // Phase 1-5 (P1-05-DB-003): document-version one-way lifecycle + clean-scan gate.
+  'shared.guard_document_version_transition',
+  // Phase 1-5 (P1-05-DB-005): link-derived access resolution primitive.
+  'shared.document_ids_for_entity',
+  // Phase 1-5 (P1-05-DB-006): retention eligibility + controlled archival.
+  'shared.document_deletion_eligibility',
+  'shared.archive_document',
 ]);
 
 let admin: Pool;
@@ -289,17 +309,30 @@ describe('database foundation', () => {
       'tg_departments_immutable',
       'tg_departments_parent_branch_live',
       'tg_departments_touch_metadata',
+      'tg_document_categories_immutable',
+      'tg_document_categories_touch_metadata',
+      'tg_document_links_immutable',
+      'tg_document_links_touch_metadata',
+      'tg_document_versions_guard_transition',
+      'tg_document_versions_immutable',
+      'tg_documents_category_scope',
+      'tg_documents_immutable',
+      'tg_documents_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
       'tg_grant_scopes_require_scope',
       'tg_languages_touch_metadata',
       'tg_legal_companies_immutable',
       'tg_legal_companies_touch_metadata',
+      'tg_legal_holds_immutable',
+      'tg_legal_holds_touch_metadata',
       'tg_login_audit_stamp',
       'tg_number_sequences_guard_regression',
       'tg_number_sequences_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
+      'tg_retention_classes_immutable',
+      'tg_retention_classes_touch_metadata',
       'tg_role_grants_immutable',
       'tg_role_grants_require_scope',
       'tg_role_grants_touch_metadata',
@@ -370,14 +403,21 @@ describe('database foundation', () => {
       'sel_cost_centers_scope',
       'sel_currencies_all',
       'sel_departments_scope',
+      'sel_document_categories_visible',
+      'sel_document_links_tenant',
+      'sel_document_versions_tenant',
+      'sel_documents_tenant',
       'sel_feature_flags_all',
+      'sel_file_scan_results_tenant',
       'sel_grant_scopes_tenant',
       'sel_languages_all',
       'sel_legal_companies_tenant',
+      'sel_legal_holds_tenant',
       'sel_login_audit_admin',
       'sel_login_audit_own',
       'sel_number_sequences_tenant',
       'sel_permissions_all',
+      'sel_retention_classes_all',
       'sel_role_grants_tenant',
       'sel_role_permissions_tenant',
       'sel_roles_tenant',

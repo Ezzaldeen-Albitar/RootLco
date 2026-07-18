@@ -910,3 +910,150 @@ credential authority. Contact fields are classified `restricted`.
 | `note`              | text                     | YES  | —                 | internal       |
 | `created_at`        | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`        | uuid                     | NO   | —                 | internal       |
+
+## Phase 1-5 — shared services (documents; generated from the live catalog, 2026-07-18)
+
+### `shared.document_categories`
+
+**Scope:** platform + tenant · **Retention class:** operational · Dual-scope document policy envelope. A platform row (`tenant_id` NULL) is a shared default readable by every tenant; a tenant row is a tenant override. Category constraints are data, not upload implementation. Runtime SELECT-only.
+
+| Column                    | Type                     | Null | Default           | Classification |
+| ------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                      | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`                   | text                     | NO   | —                 | internal       |
+| `tenant_id`               | uuid                     | YES  | —                 | internal       |
+| `category_code`           | text                     | NO   | —                 | internal       |
+| `name`                    | text                     | NO   | —                 | internal       |
+| `description`             | text                     | YES  | —                 | internal       |
+| `allowed_content_types`   | text[]                   | NO   | —                 | internal       |
+| `max_size_bytes`          | bigint                   | NO   | —                 | internal       |
+| `default_classification`  | text                     | NO   | —                 | internal       |
+| `default_retention_class` | text                     | NO   | —                 | internal       |
+| `status`                  | text                     | NO   | 'active'          | internal       |
+| `deleted_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`          | integer                  | NO   | 1                 | internal       |
+| `created_at`              | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`              | uuid                     | NO   | —                 | internal       |
+| `updated_at`              | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`              | uuid                     | YES  | —                 | internal       |
+
+### `shared.documents`
+
+**Scope:** tenant · **Retention class:** operational (per-row `retention_class`) · Governed per-file metadata; no file bytes (object storage is later backend scope). Category must be platform-scoped or owned by the same tenant. `legal_hold` recorded here; enforcement in Increment D. Runtime SELECT-only.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `company_id`      | uuid                     | YES  | —                 | internal       |
+| `branch_id`       | uuid                     | YES  | —                 | internal       |
+| `category_id`     | uuid                     | NO   | —                 | internal       |
+| `title`           | text                     | NO   | —                 | restricted     |
+| `classification`  | text                     | NO   | —                 | internal       |
+| `retention_class` | text                     | NO   | —                 | internal       |
+| `legal_hold`      | boolean                  | NO   | false             | internal       |
+| `status`          | text                     | NO   | 'pending'         | internal       |
+| `archived_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `shared.document_versions`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle (pending → accepted/quarantined/rejected) via `shared.guard_document_version_transition`; terminal rows immutable. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `version_number` | integer                  | NO   | —                 | internal       |
+| `storage_key`    | text                     | NO   | —                 | restricted     |
+| `content_type`   | text                     | NO   | —                 | internal       |
+| `size_bytes`     | bigint                   | NO   | —                 | internal       |
+| `sha256`         | bytea                    | NO   | —                 | internal       |
+| `uploaded_by`    | uuid                     | NO   | —                 | internal       |
+| `uploaded_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `status`         | text                     | NO   | 'pending'         | internal       |
+| `accepted_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `quarantined_at` | timestamp with time zone | YES  | —                 | internal       |
+| `rejected_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+
+### `shared.file_scan_results`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only scan verdict history per version (pending|clean|infected|error). An infected verdict blocks acceptance and supports quarantine. `details` is sanitized JSON. Runtime SELECT-only.
+
+| Column         | Type                     | Null | Default           | Classification |
+| -------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`           | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`    | uuid                     | NO   | —                 | internal       |
+| `version_id`   | uuid                     | NO   | —                 | internal       |
+| `scan_status`  | text                     | NO   | —                 | internal       |
+| `scanner_code` | text                     | NO   | —                 | internal       |
+| `threat_name`  | text                     | YES  | —                 | internal       |
+| `details`      | jsonb                    | NO   | '{}'::jsonb       | internal       |
+| `scanned_at`   | timestamp with time zone | NO   | now()             | internal       |
+| `created_at`   | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`   | uuid                     | NO   | —                 | internal       |
+
+### `shared.document_links`
+
+**Scope:** tenant · **Retention class:** operational · Generic tenant-scoped links from a document to a business entity (`entity_type` schema.table token, `entity_id`). Establishes the link-derived access contract; one active link per (document, entity, purpose). Runtime SELECT + `shared.document_ids_for_entity` EXECUTE only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `link_purpose`   | text                     | NO   | —                 | internal       |
+| `linked_by`      | uuid                     | NO   | —                 | internal       |
+| `linked_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `shared.retention_classes`
+
+**Scope:** platform · **Retention class:** operational · Deterministic platform definition of each retention class: minimum retention period (NULL = indefinite) and whether physical deletion is ever permitted. Populated by structural seeds. Runtime SELECT-only.
+
+| Column               | Type                     | Null | Default | Classification |
+| -------------------- | ------------------------ | ---- | ------- | -------------- |
+| `class_code`         | text                     | NO   | —       | internal       |
+| `description`        | text                     | NO   | —       | internal       |
+| `min_retention_days` | integer                  | YES  | —       | internal       |
+| `allows_deletion`    | boolean                  | NO   | —       | internal       |
+| `record_version`     | integer                  | NO   | 1       | internal       |
+| `created_at`         | timestamp with time zone | NO   | now()   | internal       |
+| `created_by`         | uuid                     | NO   | —       | internal       |
+| `updated_at`         | timestamp with time zone | YES  | —       | internal       |
+| `updated_by`         | uuid                     | YES  | —       | internal       |
+
+### `shared.legal_holds`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Auditable per-document legal hold; an active hold (`released_at` NULL) blocks archival/deletion absolutely. Placing/releasing is a backend operation. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `placed_by`      | uuid                     | NO   | —                 | internal       |
+| `placed_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `released_by`    | uuid                     | YES  | —                 | internal       |
+| `released_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |
