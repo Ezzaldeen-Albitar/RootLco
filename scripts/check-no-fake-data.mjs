@@ -19,6 +19,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Fabricated-business-data indicators. Each targets a noun phrase, not a bare
 // word, so "sample" in "sample rate" or "mock" in a test helper name is ignored.
@@ -43,30 +45,58 @@ const PATTERNS = [
 const ALLOW = [
   'docs/', // policy + governance prose (this rule is discussed here)
   'tests/', // ephemeral, rolled-back / cleaned automated-test data
-  'scripts/check-no-fake-data.mjs', // this guard (defines the patterns)
   'scripts/check-scope-exclusions.mjs', // sibling guard prose
   'supabase/seed.sql', // binding prohibitory seed prose
   'README.md',
   'SECURITY.md',
   'CONTRIBUTING.md',
   '.github/pull_request_template.md',
-  // PENDING OWNER DECISION under the no-fake-data policy: pre-existing merged
-  // Phase 1-3/1-4 pilot-provisioning seeds create business rows on `supabase db
-  // reset` and are depended on by merged tests. They are allow-listed here until
-  // the owner decides whether to convert them to ephemeral test-only provisioning
-  // or grant a documented exception (see docs/database/no-fake-data-standard.md).
-  'supabase/seeds/02_benzene_pilot_provisioning.sql',
-  'supabase/seeds/03_local_test_tenant.sql',
   'supabase/config.toml', // seed sql_paths filenames only
 ];
+
+// PENDING OWNER DECISION under the no-fake-data policy: the two pre-existing
+// merged Phase 1-3/1-4 pilot-provisioning seed packages create business rows on
+// `supabase db reset` and are depended on by merged tests. They stay allow-listed
+// until the owner either converts them to ephemeral test-only provisioning or
+// records a documented exception (docs/database/no-fake-data-standard.md §5).
+//
+// They are identified by their UNIQUE numeric seed prefixes, deliberately NOT by
+// their full filenames: the pilot tenant's name is data, never code (ADR-008),
+// so this guard's own configuration must not spell it either — the sibling
+// scope-exclusion guard scans every tracked file, including this one. Same
+// rationale as the runtime-assembled name in check-browser-exposed-secrets.mjs.
+// The uniqueness assertion below binds each prefix to EXACTLY one tracked file,
+// so this is narrower than a directory allow-list, never wider.
+const PENDING_SEED_PREFIXES = ['supabase/seeds/02_', 'supabase/seeds/03_'];
+
+// This guard's own source necessarily contains the phrases it hunts (pattern
+// definitions, error text), so it must never scan itself. The path is derived
+// from the running module at runtime — structural self-exclusion, not a
+// configuration literal that another guard could mistake for repository content.
+const SELF = relative(process.cwd(), fileURLToPath(import.meta.url)).replaceAll('\\', '/');
 
 const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
   .split('\0')
   .filter(Boolean);
 
+// Fail closed: each pending-seed prefix must identify exactly one tracked file.
+// More than one means the prefix silently widened (someone added a file under
+// it); zero means the seed is gone and the stale entry must be removed here.
+for (const prefix of PENDING_SEED_PREFIXES) {
+  const matched = files.filter((f) => f.startsWith(prefix));
+  if (matched.length !== 1) {
+    console.error(
+      `FAIL no-fake-data: pending-seed prefix '${prefix}' must match exactly one tracked file, found ${matched.length} (${matched.join(', ') || 'none'}). Update PENDING_SEED_PREFIXES.`
+    );
+    process.exit(1);
+  }
+}
+
 const violations = [];
 for (const file of files) {
+  if (file === SELF) continue; // structural self-exclusion (see above)
   if (ALLOW.some((a) => file === a || file.startsWith(a))) continue;
+  if (PENDING_SEED_PREFIXES.some((p) => file.startsWith(p))) continue;
   let text;
   try {
     text = readFileSync(file, 'utf8');
