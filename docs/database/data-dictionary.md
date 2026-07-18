@@ -1000,3 +1000,24 @@ credential authority. Contact fields are classified `restricted`.
 | `scanned_at`   | timestamp with time zone | NO   | now()             | internal       |
 | `created_at`   | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`   | uuid                     | NO   | —                 | internal       |
+
+### `shared.document_links`
+
+**Scope:** tenant · **Retention class:** operational · Generic tenant-scoped links from a document to a business entity (`entity_type` schema.table token, `entity_id`). Establishes the link-derived access contract; one active link per (document, entity, purpose). Runtime SELECT + `shared.document_ids_for_entity` EXECUTE only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `entity_type`    | text                     | NO   | —                 | internal       |
+| `entity_id`      | uuid                     | NO   | —                 | internal       |
+| `link_purpose`   | text                     | NO   | —                 | internal       |
+| `linked_by`      | uuid                     | NO   | —                 | internal       |
+| `linked_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `record_version` | integer                  | NO   | 1                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`     | uuid                     | YES  | —                 | internal       |

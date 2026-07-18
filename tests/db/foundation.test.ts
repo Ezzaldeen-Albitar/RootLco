@@ -78,6 +78,8 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-5 Increment B — versioned file metadata and scan results (P1-05-DB-003/004).
   'shared.document_versions',
   'shared.file_scan_results',
+  // Phase 1-5 Increment C — generic document links (P1-05-DB-005).
+  'shared.document_links',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -159,6 +161,8 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_document_category_scope',
   // Phase 1-5 (P1-05-DB-003): document-version one-way lifecycle + clean-scan gate.
   'shared.guard_document_version_transition',
+  // Phase 1-5 (P1-05-DB-005): link-derived access resolution primitive.
+  'shared.document_ids_for_entity',
 ]);
 
 let admin: Pool;
@@ -301,6 +305,8 @@ describe('database foundation', () => {
       'tg_departments_touch_metadata',
       'tg_document_categories_immutable',
       'tg_document_categories_touch_metadata',
+      'tg_document_links_immutable',
+      'tg_document_links_touch_metadata',
       'tg_document_versions_guard_transition',
       'tg_document_versions_immutable',
       'tg_documents_category_scope',
@@ -388,6 +394,7 @@ describe('database foundation', () => {
       'sel_currencies_all',
       'sel_departments_scope',
       'sel_document_categories_visible',
+      'sel_document_links_tenant',
       'sel_document_versions_tenant',
       'sel_documents_tenant',
       'sel_feature_flags_all',
