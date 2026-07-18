@@ -17,12 +17,12 @@ P1-05-DB / P1-05-SEC / P1-05-QA task.
 
 ## 0. Stage-A preconditions (verified before this branch was created)
 
-| Check                                                              | Result |
-| ----------------------------------------------------------------- | ------ |
+| Check                                                                | Result                                                                                                                                       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phase 1-4 gate-record commit `c1c3fa4` contained in `origin/develop` | **YES** — via PR #20, merge `69e0da1` (parents `edebde8` + `c1c3fa4`; author Ezzaldeen Albitar; 2026-07-18T10:27:40+03:00; target `develop`) |
-| Phase 1-4 source `e2cfeee` contained in `origin/develop`          | **YES** |
-| Phase 1-4 formally closed in protected history                    | **YES** — gate doc records *Go — Technical Gate Passed*; `c1c3fa4` also reached `main` via PR #21 |
-| Phase 1-5 implementation already exists                            | **NO** — no P1-05 migration, no `docs/phase-1/phase-1-5/` (before this file), no crm/veh tables |
+| Phase 1-4 source `e2cfeee` contained in `origin/develop`             | **YES**                                                                                                                                      |
+| Phase 1-4 formally closed in protected history                       | **YES** — gate doc records _Go — Technical Gate Passed_; `c1c3fa4` also reached `main` via PR #21                                            |
+| Phase 1-5 implementation already exists                              | **NO** — no P1-05 migration, no `docs/phase-1/phase-1-5/` (before this file), no crm/veh tables                                              |
 
 ### Migration-count reconciliation (P1-05 correction of a P1-4 doc)
 
@@ -31,13 +31,13 @@ develop tip was re-validated with "all **13** migrations from empty". That figur
 **factually inaccurate**. The authoritative sources — the migration directory and the
 runner's own applied-migration ledger (`supabase_migrations.schema_migrations`) — show:
 
-| Scope                    | Migrations | Files |
-| ------------------------ | ---------- | ----- |
-| Phase 1-2 foundation     | **3**      | `0001`, `0002`, `0003` |
-| Phase 1-3 org schema     | **8**      | `20260717100000` … `20260717107000` |
-| Phase 1-4 IAM/audit      | **9**      | `20260718090000` … `20260718098000` |
-| **Total applied from empty** | **20** | |
-| Seed files               | **4**      | `01`…`04` (`config.toml` `[db.seed]`) |
+| Scope                        | Migrations | Files                                 |
+| ---------------------------- | ---------- | ------------------------------------- |
+| Phase 1-2 foundation         | **3**      | `0001`, `0002`, `0003`                |
+| Phase 1-3 org schema         | **8**      | `20260717100000` … `20260717107000`   |
+| Phase 1-4 IAM/audit          | **9**      | `20260718090000` … `20260718098000`   |
+| **Total applied from empty** | **20**     |                                       |
+| Seed files                   | **4**      | `01`…`04` (`config.toml` `[db.seed]`) |
 
 The migration runner applied **all 20** (no subset semantics; the ledger holds 20 rows).
 Executable behaviour is **not defective** — every migration applies cleanly from empty —
@@ -57,16 +57,16 @@ scope/secret guards (`scripts/check-scope-exclusions.mjs`, `scripts/check-browse
 
 ### 1.1 Reusable functions (call, do not re-create)
 
-| Object | Reuse in Phase 1-5 |
-| ------ | ------------------ |
-| `iam.current_tenant_id()`, `iam.current_user_id()` | Every RLS policy and every server-stamp trigger. |
-| `iam.current_company_ids()`, `iam.current_branch_ids()` | Company/branch narrowing where documents carry those scopes. |
-| `iam.has_permission(text)`, `iam.has_permission_in_scope(text,uuid,uuid,uuid)` | Permission-gated reads (restricted documents, worker-only tables) in Increment L. |
-| `iam.audit_append(uuid,uuid,text,text,text,uuid,uuid,uuid,uuid,text,jsonb)` | The **only** audit writer. Every retention action (Increment D) calls it; a failure aborts the caller's transaction. No second audit system is created. |
-| `iam.audit_mask` / `audit_canonical` / `audit_hash` / `audit_verify_chain` | Referenced only; Phase 1-5 adds no audit primitives. |
-| `shared.touch_row_metadata()` | BEFORE UPDATE metadata stamp on every mutable table. |
-| `org.guard_immutable_columns(VARIADIC text[])` | Immutability guards (accepted versions, approved templates, delivery attempts, etc.). |
-| `shared.stamp_status_history()` + `shared.status_history` / `shared.status_evidence` | Generic status log. Document/version lifecycle transitions are recorded here, **not** in a new per-table history table. |
+| Object                                                                               | Reuse in Phase 1-5                                                                                                                                      |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iam.current_tenant_id()`, `iam.current_user_id()`                                   | Every RLS policy and every server-stamp trigger.                                                                                                        |
+| `iam.current_company_ids()`, `iam.current_branch_ids()`                              | Company/branch narrowing where documents carry those scopes.                                                                                            |
+| `iam.has_permission(text)`, `iam.has_permission_in_scope(text,uuid,uuid,uuid)`       | Permission-gated reads (restricted documents, worker-only tables) in Increment L.                                                                       |
+| `iam.audit_append(uuid,uuid,text,text,text,uuid,uuid,uuid,uuid,text,jsonb)`          | The **only** audit writer. Every retention action (Increment D) calls it; a failure aborts the caller's transaction. No second audit system is created. |
+| `iam.audit_mask` / `audit_canonical` / `audit_hash` / `audit_verify_chain`           | Referenced only; Phase 1-5 adds no audit primitives.                                                                                                    |
+| `shared.touch_row_metadata()`                                                        | BEFORE UPDATE metadata stamp on every mutable table.                                                                                                    |
+| `org.guard_immutable_columns(VARIADIC text[])`                                       | Immutability guards (accepted versions, approved templates, delivery attempts, etc.).                                                                   |
+| `shared.stamp_status_history()` + `shared.status_history` / `shared.status_evidence` | Generic status log. Document/version lifecycle transitions are recorded here, **not** in a new per-table history table.                                 |
 
 ### 1.2 Tables Phase 1-5 must NOT duplicate
 
@@ -88,12 +88,12 @@ scope/secret guards (`scripts/check-scope-exclusions.mjs`, `scripts/check-browse
 - Base metadata: `record_version int DEFAULT 1`, `created_at/created_by`, `updated_at/updated_by`
   for mutable tables; append-only tables omit the update columns and get a server-stamp trigger.
 - RLS **ENABLE + FORCE** on every table; default deny; `sel_<t>_tenant` `FOR SELECT TO
-  app_runtime, app_readonly USING (tenant_id = iam.current_tenant_id())`.
+app_runtime, app_readonly USING (tenant_id = iam.current_tenant_id())`.
 - Runtime grants are **SELECT-only** on business/config tables (writes are platform/backend ops);
   worker-only tables (outbox, error records, processed events) grant runtime **nothing** —
   same posture as `shared.idempotency_keys` and the audit tables.
 - Functions: `SECURITY INVOKER`, `SET search_path = ''`, fully-qualified names, `REVOKE EXECUTE …
-  FROM PUBLIC` then explicit grants. **No `SECURITY DEFINER`** is introduced.
+FROM PUBLIC` then explicit grants. **No `SECURITY DEFINER`** is introduced.
 - `naming`: `pk_`/`uq_`/`fk_`/`ck_`/`ix_` prefixes; triggers `tg_<table>_<purpose>`; policies
   `sel_|ins_|upd_<table>_<scope>`.
 - Every migration header declares Phase, Tasks, Owner module, Purpose, Dependencies,
@@ -112,14 +112,14 @@ scope/secret guards (`scripts/check-scope-exclusions.mjs`, `scripts/check-browse
 Last Phase 1-4 migration = `20260718098000`. Phase 1-5 continues **after** it, one 14-digit
 timestamp per increment:
 
-| Increment | Migration | Increment | Migration |
-| --------- | --------- | --------- | --------- |
-| A | `20260718100000` | G | `20260718106000` |
-| B | `20260718101000` | H | `20260718107000` |
-| C | `20260718102000` | I | `20260718108000` |
-| D | `20260718103000` | J | `20260718109000` |
-| E | `20260718104000` | K | `20260718110000` |
-| F | `20260718105000` | L | `20260718111000` |
+| Increment | Migration        | Increment | Migration        |
+| --------- | ---------------- | --------- | ---------------- |
+| A         | `20260718100000` | G         | `20260718106000` |
+| B         | `20260718101000` | H         | `20260718107000` |
+| C         | `20260718102000` | I         | `20260718108000` |
+| D         | `20260718103000` | J         | `20260718109000` |
+| E         | `20260718104000` | K         | `20260718110000` |
+| F         | `20260718105000` | L         | `20260718111000` |
 
 Increment M is a **seed** file (`supabase/seeds/05_shared_services_structural.sql`), not a
 migration, wired into `config.toml` `[db.seed]` (and referenced by CI's seed rehearsal).
@@ -175,17 +175,19 @@ No new database role is created in Phase 1-5.
 ## 3. Design reconciliations resolved before coding (assignment §6 A–I)
 
 ### A. Document access derivation
+
 `document_links` uses generic `entity_type`/`entity_id` and **cannot** carry real
 cross-domain FKs (the domains do not exist yet). Phase 1-5 therefore implements: (1) tenant
 isolation on every document object; (2) link **integrity** via a composite FK to the document's
 `(tenant_id, id)` so a link can never point across tenants; (3) a **link-derived access
-contract** — a document is reachable by a principal only when a *live* link ties it to an entity
+contract** — a document is reachable by a principal only when a _live_ link ties it to an entity
 the principal may see, resolved by later domain policies. Phase 1-5 proves the contract with
 **synthetic/test-only** entity fixtures. **We do not claim** the database can fully authorise a
 future business entity that does not exist; final domain authorisation composition is a later
 domain + backend responsibility, stated in `document-access-and-file-security.md`.
 
 ### B. Storage-key security
+
 `storage_key` is **metadata, not an authorization token**. Knowing `document_id`, `version_id`,
 `storage_key`, or `sha256` grants **no** access; access is decided solely by RLS + the
 link-derived contract + (for restricted documents) `iam.has_permission`. Storage keys are
@@ -194,6 +196,7 @@ storage-key convention (`storage-key-convention.md`) forbids embedding email/pho
 registration data.
 
 ### C. Malware lifecycle
+
 A plain `CHECK` cannot query `file_scan_results`. A version becomes `accepted` **only** through a
 controlled transition function `shared.accept_document_version(...)` that verifies an applicable
 `clean` scan row exists for that version; a `BEFORE UPDATE` guard trigger forbids any other path
@@ -202,6 +205,7 @@ result drives/【supports】`quarantined`. This is a safe-trigger + controlled-f
 `CHECK` that reaches across tables.
 
 ### D. Retention deletion
+
 **Legal hold always wins.** Document history is **not** physically deleted casually: the
 controlled routine `shared.mark_document_retention(...)` performs a mark/archive →
 `deletion_eligible` transition only when (retention elapsed) AND (no active legal hold) AND (no
@@ -210,18 +214,21 @@ fails, the whole action rolls back. Physical object deletion remains later backe
 scope. No ad-hoc `DELETE` grant is created.
 
 ### E. Event-outbox claim race
+
 `shared.outbox_claim_batch(p_limit int)` uses `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED
 LIMIT n) … RETURNING` so concurrent workers each claim a **disjoint** set — a single winner per
 row. Retry and dead-letter are explicit state transitions. **No** publisher/polling loop is built
 and **no** worker is claimed to exist.
 
 ### F. Processed-event registry
+
 `shared.processed_events` has PK `(consumer_code, event_id)` (per-consumer idempotency): the same
 consumer/event pair is accepted **once**, so replay is detected **before** side effects. This is a
 distinct concern from `shared.idempotency_keys` (request-level fingerprinting), which is reused
 unchanged — no duplication.
 
 ### G. Generic entity links
+
 Generic `entity_type`/`entity_id` rows cannot use domain FKs. Mitigations: a **constrained
 entity-type format** (`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`, e.g. `crm.customer`); tenant scope on
 every row; a documented **per-domain validation contract** (later domains validate their own
@@ -229,12 +236,14 @@ every row; a documented **per-domain validation contract** (later domains valida
 guide and RLS matrix.
 
 ### H. Notification consent
+
 No consent source exists until Phase 1-6. Phase 1-5 provides only: a `purpose`
 (`transactional` | `marketing` | `system`), a `suppressed` status with `suppress_reason`, and a
 nullable `consent_ref` placeholder for future linkage. It **does not claim** consent enforcement
 is complete — stated in `notification-data-contract.md`.
 
 ### I. Customer-facing copy
+
 Seeds contain **structural placeholders only**, every copy field marked
 `pending owner-approved wording`. No final Arabic/English customer messages are invented. A CI
 guard (`security:customer-copy-guard`) fails the build if a seeded template body lacks the
