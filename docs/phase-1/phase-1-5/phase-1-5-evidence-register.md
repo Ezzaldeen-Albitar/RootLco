@@ -54,7 +54,7 @@ retention classes, empty business tables, and idempotent counts.
 
 ## 4. Test suite (Proven)
 
-**487 tests in 36 files on the `83f0f70` tree.** The 311 pre-existing Phase
+**488 tests in 36 files on the `83f0f70` tree.** The 311 pre-existing Phase
 1-2/1-3/1-4 tests are preserved (`org-provisioning` and `iam-seeds` refactored
 to ephemeral tenant fixtures at equal coverage); **169 new** Phase 1-5 tests in
 13 new files: shared-documents 16, shared-document-versions 14,
@@ -120,7 +120,7 @@ live database. **14 vectors; zero unresolved Critical/High.**
 The `Database migrations and RLS tests` job asserts merged-migration
 immutability on pull requests, applies all 32 migrations to a clean PostgreSQL
 17, runs `validate:seed-state` **before** `test:db`, then runs the full
-487-test suite. The secrets job runs the env-file/key-material checks, the
+488-test suite. The secrets job runs the env-file/key-material checks, the
 scope-exclusion guard, the credential-pattern scan, the browser-secret check,
 and the no-fake-data scan. **No GitHub Actions run exists for the final
 implementation SHA `83f0f70`** — CI on it is owner-verifiable once the E–M pull

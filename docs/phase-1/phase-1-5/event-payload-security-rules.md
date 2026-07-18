@@ -67,8 +67,20 @@ Synthetic examples (all `fx_`/synthetic identifiers, no real data):
 { "outer": [{ "session": "fx_anything" }] }
 
 // rejected — credential-shaped substring inside a longer string
-{ "log": "call failed for key AKIAFXFXFXFXFXFXFXFX at step 3" }
+{ "log": "call failed for key <AWS_ACCESS_KEY_ID_REDACTED> at step 3" }
 ```
+
+Exact credential-shaped example values (a full AWS access-key id, a
+three-segment JWT, a private-key header, a postgres URL with an inline
+password) are **intentionally not stored in tracked documentation**. Doing so
+would trip — correctly — the tracked-secret scanner
+(`npm run security:tracked-secrets`), which makes no exception for `docs/`. The
+redaction placeholders above stand in for those shapes. The real
+credential-shaped values that prove the sanitizer rejects them are
+**constructed at runtime inside the security tests**
+(`tests/db/shared-processed-errors.test.ts`) from non-matching fragments, so
+they exist only in memory during a test run and never as a literal in source
+control.
 
 ## 4. HONEST boundary — surfaces with no sanitizer trigger
 

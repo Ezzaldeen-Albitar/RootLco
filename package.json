@@ -41,7 +41,9 @@
     "validate:no-fake-data": "node scripts/check-no-fake-data.mjs",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run style:check && npm run security:browser-secrets && npm run test && npm run build",
     "security:browser-secrets": "node scripts/check-browser-exposed-secrets.mjs",
-    "security:scope-exclusions": "node scripts/check-scope-exclusions.mjs"
+    "security:scope-exclusions": "node scripts/check-scope-exclusions.mjs",
+    "security:tracked-secrets": "node scripts/check-tracked-secrets.mjs",
+    "security:all": "npm run security:tracked-secrets && npm run security:browser-secrets && npm run security:scope-exclusions && npm run validate:no-fake-data"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

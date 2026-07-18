@@ -254,37 +254,19 @@ jobs:
       - name: Scope-exclusion guard (pilot hard-coding, excluded scope)
         run: node scripts/check-scope-exclusions.mjs
 
-      # Pattern scan over tracked text. Deliberately narrow: it targets real
-      # credential shapes rather than the word "key", so it stays useful instead
-      # of being disabled after a week of false positives.
+      # Pattern scan over tracked text for real credential SHAPES (service_role
+      # JWTs, Supabase secret keys, AWS keys, GitHub tokens, private-key headers,
+      # postgres URLs with an inline password). Deliberately narrow so it stays
+      # useful instead of being disabled after a week of false positives.
       #
-      # FALSE-POSITIVE POLICY (explicit and per-line, not per-directory):
-      # A line may be exempted ONLY by carrying the marker `pragma: allowlist secret`
-      # with a justification beside it. There is no directory-wide exclusion, so a
-      # credential accidentally committed to docs/ still fails the build. Adding the
-      # marker is a reviewable change to a CODEOWNERS-protected surface.
+      # SINGLE SOURCE OF TRUTH: the patterns and the per-line `pragma: allowlist
+      # secret` false-positive policy live in scripts/check-tracked-secrets.mjs,
+      # which this job and `npm run security:tracked-secrets` both run — the hosted
+      # job and the local verification path use identical configuration. The
+      # scanner prints only file:line, never the matching text, and is
+      # dependency-free (node: builtins only), so no `npm ci` is needed.
       - name: Scan tracked files for credential patterns
-        shell: bash
-        run: |
-          set -uo pipefail
-          # service_role JWTs, Supabase secret keys, AWS keys, GitHub tokens,
-          # private key headers, and hard-coded postgres passwords.
-          #
-          # NOTE: the character classes use POSIX [:space:], NOT \s. Inside an ERE
-          # bracket expression `\s` is the literal characters `\` and `s` -- so the
-          # previous `[^:@/\s]` excluded the letter "s", and since "postgres"
-          # contains an "s" the postgres-URL detector could never match anything.
-          PATTERN='(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})|(sb_secret_[A-Za-z0-9]{16,})|(AKIA[0-9A-Z]{16})|(gh[pousr]_[A-Za-z0-9]{30,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(postgres(ql)?://[^:@/[:space:]]+:[^@/[:space:]]+@)'
-          matches="$(git ls-files -z \
-            | xargs -0 grep -InE --binary-files=without-match "${PATTERN}" 2>/dev/null \
-            | grep -vF 'pragma: allowlist secret' || true)"
-          if [ -n "${matches}" ]; then
-            echo "::error::Possible credential committed. Do NOT paste the value anywhere. ROTATE it first, then purge history. If this is a documented non-secret example, add the marker 'pragma: allowlist secret' to that line with a justification."
-            # Print only file:line, never the matching text.
-            printf '%s\n' "${matches}" | cut -d: -f1,2
-            exit 1
-          fi
-          echo "OK: no credential patterns in tracked files"
+        run: npm run security:tracked-secrets
 
       # Guards the single most dangerous naming mistake in this stack: giving the
       # RLS-bypassing service-role key a NEXT_PUBLIC_ prefix, which Next.js inlines

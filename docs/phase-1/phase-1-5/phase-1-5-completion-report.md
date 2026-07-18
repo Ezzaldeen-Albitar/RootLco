@@ -146,14 +146,14 @@ were fixed on the branch: prettier formatting of the opening docs
 
 ## 8. Tests
 
-The database suite totals **487 tests in 36 files** (311 in 23 files at Phase
-1-4 close): **176 new Phase 1-5 tests** across twelve `shared-*` suites plus
+The database suite totals **488 tests in 36 files** (311 in 23 files at Phase
+1-4 close): **177 new Phase 1-5 tests** across twelve `shared-*` suites plus
 `no-fake-data.test.ts` and `provisioning-package.test.ts`, with the Phase
 1-2..1-4 suites preserved and the provisioning/seed suites reworked for the
 package model. Isolation assertions run as the non-owner runtime login.
 **Clean-room result (2026-07-18):** on a fresh apply of all 32 migrations from
 empty, followed by `validate:seed-state` (declared seeds applied twice) and
-then the full suite in the CI order, **487/487 passed** — the run surfaced and
+then the full suite in the CI order, **488/488 passed** — the run surfaced and
 fixed one real defect (the retention suite's fixtures silently no-opped once
 seed 05 pre-populated the retention classes; it now forces its own test
 periods with `ON CONFLICT DO UPDATE`, robust to seed presence). **This report

@@ -24,6 +24,29 @@ import {
 const EVENT_ID = 'a7000000-0000-4000-8000-000000000001';
 const RESOLVER_ID = 'a0000000-0000-4000-8000-000000000099';
 
+// Synthetic credential-shaped values are constructed at RUNTIME from non-matching
+// fragments, so no complete AWS-key- or JWT-shaped literal is ever stored in
+// source control (it would trip `npm run security:tracked-secrets`, correctly).
+// At run time they still match the sanitizer's patterns, so the sanitizer is
+// exercised against genuine credential shapes. See
+// docs/phase-1/phase-1-5/event-payload-security-rules.md §3.
+function buildSyntheticAwsAccessKeyId(): string {
+  const providerPrefix = String.fromCharCode(65, 75, 73, 65); // "AKIA"
+  return `${providerPrefix}${'F0'.repeat(8)}`; // + 16 chars from [0-9A-Z]
+}
+
+function encodeBase64Url(value: object): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function buildSyntheticJwt(): string {
+  return [
+    encodeBase64Url({ alg: 'HS256', typ: 'JWT' }),
+    encodeBase64Url({ sub: 'synthetic-security-test' }),
+    Buffer.from('synthetic-test-signature', 'utf8').toString('base64url'),
+  ].join('.');
+}
+
 interface ErrorInsert {
   errorCode?: string;
   severity?: string;
@@ -168,19 +191,50 @@ describe('shared.error_records — sanitized durable facts and lifecycle', () =>
     ['top-level sensitive key', { password: 'redacted' }],
     ['nested sensitive key', { a: { api_key: 'redacted' } }],
     ['array-nested sensitive key', { items: [{ safe: true }, { credential: 'redacted' }] }],
-    ['JWT-shaped value', { diagnostic: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature_1' }],
-    ['AWS access-key-shaped value', { diagnostic: 'prefix-AKIA1234567890ABCDEF-suffix' }],
+    ['JWT-shaped value', { diagnostic: buildSyntheticJwt() }],
+    [
+      'AWS access-key-shaped value',
+      { diagnostic: `prefix-${buildSyntheticAwsAccessKeyId()}-suffix` },
+    ],
   ])('rejects %s recursively with 23514', async (_label, context) => {
     await expectSqlState(insertError({ context }), '23514');
   });
 
+  it('builds credential shapes at runtime, proves they match, and the sanitizer rejects them without survival', async () => {
+    const awsKey = buildSyntheticAwsAccessKeyId();
+    const jwt = buildSyntheticJwt();
+
+    // The generated values genuinely carry the shapes the sanitizer hunts,
+    // under neutral (non-sensitive) keys so rejection is driven by the VALUE
+    // shape, not by a key-name match.
+    expect(awsKey).toMatch(/^AKIA[0-9A-Z]{16}$/);
+    expect(jwt.split('.')).toHaveLength(3);
+    expect(jwt).toMatch(/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+
+    await expectSqlState(insertError({ context: { diagnostic: awsKey } }), '23514');
+    await expectSqlState(insertError({ context: { a: { b: [{ note: jwt }] } } }), '23514');
+
+    // Neither rejected value survives anywhere in stored error metadata.
+    const survivors = await worker.query(
+      `SELECT count(*)::int AS n FROM shared.error_records
+       WHERE strpos(context::text, $1) > 0 OR strpos(context::text, $2) > 0`,
+      [awsKey, jwt]
+    );
+    expect(survivors.rows[0].n).toBe(0);
+  });
+
   it('rejects embedded JWT-shaped substrings recursively but accepts a benign eyJ marker', async () => {
-    await expectSqlState(insertError({ context: { diagnostic: 'Bearer eyJab.cd.ef' } }), '23514');
+    // A genuine JWT shape embedded in a Bearer prefix (built at runtime — no
+    // JWT-dot-dot literal in source), directly and array-nested.
+    const bearer = `Bearer ${buildSyntheticJwt()}`;
+    await expectSqlState(insertError({ context: { diagnostic: bearer } }), '23514');
     await expectSqlState(
-      insertError({ context: { items: [{ diagnostic: ['safe', 'Bearer eyJab.cd.ef'] }] } }),
+      insertError({ context: { items: [{ diagnostic: ['safe', bearer] }] } }),
       '23514'
     );
 
+    // A benign string that merely starts with the eyJ marker but has no dotted
+    // segments is NOT credential-shaped and is accepted.
     const id = await insertError({
       errorCode: 'fx_benign_eyj_marker',
       context: { diagnostic: 'Bearer eyJab without dot segments' },
