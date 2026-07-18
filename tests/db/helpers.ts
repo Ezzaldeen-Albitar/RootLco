@@ -264,8 +264,16 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     TENANT_A,
     TENANT_B,
   ]);
-  // Phase 1-5 shared services: documents reference org tenants/companies/branches
-  // and their category (all ON DELETE RESTRICT), so remove them before the org rows.
+  // Phase 1-5 shared services: scan results -> versions -> documents -> categories
+  // reference org rows (all ON DELETE RESTRICT), so remove the inner rows first.
+  await admin.query('DELETE FROM shared.file_scan_results WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
+  await admin.query('DELETE FROM shared.document_versions WHERE tenant_id IN ($1, $2)', [
+    TENANT_A,
+    TENANT_B,
+  ]);
   await admin.query('DELETE FROM shared.documents WHERE tenant_id IN ($1, $2)', [
     TENANT_A,
     TENANT_B,

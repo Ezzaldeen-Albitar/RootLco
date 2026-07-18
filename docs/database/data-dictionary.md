@@ -960,3 +960,43 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`      | uuid                     | NO   | —                 | internal       |
 | `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `shared.document_versions`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle (pending → accepted/quarantined/rejected) via `shared.guard_document_version_transition`; terminal rows immutable. Runtime SELECT-only.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `document_id`    | uuid                     | NO   | —                 | internal       |
+| `version_number` | integer                  | NO   | —                 | internal       |
+| `storage_key`    | text                     | NO   | —                 | restricted     |
+| `content_type`   | text                     | NO   | —                 | internal       |
+| `size_bytes`     | bigint                   | NO   | —                 | internal       |
+| `sha256`         | bytea                    | NO   | —                 | internal       |
+| `uploaded_by`    | uuid                     | NO   | —                 | internal       |
+| `uploaded_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `status`         | text                     | NO   | 'pending'         | internal       |
+| `accepted_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `quarantined_at` | timestamp with time zone | YES  | —                 | internal       |
+| `rejected_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`     | uuid                     | NO   | —                 | internal       |
+
+### `shared.file_scan_results`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only scan verdict history per version (pending|clean|infected|error). An infected verdict blocks acceptance and supports quarantine. `details` is sanitized JSON. Runtime SELECT-only.
+
+| Column         | Type                     | Null | Default           | Classification |
+| -------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`           | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`    | uuid                     | NO   | —                 | internal       |
+| `version_id`   | uuid                     | NO   | —                 | internal       |
+| `scan_status`  | text                     | NO   | —                 | internal       |
+| `scanner_code` | text                     | NO   | —                 | internal       |
+| `threat_name`  | text                     | YES  | —                 | internal       |
+| `details`      | jsonb                    | NO   | '{}'::jsonb       | internal       |
+| `scanned_at`   | timestamp with time zone | NO   | now()             | internal       |
+| `created_at`   | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`   | uuid                     | NO   | —                 | internal       |
