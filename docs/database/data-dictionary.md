@@ -2281,3 +2281,82 @@ Append-only battery readings (P1-07-DB-009): soh/soc/voltage/other.
 | `actor_id`          | uuid                     | NO   | —                   | internal |
 | `occurred_at`       | timestamp with time zone | NO   | `now()`             | internal |
 | `seq`               | bigint                   | NO   | identity            | internal |
+
+### `veh.plate_history`
+
+Mutable-temporal plate history (P1-07-DB-010); per-vehicle + cross-vehicle active-plate uniqueness over the interval.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`        | uuid                     | NO   | —                   | internal |
+| `vehicle_id`       | uuid                     | NO   | —                   | internal |
+| `country_code`     | text                     | NO   | —                   | internal |
+| `plate_raw`        | text                     | NO   | —                   | internal |
+| `plate_normalized` | text                     | YES  | generated           | internal |
+| `valid_from`       | date                     | NO   | —                   | internal |
+| `valid_to`         | date                     | YES  | —                   | internal |
+| `source`           | text                     | YES  | —                   | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+
+### `veh.ownership_history`
+
+Mutable-temporal Vehicle ownership (P1-07-DB-011); stores only the partner_id link (no PII); registered_owner authoritative.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`      | uuid                     | NO   | —                   | internal |
+| `ownership_kind`  | text                     | NO   | —                   | internal |
+| `valid_from`      | date                     | NO   | —                   | internal |
+| `valid_to`        | date                     | YES  | —                   | internal |
+| `transfer_reason` | text                     | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_relationships`
+
+Mutable-temporal party-to-Vehicle roles (P1-07-DB-012); authorized_person carries a validated authorization_scope.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `vehicle_id`          | uuid                     | NO   | —                   | internal |
+| `partner_id`          | uuid                     | NO   | —                   | internal |
+| `relationship_role`   | text                     | NO   | —                   | internal |
+| `valid_from`          | date                     | NO   | —                   | internal |
+| `valid_to`            | date                     | YES  | —                   | internal |
+| `authorization_scope` | jsonb                    | YES  | —                   | internal |
+| `granted_by`          | uuid                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.relationship_evidence`
+
+Append-only relationship evidence (P1-07-DB-013); links to shared.documents (no payload copied).
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `relationship_id` | uuid                     | NO   | —                   | internal |
+| `document_id`     | uuid                     | YES  | —                   | internal |
+| `evidence_kind`   | text                     | NO   | —                   | internal |
+| `note`            | text                     | YES  | —                   | internal |
+| `correlation_id`  | uuid                     | YES  | —                   | internal |
+| `actor_id`        | uuid                     | NO   | —                   | internal |
+| `occurred_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`             | bigint                   | NO   | identity            | internal |
