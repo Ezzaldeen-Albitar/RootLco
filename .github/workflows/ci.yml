@@ -222,6 +222,14 @@ jobs:
       - name: Validate Vehicle personal-data classification coverage
         run: npm run validate:veh-classification
 
+      # P1-08-SEC-003 / P1-08-DO-001: every apt/rec column must carry a
+      # classification (docs/database/apt-rec-personal-data-classification.json),
+      # no restricted column may be searchable, and registry/live types must
+      # reconcile. Same canonical script locally and here
+      # (npm run validate:aptrec-classification).
+      - name: Validate Appointment/Reception personal-data classification coverage
+        run: npm run validate:aptrec-classification
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 

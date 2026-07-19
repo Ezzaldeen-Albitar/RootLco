@@ -169,6 +169,51 @@ const ALLOWED_TABLES = new Set([
   'veh.vehicle_alerts',
   'veh.duplicate_candidates',
   'veh.vehicle_merges',
+  // Phase 1-8 appointment — dual-scope configuration catalogs.
+  'apt.appointment_types',
+  'apt.source_channels',
+  'apt.cancellation_reasons',
+  // Phase 1-8 appointment — branch-scoped master (P1-08-DB-001).
+  'apt.appointments',
+  // Phase 1-8 appointment — requested-services child (P1-08-DB-002) + append-only
+  // lifecycle history (P1-08-DB-003).
+  'apt.appointment_services',
+  'apt.appointment_status_history',
+  // Phase 1-8 reception — dual-scope configuration catalogs.
+  'rec.visit_reasons',
+  'rec.fuel_levels',
+  'rec.warning_light_codes',
+  'rec.refusal_reasons',
+  // Phase 1-8 reception — walk-in origin (P1-08-DB-004).
+  'rec.walk_in_references',
+  // Phase 1-8 reception — visit master / custody boundary (P1-08-DB-005).
+  'rec.reception_visits',
+  // Phase 1-8 reception — dated party roles + governed visit reasons (P1-08-DB-007/008).
+  'rec.reception_party_roles',
+  'rec.visit_reason_links',
+  // Phase 1-8 reception — complaints metadata + restricted narrative (P1-08-DB-009).
+  'rec.complaints',
+  'rec.complaint_details',
+  // Phase 1-8 reception — visual inspection + condition findings (P1-08-DB-010/011).
+  'rec.visual_inspections',
+  'rec.condition_items',
+  // Phase 1-8 reception — version-bound damage map + marks (P1-08-DB-012/013).
+  'rec.damage_maps',
+  'rec.damage_marks',
+  // Phase 1-8 reception — warning-light + leak observations (P1-08-DB-014/015).
+  'rec.warning_light_observations',
+  'rec.leak_observations',
+  // Phase 1-8 reception — vehicle contents metadata + restricted detail (P1-08-DB-016).
+  'rec.vehicle_contents',
+  'rec.vehicle_content_details',
+  // Phase 1-8 reception — append-only signatures + refusals (P1-08-DB-017/018).
+  'rec.signatures',
+  'rec.refusals',
+  // Phase 1-8 reception — append-only authorization + custody ledger (P1-08-DB-019/020).
+  'rec.authorizations',
+  'rec.custody_history',
+  // Phase 1-8 reception — append-only reception status history (P1-08-DB-021).
+  'rec.reception_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -344,6 +389,33 @@ const ALLOWED_ROUTINES = new Set([
   'veh.stamp_vehicle_merge',
   'veh.apply_vehicle_merge',
   'veh.resolve_vehicle_survivor',
+  // Phase 1-8 appointment — catalog-visibility + lifecycle-transition guards (P1-08-DB-001).
+  'apt.guard_appointment_catalog_refs',
+  'apt.guard_appointment_transition',
+  // Phase 1-8 appointment — status-history coherence guard + emitter (P1-08-DB-003).
+  'apt.guard_appointment_status_coherence',
+  'apt.emit_appointment_status_history',
+  // Phase 1-8 reception — walk-in / reception-visit reference + transition guards,
+  // visit-reason link guard (P1-08-DB-004/005/008).
+  'rec.guard_walk_in_refs',
+  'rec.guard_reception_visit_refs',
+  'rec.guard_reception_transition',
+  'rec.guard_visit_reason_link',
+  // Phase 1-8 reception — inspection lifecycle, condition-open, damage-map version,
+  // warning-light code guards (P1-08-DB-010..014).
+  'rec.guard_inspection_lifecycle',
+  'rec.guard_condition_item_open',
+  'rec.guard_damage_map_version',
+  'rec.guard_warning_light_observation',
+  // Phase 1-8 reception — signature/refusal/authorization guards, custody chain,
+  // status emit/coherence, and the atomic accepted-check-in primitive (P1-08-DB-017..022).
+  'rec.guard_signature_version',
+  'rec.guard_refusal_reason',
+  'rec.guard_authorization_authority',
+  'rec.guard_custody_transition',
+  'rec.guard_reception_status_coherence',
+  'rec.emit_reception_status_history',
+  'rec.accept_check_in',
 ]);
 
 let admin: Pool;
@@ -366,9 +438,17 @@ describe('database foundation', () => {
   it('has the five module schemas', async () => {
     const { rows } = await admin.query(
       `SELECT nspname FROM pg_namespace
-       WHERE nspname IN ('org','iam','shared','crm','veh') ORDER BY nspname`
+       WHERE nspname IN ('apt','org','iam','shared','crm','rec','veh') ORDER BY nspname`
     );
-    expect(rows.map((r) => r.nspname)).toEqual(['crm', 'iam', 'org', 'shared', 'veh']);
+    expect(rows.map((r) => r.nspname)).toEqual([
+      'apt',
+      'crm',
+      'iam',
+      'org',
+      'rec',
+      'shared',
+      'veh',
+    ]);
   });
 
   it('has the four approved extensions, in the extensions schema', async () => {
@@ -416,7 +496,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq
        FROM information_schema.tables
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
          AND table_type = 'BASE TABLE'
        ORDER BY 1`
     );
@@ -431,7 +511,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT n.nspname || '.' || c.relname AS fq, c.relrowsecurity, c.relforcerowsecurity
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND c.relkind = 'r'`
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh') AND c.relkind = 'r'`
     );
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -455,7 +535,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT n.nspname || '.' || p.proname AS fq
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
        ORDER BY 1`
     );
     expect(rows.map((r) => r.fq).sort()).toEqual([...ALLOWED_ROUTINES].sort());
@@ -466,14 +546,26 @@ describe('database foundation', () => {
       `SELECT t.tgname FROM pg_trigger t
        JOIN pg_class c ON c.oid = t.tgrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND NOT t.tgisinternal
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh') AND NOT t.tgisinternal
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
       'tg_addresses_immutable',
       'tg_addresses_touch_metadata',
+      'tg_appointment_services_immutable',
+      'tg_appointment_services_touch_metadata',
+      'tg_appointment_status_history_coherence',
+      'tg_appointment_status_history_stamp',
+      'tg_appointment_types_immutable',
+      'tg_appointment_types_touch_metadata',
+      'tg_appointments_catalog_refs',
+      'tg_appointments_immutable',
+      'tg_appointments_status_history',
+      'tg_appointments_touch_metadata',
+      'tg_appointments_transition',
       'tg_approval_limits_immutable',
       'tg_approval_limits_touch_metadata',
+      'tg_authorizations_authority',
       'tg_battery_masters_immutable',
       'tg_battery_masters_touch_metadata',
       'tg_battery_readings_stamp',
@@ -489,6 +581,8 @@ describe('database foundation', () => {
       'tg_business_partners_immutable',
       'tg_business_partners_merge_guard',
       'tg_business_partners_touch_metadata',
+      'tg_cancellation_reasons_immutable',
+      'tg_cancellation_reasons_touch_metadata',
       'tg_comments_guard_parent',
       'tg_comments_immutable',
       'tg_comments_stamp_content_edit',
@@ -502,6 +596,13 @@ describe('database foundation', () => {
       'tg_company_profiles_touch_metadata',
       'tg_company_settings_immutable',
       'tg_company_settings_validate_value',
+      'tg_complaint_details_immutable',
+      'tg_complaint_details_touch_metadata',
+      'tg_complaints_immutable',
+      'tg_complaints_touch_metadata',
+      'tg_condition_items_immutable',
+      'tg_condition_items_open',
+      'tg_condition_items_touch_metadata',
       'tg_consent_history_stamp',
       'tg_consent_history_timeline',
       'tg_contact_points_immutable',
@@ -509,6 +610,8 @@ describe('database foundation', () => {
       'tg_cost_centers_immutable',
       'tg_cost_centers_touch_metadata',
       'tg_currencies_touch_metadata',
+      'tg_custody_history_stamp',
+      'tg_custody_history_transition',
       'tg_customer_alerts_immutable',
       'tg_customer_alerts_timeline',
       'tg_customer_alerts_touch_metadata',
@@ -520,6 +623,11 @@ describe('database foundation', () => {
       'tg_customer_restrictions_touch_metadata',
       'tg_customer_segments_immutable',
       'tg_customer_segments_touch_metadata',
+      'tg_damage_maps_immutable',
+      'tg_damage_maps_touch_metadata',
+      'tg_damage_maps_version',
+      'tg_damage_marks_immutable',
+      'tg_damage_marks_touch_metadata',
       'tg_departments_immutable',
       'tg_departments_parent_branch_live',
       'tg_departments_touch_metadata',
@@ -550,10 +658,14 @@ describe('database foundation', () => {
       'tg_event_outbox_guard_initial_state',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
+      'tg_fuel_levels_immutable',
+      'tg_fuel_levels_touch_metadata',
       'tg_grant_scopes_require_scope',
       'tg_individual_profiles_immutable',
       'tg_individual_profiles_touch_metadata',
       'tg_languages_touch_metadata',
+      'tg_leak_observations_immutable',
+      'tg_leak_observations_touch_metadata',
       'tg_legal_companies_immutable',
       'tg_legal_companies_touch_metadata',
       'tg_legal_holds_immutable',
@@ -605,6 +717,18 @@ describe('database foundation', () => {
       'tg_plate_history_touch_metadata',
       'tg_powertrain_types_immutable',
       'tg_powertrain_types_touch_metadata',
+      'tg_reception_party_roles_immutable',
+      'tg_reception_party_roles_touch_metadata',
+      'tg_reception_status_history_coherence',
+      'tg_reception_status_history_stamp',
+      'tg_reception_visits_immutable',
+      'tg_reception_visits_refs',
+      'tg_reception_visits_status_history',
+      'tg_reception_visits_touch_metadata',
+      'tg_reception_visits_transition',
+      'tg_refusal_reasons_immutable',
+      'tg_refusal_reasons_touch_metadata',
+      'tg_refusals_reason',
       'tg_relationship_evidence_stamp',
       'tg_retention_classes_immutable',
       'tg_retention_classes_touch_metadata',
@@ -619,6 +743,9 @@ describe('database foundation', () => {
       'tg_search_metadata_touch_metadata',
       'tg_sensitive_data_permissions_immutable',
       'tg_sensitive_data_permissions_touch_metadata',
+      'tg_signatures_version',
+      'tg_source_channels_immutable',
+      'tg_source_channels_touch_metadata',
       'tg_status_history_stamp',
       'tg_storage_locations_immutable',
       'tg_storage_locations_parent_warehouse_live',
@@ -664,6 +791,10 @@ describe('database foundation', () => {
       'tg_vehicle_alerts_immutable',
       'tg_vehicle_alerts_touch_metadata',
       'tg_vehicle_attribute_history_stamp',
+      'tg_vehicle_content_details_immutable',
+      'tg_vehicle_content_details_touch_metadata',
+      'tg_vehicle_contents_immutable',
+      'tg_vehicle_contents_touch_metadata',
       'tg_vehicle_ev_profiles_immutable',
       'tg_vehicle_ev_profiles_powertrain',
       'tg_vehicle_ev_profiles_touch_metadata',
@@ -686,19 +817,40 @@ describe('database foundation', () => {
       'tg_vehicles_status_history',
       'tg_vehicles_touch_metadata',
       'tg_vin_verifications_stamp',
+      'tg_visit_reason_links_immutable',
+      'tg_visit_reason_links_reason',
+      'tg_visit_reason_links_touch_metadata',
+      'tg_visit_reasons_immutable',
+      'tg_visit_reasons_touch_metadata',
+      'tg_visual_inspections_immutable',
+      'tg_visual_inspections_lifecycle',
+      'tg_visual_inspections_touch_metadata',
+      'tg_walk_in_references_immutable',
+      'tg_walk_in_references_refs',
+      'tg_walk_in_references_touch_metadata',
       'tg_warehouses_immutable',
       'tg_warehouses_parent_branch_live',
       'tg_warehouses_touch_metadata',
+      'tg_warning_light_codes_immutable',
+      'tg_warning_light_codes_touch_metadata',
+      'tg_warning_light_observations_code',
+      'tg_warning_light_observations_immutable',
+      'tg_warning_light_observations_touch_metadata',
     ]);
     const policies = await admin.query(
       `SELECT polname FROM pg_policy p
        JOIN pg_class c ON c.oid = p.polrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
       'ins_addresses_tenant',
+      'ins_appointment_services_scope',
+      'ins_appointment_status_history_scope',
+      'ins_appointment_types_tenant',
+      'ins_appointments_scope',
+      'ins_authorizations_scope',
       'ins_battery_masters_tenant',
       'ins_battery_readings_tenant',
       'ins_body_types_tenant',
@@ -706,23 +858,32 @@ describe('database foundation', () => {
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
       'ins_business_partners_tenant',
+      'ins_cancellation_reasons_tenant',
       'ins_communication_log_tenant',
       'ins_communication_preferences_tenant',
       'ins_company_profiles_tenant',
       'ins_company_settings_scope',
+      'ins_complaint_details_gated',
+      'ins_complaints_scope',
+      'ins_condition_items_scope',
       'ins_consent_history_tenant',
       'ins_contact_points_tenant',
       'ins_cost_centers_scope',
+      'ins_custody_history_scope',
       'ins_customer_alerts_tenant',
       'ins_customer_block_history_tenant',
       'ins_customer_credit_profiles_tenant',
       'ins_customer_restrictions_tenant',
       'ins_customer_segments_tenant',
+      'ins_damage_maps_scope',
+      'ins_damage_marks_scope',
       'ins_departments_scope',
       'ins_duplicate_candidates_tenant',
       'ins_duplicate_candidates_tenant',
       'ins_engine_history_tenant',
+      'ins_fuel_levels_tenant',
       'ins_individual_profiles_tenant',
+      'ins_leak_observations_scope',
       'ins_legal_companies_tenant',
       'ins_makes_tenant',
       'ins_models_tenant',
@@ -736,7 +897,14 @@ describe('database foundation', () => {
       'ins_partner_status_history_tenant',
       'ins_plate_history_tenant',
       'ins_powertrain_types_tenant',
+      'ins_reception_party_roles_scope',
+      'ins_reception_status_history_scope',
+      'ins_reception_visits_scope',
+      'ins_refusal_reasons_tenant',
+      'ins_refusals_scope',
       'ins_relationship_evidence_tenant',
+      'ins_signatures_scope',
+      'ins_source_channels_tenant',
       'ins_storage_locations_scope',
       'ins_tax_classes_scope',
       'ins_tax_rates_scope',
@@ -745,6 +913,8 @@ describe('database foundation', () => {
       'ins_trims_tenant',
       'ins_vehicle_alerts_tenant',
       'ins_vehicle_attribute_history_tenant',
+      'ins_vehicle_content_details_gated',
+      'ins_vehicle_contents_scope',
       'ins_vehicle_ev_profiles_tenant',
       'ins_vehicle_identifiers_tenant',
       'ins_vehicle_merges_tenant',
@@ -752,12 +922,23 @@ describe('database foundation', () => {
       'ins_vehicle_status_history_tenant',
       'ins_vehicles_tenant',
       'ins_vin_verifications_tenant',
+      'ins_visit_reason_links_scope',
+      'ins_visit_reasons_tenant',
+      'ins_visual_inspections_scope',
+      'ins_walk_in_references_scope',
       'ins_warehouses_scope',
+      'ins_warning_light_codes_tenant',
+      'ins_warning_light_observations_scope',
       'sel_addresses_tenant',
+      'sel_appointment_services_scope',
+      'sel_appointment_status_history_scope',
+      'sel_appointment_types_visible',
+      'sel_appointments_scope',
       'sel_approval_limits_tenant',
       'sel_audit_integrity_links_permitted',
       'sel_audit_record_details_permitted',
       'sel_audit_records_permitted',
+      'sel_authorizations_scope',
       'sel_battery_masters_tenant',
       'sel_battery_readings_tenant',
       'sel_body_types_visible',
@@ -765,20 +946,27 @@ describe('database foundation', () => {
       'sel_branch_status_history_tenant',
       'sel_branches_scope',
       'sel_business_partners_tenant',
+      'sel_cancellation_reasons_visible',
       'sel_comments_tenant',
       'sel_communication_log_tenant',
       'sel_communication_preferences_tenant',
       'sel_company_profiles_tenant',
       'sel_company_settings_scope',
+      'sel_complaint_details_gated',
+      'sel_complaints_scope',
+      'sel_condition_items_scope',
       'sel_consent_history_tenant',
       'sel_contact_points_tenant',
       'sel_cost_centers_scope',
       'sel_currencies_all',
+      'sel_custody_history_scope',
       'sel_customer_alerts_tenant',
       'sel_customer_block_history_tenant',
       'sel_customer_credit_profiles_tenant',
       'sel_customer_restrictions_tenant',
       'sel_customer_segments_tenant',
+      'sel_damage_maps_scope',
+      'sel_damage_marks_scope',
       'sel_delivery_attempts_tenant',
       'sel_departments_scope',
       'sel_document_categories_visible',
@@ -791,9 +979,11 @@ describe('database foundation', () => {
       'sel_entity_tags_tenant',
       'sel_feature_flags_all',
       'sel_file_scan_results_tenant',
+      'sel_fuel_levels_visible',
       'sel_grant_scopes_tenant',
       'sel_individual_profiles_tenant',
       'sel_languages_all',
+      'sel_leak_observations_scope',
       'sel_legal_companies_tenant',
       'sel_legal_holds_tenant',
       'sel_localization_keys_all',
@@ -817,6 +1007,11 @@ describe('database foundation', () => {
       'sel_permissions_all',
       'sel_plate_history_tenant',
       'sel_powertrain_types_visible',
+      'sel_reception_party_roles_scope',
+      'sel_reception_status_history_scope',
+      'sel_reception_visits_scope',
+      'sel_refusal_reasons_visible',
+      'sel_refusals_scope',
       'sel_relationship_evidence_tenant',
       'sel_retention_classes_all',
       'sel_role_grants_tenant',
@@ -825,6 +1020,8 @@ describe('database foundation', () => {
       'sel_search_metadata_tenant',
       'sel_security_events_permitted',
       'sel_sensitive_data_permissions_tenant',
+      'sel_signatures_scope',
+      'sel_source_channels_visible',
       'sel_status_evidence_tenant',
       'sel_status_history_tenant',
       'sel_storage_locations_scope',
@@ -850,6 +1047,8 @@ describe('database foundation', () => {
       'sel_user_status_history_tenant',
       'sel_vehicle_alerts_tenant',
       'sel_vehicle_attribute_history_tenant',
+      'sel_vehicle_content_details_gated',
+      'sel_vehicle_contents_scope',
       'sel_vehicle_ev_profiles_tenant',
       'sel_vehicle_identifiers_tenant',
       'sel_vehicle_merges_tenant',
@@ -857,26 +1056,43 @@ describe('database foundation', () => {
       'sel_vehicle_status_history_tenant',
       'sel_vehicles_tenant',
       'sel_vin_verifications_tenant',
+      'sel_visit_reason_links_scope',
+      'sel_visit_reasons_visible',
+      'sel_visual_inspections_scope',
+      'sel_walk_in_references_scope',
       'sel_warehouses_scope',
+      'sel_warning_light_codes_visible',
+      'sel_warning_light_observations_scope',
       'upd_addresses_tenant',
+      'upd_appointment_services_scope',
+      'upd_appointment_types_tenant',
+      'upd_appointments_scope',
       'upd_battery_masters_tenant',
       'upd_body_types_tenant',
       'upd_branches_scope',
       'upd_business_partners_tenant',
+      'upd_cancellation_reasons_tenant',
       'upd_communication_log_tenant',
       'upd_communication_preferences_tenant',
       'upd_company_profiles_tenant',
+      'upd_complaint_details_gated',
+      'upd_complaints_scope',
+      'upd_condition_items_scope',
       'upd_contact_points_tenant',
       'upd_cost_centers_scope',
       'upd_customer_alerts_tenant',
       'upd_customer_credit_profiles_tenant',
       'upd_customer_restrictions_tenant',
       'upd_customer_segments_tenant',
+      'upd_damage_maps_scope',
+      'upd_damage_marks_scope',
       'upd_departments_scope',
       'upd_duplicate_candidates_tenant',
       'upd_duplicate_candidates_tenant',
       'upd_engine_history_tenant',
+      'upd_fuel_levels_tenant',
       'upd_individual_profiles_tenant',
+      'upd_leak_observations_scope',
       'upd_legal_companies_tenant',
       'upd_makes_tenant',
       'upd_models_tenant',
@@ -888,17 +1104,29 @@ describe('database foundation', () => {
       'upd_partner_sensitive_attributes_tenant',
       'upd_plate_history_tenant',
       'upd_powertrain_types_tenant',
+      'upd_reception_party_roles_scope',
+      'upd_reception_visits_scope',
+      'upd_refusal_reasons_tenant',
+      'upd_source_channels_tenant',
       'upd_storage_locations_scope',
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
       'upd_transmission_history_tenant',
       'upd_trims_tenant',
       'upd_vehicle_alerts_tenant',
+      'upd_vehicle_content_details_gated',
+      'upd_vehicle_contents_scope',
       'upd_vehicle_ev_profiles_tenant',
       'upd_vehicle_identifiers_tenant',
       'upd_vehicle_relationships_tenant',
       'upd_vehicles_tenant',
+      'upd_visit_reason_links_scope',
+      'upd_visit_reasons_tenant',
+      'upd_visual_inspections_scope',
+      'upd_walk_in_references_scope',
       'upd_warehouses_scope',
+      'upd_warning_light_codes_tenant',
+      'upd_warning_light_observations_scope',
       'wkr_error_records_all',
       'wkr_event_outbox_all',
       'wkr_processed_events_all',

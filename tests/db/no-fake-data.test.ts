@@ -38,7 +38,7 @@ describe('no-fake-data — all business tables start empty', () => {
       `SELECT table_schema, table_name
          FROM information_schema.tables
         WHERE table_type = 'BASE TABLE'
-          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh')
+          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec')
         ORDER BY table_schema, table_name`
     );
     const nonEmpty: string[] = [];

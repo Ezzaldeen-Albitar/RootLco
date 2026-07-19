@@ -242,6 +242,42 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants, and
+  // before the apt/veh/crm parents they reference. Reception children before the
+  // visit master before walk-ins and the reception catalogs; then the appointment
+  // children before the master before the appointment catalogs. Config catalogs'
+  // tenant rows are removed here; their platform rows (tenant_id NULL, fx_ codes)
+  // are removed in cleanFixtures.
+  await deleteFrom('rec.reception_status_history');
+  await deleteFrom('rec.custody_history');
+  await deleteFrom('rec.authorizations');
+  await deleteFrom('rec.refusals');
+  await deleteFrom('rec.signatures');
+  await deleteFrom('rec.vehicle_content_details');
+  await deleteFrom('rec.vehicle_contents');
+  await deleteFrom('rec.complaint_details');
+  await deleteFrom('rec.complaints');
+  await deleteFrom('rec.condition_items');
+  await deleteFrom('rec.visual_inspections');
+  await deleteFrom('rec.damage_marks');
+  await deleteFrom('rec.damage_maps');
+  await deleteFrom('rec.warning_light_observations');
+  await deleteFrom('rec.leak_observations');
+  await deleteFrom('rec.reception_party_roles');
+  await deleteFrom('rec.visit_reason_links');
+  await deleteFrom('rec.reception_visits');
+  await deleteFrom('rec.walk_in_references');
+  await deleteFrom('rec.visit_reasons');
+  await deleteFrom('rec.fuel_levels');
+  await deleteFrom('rec.warning_light_codes');
+  await deleteFrom('rec.refusal_reasons');
+  await deleteFrom('apt.appointment_status_history');
+  await deleteFrom('apt.appointment_services');
+  await deleteFrom('apt.appointments');
+  await deleteFrom('apt.appointment_types');
+  await deleteFrom('apt.source_channels');
+  await deleteFrom('apt.cancellation_reasons');
+
   // Phase 1-7 vehicle — delete veh children before their parents, and all veh
   // rows before crm/org (later veh tables reference crm.business_partners and
   // org.tenants). Vehicles reference the catalogs, so delete them first; the
@@ -417,6 +453,27 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(`DELETE FROM veh.body_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
   await admin.query(
     `DELETE FROM veh.powertrain_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-8 appointment platform catalog fixtures (scope='platform', fx_ codes).
+  await admin.query(
+    `DELETE FROM apt.appointment_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.source_channels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.cancellation_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-8 reception platform catalog fixtures (scope='platform', fx_ codes).
+  await admin.query(
+    `DELETE FROM rec.visit_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(`DELETE FROM rec.fuel_levels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM rec.warning_light_codes WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM rec.refusal_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
   );
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
