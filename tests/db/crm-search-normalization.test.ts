@@ -20,7 +20,6 @@ import {
   withRolledBackTx,
   expectSqlState,
   TENANT_A,
-  TENANT_B,
   USER_A,
 } from './helpers';
 
