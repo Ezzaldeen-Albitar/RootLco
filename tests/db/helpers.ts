@@ -242,9 +242,11 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
-  // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants.
-  // Config catalogs' tenant rows are removed here; their platform rows (tenant_id
-  // NULL, fx_ codes) are removed in cleanFixtures.
+  // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants, and
+  // the appointment master before the catalogs it references. Config catalogs'
+  // tenant rows are removed here; their platform rows (tenant_id NULL, fx_ codes)
+  // are removed in cleanFixtures.
+  await deleteFrom('apt.appointments');
   await deleteFrom('apt.appointment_types');
   await deleteFrom('apt.source_channels');
   await deleteFrom('apt.cancellation_reasons');

@@ -2527,3 +2527,40 @@ Dual-scope cancellation-reason catalog (a cancellation requires a reason).
 | `updated_by`     | uuid                     | YES  | —                   | internal |
 | `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.appointments`
+
+Branch-scoped appointment master (P1-08-DB-001). Composite same-scope FKs to
+`org.branches`, `veh.vehicles`, `crm.business_partners`, and the appointment
+catalogs; lifecycle state machine; integrated cancellation/no-show; same-Vehicle
+confirmed-overlap EXCLUDE.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `vehicle_id`             | uuid                     | NO   | —                   | internal |
+| `requester_partner_id`   | uuid                     | NO   | —                   | internal |
+| `appointment_type_id`    | uuid                     | NO   | —                   | internal |
+| `source_channel_id`      | uuid                     | YES  | —                   | internal |
+| `requested_from`         | timestamp with time zone | NO   | —                   | internal |
+| `requested_to`           | timestamp with time zone | NO   | —                   | internal |
+| `confirmed_from`         | timestamp with time zone | YES  | —                   | internal |
+| `confirmed_to`           | timestamp with time zone | YES  | —                   | internal |
+| `confirmed_range`        | tstzrange                | YES  | generated           | internal |
+| `lifecycle_status`       | text                     | NO   | `'requested'`       | internal |
+| `cancellation_reason_id` | uuid                     | YES  | —                   | internal |
+| `cancelled_at`           | timestamp with time zone | YES  | —                   | internal |
+| `cancelled_by`           | uuid                     | YES  | —                   | internal |
+| `no_show_recorded_at`    | timestamp with time zone | YES  | —                   | internal |
+| `no_show_recorded_by`    | uuid                     | YES  | —                   | internal |
+| `display_number`         | text                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
