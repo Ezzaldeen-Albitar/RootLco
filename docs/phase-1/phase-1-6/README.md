@@ -51,29 +51,29 @@ This phase is the database layer only. It intentionally excludes:
 
 ## 3. Document index
 
-| Document                                                                                      | Purpose                                                                                      |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [README.md](./README.md)                                                                      | This overview and folder entry point.                                                        |
-| [crm-data-dictionary.md](./crm-data-dictionary.md)                                            | Column-level data dictionary for all 21 crm tables (298 columns).                            |
-| [crm-object-inventory.md](./crm-object-inventory.md)                                          | Generated inventory: tables, functions, triggers, policies, indexes, FKs, check constraints. |
-| [crm-rls-policy-matrix.md](./crm-rls-policy-matrix.md)                                        | Per-table, per-command row-level-security policy matrix (58 policies).                       |
-| [crm-grant-matrix.md](./crm-grant-matrix.md)                                                  | Table privileges granted to `app_runtime`, `app_readonly`, and `app_worker`.                 |
-| [crm-classification-matrix.md](./crm-classification-matrix.md)                                | Personal-data classification of every column; the restricted (7) and searchable (11) sets.   |
-| [crm-party-role-taxonomy.md](./crm-party-role-taxonomy.md)                                    | Party master, temporal role, and customer-segment taxonomy.                                  |
-| [crm-audit-and-timeline-matrix.md](./crm-audit-and-timeline-matrix.md)                        | Append-only history and timeline coverage; the DB-layer attributable record.                 |
-| [crm-shared-services-contract.md](./crm-shared-services-contract.md)                          | How crm consumes shared/iam services (tenant scope, permissions, status-history stamping).   |
-| [crm-abuse-case-record.md](./crm-abuse-case-record.md)                                        | Abuse-case / adversarial review findings and dispositions (SEC-004).                         |
-| [crm-target-data-model-phase-1-35.md](./crm-target-data-model-phase-1-35.md)                  | Forward-looking target CRM data model spanning later phases (through Phase 1-35).            |
-| [p1-07-structural-contract.md](./p1-07-structural-contract.md)                                | Structural contract this phase hands to Phase 1-7.                                           |
-| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 17 crm migrations classified by kind (schema / security / function / index).             |
-| [phase-1-6-traceability.md](./phase-1-6-traceability.md)                                      | Task → migration → test → commit traceability register.                                      |
-| [phase-1-6-test-catalog.md](./phase-1-6-test-catalog.md)                                      | Catalog of the crm test suite (20 crm files of 56 db test files; 160 crm cases).             |
-| [phase-1-6-evidence-register.md](./phase-1-6-evidence-register.md)                            | Evidence register: introspection, CI, and the security-findings ledger.                      |
-| [phase-1-6-review-response.md](./phase-1-6-review-response.md)                                | Wave 7 review response: disposition (fixed / accepted + rationale) of every review finding.  |
-| [phase-1-6-completion-report.md](./phase-1-6-completion-report.md)                            | Narrative completion report for the phase.                                                   |
-| [phase-1-6-owner-gate.md](./phase-1-6-owner-gate.md)                                          | Owner phase-gate record (status Pending).                                                    |
-| [phase-1-6-change-log.md](./phase-1-6-change-log.md)                                          | Chronological change log of the phase.                                                       |
-| [phase-1-6-crm.mmd](../../database/erd/phase-1-6-crm.mmd)                                     | Mermaid ERD of the crm schema.                                                               |
+| Document                                                                                      | Purpose                                                                                        |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [README.md](./README.md)                                                                      | This overview and folder entry point.                                                          |
+| [crm-data-dictionary.md](./crm-data-dictionary.md)                                            | Column-level data dictionary for all 21 crm tables (298 columns).                              |
+| [crm-object-inventory.md](./crm-object-inventory.md)                                          | Generated inventory: tables, functions, triggers, policies, indexes, FKs, check constraints.   |
+| [crm-rls-policy-matrix.md](./crm-rls-policy-matrix.md)                                        | Per-table, per-command row-level-security policy matrix (58 policies).                         |
+| [crm-grant-matrix.md](./crm-grant-matrix.md)                                                  | Table privileges granted to `app_runtime`, `app_readonly`, and `app_worker`.                   |
+| [crm-classification-matrix.md](./crm-classification-matrix.md)                                | Personal-data classification of every column; the restricted (7) and searchable (11) sets.     |
+| [crm-party-role-taxonomy.md](./crm-party-role-taxonomy.md)                                    | Party master, temporal role, and customer-segment taxonomy.                                    |
+| [crm-audit-and-timeline-matrix.md](./crm-audit-and-timeline-matrix.md)                        | Append-only history and timeline coverage; the DB-layer attributable record.                   |
+| [crm-shared-services-contract.md](./crm-shared-services-contract.md)                          | How crm consumes shared/iam services (tenant scope, permissions, status-history stamping).     |
+| [crm-abuse-case-record.md](./crm-abuse-case-record.md)                                        | Abuse-case / adversarial review findings and dispositions (SEC-004).                           |
+| [crm-target-data-model-phase-1-35.md](./crm-target-data-model-phase-1-35.md)                  | Forward-looking target CRM data model spanning later phases (through Phase 1-35).              |
+| [p1-07-structural-contract.md](./p1-07-structural-contract.md)                                | Structural contract this phase hands to Phase 1-7.                                             |
+| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 17 crm migrations classified by kind (schema / security / function / index).               |
+| [phase-1-6-traceability.md](./phase-1-6-traceability.md)                                      | Task → migration → test → commit traceability register.                                        |
+| [phase-1-6-test-catalog.md](./phase-1-6-test-catalog.md)                                      | Catalog of the crm test suite (20 crm files of 56 db test files; 160 crm cases).               |
+| [phase-1-6-evidence-register.md](./phase-1-6-evidence-register.md)                            | Evidence register: introspection, CI, and the security-findings ledger.                        |
+| [phase-1-6-review-response.md](./phase-1-6-review-response.md)                                | Wave 7 review response: disposition (fixed / accepted + rationale) of every review finding.    |
+| [phase-1-6-completion-report.md](./phase-1-6-completion-report.md)                            | Narrative completion report for the phase.                                                     |
+| [phase-1-6-owner-gate.md](./phase-1-6-owner-gate.md)                                          | Owner phase-gate record — **Go — Technical Gate Passed** (feature PR #29 merged as `4d6d6dd`). |
+| [phase-1-6-change-log.md](./phase-1-6-change-log.md)                                          | Chronological change log of the phase.                                                         |
+| [phase-1-6-crm.mmd](../../database/erd/phase-1-6-crm.mmd)                                     | Mermaid ERD of the crm schema.                                                                 |
 
 ## 4. Security model summary
 

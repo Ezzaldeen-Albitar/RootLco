@@ -4,11 +4,11 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Phase:** 1-6 · **Gate package assembled:** 2026-07-19 ·
+**Phase:** 1-6 · **Gate package assembled:** 2026-07-19 · **Decision recorded:** 2026-07-19 ·
 **Review model:** [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md)
 under the
 [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
-— owner-authorized technical/security self-review, never independent review.
+— owner-authorized technical/security self-review, **never** independent third-party review.
 
 ## Purpose and rules
 
@@ -21,54 +21,71 @@ intention, and never from a merge alone. Nothing in this phase touches a reserve
 founder decision (no production, no real customer data, no pricing/contract, no
 material financial or scope change).
 
-## Current status: **PENDING**
+## Decision: **Go — Technical Gate Passed**
 
-The feature pull request is **not yet merged**. As of assembly, conditions 1 and
-5 below are not yet satisfied, so **no Go is recorded**. This document is the
-gate package; the Go record, when earned, is committed **separately** into
-protected history after the owner merges the pull request — it is not part of the
-feature branch.
+- **Phase ID:** P1-06
+- **Phase title:** CRM and Business Partner Database
+- **Decision:** **Go — Technical Gate Passed**
+- **Decision authority:** Eng. Ezzaldeen Al-Bitar
+- **Decision date:** 2026-07-19
+- **Governance basis:** [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md) §2 and the [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md) — owner-authorized technical/security self-review (adversarial/red-team lens), **not** an independent third-party review.
 
-## What is submitted
+### Merge evidence
 
-The full package on `feature/p1-06-crm-business-partner-database` (base
-`develop` at `cd475d3`): **seventeen** timestamped migrations
-(`20260719090000`–`106000`) creating **21 tables, 298 columns, 13 functions,
-45 triggers, 58 RLS policies, 79 indexes, 51 foreign keys, 73 check
-constraints**; every table `FORCE`-RLS'd with default-deny per-command policies;
-three `NOBYPASSRLS` application roles owning no `crm` table; the sensitive-read
-gate (`iam.has_permission('iam.sensitive.view')`) on 7 restricted columns, none
-searchable; four append-only history/timeline tables; the personal-data
-classification registry (298 columns) with a CI lint (DO-001); zero seed and zero
-business rows (DB-024); **20 CRM test files / 160 CRM test cases** plus the
-`foundation` and `no-fake-data` guards; and this documentation package. Two
-owner-authorized adversarial self-reviews (Wave 5 and a five-lens Wave 7 pass)
-returned **zero Critical** and no reproducible cross-tenant breach; every High
-and every cheap/correct Medium was fixed (chiefly the forward migrations
-`…104000` and `…105000`), and the remaining Mediums are Phase-1-16 write-path
-deferrals accepted with rationale — full disposition in the
-[review response](./phase-1-6-review-response.md),
-[completion report §4](./phase-1-6-completion-report.md), and
-[evidence register §3](./phase-1-6-evidence-register.md).
+- **Feature PR:** [#29 — [P1-06] Implement CRM and Business Partner database foundation](https://github.com/Ezzaldeen-Albitar/RootLco/pull/29) · state **Merged**.
+- **Final feature SHA:** `90e91c53eafea11374a1d13188c0fdf2d85c7557`.
+- **Merge target:** `develop`. **Merge strategy:** merge commit (`--no-ff`).
+- **Merge commit:** `4d6d6dd509c5472e0336b562198cf3b9cc7d9a48` — _"Merge pull request #29 from Ezzaldeen-Albitar/feature/p1-06-crm-business-partner-database"_; parents `cd475d3` (prior `develop`) + `90e91c5` (feature head).
+- **Merge author:** Eng. Ezzaldeen Al-Bitar. **Merge timestamp:** 2026-07-19T13:12:44+03:00.
+- **Containment:** `90e91c5` is an ancestor of `origin/develop` (`git merge-base --is-ancestor` → true). `origin/main` is unchanged by this phase and does **not** contain the feature SHA.
 
-## Gate conditions (Standing Technical Authorization §2) — status as of 2026-07-19
+### Hosted CI evidence (workflow `CI`, on the exact final SHA `90e91c5`)
 
-| #   | Condition                                                                      | Status                                                                                                                                                                                                                                                     |
-| --- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | All mandatory CI checks green on the final pull request                        | **Pending** — the pull request is not yet open; the four required checks (_Lint, types, tests, build_ · _Docker build validation_ · _Database migrations and RLS tests_ · _Secret and sensitive-file scan_) will be verified on the exact final source SHA |
-| 2   | No unresolved Critical security finding                                        | **Satisfied as of assembly** — zero known; the four Wave-5 Mediums are three-fixed / one-accepted                                                                                                                                                          |
-| 3   | No unresolved High finding without an approved, time-bounded exception         | **Satisfied as of assembly** — zero known; the [exceptions register](../../security/security-exceptions-register.md) carries no High for this phase                                                                                                        |
-| 4   | Documented technical/security self-review completed by Eng. Ezzaldeen Al-Bitar | **Satisfied** — [completion report](./phase-1-6-completion-report.md), [evidence register](./phase-1-6-evidence-register.md), and [abuse-case record](./crm-abuse-case-record.md)                                                                          |
-| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar                  | **Pending** — not yet merged; the owner performs the merge                                                                                                                                                                                                 |
+| Required job                      | Result        |
+| --------------------------------- | ------------- |
+| Lint, types, tests, build         | ✅ Successful |
+| Docker build validation           | ✅ Successful |
+| Database migrations and RLS tests | ✅ Successful |
+| Secret and sensitive-file scan    | ✅ Successful |
 
-## What happens next
+All four required checks Successful on `90e91c5`; no required job failing, running, cancelled, neutral, or unexpectedly skipped; GitHub reported the PR mergeable with no conflicts.
 
-1. The feature pull request is opened against `develop`; hosted CI runs on the
-   final source SHA.
-2. Any red check is root-caused and fixed on the branch (never by weakening a
-   test, constraint, or RLS policy) until all four required checks are green.
-3. The **owner** merges the pull request into `develop`.
-4. Only then is the Phase 1-6 **Go** record created and committed separately into
-   protected history, and containment of the merge in `origin/develop` verified.
+### Technical closure evidence (live introspection at `90e91c5`)
 
-Until step 4, this gate stands at **Pending**.
+- **17** crm migrations (`20260719090000`–`106000`); **49** migrations in the repo.
+- **21 tables · 298 columns · 13 functions · 45 triggers · 58 RLS policies · 79 indexes · 51 foreign keys · 73 check constraints.**
+- **Tests:** 20 crm test files / **160** cases; **175** from an empty database (crm + `foundation` + `no-fake-data`); **194** including the repo-wide `org-security` + `shared-hardening` suites. Clean-room from empty: all 49 migrations + idempotent seeds apply; green.
+- **RLS:** all 21 tables `ENABLE` + `FORCE ROW LEVEL SECURITY`; roles `NOBYPASSRLS`, non-superuser, own no crm table; **no `SECURITY DEFINER`; no `PUBLIC` grants.**
+- **Classification:** 298 columns classified (7 restricted, gated by `iam.has_permission('iam.sensitive.view')`, none searchable); CI guard green.
+- **Secret scan / no-fake-data:** green; zero crm seed/business rows.
+- **Security findings:** **zero unresolved Critical, zero unresolved High.** Accepted Medium residuals — application write-path authorization, profile identifier-type correctness, jsonb value containment — are documented with rationale, residual risk, and **Phase-1-16** ownership in the [review response](./phase-1-6-review-response.md).
+- **Phase boundary:** **Phase 1-7 has not started** — 0 `veh` migrations, 0 `veh` tables (empty schema namespace only).
+
+## Gate conditions (Standing Technical Authorization §2) — final status
+
+| #   | Condition                                                                      | Status                                                                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | All mandatory CI checks green on the final pull request                        | **Satisfied** — [PR #29](https://github.com/Ezzaldeen-Albitar/RootLco/pull/29) ran all four required checks Successful on the exact final SHA `90e91c5` (_Lint, types, tests, build_ · _Docker build validation_ · _Database migrations and RLS tests_ · _Secret and sensitive-file scan_) |
+| 2   | No unresolved Critical security finding                                        | **Satisfied** — zero known                                                                                                                                                                                                                                                                 |
+| 3   | No unresolved High finding without an approved, time-bounded exception         | **Satisfied** — zero known; the [exceptions register](../../security/security-exceptions-register.md) carries no High for this phase; accepted residuals are Medium/Phase-1-16                                                                                                             |
+| 4   | Documented technical/security self-review completed by Eng. Ezzaldeen Al-Bitar | **Satisfied** — [completion report](./phase-1-6-completion-report.md), [evidence register](./phase-1-6-evidence-register.md), [review response](./phase-1-6-review-response.md), and [abuse-case record](./crm-abuse-case-record.md)                                                       |
+| 5   | Pull request merged into `develop` by Eng. Ezzaldeen Al-Bitar                  | **Satisfied** — [PR #29](https://github.com/Ezzaldeen-Albitar/RootLco/pull/29) merged into `develop` as merge commit `4d6d6dd` (parents `cd475d3` + `90e91c5`); `90e91c5` verified an ancestor of `origin/develop`                                                                         |
+
+All five conditions are satisfied → **Go — Technical Gate Passed**.
+
+---
+
+## Assembly-time status (historical — accurate when written, 2026-07-19)
+
+> The section below records the gate package's state at assembly time, **before**
+> the feature pull request was opened and merged. It was accurate when written and
+> is preserved unaltered for historical integrity. The Go decision above was
+> recorded later, only after the merge, CI, and containment evidence existed.
+
+**Status as assembled: PENDING.** At assembly the feature pull request was not
+yet merged; conditions 1 and 5 were not yet satisfied, so no Go was recorded. The
+Go record, when earned, was to be committed **separately** into protected history
+after the owner merged the pull request — not as part of the feature branch. That
+sequence is exactly what occurred: the feature PR #29 was opened, hosted CI went
+green on `90e91c5`, the owner merged it into `develop` (merge commit `4d6d6dd`),
+and this Go record was then prepared on a separate gate-record branch.
