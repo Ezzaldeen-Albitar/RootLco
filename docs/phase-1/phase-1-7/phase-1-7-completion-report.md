@@ -12,12 +12,18 @@ independent third-party review.
 
 ## Status
 
-**Implementation Complete — Pending Feature PR Merge.**
+**Implementation Complete — Feature PR merged; technical gate recorded Go.**
 
-The [owner gate](./phase-1-7-owner-gate.md) records **Decision: Pending**. No
-formal Go is recorded here; the gate is flipped to Go only in the separate
-gate-record PR after the owner merges the feature PR and containment is
-verified.
+> **Formal Closure Update (2026-07-19):** The "Implementation Complete — Pending
+> Feature PR Merge" status was correct when written (before the merge). Feature
+> PR [#33](https://github.com/Ezzaldeen-Albitar/RootLco/pull/33) was
+> subsequently merged into `develop` (merge commit `47d0b9b`; final feature SHA
+> `4c9697a` contained in protected `develop`; four required hosted checks green
+> on that SHA). The [owner gate](./phase-1-7-owner-gate.md) now records
+> **Decision: Go — Technical Gate Passed**. The separate
+> `docs/p1-07-record-technical-gate` PR that carries this gate record remains
+> pending until the owner merges it; protected-history closure is declared only
+> after that merge.
 
 ## What was delivered (live introspection)
 

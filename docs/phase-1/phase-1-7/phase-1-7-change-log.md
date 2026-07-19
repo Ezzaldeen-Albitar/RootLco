@@ -26,6 +26,14 @@ completion report) are appended as they land.
 | `c5e57cd` | Documentation package (README + 12 phase docs), generated inventory/RLS/grant/dictionary/ERD, migration classification, P1-08 structural-contract test |
 | `44f2210` | Red-team forward correction: migration `20260720105000` fixes RT-1 (VIN-removal activation bypass) + RT-2 (EV-profile resurrection bypass), RT-3 comment honesty; `veh-review-hardening.test.ts`; review-response ledger; count updates |
 
-Remaining Wave 7/8 commits (evidence register, completion report, this log's
-final row) land next; the definitive list is `git log 416cf9e..HEAD` on the
-branch.
+| `4c9697a` | Completion report + evidence register; final change-log rows (final feature SHA) |
+
+The definitive feature list is `git log 416cf9e..4c9697a` on the branch.
+
+## Feature merge & gate record
+
+| Event                                               | Ref                                                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Feature PR #33 merged into `develop` (merge commit) | `47d0b9b` (parents `416cf9e` + `4c9697a`), 2026-07-19T19:42:19+03:00                                                            |
+| Gate-record branch                                  | `docs/p1-07-record-technical-gate` (from `origin/develop` `47d0b9b`)                                                            |
+| Gate-record commit                                  | `docs(P1-07): record Phase 1-7 technical gate as Go` — recorded via the separate gate-record PR (documentation/governance only) |

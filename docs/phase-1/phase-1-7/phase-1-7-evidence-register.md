@@ -70,3 +70,25 @@ result above was captured in isolation after a fresh `supabase db reset`.
 indexes · 54 foreign keys · 104 check constraints · 7 EXCLUDE constraints · 2
 restricted columns · 6 searchable columns · 0 veh business rows. Source:
 [object inventory](./veh-object-inventory.md), regenerated from the live schema.
+
+## Feature-merge containment (formal closure, 2026-07-19)
+
+Captured after the owner merged the feature PR, from Git and the GitHub PR page:
+
+| Fact                         | Value                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Feature PR                   | [#33](https://github.com/Ezzaldeen-Albitar/RootLco/pull/33) — state **Merged** ("4 checks passed")      |
+| Final feature SHA            | `4c9697ae9abe22dafd9bef838ddf9219780d5ef7`                                                              |
+| Merge commit                 | `47d0b9b3374a1a3504f60cf3c8cabdb6ed4a875e` (subject "Merge pull request #33 …")                         |
+| Merge parents                | `416cf9e` (prior `develop`) + `4c9697a` (feature head)                                                  |
+| Merge strategy               | merge commit (`--no-ff`, two parents)                                                                   |
+| Merge author / committer     | Eng. Ezzaldeen Al-Bitar / GitHub                                                                        |
+| Merge timestamp              | 2026-07-19T19:42:19+03:00                                                                               |
+| `origin/develop` after merge | `47d0b9b` (was `416cf9e`)                                                                               |
+| Feature-SHA containment      | `git merge-base --is-ancestor 4c9697a origin/develop` → **true**                                        |
+| `origin/main`                | `5b189c3` — unchanged; does **not** contain the feature SHA                                             |
+| Hosted CI on `4c9697a`       | 4/4 required checks Successful (DB migrations & RLS; lint/types/tests/build; secret scan; Docker build) |
+
+The gate-record for this closure is delivered by the separate
+`docs/p1-07-record-technical-gate` PR; the final gate-record SHA and its own CI
+result are recorded in that PR and confirmed on protected-history closure.
