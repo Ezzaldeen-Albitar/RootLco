@@ -120,6 +120,8 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-6 CRM — segments and dated assignments (P1-06-DB-007).
   'crm.customer_segments',
   'crm.partner_segment_assignments',
+  // Phase 1-6 CRM — dated restrictions (P1-06-DB-008).
+  'crm.customer_restrictions',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -385,6 +387,8 @@ describe('database foundation', () => {
       'tg_cost_centers_immutable',
       'tg_cost_centers_touch_metadata',
       'tg_currencies_touch_metadata',
+      'tg_customer_restrictions_immutable',
+      'tg_customer_restrictions_touch_metadata',
       'tg_customer_segments_immutable',
       'tg_customer_segments_touch_metadata',
       'tg_departments_immutable',
@@ -514,6 +518,7 @@ describe('database foundation', () => {
       'ins_company_profiles_tenant',
       'ins_company_settings_scope',
       'ins_cost_centers_scope',
+      'ins_customer_restrictions_tenant',
       'ins_customer_segments_tenant',
       'ins_departments_scope',
       'ins_individual_profiles_tenant',
@@ -540,6 +545,7 @@ describe('database foundation', () => {
       'sel_company_settings_scope',
       'sel_cost_centers_scope',
       'sel_currencies_all',
+      'sel_customer_restrictions_tenant',
       'sel_customer_segments_tenant',
       'sel_delivery_attempts_tenant',
       'sel_departments_scope',
@@ -601,6 +607,7 @@ describe('database foundation', () => {
       'upd_business_partners_tenant',
       'upd_company_profiles_tenant',
       'upd_cost_centers_scope',
+      'upd_customer_restrictions_tenant',
       'upd_customer_segments_tenant',
       'upd_departments_scope',
       'upd_individual_profiles_tenant',

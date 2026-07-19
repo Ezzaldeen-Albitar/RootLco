@@ -248,6 +248,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // a single-statement delete removes a merged source and its survivor together.
   await deleteFrom('crm.partner_segment_assignments');
   await deleteFrom('crm.customer_segments');
+  await deleteFrom('crm.customer_restrictions');
   await deleteFrom('crm.individual_profiles');
   await deleteFrom('crm.company_profiles');
   await deleteFrom('crm.partner_sensitive_attributes');
