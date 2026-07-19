@@ -125,6 +125,9 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-6 CRM — contact points and addresses (P1-06-DB-009/010).
   'crm.contact_points',
   'crm.addresses',
+  // Phase 1-6 CRM — preferences and consent (P1-06-DB-011/012).
+  'crm.communication_preferences',
+  'crm.consent_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -242,6 +245,9 @@ const ALLOWED_ROUTINES = new Set([
   'crm.guard_business_partner_merge',
   // Phase 1-6 CRM — point-in-time role resolver (P1-06-DB-005).
   'crm.partner_roles_active_at',
+  // Phase 1-6 CRM — consent stamp + current-consent resolver (P1-06-DB-012).
+  'crm.guard_consent_insert',
+  'crm.current_consent',
 ]);
 
 let admin: Pool;
@@ -385,10 +391,13 @@ describe('database foundation', () => {
       'tg_comments_immutable',
       'tg_comments_stamp_content_edit',
       'tg_comments_touch_metadata',
+      'tg_communication_preferences_immutable',
+      'tg_communication_preferences_touch_metadata',
       'tg_company_profiles_immutable',
       'tg_company_profiles_touch_metadata',
       'tg_company_settings_immutable',
       'tg_company_settings_validate_value',
+      'tg_consent_history_stamp',
       'tg_contact_points_immutable',
       'tg_contact_points_touch_metadata',
       'tg_cost_centers_immutable',
@@ -523,8 +532,10 @@ describe('database foundation', () => {
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
       'ins_business_partners_tenant',
+      'ins_communication_preferences_tenant',
       'ins_company_profiles_tenant',
       'ins_company_settings_scope',
+      'ins_consent_history_tenant',
       'ins_contact_points_tenant',
       'ins_cost_centers_scope',
       'ins_customer_restrictions_tenant',
@@ -551,8 +562,10 @@ describe('database foundation', () => {
       'sel_branches_scope',
       'sel_business_partners_tenant',
       'sel_comments_tenant',
+      'sel_communication_preferences_tenant',
       'sel_company_profiles_tenant',
       'sel_company_settings_scope',
+      'sel_consent_history_tenant',
       'sel_contact_points_tenant',
       'sel_cost_centers_scope',
       'sel_currencies_all',
@@ -617,6 +630,7 @@ describe('database foundation', () => {
       'upd_addresses_tenant',
       'upd_branches_scope',
       'upd_business_partners_tenant',
+      'upd_communication_preferences_tenant',
       'upd_company_profiles_tenant',
       'upd_contact_points_tenant',
       'upd_cost_centers_scope',
