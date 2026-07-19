@@ -149,6 +149,9 @@ const ALLOWED_TABLES = new Set([
   'veh.vehicles',
   // Phase 1-7 vehicle — typed identifier ledger (P1-07-DB-003).
   'veh.vehicle_identifiers',
+  // Phase 1-7 vehicle — append-only VIN verification + attribute history (P1-07-DB-004/005).
+  'veh.vin_verifications',
+  'veh.vehicle_attribute_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -294,6 +297,8 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-7 vehicle — missing-VIN activation contract guards (P1-07-DB-003).
   'veh.guard_vehicle_activation',
   'veh.guard_vehicle_identity_removal',
+  // Phase 1-7 vehicle — attribute-history emitter (P1-07-DB-005).
+  'veh.emit_vehicle_attribute_history',
 ]);
 
 let admin: Pool;
@@ -591,14 +596,17 @@ describe('database foundation', () => {
       'tg_user_sessions_immutable',
       'tg_user_sessions_touch_metadata',
       'tg_user_status_history_stamp',
+      'tg_vehicle_attribute_history_stamp',
       'tg_vehicle_identifiers_identity_removal',
       'tg_vehicle_identifiers_immutable',
       'tg_vehicle_identifiers_touch_metadata',
       'tg_vehicles_activation_guard',
+      'tg_vehicles_attribute_history',
       'tg_vehicles_catalog_refs',
       'tg_vehicles_immutable',
       'tg_vehicles_merge_guard',
       'tg_vehicles_touch_metadata',
+      'tg_vin_verifications_stamp',
       'tg_warehouses_immutable',
       'tg_warehouses_parent_branch_live',
       'tg_warehouses_touch_metadata',
@@ -647,8 +655,10 @@ describe('database foundation', () => {
       'ins_tax_rates_scope',
       'ins_timeline_events_tenant',
       'ins_trims_tenant',
+      'ins_vehicle_attribute_history_tenant',
       'ins_vehicle_identifiers_tenant',
       'ins_vehicles_tenant',
+      'ins_vin_verifications_tenant',
       'ins_warehouses_scope',
       'sel_addresses_tenant',
       'sel_approval_limits_tenant',
@@ -736,8 +746,10 @@ describe('database foundation', () => {
       'sel_user_sessions_admin',
       'sel_user_sessions_own',
       'sel_user_status_history_tenant',
+      'sel_vehicle_attribute_history_tenant',
       'sel_vehicle_identifiers_tenant',
       'sel_vehicles_tenant',
+      'sel_vin_verifications_tenant',
       'sel_warehouses_scope',
       'upd_addresses_tenant',
       'upd_body_types_tenant',

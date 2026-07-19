@@ -2140,3 +2140,38 @@ Typed identifier ledger (P1-07-DB-003); chassis/engine_no are `restricted` and r
 | `updated_by`       | uuid                     | YES  | —                   | internal            |
 | `deleted_at`       | timestamp with time zone | YES  | —                   | internal            |
 | `deleted_by`       | uuid                     | YES  | —                   | internal            |
+
+### `veh.vin_verifications`
+
+Append-only VIN verification history (P1-07-DB-004); server-stamped; override requires a reason.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `vin_checked`     | text                     | NO   | —                   | internal |
+| `check_kind`      | text                     | NO   | —                   | internal |
+| `result`          | text                     | NO   | —                   | internal |
+| `override_reason` | text                     | YES  | —                   | internal |
+| `correlation_id`  | uuid                     | YES  | —                   | internal |
+| `actor_id`        | uuid                     | NO   | —                   | internal |
+| `occurred_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`             | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_attribute_history`
+
+Append-only Vehicle attribute history (P1-07-DB-005); trigger-populated on master attribute changes; server-stamped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id`     | uuid                     | NO   | —                   | internal |
+| `field_code`     | text                     | NO   | —                   | internal |
+| `old_value`      | text                     | YES  | —                   | internal |
+| `new_value`      | text                     | YES  | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | identity            | internal |
