@@ -113,6 +113,8 @@ const ALLOWED_TABLES = new Set([
   'crm.individual_profiles',
   'crm.company_profiles',
   'crm.partner_sensitive_attributes',
+  // Phase 1-6 CRM — dated typed party roles (P1-06-DB-005).
+  'crm.partner_roles',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -228,6 +230,8 @@ const ALLOWED_ROUTINES = new Set([
   'shared.guard_comment_parent',
   // Phase 1-6 CRM — merge-redirect integrity guard (P1-06-DB-001).
   'crm.guard_business_partner_merge',
+  // Phase 1-6 CRM — point-in-time role resolver (P1-06-DB-005).
+  'crm.partner_roles_active_at',
 ]);
 
 let admin: Pool;
@@ -427,6 +431,8 @@ describe('database foundation', () => {
       'tg_outbound_messages_touch_metadata',
       'tg_partner_identifiers_immutable',
       'tg_partner_identifiers_touch_metadata',
+      'tg_partner_roles_immutable',
+      'tg_partner_roles_touch_metadata',
       'tg_partner_sensitive_attributes_immutable',
       'tg_partner_sensitive_attributes_touch_metadata',
       'tg_permissions_immutable',
@@ -502,6 +508,7 @@ describe('database foundation', () => {
       'ins_individual_profiles_tenant',
       'ins_legal_companies_tenant',
       'ins_partner_identifiers_tenant',
+      'ins_partner_roles_tenant',
       'ins_partner_sensitive_attributes_tenant',
       'ins_storage_locations_scope',
       'ins_tax_classes_scope',
@@ -543,6 +550,7 @@ describe('database foundation', () => {
       'sel_number_sequences_tenant',
       'sel_outbound_messages_tenant',
       'sel_partner_identifiers_tenant',
+      'sel_partner_roles_tenant',
       'sel_partner_sensitive_attributes_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
@@ -582,6 +590,7 @@ describe('database foundation', () => {
       'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
       'upd_partner_identifiers_tenant',
+      'upd_partner_roles_tenant',
       'upd_partner_sensitive_attributes_tenant',
       'upd_storage_locations_scope',
       'upd_tax_classes_scope',
