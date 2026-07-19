@@ -151,7 +151,8 @@ Phase 1-6 deliberately does **not** deliver, and the closeout must not be read a
   are not built (see §3.6).
 - **No households, hierarchies, or segment scoring.** These are illustrative future directions, not Phase 1-6
   structure (see §3.3, §3.5).
-- **No new indexes and no data.** DB-022 concluded no hot-path FK lacks support (68 indexes live, none added);
+- **FK-complete indexing, no data.** DB-022 was reconciled to the enforced repo standard P1-03-DB-017: every crm
+  FK now has a non-partial covering index (79 indexes live; the FK-coverage indexes added in migration `…106000`);
   DB-024 confirms CRM ships zero business and zero structural-reference rows.
 
 ---

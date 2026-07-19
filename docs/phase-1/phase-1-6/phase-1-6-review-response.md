@@ -56,6 +56,21 @@ and the associated tests/docs.
 
 ## Net effect
 
-- New forward migration `…105000`; live counts move to **298 columns, 13 functions, 45 triggers** (68 indexes unchanged).
+- Forward migrations `…105000` (review hardening) and `…106000` (FK-index coverage); live counts move to **298 columns, 13 functions, 45 triggers, 79 indexes** across **17** crm migrations.
 - Tests: **20 crm files / 160 cases**, all green; clean-room from empty re-verified.
 - The Wave 7 verdict's four must-fix items (H-1, H-2, M-1, M-9) are all **Fixed**; the remaining accepted items are honestly-documented Phase-1-16 deferrals.
+
+## Wave 8 — hosted-CI reconciliation
+
+The hosted `test:db` run surfaced three repo-wide checks that Phase 1-6 had to
+satisfy (invisible in the local crm-only run):
+
+1. `shared-hardening.test.ts` scope guard "no Phase 1-6 crm/veh tables" — the crm
+   tables now exist by design; the boundary was moved to "no Phase 1-7 **veh**
+   tables" (crm is this phase's deliverable). **Fixed.**
+2. `org-security.test.ts` data-dictionary coverage — every module-schema column
+   must appear in `docs/database/data-dictionary.md`; a Phase 1-6 CRM section was
+   added covering all 21 tables / 298 columns. **Fixed.**
+3. `org-security.test.ts` FK-index coverage (**P1-03-DB-017**) — see DB-022 above;
+   migration `…106000` adds the covering indexes. **Fixed** at the root (no check
+   weakened, no test skipped).

@@ -25,9 +25,9 @@ restrictions and block history; contact points, addresses, communication
 preferences and consent history; commercial credit profiles and customer
 alerts; duplicate candidates and partner merges; and a communication log with
 an append-only timeline — delivered as **21 tables, 298 columns, 13 functions,
-45 triggers, 58 policies, and 68 indexes** (plus 51 foreign keys and 73 check
-constraints), created across 15 forward-only crm migrations
-(`20260719090000`–`20260719104000`) and verified by live schema introspection.
+45 triggers, 58 policies, and 79 indexes** (plus 51 foreign keys and 73 check
+constraints), created across 17 forward-only crm migrations
+(`20260719090000`–`20260719106000`) and verified by live schema introspection.
 The generated [object inventory](./crm-object-inventory.md) is the authoritative
 count table and the [data dictionary](./crm-data-dictionary.md) is the
 column-level reference; the [ERD](../../database/erd/phase-1-6-crm.mmd) shows the
@@ -65,7 +65,7 @@ This phase is the database layer only. It intentionally excludes:
 | [crm-abuse-case-record.md](./crm-abuse-case-record.md)                                        | Abuse-case / adversarial review findings and dispositions (SEC-004).                         |
 | [crm-target-data-model-phase-1-35.md](./crm-target-data-model-phase-1-35.md)                  | Forward-looking target CRM data model spanning later phases (through Phase 1-35).            |
 | [p1-07-structural-contract.md](./p1-07-structural-contract.md)                                | Structural contract this phase hands to Phase 1-7.                                           |
-| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 16 crm migrations classified by kind (schema / security / function / index).             |
+| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 17 crm migrations classified by kind (schema / security / function / index).             |
 | [phase-1-6-traceability.md](./phase-1-6-traceability.md)                                      | Task → migration → test → commit traceability register.                                      |
 | [phase-1-6-test-catalog.md](./phase-1-6-test-catalog.md)                                      | Catalog of the crm test suite (20 crm files of 56 db test files; 160 crm cases).             |
 | [phase-1-6-evidence-register.md](./phase-1-6-evidence-register.md)                            | Evidence register: introspection, CI, and the security-findings ledger.                      |

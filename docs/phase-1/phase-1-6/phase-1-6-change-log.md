@@ -62,6 +62,17 @@ the [evidence register](./phase-1-6-evidence-register.md).
 | `crm-partner-identifiers` / `crm-communication-timeline` / `crm-security-hardening` / `crm-search-normalization` | Gate test, timeline server-stamp test, `seq` determinism test, real restricted-search gate test                                                                                                                                                               |
 | [review response](./phase-1-6-review-response.md)                                                                | Per-finding disposition (2 High + 12 Medium): all fixed or accepted with rationale                                                                                                                                                                            |
 
+## Hosted-CI reconciliation (Wave 8)
+
+The feature PR's hosted `test:db` job surfaced three repo-wide checks (invisible
+in the local crm-only run) that Phase 1-6 had to satisfy; all fixed at the root:
+
+| Change                                     | Summary                                                                                                                                                                                                               |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260719106000_crm_fk_index_coverage.sql` | FK-index coverage to conform to P1-03-DB-017 (`org-security.test.ts`): 11 new covering indexes + 4 profile/redirect indexes made non-partial (79 indexes total). Supersedes the Wave-5 DB-022 "no new index" verdict. |
+| `docs/database/data-dictionary.md`         | Added a Phase 1-6 CRM section (21 tables / 298 columns) so the `org-security.test.ts` data-dictionary-coverage check passes                                                                                           |
+| `shared-hardening.test.ts`                 | Scope guard moved from "no Phase 1-6 crm/veh tables" to "no Phase 1-7 **veh** tables" (crm is this phase's deliverable)                                                                                               |
+
 ## Notable corrections during the phase
 
 - **Latent determinism fix.** `occurred_at`/`created_at` are stamped with `now()`,

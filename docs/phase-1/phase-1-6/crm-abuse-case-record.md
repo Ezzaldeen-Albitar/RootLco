@@ -22,7 +22,7 @@ caller could attempt against the Phase 1-6 `crm` schema, and for each states the
 a documented residual risk). It is the SEC-004 deliverable of the closeout package.
 
 Scope is the DB layer only: 21 tables, 13 functions, 45 triggers, 58 policies, 73
-check constraints, 51 foreign keys and 68 indexes as inventoried in
+check constraints, 51 foreign keys and 79 indexes as inventoried in
 [`crm-object-inventory.md`](./crm-object-inventory.md). Application/write-path controls
 (input validation, error-message redaction, orchestration atomicity) are Phase 1-16 and
 are called out honestly where a DB control is only a backstop.

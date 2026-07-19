@@ -25,11 +25,11 @@ integration, forensic audit trail, or any real or fake business data.
 
 ## 2. What was delivered
 
-**Sixteen timestamped migrations** (`20260719090000`–`105000`) creating, per
+**Seventeen timestamped migrations** (`20260719090000`–`106000`) creating, per
 live introspection at the final source SHA:
 
 - **21 tables, 298 columns, 13 functions, 45 triggers, 58 RLS policies,
-  68 indexes, 51 foreign keys, 73 check constraints.**
+  79 indexes, 51 foreign keys, 73 check constraints.**
 
 Every table has `ENABLE` + `FORCE ROW LEVEL SECURITY` with default-deny,
 per-command policies keyed on `iam.current_tenant_id()`. The three application

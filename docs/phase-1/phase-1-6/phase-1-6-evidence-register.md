@@ -22,11 +22,11 @@ figures from an earlier commit.
 | Functions                                 |                             13 |
 | Triggers                                  |                             45 |
 | RLS policies                              |                             58 |
-| Indexes                                   |                             68 |
+| Indexes                                   |                             79 |
 | Foreign keys                              |                             51 |
 | Check constraints                         |                             73 |
-| CRM migrations                            | 16 (`20260719090000`–`105000`) |
-| Migrations in repo (total)                |                             48 |
+| CRM migrations                            | 17 (`20260719090000`–`106000`) |
+| Migrations in repo (total)                |                             49 |
 | CRM test files / cases                    |                       20 / 160 |
 | DB test files (total)                     |                             56 |
 | Reference/seed rows introduced by CRM     |                              0 |
@@ -97,12 +97,18 @@ disposition: the [review response](./phase-1-6-review-response.md).
 
 ## 4. Reconciliations
 
-- **DB-022 (index review).** No hot-path foreign key lacks a supporting index.
-  The eight FKs without an exact leading-column index are either composite FKs
-  whose `(tenant_id, partner_id)` prefix is already indexed (residual single-row
-  filter only) or single-column FKs into low-cardinality reference tables
-  (`shared.locales`, currency, `shared.documents`) that are `ON DELETE RESTRICT`
-  and rarely mutated. Verdict: no new index required.
+- **DB-022 (index review).** The repo enforces a stricter standard than the
+  initial Wave-5 review assumed: **P1-03-DB-017** (`org-security.test.ts`)
+  requires **every** module-schema FK to have a non-partial index whose leading
+  columns cover it. The Wave-5 review had accepted 17 crm FKs without a dedicated
+  covering index (composite FKs relying on a 2-column prefix, single-column
+  reference FKs, and three partial `_ref` indexes). Migration
+  `20260719106000_crm_fk_index_coverage.sql` reconciles Phase 1-6 to the enforced
+  standard: 11 covering indexes added and 4 profile/redirect indexes made
+  non-partial. **Every crm FK is now index-covered** (79 indexes total) and the
+  companion "no exact-duplicate indexes" test confirms no redundant index. This
+  was surfaced by the hosted-CI `test:db` run and fixed at the root, not by
+  weakening the check.
 - **DB-024 (seeds).** CRM introduces no seed file and no reference rows. The
   `no-fake-data.test.ts` guard discovers every `crm` base table and asserts zero
   rows after cleanup. Satisfied by construction.

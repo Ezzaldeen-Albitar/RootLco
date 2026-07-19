@@ -32,9 +32,9 @@ feature branch.
 ## What is submitted
 
 The full package on `feature/p1-06-crm-business-partner-database` (base
-`develop` at `cd475d3`): **sixteen** timestamped migrations
-(`20260719090000`–`105000`) creating **21 tables, 298 columns, 13 functions,
-45 triggers, 58 RLS policies, 68 indexes, 51 foreign keys, 73 check
+`develop` at `cd475d3`): **seventeen** timestamped migrations
+(`20260719090000`–`106000`) creating **21 tables, 298 columns, 13 functions,
+45 triggers, 58 RLS policies, 79 indexes, 51 foreign keys, 73 check
 constraints**; every table `FORCE`-RLS'd with default-deny per-command policies;
 three `NOBYPASSRLS` application roles owning no `crm` table; the sensitive-read
 gate (`iam.has_permission('iam.sensitive.view')`) on 7 restricted columns, none

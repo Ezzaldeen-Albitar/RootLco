@@ -201,17 +201,19 @@ describe('module security posture', () => {
 });
 
 describe('phase and RLS boundaries', () => {
-  it('has exactly the five module schemas and no Phase 1-6 crm/veh tables', async () => {
+  it('has exactly the five module schemas and no Phase 1-7 veh tables', async () => {
     const schemas = await admin.query(
       `SELECT nspname FROM pg_namespace WHERE nspname = ANY($1::text[]) ORDER BY 1`,
       [MODULE_SCHEMAS]
     );
     expect(schemas.rows.map((r) => r.nspname)).toEqual(MODULE_SCHEMAS);
 
+    // crm (Phase 1-6) tables now exist by design; the Phase 1-7 veh schema must
+    // still be an empty namespace (no Vehicle tables until Phase 1-7 starts).
     const futureTables = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq
        FROM information_schema.tables
-       WHERE table_schema IN ('crm', 'veh') AND table_type = 'BASE TABLE'
+       WHERE table_schema = 'veh' AND table_type = 'BASE TABLE'
        ORDER BY 1`
     );
     expect(futureTables.rows).toEqual([]);

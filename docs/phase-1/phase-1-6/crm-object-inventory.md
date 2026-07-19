@@ -2,7 +2,7 @@
 
 <!-- GENERATED from live crm introspection; do not hand-edit count tables. -->
 
-Generated from the live `crm` schema. Totals: **21 tables, 298 columns, 13 functions, 45 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
+Generated from the live `crm` schema. Totals: **21 tables, 298 columns, 13 functions, 45 triggers, 58 policies, 79 indexes, 51 foreign keys, 73 check constraints.**
 
 ## Tables (21)
 
@@ -100,28 +100,33 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `partner_status_history`       | `tg_partner_status_history_timeline`             |
 | `timeline_events`              | `tg_timeline_events_stamp`                       |
 
-## Indexes (68)
+## Indexes (79)
 
 | Table                          | Index                                               | Unique | Partial |
 | ------------------------------ | --------------------------------------------------- | ------ | ------- |
 | `addresses`                    | `ix_addresses_partner`                              |        |         |
 | `addresses`                    | `pk_addresses`                                      | ✅     |         |
 | `addresses`                    | `uq_addresses_primary_active`                       | ✅     | ✅      |
-| `business_partners`            | `ix_business_partners_merged_into`                  |        | ✅      |
+| `business_partners`            | `ix_business_partners_merged_into`                  |        |         |
 | `business_partners`            | `ix_business_partners_tenant_lifecycle`             |        |         |
 | `business_partners`            | `pk_business_partners`                              | ✅     |         |
 | `business_partners`            | `uq_business_partners_tenant_display_number_active` | ✅     | ✅      |
 | `business_partners`            | `uq_business_partners_tenant_id`                    | ✅     |         |
 | `business_partners`            | `uq_business_partners_tenant_id_party_type`         | ✅     |         |
 | `communication_log`            | `ix_communication_log_outbound`                     |        | ✅      |
+| `communication_log`            | `ix_communication_log_outbound_message`             |        |         |
 | `communication_log`            | `ix_communication_log_partner_time`                 |        |         |
 | `communication_log`            | `pk_communication_log`                              | ✅     |         |
+| `communication_preferences`    | `ix_communication_preferences_locale`               |        |         |
 | `communication_preferences`    | `pk_communication_preferences`                      | ✅     |         |
 | `communication_preferences`    | `uq_communication_preferences_dims`                 | ✅     |         |
-| `company_profiles`             | `ix_company_profiles_registration`                  |        | ✅      |
-| `company_profiles`             | `ix_company_profiles_tax`                           |        | ✅      |
+| `company_profiles`             | `ix_company_profiles_partner_type`                  |        |         |
+| `company_profiles`             | `ix_company_profiles_registration`                  |        |         |
+| `company_profiles`             | `ix_company_profiles_tax`                           |        |         |
 | `company_profiles`             | `pk_company_profiles`                               | ✅     |         |
 | `company_profiles`             | `uq_company_profiles_partner`                       | ✅     |         |
+| `consent_history`              | `ix_consent_history_contact_point`                  |        |         |
+| `consent_history`              | `ix_consent_history_evidence`                       |        |         |
 | `consent_history`              | `ix_consent_history_resolve`                        |        |         |
 | `consent_history`              | `pk_consent_history`                                | ✅     |         |
 | `contact_points`               | `ix_contact_points_normalized`                      |        | ✅      |
@@ -129,9 +134,12 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `contact_points`               | `uq_contact_points_primary_active`                  | ✅     | ✅      |
 | `contact_points`               | `uq_contact_points_tenant_partner_id`               | ✅     |         |
 | `customer_alerts`              | `ix_customer_alerts_active`                         |        | ✅      |
+| `customer_alerts`              | `ix_customer_alerts_partner`                        |        |         |
 | `customer_alerts`              | `pk_customer_alerts`                                | ✅     |         |
 | `customer_block_history`       | `ix_customer_block_history_partner_time`            |        |         |
+| `customer_block_history`       | `ix_customer_block_history_restriction`             |        |         |
 | `customer_block_history`       | `pk_customer_block_history`                         | ✅     |         |
+| `customer_credit_profiles`     | `ix_customer_credit_profiles_currency`              |        |         |
 | `customer_credit_profiles`     | `pk_customer_credit_profiles`                       | ✅     |         |
 | `customer_credit_profiles`     | `uq_customer_credit_profiles_partner`               | ✅     |         |
 | `customer_restrictions`        | `ix_customer_restrictions_active`                   |        |         |
@@ -147,7 +155,9 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `duplicate_candidates`         | `ix_duplicate_candidates_status`                    |        |         |
 | `duplicate_candidates`         | `pk_duplicate_candidates`                           | ✅     |         |
 | `duplicate_candidates`         | `uq_duplicate_candidates_open`                      | ✅     | ✅      |
-| `individual_profiles`          | `ix_individual_profiles_national_id`                |        | ✅      |
+| `individual_profiles`          | `ix_individual_profiles_locale`                     |        |         |
+| `individual_profiles`          | `ix_individual_profiles_national_id`                |        |         |
+| `individual_profiles`          | `ix_individual_profiles_partner_type`               |        |         |
 | `individual_profiles`          | `pk_individual_profiles`                            | ✅     |         |
 | `individual_profiles`          | `uq_individual_profiles_partner`                    | ✅     |         |
 | `partner_identifiers`          | `pk_partner_identifiers`                            | ✅     |         |
@@ -166,6 +176,7 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `partner_segment_assignments`  | `ix_partner_segment_assignments_lookup`             |        |         |
 | `partner_segment_assignments`  | `ix_partner_segment_assignments_segment`            |        |         |
 | `partner_segment_assignments`  | `pk_partner_segment_assignments`                    | ✅     |         |
+| `partner_sensitive_attributes` | `ix_partner_sensitive_attributes_partner`           |        |         |
 | `partner_sensitive_attributes` | `pk_partner_sensitive_attributes`                   | ✅     |         |
 | `partner_sensitive_attributes` | `uq_partner_sensitive_attributes_active`            | ✅     | ✅      |
 | `partner_status_history`       | `ix_partner_status_history_partner_time`            |        |         |

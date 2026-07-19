@@ -8,13 +8,13 @@
 (Eng. Ezzaldeen Al-Bitar)
 
 Naming: 14-digit `supabase migration new` timestamps (migration standard §3).
-Phase 1-6 uses the `20260719<hhmmss>` band (`090000..105000`); application
-order = filename order. The repository holds **48 migrations total**; **16** of
+Phase 1-6 uses the `20260719<hhmmss>` band (`090000..106000`); application
+order = filename order. The repository holds **49 migrations total**; **17** of
 them are Phase 1-6 CRM migrations, listed below.
 
 **Classified before merge.** Every Phase 1-6 migration header declares its
 Purpose, Tasks, Dependencies, and a Rollback classification at authoring time.
-All sixteen live on `feature/p1-06-crm-business-partner-database` and are **not
+All seventeen live on `feature/p1-06-crm-business-partner-database` and are **not
 yet merged** — the pull request is not open at the time of writing. Because none
 has entered protected history, there is no fix-forward-vs-edit constraint within
 the branch; the final merged set is what CI validates on the feature PR's exact
@@ -53,18 +53,22 @@ functions) in a single file. The dominant class is noted per row.
 | `20260719103000_crm_search_normalization.sql`   | DB-021                      | function                 | `normalize_name/email/phone` (IMMUTABLE, Arabic-safe); search projection contract; restricted data never projected                                                                                                                                                                                               | **rollback-safe** (functions only; no data)                          | `crm-search-normalization.test.ts` (9)                                 |
 | `20260719104000_crm_security_hardening.sql`     | SEC-002, SEC-004            | function+schema          | Forward hardening: monotonic `seq` on block/consent history; INSERT-path block/merge guards; whole-document case-insensitive jsonb raw-value scan; deterministic `current_consent`                                                                                                                               | roll-forward-only once history rows exist; rollback-safe while empty | `crm-security-hardening.test.ts` (7)                                   |
 | `20260719105000_crm_review_hardening.sql`       | SEC-004, DB-016/017, DB-019 | security+function        | Wave 7 review hardening: gate restricted-identifier INSERT on the sensitive permission; `UNIQUE (tenant_id, source_partner_id)` on `partner_merges`; reject merge into a soft-deleted survivor; monotonic `seq` on `partner_status_history` + `timeline_events`; BEFORE-INSERT server-stamp on `timeline_events` | roll-forward-only once rows exist; rollback-safe while empty         | `crm-partner-identifiers.test.ts` (14), `crm-role-grants.test.ts` (4)  |
+| `20260719106000_crm_fk_index_coverage.sql`      | DB-022                      | index                    | Foreign-key index coverage to conform to the enforced repo standard P1-03-DB-017: 11 new FK-support indexes + 4 profile/redirect indexes made non-partial, so every crm FK has a non-partial leading-column index                                                                                                | **fully rollback-safe** (index-only)                                 | `org-security.test.ts` FK-coverage + no-duplicate-index tests          |
 
 **No reference/seed migrations.** Phase 1-6 introduces no reference-configuration
 seed. CRM business tables start empty and remain empty after clean migration;
 the [`no-fake-data.test.ts`](../../tests/db/no-fake-data.test.ts) guard scans the
 `crm` schema and asserts zero rows. This satisfies DB-024 by construction.
 
-**Index posture (DB-022).** 68 indexes exist across the 21 tables (primary keys,
+**Index posture (DB-022).** 79 indexes exist across the 21 tables (primary keys,
 composite tenant candidate keys, partial unique indexes for single-primary and
 single-open-assignment invariants, the GiST EXCLUDE for role intervals, and
-FK-support/lookup indexes). The index/EXPLAIN review found no hot-path foreign
-key lacking support: every FK is either index-supported on its tenant-scoped
-leading columns or references a low-cardinality reference table (locales,
-currencies, documents) that is `ON DELETE RESTRICT` and rarely mutated. No
-additional indexes were required. Full listing: the
+FK-support/lookup indexes). The repo-wide standard **P1-03-DB-017** — enforced by
+`org-security.test.ts` — requires **every** module-schema FK to have a
+non-partial index whose leading columns cover it. The initial Wave-5 DB-022
+review had accepted several low-cardinality reference FKs without a dedicated
+index; migration `20260719106000` reconciles Phase 1-6 to the enforced standard
+by adding 11 covering indexes and making 4 profile/redirect FK indexes
+non-partial, so **every** crm FK is now index-covered and no exact-duplicate
+index exists. Full listing: the
 [object inventory](../phase-1/phase-1-6/crm-object-inventory.md).
