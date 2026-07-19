@@ -127,6 +127,9 @@ const ALLOWED_TABLES = new Set([
   'crm.customer_credit_profiles',
   // Phase 1-6 CRM — append-only block history (P1-06-DB-015).
   'crm.customer_block_history',
+  // Phase 1-6 CRM — duplicate candidates and merge history (P1-06-DB-016/017).
+  'crm.duplicate_candidates',
+  'crm.partner_merges',
   // Phase 1-6 CRM — contact points and addresses (P1-06-DB-009/010).
   'crm.contact_points',
   'crm.addresses',
@@ -255,6 +258,10 @@ const ALLOWED_ROUTINES = new Set([
   'crm.current_consent',
   // Phase 1-6 CRM — block/lifecycle coherence guard (P1-06-DB-015).
   'crm.guard_partner_block_coherence',
+  // Phase 1-6 CRM — duplicate/merge helpers (P1-06-DB-016/017).
+  'crm.jsonb_no_raw_value_keys',
+  'crm.stamp_partner_merge',
+  'crm.resolve_partner_survivor',
 ]);
 
 let admin: Pool;
@@ -434,6 +441,8 @@ describe('database foundation', () => {
       'tg_documents_guard_initial_state',
       'tg_documents_immutable',
       'tg_documents_touch_metadata',
+      'tg_duplicate_candidates_immutable',
+      'tg_duplicate_candidates_touch_metadata',
       'tg_entity_tags_immutable',
       'tg_entity_tags_touch_metadata',
       'tg_error_records_context_sanitized',
@@ -471,6 +480,7 @@ describe('database foundation', () => {
       'tg_outbound_messages_touch_metadata',
       'tg_partner_identifiers_immutable',
       'tg_partner_identifiers_touch_metadata',
+      'tg_partner_merges_stamp',
       'tg_partner_roles_immutable',
       'tg_partner_roles_touch_metadata',
       'tg_partner_segment_assignments_immutable',
@@ -557,9 +567,11 @@ describe('database foundation', () => {
       'ins_customer_restrictions_tenant',
       'ins_customer_segments_tenant',
       'ins_departments_scope',
+      'ins_duplicate_candidates_tenant',
       'ins_individual_profiles_tenant',
       'ins_legal_companies_tenant',
       'ins_partner_identifiers_tenant',
+      'ins_partner_merges_tenant',
       'ins_partner_roles_tenant',
       'ins_partner_segment_assignments_tenant',
       'ins_partner_sensitive_attributes_tenant',
@@ -596,6 +608,7 @@ describe('database foundation', () => {
       'sel_document_links_tenant',
       'sel_document_versions_tenant',
       'sel_documents_tenant',
+      'sel_duplicate_candidates_tenant',
       'sel_entity_tags_tenant',
       'sel_feature_flags_all',
       'sel_file_scan_results_tenant',
@@ -613,6 +626,7 @@ describe('database foundation', () => {
       'sel_number_sequences_tenant',
       'sel_outbound_messages_tenant',
       'sel_partner_identifiers_tenant',
+      'sel_partner_merges_tenant',
       'sel_partner_roles_tenant',
       'sel_partner_segment_assignments_tenant',
       'sel_partner_sensitive_attributes_tenant',
@@ -658,6 +672,7 @@ describe('database foundation', () => {
       'upd_customer_restrictions_tenant',
       'upd_customer_segments_tenant',
       'upd_departments_scope',
+      'upd_duplicate_candidates_tenant',
       'upd_individual_profiles_tenant',
       'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
