@@ -23,6 +23,9 @@ completion report) are appended as they land.
 | `26deb96` | Index + query-plan review evidence: 54 FKs covered, 24 plans, zero Seq Scans (DB-020)                                                                                              |
 | `8c73ba9` | SEC-001 visibility matrix, SEC-002 scope contract, SEC-004 53-case abuse ledger; seed-state validator sweeps crm+veh (DB-022); classification-validator negative fixtures (DO-001) |
 
-Wave 7+ commits (documentation package, structural contract test, red-team
-dispositions, clean-room evidence) follow in subsequent rows of this table as
-they are pushed; the definitive list is `git log 416cf9e..HEAD` on the branch.
+| `c5e57cd` | Documentation package (README + 12 phase docs), generated inventory/RLS/grant/dictionary/ERD, migration classification, P1-08 structural-contract test |
+| `44f2210` | Red-team forward correction: migration `20260720105000` fixes RT-1 (VIN-removal activation bypass) + RT-2 (EV-profile resurrection bypass), RT-3 comment honesty; `veh-review-hardening.test.ts`; review-response ledger; count updates |
+
+Remaining Wave 7/8 commits (evidence register, completion report, this log's
+final row) land next; the definitive list is `git log 416cf9e..HEAD` on the
+branch.
