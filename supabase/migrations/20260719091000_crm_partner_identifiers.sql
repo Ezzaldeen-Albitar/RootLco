@@ -6,9 +6,9 @@
 --
 -- Purpose
 --   Create crm.partner_identifiers — normalized, typed identifiers for a
---   business partner (phone, email, national_id, registration, other) with
+--   business partner (phone, email, national_id, registration, tax, other) with
 --   tenant-scoped per-type uniqueness among live rows. This is the ONLY place
---   raw restricted identifier VALUES (national_id, registration) live; they are
+--   raw restricted identifier VALUES (national_id, registration, tax) live; they are
 --   gated per-permission at the row level via iam.has_permission('iam.sensitive.view').
 --   Profile _ref pointers (later migrations) reference this table's same-partner
 --   candidate key so a profile can only point at its own partner's identifier.
@@ -28,7 +28,7 @@
 --   * WRITABLE classification table — hardened against the two bypasses a
 --     SELECT-only precedent (shared.notes) never faced:
 --       (a) MISLABEL-ON-INSERT: ck_partner_identifiers_type_classification forces
---           national_id/registration => 'restricted' and phone/email => 'internal',
+--           national_id/registration/tax => 'restricted' and phone/email => 'internal',
 --           so a restricted value cannot be inserted as 'internal'.
 --       (b) DOWNGRADE-ON-UPDATE: identifier_type AND classification are immutable
 --           (guard_immutable_columns), and the UPDATE policy USING carries the
@@ -84,13 +84,13 @@ CREATE TABLE crm.partner_identifiers (
     REFERENCES crm.business_partners (tenant_id, id) ON DELETE RESTRICT,
 
   CONSTRAINT ck_partner_identifiers_type
-    CHECK (identifier_type IN ('phone', 'email', 'national_id', 'registration', 'other')),
+    CHECK (identifier_type IN ('phone', 'email', 'national_id', 'registration', 'tax', 'other')),
   CONSTRAINT ck_partner_identifiers_classification
     CHECK (classification IN ('internal', 'restricted')),
   -- Coupling: sensitive identifier types are always restricted; contact types
   -- are always internal; 'other' may be either. Blocks mislabel-on-insert.
   CONSTRAINT ck_partner_identifiers_type_classification CHECK (
-    (identifier_type IN ('national_id', 'registration') AND classification = 'restricted')
+    (identifier_type IN ('national_id', 'registration', 'tax') AND classification = 'restricted')
     OR (identifier_type IN ('phone', 'email') AND classification = 'internal')
     OR (identifier_type = 'other')
   ),

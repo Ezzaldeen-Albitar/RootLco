@@ -173,6 +173,16 @@ describe('identifier creation, typing, and coupling (P1-06-DB-004)', () => {
     });
   });
 
+  it('accepts a tax identifier as restricted and rejects it as internal (coupling)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      await insertIdent(tx, 'a6200000-0000-4000-8000-00000000fa01', 'tax', 'TAX-1', 'restricted');
+      await expectSqlState(
+        insertIdent(tx, 'a6200000-0000-4000-8000-00000000fa02', 'tax', 'TAX-2', 'internal'),
+        '23514'
+      );
+    });
+  });
+
   it('enforces per-type normalized uniqueness among live rows, freed by soft delete', async () => {
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
       await insertIdent(
