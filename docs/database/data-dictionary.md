@@ -1974,3 +1974,115 @@ Append-only partner activity timeline; written only through emit_timeline_event;
 | `actor_id`       | uuid                     | YES  | —                   | internal |
 | `correlation_id` | uuid                     | YES  | —                   | internal |
 | `seq`            | bigint                   | NO   | —                   | internal |
+
+## Phase 1-7 — Vehicle schema (generated from the live catalog, 2026-07-20)
+
+The `veh` schema is the independent Vehicle master and its identity, mechanical,
+ownership, relationship, and lifecycle history. This section grows one increment
+at a time; classification follows the Phase 1-7 registry
+(`docs/database/veh-personal-data-classification.json`).
+
+### `veh.makes`
+
+Dual-scope vehicle make catalog (P1-07-DB-006): platform default (`scope`=platform, `tenant_id` NULL) or tenant extension.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.models`
+
+Dual-scope vehicle model catalog (P1-07-DB-006), child of `veh.makes`. `model_year` is a vehicle attribute, not a catalog.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`            | text                     | NO   | —                   | internal |
+| `tenant_id`        | uuid                     | YES  | —                   | internal |
+| `make_id`          | uuid                     | NO   | —                   | internal |
+| `code`             | text                     | NO   | —                   | internal |
+| `name`             | text                     | NO   | —                   | internal |
+| `first_model_year` | integer                  | YES  | —                   | internal |
+| `last_model_year`  | integer                  | YES  | —                   | internal |
+| `status`           | text                     | NO   | `'active'::text`    | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`       | uuid                     | YES  | —                   | internal |
+
+### `veh.trims`
+
+Dual-scope vehicle trim catalog (P1-07-DB-006), child of `veh.models`.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `model_id`       | uuid                     | NO   | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.body_types`
+
+Dual-scope vehicle body-type catalog (P1-07-DB-006).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.powertrain_types`
+
+Dual-scope powertrain-type catalog (P1-07-DB-006); `category` (ice/ev/hybrid/phev/other) is descriptive — the authoritative EV driver is `veh.vehicles.powertrain_category`.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `category`       | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
