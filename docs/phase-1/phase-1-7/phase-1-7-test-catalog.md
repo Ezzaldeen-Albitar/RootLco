@@ -3,10 +3,10 @@
 Counts are taken from actual Vitest runner output (`vitest run --config
 vitest.config.db.ts`, per-file `(N tests)` lines) at the recorded evidence SHA
 — see the [evidence register](./phase-1-7-evidence-register.md) for the run
-records. **14 Vehicle test files, 177 tests**, plus the phase's additions to
+records. **15 Vehicle test files, 183 tests**, plus the phase's additions to
 the repo-wide guards and the P1-08 contract suite.
 
-## Vehicle suites (14 files, 177 tests)
+## Vehicle suites (15 files, 183 tests)
 
 | File                               | Tests | Proves                                                                                                                                                                                          |
 | ---------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -24,6 +24,7 @@ the repo-wide guards and the P1-08 contract suite.
 | `veh-isolation.test.ts`            | 5     | Auto-enumerating two-tenant isolation: completeness gate, no-context deny, cross-tenant write-denial per table, populated read isolation, FK containment                                        |
 | `veh-concurrency.test.ts`          | 18    | QA-008: the 18 documented races on genuinely parallel connections (single-winner SQLSTATEs + serialize-both invariants)                                                                         |
 | `veh-classification-guard.test.ts` | 6     | The canonical classification validator passes the real registry and fails 5 tampered fixtures                                                                                                   |
+| `veh-review-hardening.test.ts`     | 6     | Red-team regressions: RT-1 VIN-removal re-validation on an active Vehicle; RT-2 EV-profile un-soft-delete re-validation (plus the still-allowed paths)                                          |
 
 ## Contract + guard additions
 

@@ -29,9 +29,9 @@ forgery-proof status ledger; Vehicle alerts; explainable duplicate candidates
 with a positive-schema match basis; and an atomic, append-only Vehicle merge
 primitive with survivor resolution — delivered as **23 tables, 320 columns,
 29 functions, 57 triggers, 62 RLS policies, and 91 indexes** (plus 54 foreign
-keys, 104 check constraints, and 7 EXCLUDE constraints), created across 15
-forward-only veh migrations (`20260720090000`–`20260720104000`) and verified by
-live schema introspection. The generated
+keys, 104 check constraints, and 7 EXCLUDE constraints), created across 16
+forward-only veh migrations (`20260720090000`–`20260720105000`, the last being
+the red-team forward correction) and verified by live schema introspection. The generated
 [object inventory](./veh-object-inventory.md) is the authoritative count table,
 the [data dictionary annex](./veh-data-dictionary.md) is the column-level
 reference, and the [ERD](../../database/erd/phase-1-7-vehicle.mmd) shows the
