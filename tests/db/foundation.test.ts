@@ -175,6 +175,10 @@ const ALLOWED_TABLES = new Set([
   'apt.cancellation_reasons',
   // Phase 1-8 appointment — branch-scoped master (P1-08-DB-001).
   'apt.appointments',
+  // Phase 1-8 appointment — requested-services child (P1-08-DB-002) + append-only
+  // lifecycle history (P1-08-DB-003).
+  'apt.appointment_services',
+  'apt.appointment_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -353,6 +357,9 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-8 appointment — catalog-visibility + lifecycle-transition guards (P1-08-DB-001).
   'apt.guard_appointment_catalog_refs',
   'apt.guard_appointment_transition',
+  // Phase 1-8 appointment — status-history coherence guard + emitter (P1-08-DB-003).
+  'apt.guard_appointment_status_coherence',
+  'apt.emit_appointment_status_history',
 ]);
 
 let admin: Pool;
@@ -489,10 +496,15 @@ describe('database foundation', () => {
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
       'tg_addresses_immutable',
       'tg_addresses_touch_metadata',
+      'tg_appointment_services_immutable',
+      'tg_appointment_services_touch_metadata',
+      'tg_appointment_status_history_coherence',
+      'tg_appointment_status_history_stamp',
       'tg_appointment_types_immutable',
       'tg_appointment_types_touch_metadata',
       'tg_appointments_catalog_refs',
       'tg_appointments_immutable',
+      'tg_appointments_status_history',
       'tg_appointments_touch_metadata',
       'tg_appointments_transition',
       'tg_approval_limits_immutable',
@@ -726,6 +738,8 @@ describe('database foundation', () => {
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
       'ins_addresses_tenant',
+      'ins_appointment_services_scope',
+      'ins_appointment_status_history_scope',
       'ins_appointment_types_tenant',
       'ins_appointments_scope',
       'ins_battery_masters_tenant',
@@ -785,6 +799,8 @@ describe('database foundation', () => {
       'ins_vin_verifications_tenant',
       'ins_warehouses_scope',
       'sel_addresses_tenant',
+      'sel_appointment_services_scope',
+      'sel_appointment_status_history_scope',
       'sel_appointment_types_visible',
       'sel_appointments_scope',
       'sel_approval_limits_tenant',
@@ -894,6 +910,7 @@ describe('database foundation', () => {
       'sel_vin_verifications_tenant',
       'sel_warehouses_scope',
       'upd_addresses_tenant',
+      'upd_appointment_services_scope',
       'upd_appointment_types_tenant',
       'upd_appointments_scope',
       'upd_battery_masters_tenant',

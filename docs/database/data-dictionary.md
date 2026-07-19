@@ -2564,3 +2564,53 @@ confirmed-overlap EXCLUDE.
 | `updated_by`             | uuid                     | YES  | —                   | internal |
 | `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `apt.appointment_services`
+
+Branch-scoped appointment requested-services child (P1-08-DB-002). Intake demand
+only (not the service catalog, not a work order). Each row carries a future
+catalog reference (`future_service_id` — a placeholder uuid with NO FK until
+P1-10) OR requester free text; at least one is required. Duplicate active
+descriptors are rejected per appointment.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `appointment_id`         | uuid                     | NO   | —                   | internal |
+| `future_service_id`      | uuid                     | YES  | —                   | internal |
+| `requested_service_text` | text                     | YES  | —                   | internal |
+| `quantity`               | integer                  | YES  | —                   | internal |
+| `note`                   | text                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `apt.appointment_status_history`
+
+Append-only appointment lifecycle ledger (P1-08-DB-003). Trigger-populated from
+`apt.appointments` on real lifecycle changes (one row per change); no-op updates
+write nothing. Server-stamped `actor_id`/`occurred_at`; monotonic `seq`; a
+coherence guard anchors `to_state` to the live master so forged transitions are
+rejected. `reason`/`correlation_id` are optional GUC-captured annotations.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `company_id`     | uuid                     | NO   | —                   | internal |
+| `branch_id`      | uuid                     | NO   | —                   | internal |
+| `appointment_id` | uuid                     | NO   | —                   | internal |
+| `from_state`     | text                     | YES  | —                   | internal |
+| `to_state`       | text                     | NO   | —                   | internal |
+| `reason`         | text                     | YES  | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | generated identity  | internal |
