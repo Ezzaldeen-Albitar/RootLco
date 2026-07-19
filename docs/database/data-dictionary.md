@@ -2175,3 +2175,109 @@ Append-only Vehicle attribute history (P1-07-DB-005); trigger-populated on maste
 | `actor_id`       | uuid                     | NO   | —                   | internal |
 | `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
 | `seq`            | bigint                   | NO   | identity            | internal |
+
+### `veh.engine_history`
+
+Mutable-temporal engine interval history (P1-07-DB-007); internal attributes only; end-datable valid_to.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `displacement_cc` | integer                  | YES  | —                   | internal |
+| `power_kw`        | numeric                  | YES  | —                   | internal |
+| `fuel_note`       | text                     | YES  | —                   | internal |
+| `valid_from`      | date                     | NO   | —                   | internal |
+| `valid_to`        | date                     | YES  | —                   | internal |
+| `reason`          | text                     | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.transmission_history`
+
+Mutable-temporal transmission interval history (P1-07-DB-007).
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `vehicle_id`          | uuid                     | NO   | —                   | internal |
+| `transmission_type`   | text                     | NO   | —                   | internal |
+| `transmission_number` | text                     | YES  | —                   | internal |
+| `valid_from`          | date                     | NO   | —                   | internal |
+| `valid_to`            | date                     | YES  | —                   | internal |
+| `reason`              | text                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_ev_profiles`
+
+EV profile (P1-07-DB-008); powertrain-coupled (bev->ev, hybrid->hybrid, phev->phev); one active per vehicle.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | NO   | —                   | internal |
+| `ev_kind`              | text                     | NO   | —                   | internal |
+| `usable_capacity_kwh`  | numeric                  | YES  | —                   | internal |
+| `charge_port_type`     | text                     | YES  | —                   | internal |
+| `high_voltage_warning` | boolean                  | NO   | `true`              | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `veh.battery_masters`
+
+Battery installations (P1-07-DB-009); one active traction battery per vehicle.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | NO   | —                   | internal |
+| `battery_ref`          | text                     | YES  | —                   | internal |
+| `battery_role`         | text                     | NO   | `'traction'::text`  | internal |
+| `chemistry`            | text                     | YES  | —                   | internal |
+| `nominal_capacity_kwh` | numeric                  | YES  | —                   | internal |
+| `installed_on`         | date                     | YES  | —                   | internal |
+| `removed_on`           | date                     | YES  | —                   | internal |
+| `status`               | text                     | NO   | `'active'::text`    | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `veh.battery_readings`
+
+Append-only battery readings (P1-07-DB-009): soh/soc/voltage/other.
+
+| Column              | Type                     | Null | Default             | Class    |
+| ------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`         | uuid                     | NO   | —                   | internal |
+| `battery_master_id` | uuid                     | NO   | —                   | internal |
+| `reading_kind`      | text                     | NO   | —                   | internal |
+| `value`             | numeric                  | NO   | —                   | internal |
+| `unit`              | text                     | NO   | —                   | internal |
+| `measured_at`       | timestamp with time zone | NO   | —                   | internal |
+| `measured_by`       | uuid                     | YES  | —                   | internal |
+| `source`            | text                     | YES  | —                   | internal |
+| `correlation_id`    | uuid                     | YES  | —                   | internal |
+| `actor_id`          | uuid                     | NO   | —                   | internal |
+| `occurred_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`               | bigint                   | NO   | identity            | internal |

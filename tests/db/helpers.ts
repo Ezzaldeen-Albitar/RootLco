@@ -249,6 +249,11 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // a single statement. Catalog hierarchy: trims -> models -> makes.
   await deleteFrom('veh.vin_verifications');
   await deleteFrom('veh.vehicle_attribute_history');
+  await deleteFrom('veh.battery_readings');
+  await deleteFrom('veh.battery_masters');
+  await deleteFrom('veh.engine_history');
+  await deleteFrom('veh.transmission_history');
+  await deleteFrom('veh.vehicle_ev_profiles');
   await deleteFrom('veh.vehicle_identifiers');
   await deleteFrom('veh.vehicles');
   await deleteFrom('veh.trims');
