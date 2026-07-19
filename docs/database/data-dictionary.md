@@ -2793,3 +2793,242 @@ Governed visit-reason attachments (P1-08-DB-008). Archived reasons cannot be new
 | `updated_by`         | uuid                     | YES  | —                   | internal |
 | `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+## Phase 1-8 — Vehicle Reception schema, Wave 4 (generated from the live catalog)
+
+### `rec.complaints`
+
+Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative in rec.complaint_details. Corrections linked.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`     | uuid                     | NO   | —                   | internal |
+| `reported_by_partner_id` | uuid                     | YES  | —                   | internal |
+| `category`               | text                     | NO   | —                   | internal |
+| `severity`               | text                     | NO   | `'medium'`          | internal |
+| `evidence_document_id`   | uuid                     | YES  | —                   | internal |
+| `correction_of`          | uuid                     | YES  | —                   | internal |
+| `correlation_id`         | uuid                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `rec.complaint_details`
+
+RESTRICTED complaint narrative (P1-08-DB-009). 1:1; row-gated by iam.sensitive.view.
+
+| Column           | Type                     | Null | Default             | Class      |
+| ---------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`      | uuid                     | NO   | —                   | internal   |
+| `company_id`     | uuid                     | NO   | —                   | internal   |
+| `branch_id`      | uuid                     | NO   | —                   | internal   |
+| `complaint_id`   | uuid                     | NO   | —                   | internal   |
+| `complaint_text` | text                     | NO   | —                   | restricted |
+| `classification` | text                     | NO   | `'restricted'`      | internal   |
+| `record_version` | integer                  | NO   | `1`                 | internal   |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`     | uuid                     | NO   | —                   | internal   |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal   |
+| `updated_by`     | uuid                     | YES  | —                   | internal   |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal   |
+| `deleted_by`     | uuid                     | YES  | —                   | internal   |
+
+### `rec.visual_inspections`
+
+Visual-inspection header (P1-08-DB-010). in_progress -> completed|cancelled; finalized headers locked.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `inspector_id`       | uuid                     | NO   | —                   | internal |
+| `inspection_status`  | text                     | NO   | `'in_progress'`     | internal |
+| `started_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `completed_at`       | timestamp with time zone | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+### `rec.condition_items`
+
+Condition findings (P1-08-DB-011). New findings only while open; corrections linked. finding_note internal.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `inspection_id`        | uuid                     | NO   | —                   | internal |
+| `finding_category`     | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `severity`             | text                     | NO   | `'minor'`           | internal |
+| `finding_note`         | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `correction_of`        | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.damage_maps`
+
+Damage-map reference (P1-08-DB-012). Bound to an exact immutable document version.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `company_id`          | uuid                     | NO   | —                   | internal |
+| `branch_id`           | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`  | uuid                     | NO   | —                   | internal |
+| `document_id`         | uuid                     | NO   | —                   | internal |
+| `document_version_id` | uuid                     | NO   | —                   | internal |
+| `map_type`            | text                     | NO   | —                   | internal |
+| `perspective`         | text                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+| `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`          | uuid                     | YES  | —                   | internal |
+
+### `rec.damage_marks`
+
+Damage marks (P1-08-DB-013). Normalized 0..1 coordinates on a version-bound map.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `damage_map_id`        | uuid                     | NO   | —                   | internal |
+| `mark_type`            | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `coord_x`              | numeric                  | NO   | —                   | internal |
+| `coord_y`              | numeric                  | NO   | —                   | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.warning_light_observations`
+
+Warning-light observations (P1-08-DB-014). Governed code (archived not newly selectable).
+
+| Column                  | Type                     | Null | Default             | Class    |
+| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`             | uuid                     | NO   | —                   | internal |
+| `company_id`            | uuid                     | NO   | —                   | internal |
+| `branch_id`             | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`    | uuid                     | NO   | —                   | internal |
+| `warning_light_code_id` | uuid                     | NO   | —                   | internal |
+| `observed_state`        | text                     | NO   | `'on'`              | internal |
+| `note`                  | text                     | YES  | —                   | internal |
+| `evidence_document_id`  | uuid                     | YES  | —                   | internal |
+| `record_version`        | integer                  | NO   | `1`                 | internal |
+| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`            | uuid                     | NO   | —                   | internal |
+| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`            | uuid                     | YES  | —                   | internal |
+| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`            | uuid                     | YES  | —                   | internal |
+
+### `rec.leak_observations`
+
+Visible-leak observations (P1-08-DB-015). Bounded type/zone/severity.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `leak_type`            | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `severity`             | text                     | NO   | `'minor'`           | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.vehicle_contents`
+
+Vehicle-contents metadata (P1-08-DB-016). Restricted description/value in rec.vehicle_content_details.
+
+| Column                     | Type                     | Null | Default             | Class    |
+| -------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                       | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                | uuid                     | NO   | —                   | internal |
+| `company_id`               | uuid                     | NO   | —                   | internal |
+| `branch_id`                | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`       | uuid                     | NO   | —                   | internal |
+| `quantity`                 | integer                  | NO   | `1`                 | internal |
+| `location`                 | text                     | YES  | —                   | internal |
+| `declared_by_partner_id`   | uuid                     | YES  | —                   | internal |
+| `witnessed_by_employee_id` | uuid                     | YES  | —                   | internal |
+| `evidence_document_id`     | uuid                     | YES  | —                   | internal |
+| `correction_of`            | uuid                     | YES  | —                   | internal |
+| `record_version`           | integer                  | NO   | `1`                 | internal |
+| `created_at`               | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`               | uuid                     | NO   | —                   | internal |
+| `updated_at`               | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`               | uuid                     | YES  | —                   | internal |
+| `deleted_at`               | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`               | uuid                     | YES  | —                   | internal |
+
+### `rec.vehicle_content_details`
+
+RESTRICTED vehicle-content detail (P1-08-DB-016 / P1-OD-018). 1:1; row-gated by iam.sensitive.view.
+
+| Column              | Type                     | Null | Default             | Class      |
+| ------------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`         | uuid                     | NO   | —                   | internal   |
+| `company_id`        | uuid                     | NO   | —                   | internal   |
+| `branch_id`         | uuid                     | NO   | —                   | internal   |
+| `content_id`        | uuid                     | NO   | —                   | internal   |
+| `item_description`  | text                     | NO   | —                   | restricted |
+| `declared_value`    | numeric                  | YES  | —                   | restricted |
+| `declared_currency` | text                     | YES  | —                   | restricted |
+| `classification`    | text                     | NO   | `'restricted'`      | internal   |
+| `record_version`    | integer                  | NO   | `1`                 | internal   |
+| `created_at`        | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`        | uuid                     | NO   | —                   | internal   |
+| `updated_at`        | timestamp with time zone | YES  | —                   | internal   |
+| `updated_by`        | uuid                     | YES  | —                   | internal   |
+| `deleted_at`        | timestamp with time zone | YES  | —                   | internal   |
+| `deleted_by`        | uuid                     | YES  | —                   | internal   |

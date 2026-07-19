@@ -248,6 +248,16 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // children before the master before the appointment catalogs. Config catalogs'
   // tenant rows are removed here; their platform rows (tenant_id NULL, fx_ codes)
   // are removed in cleanFixtures.
+  await deleteFrom('rec.vehicle_content_details');
+  await deleteFrom('rec.vehicle_contents');
+  await deleteFrom('rec.complaint_details');
+  await deleteFrom('rec.complaints');
+  await deleteFrom('rec.condition_items');
+  await deleteFrom('rec.visual_inspections');
+  await deleteFrom('rec.damage_marks');
+  await deleteFrom('rec.damage_maps');
+  await deleteFrom('rec.warning_light_observations');
+  await deleteFrom('rec.leak_observations');
   await deleteFrom('rec.reception_party_roles');
   await deleteFrom('rec.visit_reason_links');
   await deleteFrom('rec.reception_visits');
