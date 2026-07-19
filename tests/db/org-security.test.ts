@@ -41,6 +41,12 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'shared.processed_events', // platform consumers process platform-scope work without a tenant
   'shared.error_records', // errors can occur before tenant context is established
   'shared.system_settings', // dual-scope: platform default (tenant NULL) OR tenant override
+  // Phase 1-7 vehicle reference catalogs — dual-scope: platform default (tenant NULL) OR tenant extension.
+  'veh.makes',
+  'veh.models',
+  'veh.trims',
+  'veh.body_types',
+  'veh.powertrain_types',
 ]);
 
 let admin: Pool;

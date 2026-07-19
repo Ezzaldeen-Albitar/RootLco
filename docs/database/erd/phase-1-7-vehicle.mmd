@@ -1,0 +1,139 @@
+%% Phase 1-7 — Vehicle Database (erDiagram)
+%% <!-- GENERATED from live veh introspection; do not hand-edit count tables. -->
+%% Controlled extensions over the Chapter-4 target figures (4.13/4.14/4.15):
+%% vin_verifications, vehicle_attribute_history, EV/battery trio, vehicle_alerts,
+%% duplicate_candidates + vehicle_merges, workshop_status axis, shared-search
+%% integration, display numbers via shared.number_sequences.
+erDiagram
+  battery_masters {
+    int columns "17"
+  }
+  battery_readings {
+    int columns "13"
+  }
+  body_types {
+    int columns "13"
+  }
+  duplicate_candidates {
+    int columns "15"
+  }
+  engine_history {
+    int columns "14"
+  }
+  makes {
+    int columns "13"
+  }
+  models {
+    int columns "16"
+  }
+  odometer_readings {
+    int columns "14"
+  }
+  ownership_history {
+    int columns "13"
+  }
+  plate_history {
+    int columns "14"
+  }
+  powertrain_types {
+    int columns "14"
+  }
+  relationship_evidence {
+    int columns "10"
+  }
+  transmission_history {
+    int columns "13"
+  }
+  trims {
+    int columns "14"
+  }
+  vehicle_alerts {
+    int columns "18"
+  }
+  vehicle_attribute_history {
+    int columns "10"
+  }
+  vehicle_ev_profiles {
+    int columns "14"
+  }
+  vehicle_identifiers {
+    int columns "17"
+  }
+  vehicle_merges {
+    int columns "10"
+  }
+  vehicle_relationships {
+    int columns "14"
+  }
+  vehicle_status_history {
+    int columns "10"
+  }
+  vehicles {
+    int columns "23"
+  }
+  vin_verifications {
+    int columns "11"
+  }
+  org_tenants ||--o{ battery_masters : "battery_masters_tenant"
+  vehicles ||--o{ battery_masters : "battery_masters_vehicle"
+  battery_masters ||--o{ battery_readings : "battery_readings_battery"
+  org_tenants ||--o{ battery_readings : "battery_readings_tenant"
+  org_tenants ||--o{ body_types : "body_types_tenant"
+  vehicles ||--o{ duplicate_candidates : "duplicate_candidates_a"
+  vehicles ||--o{ duplicate_candidates : "duplicate_candidates_b"
+  org_tenants ||--o{ duplicate_candidates : "duplicate_candidates_tenant"
+  org_tenants ||--o{ engine_history : "engine_history_tenant"
+  vehicles ||--o{ engine_history : "engine_history_vehicle"
+  org_tenants ||--o{ makes : "makes_tenant"
+  makes ||--o{ models : "models_make"
+  org_tenants ||--o{ models : "models_tenant"
+  odometer_readings ||--o{ odometer_readings : "odometer_readings_correction"
+  org_tenants ||--o{ odometer_readings : "odometer_readings_tenant"
+  vehicles ||--o{ odometer_readings : "odometer_readings_vehicle"
+  crm_business_partners ||--o{ ownership_history : "ownership_history_partner"
+  org_tenants ||--o{ ownership_history : "ownership_history_tenant"
+  vehicles ||--o{ ownership_history : "ownership_history_vehicle"
+  org_tenants ||--o{ plate_history : "plate_history_tenant"
+  vehicles ||--o{ plate_history : "plate_history_vehicle"
+  org_tenants ||--o{ powertrain_types : "powertrain_types_tenant"
+  shared_documents ||--o{ relationship_evidence : "relationship_evidence_document"
+  vehicle_relationships ||--o{ relationship_evidence : "relationship_evidence_relationship"
+  org_tenants ||--o{ relationship_evidence : "relationship_evidence_tenant"
+  org_tenants ||--o{ transmission_history : "transmission_history_tenant"
+  vehicles ||--o{ transmission_history : "transmission_history_vehicle"
+  models ||--o{ trims : "trims_model"
+  org_tenants ||--o{ trims : "trims_tenant"
+  org_tenants ||--o{ vehicle_alerts : "vehicle_alerts_tenant"
+  vehicles ||--o{ vehicle_alerts : "vehicle_alerts_vehicle"
+  org_tenants ||--o{ vehicle_attribute_history : "vehicle_attribute_history_tenant"
+  vehicles ||--o{ vehicle_attribute_history : "vehicle_attribute_history_vehicle"
+  org_tenants ||--o{ vehicle_ev_profiles : "vehicle_ev_profiles_tenant"
+  vehicles ||--o{ vehicle_ev_profiles : "vehicle_ev_profiles_vehicle"
+  org_tenants ||--o{ vehicle_identifiers : "vehicle_identifiers_tenant"
+  vehicles ||--o{ vehicle_identifiers : "vehicle_identifiers_vehicle"
+  vehicles ||--o{ vehicle_merges : "vehicle_merges_source"
+  vehicles ||--o{ vehicle_merges : "vehicle_merges_survivor"
+  org_tenants ||--o{ vehicle_merges : "vehicle_merges_tenant"
+  crm_business_partners ||--o{ vehicle_relationships : "vehicle_relationships_partner"
+  org_tenants ||--o{ vehicle_relationships : "vehicle_relationships_tenant"
+  vehicles ||--o{ vehicle_relationships : "vehicle_relationships_vehicle"
+  org_tenants ||--o{ vehicle_status_history : "vehicle_status_history_tenant"
+  vehicles ||--o{ vehicle_status_history : "vehicle_status_history_vehicle"
+  body_types ||--o{ vehicles : "vehicles_body_type"
+  makes ||--o{ vehicles : "vehicles_make"
+  vehicles ||--o{ vehicles : "vehicles_merged_into"
+  models ||--o{ vehicles : "vehicles_model"
+  powertrain_types ||--o{ vehicles : "vehicles_powertrain_type"
+  org_tenants ||--o{ vehicles : "vehicles_tenant"
+  trims ||--o{ vehicles : "vehicles_trim"
+  org_tenants ||--o{ vin_verifications : "vin_verifications_tenant"
+  vehicles ||--o{ vin_verifications : "vin_verifications_vehicle"
+  org_tenants {
+    string external "yes"
+  }
+  crm_business_partners {
+    string external "yes"
+  }
+  shared_documents {
+    string external "yes"
+  }

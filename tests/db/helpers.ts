@@ -242,6 +242,35 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-7 vehicle — delete veh children before their parents, and all veh
+  // rows before crm/org (later veh tables reference crm.business_partners and
+  // org.tenants). Vehicles reference the catalogs, so delete them first; the
+  // self-referential merged_into_id (ON DELETE RESTRICT) is removed together in
+  // a single statement. Catalog hierarchy: trims -> models -> makes.
+  await deleteFrom('veh.vehicle_merges');
+  await deleteFrom('veh.duplicate_candidates');
+  await deleteFrom('veh.vehicle_alerts');
+  await deleteFrom('veh.vehicle_status_history');
+  await deleteFrom('veh.odometer_readings');
+  await deleteFrom('veh.relationship_evidence');
+  await deleteFrom('veh.vehicle_relationships');
+  await deleteFrom('veh.ownership_history');
+  await deleteFrom('veh.plate_history');
+  await deleteFrom('veh.vin_verifications');
+  await deleteFrom('veh.vehicle_attribute_history');
+  await deleteFrom('veh.battery_readings');
+  await deleteFrom('veh.battery_masters');
+  await deleteFrom('veh.engine_history');
+  await deleteFrom('veh.transmission_history');
+  await deleteFrom('veh.vehicle_ev_profiles');
+  await deleteFrom('veh.vehicle_identifiers');
+  await deleteFrom('veh.vehicles');
+  await deleteFrom('veh.trims');
+  await deleteFrom('veh.models');
+  await deleteFrom('veh.makes');
+  await deleteFrom('veh.body_types');
+  await deleteFrom('veh.powertrain_types');
+
   // Phase 1-6 CRM — delete crm children before crm.business_partners, and all
   // crm rows before org.tenants (business_partners.tenant_id -> org.tenants).
   // business_partners self-references via merged_into_id (ON DELETE RESTRICT);
@@ -379,6 +408,15 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(
     `DELETE FROM shared.message_templates
       WHERE scope = 'platform' AND template_code LIKE 'fx\\_%'`
+  );
+  // Phase 1-7 vehicle platform catalog fixtures (scope='platform', tenant NULL)
+  // carry the fx_ code prefix; delete children before parents.
+  await admin.query(`DELETE FROM veh.trims WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM veh.models WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM veh.makes WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM veh.body_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM veh.powertrain_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
   );
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
