@@ -1,0 +1,1184 @@
+{
+  "$schema": "internal://rootlco/crm-personal-data-classification",
+  "description": "Phase 1-6 (P1-06-SEC-001) column-level personal-data classification registry for the crm schema. Column-level worst-case sensitivity: a column is restricted if it can hold a restricted value. Validated against live DB introspection by scripts/check-crm-classification.mjs. Allowed classifications: public, internal, restricted, secret.",
+  "allowedClassifications": ["public", "internal", "restricted", "secret"],
+  "columnCount": 294,
+  "columns": {
+    "addresses.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.address_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.line1": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.line2": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.line3": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.city": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.region": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.postal_code": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.country_code": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.is_primary": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "addresses.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.party_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.display_name": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "business_partners.display_number": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.lifecycle_status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.commercial_status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.merged_into_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "business_partners.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.direction": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.channel": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.subject": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.summary": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.outbound_message_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.related_entity_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.related_entity_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.logged_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.occurred_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_log.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.channel": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.purpose": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.preferred": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.preferred_locale": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.quiet_hours_note": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "communication_preferences.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.party_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.legal_name": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "company_profiles.trade_name": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "company_profiles.legal_name_normalized": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "company_profiles.trade_name_normalized": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "company_profiles.registration_ref": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "company_profiles.tax_ref": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "company_profiles.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "company_profiles.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.consent_kind": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.contact_point_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.channel": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.purpose": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.source": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.effective_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.recorded_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "consent_history.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.channel": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.normalized_value": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "contact_points.raw_value": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "contact_points.label": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.is_primary": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.verified_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "contact_points.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.alert_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.severity": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.message": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.active": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.effective_from": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.effective_to": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.acknowledged_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.acknowledged_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_alerts.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.action": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.reason": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.restriction_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.approval_ref": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.actor_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.credit_limit": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.currency_code": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.risk_note": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.payment_terms_code": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.approved_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.approval_ref": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_credit_profiles.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.restriction_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.reason": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.imposed_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.effective_from": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.effective_to": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.approval_ref": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_restrictions.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.segment_code": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.name": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.criteria_note": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_segments.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.partner_id_a": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.partner_id_b": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.match_score": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.match_basis": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.status": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.detected_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.reviewed_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.reviewed_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "duplicate_candidates.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.party_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.given_name": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "individual_profiles.family_name": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "individual_profiles.given_name_normalized": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "individual_profiles.family_name_normalized": {
+      "classification": "internal",
+      "searchable": true
+    },
+    "individual_profiles.national_id_ref": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "individual_profiles.preferred_locale": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "individual_profiles.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.identifier_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.normalized_value": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "partner_identifiers.raw_value": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "partner_identifiers.classification": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.is_primary": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.verified_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_identifiers.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.source_partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.survivor_partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.merge_summary": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.preview_ref": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.approval_ref": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.merged_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.merged_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_merges.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.role_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.valid_from": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.valid_to": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.source": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_roles.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.segment_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.assigned_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.assigned_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.valid_from": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.valid_to": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_segment_assignments.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.attribute_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.value_date": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.value_text": {
+      "classification": "restricted",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.classification": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.record_version": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.created_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.created_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.updated_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.updated_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.deleted_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_sensitive_attributes.deleted_by": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.status_kind": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.reason": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "partner_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.tenant_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.partner_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.event_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.event_ref_type": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.event_ref_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.title": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.occurred_at": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.actor_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "timeline_events.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    }
+  }
+}
