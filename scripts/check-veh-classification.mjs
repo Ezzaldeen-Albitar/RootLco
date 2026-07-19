@@ -24,7 +24,12 @@ import { dirname, join } from 'node:path';
 import pg from 'pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REGISTRY = join(HERE, '..', 'docs', 'database', 'veh-personal-data-classification.json');
+// VEH_CLASSIFICATION_REGISTRY is a TEST-ONLY override so the guard's failure
+// modes can be exercised against controlled negative fixtures (P1-07-DO-001).
+// CI and local validation always use the committed default path.
+const REGISTRY =
+  process.env.VEH_CLASSIFICATION_REGISTRY ??
+  join(HERE, '..', 'docs', 'database', 'veh-personal-data-classification.json');
 
 const cfg = {
   host: process.env.DB_HOST ?? '127.0.0.1',

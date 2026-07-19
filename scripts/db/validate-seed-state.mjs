@@ -8,7 +8,9 @@ import pg from 'pg';
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUPABASE_DIR = resolve(REPOSITORY_ROOT, 'supabase');
 const CONFIG_PATH = resolve(SUPABASE_DIR, 'config.toml');
-const MODULE_SCHEMAS = ['org', 'iam', 'shared'];
+// P1-07-DB-022: crm and veh are swept too — every business-domain table must be
+// empty before and after both seed passes (no Vehicle/partner data is EVER seeded).
+const MODULE_SCHEMAS = ['org', 'iam', 'shared', 'crm', 'veh'];
 const STRUCTURAL_REFERENCE = new Set([
   'shared.currencies',
   'shared.timezones',
