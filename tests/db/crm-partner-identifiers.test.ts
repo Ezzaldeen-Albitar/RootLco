@@ -190,7 +190,13 @@ describe('identifier creation, typing, and coupling (P1-06-DB-004)', () => {
     // identifier at all — closes the write-without-read plant and the 23505 oracle.
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
       await expectSqlState(
-        insertIdent(tx, 'a6200000-0000-4000-8000-00000000fb01', 'national_id', 'NID-GATE', 'restricted'),
+        insertIdent(
+          tx,
+          'a6200000-0000-4000-8000-00000000fb01',
+          'national_id',
+          'NID-GATE',
+          'restricted'
+        ),
         '42501'
       );
     });

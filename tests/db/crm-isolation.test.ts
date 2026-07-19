@@ -305,7 +305,10 @@ describe('two-tenant isolation across every crm table (P1-06-QA-006)', () => {
     }
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: SENSITIVE_A }, async (tx) => {
       for (const t of COVERED_TABLES) {
-        const upd = await attempt(tx, `UPDATE crm.${t} SET tenant_id = tenant_id WHERE tenant_id = $1`);
+        const upd = await attempt(
+          tx,
+          `UPDATE crm.${t} SET tenant_id = tenant_id WHERE tenant_id = $1`
+        );
         if (upd.code !== undefined) expect(upd.code, `UPDATE crm.${t}`).toBe('42501');
         else expect(upd.rowCount, `UPDATE crm.${t} changed tenant-B rows`).toBe(0);
 

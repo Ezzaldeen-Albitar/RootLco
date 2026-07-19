@@ -111,10 +111,7 @@ describe('app_worker — no crm access at all (P1-06-DB-023)', () => {
       );
     });
     await withRolledBackTx(worker, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
-      await expectSqlState(
-        tx.query(`SELECT 1 FROM crm.partner_status_history LIMIT 1`),
-        '42501'
-      );
+      await expectSqlState(tx.query(`SELECT 1 FROM crm.partner_status_history LIMIT 1`), '42501');
     });
   });
 });

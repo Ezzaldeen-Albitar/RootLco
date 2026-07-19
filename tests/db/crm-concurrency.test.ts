@@ -150,9 +150,11 @@ describe('single-winner concurrency (P1-06-QA-007)', () => {
     // one commits; the loser is frozen (23514) or aborts on deadlock (40P01)/lock timeout (55P03).
     expectOneWinner(out, ['23514', '40P01', '55P03']);
     // reset P3 to live via admin (merged rows are frozen for the runtime role; admin bypasses)
-    await admin.query(
-      `UPDATE crm.business_partners SET lifecycle_status = 'active', merged_into_id = NULL WHERE id = $1`,
-      [P3]
-    ).catch(() => undefined);
+    await admin
+      .query(
+        `UPDATE crm.business_partners SET lifecycle_status = 'active', merged_into_id = NULL WHERE id = $1`,
+        [P3]
+      )
+      .catch(() => undefined);
   });
 });

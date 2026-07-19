@@ -115,7 +115,10 @@ describe('P1-07 structural contract — security posture', () => {
         WHERE n.nspname = 'crm' AND t.relkind = 'r'
           AND NOT (t.relrowsecurity AND t.relforcerowsecurity)`
     );
-    expect(rows.map((r) => r.relname), 'tables lacking ENABLE+FORCE RLS').toEqual([]);
+    expect(
+      rows.map((r) => r.relname),
+      'tables lacking ENABLE+FORCE RLS'
+    ).toEqual([]);
   });
 
   it('the application roles cannot bypass RLS and are not superusers', async () => {
@@ -137,6 +140,9 @@ describe('P1-07 structural contract — security posture', () => {
         WHERE n.nspname = 'crm' AND t.relkind = 'r'
           AND pg_get_userbyid(t.relowner) IN ('app_runtime','app_readonly','app_worker')`
     );
-    expect(rows.map((r) => r.relname), 'crm tables owned by an app role').toEqual([]);
+    expect(
+      rows.map((r) => r.relname),
+      'crm tables owned by an app role'
+    ).toEqual([]);
   });
 });
