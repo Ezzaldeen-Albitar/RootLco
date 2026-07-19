@@ -89,3 +89,13 @@ in the local crm-only run) that Phase 1-6 had to satisfy; all fixed at the root:
 The pull-request, CI, and merge events are appended once they occur; the Phase
 1-6 **Go** record is committed separately into protected history after the owner
 merges — see the [owner gate](./phase-1-6-owner-gate.md).
+
+## Feature merge and gate record (Wave 8 closure)
+
+| Event             | Detail                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Feature PR opened | [#29](https://github.com/Ezzaldeen-Albitar/RootLco/pull/29) — base `develop`, head `90e91c5`                                         |
+| Hosted CI         | All four required jobs Successful on `90e91c5`                                                                                       |
+| Feature PR merged | Merge commit `4d6d6dd` (parents `cd475d3` + `90e91c5`), into `develop`, 2026-07-19T13:12:44+03:00                                    |
+| Containment       | `90e91c5` verified an ancestor of `origin/develop`; `main` untouched                                                                 |
+| Gate decision     | **Go — Technical Gate Passed**, recorded on `docs/p1-06-record-technical-gate` (this branch) — pending its own PR merge by the owner |
