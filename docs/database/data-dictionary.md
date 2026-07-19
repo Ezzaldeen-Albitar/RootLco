@@ -2614,3 +2614,182 @@ rejected. `reason`/`correlation_id` are optional GUC-captured annotations.
 | `actor_id`       | uuid                     | NO   | —                   | internal |
 | `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
 | `seq`            | bigint                   | NO   | generated identity  | internal |
+
+## Phase 1-8 — Vehicle Reception schema (generated from the live catalog)
+
+### `rec.visit_reasons`
+
+Dual-scope reception visit-reason catalog. Zero rows shipped (no-fake-data).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.fuel_levels`
+
+Dual-scope fuel-gauge code list captured at custody acceptance. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.warning_light_codes`
+
+Dual-scope dashboard warning-light code list. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.refusal_reasons`
+
+Dual-scope reception refusal-reason catalog. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.walk_in_references`
+
+Walk-in origin reference (P1-08-DB-004): an unscheduled arrival a reception visit can consume. Not a fake appointment; Vehicle/partner nullable until identified.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | YES  | —                   | internal |
+| `requester_partner_id` | uuid                     | YES  | —                   | internal |
+| `arrived_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `source_channel_id`    | uuid                     | YES  | —                   | internal |
+| `verification_state`   | text                     | NO   | `'unverified'`      | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.reception_visits`
+
+Reception visit master / custody boundary (P1-08-DB-005). Exactly one origin (appointment XOR walk-in); one open visit per Vehicle; captures odometer/fuel/SOC. No work order.
+
+| Column                  | Type                     | Null | Default             | Class    |
+| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`             | uuid                     | NO   | —                   | internal |
+| `company_id`            | uuid                     | NO   | —                   | internal |
+| `branch_id`             | uuid                     | NO   | —                   | internal |
+| `appointment_id`        | uuid                     | YES  | —                   | internal |
+| `walk_in_id`            | uuid                     | YES  | —                   | internal |
+| `vehicle_id`            | uuid                     | NO   | —                   | internal |
+| `odometer_reading_id`   | uuid                     | YES  | —                   | internal |
+| `fuel_level_id`         | uuid                     | YES  | —                   | internal |
+| `ev_soc_percent`        | numeric                  | YES  | —                   | internal |
+| `receiving_employee_id` | uuid                     | NO   | —                   | internal |
+| `custody_accepted_at`   | timestamp with time zone | NO   | `now()`             | internal |
+| `reception_status`      | text                     | NO   | `'opened'`          | internal |
+| `display_number`        | text                     | YES  | —                   | internal |
+| `record_version`        | integer                  | NO   | `1`                 | internal |
+| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`            | uuid                     | NO   | —                   | internal |
+| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`            | uuid                     | YES  | —                   | internal |
+| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`            | uuid                     | YES  | —                   | internal |
+
+### `rec.reception_party_roles`
+
+Dated typed party roles on a reception visit (P1-08-DB-007). Distinct taxonomy; dated (valid_to), history preserved.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `partner_id`         | uuid                     | NO   | —                   | internal |
+| `relationship_role`  | text                     | NO   | —                   | internal |
+| `valid_from`         | timestamp with time zone | NO   | `now()`             | internal |
+| `valid_to`           | timestamp with time zone | YES  | —                   | internal |
+| `assignment_source`  | text                     | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+### `rec.visit_reason_links`
+
+Governed visit-reason attachments (P1-08-DB-008). Archived reasons cannot be newly linked; label lives in rec.visit_reasons.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `visit_reason_id`    | uuid                     | NO   | —                   | internal |
+| `note`               | text                     | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |

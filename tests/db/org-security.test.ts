@@ -51,6 +51,11 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'apt.appointment_types',
   'apt.source_channels',
   'apt.cancellation_reasons',
+  // Phase 1-8 reception configuration catalogs — dual-scope (platform default OR tenant extension).
+  'rec.visit_reasons',
+  'rec.fuel_levels',
+  'rec.warning_light_codes',
+  'rec.refusal_reasons',
 ]);
 
 let admin: Pool;
