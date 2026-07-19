@@ -47,6 +47,10 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'veh.trims',
   'veh.body_types',
   'veh.powertrain_types',
+  // Phase 1-8 appointment configuration catalogs — dual-scope (platform default OR tenant extension).
+  'apt.appointment_types',
+  'apt.source_channels',
+  'apt.cancellation_reasons',
 ]);
 
 let admin: Pool;

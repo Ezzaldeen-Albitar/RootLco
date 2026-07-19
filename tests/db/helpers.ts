@@ -242,6 +242,13 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants.
+  // Config catalogs' tenant rows are removed here; their platform rows (tenant_id
+  // NULL, fx_ codes) are removed in cleanFixtures.
+  await deleteFrom('apt.appointment_types');
+  await deleteFrom('apt.source_channels');
+  await deleteFrom('apt.cancellation_reasons');
+
   // Phase 1-7 vehicle — delete veh children before their parents, and all veh
   // rows before crm/org (later veh tables reference crm.business_partners and
   // org.tenants). Vehicles reference the catalogs, so delete them first; the
@@ -417,6 +424,16 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(`DELETE FROM veh.body_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
   await admin.query(
     `DELETE FROM veh.powertrain_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-8 appointment platform catalog fixtures (scope='platform', fx_ codes).
+  await admin.query(
+    `DELETE FROM apt.appointment_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.source_channels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.cancellation_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
   );
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);

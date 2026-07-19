@@ -2462,3 +2462,68 @@ Append-only Vehicle merge record (P1-07-DB-018); one merge per source; inserting
 | `merged_at`           | timestamp with time zone | NO   | `now()`             | internal |
 | `correlation_id`      | uuid                     | YES  | —                   | internal |
 | `seq`                 | bigint                   | NO   | identity            | internal |
+
+## Phase 1-8 — Appointment schema (generated from the live catalog, 2026-07-21)
+
+The three appointment configuration catalogs are dual-scope (platform default
+row with `tenant_id` NULL, or tenant extension) and share one column shape.
+
+### `apt.appointment_types`
+
+Dual-scope appointment type catalog. Zero rows shipped (no-fake-data).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.source_channels`
+
+Dual-scope intake source-channel catalog (reused by `rec.walk_ins`).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.cancellation_reasons`
+
+Dual-scope cancellation-reason catalog (a cancellation requires a reason).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
