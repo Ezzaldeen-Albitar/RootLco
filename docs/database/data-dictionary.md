@@ -3032,3 +3032,112 @@ RESTRICTED vehicle-content detail (P1-08-DB-016 / P1-OD-018). 1:1; row-gated by 
 | `updated_by`        | uuid                     | YES  | —                   | internal   |
 | `deleted_at`        | timestamp with time zone | YES  | —                   | internal   |
 | `deleted_by`        | uuid                     | YES  | —                   | internal   |
+
+## Phase 1-8 — Vehicle Reception schema, Wave 5 (generated from the live catalog)
+
+### `rec.signatures`
+
+Append-only reception signatures (P1-08-DB-017). Binds document + exact version; no raw bytes; SELECT+INSERT only.
+
+| Column                          | Type                     | Null | Default             | Class    |
+| ------------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                            | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                     | uuid                     | NO   | —                   | internal |
+| `company_id`                    | uuid                     | NO   | —                   | internal |
+| `branch_id`                     | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`            | uuid                     | NO   | —                   | internal |
+| `signer_role`                   | text                     | NO   | —                   | internal |
+| `signer_partner_id`             | uuid                     | YES  | —                   | internal |
+| `signature_document_id`         | uuid                     | NO   | —                   | internal |
+| `signature_document_version_id` | uuid                     | NO   | —                   | internal |
+| `capture_method`                | text                     | NO   | —                   | internal |
+| `purpose`                       | text                     | NO   | —                   | internal |
+| `signature_hash`                | bytea                    | YES  | —                   | internal |
+| `signed_at`                     | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`                | uuid                     | YES  | —                   | internal |
+| `created_at`                    | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                    | uuid                     | NO   | —                   | internal |
+
+### `rec.refusals`
+
+Append-only reception refusals (P1-08-DB-018). Governed reason code (no free personal text); SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `refusal_type`         | text                     | NO   | —                   | internal |
+| `refusal_reason_id`    | uuid                     | YES  | —                   | internal |
+| `refusing_partner_id`  | uuid                     | YES  | —                   | internal |
+| `witness_employee_id`  | uuid                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+
+### `rec.authorizations`
+
+Append-only reception authorizations (P1-08-DB-019). Authorizing partner must hold an active authorizing role; no work order; SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `authorizing_role`     | text                     | NO   | —                   | internal |
+| `partner_id`           | uuid                     | NO   | —                   | internal |
+| `decision`             | text                     | NO   | —                   | internal |
+| `channel`              | text                     | NO   | `'in_person'`       | internal |
+| `authorized_scope`     | jsonb                    | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+
+### `rec.custody_history`
+
+Append-only custody ledger (P1-08-DB-020). accepted -> in_workshop -> released; no release-before-accept; no duplicate accept; SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `from_state`           | text                     | YES  | —                   | internal |
+| `to_state`             | text                     | NO   | —                   | internal |
+| `receiving_partner_id` | uuid                     | YES  | —                   | internal |
+| `releasing_partner_id` | uuid                     | YES  | —                   | internal |
+| `reason`               | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `actor_id`             | uuid                     | NO   | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`                  | bigint                   | NO   | generated identity  | internal |
+
+### `rec.reception_status_history`
+
+Append-only reception status ledger (P1-08-DB-021). Trigger-emitted; coherence-guarded; converted creates no work order; SELECT+INSERT only.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `from_state`         | text                     | YES  | —                   | internal |
+| `to_state`           | text                     | NO   | —                   | internal |
+| `reason`             | text                     | YES  | —                   | internal |
+| `correlation_id`     | uuid                     | YES  | —                   | internal |
+| `actor_id`           | uuid                     | NO   | —                   | internal |
+| `occurred_at`        | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`                | bigint                   | NO   | generated identity  | internal |
