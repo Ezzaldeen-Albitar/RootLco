@@ -116,9 +116,16 @@ exists yet; this phase adds database foundation only.
 
 ## 6. Current status
 
-**Implementation Complete — Pending Feature PR Merge.** The
-[owner gate](./phase-1-7-owner-gate.md) records **Decision: Pending** until the
-feature PR is merged into `develop` by the owner and the gate-record PR is
-prepared. Review model: owner-authorized technical/security self-review under
-the Standing Technical Authorization + Solo Developer Review policies — **not**
-an independent third-party review.
+**Technical gate recorded: Go — Technical Gate Passed** (2026-07-19). Feature PR
+[#33](https://github.com/Ezzaldeen-Albitar/RootLco/pull/33) was merged into
+`develop` (merge commit `47d0b9b`; final feature SHA `4c9697a` contained in
+protected `develop`; all four required hosted checks green on that SHA). The
+[owner gate](./phase-1-7-owner-gate.md) records **Decision: Go — Technical Gate
+Passed** with the full merge-evidence block; the earlier **Pending** status
+(correct when written, before the merge) is preserved there for audit. The
+separate `docs/p1-07-record-technical-gate` PR carries this gate record and
+**remains pending until the owner merges it**; formal protected-history closure
+is declared only after that merge. Review model: owner-authorized technical,
+QA, security, and adversarial self-review under the Standing Technical
+Authorization + Solo Developer Review policies — **not** an independent
+third-party review.
