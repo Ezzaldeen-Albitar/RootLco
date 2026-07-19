@@ -366,9 +366,17 @@ describe('database foundation', () => {
   it('has the five module schemas', async () => {
     const { rows } = await admin.query(
       `SELECT nspname FROM pg_namespace
-       WHERE nspname IN ('org','iam','shared','crm','veh') ORDER BY nspname`
+       WHERE nspname IN ('apt','org','iam','shared','crm','rec','veh') ORDER BY nspname`
     );
-    expect(rows.map((r) => r.nspname)).toEqual(['crm', 'iam', 'org', 'shared', 'veh']);
+    expect(rows.map((r) => r.nspname)).toEqual([
+      'apt',
+      'crm',
+      'iam',
+      'org',
+      'rec',
+      'shared',
+      'veh',
+    ]);
   });
 
   it('has the four approved extensions, in the extensions schema', async () => {
@@ -416,7 +424,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq
        FROM information_schema.tables
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
          AND table_type = 'BASE TABLE'
        ORDER BY 1`
     );
@@ -431,7 +439,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT n.nspname || '.' || c.relname AS fq, c.relrowsecurity, c.relforcerowsecurity
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND c.relkind = 'r'`
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh') AND c.relkind = 'r'`
     );
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -455,7 +463,7 @@ describe('database foundation', () => {
     const { rows } = await admin.query(
       `SELECT n.nspname || '.' || p.proname AS fq
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
        ORDER BY 1`
     );
     expect(rows.map((r) => r.fq).sort()).toEqual([...ALLOWED_ROUTINES].sort());
@@ -466,7 +474,7 @@ describe('database foundation', () => {
       `SELECT t.tgname FROM pg_trigger t
        JOIN pg_class c ON c.oid = t.tgrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND NOT t.tgisinternal
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh') AND NOT t.tgisinternal
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
@@ -694,7 +702,7 @@ describe('database foundation', () => {
       `SELECT polname FROM pg_policy p
        JOIN pg_class c ON c.oid = p.polrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([

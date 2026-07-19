@@ -8,9 +8,10 @@ import pg from 'pg';
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUPABASE_DIR = resolve(REPOSITORY_ROOT, 'supabase');
 const CONFIG_PATH = resolve(SUPABASE_DIR, 'config.toml');
-// P1-07-DB-022: crm and veh are swept too — every business-domain table must be
-// empty before and after both seed passes (no Vehicle/partner data is EVER seeded).
-const MODULE_SCHEMAS = ['org', 'iam', 'shared', 'crm', 'veh'];
+// P1-07-DB-022 / P1-08: crm, veh, apt, rec are swept too — every business-domain
+// table must be empty before and after both seed passes (no Vehicle/partner/
+// appointment/reception data is EVER seeded).
+const MODULE_SCHEMAS = ['org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec'];
 const STRUCTURAL_REFERENCE = new Set([
   'shared.currencies',
   'shared.timezones',

@@ -70,7 +70,7 @@ describe('tenant-column invariant', () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        LEFT JOIN pg_attribute a
          ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
-       WHERE n.nspname IN ('org','iam','shared','crm','veh') AND c.relkind = 'r'
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh') AND c.relkind = 'r'
        ORDER BY 1`
     );
     const violations: string[] = [];
@@ -101,7 +101,7 @@ describe('foreign-key index coverage (P1-03-DB-017)', () => {
          FROM pg_constraint c
          JOIN pg_class t ON t.oid = c.conrelid
          JOIN pg_namespace n ON n.oid = t.relnamespace
-         WHERE c.contype = 'f' AND n.nspname IN ('org','iam','shared','crm','veh')
+         WHERE c.contype = 'f' AND n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
        )
        SELECT f.conname, f.child
        FROM fks f
@@ -130,7 +130,7 @@ describe('foreign-key index coverage (P1-03-DB-017)', () => {
        JOIN pg_class t ON t.oid = i.indrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        JOIN pg_class ic ON ic.oid = i.indexrelid
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
          AND i.indpred IS NULL
        GROUP BY 1, 2
        HAVING count(*) > 1`
@@ -172,7 +172,7 @@ describe('role posture', () => {
   it('DELETE is granted to application roles on NO module-schema table', async () => {
     const { rows } = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq FROM information_schema.role_table_grants
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
          AND grantee IN ('app_runtime','app_readonly','app_worker')
          AND privilege_type = 'DELETE'`
     );
@@ -192,7 +192,7 @@ describe('data-dictionary coverage (P1-03-DOC-001, P1-03-SEC-003)', () => {
     const { rows } = await admin.query(
       `SELECT table_schema, table_name, column_name
        FROM information_schema.columns
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
        ORDER BY 1, 2, 3`
     );
     const missing: string[] = [];
