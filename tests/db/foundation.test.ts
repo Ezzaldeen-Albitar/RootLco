@@ -122,6 +122,9 @@ const ALLOWED_TABLES = new Set([
   'crm.partner_segment_assignments',
   // Phase 1-6 CRM — dated restrictions (P1-06-DB-008).
   'crm.customer_restrictions',
+  // Phase 1-6 CRM — contact points and addresses (P1-06-DB-009/010).
+  'crm.contact_points',
+  'crm.addresses',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -365,6 +368,8 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_addresses_immutable',
+      'tg_addresses_touch_metadata',
       'tg_approval_limits_immutable',
       'tg_approval_limits_touch_metadata',
       'tg_branch_settings_immutable',
@@ -384,6 +389,8 @@ describe('database foundation', () => {
       'tg_company_profiles_touch_metadata',
       'tg_company_settings_immutable',
       'tg_company_settings_validate_value',
+      'tg_contact_points_immutable',
+      'tg_contact_points_touch_metadata',
       'tg_cost_centers_immutable',
       'tg_cost_centers_touch_metadata',
       'tg_currencies_touch_metadata',
@@ -511,12 +518,14 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(policies.rows.map((r) => r.polname)).toEqual([
+      'ins_addresses_tenant',
       'ins_branch_settings_scope',
       'ins_branch_status_history_tenant',
       'ins_branches_scope',
       'ins_business_partners_tenant',
       'ins_company_profiles_tenant',
       'ins_company_settings_scope',
+      'ins_contact_points_tenant',
       'ins_cost_centers_scope',
       'ins_customer_restrictions_tenant',
       'ins_customer_segments_tenant',
@@ -532,6 +541,7 @@ describe('database foundation', () => {
       'ins_tax_classes_scope',
       'ins_tax_rates_scope',
       'ins_warehouses_scope',
+      'sel_addresses_tenant',
       'sel_approval_limits_tenant',
       'sel_audit_integrity_links_permitted',
       'sel_audit_record_details_permitted',
@@ -543,6 +553,7 @@ describe('database foundation', () => {
       'sel_comments_tenant',
       'sel_company_profiles_tenant',
       'sel_company_settings_scope',
+      'sel_contact_points_tenant',
       'sel_cost_centers_scope',
       'sel_currencies_all',
       'sel_customer_restrictions_tenant',
@@ -603,9 +614,11 @@ describe('database foundation', () => {
       'sel_user_sessions_own',
       'sel_user_status_history_tenant',
       'sel_warehouses_scope',
+      'upd_addresses_tenant',
       'upd_branches_scope',
       'upd_business_partners_tenant',
       'upd_company_profiles_tenant',
+      'upd_contact_points_tenant',
       'upd_cost_centers_scope',
       'upd_customer_restrictions_tenant',
       'upd_customer_segments_tenant',
