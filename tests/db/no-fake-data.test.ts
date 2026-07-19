@@ -15,6 +15,13 @@ const STRUCTURAL_REFERENCE = new Set([
   'shared.languages',
   'iam.permissions',
   'shared.retention_classes',
+  // Phase 1-9 platform work-order/job state graph — structurally mandatory (the
+  // transition guards enforce against these rows; the app cannot route work
+  // without them). Platform scope only; tenant-neutral; no business data.
+  'wo.work_order_states',
+  'wo.work_order_transitions',
+  'wo.job_states',
+  'wo.job_transitions',
 ]);
 
 let admin: Pool;
@@ -38,7 +45,7 @@ describe('no-fake-data — all business tables start empty', () => {
       `SELECT table_schema, table_name
          FROM information_schema.tables
         WHERE table_type = 'BASE TABLE'
-          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec')
+          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec', 'wo', 'dia', 'tech', 'qms')
         ORDER BY table_schema, table_name`
     );
     const nonEmpty: string[] = [];

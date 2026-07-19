@@ -1,0 +1,3293 @@
+{
+  "$schema": "./classification.schema.json",
+  "description": "P1-09-SEC-003 — Work Order (wo) + Technician (tech) + Diagnostics (dia) + Quality (qms) personal-data / sensitivity classification registry. Every live column in the four Phase 1-9 module schemas is classified. Restricted columns live in gated 1:1 tables (iam.sensitive.view); none is searchable.",
+  "allowedClassifications": ["public", "internal", "restricted", "secret"],
+  "columnCount": 657,
+  "columns": {
+    "dia.diagnostic_evidence.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_evidence.evidence_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_evidence.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_evidence.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_evidence.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_report_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_report_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_report_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_report_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_report_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "dia.diagnostic_reports.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.template_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.diagnostic_type_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_reports.revision_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.diagnostic_reports.summary": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_reports.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.diagnostic_reports.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_reports.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_reports.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reports.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_reports.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.review_result": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_reviews.notes": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_reviews.reviewer_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_reviews.reviewed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_types.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_types.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_types.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_types.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_types.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_types.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.diagnostic_types.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.diagnostic_types.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_types.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_types.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_types.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.diagnostic_types.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.diagnostic_types.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.dtc_records.description": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.dtc_records.dtc_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.dtc_records.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.dtc_records.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.dtc_records.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.dtc_records.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.dtc_records.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.dtc_records.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.template_item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.severity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.findings.disposition": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.findings.description": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.findings.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.findings.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.findings.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.findings.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.findings.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.findings.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.inspection_templates.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.inspection_templates.diagnostic_type_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.inspection_templates.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.inspection_templates.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.inspection_templates.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.inspection_templates.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.inspection_templates.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.inspection_templates.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.template_item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.label": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.measurements.measured_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "dia.measurements.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.measurements.within_range": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "dia.measurements.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.measurements.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.measurements.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.measurements.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.measurements.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.measurements.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.recommendation": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.recommendations.priority": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.recommendations.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.recommendations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.recommendations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.recommendations.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.recommendations.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.recommendations.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.diagnostic_report_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.template_item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.result_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.report_item_results.not_applicable_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.report_item_results.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.report_item_results.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.report_item_results.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.report_item_results.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.report_item_results.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.report_item_results.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.template_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.item_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.template_items.prompt": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.template_items.response_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.template_items.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.template_items.is_mandatory": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "dia.template_items.validation_rule": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "dia.template_items.sequence": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.template_items.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.template_items.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_items.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_items.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_items.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_items.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.template_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.version_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.template_versions.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "dia.template_versions.published_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_versions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "dia.template_versions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_versions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_versions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "dia.template_versions.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "dia.template_versions.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.quality_control_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.qc_check_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.result": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_check_results.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_check_results.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "qms.qc_check_results.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_check_results.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_check_results.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_check_results.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_check_results.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_checks.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_checks.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_checks.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_checks.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_checks.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_checks.is_mandatory": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "qms.qc_checks.is_safety_critical": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "qms.qc_checks.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_checks.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "qms.qc_checks.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_checks.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_checks.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_checks.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_checks.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_checks.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.quality_control_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.qc_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.qc_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.qc_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "qms.quality_control_records.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.overall_result": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.quality_control_records.checker_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.finalized_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.quality_control_records.notes": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.quality_control_records.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "qms.quality_control_records.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.quality_control_records.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.quality_control_records.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.quality_control_records.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.quality_control_records.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.reopen_attempts.outcome": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.reopen_attempts.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.reopen_attempts.requested_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_link_details.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.rework_link_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.rework_cost": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "qms.rework_link_details.cost_currency": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.rework_link_details.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.rework_link_details.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "qms.rework_link_details.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_link_details.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_link_details.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_link_details.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_link_details.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.original_work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.rework_work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.root_cause": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.rework_links.corrective_action": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.rework_links.responsibility": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "qms.rework_links.lead_technician_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.is_safety_critical": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "qms.rework_links.independent_sign_off_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.sign_off_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_links.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "qms.rework_links.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_links.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_links.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "qms.rework_links.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "qms.rework_links.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.certifications.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.certifications.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.certifications.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.certifications.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.certifications.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.certifications.authority": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.certifications.validity_months": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.certifications.is_safety_critical": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "tech.certifications.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.certifications.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.certifications.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.certifications.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.certifications.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.certifications.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.certifications.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.certifications.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.technician_profile_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.started_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.labor_sessions.ended_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.labor_sessions.source": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.labor_sessions.correction_of_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.labor_sessions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.labor_sessions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.labor_sessions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.labor_sessions.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.labor_sessions.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skill_levels.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skill_levels.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skill_levels.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skill_levels.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skill_levels.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skill_levels.rank": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.skill_levels.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skill_levels.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.skill_levels.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skill_levels.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skill_levels.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skill_levels.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skill_levels.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skill_levels.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skills.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skills.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skills.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skills.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skills.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skills.discipline": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skills.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.skills.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.skills.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skills.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skills.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skills.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.skills.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.skills.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.technician_profile_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.available_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_availability.available_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_availability.availability_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_availability.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_availability.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.technician_availability.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_availability.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_availability.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_availability.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_availability.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.technician_certification_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.certificate_number": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_certification_details.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_certification_details.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.technician_certification_details.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certification_details.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certification_details.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certification_details.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certification_details.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.technician_profile_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.certification_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.issued_on": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "tech.technician_certifications.expires_on": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "tech.technician_certifications.cert_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_certifications.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.technician_certifications.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certifications.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certifications.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_certifications.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_certifications.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.user_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.trade": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_profiles.is_active": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "tech.technician_profiles.employment_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "tech.technician_profiles.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.technician_profiles.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_profiles.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_profiles.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_profiles.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_profiles.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.technician_profile_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.skill_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.skill_level_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "tech.technician_skills.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_skills.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_skills.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "tech.technician_skills.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "tech.technician_skills.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.additional_work_request_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.description": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.additional_work_request_details.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.additional_work_request_details.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.additional_work_request_details.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_request_details.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_request_details.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_request_details.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_request_details.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.originating_job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.originating_finding_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.summary": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.additional_work_requests.state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.additional_work_requests.fulfillment_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.additional_work_requests.is_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.additional_work_requests.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.additional_work_requests.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_requests.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_requests.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.additional_work_requests.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.additional_work_requests.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.customer_approval_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approval_evidence.evidence_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.customer_approval_evidence.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.customer_approval_evidence.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.customer_approval_evidence.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.additional_work_request_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.deciding_party_role_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.decision": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.customer_approvals.channel": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.customer_approvals.presented_scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.customer_approvals.quotation_revision_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.decided_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.customer_approvals.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.customer_approvals.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.customer_approvals.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.customer_approvals.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.customer_approvals.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.customer_approvals.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.technician_profile_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.assignment_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_assignments.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_assignments.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_assignments.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_assignments.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.job_assignments.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_assignments.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_assignments.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_assignments.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_assignments.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_states.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_states.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_states.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_states.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_states.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_states.is_terminal": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_states.reason_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_states.assignment_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_states.labor_allowed": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_states.closure_eligible": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_states.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_states.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.job_states.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_states.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_states.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_states.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_states.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_states.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "wo.job_transitions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_transitions.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_transitions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_transitions.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_transitions.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_transitions.requires_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_transitions.is_active": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.job_transitions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.job_transitions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_transitions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_transitions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_transitions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_transitions.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_transitions.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.title": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.jobs.job_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.jobs.state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.jobs.requires_diagnostic": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.jobs.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.jobs.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.jobs.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.jobs.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.jobs.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.jobs.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.description": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.required_parts.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "wo.required_parts.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.required_parts.item_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.required_parts.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.required_parts.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.required_parts.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.required_parts.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.required_parts.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.description": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_service_lines.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "wo.work_order_service_lines.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_service_lines.service_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.work_order_service_lines.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_service_lines.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_service_lines.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_service_lines.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_service_lines.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_states.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_states.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_states.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_states.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_states.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_states.is_terminal": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.is_closed": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.is_cancellation": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.reason_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.allows_jobs": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.allows_labor": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.allows_additional_work": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.requires_qc": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.is_reopenable": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_states.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_states.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.work_order_states.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_states.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_states.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_states.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_states.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_states.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "wo.work_order_transitions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_transitions.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_transitions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_transitions.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_transitions.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_order_transitions.requires_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_transitions.is_active": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "wo.work_order_transitions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.work_order_transitions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_transitions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_transitions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_transitions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_order_transitions.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_order_transitions.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_orders.state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_orders.parts_forward_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_orders.display_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.work_orders.opened_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_orders.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wo.work_orders.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_orders.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_orders.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.work_orders.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.work_orders.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    }
+  }
+}

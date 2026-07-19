@@ -28,7 +28,19 @@ const MIGRATIONS_DIR = join(
   'supabase',
   'migrations'
 );
-const MODULE_SCHEMAS = ['org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec'];
+const MODULE_SCHEMAS = [
+  'org',
+  'iam',
+  'shared',
+  'crm',
+  'veh',
+  'apt',
+  'rec',
+  'wo',
+  'dia',
+  'tech',
+  'qms',
+];
 const NAME_RULE = /^(\d{4}|\d{14})_[a-z0-9_]+\.sql$/;
 
 export function listMigrations(dir = MIGRATIONS_DIR) {

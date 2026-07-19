@@ -230,6 +230,14 @@ jobs:
       - name: Validate Appointment/Reception personal-data classification coverage
         run: npm run validate:aptrec-classification
 
+      # P1-09-SEC-003 / P1-09-DO-001: every wo/tech/dia/qms column must carry a
+      # classification (docs/database/wo-tech-dia-qms-personal-data-classification.json),
+      # no restricted column may be searchable, no duplicate entry, and registry/live
+      # types must reconcile. Same canonical script locally and here
+      # (npm run validate:wo-tech-dia-qms-classification).
+      - name: Validate Work-Order/Diagnostics/Technician/Quality personal-data classification coverage
+        run: npm run validate:wo-tech-dia-qms-classification
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 
