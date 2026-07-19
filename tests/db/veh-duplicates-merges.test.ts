@@ -295,6 +295,7 @@ describe('veh.vehicle_merges — concurrency (same source)', () => {
       await setContext(c2, ctxA);
       await c1.query(insMerge(RC_SRC, RC_S2)); // inserts + locks source key/row
       const p2 = c2.query(insMerge(RC_SRC, RC_S3)); // blocks on the unique source key
+      p2.catch(() => {}); // mark handled now; p2 may reject during the COMMIT await
       await c1.query('COMMIT');
       await expectSqlState(p2, '23505', '40001', '40P01');
       await c2.query('ROLLBACK');

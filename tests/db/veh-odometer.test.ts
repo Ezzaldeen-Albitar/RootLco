@@ -297,6 +297,7 @@ describe('veh.odometer_readings — concurrency (per-Vehicle lock)', () => {
 
       await c1.query(insOdo(V_RACE, 150, 'km')); // locks the vehicle row
       const p2 = c2.query(insOdo(V_RACE, 120, 'km')); // blocks on the lock
+      p2.catch(() => {}); // mark handled now; p2 may reject during the COMMIT await
       await c1.query('COMMIT');
       // c2 now sees 150 as current -> 120 is a rollback -> rejected
       await expectSqlState(p2, '23514');

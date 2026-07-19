@@ -193,6 +193,7 @@ describe('veh.vehicle_status_history — concurrency', () => {
       const p2 = c2.query(`UPDATE veh.vehicles SET workshop_status='in_workshop' WHERE id=$1`, [
         V_CC,
       ]); // blocks
+      p2.catch(() => {}); // mark handled now; p2 may reject during the COMMIT await
       await c1.query('COMMIT');
       await p2;
       await c2.query('COMMIT');
