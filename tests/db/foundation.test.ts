@@ -125,6 +125,8 @@ const ALLOWED_TABLES = new Set([
   // Phase 1-6 CRM — alerts and credit-profile foundation (P1-06-DB-013/014).
   'crm.customer_alerts',
   'crm.customer_credit_profiles',
+  // Phase 1-6 CRM — append-only block history (P1-06-DB-015).
+  'crm.customer_block_history',
   // Phase 1-6 CRM — contact points and addresses (P1-06-DB-009/010).
   'crm.contact_points',
   'crm.addresses',
@@ -251,6 +253,8 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-6 CRM — consent stamp + current-consent resolver (P1-06-DB-012).
   'crm.guard_consent_insert',
   'crm.current_consent',
+  // Phase 1-6 CRM — block/lifecycle coherence guard (P1-06-DB-015).
+  'crm.guard_partner_block_coherence',
 ]);
 
 let admin: Pool;
@@ -387,6 +391,7 @@ describe('database foundation', () => {
       'tg_branches_immutable',
       'tg_branches_parent_company_live',
       'tg_branches_touch_metadata',
+      'tg_business_partners_block_coherence',
       'tg_business_partners_immutable',
       'tg_business_partners_merge_guard',
       'tg_business_partners_touch_metadata',
@@ -408,6 +413,7 @@ describe('database foundation', () => {
       'tg_currencies_touch_metadata',
       'tg_customer_alerts_immutable',
       'tg_customer_alerts_touch_metadata',
+      'tg_customer_block_history_stamp',
       'tg_customer_credit_profiles_immutable',
       'tg_customer_credit_profiles_touch_metadata',
       'tg_customer_restrictions_immutable',
@@ -546,6 +552,7 @@ describe('database foundation', () => {
       'ins_contact_points_tenant',
       'ins_cost_centers_scope',
       'ins_customer_alerts_tenant',
+      'ins_customer_block_history_tenant',
       'ins_customer_credit_profiles_tenant',
       'ins_customer_restrictions_tenant',
       'ins_customer_segments_tenant',
@@ -579,6 +586,7 @@ describe('database foundation', () => {
       'sel_cost_centers_scope',
       'sel_currencies_all',
       'sel_customer_alerts_tenant',
+      'sel_customer_block_history_tenant',
       'sel_customer_credit_profiles_tenant',
       'sel_customer_restrictions_tenant',
       'sel_customer_segments_tenant',
