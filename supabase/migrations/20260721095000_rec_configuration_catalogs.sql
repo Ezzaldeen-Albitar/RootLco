@@ -16,8 +16,8 @@
 --   Each is DUAL-SCOPE (veh/apt-catalog precedent): a platform default row
 --   (scope='platform', tenant_id NULL) OR a tenant extension (scope='tenant',
 --   tenant_id NOT NULL). Zero rows ship (no-fake-data); platform rows are
---   provisioned admin-side and tenant rows at runtime. No Benzene identifiers or
---   real operational values are seeded or defaulted. Constrained taxonomies are
+--   provisioned admin-side and tenant rows at runtime. No pilot-tenant
+--   identifiers or real operational values are seeded or defaulted. Constrained taxonomies are
 --   NOT over-normalized: these are the only reception code lists in this phase.
 --
 -- Dependencies

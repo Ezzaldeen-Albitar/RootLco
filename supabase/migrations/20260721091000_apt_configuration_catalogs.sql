@@ -14,7 +14,7 @@
 --   platform default row (scope='platform', tenant_id NULL) OR a tenant
 --   extension (scope='tenant', tenant_id NOT NULL). Zero rows ship (no-fake-data);
 --   platform rows are provisioned admin-side and tenant rows at runtime. No
---   Benzene identifiers or real operational values are seeded or defaulted.
+--   pilot-tenant identifiers or real operational values are seeded or defaulted.
 --
 --   No-show reasons are NOT a separate catalog in this phase: the no-show event
 --   is recorded on the appointment master and in the append-only status history
