@@ -2360,3 +2360,105 @@ Append-only relationship evidence (P1-07-DB-013); links to shared.documents (no 
 | `actor_id`        | uuid                     | NO   | —                   | internal |
 | `occurred_at`     | timestamp with time zone | NO   | `now()`             | internal |
 | `seq`             | bigint                   | NO   | identity            | internal |
+
+### `veh.odometer_readings`
+
+Append-only odometer series (P1-07-DB-014); forward-only with reasoned anomaly-flagged corrections; canonical `value_km` basis; units stored verbatim.
+
+| Column              | Type                     | Null | Default             | Class    |
+| ------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`         | uuid                     | NO   | —                   | internal |
+| `vehicle_id`        | uuid                     | NO   | —                   | internal |
+| `value`             | numeric(12,1)            | NO   | —                   | internal |
+| `unit`              | text                     | NO   | —                   | internal |
+| `value_km`          | numeric(14,4)            | YES  | generated           | internal |
+| `observed_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `capture_method`    | text                     | NO   | —                   | internal |
+| `correction_of`     | uuid                     | YES  | —                   | internal |
+| `correction_reason` | text                     | YES  | —                   | internal |
+| `anomaly_flag`      | boolean                  | NO   | `false`             | internal |
+| `correlation_id`    | uuid                     | YES  | —                   | internal |
+| `recorded_by`       | uuid                     | NO   | —                   | internal |
+| `seq`               | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_status_history`
+
+Append-only typed status ledger (P1-07-DB-015); trigger-emitted lifecycle/workshop transitions; to_state anchored to the live master.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id`     | uuid                     | NO   | —                   | internal |
+| `status_kind`    | text                     | NO   | —                   | internal |
+| `from_state`     | text                     | YES  | —                   | internal |
+| `to_state`       | text                     | NO   | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_alerts`
+
+Vehicle alerts (P1-07-DB-016); safety/technical/commercial/other with severity, effective window, active flag, coherent acknowledgement; soft-deleted; `message` is internal and excluded from search.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `alert_type`      | text                     | NO   | —                   | internal |
+| `severity`        | text                     | NO   | —                   | internal |
+| `message`         | text                     | NO   | —                   | internal |
+| `effective_from`  | timestamp with time zone | NO   | `now()`             | internal |
+| `effective_to`    | timestamp with time zone | YES  | —                   | internal |
+| `is_active`       | boolean                  | NO   | `true`              | internal |
+| `acknowledged_by` | uuid                     | YES  | —                   | internal |
+| `acknowledged_at` | timestamp with time zone | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+| `deleted_at`      | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.duplicate_candidates`
+
+Explainable duplicate Vehicle pairs (P1-07-DB-017); a<b canonical, one open per pair; positive-schema `match_basis` (no raw identifier values).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id_a`   | uuid                     | NO   | —                   | internal |
+| `vehicle_id_b`   | uuid                     | NO   | —                   | internal |
+| `match_score`    | numeric(5,4)             | NO   | —                   | internal |
+| `match_basis`    | jsonb                    | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'open'`            | internal |
+| `detected_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `reviewed_by`    | uuid                     | YES  | —                   | internal |
+| `reviewed_at`    | timestamp with time zone | YES  | —                   | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_merges`
+
+Append-only Vehicle merge record (P1-07-DB-018); one merge per source; inserting a record atomically transitions the source to merged/redirected.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `source_vehicle_id`   | uuid                     | NO   | —                   | internal |
+| `survivor_vehicle_id` | uuid                     | NO   | —                   | internal |
+| `merge_summary`       | jsonb                    | NO   | `'{}'::jsonb`       | internal |
+| `approval_ref`        | text                     | NO   | —                   | internal |
+| `merged_by`           | uuid                     | NO   | —                   | internal |
+| `merged_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`      | uuid                     | YES  | —                   | internal |
+| `seq`                 | bigint                   | NO   | identity            | internal |
