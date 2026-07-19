@@ -107,6 +107,8 @@ const ALLOWED_TABLES = new Set([
   'shared.comments',
   // Phase 1-6 CRM — party master (P1-06-DB-001).
   'crm.business_partners',
+  // Phase 1-6 CRM — normalized typed identifiers (P1-06-DB-004).
+  'crm.partner_identifiers',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -415,6 +417,8 @@ describe('database foundation', () => {
       'tg_outbound_messages_guard_scope',
       'tg_outbound_messages_immutable',
       'tg_outbound_messages_touch_metadata',
+      'tg_partner_identifiers_immutable',
+      'tg_partner_identifiers_touch_metadata',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
       'tg_retention_classes_immutable',
@@ -485,6 +489,7 @@ describe('database foundation', () => {
       'ins_cost_centers_scope',
       'ins_departments_scope',
       'ins_legal_companies_tenant',
+      'ins_partner_identifiers_tenant',
       'ins_storage_locations_scope',
       'ins_tax_classes_scope',
       'ins_tax_rates_scope',
@@ -522,6 +527,7 @@ describe('database foundation', () => {
       'sel_notes_tenant',
       'sel_number_sequences_tenant',
       'sel_outbound_messages_tenant',
+      'sel_partner_identifiers_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
       'sel_role_grants_tenant',
@@ -557,6 +563,7 @@ describe('database foundation', () => {
       'upd_departments_scope',
       'upd_legal_companies_tenant',
       'upd_number_sequences_tenant',
+      'upd_partner_identifiers_tenant',
       'upd_storage_locations_scope',
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
