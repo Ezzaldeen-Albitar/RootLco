@@ -40,8 +40,8 @@
 - [x] Append-only ledgers reject UPDATE/DELETE; forged/incoherent rows rejected.
 - [x] Concurrency single-winner races proven ×5.
 - [x] No work-order table (P1-09); no backend (P1-18); no frontend (P1-28).
-- [ ] Feature PR merged into `develop` — recorded at gate closure.
-- [ ] Hosted CI green on final feature SHA — recorded at gate closure.
+- [x] Feature PR **#36** merged into `develop` — merge commit `6e5e56a` (parents `ca5273f` + `e7ba638`), merge-commit strategy, 2026-07-19T23:10:28+03:00; feature SHA `e7ba638` contained in `origin/develop` (`6e5e56a`).
+- [x] Hosted CI green on the final feature SHA `e7ba638` — all four required checks passed.
 
 ## Reconciliation notes
 

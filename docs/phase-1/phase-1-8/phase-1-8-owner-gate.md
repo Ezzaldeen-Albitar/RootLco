@@ -19,18 +19,31 @@ and never from a merge alone. Nothing in this phase touches a reserved founder
 decision (no production, no real customer data, no pricing/contract, no material
 financial or scope change).
 
-## Decision: **Pending**
+## Decision: **Go — Technical Gate Passed**
 
-The decision is **Pending** until the feature pull request is merged into
-protected `develop` and this record is updated with the merge evidence in a
-separate gate-record pull request.
+All five gate conditions below are evidenced. The Phase 1-8 feature pull request
+was merged into protected `develop`; the merge by Eng. Ezzaldeen Al-Bitar is the
+recorded technical approval event. The record is completed from evidenced facts,
+not from the merge alone.
 
 - **Phase ID:** P1-08
 - **Phase title:** Appointment and Vehicle Reception Database
+- **Decision:** **Go — Technical Gate Passed**
 - **Decision authority:** Eng. Ezzaldeen Al-Bitar
+- **Decision date:** 2026-07-19
 - **Governance basis:** Standing Technical Authorization Policy §2 and the Solo
   Developer Review Policy — owner-authorized technical, QA, security, and
   adversarial self-review, **not** an independent third-party review.
+
+### Merge evidence
+
+- **Feature PR:** [#36 — [P1-08] Implement Appointment and Vehicle Reception database foundation](https://github.com/Ezzaldeen-Albitar/RootLco/pull/36) · state **Merged**.
+- **Final feature SHA:** `e7ba6380e74fbd87ec1bee79b6ebcbcfefaa2676`.
+- **Merge target:** `develop`. **Merge strategy:** merge commit (`--no-ff`, two parents).
+- **Merge commit:** `6e5e56a7530bf73bc7ea5c2294296b62164c7c24` — _"Merge pull request #36 from Ezzaldeen-Albitar/feature/p1-08-appointment-reception-database"_; parents `ca5273f` (prior `develop`, the Phase 1-7 gate merge #35) + `e7ba638` (feature head).
+- **Merge author:** Eng. Ezzaldeen Al-Bitar. **Committer:** GitHub. **Merge timestamp:** 2026-07-19T23:10:28+03:00.
+- **Hosted CI on the final feature SHA:** all four required checks green — Database migrations + RLS/classification/concurrency, Lint/types/tests/build, Docker build validation, Secret and sensitive-file scan; GitHub reported "All checks have passed" and "No conflicts with base branch".
+- **Containment:** `e7ba638` verified as an ancestor of `origin/develop` (`6e5e56a`).
 
 ## Gate conditions (all must be evidenced before Go)
 
@@ -59,13 +72,28 @@ separate gate-record pull request.
 - **Classification:** all 454 apt/rec columns classified; 4 restricted columns,
   0 restricted-searchable; validator green in CI.
 
-## Merge evidence
+## Formal Closure Update
 
-_To be completed in the separate gate-record pull request after the feature PR is
-merged: feature PR number + state, final feature SHA, merge commit + parents +
-strategy, merge author/timestamp, and the green CI run on the final SHA._
+This gate-record pull request records the technical gate as **Go — Technical Gate
+Passed** in protected history, from the evidenced facts above. Only closure and
+governance documentation is modified by this pull request; no schema, test, or
+application code changes.
 
-## Formal closure
+- Feature PR **#36** is **Merged** into `develop`; final feature SHA `e7ba638` is
+  contained in `origin/develop` (`6e5e56a`).
+- All five gate conditions are satisfied and evidenced (schema/tests/no-fake-data/
+  classification/clean-room, zero unresolved Critical/High, no P1-09/P1-18/P1-28
+  scope leakage, `main` untouched).
+- Phase 1-8 is formally closed once **this** gate-record pull request is also
+  merged into `develop` and both SHAs (feature `e7ba638` and this gate-record
+  commit) are verified contained in protected `origin/develop`.
 
-_Recorded after both the feature PR and this gate-record PR are merged and both
-SHAs are verified contained in `origin/develop`._
+## Pre-closure status (historical — superseded)
+
+_Preserved verbatim for the audit trail. This was the record's state before the
+feature PR merged; it is superseded by the **Go — Technical Gate Passed** decision
+above._
+
+> **Decision: Pending** — The decision is Pending until the feature pull request
+> is merged into protected `develop` and this record is updated with the merge
+> evidence in a separate gate-record pull request.
