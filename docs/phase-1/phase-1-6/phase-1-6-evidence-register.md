@@ -18,17 +18,17 @@ figures from an earlier commit.
 | Metric                                    |                          Value |
 | ----------------------------------------- | -----------------------------: |
 | Tables                                    |                             21 |
-| Columns                                   |                            296 |
-| Functions                                 |                             12 |
-| Triggers                                  |                             44 |
+| Columns                                   |                            298 |
+| Functions                                 |                             13 |
+| Triggers                                  |                             45 |
 | RLS policies                              |                             58 |
 | Indexes                                   |                             68 |
 | Foreign keys                              |                             51 |
 | Check constraints                         |                             73 |
-| CRM migrations                            | 15 (`20260719090000`–`104000`) |
-| Migrations in repo (total)                |                             47 |
-| CRM test files / cases                    |                       19 / 151 |
-| DB test files (total)                     |                             55 |
+| CRM migrations                            | 16 (`20260719090000`–`105000`) |
+| Migrations in repo (total)                |                             48 |
+| CRM test files / cases                    |                       20 / 160 |
+| DB test files (total)                     |                             56 |
 | Reference/seed rows introduced by CRM     |                              0 |
 | Business rows after clean migration       |                              0 |
 | `SECURITY DEFINER` functions in `crm`     |                              0 |
@@ -83,6 +83,18 @@ random `uuid` was non-deterministic for same-transaction events. A monotonic
 and `consent_history`; block coherence and `current_consent` now order by `seq`.
 Verified stable; concurrency suite green over five consecutive runs.
 
+A second, five-lens Wave 7 review (architecture, security, QA, documentation,
+red-team + integration) found **zero Critical, two High, twelve Medium** and no
+reproducible cross-tenant breach. Both Highs (a self-review mislabelled
+"independent" in shipped source; cross-tenant **write** isolation proven on only
+one table) and nine Mediums were **fixed** — chiefly the forward migration
+`20260719105000_crm_review_hardening.sql` (restricted-identifier INSERT gate;
+`UNIQUE (tenant_id, source_partner_id)`; reject merge into a soft-deleted
+survivor; `seq` on `partner_status_history`/`timeline_events`; a `BEFORE INSERT`
+server-stamp on `timeline_events`). The three remaining Mediums are
+Phase-1-16 write-path deferrals accepted with rationale. Full per-finding
+disposition: the [review response](./phase-1-6-review-response.md).
+
 ## 4. Reconciliations
 
 - **DB-022 (index review).** No hot-path foreign key lacks a supporting index.
@@ -106,7 +118,7 @@ Verified stable; concurrency suite green over five consecutive runs.
 | `eslint` on new/changed test files                   | clean                      |
 | CRM + foundation + no-fake-data suites               | green                      |
 | Concurrency suite (5 consecutive runs)               | green                      |
-| Classification guard (`validate:crm-classification`) | OK — 296 columns reconcile |
+| Classification guard (`validate:crm-classification`) | OK — 298 columns reconcile |
 
 The authoritative signal is the hosted CI on the feature PR's exact SHA (four
 required checks). This register is completed from local evidence and updated with

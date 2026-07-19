@@ -153,4 +153,29 @@ describe('timeline events (P1-06-DB-019)', () => {
     await admin.query(`DELETE FROM crm.timeline_events WHERE partner_id = $1`, [PARTNER_A]);
     await admin.query(`DELETE FROM crm.communication_log WHERE partner_id = $1`, [PARTNER_A]);
   });
+
+  it('server-stamps attribution: a direct insert cannot forge actor_id or backdate occurred_at', async () => {
+    // The direct-INSERT path exists (SECURITY DEFINER is forbidden, so writes
+    // cannot be locked to the emit trigger). The BEFORE INSERT stamp trigger
+    // therefore forces actor_id := current user and occurred_at := now(), so a
+    // caller cannot forge attribution or backdate the event.
+    const FORGED_ACTOR = '00000000-0000-4000-8000-0000000000ff';
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      await tx.query(
+        `INSERT INTO crm.timeline_events (tenant_id, partner_id, event_type, title, occurred_at, actor_id)
+         VALUES ($1, $2, 'communication_logged', 'forge attempt', TIMESTAMPTZ '2000-01-01T00:00:00Z', $3)`,
+        [TENANT_A, PARTNER_A, FORGED_ACTOR]
+      );
+      const { rows } = await tx.query(
+        `SELECT actor_id, occurred_at FROM crm.timeline_events
+          WHERE tenant_id = $1 AND partner_id = $2 AND title = 'forge attempt'`,
+        [TENANT_A, PARTNER_A]
+      );
+      expect(rows[0].actor_id, 'actor_id must be stamped to the session user').toBe(USER_A);
+      expect(
+        new Date(rows[0].occurred_at).getUTCFullYear(),
+        'occurred_at must be stamped to now(), not the backdated value'
+      ).toBeGreaterThan(2000);
+    });
+  });
 });

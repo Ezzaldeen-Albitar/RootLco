@@ -159,7 +159,9 @@ describe('identifier creation, typing, and coupling (P1-06-DB-004)', () => {
   });
 
   it('rejects a contact type labelled restricted (coupling)', async () => {
-    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+    // Under the sensitive-view user so the restricted-INSERT gate passes and the
+    // type<->classification coupling CHECK (not the gate) is what rejects it.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: SENSITIVE_USER }, async (tx) => {
       await expectSqlState(
         insertIdent(
           tx,
@@ -174,12 +176,44 @@ describe('identifier creation, typing, and coupling (P1-06-DB-004)', () => {
   });
 
   it('accepts a tax identifier as restricted and rejects it as internal (coupling)', async () => {
-    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: SENSITIVE_USER }, async (tx) => {
       await insertIdent(tx, 'a6200000-0000-4000-8000-00000000fa01', 'tax', 'TAX-1', 'restricted');
       await expectSqlState(
         insertIdent(tx, 'a6200000-0000-4000-8000-00000000fa02', 'tax', 'TAX-2', 'internal'),
         '23514'
       );
+    });
+  });
+
+  it('requires iam.sensitive.view to INSERT a restricted identifier (existence-oracle gate)', async () => {
+    // Unprivileged user cannot create a restricted (national_id/registration/tax)
+    // identifier at all — closes the write-without-read plant and the 23505 oracle.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      await expectSqlState(
+        insertIdent(tx, 'a6200000-0000-4000-8000-00000000fb01', 'national_id', 'NID-GATE', 'restricted'),
+        '42501'
+      );
+    });
+    // Sensitive-view user can; and an internal identifier needs no permission.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: SENSITIVE_USER }, async (tx) => {
+      const r = await insertIdent(
+        tx,
+        'a6200000-0000-4000-8000-00000000fb02',
+        'national_id',
+        'NID-GATE-OK',
+        'restricted'
+      );
+      expect(r.rowCount).toBe(1);
+    });
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      const r = await insertIdent(
+        tx,
+        'a6200000-0000-4000-8000-00000000fb03',
+        'email',
+        'gate@x.test',
+        'internal'
+      );
+      expect(r.rowCount).toBe(1);
     });
   });
 

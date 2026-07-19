@@ -4,7 +4,7 @@
 
 **Company:** RootLco — Root Link Company · **Phase:** 1-6 — CRM and Business Partner Database
 
-Authoritative per-column reference for all **21** `crm` tables (**296** columns). "Class" is the personal-data classification from the enforced registry (`public`/`internal`/`restricted`/`secret`); **restricted** columns are sensitive-view gated and never projected into search. RLS is `FORCE`d on every table; grants and policies are in the [grant matrix](./crm-grant-matrix.md) and [RLS matrix](./crm-rls-policy-matrix.md).
+Authoritative per-column reference for all **21** `crm` tables (**298** columns). "Class" is the personal-data classification from the enforced registry (`public`/`internal`/`restricted`/`secret`); **restricted** columns are sensitive-view gated and never projected into search. RLS is `FORCE`d on every table; grants and policies are in the [grant matrix](./crm-grant-matrix.md) and [RLS matrix](./crm-rls-policy-matrix.md).
 
 ## `crm.addresses`
 
@@ -431,6 +431,7 @@ Append-only lifecycle-status history. Grant is INSERT+SELECT only; a shared trig
 | `actor_id`       | uuid        | NOT NULL | internal |                     |
 | `occurred_at`    | timestamptz | NOT NULL | internal | `now()`             |
 | `correlation_id` | uuid        | ·        | internal |                     |
+| `seq`            | bigint      | NOT NULL | internal |                     |
 
 ## `crm.timeline_events`
 
@@ -448,3 +449,4 @@ Append-only partner activity timeline. Rows are emitted through emit_timeline_ev
 | `occurred_at`    | timestamptz | NOT NULL | internal | `now()`             |
 | `actor_id`       | uuid        | ·        | internal |                     |
 | `correlation_id` | uuid        | ·        | internal |                     |
+| `seq`            | bigint      | NOT NULL | internal |                     |

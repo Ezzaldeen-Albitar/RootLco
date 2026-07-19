@@ -9,9 +9,10 @@
 --   function/trigger validation only — no data rewrite.
 --
 -- Purpose
---   Forward corrections for three MEDIUM findings from the independent Wave 5
---   security/adversarial review of the committed schema. Migrations are
---   immutable once merged; these are new forward changes, not edits.
+--   Forward corrections for three MEDIUM findings from the Wave 5
+--   owner-authorized technical/security self-review (adversarial/red-team lens,
+--   NOT an independent third-party review) of the committed schema. Migrations
+--   are immutable once merged; these are new forward changes, not edits.
 --
 --   1. Block coherence was enforced only on UPDATE, so a partner could be
 --      INSERTED already 'blocked' with no attributable block-history row. Extend

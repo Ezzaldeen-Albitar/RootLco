@@ -1,8 +1,9 @@
 /**
  * Phase 1-6 CRM — Wave 5 security hardening (P1-06-SEC-002/004).
  *
- * Regression guards for three MEDIUM findings from the independent Wave 5
- * review: a partner cannot be INSERTED already blocked or already merged (block
+ * Regression guards for three MEDIUM findings from the Wave 5 owner-authorized
+ * technical/security self-review (adversarial/red-team lens, not an independent
+ * third-party review): a partner cannot be INSERTED already blocked or already merged (block
  * and merge are only ever UPDATEs), and crm.jsonb_no_raw_value_keys rejects
  * raw-value keys at ANY nesting depth, case-insensitively.
  *
@@ -122,6 +123,35 @@ describe('jsonb raw-value containment recurses and is case-insensitive (P1-06-SE
         [TENANT_A, DUP_A, SURVIVOR]
       );
       expect(res.rowCount).toBe(1);
+    });
+  });
+});
+
+describe('deterministic same-transaction ordering by seq (P1-06-SEC-003)', () => {
+  it('current_consent resolves two same-effective-time consents by seq (later insert wins)', async () => {
+    // occurred_at/effective_at are now() (constant within a tx) — without the
+    // monotonic seq tie-break this would resolve nondeterministically. Two
+    // consents with the SAME effective_at inserted granted->withdrawn in one
+    // transaction must always resolve to 'withdrawn' (the higher seq).
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      const eff = '2026-03-01T00:00:00Z';
+      for (const status of ['granted', 'withdrawn']) {
+        await tx.query(
+          `INSERT INTO crm.consent_history
+             (tenant_id, partner_id, consent_kind, channel, purpose, status, effective_at)
+           VALUES ($1, $2, 'marketing', 'email', 'marketing', $3, $4::timestamptz)`,
+          [TENANT_A, SURVIVOR, status, eff]
+        );
+      }
+      for (let i = 0; i < 3; i++) {
+        const { rows } = await tx.query(
+          `SELECT crm.current_consent($1, 'marketing', 'email', 'marketing') AS s`,
+          [SURVIVOR]
+        );
+        expect(rows[0].s, 'same-effective-time consent must resolve deterministically').toBe(
+          'withdrawn'
+        );
+      }
     });
   });
 });

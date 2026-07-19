@@ -112,23 +112,30 @@ describe('search projection contract (P1-06-DB-021)', () => {
     await admin.query(`DELETE FROM shared.search_metadata WHERE tenant_id = $1`, [TENANT_A]);
   });
 
-  it('the projection contract excludes restricted fields (no restricted classification for partner search)', async () => {
-    // The contract forbids projecting national/tax/registration ids or DOB. We
-    // assert the guard-rail: a partner search projection classified 'restricted'
-    // is a contract violation the projection never emits — proven here by never
-    // writing one and confirming only 'internal' rows exist for the partner.
+  it('even a mis-projected restricted search row is hidden from an unprivileged runtime session', async () => {
+    // The projection contract forbids emitting restricted identifiers/DOB into
+    // search. This asserts the real, non-vacuous guard-rail behind that contract:
+    // shared.search_metadata's row-level gate hides a restricted row from a
+    // runtime session lacking iam.sensitive.view, so even a contract violation
+    // does not leak restricted data to unprivileged search. (The property that
+    // no crm column is BOTH restricted and searchable is separately enforced by
+    // `npm run validate:crm-classification`.)
     await admin.query(
       `INSERT INTO shared.search_metadata
          (tenant_id, entity_type, entity_id, field_code, normalized_value, classification, source_updated_at, created_by)
-       VALUES ($1, 'crm.business_partner', $2, 'email', crm.normalize_email('a@b.test'), 'internal', now(), $3)`,
+       VALUES ($1, 'crm.business_partner', $2, 'email', crm.normalize_email('a@b.test'), 'internal', now(), $3),
+              ($1, 'crm.business_partner', $2, 'national_id', 'leaked-restricted', 'restricted', now(), $3)`,
       [TENANT_A, PARTNER_A, USER_A]
     );
-    const { rows } = await admin.query(
-      `SELECT count(*)::int AS restricted FROM shared.search_metadata
-        WHERE tenant_id = $1 AND entity_id = $2 AND classification IN ('restricted','secret')`,
-      [TENANT_A, PARTNER_A]
-    );
-    expect(rows[0].restricted).toBe(0);
+    // Unprivileged runtime session (no iam.sensitive.view) sees only the internal row.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT classification FROM shared.search_metadata
+          WHERE tenant_id = $1 AND entity_id = $2 ORDER BY classification`,
+        [TENANT_A, PARTNER_A]
+      );
+      expect(rows.map((r) => r.classification)).toEqual(['internal']);
+    });
     await admin.query(`DELETE FROM shared.search_metadata WHERE tenant_id = $1`, [TENANT_A]);
   });
 });

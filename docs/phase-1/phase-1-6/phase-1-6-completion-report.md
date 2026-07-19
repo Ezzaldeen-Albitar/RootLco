@@ -25,10 +25,10 @@ integration, forensic audit trail, or any real or fake business data.
 
 ## 2. What was delivered
 
-**Fifteen timestamped migrations** (`20260719090000`–`104000`) creating, per
+**Sixteen timestamped migrations** (`20260719090000`–`105000`) creating, per
 live introspection at the final source SHA:
 
-- **21 tables, 296 columns, 12 functions, 44 triggers, 58 RLS policies,
+- **21 tables, 298 columns, 13 functions, 45 triggers, 58 RLS policies,
   68 indexes, 51 foreign keys, 73 check constraints.**
 
 Every table has `ENABLE` + `FORCE ROW LEVEL SECURITY` with default-deny,
@@ -44,14 +44,14 @@ history/timeline tables are append-only (INSERT+SELECT grants only; UPDATE/DELET
 [data dictionary](./crm-data-dictionary.md), [party & role taxonomy](./crm-party-role-taxonomy.md),
 and [ERD](../../database/erd/phase-1-6-crm.mmd).
 
-**Testing:** 19 CRM test files, 151 CRM test cases, all passing, plus the shared
+**Testing:** 20 CRM test files, 160 CRM test cases, all passing, plus the shared
 `foundation` and `no-fake-data` guards. Includes the QA-006 two-tenant isolation
 suite (covers all 21 tables, auto-fails if a new table lacks coverage), the
 QA-007 concurrency suite (single-winner races; five-run stability), and the
 P1-07 structural-contract test. See the [test catalog](./phase-1-6-test-catalog.md).
 
 **Data governance:** a personal-data [classification registry](../../database/crm-personal-data-classification.json)
-(296 columns) enforced in CI by `validate:crm-classification` (DO-001); zero
+(298 columns) enforced in CI by `validate:crm-classification` (DO-001); zero
 seed rows and zero business rows (DB-024); the permanent no-fake-data invariant
 extended to the `crm` schema.
 
@@ -69,8 +69,15 @@ extended to the `crm` schema.
   surfaced four Medium findings.
 - **Wave 6** — config-only seed confirmation (DB-024), migration/pipeline
   rehearsal (DB-025/QA-008), and this documentation package.
-- **Waves 7–8** — clean-room validation from an empty database, adversarial
-  red-team review, then the feature pull request and hosted-CI loop.
+- **Wave 7** — clean-room validation from an empty database (all migrations +
+  idempotent seeds; full CRM/foundation/no-fake-data suite green; concurrency
+  stable across repeated runs) and a five-lens adversarial review
+  (architecture, security, QA, documentation, red-team + integration). It found
+  zero Critical, two High, and twelve Medium; both Highs and nine Mediums were
+  fixed (mostly via the forward migration `…105000`), the remaining three
+  Mediums accepted as Phase-1-16 deferrals. See the
+  [review response](./phase-1-6-review-response.md).
+- **Wave 8** — the feature pull request and the hosted-CI loop.
 
 ## 4. Security self-review and findings
 

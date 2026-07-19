@@ -118,7 +118,7 @@ invariants (see [`rls-standard.md`](../../database/rls-standard.md),
 - **Discriminator exclusivity.** Profile exclusivity is enforced by the discriminator key `(tenant_id, id, party_type)`,
   so a party is one type and its profile row cannot mismatch. New party-typed detail attaches through the same
   discriminator without ambiguity.
-- **Classification registry as the single sensitive-data source of truth.** All 296 columns are classified in
+- **Classification registry as the single sensitive-data source of truth.** All 298 columns are classified in
   [`crm-personal-data-classification.json`](../../database/crm-personal-data-classification.json) and enforced in
   CI (`validate:crm-classification`). The guard fails on any unclassified column, any stale entry, any invalid
   value, and any column that is both `restricted` and `searchable`. A new sensitive column cannot ship

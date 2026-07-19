@@ -2,7 +2,7 @@
 
 <!-- GENERATED from live crm introspection; do not hand-edit count tables. -->
 
-Generated from the live `crm` schema. Totals: **21 tables, 296 columns, 12 functions, 44 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
+Generated from the live `crm` schema. Totals: **21 tables, 298 columns, 13 functions, 45 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
 
 ## Tables (21)
 
@@ -27,10 +27,10 @@ Generated from the live `crm` schema. Totals: **21 tables, 296 columns, 12 funct
 | `partner_roles`                | 12      | ✅         |
 | `partner_segment_assignments`  | 13      | ✅         |
 | `partner_sensitive_attributes` | 14      | ✅         |
-| `partner_status_history`       | 10      | ✅         |
-| `timeline_events`              | 10      | ✅         |
+| `partner_status_history`       | 11      | ✅         |
+| `timeline_events`              | 11      | ✅         |
 
-## Functions (12)
+## Functions (13)
 
 All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 
@@ -48,8 +48,9 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `partner_roles_active_at`       | INVOKER  | STABLE     |
 | `resolve_partner_survivor`      | INVOKER  | STABLE     |
 | `stamp_partner_merge`           | INVOKER  | VOLATILE   |
+| `stamp_timeline_event`          | INVOKER  | VOLATILE   |
 
-## Triggers (44)
+## Triggers (45)
 
 | Table                          | Trigger                                          |
 | ------------------------------ | ------------------------------------------------ |
@@ -97,6 +98,7 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `partner_sensitive_attributes` | `tg_partner_sensitive_attributes_touch_metadata` |
 | `partner_status_history`       | `tg_partner_status_history_stamp`                |
 | `partner_status_history`       | `tg_partner_status_history_timeline`             |
+| `timeline_events`              | `tg_timeline_events_stamp`                       |
 
 ## Indexes (68)
 
@@ -153,9 +155,9 @@ All `SECURITY INVOKER`, `search_path=''`. No `SECURITY DEFINER` exists in `crm`.
 | `partner_identifiers`          | `uq_partner_identifiers_tenant_id`                  | ✅     |         |
 | `partner_identifiers`          | `uq_partner_identifiers_tenant_partner_id`          | ✅     |         |
 | `partner_identifiers`          | `uq_partner_identifiers_value_active`               | ✅     | ✅      |
-| `partner_merges`               | `ix_partner_merges_source`                          |        |         |
 | `partner_merges`               | `ix_partner_merges_survivor`                        |        |         |
 | `partner_merges`               | `pk_partner_merges`                                 | ✅     |         |
+| `partner_merges`               | `uq_partner_merges_source`                          | ✅     |         |
 | `partner_roles`                | `ex_partner_roles_no_overlap`                       |        |         |
 | `partner_roles`                | `ix_partner_roles_lookup`                           |        |         |
 | `partner_roles`                | `pk_partner_roles`                                  | ✅     |         |

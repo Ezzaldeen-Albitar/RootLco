@@ -3,9 +3,11 @@
  *
  * Seeds a complete CRM dataset in BOTH tenants, then proves through the
  * NON-owner runtime login that tenant A can neither read nor write tenant B's
- * data on EVERY crm table, that the sensitive-view permission is per-tenant, and
- * — critically — the suite FAILS if a new crm table is added without isolation
- * coverage here.
+ * data on EVERY crm table — reads return zero tenant-B rows, and cross-tenant
+ * UPDATE/DELETE affect zero rows (or are denied 42501 on append-only tables)
+ * with every tenant-B row verified still present. Also proves the sensitive-view
+ * permission is per-tenant, default-deny holds with no tenant context, and —
+ * critically — the suite FAILS if a new crm table is added without coverage here.
  *
  * Test-reference: TC-RLS-001, TC-CRM-001.
  */
@@ -282,5 +284,70 @@ describe('two-tenant isolation across every crm table (P1-06-QA-006)', () => {
         '42501'
       );
     });
+  });
+
+  it('tenant A cannot UPDATE or DELETE any tenant-B row on ANY covered table', async () => {
+    // For every covered table, a tenant-A runtime session must not be able to
+    // mutate a tenant-B row. Mutable tables silently affect 0 rows (RLS USING
+    // filters tenant B out); append-only tables reject the command outright
+    // (42501, no UPDATE/DELETE grant). Either way, zero tenant-B rows change.
+    // Savepoints isolate each expected-fail so one does not poison the loop.
+    async function attempt(tx: { query: Pool['query'] }, sql: string) {
+      await tx.query('SAVEPOINT sp');
+      try {
+        const r = await tx.query(sql, [TENANT_B]);
+        await tx.query('RELEASE SAVEPOINT sp');
+        return { rowCount: r.rowCount as number };
+      } catch (e) {
+        await tx.query('ROLLBACK TO SAVEPOINT sp');
+        return { code: (e as { code?: string }).code };
+      }
+    }
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: SENSITIVE_A }, async (tx) => {
+      for (const t of COVERED_TABLES) {
+        const upd = await attempt(tx, `UPDATE crm.${t} SET tenant_id = tenant_id WHERE tenant_id = $1`);
+        if (upd.code !== undefined) expect(upd.code, `UPDATE crm.${t}`).toBe('42501');
+        else expect(upd.rowCount, `UPDATE crm.${t} changed tenant-B rows`).toBe(0);
+
+        const del = await attempt(tx, `DELETE FROM crm.${t} WHERE tenant_id = $1`);
+        if (del.code !== undefined) expect(del.code, `DELETE crm.${t}`).toBe('42501');
+        else expect(del.rowCount, `DELETE crm.${t} removed tenant-B rows`).toBe(0);
+      }
+      // Every tenant-B row still present (nothing was actually mutated/deleted).
+      for (const t of COVERED_TABLES) {
+        const still = await admin.query(
+          `SELECT count(*)::int AS n FROM crm.${t} WHERE tenant_id = $1`,
+          [TENANT_B]
+        );
+        expect(still.rows[0].n, `tenant-B rows in crm.${t} survived`).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  it('with NO tenant context, the runtime role reads zero rows and cannot write (default-deny)', async () => {
+    const client = await runtime.connect();
+    try {
+      await client.query('BEGIN');
+      // Deliberately DO NOT set app.tenant_id / app.user_id.
+      for (const t of COVERED_TABLES) {
+        const r = await client.query(`SELECT count(*)::int AS n FROM crm.${t}`);
+        expect(r.rows[0].n, `no-context read of crm.${t} must be empty`).toBe(0);
+      }
+      await client.query('SAVEPOINT sp');
+      let insertCode: string | undefined;
+      try {
+        await client.query(
+          `INSERT INTO crm.business_partners (tenant_id, party_type, display_name, created_by)
+           VALUES ($1, 'individual', 'NoCtx', $2)`,
+          [TENANT_A, USER_A]
+        );
+      } catch (e) {
+        insertCode = (e as { code?: string }).code;
+      }
+      expect(insertCode, 'no-context INSERT must be denied by WITH CHECK').toBe('42501');
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
   });
 });

@@ -265,8 +265,9 @@ const ALLOWED_ROUTINES = new Set([
   'crm.jsonb_no_raw_value_keys',
   'crm.stamp_partner_merge',
   'crm.resolve_partner_survivor',
-  // Phase 1-6 CRM — timeline emit (P1-06-DB-019).
+  // Phase 1-6 CRM — timeline emit (P1-06-DB-019) + BEFORE-INSERT stamp (P1-06 review hardening).
   'crm.emit_timeline_event',
+  'crm.stamp_timeline_event',
   // Phase 1-6 CRM — search normalization (P1-06-DB-021).
   'crm.normalize_name',
   'crm.normalize_email',
@@ -544,6 +545,7 @@ describe('database foundation', () => {
       'tg_tenant_subscriptions_touch_metadata',
       'tg_tenants_immutable_columns',
       'tg_tenants_touch_metadata',
+      'tg_timeline_events_stamp',
       'tg_timezones_touch_metadata',
       'tg_timezones_validate_zone_name',
       'tg_user_accounts_immutable',

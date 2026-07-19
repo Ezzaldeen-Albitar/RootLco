@@ -2,9 +2,9 @@
 
 <!-- GENERATED from live crm introspection; do not hand-edit count tables. -->
 
-Generated from the live `crm` schema. Totals: **21 tables, 296 columns, 12 functions, 44 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
+Generated from the live `crm` schema. Totals: **21 tables, 298 columns, 13 functions, 45 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
 
-Every `crm` base table has `ENABLE` **and** `FORCE ROW LEVEL SECURITY`, so even the table owner is subject to policy. All app roles are `NOBYPASSRLS` and non-superuser. Policies are per-command and default-deny: a command with no matching policy is denied. Tenant scoping keys on `iam.current_tenant_id()`.
+Every `crm` base table has `ENABLE` **and** `FORCE ROW LEVEL SECURITY`. `FORCE` binds any **non-superuser** role, including a non-superuser table owner; the `crm` tables are currently owned by the superuser `postgres` (which bypasses RLS regardless of `FORCE`), so tenant isolation rests on the application connecting **only** as the `NOBYPASSRLS` app roles (`app_runtime`/`app_readonly`/`app_worker`), never the owner/provisioning connection. All app roles are `NOBYPASSRLS` and non-superuser. Policies are per-command and default-deny: a command with no matching policy is denied. Tenant scoping keys on `iam.current_tenant_id()`.
 
 ## Force-RLS coverage
 

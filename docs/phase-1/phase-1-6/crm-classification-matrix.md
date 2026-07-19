@@ -4,7 +4,7 @@
 
 Machine source: [`docs/database/crm-personal-data-classification.json`](../../database/crm-personal-data-classification.json), enforced in CI by `npm run validate:crm-classification` (job **Database migrations and RLS tests**). Every `crm` column carries a classification in {`public`, `internal`, `restricted`, `secret`}; the guard fails on any unclassified column, any stale entry, any invalid value, and any column that is both `restricted` and `searchable`.
 
-**Columns classified:** 296 · **Restricted:** 7 · **Searchable:** 11
+**Columns classified:** 298 · **Restricted:** 7 · **Searchable:** 11
 
 ## Restricted columns (7) — sensitive-view gated, never searchable
 

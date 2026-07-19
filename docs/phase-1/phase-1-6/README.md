@@ -24,8 +24,8 @@ segments and segment assignments; lifecycle status history, customer
 restrictions and block history; contact points, addresses, communication
 preferences and consent history; commercial credit profiles and customer
 alerts; duplicate candidates and partner merges; and a communication log with
-an append-only timeline — delivered as **21 tables, 296 columns, 12 functions,
-44 triggers, 58 policies, and 68 indexes** (plus 51 foreign keys and 73 check
+an append-only timeline — delivered as **21 tables, 298 columns, 13 functions,
+45 triggers, 58 policies, and 68 indexes** (plus 51 foreign keys and 73 check
 constraints), created across 15 forward-only crm migrations
 (`20260719090000`–`20260719104000`) and verified by live schema introspection.
 The generated [object inventory](./crm-object-inventory.md) is the authoritative
@@ -54,7 +54,7 @@ This phase is the database layer only. It intentionally excludes:
 | Document                                                                                      | Purpose                                                                                      |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | [README.md](./README.md)                                                                      | This overview and folder entry point.                                                        |
-| [crm-data-dictionary.md](./crm-data-dictionary.md)                                            | Column-level data dictionary for all 21 crm tables (296 columns).                            |
+| [crm-data-dictionary.md](./crm-data-dictionary.md)                                            | Column-level data dictionary for all 21 crm tables (298 columns).                            |
 | [crm-object-inventory.md](./crm-object-inventory.md)                                          | Generated inventory: tables, functions, triggers, policies, indexes, FKs, check constraints. |
 | [crm-rls-policy-matrix.md](./crm-rls-policy-matrix.md)                                        | Per-table, per-command row-level-security policy matrix (58 policies).                       |
 | [crm-grant-matrix.md](./crm-grant-matrix.md)                                                  | Table privileges granted to `app_runtime`, `app_readonly`, and `app_worker`.                 |
@@ -65,10 +65,11 @@ This phase is the database layer only. It intentionally excludes:
 | [crm-abuse-case-record.md](./crm-abuse-case-record.md)                                        | Abuse-case / adversarial review findings and dispositions (SEC-004).                         |
 | [crm-target-data-model-phase-1-35.md](./crm-target-data-model-phase-1-35.md)                  | Forward-looking target CRM data model spanning later phases (through Phase 1-35).            |
 | [p1-07-structural-contract.md](./p1-07-structural-contract.md)                                | Structural contract this phase hands to Phase 1-7.                                           |
-| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 15 crm migrations classified by kind (schema / security / function / index).             |
+| [phase-1-6-migration-classification.md](../../database/phase-1-6-migration-classification.md) | The 16 crm migrations classified by kind (schema / security / function / index).             |
 | [phase-1-6-traceability.md](./phase-1-6-traceability.md)                                      | Task → migration → test → commit traceability register.                                      |
-| [phase-1-6-test-catalog.md](./phase-1-6-test-catalog.md)                                      | Catalog of the crm test suite (18 crm files of 54 db test files; 158 tests green).           |
+| [phase-1-6-test-catalog.md](./phase-1-6-test-catalog.md)                                      | Catalog of the crm test suite (20 crm files of 56 db test files; 160 crm cases).             |
 | [phase-1-6-evidence-register.md](./phase-1-6-evidence-register.md)                            | Evidence register: introspection, CI, and the security-findings ledger.                      |
+| [phase-1-6-review-response.md](./phase-1-6-review-response.md)                                | Wave 7 review response: disposition (fixed / accepted + rationale) of every review finding.  |
 | [phase-1-6-completion-report.md](./phase-1-6-completion-report.md)                            | Narrative completion report for the phase.                                                   |
 | [phase-1-6-owner-gate.md](./phase-1-6-owner-gate.md)                                          | Owner phase-gate record (status Pending).                                                    |
 | [phase-1-6-change-log.md](./phase-1-6-change-log.md)                                          | Chronological change log of the phase.                                                       |
@@ -105,4 +106,4 @@ it is not an independent review.
 **Branch** `feature/p1-06-crm-business-partner-database` · **base** `develop` ·
 **owner gate Pending** — the feature pull request is not yet open or merged, so
 the [owner gate](./phase-1-6-owner-gate.md) is **Pending** (not Go). The full
-crm + foundation + no-fake-data database suite runs 158 tests green.
+crm + foundation + no-fake-data database suite runs 175 tests green (160 CRM).

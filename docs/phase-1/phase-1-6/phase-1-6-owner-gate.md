@@ -32,19 +32,23 @@ feature branch.
 ## What is submitted
 
 The full package on `feature/p1-06-crm-business-partner-database` (base
-`develop` at `cd475d3`): **fifteen** timestamped migrations
-(`20260719090000`–`104000`) creating **21 tables, 296 columns, 12 functions,
-44 triggers, 58 RLS policies, 68 indexes, 51 foreign keys, 73 check
+`develop` at `cd475d3`): **sixteen** timestamped migrations
+(`20260719090000`–`105000`) creating **21 tables, 298 columns, 13 functions,
+45 triggers, 58 RLS policies, 68 indexes, 51 foreign keys, 73 check
 constraints**; every table `FORCE`-RLS'd with default-deny per-command policies;
 three `NOBYPASSRLS` application roles owning no `crm` table; the sensitive-read
 gate (`iam.has_permission('iam.sensitive.view')`) on 7 restricted columns, none
 searchable; four append-only history/timeline tables; the personal-data
-classification registry (296 columns) with a CI lint (DO-001); zero seed and zero
-business rows (DB-024); **19 CRM test files / 151 CRM test cases** plus the
-`foundation` and `no-fake-data` guards; and this documentation package. The
-adversarial self-review returned zero Critical/High and zero RLS defects, with
-three Medium findings fixed forward and one accepted — details in the
-[completion report §4](./phase-1-6-completion-report.md) and
+classification registry (298 columns) with a CI lint (DO-001); zero seed and zero
+business rows (DB-024); **20 CRM test files / 160 CRM test cases** plus the
+`foundation` and `no-fake-data` guards; and this documentation package. Two
+owner-authorized adversarial self-reviews (Wave 5 and a five-lens Wave 7 pass)
+returned **zero Critical** and no reproducible cross-tenant breach; every High
+and every cheap/correct Medium was fixed (chiefly the forward migrations
+`…104000` and `…105000`), and the remaining Mediums are Phase-1-16 write-path
+deferrals accepted with rationale — full disposition in the
+[review response](./phase-1-6-review-response.md),
+[completion report §4](./phase-1-6-completion-report.md), and
 [evidence register §3](./phase-1-6-evidence-register.md).
 
 ## Gate conditions (Standing Technical Authorization §2) — status as of 2026-07-19

@@ -2,7 +2,7 @@
 
 <!-- GENERATED from live crm introspection; do not hand-edit count tables. -->
 
-Generated from the live `crm` schema. Totals: **21 tables, 296 columns, 12 functions, 44 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
+Generated from the live `crm` schema. Totals: **21 tables, 298 columns, 13 functions, 45 triggers, 58 policies, 68 indexes, 51 foreign keys, 73 check constraints.**
 
 Table privileges granted to the three application roles. `app_runtime` is the request-path role, `app_readonly` is read-only, `app_worker` is the constrained background role. None owns any `crm` table; none has `BYPASSRLS`. Append-only history tables grant `INSERT`+`SELECT` only (no `UPDATE`/`DELETE`). A blank cell means no direct privilege.
 

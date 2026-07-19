@@ -21,7 +21,7 @@ caller could attempt against the Phase 1-6 `crm` schema, and for each states the
 **database-layer** control that defeats it and the observable outcome (an SQLSTATE, or
 a documented residual risk). It is the SEC-004 deliverable of the closeout package.
 
-Scope is the DB layer only: 21 tables, 12 functions, 44 triggers, 58 policies, 73
+Scope is the DB layer only: 21 tables, 13 functions, 45 triggers, 58 policies, 73
 check constraints, 51 foreign keys and 68 indexes as inventoried in
 [`crm-object-inventory.md`](./crm-object-inventory.md). Application/write-path controls
 (input validation, error-message redaction, orchestration atomicity) are Phase 1-16 and
@@ -83,7 +83,7 @@ See [`crm-rls-policy-matrix.md`](./crm-rls-policy-matrix.md) for the full 58-pol
 | #   | Abuse case                                                                                                                                    | DB-layer control                                                                                      | Outcome / SQLSTATE                       | Status    |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------- |
 | 12  | Disable or bypass RLS (`SET row_security = off`, `ALTER TABLE … NO FORCE`)                                                                    | app roles are `NOBYPASSRLS`, non-superuser, and own zero `crm` tables; FORCE RLS binds even the owner | no effect / `42501` (ownership required) | Prevented |
-| 13  | Escalate through a `SECURITY DEFINER` helper                                                                                                  | none exist — all 12 functions are `SECURITY INVOKER`, so they run under the caller's RLS              | no such surface                          | Prevented |
+| 13  | Escalate through a `SECURITY DEFINER` helper                                                                                                  | none exist — all 13 functions are `SECURITY INVOKER`, so they run under the caller's RLS              | no such surface                          | Prevented |
 | 14  | Call a guard/stamp/emit function directly to forge attribution or write out of band (`stamp_partner_merge`, `emit_timeline_event`, `guard_*`) | `REVOKE EXECUTE … FROM PUBLIC`; not granted to app roles                                              | `42501`                                  | Prevented |
 | 15  | Shadow an object a function calls via `search_path` manipulation                                                                              | every function sets `search_path = ''` → schema-qualified resolution only                             | injection surface removed                | Prevented |
 | 16  | `app_readonly` performs a write                                                                                                               | `SELECT`-only grant on `crm` tables                                                                   | `42501`                                  | Prevented |
@@ -98,17 +98,17 @@ The only sensitive-data primitive is a **row-level** `iam.has_permission('iam.se
 gate against a `classification` column — there is no column-masking view or function.
 Restricted = national_id / registration / tax identifiers + date_of_birth.
 
-| #   | Abuse case                                                                                                   | DB-layer control                                                                                                                                                             | Outcome / SQLSTATE                   | Status                                                                                          |
-| --- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| 19  | Read raw national_id/registration/tax without permission                                                     | `sel_partner_identifiers_tenant` gates restricted rows on `iam.has_permission('iam.sensitive.view')`                                                                         | restricted rows invisible (0 rows)   | Prevented                                                                                       |
-| 20  | Read `date_of_birth` without permission                                                                      | `partner_sensitive_attributes` whole-table SELECT gate on `iam.sensitive.view`                                                                                               | invisible (0 rows)                   | Prevented                                                                                       |
-| 21  | Insert a restricted identifier mislabeled `internal` to dodge the gate                                       | `ck_partner_identifiers_type_classification` forces national_id/registration/tax ⇒ `restricted`                                                                              | `23514`                              | Prevented                                                                                       |
-| 22  | Downgrade a restricted row's `classification` to expose it                                                   | `classification` immutable (`tg_*_immutable`) **and** UPDATE `USING` carries the sensitive gate (unprivileged session cannot touch the row)                                  | `23514` / row invisible              | Prevented                                                                                       |
-| 23  | Insert a `date_of_birth` row as `internal`                                                                   | `ck_partner_sensitive_attributes_classification` pins `restricted`                                                                                                           | `23514`                              | Prevented                                                                                       |
-| 24  | Smuggle a raw sensitive value into `duplicate_candidates.match_basis` / `partner_merges.merge_summary` jsonb | `ck_*` calling `crm.jsonb_no_raw_value_keys(...)`                                                                                                                            | `23514`                              | Prevented (defensive; backend sanitizer is primary)                                             |
-| 25  | Hide the raw value under a nested or differently-cased key (`details.national_id`, `Raw_Value`)              | hardened **whole-document, case-insensitive** scan (`45fda2d`)                                                                                                               | `23514`                              | Prevented — **FIXED finding #3**                                                                |
-| 26  | Store a restricted value where it becomes searchable                                                         | classification registry keeps the 7 restricted and 11 searchable columns **disjoint**; CI `validate:crm-classification` (`scripts/check-crm-classification.mjs`) enforces it | lint fails the build                 | Prevented (DB-layer contract; the search **projection** is a Phase-1-16 write-path concern)     |
-| 27  | Bind a profile's `national_id_ref` to a same-partner identifier of the **wrong type** (e.g. a phone)         | same-partner composite FK enforces existence + tenant + partner, but **not** `identifier_type`                                                                               | link accepted if same partner/tenant | **Accepted (residual)** — **finding #4**: type-correctness is a Phase-1-16 write-path invariant |
+| #   | Abuse case                                                                                                   | DB-layer control                                                                                                                                                             | Outcome / SQLSTATE                   | Status                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 19  | Read raw national_id/registration/tax without permission                                                     | `sel_partner_identifiers_tenant` gates restricted rows on `iam.has_permission('iam.sensitive.view')`                                                                         | restricted rows invisible (0 rows)   | Prevented                                                                                                                           |
+| 20  | Read `date_of_birth` without permission                                                                      | `partner_sensitive_attributes` whole-table SELECT gate on `iam.sensitive.view`                                                                                               | invisible (0 rows)                   | Prevented                                                                                                                           |
+| 21  | Insert a restricted identifier mislabeled `internal` to dodge the gate                                       | `ck_partner_identifiers_type_classification` forces national_id/registration/tax ⇒ `restricted`                                                                              | `23514`                              | Prevented                                                                                                                           |
+| 22  | Downgrade a restricted row's `classification` to expose it                                                   | `classification` immutable (`tg_*_immutable`) **and** UPDATE `USING` carries the sensitive gate (unprivileged session cannot touch the row)                                  | `23514` / row invisible              | Prevented                                                                                                                           |
+| 23  | Insert a `date_of_birth` row as `internal`                                                                   | `ck_partner_sensitive_attributes_classification` pins `restricted`                                                                                                           | `23514`                              | Prevented                                                                                                                           |
+| 24  | Smuggle a raw sensitive value into `duplicate_candidates.match_basis` / `partner_merges.merge_summary` jsonb | `ck_*` calling `crm.jsonb_no_raw_value_keys(...)` (name-based deny-list)                                                                                                     | `23514` (listed keys only)           | Partly prevented — a value under a non-listed key is NOT caught; defense-in-depth, not a PII barrier (backend sanitizer is primary) |
+| 25  | Hide the raw value under a nested or differently-cased key (`details.national_id`, `Raw_Value`)              | hardened **whole-document, case-insensitive** scan (`45fda2d`)                                                                                                               | `23514`                              | Prevented — **FIXED finding #3**                                                                                                    |
+| 26  | Store a restricted value where it becomes searchable                                                         | classification registry keeps the 7 restricted and 11 searchable columns **disjoint**; CI `validate:crm-classification` (`scripts/check-crm-classification.mjs`) enforces it | lint fails the build                 | Prevented (DB-layer contract; the search **projection** is a Phase-1-16 write-path concern)                                         |
+| 27  | Bind a profile's `national_id_ref` to a same-partner identifier of the **wrong type** (e.g. a phone)         | same-partner composite FK enforces existence + tenant + partner, but **not** `identifier_type`                                                                               | link accepted if same partner/tenant | **Accepted (residual)** — **finding #4**: type-correctness is a Phase-1-16 write-path invariant                                     |
 
 Column-by-column classification is in [`crm-classification-matrix.md`](./crm-classification-matrix.md);
 the machine-checked registry is [`crm-personal-data-classification.json`](../../database/crm-personal-data-classification.json).
@@ -195,25 +195,46 @@ Migrations are immutable once merged, so these are forward corrections, not edit
 
 ## 4. Residual risk and honestly-deferred scope
 
-- **Finding #4 (accepted):** a profile identifier pointer can reference a same-partner
+Several items below were **closed** by the Wave 7 review-hardening migration
+`20260719105000_crm_review_hardening.sql`; the disposition of every review
+finding is recorded in the [review response](./phase-1-6-review-response.md).
+
+- **Authorization scope (accepted, Phase 1-16):** the DB enforces attribution
+  **shape** and **coherence**, not **who** may act. Beyond the `iam.sensitive.view`
+  gate on restricted data, block/unblock, restrictions, alerts, and credit approval
+  carry no permission check — any `app_runtime` session with a valid tenant/user
+  context can perform them within its tenant. Authorization is a Phase-1-16
+  write-path responsibility; before any such action becomes reachable, an
+  `iam.has_permission` gate should be added to the relevant policy/CHECK.
+- **Finding M-10 (accepted):** a profile identifier pointer can reference a same-partner
   identifier of the wrong `identifier_type`. Only the _write path_ (Phase 1-16) can
-  assert type-correctness; the DB enforces existence, tenant, and partner.
-- **Restricted-existence oracle (case 19 corollary):** the tenant-scoped partial-unique
-  index enforces beneath RLS, so a raw `INSERT` of an existing restricted identifier
-  yields `23505` — an existence signal. The Phase-1-16 backend MUST catch `23505`,
-  return a generic "possible duplicate, routed to review" **without** echoing the
-  constraint DETAIL, and route restricted-identifier dedup through a path holding
-  `iam.sensitive.view`. Documented in `20260719091000_crm_partner_identifiers.sql`.
-- **Merge orchestration atomicity:** redirect cycles are prevented at set-time, but the
-  atomic coupling of `merged_into_id` with its `partner_merges` row and the transfer of
-  child rows to the survivor is a Phase-1-16 single-transaction backend responsibility.
-- **Timeline write path:** with no `SECURITY DEFINER` available, runtime holds `INSERT`
-  on `timeline_events`, so writes cannot be constrained to the emit triggers only. The
-  triggers are the intended path and titles are constrained to PII-safe tokens by
-  construction — an honest limit, not a masked one.
+  assert type-correctness; the DB enforces existence, tenant, and partner. It is
+  declaratively closeable (a `(tenant_id, partner_id, id, identifier_type)` candidate
+  key + pinned discriminator FKs) and is the top integrity item to close in Phase 1-16.
+- **Restricted-existence oracle — now gated at the DB layer:** restricted-identifier
+  `INSERT` is gated on `iam.has_permission('iam.sensitive.view')` (migration `…105000`),
+  so an unprivileged session can no longer plant or probe restricted values via the
+  `23505` unique-violation. The Phase-1-16 backend should still return a generic
+  "possible duplicate" without echoing constraint DETAIL as defence-in-depth.
+- **jsonb raw-value containment (defense-in-depth only):** `crm.jsonb_no_raw_value_keys`
+  is a name-based deny-list; a raw value smuggled under a non-listed key is **not**
+  caught. It is not a PII barrier — the real controls are the store-refs-not-values
+  schema (uuid pointers + counts) and the Phase-1-16 backend sanitizer.
+- **Merge orchestration atomicity:** redirect cycles, cross-tenant survivors,
+  merge-into-merged, and merge-into-**soft-deleted** survivors are all prevented at the
+  DB layer, and a source can be merged at most once (`UNIQUE (tenant_id, source_partner_id)`).
+  The atomic coupling of `merged_into_id` with its `partner_merges` row and the transfer
+  of child rows remains a Phase-1-16 single-transaction backend responsibility.
+- **Timeline write path — attribution now server-stamped:** a `BEFORE INSERT` trigger
+  forces `actor_id := iam.current_user_id()` and `occurred_at := now()`, so attribution
+  and time cannot be forged or backdated even on the direct-insert path. With no
+  `SECURITY DEFINER` available, direct `INSERT` cannot be locked to the emit triggers, so
+  `event_type`/`title` remain caller-shaped on that path — an honest limit; the
+  customer-facing timeline is distinct from the Phase-1-16 forensic audit trail.
 - **Searchable projection (case 26):** the DB-layer guarantee is the disjoint
-  classification registry and its CI lint; building the search projection itself is a
-  Phase-1-16 write-path task.
+  classification registry and its CI lint, plus `shared.search_metadata`'s row-level
+  gate that hides restricted rows from unprivileged sessions; building the crm search
+  projection itself is a Phase-1-16 write-path task.
 
 ## 5. Cross-references
 
