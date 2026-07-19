@@ -2,7 +2,7 @@
   "$schema": "internal://rootlco/crm-personal-data-classification",
   "description": "Phase 1-6 (P1-06-SEC-001) column-level personal-data classification registry for the crm schema. Column-level worst-case sensitivity: a column is restricted if it can hold a restricted value. Validated against live DB introspection by scripts/check-crm-classification.mjs. Allowed classifications: public, internal, restricted, secret.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 294,
+  "columnCount": 296,
   "columns": {
     "addresses.id": {
       "classification": "internal",
@@ -380,6 +380,10 @@
       "classification": "internal",
       "searchable": false
     },
+    "consent_history.seq": {
+      "classification": "internal",
+      "searchable": false
+    },
     "contact_points.id": {
       "classification": "internal",
       "searchable": false
@@ -549,6 +553,10 @@
       "searchable": false
     },
     "customer_block_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false
+    },
+    "customer_block_history.seq": {
       "classification": "internal",
       "searchable": false
     },
