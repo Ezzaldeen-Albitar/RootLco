@@ -236,11 +236,14 @@ describe('rec.reception_visits — one open visit', () => {
 });
 
 describe('rec.reception_visits — state machine', () => {
-  it('allows opened -> inspecting -> authorized -> converted and freezes terminals', async () => {
+  it('allows opened -> inspecting -> closed_without_work and freezes terminals', async () => {
+    // The authorized/converted path needs the activation contract (service
+    // requester + approved authorization) and is covered in the custody suite;
+    // here we exercise a terminal path that needs no authorization.
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const wi = await insWalkIn(c, V_A);
       const id = (await c.query(insVisit({ walkIn: wi, vehicle: V_A }))).rows[0].id;
-      for (const s of ['inspecting', 'authorized', 'converted']) {
+      for (const s of ['inspecting', 'closed_without_work']) {
         expect(
           (
             await c.query(
@@ -252,7 +255,7 @@ describe('rec.reception_visits — state machine', () => {
       await expectSqlState(
         c.query(`UPDATE rec.reception_visits SET reception_status='inspecting' WHERE id='${id}'`),
         '23514'
-      ); // converted is terminal
+      ); // closed_without_work is terminal
     });
   });
 
