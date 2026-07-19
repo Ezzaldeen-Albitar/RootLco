@@ -246,6 +246,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // crm rows before org.tenants (business_partners.tenant_id -> org.tenants).
   // business_partners self-references via merged_into_id (ON DELETE RESTRICT);
   // a single-statement delete removes a merged source and its survivor together.
+  await deleteFrom('crm.partner_segment_assignments');
+  await deleteFrom('crm.customer_segments');
   await deleteFrom('crm.individual_profiles');
   await deleteFrom('crm.company_profiles');
   await deleteFrom('crm.partner_sensitive_attributes');
