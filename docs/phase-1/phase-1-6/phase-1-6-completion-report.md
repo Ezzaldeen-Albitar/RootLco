@@ -116,7 +116,20 @@ and controls: [evidence register §3](./phase-1-6-evidence-register.md) and
 
 ## 6. Gate status
 
-**Pending.** This report is complete and factual. The
-[owner gate](./phase-1-6-owner-gate.md) records the five conditions and their
-status; it is not a Go until CI is green on the final SHA and the owner merges
-the pull request into `develop`.
+**Pending.** _(Historical — accurate when written.)_ This report is complete and
+factual. The [owner gate](./phase-1-6-owner-gate.md) records the five conditions
+and their status; it is not a Go until CI is green on the final SHA and the owner
+merges the pull request into `develop`.
+
+## 7. Formal Closure Update (2026-07-19)
+
+The Pending statement above was accurate when written. It was subsequently
+superseded by evidenced facts: **feature PR #29** was merged into `develop` as
+merge commit **`4d6d6dd`** (parents `cd475d3` + `90e91c5`) on
+2026-07-19T13:12:44+03:00; hosted CI was green on the exact final SHA **`90e91c5`**
+(all four required jobs Successful); and **`90e91c5` is contained in
+`origin/develop`**. The Phase 1-6 technical gate is therefore recorded as
+**Go — Technical Gate Passed** ([owner gate](./phase-1-6-owner-gate.md)). This
+change is delivered on the separate `docs/p1-06-record-technical-gate` branch;
+its pull request remains pending until the owner merges it, at which point
+Phase 1-6 is formally closed.

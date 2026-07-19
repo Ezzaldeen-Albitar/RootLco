@@ -132,7 +132,28 @@ the CI outcome once the pull request is open.
 
 ## 6. Gate status
 
-**Owner gate: PENDING.** The feature pull request is not yet merged. The gate
-becomes recordable only after CI is green on the final SHA, the PR is merged into
-`develop` by the owner, and the separate gate-record is committed. See the
-[owner gate](./phase-1-6-owner-gate.md).
+**Owner gate: PENDING.** _(Historical — accurate when written.)_ The feature pull
+request is not yet merged. The gate becomes recordable only after CI is green on
+the final SHA, the PR is merged into `develop` by the owner, and the separate
+gate-record is committed. See the [owner gate](./phase-1-6-owner-gate.md).
+
+## 7. Formal Closure Update (2026-07-19)
+
+The §5–§6 statements above were accurate when written (at assembly, the feature
+PR was not yet open/merged and the gate stood Pending). The following facts were
+established **later** and do not alter the earlier record:
+
+- **Feature PR #29** — [P1-06] Implement CRM and Business Partner database
+  foundation — was **merged into `develop`** by Eng. Ezzaldeen Al-Bitar as merge
+  commit **`4d6d6dd`** (parents `cd475d3` + `90e91c5`) on 2026-07-19T13:12:44+03:00.
+- The final feature SHA **`90e91c5`** is an **ancestor of `origin/develop`**
+  (`git merge-base --is-ancestor` → true); `origin/main` was not changed.
+- **Hosted CI passed on the exact final SHA `90e91c5`** — all four required jobs
+  (Lint/types/tests/build · Docker build validation · Database migrations and RLS
+  tests · Secret and sensitive-file scan) Successful.
+- The Phase 1-6 technical gate was therefore recorded as **Go — Technical Gate
+  Passed** in the [owner gate](./phase-1-6-owner-gate.md).
+- This gate-record change is itself delivered on a **separate** branch
+  (`docs/p1-06-record-technical-gate`) and its pull request **remains pending
+  until the owner merges it**; Phase 1-6 is declared formally closed only after
+  that merge is verified contained in `origin/develop`.
