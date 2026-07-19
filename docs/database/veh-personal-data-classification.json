@@ -1,0 +1,1608 @@
+{
+  "$schema": "./classification.schema.json",
+  "description": "P1-07-SEC-003 — Vehicle personal-data / sensitivity classification registry. Every live veh column is classified. Restricted columns (chassis/engine identifier values) must never be searchable. The only search-eligible columns are the VIN/plate/display-number/catalog-name set (DB-019). Reconciled against the live veh schema by scripts/check-veh-classification.mjs (run identically locally and in CI).",
+  "allowedClassifications": ["public", "internal", "restricted", "secret"],
+  "columnCount": 320,
+  "columns": {
+    "battery_masters.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_masters.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_masters.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_masters.battery_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_masters.battery_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_masters.chemistry": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_masters.nominal_capacity_kwh": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "battery_masters.installed_on": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "battery_masters.removed_on": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "battery_masters.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_masters.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "battery_masters.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "battery_masters.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_masters.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "battery_masters.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_masters.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "battery_masters.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.battery_master_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.reading_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_readings.value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "battery_readings.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_readings.measured_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "battery_readings.measured_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.source": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "battery_readings.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "battery_readings.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "battery_readings.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "body_types.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "body_types.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "body_types.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "body_types.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "body_types.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "body_types.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "body_types.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "body_types.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "body_types.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "body_types.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "body_types.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "body_types.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "body_types.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.vehicle_id_a": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.vehicle_id_b": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.match_score": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "duplicate_candidates.match_basis": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "duplicate_candidates.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "duplicate_candidates.detected_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "duplicate_candidates.reviewed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.reviewed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "duplicate_candidates.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "duplicate_candidates.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "duplicate_candidates.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "duplicate_candidates.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "duplicate_candidates.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "engine_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "engine_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "engine_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "engine_history.displacement_cc": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "engine_history.power_kw": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "engine_history.fuel_note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "engine_history.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "engine_history.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "engine_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "engine_history.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "engine_history.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "engine_history.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "engine_history.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "engine_history.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "makes.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "makes.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "makes.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "makes.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "makes.name": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "makes.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "makes.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "makes.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "makes.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "makes.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "makes.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "makes.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "makes.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "models.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.make_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "models.name": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "models.first_model_year": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "models.last_model_year": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "models.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "models.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "models.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "models.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "models.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "models.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "models.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "odometer_readings.unit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "odometer_readings.value_km": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "odometer_readings.observed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "odometer_readings.capture_method": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "odometer_readings.correction_of": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.correction_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "odometer_readings.anomaly_flag": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "odometer_readings.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.recorded_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "odometer_readings.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "ownership_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "ownership_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "ownership_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "ownership_history.partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "ownership_history.ownership_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "ownership_history.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "ownership_history.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "ownership_history.transfer_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "ownership_history.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "ownership_history.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "ownership_history.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "ownership_history.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "ownership_history.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "plate_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "plate_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "plate_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "plate_history.country_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "plate_history.plate_raw": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "plate_history.plate_normalized": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "plate_history.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "plate_history.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "plate_history.source": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "plate_history.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "plate_history.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "plate_history.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "plate_history.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "plate_history.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "powertrain_types.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "powertrain_types.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "powertrain_types.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "powertrain_types.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "powertrain_types.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "powertrain_types.category": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "powertrain_types.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "powertrain_types.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "powertrain_types.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "powertrain_types.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "powertrain_types.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "powertrain_types.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "powertrain_types.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "powertrain_types.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.relationship_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.evidence_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "relationship_evidence.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "relationship_evidence.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "relationship_evidence.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "relationship_evidence.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "transmission_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "transmission_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "transmission_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "transmission_history.transmission_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "transmission_history.transmission_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "transmission_history.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "transmission_history.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "transmission_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "transmission_history.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "transmission_history.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "transmission_history.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "transmission_history.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "transmission_history.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "trims.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.model_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "trims.name": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "trims.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "trims.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "trims.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "trims.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "trims.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "trims.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "trims.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.alert_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_alerts.severity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_alerts.message": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_alerts.effective_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.effective_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.is_active": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "vehicle_alerts.acknowledged_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.acknowledged_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicle_alerts.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_alerts.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_alerts.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.field_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_attribute_history.old_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_attribute_history.new_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_attribute_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_attribute_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_attribute_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "vehicle_ev_profiles.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_ev_profiles.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_ev_profiles.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_ev_profiles.ev_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_ev_profiles.usable_capacity_kwh": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "vehicle_ev_profiles.charge_port_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_ev_profiles.high_voltage_warning": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "vehicle_ev_profiles.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicle_ev_profiles.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_ev_profiles.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_ev_profiles.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_ev_profiles.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_ev_profiles.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_ev_profiles.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.identifier_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_identifiers.raw_value": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_identifiers.normalized_value": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_identifiers.is_primary": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "vehicle_identifiers.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_identifiers.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_identifiers.verified_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_identifiers.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicle_identifiers.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_identifiers.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_identifiers.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_identifiers.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_identifiers.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.source_vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.survivor_vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.merge_summary": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "vehicle_merges.approval_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_merges.merged_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.merged_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_merges.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_merges.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "vehicle_relationships.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.relationship_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_relationships.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "vehicle_relationships.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "vehicle_relationships.authorization_scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "vehicle_relationships.granted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicle_relationships.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_relationships.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_relationships.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_relationships.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.status_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicle_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicle_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicle_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "vehicles.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.display_number": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "vehicles.vin_raw": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicles.vin_normalized": {
+      "classification": "internal",
+      "searchable": true,
+      "dataType": "text"
+    },
+    "vehicles.make_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.model_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.trim_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.model_year": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicles.body_type_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.powertrain_type_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.powertrain_category": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicles.color": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicles.lifecycle_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicles.workshop_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vehicles.merged_into_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "vehicles.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicles.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicles.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vehicles.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vehicles.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.vin_checked": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vin_verifications.check_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vin_verifications.result": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vin_verifications.override_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "vin_verifications.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "vin_verifications.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "vin_verifications.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    }
+  }
+}

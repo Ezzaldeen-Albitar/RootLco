@@ -215,6 +215,13 @@ jobs:
       - name: Validate CRM personal-data classification coverage
         run: npm run validate:crm-classification
 
+      # P1-07-SEC-003 / P1-07-DO-001: every veh column must carry a classification
+      # (docs/database/veh-personal-data-classification.json), no restricted column
+      # may be searchable, and registry/live types must reconcile. Same canonical
+      # script locally and here (npm run validate:veh-classification).
+      - name: Validate Vehicle personal-data classification coverage
+        run: npm run validate:veh-classification
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 
