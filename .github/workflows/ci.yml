@@ -207,6 +207,14 @@ jobs:
       - name: Apply declared seeds twice and validate clean business state
         run: npm run validate:seed-state
 
+      # P1-06-SEC-001 / P1-06-DO-001: every crm column must carry a
+      # classification (docs/database/crm-personal-data-classification.json), and
+      # no restricted column may be marked searchable. A new unclassified CRM
+      # column fails this step and blocks the merge. One canonical script, run
+      # identically here and locally (npm run validate:crm-classification).
+      - name: Validate CRM personal-data classification coverage
+        run: npm run validate:crm-classification
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 
