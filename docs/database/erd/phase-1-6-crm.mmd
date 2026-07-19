@@ -1,0 +1,91 @@
+%% Phase 1-6 — CRM and Business Partner Database (erDiagram)
+%% <!-- GENERATED from live crm introspection; do not hand-edit count tables. -->
+erDiagram
+  addresses {
+    int columns "20"
+  }
+  business_partners {
+    int columns "15"
+  }
+  communication_log {
+    int columns "17"
+  }
+  communication_preferences {
+    int columns "13"
+  }
+  company_profiles {
+    int columns "15"
+  }
+  consent_history {
+    int columns "15"
+  }
+  contact_points {
+    int columns "17"
+  }
+  customer_alerts {
+    int columns "16"
+  }
+  customer_block_history {
+    int columns "11"
+  }
+  customer_credit_profiles {
+    int columns "15"
+  }
+  customer_restrictions {
+    int columns "14"
+  }
+  customer_segments {
+    int columns "13"
+  }
+  duplicate_candidates {
+    int columns "15"
+  }
+  individual_profiles {
+    int columns "15"
+  }
+  partner_identifiers {
+    int columns "16"
+  }
+  partner_merges {
+    int columns "10"
+  }
+  partner_roles {
+    int columns "12"
+  }
+  partner_segment_assignments {
+    int columns "13"
+  }
+  partner_sensitive_attributes {
+    int columns "14"
+  }
+  partner_status_history {
+    int columns "10"
+  }
+  timeline_events {
+    int columns "10"
+  }
+  business_partners ||--o{ addresses : "addresses_partner"
+  business_partners ||--o{ business_partners : "business_partners_merged_into"
+  business_partners ||--o{ communication_log : "communication_log_partner"
+  business_partners ||--o{ communication_preferences : "communication_preferences_partner"
+  business_partners ||--o{ company_profiles : "company_profiles_partner_type"
+  partner_identifiers ||--o{ company_profiles : "company_profiles_registration"
+  contact_points ||--o{ consent_history : "consent_history_contact_point"
+  business_partners ||--o{ consent_history : "consent_history_partner"
+  business_partners ||--o{ contact_points : "contact_points_partner"
+  business_partners ||--o{ customer_alerts : "customer_alerts_partner"
+  business_partners ||--o{ customer_block_history : "customer_block_history_partner"
+  customer_restrictions ||--o{ customer_block_history : "customer_block_history_restriction"
+  business_partners ||--o{ customer_credit_profiles : "customer_credit_profiles_partner"
+  business_partners ||--o{ customer_restrictions : "customer_restrictions_partner"
+  business_partners ||--o{ duplicate_candidates : "duplicate_candidates_a"
+  partner_identifiers ||--o{ individual_profiles : "individual_profiles_national_id"
+  business_partners ||--o{ individual_profiles : "individual_profiles_partner_type"
+  business_partners ||--o{ partner_identifiers : "partner_identifiers_partner"
+  business_partners ||--o{ partner_merges : "partner_merges_source"
+  business_partners ||--o{ partner_roles : "partner_roles_partner"
+  business_partners ||--o{ partner_segment_assignments : "partner_segment_assignments_partner"
+  customer_segments ||--o{ partner_segment_assignments : "partner_segment_assignments_segment"
+  business_partners ||--o{ partner_sensitive_attributes : "partner_sensitive_attributes_partner"
+  business_partners ||--o{ partner_status_history : "partner_status_history_partner"
+  business_partners ||--o{ timeline_events : "timeline_events_partner"
