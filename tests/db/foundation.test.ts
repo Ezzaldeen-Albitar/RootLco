@@ -115,6 +115,8 @@ const ALLOWED_TABLES = new Set([
   'crm.partner_sensitive_attributes',
   // Phase 1-6 CRM — dated typed party roles (P1-06-DB-005).
   'crm.partner_roles',
+  // Phase 1-6 CRM — append-only status history (P1-06-DB-006).
+  'crm.partner_status_history',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -435,6 +437,7 @@ describe('database foundation', () => {
       'tg_partner_roles_touch_metadata',
       'tg_partner_sensitive_attributes_immutable',
       'tg_partner_sensitive_attributes_touch_metadata',
+      'tg_partner_status_history_stamp',
       'tg_permissions_immutable',
       'tg_permissions_touch_metadata',
       'tg_retention_classes_immutable',
@@ -510,6 +513,7 @@ describe('database foundation', () => {
       'ins_partner_identifiers_tenant',
       'ins_partner_roles_tenant',
       'ins_partner_sensitive_attributes_tenant',
+      'ins_partner_status_history_tenant',
       'ins_storage_locations_scope',
       'ins_tax_classes_scope',
       'ins_tax_rates_scope',
@@ -552,6 +556,7 @@ describe('database foundation', () => {
       'sel_partner_identifiers_tenant',
       'sel_partner_roles_tenant',
       'sel_partner_sensitive_attributes_tenant',
+      'sel_partner_status_history_tenant',
       'sel_permissions_all',
       'sel_retention_classes_all',
       'sel_role_grants_tenant',

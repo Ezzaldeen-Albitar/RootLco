@@ -251,6 +251,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('crm.partner_sensitive_attributes');
   await deleteFrom('crm.partner_identifiers');
   await deleteFrom('crm.partner_roles');
+  await deleteFrom('crm.partner_status_history');
   await deleteFrom('crm.business_partners');
 
   await deleteFrom('shared.comments');
