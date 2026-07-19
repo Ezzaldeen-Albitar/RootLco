@@ -244,7 +244,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
 
   // Phase 1-7 vehicle — delete veh children before their parents, and all veh
   // rows before crm/org (later veh tables reference crm.business_partners and
-  // org.tenants). Catalog hierarchy: trims -> models -> makes.
+  // org.tenants). Vehicles reference the catalogs, so delete them first; the
+  // self-referential merged_into_id (ON DELETE RESTRICT) is removed together in
+  // a single statement. Catalog hierarchy: trims -> models -> makes.
+  await deleteFrom('veh.vehicles');
   await deleteFrom('veh.trims');
   await deleteFrom('veh.models');
   await deleteFrom('veh.makes');

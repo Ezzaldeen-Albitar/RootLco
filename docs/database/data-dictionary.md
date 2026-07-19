@@ -2086,3 +2086,33 @@ Dual-scope powertrain-type catalog (P1-07-DB-006); `category` (ice/ev/hybrid/phe
 | `updated_by`     | uuid                     | YES  | —                   | internal |
 | `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicles`
+
+The independent Vehicle master (P1-07-DB-001). No partner/owner column; ownership is temporal. `vin_normalized` is generated from `veh.normalize_vin(vin_raw)`.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `display_number`      | text                     | YES  | —                   | internal |
+| `vin_raw`             | text                     | YES  | —                   | internal |
+| `vin_normalized`      | text                     | YES  | generated           | internal |
+| `make_id`             | uuid                     | YES  | —                   | internal |
+| `model_id`            | uuid                     | YES  | —                   | internal |
+| `trim_id`             | uuid                     | YES  | —                   | internal |
+| `model_year`          | integer                  | YES  | —                   | internal |
+| `body_type_id`        | uuid                     | YES  | —                   | internal |
+| `powertrain_type_id`  | uuid                     | YES  | —                   | internal |
+| `powertrain_category` | text                     | NO   | `'ice'::text`       | internal |
+| `color`               | text                     | YES  | —                   | internal |
+| `lifecycle_status`    | text                     | NO   | `'draft'::text`     | internal |
+| `workshop_status`     | text                     | NO   | `'none'::text`      | internal |
+| `merged_into_id`      | uuid                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+| `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`          | uuid                     | YES  | —                   | internal |
