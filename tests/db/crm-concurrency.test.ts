@@ -123,7 +123,7 @@ describe('single-winner concurrency (P1-06-QA-007)', () => {
     await admin.query(`DELETE FROM crm.contact_points WHERE partner_id = $1`, [P1]);
   });
 
-  it('concurrent overlapping same-role intervals -> one winner, others 23P01', async () => {
+  it('concurrent overlapping same-role intervals -> one winner, the other excluded/deadlocked', async () => {
     const insert = (c: PoolClient) =>
       c.query(
         `INSERT INTO crm.partner_roles (tenant_id, partner_id, role_type, valid_from, valid_to, created_by)
@@ -131,7 +131,11 @@ describe('single-winner concurrency (P1-06-QA-007)', () => {
         [TENANT_A, P1, USER_A]
       );
     const out = await race([insert, insert]);
-    expectOneWinner(out, ['23P01']);
+    // Two concurrent inserts into the GiST EXCLUDE constraint resolve as a clean
+    // exclusion violation (23P01) or, if they lock the index in opposite orders,
+    // a detected deadlock (40P01) / lock timeout (55P03). All three uphold the
+    // invariant: exactly one interval commits, never two overlapping ones.
+    expectOneWinner(out, ['23P01', '40P01', '55P03']);
     await admin.query(`DELETE FROM crm.partner_roles WHERE partner_id = $1`, [P1]);
   });
 
