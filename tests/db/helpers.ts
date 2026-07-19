@@ -242,6 +242,32 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-6 CRM — delete crm children before crm.business_partners, and all
+  // crm rows before org.tenants (business_partners.tenant_id -> org.tenants).
+  // business_partners self-references via merged_into_id (ON DELETE RESTRICT);
+  // a single-statement delete removes a merged source and its survivor together.
+  await deleteFrom('crm.timeline_events');
+  await deleteFrom('crm.communication_log');
+  await deleteFrom('crm.partner_merges');
+  await deleteFrom('crm.duplicate_candidates');
+  await deleteFrom('crm.consent_history');
+  await deleteFrom('crm.communication_preferences');
+  await deleteFrom('crm.partner_segment_assignments');
+  await deleteFrom('crm.customer_segments');
+  await deleteFrom('crm.customer_block_history');
+  await deleteFrom('crm.customer_restrictions');
+  await deleteFrom('crm.customer_alerts');
+  await deleteFrom('crm.customer_credit_profiles');
+  await deleteFrom('crm.contact_points');
+  await deleteFrom('crm.addresses');
+  await deleteFrom('crm.individual_profiles');
+  await deleteFrom('crm.company_profiles');
+  await deleteFrom('crm.partner_sensitive_attributes');
+  await deleteFrom('crm.partner_identifiers');
+  await deleteFrom('crm.partner_roles');
+  await deleteFrom('crm.partner_status_history');
+  await deleteFrom('crm.business_partners');
+
   await deleteFrom('shared.comments');
   await deleteFrom('shared.notes');
   await deleteFrom('shared.entity_tags');

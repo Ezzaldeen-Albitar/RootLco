@@ -1,0 +1,76 @@
+# Phase 1-6 — Wave 7 Review Response
+
+**Company:** RootLco — Root Link Company ·
+**Product:** [PRODUCT NAME — Pending Final Approval] ·
+**Classification:** Confidential — Commercial Product and Pilot Planning
+
+**Phase:** 1-6 — CRM and Business Partner Database ·
+**Branch:** `feature/p1-06-crm-business-partner-database` · **Date:** 2026-07-19
+
+The Wave 7 owner-authorized review ran five independent adversarial lenses
+(database architecture, security, QA, documentation, red-team) plus an
+integration synthesis (~0.8M subagent tokens). It found **zero Critical**,
+**two High**, and **twelve Medium** findings, verdict _ready-with-fixes_, with no
+reproducible cross-tenant read/write/link and all seven hard constraints holding
+on inspection. This record states the disposition of **every** finding — each is
+**Fixed** or **Accepted with rationale**; none is silently dropped. Fixes landed
+in the forward migration
+[`20260719105000_crm_review_hardening.sql`](../../../supabase/migrations/20260719105000_crm_review_hardening.sql)
+and the associated tests/docs.
+
+## High (both Fixed)
+
+| #   | Finding                                                                                                                                                | Disposition                                                                                                                                                                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| H-1 | Migration `…104000` and `crm-security-hardening.test.ts` described the Wave 5 self-review as "independent," violating the Solo Developer Review Policy | **Fixed** — both comments reworded to "owner-authorized technical/security self-review (adversarial/red-team lens), not an independent third-party review." All shipped `.sql`/`.ts` re-grepped; the only remaining "independent" uses are the technical sense ("exists independently of any role") or explicit negations.           |
+| H-2 | The two-tenant isolation suite claimed to prove no cross-tenant read **or write** on every table, but proved writes on only `business_partners`        | **Fixed** — `crm-isolation.test.ts` now drives, as `app_runtime` in tenant-A context, a cross-tenant `UPDATE` and `DELETE` on **every** covered table (asserting `rowCount === 0`, or `42501` where the command is ungranted) and verifies every tenant-B row survived, plus a no-context default-deny case. Suite grew 5 → 7 tests. |
+
+## Medium — Fixed (9)
+
+| #   | Finding                                                                                                             | Disposition                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M-1 | Restricted-identifier `INSERT` not sensitive-gated → write-without-read plant + `23505` existence oracle            | **Fixed** — `ins_partner_identifiers_tenant` now gates on `classification = 'internal' OR iam.has_permission('iam.sensitive.view')`, matching `sel_`/`upd_` and the sibling `partner_sensitive_attributes`. New gate test: unprivileged restricted INSERT → `42501`; privileged → OK.                                                                                                       |
+| M-2 | `partner_merges` had no `UNIQUE (tenant_id, source_partner_id)` — a source could be recorded merged twice           | **Fixed** — added the `UNIQUE` constraint (replacing the non-unique index); a source can only ever be merged once.                                                                                                                                                                                                                                                                          |
+| M-3 | Merge guard rejected a `merged` survivor but not a **soft-deleted** survivor                                        | **Fixed** — `guard_business_partner_merge` now also rejects a redirect into a survivor whose `deleted_at IS NOT NULL`.                                                                                                                                                                                                                                                                      |
+| M-4 | Monotonic `seq` determinism fix (Wave 5) not applied to `timeline_events` / `partner_status_history`                | **Fixed** — added `seq bigint GENERATED ALWAYS AS IDENTITY` to both and included it in their `(occurred_at DESC, seq DESC)` reader indexes.                                                                                                                                                                                                                                                 |
+| M-5 | `timeline_events` accepted forgeable, unattributed direct inserts (no server-stamp)                                 | **Fixed** — new `BEFORE INSERT` trigger `stamp_timeline_event` forces `actor_id := iam.current_user_id()` and `occurred_at := now()`. A full lock-out of direct writes would require `SECURITY DEFINER` (forbidden); `event_type`/`title` remain caller-shaped on the direct path — the customer-facing timeline is distinct from the Phase-1-16 forensic audit. New forge-resistance test. |
+| M-6 | "Restricted never searchable" test was tautological (asserted 0 restricted rows after inserting only internal rows) | **Fixed** — replaced with a real gate test: a restricted `shared.search_metadata` row is projected via admin and confirmed **hidden** from an unprivileged `app_runtime` session (the `restricted ∩ searchable = ∅` property is separately enforced by `validate:crm-classification`).                                                                                                      |
+| M-7 | No regression test for the `seq` determinism fix                                                                    | **Fixed** — new test inserts two same-`effective_at` consents in one transaction and asserts `current_consent` resolves deterministically to the higher-`seq` row across repeated reads.                                                                                                                                                                                                    |
+| M-8 | `app_readonly` / `app_worker` had no behavioral crm coverage                                                        | **Fixed** — new `crm-role-grants.test.ts`: `app_readonly` reads tenant-scoped and every write → `42501`; `app_worker` has no crm grant (even `SELECT` → `42501`).                                                                                                                                                                                                                           |
+| M-9 | README/test-catalog test-file counts (18/54) contradicted the evidence register                                     | **Fixed** — corrected to the live counts (20 crm files / 160 cases / 56 total), re-derived from a live run.                                                                                                                                                                                                                                                                                 |
+
+## Medium — Accepted with rationale (3)
+
+| #    | Finding                                                                                                                                                                                                                           | Rationale for acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M-10 | Profile `national_id_ref`/`registration_ref`/`tax_ref` FKs do not pin `identifier_type`                                                                                                                                           | The DB enforces existence + same-tenant + same-partner; type-correctness is an application write-path invariant deferred to Phase 1-16. It **is** declaratively closeable (a `(tenant_id, partner_id, id, identifier_type)` candidate key + pinned discriminator FKs) and is recorded as the **top integrity item to close in/before Phase 1-16**. Not changed now to avoid a profile-schema change (new generated columns, registry/foundation/dictionary churn) on an already-accepted residual immediately before the PR. |
+| M-11 | CRM domain actor/attribution columns (`imposed_by`, `assigned_by`, `acknowledged_by`, `approved_by`, `reviewed_by`, `logged_by`, `actor_id`, `recorded_by`, `merged_by`) are unconstrained uuids, not FK'd to `iam.user_accounts` | Consistency/integrity hardening, not a cross-tenant leak (RLS + composite tenant keys already prevent that). Server-stamped columns derive from `iam.current_user_id()`. FK'ing the caller-supplied columns (with supporting indexes) is scheduled for the Phase-1-16 write path, where the acting-user contract is established.                                                                                                                                                                                             |
+| M-12 | `jsonb_no_raw_value_keys` is a bypassable name-based deny-list, not a PII barrier                                                                                                                                                 | Defense-in-depth by design; the real control is the store-refs-not-values schema (uuid pointers + counts) plus the Phase-1-16 backend sanitizer. Evidence docs no longer present it as a PII barrier. A future allow-list key/shape schema is preferred over the deny-list.                                                                                                                                                                                                                                                  |
+
+## Also accepted (Low / Info, documented deferrals)
+
+- **No DB-layer authorization on state-changing actions** (block/unblock, restrictions, alerts, credit approval self-asserted): the DB enforces attribution **shape** and **coherence**, not **who** may act — a documented Phase-1-16 write-path/authorization deferral (see [abuse-case record](./crm-abuse-case-record.md)).
+- **Merge redirect and the `partner_merges` record are not atomic**: single-transaction orchestration is Phase 1-16; cycle and cross-tenant-survivor prevention **are** enforced at the DB layer, and merge-into-merged / merge-into-soft-deleted are now both rejected.
+- **RLS-matrix "owner is subject to policy" wording**: reworded — `FORCE` binds non-superuser roles; the `crm` tables are owned by the superuser `postgres` (which bypasses RLS regardless of `FORCE`), so isolation rests on the app connecting **only** as the `NOBYPASSRLS` app roles.
+- **Append-only history content is forgeable** (attribution and ordering are not); **`display_number` is directly settable**; **`resolve_partner_survivor` 64-hop cap**; **concurrency EXCLUDE/merge loser breadth**; **DB tenant isolation assumes the app sets `app.tenant_id` honestly** — each is inherent, low-impact, or foundational and noted in the threat model / abuse-case record.
+
+## Net effect
+
+- Forward migrations `…105000` (review hardening) and `…106000` (FK-index coverage); live counts move to **298 columns, 13 functions, 45 triggers, 79 indexes** across **17** crm migrations.
+- Tests: **20 crm files / 160 cases**, all green; clean-room from empty re-verified.
+- The Wave 7 verdict's four must-fix items (H-1, H-2, M-1, M-9) are all **Fixed**; the remaining accepted items are honestly-documented Phase-1-16 deferrals.
+
+## Wave 8 — hosted-CI reconciliation
+
+The hosted `test:db` run surfaced three repo-wide checks that Phase 1-6 had to
+satisfy (invisible in the local crm-only run):
+
+1. `shared-hardening.test.ts` scope guard "no Phase 1-6 crm/veh tables" — the crm
+   tables now exist by design; the boundary was moved to "no Phase 1-7 **veh**
+   tables" (crm is this phase's deliverable). **Fixed.**
+2. `org-security.test.ts` data-dictionary coverage — every module-schema column
+   must appear in `docs/database/data-dictionary.md`; a Phase 1-6 CRM section was
+   added covering all 21 tables / 298 columns. **Fixed.**
+3. `org-security.test.ts` FK-index coverage (**P1-03-DB-017**) — see DB-022 above;
+   migration `…106000` adds the covering indexes. **Fixed** at the root (no check
+   weakened, no test skipped).

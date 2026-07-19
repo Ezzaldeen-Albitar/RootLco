@@ -1525,3 +1525,452 @@ P1-05-DB-018, P1-05-QA-007.
 Increment K routines are `SECURITY INVOKER`, use empty `search_path`, and revoke
 PUBLIC execute: `shared.stamp_content_edit()` is shared by notes/comments;
 `shared.guard_comment_parent()` enforces comment initial state and parent scope.
+
+## Phase 1-6 — CRM and Business Partner schema (generated from the live catalog, 2026-07-19)
+
+All 21 `crm` tables and their 298 columns. "Class" is the personal-data classification from the enforced registry ([`crm-personal-data-classification.json`](./crm-personal-data-classification.json), CI-checked by `npm run validate:crm-classification`); **restricted** columns are sensitive-view gated and never searchable. RLS is `FORCE`d on every table. Migrations `20260719090000`–`20260719106000`.
+
+### `crm.addresses`
+
+Postal/physical addresses; one active primary per type.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `address_type`   | text                     | NO   | —                   | internal |
+| `line1`          | text                     | NO   | —                   | internal |
+| `line2`          | text                     | YES  | —                   | internal |
+| `line3`          | text                     | YES  | —                   | internal |
+| `city`           | text                     | YES  | —                   | internal |
+| `region`         | text                     | YES  | —                   | internal |
+| `postal_code`    | text                     | YES  | —                   | internal |
+| `country_code`   | text                     | YES  | —                   | internal |
+| `is_primary`     | boolean                  | NO   | `false`             | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `crm.business_partners`
+
+Party master — one row per customer/individual/company; carries the display number, party_type discriminator, lifecycle_status, and merge redirect.
+
+| Column              | Type                     | Null | Default             | Class    |
+| ------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`         | uuid                     | NO   | —                   | internal |
+| `party_type`        | text                     | NO   | —                   | internal |
+| `display_name`      | text                     | NO   | —                   | internal |
+| `display_number`    | text                     | YES  | —                   | internal |
+| `lifecycle_status`  | text                     | NO   | `'prospect'::text`  | internal |
+| `commercial_status` | text                     | NO   | `'normal'::text`    | internal |
+| `merged_into_id`    | uuid                     | YES  | —                   | internal |
+| `record_version`    | integer                  | NO   | `1`                 | internal |
+| `created_at`        | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`        | uuid                     | NO   | —                   | internal |
+| `updated_at`        | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`        | uuid                     | YES  | —                   | internal |
+| `deleted_at`        | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`        | uuid                     | YES  | —                   | internal |
+
+### `crm.communication_log`
+
+Record of communications sent/received about a partner.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `partner_id`          | uuid                     | NO   | —                   | internal |
+| `direction`           | text                     | NO   | —                   | internal |
+| `channel`             | text                     | NO   | —                   | internal |
+| `subject`             | text                     | YES  | —                   | internal |
+| `summary`             | text                     | YES  | —                   | internal |
+| `outbound_message_id` | uuid                     | YES  | —                   | internal |
+| `related_entity_type` | text                     | YES  | —                   | internal |
+| `related_entity_id`   | uuid                     | YES  | —                   | internal |
+| `logged_by`           | uuid                     | NO   | —                   | internal |
+| `occurred_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+
+### `crm.communication_preferences`
+
+Per-partner channel/purpose preferences and preferred locale.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`        | uuid                     | NO   | —                   | internal |
+| `partner_id`       | uuid                     | NO   | —                   | internal |
+| `channel`          | text                     | NO   | —                   | internal |
+| `purpose`          | text                     | NO   | —                   | internal |
+| `preferred`        | boolean                  | NO   | —                   | internal |
+| `preferred_locale` | text                     | YES  | —                   | internal |
+| `quiet_hours_note` | text                     | YES  | —                   | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+
+### `crm.company_profiles`
+
+Per-partner profile for party_type=company; registration_ref/tax_ref restricted.
+
+| Column                  | Type                     | Null | Default                | Class          |
+| ----------------------- | ------------------------ | ---- | ---------------------- | -------------- |
+| `id`                    | uuid                     | NO   | `gen_random_uuid()`    | internal       |
+| `tenant_id`             | uuid                     | NO   | —                      | internal       |
+| `partner_id`            | uuid                     | NO   | —                      | internal       |
+| `party_type`            | text                     | NO   | `'organization'::text` | internal       |
+| `legal_name`            | text                     | NO   | —                      | internal       |
+| `trade_name`            | text                     | YES  | —                      | internal       |
+| `legal_name_normalized` | text                     | YES  | —                      | internal       |
+| `trade_name_normalized` | text                     | YES  | —                      | internal       |
+| `registration_ref`      | uuid                     | YES  | —                      | **restricted** |
+| `tax_ref`               | uuid                     | YES  | —                      | **restricted** |
+| `record_version`        | integer                  | NO   | `1`                    | internal       |
+| `created_at`            | timestamp with time zone | NO   | `now()`                | internal       |
+| `created_by`            | uuid                     | NO   | —                      | internal       |
+| `updated_at`            | timestamp with time zone | YES  | —                      | internal       |
+| `updated_by`            | uuid                     | YES  | —                      | internal       |
+
+### `crm.consent_history`
+
+Append-only consent ledger; current_consent() resolves the latest effective row by seq.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `partner_id`           | uuid                     | NO   | —                   | internal |
+| `consent_kind`         | text                     | NO   | —                   | internal |
+| `contact_point_id`     | uuid                     | YES  | —                   | internal |
+| `channel`              | text                     | NO   | —                   | internal |
+| `purpose`              | text                     | NO   | —                   | internal |
+| `status`               | text                     | NO   | —                   | internal |
+| `source`               | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `effective_at`         | timestamp with time zone | NO   | —                   | internal |
+| `recorded_by`          | uuid                     | NO   | —                   | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`                  | bigint                   | NO   | —                   | internal |
+
+### `crm.contact_points`
+
+Communication endpoints with normalized value; one active primary per channel.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`        | uuid                     | NO   | —                   | internal |
+| `partner_id`       | uuid                     | NO   | —                   | internal |
+| `channel`          | text                     | NO   | —                   | internal |
+| `normalized_value` | text                     | NO   | —                   | internal |
+| `raw_value`        | text                     | YES  | —                   | internal |
+| `label`            | text                     | YES  | —                   | internal |
+| `is_primary`       | boolean                  | NO   | `false`             | internal |
+| `verified_at`      | timestamp with time zone | YES  | —                   | internal |
+| `status`           | text                     | NO   | `'active'::text`    | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`       | uuid                     | YES  | —                   | internal |
+
+### `crm.customer_alerts`
+
+Operational alerts/flags on a partner (kind, severity, status).
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `partner_id`      | uuid                     | NO   | —                   | internal |
+| `alert_type`      | text                     | NO   | —                   | internal |
+| `severity`        | text                     | NO   | —                   | internal |
+| `message`         | text                     | NO   | —                   | internal |
+| `active`          | boolean                  | NO   | `true`              | internal |
+| `effective_from`  | date                     | NO   | —                   | internal |
+| `effective_to`    | date                     | YES  | —                   | internal |
+| `acknowledged_by` | uuid                     | YES  | —                   | internal |
+| `acknowledged_at` | timestamp with time zone | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+
+### `crm.customer_block_history`
+
+Append-only block/unblock ledger backing lifecycle coherence; monotonic seq order.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `action`         | text                     | NO   | —                   | internal |
+| `reason`         | text                     | NO   | —                   | internal |
+| `restriction_id` | uuid                     | YES  | —                   | internal |
+| `approval_ref`   | text                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `seq`            | bigint                   | NO   | —                   | internal |
+
+### `crm.customer_credit_profiles`
+
+Per-partner credit terms (limit, currency, terms); one profile per partner.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `partner_id`         | uuid                     | NO   | —                   | internal |
+| `credit_limit`       | numeric                  | YES  | —                   | internal |
+| `currency_code`      | text                     | YES  | —                   | internal |
+| `risk_note`          | text                     | YES  | —                   | internal |
+| `payment_terms_code` | text                     | YES  | —                   | internal |
+| `status`             | text                     | NO   | `'none'::text`      | internal |
+| `approved_by`        | uuid                     | YES  | —                   | internal |
+| `approval_ref`       | text                     | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+
+### `crm.customer_restrictions`
+
+Restriction/hold records with reason and scope; referenced by block history.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`        | uuid                     | NO   | —                   | internal |
+| `partner_id`       | uuid                     | NO   | —                   | internal |
+| `restriction_type` | text                     | NO   | —                   | internal |
+| `reason`           | text                     | NO   | —                   | internal |
+| `imposed_by`       | uuid                     | NO   | —                   | internal |
+| `effective_from`   | date                     | NO   | —                   | internal |
+| `effective_to`     | date                     | YES  | —                   | internal |
+| `approval_ref`     | text                     | YES  | —                   | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+
+### `crm.customer_segments`
+
+Tenant-defined segment catalog (structural configuration, not business data).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `segment_code`   | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `criteria_note`  | text                     | YES  | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `crm.duplicate_candidates`
+
+Suspected duplicate partner pairs with match_score and raw-value-free match_basis.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id_a`   | uuid                     | NO   | —                   | internal |
+| `partner_id_b`   | uuid                     | NO   | —                   | internal |
+| `match_score`    | numeric                  | NO   | —                   | internal |
+| `match_basis`    | jsonb                    | NO   | `'[]'::jsonb`       | internal |
+| `status`         | text                     | NO   | `'open'::text`      | internal |
+| `detected_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `reviewed_by`    | uuid                     | YES  | —                   | internal |
+| `reviewed_at`    | timestamp with time zone | YES  | —                   | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `crm.individual_profiles`
+
+Per-partner profile for party_type=individual; national_id_ref restricted, DOB via sensitive attributes.
+
+| Column                   | Type                     | Null | Default              | Class          |
+| ------------------------ | ------------------------ | ---- | -------------------- | -------------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()`  | internal       |
+| `tenant_id`              | uuid                     | NO   | —                    | internal       |
+| `partner_id`             | uuid                     | NO   | —                    | internal       |
+| `party_type`             | text                     | NO   | `'individual'::text` | internal       |
+| `given_name`             | text                     | NO   | —                    | internal       |
+| `family_name`            | text                     | NO   | —                    | internal       |
+| `given_name_normalized`  | text                     | YES  | —                    | internal       |
+| `family_name_normalized` | text                     | YES  | —                    | internal       |
+| `national_id_ref`        | uuid                     | YES  | —                    | **restricted** |
+| `preferred_locale`       | text                     | YES  | —                    | internal       |
+| `record_version`         | integer                  | NO   | `1`                  | internal       |
+| `created_at`             | timestamp with time zone | NO   | `now()`              | internal       |
+| `created_by`             | uuid                     | NO   | —                    | internal       |
+| `updated_at`             | timestamp with time zone | YES  | —                    | internal       |
+| `updated_by`             | uuid                     | YES  | —                    | internal       |
+
+### `crm.partner_identifiers`
+
+Typed government/registration/tax identifiers; raw/normalized restricted values are sensitive-view gated.
+
+| Column             | Type                     | Null | Default             | Class          |
+| ------------------ | ------------------------ | ---- | ------------------- | -------------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal       |
+| `tenant_id`        | uuid                     | NO   | —                   | internal       |
+| `partner_id`       | uuid                     | NO   | —                   | internal       |
+| `identifier_type`  | text                     | NO   | —                   | internal       |
+| `normalized_value` | text                     | NO   | —                   | **restricted** |
+| `raw_value`        | text                     | YES  | —                   | **restricted** |
+| `classification`   | text                     | NO   | `'internal'::text`  | internal       |
+| `is_primary`       | boolean                  | NO   | `false`             | internal       |
+| `verified_at`      | timestamp with time zone | YES  | —                   | internal       |
+| `record_version`   | integer                  | NO   | `1`                 | internal       |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal       |
+| `created_by`       | uuid                     | NO   | —                   | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal       |
+| `updated_by`       | uuid                     | YES  | —                   | internal       |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal       |
+| `deleted_by`       | uuid                     | YES  | —                   | internal       |
+
+### `crm.partner_merges`
+
+Immutable merge records (source → survivor) with counts-only merge_summary.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `source_partner_id`   | uuid                     | NO   | —                   | internal |
+| `survivor_partner_id` | uuid                     | NO   | —                   | internal |
+| `merge_summary`       | jsonb                    | NO   | `'{}'::jsonb`       | internal |
+| `preview_ref`         | text                     | YES  | —                   | internal |
+| `approval_ref`        | text                     | NO   | —                   | internal |
+| `merged_by`           | uuid                     | NO   | —                   | internal |
+| `merged_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`      | uuid                     | YES  | —                   | internal |
+
+### `crm.partner_roles`
+
+Dated business roles a partner plays; a btree_gist EXCLUDE forbids overlapping same-role intervals.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `role_type`      | text                     | NO   | —                   | internal |
+| `valid_from`     | date                     | NO   | —                   | internal |
+| `valid_to`       | date                     | YES  | —                   | internal |
+| `source`         | text                     | YES  | —                   | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `crm.partner_segment_assignments`
+
+Dated membership of a partner in a segment.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `segment_id`     | uuid                     | NO   | —                   | internal |
+| `assigned_by`    | uuid                     | NO   | —                   | internal |
+| `assigned_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `valid_from`     | date                     | NO   | —                   | internal |
+| `valid_to`       | date                     | YES  | —                   | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `crm.partner_sensitive_attributes`
+
+Declarative sensitive key/value attributes (value_text/value_date restricted); every read sensitive-view gated.
+
+| Column           | Type                     | Null | Default              | Class          |
+| ---------------- | ------------------------ | ---- | -------------------- | -------------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()`  | internal       |
+| `tenant_id`      | uuid                     | NO   | —                    | internal       |
+| `partner_id`     | uuid                     | NO   | —                    | internal       |
+| `attribute_type` | text                     | NO   | —                    | internal       |
+| `value_date`     | date                     | YES  | —                    | **restricted** |
+| `value_text`     | text                     | YES  | —                    | **restricted** |
+| `classification` | text                     | NO   | `'restricted'::text` | internal       |
+| `record_version` | integer                  | NO   | `1`                  | internal       |
+| `created_at`     | timestamp with time zone | NO   | `now()`              | internal       |
+| `created_by`     | uuid                     | NO   | —                    | internal       |
+| `updated_at`     | timestamp with time zone | YES  | —                    | internal       |
+| `updated_by`     | uuid                     | YES  | —                    | internal       |
+| `deleted_at`     | timestamp with time zone | YES  | —                    | internal       |
+| `deleted_by`     | uuid                     | YES  | —                    | internal       |
+
+### `crm.partner_status_history`
+
+Append-only lifecycle/commercial status history; server-stamped; monotonic seq for same-tx order.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `status_kind`    | text                     | NO   | —                   | internal |
+| `from_state`     | text                     | YES  | —                   | internal |
+| `to_state`       | text                     | NO   | —                   | internal |
+| `reason`         | text                     | NO   | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `seq`            | bigint                   | NO   | —                   | internal |
+
+### `crm.timeline_events`
+
+Append-only partner activity timeline; written only through emit_timeline_event; attribution server-stamped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`     | uuid                     | NO   | —                   | internal |
+| `event_type`     | text                     | NO   | —                   | internal |
+| `event_ref_type` | text                     | YES  | —                   | internal |
+| `event_ref_id`   | uuid                     | YES  | —                   | internal |
+| `title`          | text                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `actor_id`       | uuid                     | YES  | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `seq`            | bigint                   | NO   | —                   | internal |
