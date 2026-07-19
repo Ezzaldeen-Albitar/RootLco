@@ -247,6 +247,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // org.tenants). Vehicles reference the catalogs, so delete them first; the
   // self-referential merged_into_id (ON DELETE RESTRICT) is removed together in
   // a single statement. Catalog hierarchy: trims -> models -> makes.
+  await deleteFrom('veh.vehicle_identifiers');
   await deleteFrom('veh.vehicles');
   await deleteFrom('veh.trims');
   await deleteFrom('veh.models');

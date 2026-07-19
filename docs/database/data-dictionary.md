@@ -2116,3 +2116,27 @@ The independent Vehicle master (P1-07-DB-001). No partner/owner column; ownershi
 | `updated_by`          | uuid                     | YES  | —                   | internal |
 | `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_identifiers`
+
+Typed identifier ledger (P1-07-DB-003); chassis/engine_no are `restricted` and row-gated. Alternate identifiers satisfy the missing-VIN activation contract.
+
+| Column             | Type                     | Null | Default             | Class               |
+| ------------------ | ------------------------ | ---- | ------------------- | ------------------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal            |
+| `tenant_id`        | uuid                     | NO   | —                   | internal            |
+| `vehicle_id`       | uuid                     | NO   | —                   | internal            |
+| `identifier_type`  | text                     | NO   | —                   | internal            |
+| `raw_value`        | text                     | NO   | —                   | internal            |
+| `normalized_value` | text                     | NO   | —                   | internal            |
+| `is_primary`       | boolean                  | NO   | `false`             | internal            |
+| `status`           | text                     | NO   | `'active'::text`    | internal            |
+| `classification`   | text                     | NO   | —                   | internal/restricted |
+| `verified_at`      | timestamp with time zone | YES  | —                   | internal            |
+| `record_version`   | integer                  | NO   | `1`                 | internal            |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal            |
+| `created_by`       | uuid                     | NO   | —                   | internal            |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal            |
+| `updated_by`       | uuid                     | YES  | —                   | internal            |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal            |
+| `deleted_by`       | uuid                     | YES  | —                   | internal            |

@@ -147,6 +147,8 @@ const ALLOWED_TABLES = new Set([
   'veh.powertrain_types',
   // Phase 1-7 vehicle — independent Vehicle master (P1-07-DB-001).
   'veh.vehicles',
+  // Phase 1-7 vehicle — typed identifier ledger (P1-07-DB-003).
+  'veh.vehicle_identifiers',
 ]);
 
 /** Extensions the PROJECT approved (extension register, migration 0001). */
@@ -289,6 +291,9 @@ const ALLOWED_ROUTINES = new Set([
   // Phase 1-7 vehicle — master catalog-scope and merge-redirect guards (P1-07-DB-001).
   'veh.guard_vehicle_catalog_refs',
   'veh.guard_vehicle_merge',
+  // Phase 1-7 vehicle — missing-VIN activation contract guards (P1-07-DB-003).
+  'veh.guard_vehicle_activation',
+  'veh.guard_vehicle_identity_removal',
 ]);
 
 let admin: Pool;
@@ -586,6 +591,10 @@ describe('database foundation', () => {
       'tg_user_sessions_immutable',
       'tg_user_sessions_touch_metadata',
       'tg_user_status_history_stamp',
+      'tg_vehicle_identifiers_identity_removal',
+      'tg_vehicle_identifiers_immutable',
+      'tg_vehicle_identifiers_touch_metadata',
+      'tg_vehicles_activation_guard',
       'tg_vehicles_catalog_refs',
       'tg_vehicles_immutable',
       'tg_vehicles_merge_guard',
@@ -638,6 +647,7 @@ describe('database foundation', () => {
       'ins_tax_rates_scope',
       'ins_timeline_events_tenant',
       'ins_trims_tenant',
+      'ins_vehicle_identifiers_tenant',
       'ins_vehicles_tenant',
       'ins_warehouses_scope',
       'sel_addresses_tenant',
@@ -726,6 +736,7 @@ describe('database foundation', () => {
       'sel_user_sessions_admin',
       'sel_user_sessions_own',
       'sel_user_status_history_tenant',
+      'sel_vehicle_identifiers_tenant',
       'sel_vehicles_tenant',
       'sel_warehouses_scope',
       'upd_addresses_tenant',
@@ -757,6 +768,7 @@ describe('database foundation', () => {
       'upd_tax_classes_scope',
       'upd_tax_rates_scope',
       'upd_trims_tenant',
+      'upd_vehicle_identifiers_tenant',
       'upd_vehicles_tenant',
       'upd_warehouses_scope',
       'wkr_error_records_all',

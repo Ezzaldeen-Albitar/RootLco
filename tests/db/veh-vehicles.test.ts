@@ -179,7 +179,7 @@ describe('veh.vehicles — active VIN uniqueness (P1-07-DB-002)', () => {
       const survivor = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1, 'active', $2) RETURNING id`,
+           VALUES ($1, 'draft', $2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
@@ -265,7 +265,7 @@ describe('veh.vehicles — merge-redirect integrity', () => {
       const id = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1,'active',$2) RETURNING id`,
+           VALUES ($1,'draft',$2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
@@ -284,14 +284,14 @@ describe('veh.vehicles — merge-redirect integrity', () => {
       const survivor = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1,'active',$2) RETURNING id`,
+           VALUES ($1,'draft',$2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
       const source = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1,'active',$2) RETURNING id`,
+           VALUES ($1,'draft',$2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
@@ -312,7 +312,7 @@ describe('veh.vehicles — merge-redirect integrity', () => {
         (
           await c.query(
             `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-             VALUES ($1,'active',$2) RETURNING id`,
+             VALUES ($1,'draft',$2) RETURNING id`,
             [TENANT_A, USER_A]
           )
         ).rows[0].id;
@@ -338,7 +338,7 @@ describe('veh.vehicles — merge-redirect integrity', () => {
       const survivor = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1,'active',$2) RETURNING id`,
+           VALUES ($1,'draft',$2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
@@ -346,7 +346,7 @@ describe('veh.vehicles — merge-redirect integrity', () => {
       const source = (
         await c.query(
           `INSERT INTO veh.vehicles (tenant_id, lifecycle_status, created_by)
-           VALUES ($1,'active',$2) RETURNING id`,
+           VALUES ($1,'draft',$2) RETURNING id`,
           [TENANT_A, USER_A]
         )
       ).rows[0].id;
@@ -385,7 +385,7 @@ describe('veh.vehicles — coherence, display numbers, isolation', () => {
         ).rows[0].display_number;
         return c.query(
           `INSERT INTO veh.vehicles (tenant_id, display_number, lifecycle_status, created_by)
-         VALUES ($1, $2, 'active', $3) RETURNING display_number`,
+         VALUES ($1, $2, 'draft', $3) RETURNING display_number`,
           [TENANT_A, dn, USER_A]
         );
       }
