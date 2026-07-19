@@ -1974,3 +1974,491 @@ Append-only partner activity timeline; written only through emit_timeline_event;
 | `actor_id`       | uuid                     | YES  | —                   | internal |
 | `correlation_id` | uuid                     | YES  | —                   | internal |
 | `seq`            | bigint                   | NO   | —                   | internal |
+
+## Phase 1-7 — Vehicle schema (generated from the live catalog, 2026-07-20)
+
+The `veh` schema is the independent Vehicle master and its identity, mechanical,
+ownership, relationship, and lifecycle history. This section grows one increment
+at a time; classification follows the Phase 1-7 registry
+(`docs/database/veh-personal-data-classification.json`).
+
+### `veh.makes`
+
+Dual-scope vehicle make catalog (P1-07-DB-006): platform default (`scope`=platform, `tenant_id` NULL) or tenant extension.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.models`
+
+Dual-scope vehicle model catalog (P1-07-DB-006), child of `veh.makes`. `model_year` is a vehicle attribute, not a catalog.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`            | text                     | NO   | —                   | internal |
+| `tenant_id`        | uuid                     | YES  | —                   | internal |
+| `make_id`          | uuid                     | NO   | —                   | internal |
+| `code`             | text                     | NO   | —                   | internal |
+| `name`             | text                     | NO   | —                   | internal |
+| `first_model_year` | integer                  | YES  | —                   | internal |
+| `last_model_year`  | integer                  | YES  | —                   | internal |
+| `status`           | text                     | NO   | `'active'::text`    | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`       | uuid                     | YES  | —                   | internal |
+
+### `veh.trims`
+
+Dual-scope vehicle trim catalog (P1-07-DB-006), child of `veh.models`.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `model_id`       | uuid                     | NO   | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.body_types`
+
+Dual-scope vehicle body-type catalog (P1-07-DB-006).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.powertrain_types`
+
+Dual-scope powertrain-type catalog (P1-07-DB-006); `category` (ice/ev/hybrid/phev/other) is descriptive — the authoritative EV driver is `veh.vehicles.powertrain_category`.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `category`       | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicles`
+
+The independent Vehicle master (P1-07-DB-001). No partner/owner column; ownership is temporal. `vin_normalized` is generated from `veh.normalize_vin(vin_raw)`.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `display_number`      | text                     | YES  | —                   | internal |
+| `vin_raw`             | text                     | YES  | —                   | internal |
+| `vin_normalized`      | text                     | YES  | generated           | internal |
+| `make_id`             | uuid                     | YES  | —                   | internal |
+| `model_id`            | uuid                     | YES  | —                   | internal |
+| `trim_id`             | uuid                     | YES  | —                   | internal |
+| `model_year`          | integer                  | YES  | —                   | internal |
+| `body_type_id`        | uuid                     | YES  | —                   | internal |
+| `powertrain_type_id`  | uuid                     | YES  | —                   | internal |
+| `powertrain_category` | text                     | NO   | `'ice'::text`       | internal |
+| `color`               | text                     | YES  | —                   | internal |
+| `lifecycle_status`    | text                     | NO   | `'draft'::text`     | internal |
+| `workshop_status`     | text                     | NO   | `'none'::text`      | internal |
+| `merged_into_id`      | uuid                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+| `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_identifiers`
+
+Typed identifier ledger (P1-07-DB-003); chassis/engine_no are `restricted` and row-gated. Alternate identifiers satisfy the missing-VIN activation contract.
+
+| Column             | Type                     | Null | Default             | Class               |
+| ------------------ | ------------------------ | ---- | ------------------- | ------------------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal            |
+| `tenant_id`        | uuid                     | NO   | —                   | internal            |
+| `vehicle_id`       | uuid                     | NO   | —                   | internal            |
+| `identifier_type`  | text                     | NO   | —                   | internal            |
+| `raw_value`        | text                     | NO   | —                   | internal            |
+| `normalized_value` | text                     | NO   | —                   | internal            |
+| `is_primary`       | boolean                  | NO   | `false`             | internal            |
+| `status`           | text                     | NO   | `'active'::text`    | internal            |
+| `classification`   | text                     | NO   | —                   | internal/restricted |
+| `verified_at`      | timestamp with time zone | YES  | —                   | internal            |
+| `record_version`   | integer                  | NO   | `1`                 | internal            |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal            |
+| `created_by`       | uuid                     | NO   | —                   | internal            |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal            |
+| `updated_by`       | uuid                     | YES  | —                   | internal            |
+| `deleted_at`       | timestamp with time zone | YES  | —                   | internal            |
+| `deleted_by`       | uuid                     | YES  | —                   | internal            |
+
+### `veh.vin_verifications`
+
+Append-only VIN verification history (P1-07-DB-004); server-stamped; override requires a reason.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `vin_checked`     | text                     | NO   | —                   | internal |
+| `check_kind`      | text                     | NO   | —                   | internal |
+| `result`          | text                     | NO   | —                   | internal |
+| `override_reason` | text                     | YES  | —                   | internal |
+| `correlation_id`  | uuid                     | YES  | —                   | internal |
+| `actor_id`        | uuid                     | NO   | —                   | internal |
+| `occurred_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`             | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_attribute_history`
+
+Append-only Vehicle attribute history (P1-07-DB-005); trigger-populated on master attribute changes; server-stamped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id`     | uuid                     | NO   | —                   | internal |
+| `field_code`     | text                     | NO   | —                   | internal |
+| `old_value`      | text                     | YES  | —                   | internal |
+| `new_value`      | text                     | YES  | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | identity            | internal |
+
+### `veh.engine_history`
+
+Mutable-temporal engine interval history (P1-07-DB-007); internal attributes only; end-datable valid_to.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `displacement_cc` | integer                  | YES  | —                   | internal |
+| `power_kw`        | numeric                  | YES  | —                   | internal |
+| `fuel_note`       | text                     | YES  | —                   | internal |
+| `valid_from`      | date                     | NO   | —                   | internal |
+| `valid_to`        | date                     | YES  | —                   | internal |
+| `reason`          | text                     | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.transmission_history`
+
+Mutable-temporal transmission interval history (P1-07-DB-007).
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `vehicle_id`          | uuid                     | NO   | —                   | internal |
+| `transmission_type`   | text                     | NO   | —                   | internal |
+| `transmission_number` | text                     | YES  | —                   | internal |
+| `valid_from`          | date                     | NO   | —                   | internal |
+| `valid_to`            | date                     | YES  | —                   | internal |
+| `reason`              | text                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_ev_profiles`
+
+EV profile (P1-07-DB-008); powertrain-coupled (bev->ev, hybrid->hybrid, phev->phev); one active per vehicle.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | NO   | —                   | internal |
+| `ev_kind`              | text                     | NO   | —                   | internal |
+| `usable_capacity_kwh`  | numeric                  | YES  | —                   | internal |
+| `charge_port_type`     | text                     | YES  | —                   | internal |
+| `high_voltage_warning` | boolean                  | NO   | `true`              | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `veh.battery_masters`
+
+Battery installations (P1-07-DB-009); one active traction battery per vehicle.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | NO   | —                   | internal |
+| `battery_ref`          | text                     | YES  | —                   | internal |
+| `battery_role`         | text                     | NO   | `'traction'::text`  | internal |
+| `chemistry`            | text                     | YES  | —                   | internal |
+| `nominal_capacity_kwh` | numeric                  | YES  | —                   | internal |
+| `installed_on`         | date                     | YES  | —                   | internal |
+| `removed_on`           | date                     | YES  | —                   | internal |
+| `status`               | text                     | NO   | `'active'::text`    | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `veh.battery_readings`
+
+Append-only battery readings (P1-07-DB-009): soh/soc/voltage/other.
+
+| Column              | Type                     | Null | Default             | Class    |
+| ------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`         | uuid                     | NO   | —                   | internal |
+| `battery_master_id` | uuid                     | NO   | —                   | internal |
+| `reading_kind`      | text                     | NO   | —                   | internal |
+| `value`             | numeric                  | NO   | —                   | internal |
+| `unit`              | text                     | NO   | —                   | internal |
+| `measured_at`       | timestamp with time zone | NO   | —                   | internal |
+| `measured_by`       | uuid                     | YES  | —                   | internal |
+| `source`            | text                     | YES  | —                   | internal |
+| `correlation_id`    | uuid                     | YES  | —                   | internal |
+| `actor_id`          | uuid                     | NO   | —                   | internal |
+| `occurred_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`               | bigint                   | NO   | identity            | internal |
+
+### `veh.plate_history`
+
+Mutable-temporal plate history (P1-07-DB-010); per-vehicle + cross-vehicle active-plate uniqueness over the interval.
+
+| Column             | Type                     | Null | Default             | Class    |
+| ------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`               | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`        | uuid                     | NO   | —                   | internal |
+| `vehicle_id`       | uuid                     | NO   | —                   | internal |
+| `country_code`     | text                     | NO   | —                   | internal |
+| `plate_raw`        | text                     | NO   | —                   | internal |
+| `plate_normalized` | text                     | YES  | generated           | internal |
+| `valid_from`       | date                     | NO   | —                   | internal |
+| `valid_to`         | date                     | YES  | —                   | internal |
+| `source`           | text                     | YES  | —                   | internal |
+| `record_version`   | integer                  | NO   | `1`                 | internal |
+| `created_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`       | uuid                     | NO   | —                   | internal |
+| `updated_at`       | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`       | uuid                     | YES  | —                   | internal |
+
+### `veh.ownership_history`
+
+Mutable-temporal Vehicle ownership (P1-07-DB-011); stores only the partner_id link (no PII); registered_owner authoritative.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `partner_id`      | uuid                     | NO   | —                   | internal |
+| `ownership_kind`  | text                     | NO   | —                   | internal |
+| `valid_from`      | date                     | NO   | —                   | internal |
+| `valid_to`        | date                     | YES  | —                   | internal |
+| `transfer_reason` | text                     | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_relationships`
+
+Mutable-temporal party-to-Vehicle roles (P1-07-DB-012); authorized_person carries a validated authorization_scope.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `vehicle_id`          | uuid                     | NO   | —                   | internal |
+| `partner_id`          | uuid                     | NO   | —                   | internal |
+| `relationship_role`   | text                     | NO   | —                   | internal |
+| `valid_from`          | date                     | NO   | —                   | internal |
+| `valid_to`            | date                     | YES  | —                   | internal |
+| `authorization_scope` | jsonb                    | YES  | —                   | internal |
+| `granted_by`          | uuid                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+
+### `veh.relationship_evidence`
+
+Append-only relationship evidence (P1-07-DB-013); links to shared.documents (no payload copied).
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `relationship_id` | uuid                     | NO   | —                   | internal |
+| `document_id`     | uuid                     | YES  | —                   | internal |
+| `evidence_kind`   | text                     | NO   | —                   | internal |
+| `note`            | text                     | YES  | —                   | internal |
+| `correlation_id`  | uuid                     | YES  | —                   | internal |
+| `actor_id`        | uuid                     | NO   | —                   | internal |
+| `occurred_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`             | bigint                   | NO   | identity            | internal |
+
+### `veh.odometer_readings`
+
+Append-only odometer series (P1-07-DB-014); forward-only with reasoned anomaly-flagged corrections; canonical `value_km` basis; units stored verbatim.
+
+| Column              | Type                     | Null | Default             | Class    |
+| ------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`         | uuid                     | NO   | —                   | internal |
+| `vehicle_id`        | uuid                     | NO   | —                   | internal |
+| `value`             | numeric(12,1)            | NO   | —                   | internal |
+| `unit`              | text                     | NO   | —                   | internal |
+| `value_km`          | numeric(14,4)            | YES  | generated           | internal |
+| `observed_at`       | timestamp with time zone | NO   | `now()`             | internal |
+| `capture_method`    | text                     | NO   | —                   | internal |
+| `correction_of`     | uuid                     | YES  | —                   | internal |
+| `correction_reason` | text                     | YES  | —                   | internal |
+| `anomaly_flag`      | boolean                  | NO   | `false`             | internal |
+| `correlation_id`    | uuid                     | YES  | —                   | internal |
+| `recorded_by`       | uuid                     | NO   | —                   | internal |
+| `seq`               | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_status_history`
+
+Append-only typed status ledger (P1-07-DB-015); trigger-emitted lifecycle/workshop transitions; to_state anchored to the live master.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id`     | uuid                     | NO   | —                   | internal |
+| `status_kind`    | text                     | NO   | —                   | internal |
+| `from_state`     | text                     | YES  | —                   | internal |
+| `to_state`       | text                     | NO   | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | identity            | internal |
+
+### `veh.vehicle_alerts`
+
+Vehicle alerts (P1-07-DB-016); safety/technical/commercial/other with severity, effective window, active flag, coherent acknowledgement; soft-deleted; `message` is internal and excluded from search.
+
+| Column            | Type                     | Null | Default             | Class    |
+| ----------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`       | uuid                     | NO   | —                   | internal |
+| `vehicle_id`      | uuid                     | NO   | —                   | internal |
+| `alert_type`      | text                     | NO   | —                   | internal |
+| `severity`        | text                     | NO   | —                   | internal |
+| `message`         | text                     | NO   | —                   | internal |
+| `effective_from`  | timestamp with time zone | NO   | `now()`             | internal |
+| `effective_to`    | timestamp with time zone | YES  | —                   | internal |
+| `is_active`       | boolean                  | NO   | `true`              | internal |
+| `acknowledged_by` | uuid                     | YES  | —                   | internal |
+| `acknowledged_at` | timestamp with time zone | YES  | —                   | internal |
+| `record_version`  | integer                  | NO   | `1`                 | internal |
+| `created_at`      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`      | uuid                     | NO   | —                   | internal |
+| `updated_at`      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`      | uuid                     | YES  | —                   | internal |
+| `deleted_at`      | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`      | uuid                     | YES  | —                   | internal |
+
+### `veh.duplicate_candidates`
+
+Explainable duplicate Vehicle pairs (P1-07-DB-017); a<b canonical, one open per pair; positive-schema `match_basis` (no raw identifier values).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `vehicle_id_a`   | uuid                     | NO   | —                   | internal |
+| `vehicle_id_b`   | uuid                     | NO   | —                   | internal |
+| `match_score`    | numeric(5,4)             | NO   | —                   | internal |
+| `match_basis`    | jsonb                    | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'open'`            | internal |
+| `detected_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `reviewed_by`    | uuid                     | YES  | —                   | internal |
+| `reviewed_at`    | timestamp with time zone | YES  | —                   | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `veh.vehicle_merges`
+
+Append-only Vehicle merge record (P1-07-DB-018); one merge per source; inserting a record atomically transitions the source to merged/redirected.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `source_vehicle_id`   | uuid                     | NO   | —                   | internal |
+| `survivor_vehicle_id` | uuid                     | NO   | —                   | internal |
+| `merge_summary`       | jsonb                    | NO   | `'{}'::jsonb`       | internal |
+| `approval_ref`        | text                     | NO   | —                   | internal |
+| `merged_by`           | uuid                     | NO   | —                   | internal |
+| `merged_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`      | uuid                     | YES  | —                   | internal |
+| `seq`                 | bigint                   | NO   | identity            | internal |

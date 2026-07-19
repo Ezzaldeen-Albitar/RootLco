@@ -201,22 +201,17 @@ describe('module security posture', () => {
 });
 
 describe('phase and RLS boundaries', () => {
-  it('has exactly the five module schemas and no Phase 1-7 veh tables', async () => {
+  it('has exactly the five module schemas', async () => {
     const schemas = await admin.query(
       `SELECT nspname FROM pg_namespace WHERE nspname = ANY($1::text[]) ORDER BY 1`,
       [MODULE_SCHEMAS]
     );
     expect(schemas.rows.map((r) => r.nspname)).toEqual(MODULE_SCHEMAS);
 
-    // crm (Phase 1-6) tables now exist by design; the Phase 1-7 veh schema must
-    // still be an empty namespace (no Vehicle tables until Phase 1-7 starts).
-    const futureTables = await admin.query(
-      `SELECT table_schema || '.' || table_name AS fq
-       FROM information_schema.tables
-       WHERE table_schema = 'veh' AND table_type = 'BASE TABLE'
-       ORDER BY 1`
-    );
-    expect(futureTables.rows).toEqual([]);
+    // Phase 1-7 has started: the veh schema now holds Vehicle-domain tables. The
+    // exact per-schema table inventory is guarded by tests/db/foundation.test.ts
+    // (ALLOWED_TABLES); a future-phase table (e.g. Phase 1-8 reception) that
+    // slips into veh would fail there. No forward-empty-schema guard remains.
   });
 
   it('enables and forces RLS on every module-schema table', async () => {
