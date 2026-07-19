@@ -267,6 +267,10 @@ const ALLOWED_ROUTINES = new Set([
   'crm.resolve_partner_survivor',
   // Phase 1-6 CRM — timeline emit (P1-06-DB-019).
   'crm.emit_timeline_event',
+  // Phase 1-6 CRM — search normalization (P1-06-DB-021).
+  'crm.normalize_name',
+  'crm.normalize_email',
+  'crm.normalize_phone',
 ]);
 
 let admin: Pool;
