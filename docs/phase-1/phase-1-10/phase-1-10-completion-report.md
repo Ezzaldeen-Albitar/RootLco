@@ -21,10 +21,10 @@ deferred to a backend — and **without any `SECURITY DEFINER`**.
 | Object         | Count                                                                               |
 | -------------- | ----------------------------------------------------------------------------------- |
 | Tables         | 35 (11 `svc` + 6 `quo` + 18 `inv`)                                                  |
-| Functions      | 37 (all `SECURITY INVOKER`, `search_path=''`, `REVOKE PUBLIC`)                      |
-| Triggers       | 84                                                                                  |
+| Functions      | 39 (all `SECURITY INVOKER`, `search_path=''`, `REVOKE PUBLIC`)                      |
+| Triggers       | 85                                                                                  |
 | Policies       | 101                                                                                 |
-| Indexes        | 155                                                                                 |
+| Indexes        | 160                                                                                 |
 | Columns        | 582 (3 restricted, 0 restricted-searchable)                                         |
 | Migrations     | 8 (`20260723090000` … `20260723097000`)                                             |
 | P1-10 DB tests | see [phase-1-10-test-catalog.md](phase-1-10-test-catalog.md) (planned P1-10 suites) |

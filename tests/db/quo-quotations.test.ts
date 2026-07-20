@@ -132,4 +132,30 @@ describe('quo quotations', () => {
       ]);
     });
   });
+
+  it("freezes an issued revision's captured totals and forbids reverting to draft", async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const visit = await makeAuthorizedVisit(c);
+      const wo = await newWorkOrder(c, visit);
+      const { service } = await seedService(c, 'q5');
+      const quotation = await seedQuotation(c, wo, 'q5');
+      const rev = await draftRevision(c, quotation, 1);
+      await addServiceItem(c, rev, service, 1, 100, 1);
+      await c.query(`SELECT quo.issue_revision($1)`, [rev]);
+      // captured totals of an issued revision cannot be rewritten
+      await expectFail(
+        c,
+        '23514',
+        `UPDATE quo.quotation_revisions SET captured_grand_total=99999 WHERE id=$1`,
+        [rev]
+      );
+      // and status cannot revert to draft (which would re-open item editing)
+      await expectFail(
+        c,
+        '23514',
+        `UPDATE quo.quotation_revisions SET status='draft' WHERE id=$1`,
+        [rev]
+      );
+    });
+  });
 });

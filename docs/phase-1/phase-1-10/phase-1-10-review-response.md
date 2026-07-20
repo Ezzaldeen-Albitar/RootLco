@@ -125,7 +125,8 @@ quotation_revision_id, quotation_item_id)` → `quotation_items`; the target car
 - **Currency coherence (money):** covered by H12. **Fixed.**
 - **Specificity encoding:** strict bit-weighted total order (H11). **Fixed.**
 - **Dangling tax class when company NULL:** `CHECK ((company_id IS NOT NULL) OR
-(tax_class_id IS NULL))` on `price_rules` and `discount_rules`. **Fixed.**
+(tax_class_id IS NULL))` on `price_rules` (`discount_rules` carries no `tax_class_id`
+  column, so it needs no such CHECK). **Fixed.**
 - **Published-version child INSERT/DELETE:** covered by H13. **Fixed.**
 - **`record_item_decision` race:** takes `FOR UPDATE` on the parent `quotations` row and
   re-reads `current_revision_id` + status under the lock. **Fixed.**
@@ -183,3 +184,80 @@ id)` so the full-scope forward FK from `wo.customer_approvals` has a valid targe
 Zero unresolved Critical or High. All Mediums fixed except two documented performance/
 operational residuals (coherence-guard re-sum cost; reservation-expiry scheduler), both
 deferred to P1-21 with mitigations. **The design gate is passed; migrations may proceed.**
+
+## Post-implementation red-team follow-up
+
+A second adversarial pass was run against the _implemented_ migrations (not just the
+design) after the first clean-room commit. It surfaced two High findings and one Low; all
+three were fixed at the database layer with regression coverage before the feature PR. No
+Critical or additional High findings remained.
+
+### RT-HIGH-1 — Raw `part_returns` insert could mint phantom stock
+
+- **Severity:** High.
+- **Failure path:** the return ceiling (Σ returns ≤ issued quantity) was enforced only
+  inside `inv.return_part`. A caller with the ordinary `INSERT` grant on
+  `inv.part_returns` could insert a return row directly, bypassing the function, and then
+  a matching `part_return` stock movement would pass the provenance guard (which binds the
+  movement to the return row's quantity) — minting on-hand stock that was never issued.
+- **Root cause:** invariant enforced in application-path code (a `SECURITY INVOKER`
+  function) rather than at the table/constraint layer, leaving the direct-insert path open.
+- **Fix (constraint layer):** `inv.guard_part_return_ceiling()` `BEFORE INSERT` trigger
+  (`tg_part_returns_ceiling`) on `inv.part_returns`. It `SELECT … FOR UPDATE`-locks the
+  parent `inv.part_issues` row (serialising concurrent returns), raises
+  `foreign_key_violation` if the issue is not in scope, and raises `check_violation`
+  (23514) when `Σ existing returns + NEW.quantity > issued quantity`. The control now
+  holds for **any** writer — the public function _and_ a raw table insert — because it
+  lives on the table, not in the function.
+- **Regression test:** `tests/db/inv-operations.test.ts` — "issues to an open work order
+  and rejects a return beyond the issued quantity" now also asserts that a raw
+  `INSERT INTO inv.part_returns … VALUES (…,1000000,…)` that outruns the issue is rejected
+  with `23514`, closing the phantom-stock path.
+- **Disposition:** Fixed. **Residual risk:** none identified; the ceiling is
+  constraint-enforced and the parent lock serialises concurrency.
+
+### RT-HIGH-2 — Issued quotation revisions were monetarily mutable
+
+- **Severity:** High.
+- **Failure path:** an `issued` `quo.quotation_revisions` row could be `UPDATE`d directly
+  to rewrite its `captured_*` totals, or to revert `status` back to `draft` — which would
+  re-open item editing and release the single-issued partial-unique. Item-level freeze
+  alone did not protect the revision header.
+- **Root cause:** the captured monetary snapshot and the issued lifecycle were treated as
+  backend convention rather than a database invariant.
+- **Fix (constraint layer):** `quo.guard_quotation_revision_freeze()` `BEFORE UPDATE`
+  trigger (`tg_quotation_revisions_freeze`) on `quo.quotation_revisions`. For any row whose
+  `OLD.status <> 'draft'` it rejects (23514) any change to `captured_subtotal`,
+  `captured_discount_total`, `captured_tax_total`, `captured_grand_total`, or `issued_at`;
+  it permits only `issued → superseded/rejected/expired` and treats
+  `superseded/rejected/expired` as terminal. The `draft → issued` transition performed by
+  `quo.issue_revision` (where `OLD.status = 'draft'`) is still allowed, so totals are
+  captured exactly once and then frozen.
+- **Regression test:** `tests/db/quo-quotations.test.ts` — "freezes an issued revision's
+  captured totals and forbids reverting to draft" asserts both a
+  `captured_grand_total` rewrite and a `status='draft'` revert are rejected with `23514`.
+- **Disposition:** Fixed. **Residual risk:** none identified; issued monetary values and
+  status are trigger-frozen, not merely convention.
+
+### RT-LOW-1 — `inv.expire_reservations` under-counted
+
+- **Severity:** Low (reporting only; no data-integrity impact).
+- **Failure path:** the per-cell loop used `GET DIAGNOSTICS v_count = ROW_COUNT`, which
+  _overwrote_ the accumulator each iteration, so the returned integer reflected only the
+  last cell's expirations rather than the total swept.
+- **Fix:** accumulate into a per-batch variable and sum —
+  `GET DIAGNOSTICS v_batch = ROW_COUNT; v_count := v_count + v_batch;`. The actual expiry
+  `UPDATE`s (and the coherence-restoring `sync_reserved`) were always correct; only the
+  return value changed.
+- **Disposition:** Fixed. **Residual risk:** none.
+
+### Object-count impact
+
+The two High fixes add **2 functions** (`inv.guard_part_return_ceiling`,
+`quo.guard_quotation_revision_freeze`) and **2 triggers** (`tg_part_returns_ceiling`,
+`tg_quotation_revisions_freeze`) to the P1-10 surface; the Low fix changes no object. The
+foundation allow-lists (`ALLOWED_ROUTINES`, trigger inventory) and the P1-10 object counts
+recorded in `phase-1-10-object-inventory.md`, `phase-1-10-owner-gate.md`,
+`phase-1-10-grant-matrix.md`, and `phase-1-10-security-matrix.md` were regenerated from
+live introspection to reflect the post-fix totals. The evidence is the green clean-room
+run captured in the completion report.

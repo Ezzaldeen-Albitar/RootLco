@@ -384,7 +384,7 @@ GRANT EXECUTE ON FUNCTION inv.consume_reservation(uuid) TO app_runtime;
 
 CREATE OR REPLACE FUNCTION inv.expire_reservations(p_item uuid DEFAULT NULL, p_location uuid DEFAULT NULL)
 RETURNS integer LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE v_tenant uuid := iam.current_tenant_id(); v_count int := 0; cell RECORD;
+DECLARE v_tenant uuid := iam.current_tenant_id(); v_count int := 0; v_batch int := 0; cell RECORD;
 BEGIN
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'requires a tenant context' USING ERRCODE = 'raise_exception'; END IF;
   FOR cell IN
@@ -396,7 +396,8 @@ BEGIN
     UPDATE inv.stock_reservations SET status = 'expired', released_reason = 'expired'
       WHERE tenant_id = v_tenant AND company_id = cell.company_id AND branch_id = cell.branch_id
         AND item_id = cell.item_id AND location_id = cell.location_id AND status = 'active' AND expires_at IS NOT NULL AND expires_at < now();
-    GET DIAGNOSTICS v_count = ROW_COUNT;
+    GET DIAGNOSTICS v_batch = ROW_COUNT;
+    v_count := v_count + v_batch;
     PERFORM inv.sync_reserved(v_tenant, cell.company_id, cell.branch_id, cell.item_id, cell.location_id);
   END LOOP;
   RETURN v_count;

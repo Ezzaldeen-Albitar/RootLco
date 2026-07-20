@@ -349,6 +349,33 @@ CREATE POLICY upd_part_returns_scope ON inv.part_returns FOR UPDATE TO app_runti
 GRANT SELECT, INSERT, UPDATE ON inv.part_returns TO app_runtime;
 GRANT SELECT ON inv.part_returns TO app_readonly;
 
+-- Return-ceiling enforcement at the CONSTRAINT layer (not just inv.return_part):
+-- row-lock the parent issue and reject if the running sum of returns would exceed
+-- the issued quantity. This closes the phantom-stock path where a raw part_returns
+-- INSERT (bypassing the function) + a matching return movement could otherwise mint
+-- stock, since the movement provenance guard binds the movement to this row's quantity.
+CREATE OR REPLACE FUNCTION inv.guard_part_return_ceiling()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_issued numeric(12, 3); v_returned numeric(12, 3);
+BEGIN
+  SELECT quantity INTO v_issued FROM inv.part_issues
+    WHERE tenant_id = NEW.tenant_id AND company_id = NEW.company_id AND branch_id = NEW.branch_id AND id = NEW.part_issue_id
+    FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'inv.part_returns: part issue % not found in scope', NEW.part_issue_id USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  SELECT COALESCE(SUM(quantity), 0) INTO v_returned FROM inv.part_returns
+    WHERE tenant_id = NEW.tenant_id AND part_issue_id = NEW.part_issue_id;
+  IF v_returned + NEW.quantity > v_issued THEN
+    RAISE EXCEPTION 'inv.part_returns: total returns %.% exceed the issued quantity %',
+      v_returned, NEW.quantity, v_issued USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END; $$;
+REVOKE EXECUTE ON FUNCTION inv.guard_part_return_ceiling() FROM PUBLIC;
+CREATE TRIGGER tg_part_returns_ceiling BEFORE INSERT ON inv.part_returns
+  FOR EACH ROW EXECUTE FUNCTION inv.guard_part_return_ceiling();
+
 -- ----------------------------------------------------------------------------
 -- 4. inv.damaged_stock
 -- ----------------------------------------------------------------------------

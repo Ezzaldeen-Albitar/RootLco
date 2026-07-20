@@ -134,6 +134,38 @@ CREATE POLICY upd_quotation_revisions_scope ON quo.quotation_revisions FOR UPDAT
 GRANT SELECT, INSERT, UPDATE ON quo.quotation_revisions TO app_runtime;
 GRANT SELECT ON quo.quotation_revisions TO app_readonly;
 
+-- Freeze a non-draft revision: its captured totals and issued_at are immutable, and
+-- status may only advance issued -> superseded/rejected/expired (never back to draft,
+-- which would re-open item editing and free the single-issued unique). issue_revision
+-- sets the totals during the draft->issued transition (OLD.status='draft'), which this
+-- guard permits. Complements the item-level freeze so an issued quotation's captured
+-- amounts can never be rewritten (FR-SVC-004 / BR-QUO-001).
+CREATE OR REPLACE FUNCTION quo.guard_quotation_revision_freeze()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+BEGIN
+  IF OLD.status <> 'draft' THEN
+    IF NEW.captured_subtotal <> OLD.captured_subtotal
+       OR NEW.captured_discount_total <> OLD.captured_discount_total
+       OR NEW.captured_tax_total <> OLD.captured_tax_total
+       OR NEW.captured_grand_total <> OLD.captured_grand_total
+       OR NEW.issued_at IS DISTINCT FROM OLD.issued_at THEN
+      RAISE EXCEPTION 'quo.quotation_revisions: a % revision''s captured totals are frozen', OLD.status USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.status <> OLD.status THEN
+      IF OLD.status = 'issued' AND NEW.status NOT IN ('superseded', 'rejected', 'expired') THEN
+        RAISE EXCEPTION 'quo.quotation_revisions: an issued revision may only be superseded/rejected/expired' USING ERRCODE = 'check_violation';
+      END IF;
+      IF OLD.status IN ('superseded', 'rejected', 'expired') THEN
+        RAISE EXCEPTION 'quo.quotation_revisions: % is terminal', OLD.status USING ERRCODE = 'check_violation';
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+REVOKE EXECUTE ON FUNCTION quo.guard_quotation_revision_freeze() FROM PUBLIC;
+CREATE TRIGGER tg_quotation_revisions_freeze BEFORE UPDATE ON quo.quotation_revisions
+  FOR EACH ROW EXECUTE FUNCTION quo.guard_quotation_revision_freeze();
+
 -- ----------------------------------------------------------------------------
 -- 3. quo.quotation_items — captured lines (frozen once revision issued).
 -- ----------------------------------------------------------------------------

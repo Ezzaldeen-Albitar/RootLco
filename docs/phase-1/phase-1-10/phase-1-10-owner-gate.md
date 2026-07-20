@@ -72,11 +72,11 @@ recorded**.
 
 ## Verified facts at gate-package assembly
 
-- **Schema:** 35 tables (11 `svc` + 6 `quo` + 18 `inv`), 37 functions, 84 triggers,
-  101 policies, 155 indexes, 582 columns — all introspected from the live catalog.
+- **Schema:** 35 tables (11 `svc` + 6 `quo` + 18 `inv`), 39 functions, 85 triggers,
+  101 policies, 160 indexes, 582 columns — all introspected from the live catalog.
 - **Migrations:** 8 additive, forward-only migrations `20260723090000` …
   `20260723097000`; no merged migration edited; `main` untouched.
-- **No `SECURITY DEFINER`:** all 37 functions are `SECURITY INVOKER`, `search_path=''`,
+- **No `SECURITY DEFINER`:** all 39 functions are `SECURITY INVOKER`, `search_path=''`,
   `REVOKE EXECUTE FROM PUBLIC`; stock-balance integrity is enforced by movement
   provenance + coherence guards, not a privilege boundary.
 - **No fabricated data:** every business table empty after a clean migration; the only

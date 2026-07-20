@@ -143,6 +143,16 @@ describe('inv operations', () => {
       expect(await onHand(c, item, warehouse)).toBe(8);
       // total returns cannot exceed the 5 issued (3 already returned, +3 -> 6 > 5)
       await expectFail(c, '23514', `SELECT inv.return_part($1,3)`, [issue]);
+      // the ceiling is enforced at the CONSTRAINT layer too: a RAW part_returns insert
+      // (bypassing inv.return_part) that would outrun the issue is rejected — closing the
+      // phantom-stock path a matching forged return movement would otherwise open.
+      await expectFail(
+        c,
+        '23514',
+        `INSERT INTO inv.part_returns (tenant_id, company_id, branch_id, part_issue_id, quantity, created_by)
+         VALUES ($1,$2,$3,$4,1000000,$5)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, issue, USER_A]
+      );
     });
   });
 

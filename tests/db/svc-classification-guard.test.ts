@@ -67,7 +67,8 @@ describe('svc/quo/inv classification guard', () => {
 
   it('fails on an invalid classification value', () => {
     const p = tampered('badclass.json', (doc) => {
-      doc.columns['svc.services.name'].classification = 'ultra-secret';
+      const col = doc.columns['svc.services.name'];
+      if (col) col.classification = 'ultra-secret';
       return doc;
     });
     expect(run(p).out).toContain('invalid classification');
@@ -75,7 +76,8 @@ describe('svc/quo/inv classification guard', () => {
 
   it('fails when a restricted column is marked searchable', () => {
     const p = tampered('searchable.json', (doc) => {
-      doc.columns['inv.item_cost_details.standard_cost'].searchable = true;
+      const col = doc.columns['inv.item_cost_details.standard_cost'];
+      if (col) col.searchable = true;
       return doc;
     });
     expect(run(p).out).toContain('searchable');
@@ -83,7 +85,8 @@ describe('svc/quo/inv classification guard', () => {
 
   it('fails on registry/live data-type drift', () => {
     const p = tampered('drift.json', (doc) => {
-      doc.columns['svc.services.name'].dataType = 'integer';
+      const col = doc.columns['svc.services.name'];
+      if (col) col.dataType = 'integer';
       return doc;
     });
     expect(run(p).out).toContain('drift');

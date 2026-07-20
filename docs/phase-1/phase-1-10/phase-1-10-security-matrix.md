@@ -81,7 +81,7 @@ Status ledgers are trigger-emitted/server-stamped; evidence binds an exact
 
 ## Function security
 
-All 37 functions are `SECURITY INVOKER` with `SET search_path = ''` and `REVOKE
+All 39 functions are `SECURITY INVOKER` with `SET search_path = ''` and `REVOKE
 EXECUTE FROM PUBLIC`; **none is `SECURITY DEFINER`** (repo-wide prohibition). A
 `SECURITY INVOKER` function runs with the caller's RLS, so a function cannot bypass
 branch isolation. Because there is no privileged write path, stock-balance integrity

@@ -1,6 +1,6 @@
 # Phase 1-10 — Index Evidence
 
-**155 indexes** across the 35 tables (introspected). Every foreign key is covered by a
+**160 indexes** across the 35 tables (introspected). Every foreign key is covered by a
 non-partial index whose leading columns (as a set) equal the FK columns; partial,
 gist, and `NULLS NOT DISTINCT` uniques never count as FK cover, so a plain covering
 index accompanies each. The repo FK-index-cover guard reports zero gaps and the

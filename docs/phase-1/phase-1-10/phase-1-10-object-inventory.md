@@ -1,7 +1,7 @@
 # Phase 1-10 — Object Inventory
 
-Introspected from the live catalog. Counts: **35 tables, 37 functions, 84 triggers,
-101 policies, 155 indexes, 582 columns.**
+Introspected from the live catalog. Counts: **35 tables, 39 functions, 85 triggers,
+101 policies, 160 indexes, 582 columns.**
 
 ## Tables
 
@@ -55,9 +55,9 @@ Introspected from the live catalog. Counts: **35 tables, 37 functions, 84 trigge
 | `inv.external_purchase_parts`        | non-procurement foundation   | WO-linked purchase reference (`is_procurement=false`)                           |
 | `inv.external_purchase_part_details` | restricted 1:1               | `unit_cost` (gated by `inv.cost.view`), branch-scoped                           |
 
-## Functions (37)
+## Functions (39)
 
-All 37 functions are `SECURITY INVOKER` with `SET search_path = ''` and `REVOKE
+All 39 functions are `SECURITY INVOKER` with `SET search_path = ''` and `REVOKE
 EXECUTE FROM PUBLIC`; **none is `SECURITY DEFINER`** (the repo forbids it entirely).
 Because no write path hides behind a privileged role, integrity is enforced by
 constraints, triggers, and coherence/provenance guards, not by a privilege boundary.
@@ -72,13 +72,14 @@ constraints, triggers, and coherence/provenance guards, not by a privilege bound
 date)`, `publish_price_list_version(uuid, uuid, date)` → `app_runtime`;
   `resolve_price(uuid, uuid, uuid, text, date)` → `app_runtime, app_readonly`.
 
-### `inv` (22)
+### `inv` (23)
 
 - **Guards:** `guard_item_category_no_cycle`, `guard_item_lifecycle`,
   `guard_item_uom_scope`, `guard_stock_location_hierarchy`,
   `guard_stock_balance_coherence`, `guard_stock_reservation_status`,
   `guard_opening_batch_approval`, `guard_adjustment_approval`,
-  `guard_stock_movement_provenance` (the movement trust root).
+  `guard_part_return_ceiling` (constraint-layer `Σ returns ≤ issued`, row-locks the
+  parent issue), `guard_stock_movement_provenance` (the movement trust root).
 - **Internal helpers (`REVOKE PUBLIC`, no grant — called only by other functions):**
   `lock_stock_balance`, `sync_reserved`, `free_reservations_for_loss`.
 - **App-runtime primitives (`GRANT EXECUTE TO app_runtime`):** `post_stock_movement`,
@@ -86,15 +87,17 @@ date)`, `publish_price_list_version(uuid, uuid, date)` → `app_runtime`;
   `expire_reservations`, `issue_part`, `return_part`, `record_damage`,
   `approve_opening_batch`, `approve_adjustment`.
 
-### `quo` (5)
+### `quo` (6)
 
 - **Guards / emitters:** `guard_quotation_item` (parent-freeze + currency coherence),
+  `guard_quotation_revision_freeze` (issued revision captured totals/`issued_at`
+  immutable; status may only advance issued→superseded/rejected/expired),
   `guard_revision_totals` (deferred constraint-trigger totals identity),
   `emit_quotation_status_history`.
 - **App-runtime primitives (`GRANT EXECUTE TO app_runtime`):** `issue_revision(uuid,
 timestamptz)`, `record_item_decision(uuid, text, text, uuid)`.
 
-## Triggers (84)
+## Triggers (85)
 
 Every table carries the standard trigger set — `BEFORE UPDATE
 shared.touch_row_metadata` on mutable tables, `org.guard_immutable_columns(...)`
@@ -104,6 +107,9 @@ freeze, provenance, coherence, approval, status). Append-only ledgers
 carry a `BEFORE INSERT shared.stamp_status_history` server-stamp; the movement ledger
 additionally carries `tg_stock_movements_provenance`; `quo.quotation_items` carries
 the `DEFERRABLE INITIALLY DEFERRED` constraint trigger `tg_quotation_items_totals`.
+Two constraint-layer guards close raw-write paths: `tg_part_returns_ceiling`
+(`BEFORE INSERT` on `inv.part_returns`) and `tg_quotation_revisions_freeze`
+(`BEFORE UPDATE` on `quo.quotation_revisions`).
 
 ## Policies (101)
 
@@ -116,7 +122,7 @@ iam.has_permission('inv.cost.view')`), and the append-only ledgers (SELECT+INSER
 policies only — no UPDATE/DELETE). See
 [phase-1-10-security-matrix.md](phase-1-10-security-matrix.md).
 
-## Indexes (155)
+## Indexes (160)
 
 Every foreign key is covered by a non-partial index whose leading columns (as a set)
 equal the FK columns; partial/gist/`NULLS NOT DISTINCT` uniques never count as FK

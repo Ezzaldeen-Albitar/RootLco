@@ -19,9 +19,10 @@ soft-delete UPDATE; the append-only ledgers have no soft-delete.
 
 ## Function grants
 
-All 37 functions are `SECURITY INVOKER`, `SET search_path=''`, `REVOKE EXECUTE FROM
+All 39 functions are `SECURITY INVOKER`, `SET search_path=''`, `REVOKE EXECUTE FROM
 PUBLIC`. Guard/emitter/helper functions carry **no** grant (they run only as triggers
-or as internal callees). The following primitives carry an explicit `GRANT EXECUTE`:
+or as internal callees) — including the two constraint-layer guards
+`inv.guard_part_return_ceiling` and `quo.guard_quotation_revision_freeze`. The following primitives carry an explicit `GRANT EXECUTE`:
 
 | Function                                                                           | Granted to                    |
 | ---------------------------------------------------------------------------------- | ----------------------------- |
