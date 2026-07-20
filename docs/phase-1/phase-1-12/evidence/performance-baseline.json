@@ -1,0 +1,54 @@
+{
+  "disclaimer": "PROPOSED validation baseline on a generated non-personal dataset — NOT a production-capacity claim (P1-OD-027 / NFR-SCL unresolved).",
+  "iterations": 25,
+  "dataset_volumes": {
+    "partners": 30000,
+    "vehicles": 30000
+  },
+  "results": [
+    {
+      "family": "partner_point_lookup_tenant_id",
+      "median_ms": 1.065,
+      "p95_ms": 1.499,
+      "p99_ms": 1.748,
+      "top_node": "Index Scan",
+      "index_used": true,
+      "uses_seq_scan": false,
+      "nodes": ["Index Scan(pk_business_partners)"],
+      "note": null
+    },
+    {
+      "family": "vehicle_point_lookup_tenant_id",
+      "median_ms": 1.023,
+      "p95_ms": 1.126,
+      "p99_ms": 1.26,
+      "top_node": "Index Scan",
+      "index_used": true,
+      "uses_seq_scan": false,
+      "nodes": ["Index Scan(pk_vehicles)"],
+      "note": null
+    },
+    {
+      "family": "partner_scan_by_tenant_isolation",
+      "median_ms": 3.727,
+      "p95_ms": 4.408,
+      "p99_ms": 4.942,
+      "top_node": "Aggregate",
+      "index_used": false,
+      "uses_seq_scan": true,
+      "nodes": ["Aggregate", "Seq Scan"],
+      "note": null
+    },
+    {
+      "family": "partner_outstanding_balance_fn",
+      "median_ms": 1.588,
+      "p95_ms": 1.849,
+      "p99_ms": 1.954,
+      "top_node": "Result",
+      "index_used": false,
+      "uses_seq_scan": false,
+      "nodes": ["Result"],
+      "note": null
+    }
+  ]
+}
