@@ -20,21 +20,31 @@ and never from a merge alone. Nothing in this phase touches a reserved founder
 decision (no production, no real customer data, no pricing/contract, no material
 financial or scope change).
 
-## Decision: **Pending**
+## Decision: **Go — Technical Gate Passed**
 
-The decision is **Pending** until the Phase 1-9 feature pull request is merged into
-protected `develop` and **this** record is updated with the merge evidence in a
-**separate gate-record pull request**. A merge alone does not constitute the gate;
-the record is completed from evidenced facts. No gate condition may be recorded as
-satisfied on intention.
+All five gate conditions below are evidenced. The Phase 1-9 feature pull request
+was merged into protected `develop`; the merge by Eng. Ezzaldeen Al-Bitar is the
+recorded technical approval event. The record is completed from evidenced facts,
+not from the merge alone.
 
 - **Phase ID:** P1-09
 - **Phase title:** Work Order, Diagnostics, and Technician Database
-- **Decision:** **Pending** (until feature-PR merge + gate-record PR)
+- **Decision:** **Go — Technical Gate Passed**
 - **Decision authority:** Eng. Ezzaldeen Al-Bitar
+- **Decision date:** 2026-07-20
 - **Governance basis:** Standing Technical Authorization Policy §2 and the Solo
   Developer Review Policy — owner-authorized technical, QA, security, and
   adversarial self-review, **not** an independent third-party review.
+
+### Merge evidence
+
+- **Feature PR:** [#39 — [P1-09] Implement Work Order, Diagnostics, and Technician database foundation](https://github.com/Ezzaldeen-Albitar/RootLco/pull/39) · state **Merged**.
+- **Final feature SHA:** `b9550bb4c65a3a22341a4b5b7f2f398d07f71476`.
+- **Merge target:** `develop`. **Merge strategy:** merge commit (`--no-ff`, two parents).
+- **Merge commit:** `4fff32775eb889d2ee4f3a551be01b916e5d9b27` — _"Merge pull request #39 from Ezzaldeen-Albitar/feature/p1-09-work-order-diagnostics-technician-database"_; parents `8881834` (prior `develop`, the Phase 1-8 gate merge #38) + `b9550bb` (feature head).
+- **Merge author:** Eng. Ezzaldeen Al-Bitar. **Committer:** GitHub. **Merge timestamp:** 2026-07-20T10:02:58+03:00.
+- **Hosted CI on the final feature SHA:** all four required checks green — Lint/types/tests/build, Docker build validation, Database migrations and RLS tests, Secret and sensitive-file scan; GitHub reported "All checks have passed", "4 successful checks", and "No conflicts with base branch".
+- **Containment:** `b9550bb` verified as an ancestor of `origin/develop` (`4fff327`).
 
 ## Gate conditions (all must be evidenced before Go)
 
@@ -82,5 +92,31 @@ updates this record with, from evidenced facts:
 - Hosted CI result on the exact final feature SHA (all required checks green).
 - Containment proof: the final feature SHA is an ancestor of `origin/develop`.
 
-Until that gate-record pull request is itself merged and both SHAs are verified
-contained in protected `origin/develop`, the decision remains **Pending**.
+This gate-record pull request supplies all of the above from evidenced facts.
+
+## Formal Closure Update
+
+This gate-record pull request records the technical gate as **Go — Technical Gate
+Passed** in protected history, from the evidenced facts above. Only closure and
+governance documentation is modified by this pull request; no schema, test, or
+application code changes.
+
+- Feature PR **#39** is **Merged** into `develop`; final feature SHA `b9550bb` is
+  contained in `origin/develop` (`4fff327`).
+- All five gate conditions are satisfied and evidenced (schema/tests/no-fabricated-
+  data/classification/clean-room, zero unresolved Critical/High, no P1-10/P1-19/
+  P1-29 scope leakage, `main` untouched).
+- Phase 1-9 is formally closed once **this** gate-record pull request is also merged
+  into `develop` and both SHAs (feature `b9550bb` and this gate-record commit) are
+  verified contained in protected `origin/develop`.
+
+## Pre-closure status (historical — superseded)
+
+_Preserved verbatim for the audit trail. This was the record's state before the
+feature PR merged; it is superseded by the **Go — Technical Gate Passed** decision
+above._
+
+> **Decision: Pending** — The decision is Pending until the Phase 1-9 feature pull
+> request is merged into protected `develop` and this record is updated with the
+> merge evidence in a separate gate-record pull request. A merge alone does not
+> constitute the gate; the record is completed from evidenced facts.

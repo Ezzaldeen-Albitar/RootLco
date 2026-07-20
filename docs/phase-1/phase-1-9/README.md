@@ -41,7 +41,7 @@ fabricated business data.
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [phase-1-9-design.md](phase-1-9-design.md)                                               | Architecture and design gate (fixed before any migration)                  |
 | [phase-1-9-review-response.md](phase-1-9-review-response.md)                             | Adversarial self-review ledger — 14 findings resolved by binding amendment |
-| [phase-1-9-owner-gate.md](phase-1-9-owner-gate.md)                                       | Owner gate record (**Decision: Pending** until closure)                    |
+| [phase-1-9-owner-gate.md](phase-1-9-owner-gate.md)                                       | Owner gate record (**Go — Technical Gate Passed**)                         |
 | [phase-1-9-completion-report.md](phase-1-9-completion-report.md)                         | Implementation summary + object/test counts                                |
 | [phase-1-9-object-inventory.md](phase-1-9-object-inventory.md)                           | Tables, functions, triggers, policies, indexes, migrations                 |
 | [phase-1-9-state-machines.md](phase-1-9-state-machines.md)                               | Work-order and job state matrices + configurable-graph principle           |
@@ -64,6 +64,9 @@ fabricated business data.
 Reviewed under the **Solo Developer Review Policy** and the **Standing Technical
 Authorization Policy** — owner-authorized technical, QA, security, and adversarial
 self-review by Eng. Ezzaldeen Al-Bitar; **not** an independent third-party review.
-The user performs every merge. The owner gate for this phase is **Pending** until
-the feature pull request merges into `develop` and the merge evidence is recorded
-in a separate gate-record pull request.
+The user performs every merge. The owner gate for this phase is **Go — Technical
+Gate Passed**: the feature pull request (#39, final SHA `b9550bb`) merged into
+`develop` (merge commit `4fff327`), and the merge evidence is recorded in the
+[owner gate](phase-1-9-owner-gate.md) via this gate-record pull request. Phase 1-9
+is formally closed once this gate-record pull request is also merged and both SHAs
+are verified contained in protected `origin/develop`.
