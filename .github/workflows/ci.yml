@@ -245,6 +245,13 @@ jobs:
       - name: Validate Service/Pricing/Quotation/Inventory financial-data classification coverage
         run: npm run validate:svc-quo-inv-classification
 
+      # P1-11-SEC: every sal/wty/rpt column must carry a classification
+      # (docs/database/sal-wty-rpt-personal-data-classification.json); no restricted
+      # financial column may be searchable, no duplicate entry, and registry/live
+      # types must reconcile. Same canonical script locally and here.
+      - name: Validate Billing/Payment/Delivery/Warranty/Reporting financial-data classification coverage
+        run: npm run validate:sal-wty-rpt-classification
+
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
 

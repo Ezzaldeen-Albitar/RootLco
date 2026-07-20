@@ -1,0 +1,2143 @@
+{
+  "$schema": "./classification.schema.json",
+  "description": "P1-11-SEC — Billing / Payment / Delivery / Warranty / Reporting financial-and-personal-data classification registry. Restricted = financial amounts (invoice/line/receipt/allocation/credit/reversal/financial-event) gated by sal.finance.view, plus receiver identity evidence and delivery signature document references gated by sal.delivery.view. No restricted column is searchable.",
+  "allowedClassifications": ["public", "internal", "restricted", "secret"],
+  "columnCount": 427,
+  "columns": {
+    "rpt.report_configuration_versions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configuration_versions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configuration_versions.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.parameter_schema": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.report_configuration_versions.published_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configuration_versions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rpt.report_configuration_versions.report_configuration_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configuration_versions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configuration_versions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configuration_versions.version_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rpt.report_configurations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configurations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configurations.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configurations.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configurations.export_permission_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configurations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configurations.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configurations.owner_user_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configurations.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rpt.report_configurations.report_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configurations.scope_level": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configurations.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_configurations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_configurations.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_configurations.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.saved_filters.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.saved_filters.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.filter_definition": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.saved_filters.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.saved_filters.owner_user_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rpt.saved_filters.report_configuration_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.scope_level": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.saved_filters.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.saved_filters.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.saved_filters.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.authorized_receivers.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.authorized_receivers.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.delivery_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.identity_evidence_document_version_id": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.receiver_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.authorized_receivers.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.authorized_receivers.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.authorized_receivers.verified_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.authorized_receivers.verified_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.credit_notes.approval_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.credit_notes.approved_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.credit_notes.approved_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.credit_notes.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.credit_notes.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.credit_notes.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.issued_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.credit_notes.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.credit_notes.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.credit_notes.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.credit_notes.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_results.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_results.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.delivery_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.outcome": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_results.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.delivery_checklist_results.recorded_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.template_item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_results.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_results.waiver_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_template_items.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_template_items.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_template_items.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.is_mandatory": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "sal.delivery_checklist_template_items.item_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_template_items.label": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_template_items.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.delivery_checklist_template_items.sort_order": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.delivery_checklist_template_items.template_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_template_items.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_template_items.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_templates.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_templates.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_templates.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.delivery_checklist_templates.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_templates.template_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_checklist_templates.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_checklist_templates.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_checklist_templates.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_records.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_records.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.delivered_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_records.delivering_employee_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.final_odometer_reading_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_records.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.delivery_records.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_records.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_records.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_records.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_signatures.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.delivery_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.signature_document_version_id": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_signatures.signed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_signatures.signer_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_signatures.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.delivery_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.from_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.delivery_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "sal.delivery_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_status_history.to_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.financial_events.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.financial_events.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.financial_events.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.financial_events.event_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.financial_events.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.financial_events.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.financial_events.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "sal.financial_events.source_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.financial_events.source_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.financial_events.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_amounts.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_amounts.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_amounts.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.gross_total": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_amounts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.net_total": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_amounts.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoice_amounts.tax_total": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_amounts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_amounts.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_amounts.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_line_amounts.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_line_amounts.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.customer_pay_amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_line_amounts.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_line_amounts.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.gross_amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_line_amounts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.invoice_line_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.net_amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_line_amounts.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoice_line_amounts.tax_amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_line_amounts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.unit_price": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_line_amounts.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_line_amounts.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_line_amounts.warranty_pay_amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_lines.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_lines.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_lines.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_lines.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.line_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoice_lines.line_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_lines.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.invoice_lines.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoice_lines.source_part_issue_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.source_quotation_item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.source_service_line_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.tax_class_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_lines.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_lines.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_numbering_configs.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_numbering_configs.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.mode": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_numbering_configs.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoice_numbering_configs.sequence_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_numbering_configs.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_numbering_configs.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_numbering_configs.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_numbering_configs.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.from_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoice_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoice_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "sal.invoice_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoice_status_history.to_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoices.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoices.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoices.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoices.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoices.invoice_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoices.issued_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoices.payer_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.quotation_revision_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.invoices.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.invoices.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.invoices.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.invoices.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.allocated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.payment_allocations.allocated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.payment_allocations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.payment_allocations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_allocations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.receipt_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_allocations.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "sal.payment_allocations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_methods.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.payment_methods.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_methods.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.payment_methods.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_methods.display_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_methods.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_methods.kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_methods.method_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_methods.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.payment_methods.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_methods.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.payment_methods.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.payment_methods.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.payment_methods.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.receipt_reversals.approval_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipt_reversals.approved_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipt_reversals.approved_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipt_reversals.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipt_reversals.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipt_reversals.original_receipt_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipt_reversals.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.receipt_reversals.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.reversed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipt_reversals.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipt_reversals.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipt_reversals.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.receipts.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipts.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipts.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipts.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.evidence_document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipts.payer_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.payment_method_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.receipt_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipts.received_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipts.received_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.receipts.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.receipts.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.receipts.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.receipts.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.covered_scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_coverage.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_coverage.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_coverage.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.duration_months": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_coverage.effective_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "wty.warranty_coverage.effective_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "wty.warranty_coverage.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.odometer_limit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_coverage.policy_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_coverage.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_coverage.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_coverage.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_coverage.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_policies.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_policies.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_policies.policy_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_policies.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_policies.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_policies.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_policies.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_policies.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_record_items.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_record_items.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.description": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_record_items.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.item_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_record_items.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_record_items.source_job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.source_part_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_record_items.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_record_items.warranty_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.coverage_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_records.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_records.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.delivery_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.expiry_date": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "wty.warranty_records.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_records.odometer_at_issue": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_records.odometer_limit": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_records.policy_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "wty.warranty_records.start_date": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "wty.warranty_records.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_records.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_records.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_records.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.from_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wty.warranty_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "wty.warranty_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wty.warranty_status_history.to_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wty.warranty_status_history.warranty_record_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    }
+  }
+}

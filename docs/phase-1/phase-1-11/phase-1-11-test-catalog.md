@@ -1,0 +1,46 @@
+# Phase 1-11 — Test Catalog
+
+The planned P1-11 database test suites, run within the full `npm run test:db` suite. All
+isolation and concurrency assertions run on the non-privileged `app_runtime` /
+`app_readonly` login roles; admin (BYPASSRLS) is used only for fixtures and is never RLS
+evidence. **Final per-file test counts are recorded on merge** (see
+[phase-1-11-evidence-register.md](phase-1-11-evidence-register.md)); this catalog lists the
+suites and their coverage without inventing counts.
+
+Owner-authorized technical self-review by Eng. Ezzaldeen Al-Bitar under the Solo Developer
+Review Policy and the Standing Technical Authorization Policy — not an independent
+third-party review.
+
+| Suite                        | Covers                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sal-invoice`                | One live invoice per WO (`uq_invoices_work_order_active`); number-iff-issued CHECK; `issue_invoice` totals recompute + verify (`23514`) + zero-line ban; freeze after issue; line/header reconciliation (deferred trigger); payer split `customer_pay+warranty_pay=gross`; restricted amount tables gated by `sal.finance.view`                                                                             |
+| `sal-numbering`              | `issue_invoice` resolves `sequence_code` from the active `invoice_numbering_configs`; strict sequence via `shared.next_display_number` FOR-UPDATE; **no number consumed on abort** (rollback); one active config per company                                                                                                                                                                                |
+| `sal-payment`                | Receipt record + freeze (`guard_receipt_freeze`); dual-scope payment methods (platform read, tenant write); allocation bounds (≤ receipt-unallocated, ≤ invoice-open); `Σ active + unallocated = receipt`; append-only allocations                                                                                                                                                                          |
+| `sal-allocation-concurrency` | Fixed lock order (receipt→invoice); ×5 concurrent allocations never overspend the receipt or overpay the invoice; deadlock-free; loser gets deterministic error                                                                                                                                                                                                                                             |
+| `sal-derivation`             | `invoice_open_receivable`/`partner_outstanding_balance` equal a fact-level recomputation across randomized allocation/credit/reversal sequences (TC-P1-11-004); reversed-receipt allocations excluded; O(n) derivation documented                                                                                                                                                                           |
+| `sal-credit-reversal`        | Credit note + full-receipt reversal dual control (server-stamped maker≠approver); immutable once approved; original retained; `credit ≤ open` under invoice lock; `reversal.amount = original`; currency coherence; concurrent-reversal race safe                                                                                                                                                           |
+| `sal-financial-event`        | Single-use `uq_financial_events_source`; `guard_financial_event_provenance` rejects a forged event with no valid source (TC-P1-11-005); 5 deferred completeness triggers force exactly one event per command; append-only (no UPDATE/DELETE); no debit/credit/account columns                                                                                                                               |
+| `sal-idempotency`            | Replayed issue/receipt/reversal hits the partial unique and returns the original (zero duplicate rows, zero duplicate events) (TC-P1-11-002)                                                                                                                                                                                                                                                                |
+| `sal-delivery`               | Eligibility + coherence (`guard_delivery_coherence`: vehicle/visit match the WO); authorized receiver vs reception party roles (`guard_authorized_receiver`); mandatory checklist gate; final-odometer coherence; signature binds `document_versions.sha256`; append-only signatures/history (TC-P1-11-003)                                                                                                 |
+| `sal-custody-closure`        | `complete_delivery` writes the `rec.custody_history` release exactly once; `uq_custody_history_released` backstop (2nd → 23505); the delivery gates (receiver/checklist/signature/odometer) are enforced inside `complete_delivery`; duplicate completion idempotent. (H-dlv-1 accepted residual: the rec-forward delivery gate was removed; a raw rec custody close bypasses no billing/warranty control.) |
+| `wty-warranty`               | Effective-dated coverage eligibility at service/delivery date; gist `EXCLUDE` no-overlap (coverage + records); `issue_warranty` binds odometer/start_date to the delivery; immutable record after issue; append-only status history                                                                                                                                                                         |
+| `rpt-reporting`              | Report configuration versioning (published immutable, `guard_report_version_freeze`); saved-filter owner-only RLS (USING + WITH CHECK, non-reassignable); `scope_level ≤ report scope` (`guard_saved_filter_scope`)                                                                                                                                                                                         |
+| `p1-11-isolation`            | Cross-tenant and cross-branch read **and** write denial across `sal`/`wty`/`rpt` on non-privileged roles; finance-gated and delivery-gated read denial without the permission                                                                                                                                                                                                                               |
+| `p1-11-security`             | Auto-enumerated over all 27 tables: RLS enabled+forced; policies present; no DELETE grant on any P1-11 table; readonly SELECT-only; finance/delivery gates; append-only no-UPDATE; function `SECURITY INVOKER`/`search_path`/no-`DEFINER`; worker no-grant; no GL/gateway/backend scope leakage                                                                                                             |
+| `p1-11-classification-guard` | Classification validator negatives (searchable-restricted, missing, stale, duplicate, invalid class, type-drift) + committed-registry pass (16 restricted, 0 searchable)                                                                                                                                                                                                                                    |
+| `p1-11-rollback`             | Clean-room from-zero apply of all 7 migrations; business tables empty after apply (only the platform payment-method reference seeded); precision scan (no float / money=`numeric(18,4)`); injected-failure rollback in issue/allocation leaves no partial rows and no consumed number                                                                                                                       |
+
+## Shared fixture
+
+A `p1-11-helpers` module provides cascade cleanup and platform-fixture cleanup for every
+`sal`/`wty`/`rpt` table, scope/context helpers, and the work-order + reception-visit +
+vehicle + odometer + partner + document fixtures assembled through prior-phase primitives
+(so billing, delivery, and warranty operations satisfy their preconditions without touching
+`wo`/`rec`/`veh` internals).
+
+## Cross-cutting guards that also cover P1-11
+
+`foundation` (table/routine/trigger/policy allow-lists, RLS-forced, role posture),
+`org-security` (FK-index coverage, no duplicate indexes, tenant-column invariant, no DELETE
+grant on any P1-11 table), the no-business-data guard (schema list extended to
+`sal`/`wty`/`rpt`), and the money-precision scan (zero float on financial columns).

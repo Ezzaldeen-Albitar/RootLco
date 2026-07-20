@@ -1,0 +1,46 @@
+# Phase 1-11 — Traceability
+
+Requirement (FR/BR) + task (P1-11-DB-001…022) → migration → primary object(s) → test suite
+→ doc. **Status `✓` = implemented + tested on the feature branch;** the owner gate is
+**Pending** until merge (see [phase-1-11-owner-gate.md](phase-1-11-owner-gate.md)). Suites
+are named in [phase-1-11-test-catalog.md](phase-1-11-test-catalog.md).
+
+Owner-authorized technical self-review by Eng. Ezzaldeen Al-Bitar under the Solo Developer
+Review Policy and the Standing Technical Authorization Policy — not an independent
+third-party review.
+
+| Requirement / Task                               | Migration            | Object(s)                                                                                      | Suite                                  | Doc                                              | Status |
+| ------------------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------ | :----: |
+| FR-SAL-001 / DB-001 one invoice per WO           | `…091000`            | `sal.invoices` (`uq_..._work_order_active`), `sal.invoice_amounts`                             | `sal-invoice`                          | invoice-identity-contract                        |   ✓    |
+| FR-WTY-004 / DB-002 line + payer split           | `…091000`            | `sal.invoice_lines`, `sal.invoice_line_amounts` (`customer_pay+warranty_pay=gross`)            | `sal-invoice`                          | invoice-line-payer-split-contract                |   ✓    |
+| DB-003 / P1-OD-042 invoice numbering             | `…091000`            | `sal.invoice_numbering_configs`, `sal.issue_invoice`, `shared.next_display_number`             | `sal-numbering`                        | invoice-numbering-contract                       |   ✓    |
+| DB-004 invoice status history                    | `…091000`            | `sal.invoice_status_history` (append-only)                                                     | `sal-invoice`                          | invoice-identity-contract                        |   ✓    |
+| BR-SAL-001 / DB-010 idempotency                  | `…091000`–`…094000`  | `uq_*_idempotency` on invoices/receipts/credit_notes/receipt_reversals + in-lock short-circuit | `sal-idempotency`                      | invoice-issue-idempotency-contract               |   ✓    |
+| DB-005 payment methods + receipts                | `…092000`            | `sal.payment_methods` (dual-scope), `sal.receipts` (freeze)                                    | `sal-payment`                          | payment-method-contract / receipt-contract       |   ✓    |
+| FR-SAL-003 / BR-SAL-002 / DB-006 allocation      | `…092000`            | `sal.payment_allocations`, `sal.allocate_receipt` (receipt→invoice lock)                       | `sal-allocation-concurrency`           | allocation-locking-contract                      |   ✓    |
+| DB-007 outstanding-balance derivation            | `…092000`            | `sal.invoice_open_receivable`, `sal.partner_outstanding_balance`, `sal.receipt_unallocated`    | `sal-derivation`                       | outstanding-balance-derivation-contract          |   ✓    |
+| FR-SAL-004 / DB-008 credit note + reversal       | `…093000`            | `sal.credit_notes`, `sal.receipt_reversals` (dual control), `approve_*`                        | `sal-credit-reversal`                  | credit-note / receipt-reversal-contract          |   ✓    |
+| TS-002 / DB-009 financial-event foundation       | `…093000`            | `sal.financial_events` (provenance + single-use + completeness)                                | `sal-financial-event`                  | financial-event-catalogue / -provenance          |   ✓    |
+| No general ledger (boundary)                     | `…093000`            | `sal.financial_events` (no debit/credit/account); no GL table                                  | `p1-11-security`                       | no-general-ledger-boundary                       |   ✓    |
+| BR-REC-001 / DB-011 delivery record + custody    | `…090000`/`…094000`  | `sal.delivery_records`, `sal.complete_delivery`, `rec.custody_history` backstop                | `sal-delivery` / `sal-custody-closure` | delivery-eligibility / custody-closure           |   ✓    |
+| DB-012 delivery checklist                        | `…094000`            | `sal.delivery_checklist_templates`/`_items`/`_results` (mandatory gate)                        | `sal-delivery`                         | delivery-checklist-contract                      |   ✓    |
+| DB-013 authorized receiver                       | `…094000`            | `sal.authorized_receivers` (`guard_authorized_receiver`)                                       | `sal-delivery`                         | authorized-receiver-contract                     |   ✓    |
+| DB-014 delivery signature + status history       | `…094000`            | `sal.delivery_signatures` (sha256 bind), `sal.delivery_status_history`                         | `sal-delivery`                         | delivery-signature-evidence-contract             |   ✓    |
+| BR-WTY-001 / DB-015 warranty policy + coverage   | `…095000`            | `wty.warranty_policies`, `wty.warranty_coverage` (gist EXCLUDE)                                | `wty-warranty`                         | warranty-policy-version / -eligibility           |   ✓    |
+| FR-WTY-002 / DB-016 warranty record + items      | `…095000`            | `wty.warranty_records` (immutable), `wty.warranty_record_items`, `wty.issue_warranty`          | `wty-warranty`                         | warranty-record-contract                         |   ✓    |
+| FR-WTY-003 / DB-017 warranty status history      | `…095000`            | `wty.warranty_status_history` (append-only)                                                    | `wty-warranty`                         | warranty-record-contract                         |   ✓    |
+| FR-RPT-001 / DB-018 report config + saved filter | `…096000`            | `rpt.report_configurations`/`_versions`, `rpt.saved_filters`                                   | `rpt-reporting`                        | reporting-configuration / saved-filter-ownership |   ✓    |
+| DB-019 FK RESTRICT + index families              | all                  | every FK `ON DELETE RESTRICT`; open-receivable/delivery-ready/warranty-expiry indexes          | `p1-11-security`                       | index-evidence                                   |   ✓    |
+| DB-020 structural seed                           | `…092000`            | platform payment-method reference (tenant-neutral, idempotent)                                 | `p1-11-rollback`                       | payment-method-contract                          |   ✓    |
+| P1-11-SEC-001 RLS/isolation                      | all                  | 75 policies; finance/delivery/owner gates; branch isolation                                    | `p1-11-isolation`/`-security`          | rls-matrix / security                            |   ✓    |
+| P1-11-SEC-002 classification                     | registry + validator | 16 restricted (14 `sal.finance.view`, 2 `sal.delivery.view`), 0 searchable                     | `p1-11-classification-guard`           | classification-matrix                            |   ✓    |
+| P1-11-SEC-003 immutability/append-only           | all                  | freeze guards + append-only ledgers                                                            | `p1-11-security`                       | append-only-immutability-matrix                  |   ✓    |
+| P1-11-SEC-004 dual control                       | `…093000`            | `stamp_dual_control_maker` + `guard_dual_control_approval` (maker≠approver)                    | `sal-credit-reversal`                  | credit-note / receipt-reversal-contract          |   ✓    |
+| P1-11-SEC-005 threat review                      | —                    | each abuse case → named control                                                                | `p1-11-security`                       | abuse-case-ledger                                |   ✓    |
+| BR-RPT-001 export scope ≤ report scope           | `…096000`            | `guard_saved_filter_scope`; `export_permission_code` FK                                        | `rpt-reporting`                        | saved-filter-ownership-contract                  |   ✓    |
+| DB-021/022 tests + dry-run + roll-forward        | all                  | from-zero apply; rollback; roll-forward-only classification                                    | `p1-11-rollback`                       | migration-classification / recovery-note         |   ✓    |
+| Financial precision / currency                   | all                  | `NUMERIC(18,4)`; `shared.currencies` FK; zero float                                            | `p1-11-rollback`                       | financial-precision-currency-contract            |   ✓    |
+
+Every FK is covered by a non-partial index; the FK-index guard reports zero gaps and the
+duplicate-index guard reports zero exact duplicates across `sal`/`wty`/`rpt`. Full requirement
+disposition and open-decision handling: [phase-1-11-od-linkage.md](phase-1-11-od-linkage.md).

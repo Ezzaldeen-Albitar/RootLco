@@ -4090,3 +4090,631 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 12  | `updated_by`         | uuid                     | yes      |
 | 13  | `deleted_at`         | timestamp with time zone | yes      |
 | 14  | `deleted_by`         | uuid                     | yes      |
+
+---
+
+# Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)
+
+Introspected from the live catalog: **27 tables** (`sal` 19, `wty` 5, `rpt` 3), 427 columns, **16 restricted** (14 amount columns gated by `sal.finance.view`; 2 delivery-evidence columns gated by `sal.delivery.view`), 0 restricted-searchable. Money is `NUMERIC(18,4)`; every FK is `ON DELETE RESTRICT`. Full per-column tables live in `docs/phase-1/phase-1-11/phase-1-11-data-dictionary-{sal,wty,rpt}.md`.
+
+## §SAL — invoices/`invoice_amounts` (restricted)/lines/`invoice_line_amounts` (restricted)/numbering configs/status history/payment methods/receipts/allocations/credit notes/receipt reversals/financial events/delivery records/checklist templates+items+results/authorized receivers/signatures/delivery status history.
+
+### `sal.authorized_receivers`
+
+Verified authorized receiver (WHOLE ROW gated by `sal.delivery.view`).
+
+| Column                                  | Type          | class      | Null? | Purpose                                                                                                                  |
+| --------------------------------------- | ------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------ |
+| `id`                                    | `uuid`        | internal   | no    | Primary key (UUID).                                                                                                      |
+| `tenant_id`                             | `uuid`        | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                          |
+| `company_id`                            | `uuid`        | internal   | no    | Company scope (branch composite scope).                                                                                  |
+| `branch_id`                             | `uuid`        | internal   | no    | Branch scope (branch composite scope).                                                                                   |
+| `delivery_record_id`                    | `uuid`        | internal   | no    | Composite FK -> `sal.delivery_records(...)` RESTRICT; one receiver per delivery (unique).                                |
+| `receiver_partner_id`                   | `uuid`        | internal   | no    | Receiver; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT; validated vs reception party roles (M-dlv-2). |
+| `identity_evidence_document_version_id` | `uuid`        | restricted | yes   | RESTRICTED identity evidence; composite FK -> `shared.document_versions(tenant_id, id)` (gated by `sal.delivery.view`).  |
+| `verified_by`                           | `uuid`        | internal   | no    | Verifying actor.                                                                                                         |
+| `verified_at`                           | `timestamptz` | internal   | no    | Verification time.                                                                                                       |
+| `record_version`                        | `integer`     | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                   |
+| `created_at`                            | `timestamptz` | internal   | no    | Row creation timestamp.                                                                                                  |
+| `created_by`                            | `uuid`        | internal   | no    | Creating actor (user id).                                                                                                |
+| `updated_at`                            | `timestamptz` | internal   | yes   | Last-update timestamp (NULL until first update).                                                                         |
+| `updated_by`                            | `uuid`        | internal   | yes   | Last-updating actor.                                                                                                     |
+| `deleted_at`                            | `timestamptz` | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                                     |
+| `deleted_by`                            | `uuid`        | internal   | yes   | Soft-deleting actor.                                                                                                     |
+
+### `sal.credit_notes`
+
+Credit-note (invoice-linked, WHOLE ROW gated); dual control.
+
+| Column            | Type            | class      | Null? | Purpose                                                                                                |
+| ----------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------ |
+| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                    |
+| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                        |
+| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                |
+| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                 |
+| `invoice_id`      | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                          |
+| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                |
+| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); credit <= invoice open receivable at approval (under the invoice lock). |
+| `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                      |
+| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected'); immutable once approved.                                   |
+| `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                               |
+| `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                             |
+| `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                     |
+| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time (set at approval).                                                                          |
+| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                   |
+| `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                 |
+| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                |
+| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                              |
+| `updated_at`      | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                       |
+| `updated_by`      | `uuid`          | internal   | yes   | Last-updating actor.                                                                                   |
+
+### `sal.delivery_checklist_results`
+
+Per-delivery checklist result.
+
+| Column               | Type          | class    | Null? | Purpose                                                                                                                      |
+| -------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | `uuid`        | internal | no    | Primary key (UUID).                                                                                                          |
+| `tenant_id`          | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                              |
+| `company_id`         | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                      |
+| `branch_id`          | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                       |
+| `delivery_record_id` | `uuid`        | internal | no    | Composite FK -> `sal.delivery_records(...)` RESTRICT.                                                                        |
+| `template_item_id`   | `uuid`        | internal | no    | Composite FK -> `sal.delivery_checklist_template_items(tenant_id, company_id, id)` RESTRICT; one result per (delivery,item). |
+| `outcome`            | `text`        | internal | no    | CHECK IN ('passed','failed','waived'); waived requires waiver_reason.                                                        |
+| `waiver_reason`      | `text`        | internal | yes   | Required iff outcome='waived' (CHECK).                                                                                       |
+| `recorded_by`        | `uuid`        | internal | no    | Recording actor.                                                                                                             |
+| `record_version`     | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                       |
+| `created_at`         | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                      |
+| `created_by`         | `uuid`        | internal | no    | Creating actor (user id).                                                                                                    |
+| `updated_at`         | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                             |
+| `updated_by`         | `uuid`        | internal | yes   | Last-updating actor.                                                                                                         |
+| `deleted_at`         | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                         |
+| `deleted_by`         | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                         |
+
+### `sal.delivery_checklist_template_items`
+
+Delivery checklist template item.
+
+| Column           | Type          | class    | Null? | Purpose                                                                                 |
+| ---------------- | ------------- | -------- | ----- | --------------------------------------------------------------------------------------- |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                                     |
+| `tenant_id`      | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                         |
+| `company_id`     | `uuid`        | internal | no    | Company scope (branch composite scope).                                                 |
+| `template_id`    | `uuid`        | internal | no    | Composite FK -> `sal.delivery_checklist_templates(tenant_id, company_id, id)` RESTRICT. |
+| `item_code`      | `text`        | internal | no    | Item code; `UNIQUE(tenant_id, template_id, item_code)`.                                 |
+| `label`          | `text`        | internal | no    | Checklist item label.                                                                   |
+| `is_mandatory`   | `boolean`     | internal | no    | When true, blocks completion unless passed/waived (L-dlv-1).                            |
+| `sort_order`     | `integer`     | internal | no    | Display order.                                                                          |
+| `record_version` | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                  |
+| `created_at`     | `timestamptz` | internal | no    | Row creation timestamp.                                                                 |
+| `created_by`     | `uuid`        | internal | no    | Creating actor (user id).                                                               |
+| `updated_at`     | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                        |
+| `updated_by`     | `uuid`        | internal | yes   | Last-updating actor.                                                                    |
+| `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                    |
+| `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                                    |
+
+### `sal.delivery_checklist_templates`
+
+Tenant-configurable delivery checklist template.
+
+| Column           | Type          | class    | Null? | Purpose                                                                |
+| ---------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------- |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                    |
+| `tenant_id`      | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                        |
+| `company_id`     | `uuid`        | internal | no    | Company scope (branch composite scope).                                |
+| `template_code`  | `text`        | internal | no    | Template code; `UNIQUE(tenant_id, company_id, template_code)`.         |
+| `name`           | `text`        | internal | no    | Human-readable name.                                                   |
+| `status`         | `text`        | internal | no    | CHECK IN ('active','inactive').                                        |
+| `record_version` | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`. |
+| `created_at`     | `timestamptz` | internal | no    | Row creation timestamp.                                                |
+| `created_by`     | `uuid`        | internal | no    | Creating actor (user id).                                              |
+| `updated_at`     | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                       |
+| `updated_by`     | `uuid`        | internal | yes   | Last-updating actor.                                                   |
+| `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                   |
+| `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                   |
+
+### `sal.delivery_records`
+
+Delivery record (branch-scoped) closing the reception custody chain.
+
+| Column                      | Type          | class    | Null? | Purpose                                                                                                                       |
+| --------------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `uuid`        | internal | no    | Primary key (UUID).                                                                                                           |
+| `tenant_id`                 | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                               |
+| `company_id`                | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                       |
+| `branch_id`                 | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                        |
+| `work_order_id`             | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live delivery per WO (`uq_delivery_records_work_order_active`).           |
+| `reception_visit_id`        | `uuid`        | internal | no    | Composite FK -> `rec.reception_visits(...)` RESTRICT; must match the WO (M-dlv-1).                                            |
+| `vehicle_id`                | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT; must match the WO (M-dlv-1).                                          |
+| `delivering_employee_id`    | `uuid`        | internal | no    | Delivering employee (user id).                                                                                                |
+| `status`                    | `text`        | internal | no    | CHECK IN ('ready','receiver_verified','signed','delivered','exception'); delivered-shape CHECK binds delivered_at + odometer. |
+| `delivered_at`              | `timestamptz` | internal | yes   | Delivery time; set at completion.                                                                                             |
+| `final_odometer_reading_id` | `uuid`        | internal | yes   | Composite FK -> `veh.odometer_readings(tenant_id, vehicle_id, id)` RESTRICT (nullable until delivered).                       |
+| `idempotency_key`           | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                          |
+| `record_version`            | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                        |
+| `created_at`                | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                       |
+| `created_by`                | `uuid`        | internal | no    | Creating actor (user id).                                                                                                     |
+| `updated_at`                | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                              |
+| `updated_by`                | `uuid`        | internal | yes   | Last-updating actor.                                                                                                          |
+| `deleted_at`                | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                          |
+| `deleted_by`                | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                          |
+
+### `sal.delivery_signatures`
+
+Delivery signature (append-only, WHOLE ROW gated by `sal.delivery.view`).
+
+| Column                          | Type          | class      | Null? | Purpose                                                                                                                                               |
+| ------------------------------- | ------------- | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                            | `uuid`        | internal   | no    | Primary key (UUID).                                                                                                                                   |
+| `tenant_id`                     | `uuid`        | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                       |
+| `company_id`                    | `uuid`        | internal   | no    | Company scope (branch composite scope).                                                                                                               |
+| `branch_id`                     | `uuid`        | internal   | no    | Branch scope (branch composite scope).                                                                                                                |
+| `delivery_record_id`            | `uuid`        | internal   | no    | Composite FK -> `sal.delivery_records(...)` RESTRICT; append-only.                                                                                    |
+| `signer_role`                   | `text`        | internal   | no    | CHECK IN ('receiver','delivering_employee','witness').                                                                                                |
+| `signature_document_version_id` | `uuid`        | restricted | no    | RESTRICTED signature doc; composite FK -> `shared.document_versions(tenant_id, id)` (its sha256 anchors the signature; gated by `sal.delivery.view`). |
+| `signed_at`                     | `timestamptz` | internal   | no    | Signature time.                                                                                                                                       |
+| `created_at`                    | `timestamptz` | internal   | no    | Row creation timestamp.                                                                                                                               |
+| `created_by`                    | `uuid`        | internal   | no    | Creating actor (user id).                                                                                                                             |
+
+### `sal.delivery_status_history`
+
+Append-only delivery status ledger (SELECT+INSERT).
+
+| Column               | Type          | class    | Null? | Purpose                                                                            |
+| -------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------- |
+| `id`                 | `uuid`        | internal | no    | Primary key (UUID).                                                                |
+| `tenant_id`          | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                    |
+| `company_id`         | `uuid`        | internal | no    | Company scope (branch composite scope).                                            |
+| `branch_id`          | `uuid`        | internal | no    | Branch scope (branch composite scope).                                             |
+| `delivery_record_id` | `uuid`        | internal | no    | Composite FK -> `sal.delivery_records(...)` RESTRICT.                              |
+| `from_status`        | `text`        | internal | yes   | Prior status (NULL on first row).                                                  |
+| `to_status`          | `text`        | internal | no    | New status recorded by this ledger row.                                            |
+| `reason`             | `text`        | internal | yes   | Free-text reason.                                                                  |
+| `correlation_id`     | `uuid`        | internal | yes   | Optional correlation id linking the row to its originating command.                |
+| `actor_id`           | `uuid`        | internal | no    | Server-stamped acting user (`stamp_status_history`).                               |
+| `occurred_at`        | `timestamptz` | internal | no    | Server-stamped event time (`stamp_status_history`).                                |
+| `seq`                | `bigint`      | internal | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger). |
+
+### `sal.financial_events`
+
+IMMUTABLE append-only financial-event ledger (WHOLE ROW gated).
+
+| Column            | Type            | class      | Null? | Purpose                                                                                                                               |
+| ----------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                   |
+| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                       |
+| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                               |
+| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                |
+| `event_type`      | `text`          | internal   | no    | CHECK IN ('invoice_issued','receipt_recorded','payment_allocated','credit_note_issued','receipt_reversed','warranty_split_recorded'). |
+| `source_type`     | `text`          | internal   | no    | CHECK IN ('invoice','receipt','payment_allocation','credit_note','receipt_reversal').                                                 |
+| `source_id`       | `uuid`          | internal   | no    | Source row id; single-use `UNIQUE(tenant_id, source_type, source_id, event_type)`; provenance-guarded.                                |
+| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                               |
+| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED event amount (>=0); bound to the source by the provenance guard.                                                           |
+| `occurred_at`     | `timestamptz`   | internal   | no    | Event time.                                                                                                                           |
+| `actor_id`        | `uuid`          | internal   | no    | Acting user.                                                                                                                          |
+| `correlation_id`  | `uuid`          | internal   | yes   | Optional correlation id linking the row to its originating command.                                                                   |
+| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                  |
+| `seq`             | `bigint`        | internal   | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger).                                                    |
+| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                               |
+| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                             |
+
+### `sal.invoice_amounts`
+
+RESTRICTED 1:1 invoice header totals (gated by `sal.finance.view`).
+
+| Column           | Type            | class      | Null? | Purpose                                                                           |
+| ---------------- | --------------- | ---------- | ----- | --------------------------------------------------------------------------------- |
+| `id`             | `uuid`          | internal   | no    | Primary key (UUID).                                                               |
+| `tenant_id`      | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                   |
+| `company_id`     | `uuid`          | internal   | no    | Company scope (branch composite scope).                                           |
+| `branch_id`      | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                            |
+| `invoice_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT; 1:1 (`uq_invoice_amounts_invoice`). |
+| `net_total`      | `numeric(18,4)` | restricted | no    | RESTRICTED net total; reconciled to lines (deferred trigger).                     |
+| `tax_total`      | `numeric(18,4)` | restricted | no    | RESTRICTED tax total.                                                             |
+| `gross_total`    | `numeric(18,4)` | restricted | no    | RESTRICTED gross; CHECK `= round(net_total + tax_total, 4)`.                      |
+| `classification` | `text`          | internal   | no    | Restricted-table marker; CHECK `= 'restricted'` (immutable).                      |
+| `record_version` | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.            |
+| `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp.                                                           |
+| `created_by`     | `uuid`          | internal   | no    | Creating actor (user id).                                                         |
+| `updated_at`     | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                  |
+| `updated_by`     | `uuid`          | internal   | yes   | Last-updating actor.                                                              |
+| `deleted_at`     | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                              |
+| `deleted_by`     | `uuid`          | internal   | yes   | Soft-deleting actor.                                                              |
+
+### `sal.invoice_line_amounts`
+
+RESTRICTED 1:1 invoice-line money + payer split (gated by `sal.finance.view`).
+
+| Column                | Type            | class      | Null? | Purpose                                                                                  |
+| --------------------- | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------- |
+| `id`                  | `uuid`          | internal   | no    | Primary key (UUID).                                                                      |
+| `tenant_id`           | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                          |
+| `company_id`          | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                  |
+| `branch_id`           | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                   |
+| `invoice_line_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoice_lines(...)` RESTRICT; 1:1 (`uq_invoice_line_amounts_line`). |
+| `invoice_id`          | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT (reconciliation join).                      |
+| `unit_price`          | `numeric(18,4)` | restricted | no    | RESTRICTED unit price.                                                                   |
+| `net_amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED net amount.                                                                   |
+| `tax_amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED tax amount.                                                                   |
+| `gross_amount`        | `numeric(18,4)` | restricted | no    | RESTRICTED gross; CHECK `= round(net + tax, 4)`.                                         |
+| `customer_pay_amount` | `numeric(18,4)` | restricted | no    | RESTRICTED customer-pay split.                                                           |
+| `warranty_pay_amount` | `numeric(18,4)` | restricted | no    | RESTRICTED warranty-pay split; CHECK `customer_pay + warranty_pay = gross` (FR-WTY-004). |
+| `classification`      | `text`          | internal   | no    | Restricted-table marker; CHECK `= 'restricted'` (immutable).                             |
+| `record_version`      | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                   |
+| `created_at`          | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                  |
+| `created_by`          | `uuid`          | internal   | no    | Creating actor (user id).                                                                |
+| `updated_at`          | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                         |
+| `updated_by`          | `uuid`          | internal   | yes   | Last-updating actor.                                                                     |
+| `deleted_at`          | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                     |
+| `deleted_by`          | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                     |
+
+### `sal.invoice_lines`
+
+Invoice line (structural); amounts + payer split in restricted `sal.invoice_line_amounts`.
+
+| Column                     | Type            | class    | Null? | Purpose                                                                                                 |
+| -------------------------- | --------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                     |
+| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                         |
+| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                 |
+| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                  |
+| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`). |
+| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                              |
+| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                      |
+| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                     |
+| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                       |
+| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                 |
+| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                              |
+| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                    |
+| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                 |
+| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                  |
+| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                 |
+| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                               |
+| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                        |
+| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                    |
+| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                    |
+| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                    |
+
+### `sal.invoice_numbering_configs`
+
+Per (tenant, company) invoice numbering configuration (P1-OD-042).
+
+| Column           | Type          | class    | Null? | Purpose                                                                                                   |
+| ---------------- | ------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------- |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                                                       |
+| `tenant_id`      | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                           |
+| `company_id`     | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                   |
+| `mode`           | `text`        | internal | no    | CHECK IN ('gapless','gapped'); documents legal posture (P1-OD-042); both use the rollback-safe allocator. |
+| `sequence_code`  | `text`        | internal | no    | Number-sequence code resolved by `issue_invoice`; `^[a-z][a-z0-9_]{1,62}$`.                               |
+| `status`         | `text`        | internal | no    | CHECK IN ('active','inactive'); one active config per company (partial unique).                           |
+| `record_version` | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                    |
+| `created_at`     | `timestamptz` | internal | no    | Row creation timestamp.                                                                                   |
+| `created_by`     | `uuid`        | internal | no    | Creating actor (user id).                                                                                 |
+| `updated_at`     | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                          |
+| `updated_by`     | `uuid`        | internal | yes   | Last-updating actor.                                                                                      |
+| `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                      |
+| `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                      |
+
+### `sal.invoice_status_history`
+
+Append-only invoice status ledger (SELECT+INSERT).
+
+| Column           | Type          | class    | Null? | Purpose                                                                                                                      |
+| ---------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                                                                          |
+| `tenant_id`      | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                              |
+| `company_id`     | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                      |
+| `branch_id`      | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                       |
+| `invoice_id`     | `uuid`        | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                                                |
+| `from_status`    | `text`        | internal | yes   | Prior status (NULL on first row).                                                                                            |
+| `to_status`      | `text`        | internal | no    | CHECK IN ('draft','issued','partially_paid','paid','credited','void_before_issue') — records derived payment milestones too. |
+| `reason`         | `text`        | internal | yes   | Free-text reason.                                                                                                            |
+| `correlation_id` | `uuid`        | internal | yes   | Optional correlation id linking the row to its originating command.                                                          |
+| `actor_id`       | `uuid`        | internal | no    | Server-stamped acting user (`stamp_status_history`).                                                                         |
+| `occurred_at`    | `timestamptz` | internal | no    | Server-stamped event time (`stamp_status_history`).                                                                          |
+| `seq`            | `bigint`      | internal | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger).                                           |
+
+### `sal.invoices`
+
+Invoice master (branch-scoped, structural). Money lives in restricted `sal.invoice_amounts`.
+
+| Column                  | Type          | class    | Null? | Purpose                                                                                                                |
+| ----------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                    |
+| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                        |
+| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                |
+| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                 |
+| `work_order_id`         | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`).             |
+| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                   |
+| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                |
+| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                |
+| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1). |
+| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).             |
+| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                  |
+| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                   |
+| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                 |
+| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                |
+| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                              |
+| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                       |
+| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                   |
+| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                   |
+| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                   |
+
+### `sal.payment_allocations`
+
+Append-only receipt->invoice allocation (WHOLE ROW gated).
+
+| Column           | Type            | class      | Null? | Purpose                                                                                                            |
+| ---------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------ |
+| `id`             | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                |
+| `tenant_id`      | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                    |
+| `company_id`     | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                            |
+| `branch_id`      | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                             |
+| `receipt_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT (same-branch, M-fin-5).                                               |
+| `invoice_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT (same-branch, M-fin-5).                                               |
+| `currency_code`  | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                            |
+| `amount`         | `numeric(18,4)` | restricted | no    | RESTRICTED allocated amount (>0); bounded by derived receipt-unallocated and invoice-open under fixed-order locks. |
+| `allocated_by`   | `uuid`          | internal   | no    | Allocating actor.                                                                                                  |
+| `allocated_at`   | `timestamptz`   | internal   | no    | Allocation time.                                                                                                   |
+| `correlation_id` | `uuid`          | internal   | yes   | Optional correlation id linking the row to its originating command.                                                |
+| `seq`            | `bigint`        | internal   | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger).                                 |
+| `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                            |
+| `created_by`     | `uuid`          | internal   | no    | Creating actor (user id).                                                                                          |
+
+### `sal.payment_methods`
+
+Dual-scope payment-method reference (platform + tenant).
+
+| Column           | Type          | class    | Null? | Purpose                                                                                          |
+| ---------------- | ------------- | -------- | ----- | ------------------------------------------------------------------------------------------------ |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                                              |
+| `scope`          | `text`        | internal | no    | CHECK IN ('platform','tenant'); platform rows have NULL tenant_id, tenant rows NOT NULL.         |
+| `tenant_id`      | `uuid`        | internal | yes   | Tenant (NULL for platform rows).                                                                 |
+| `method_code`    | `text`        | internal | no    | Method code; platform-unique / tenant-unique (partial uniques).                                  |
+| `kind`           | `text`        | internal | no    | CHECK IN ('cash','card_terminal','bank_transfer') — no gateway/settlement kinds (ASM-14/CON-04). |
+| `display_name`   | `text`        | internal | no    | Display label.                                                                                   |
+| `status`         | `text`        | internal | no    | Lifecycle status (see table CHECK).                                                              |
+| `record_version` | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                           |
+| `created_at`     | `timestamptz` | internal | no    | Row creation timestamp.                                                                          |
+| `created_by`     | `uuid`        | internal | no    | Creating actor (user id).                                                                        |
+| `updated_at`     | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                 |
+| `updated_by`     | `uuid`        | internal | yes   | Last-updating actor.                                                                             |
+| `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                             |
+| `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                                             |
+
+### `sal.receipt_reversals`
+
+Full-receipt reversal (WHOLE ROW gated); dual control.
+
+| Column                | Type            | class      | Null? | Purpose                                                                                              |
+| --------------------- | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------------------- |
+| `id`                  | `uuid`          | internal   | no    | Primary key (UUID).                                                                                  |
+| `tenant_id`           | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                      |
+| `company_id`          | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                              |
+| `branch_id`           | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                               |
+| `original_receipt_id` | `uuid`          | internal   | no    | Composite FK -> `sal.receipts(...)` RESTRICT; original retained; at most one reversal per receipt.   |
+| `currency_code`       | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                              |
+| `amount`              | `numeric(18,4)` | restricted | no    | RESTRICTED reversal amount (>0); CHECK `= original receipt amount` (full-receipt reversal, H-fin-1). |
+| `reason`              | `text`          | internal   | no    | Free-text reason.                                                                                    |
+| `approval_state`      | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected').                                                          |
+| `requested_by`        | `uuid`          | internal   | no    | Maker; server-stamped (H-fin-6).                                                                     |
+| `approved_by`         | `uuid`          | internal   | yes   | Approver; server-stamped; CHECK `approved_by <> requested_by`.                                       |
+| `approved_at`         | `timestamptz`   | internal   | yes   | Approval time.                                                                                       |
+| `reversed_at`         | `timestamptz`   | internal   | yes   | Reversal time (set at approval).                                                                     |
+| `idempotency_key`     | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                 |
+| `record_version`      | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                               |
+| `created_at`          | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                              |
+| `created_by`          | `uuid`          | internal   | no    | Creating actor (user id).                                                                            |
+| `updated_at`          | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                     |
+| `updated_by`          | `uuid`          | internal   | yes   | Last-updating actor.                                                                                 |
+
+### `sal.receipts`
+
+Receipt (branch-scoped, WHOLE ROW gated by `sal.finance.view`).
+
+| Column                         | Type            | class      | Null? | Purpose                                                                                                    |
+| ------------------------------ | --------------- | ---------- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| `id`                           | `uuid`          | internal   | no    | Primary key (UUID).                                                                                        |
+| `tenant_id`                    | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                            |
+| `company_id`                   | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                    |
+| `branch_id`                    | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                     |
+| `receipt_number`               | `text`          | internal   | no    | Allocated via `shared.next_display_number`; `UNIQUE(...,receipt_number)`.                                  |
+| `payment_method_id`            | `uuid`          | internal   | no    | Composite FK -> `sal.payment_methods(tenant_id, id)` RESTRICT.                                             |
+| `payer_partner_id`             | `uuid`          | internal   | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                    |
+| `currency_code`                | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                    |
+| `amount`                       | `numeric(18,4)` | restricted | no    | RESTRICTED receipt amount (>0); frozen once recorded (`guard_receipt_freeze`, H-fin-4).                    |
+| `received_by`                  | `uuid`          | internal   | no    | Recording cashier (user id).                                                                               |
+| `received_at`                  | `timestamptz`   | internal   | no    | Receipt time; frozen once recorded.                                                                        |
+| `evidence_document_version_id` | `uuid`          | internal   | yes   | Composite FK -> `shared.document_versions(tenant_id, id)` RESTRICT (nullable).                             |
+| `status`                       | `text`          | internal   | no    | CHECK IN ('recorded','partially_allocated','allocated','reversed'); full reversal -> 'reversed' (H-fin-1). |
+| `idempotency_key`              | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                       |
+| `record_version`               | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                     |
+| `created_at`                   | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                    |
+| `created_by`                   | `uuid`          | internal   | no    | Creating actor (user id).                                                                                  |
+| `updated_at`                   | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                           |
+| `updated_by`                   | `uuid`          | internal   | yes   | Last-updating actor.                                                                                       |
+| `deleted_at`                   | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                       |
+| `deleted_by`                   | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                                       |
+
+## §WTY — warranty policies/effective-dated coverage/records/record items/status history.
+
+### `wty.warranty_coverage`
+
+Effective-dated warranty coverage (BR-WTY-001).
+
+| Column            | Type          | class    | Null? | Purpose                                                                                |
+| ----------------- | ------------- | -------- | ----- | -------------------------------------------------------------------------------------- |
+| `id`              | `uuid`        | internal | no    | Primary key (UUID).                                                                    |
+| `tenant_id`       | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                        |
+| `company_id`      | `uuid`        | internal | no    | Company scope (branch composite scope).                                                |
+| `policy_id`       | `uuid`        | internal | no    | Composite FK -> `wty.warranty_policies(tenant_id, company_id, id)` RESTRICT.           |
+| `covered_scope`   | `text`        | internal | no    | CHECK IN ('all','service','part').                                                     |
+| `duration_months` | `integer`     | internal | no    | Coverage duration (months, >0).                                                        |
+| `odometer_limit`  | `integer`     | internal | yes   | Optional odometer ceiling (>0).                                                        |
+| `effective_from`  | `date`        | internal | no    | Coverage effective-from date; gist EXCLUDE no-overlap on active coverage (BR-WTY-001). |
+| `effective_to`    | `date`        | internal | yes   | Coverage effective-to (NULL = open); CHECK `> effective_from`.                         |
+| `status`          | `text`        | internal | no    | CHECK IN ('active','archived').                                                        |
+| `record_version`  | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                 |
+| `created_at`      | `timestamptz` | internal | no    | Row creation timestamp.                                                                |
+| `created_by`      | `uuid`        | internal | no    | Creating actor (user id).                                                              |
+| `updated_at`      | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                       |
+| `updated_by`      | `uuid`        | internal | yes   | Last-updating actor.                                                                   |
+| `deleted_at`      | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                   |
+| `deleted_by`      | `uuid`        | internal | yes   | Soft-deleting actor.                                                                   |
+
+### `wty.warranty_policies`
+
+Warranty policy (tenant/company-scoped).
+
+| Column           | Type          | class    | Null? | Purpose                                                                |
+| ---------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------- |
+| `id`             | `uuid`        | internal | no    | Primary key (UUID).                                                    |
+| `tenant_id`      | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                        |
+| `company_id`     | `uuid`        | internal | no    | Company scope; composite FK to `org.legal_companies`.                  |
+| `policy_code`    | `text`        | internal | no    | Policy code; `UNIQUE(tenant_id, company_id, policy_code)`.             |
+| `name`           | `text`        | internal | no    | Human-readable name.                                                   |
+| `status`         | `text`        | internal | no    | CHECK IN ('active','archived').                                        |
+| `record_version` | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`. |
+| `created_at`     | `timestamptz` | internal | no    | Row creation timestamp.                                                |
+| `created_by`     | `uuid`        | internal | no    | Creating actor (user id).                                              |
+| `updated_at`     | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                       |
+| `updated_by`     | `uuid`        | internal | yes   | Last-updating actor.                                                   |
+| `deleted_at`     | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                   |
+| `deleted_by`     | `uuid`        | internal | yes   | Soft-deleting actor.                                                   |
+
+### `wty.warranty_record_items`
+
+Covered job/part on a warranty record (FR-WTY-002).
+
+| Column               | Type          | class    | Null? | Purpose                                                                |
+| -------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------- |
+| `id`                 | `uuid`        | internal | no    | Primary key (UUID).                                                    |
+| `tenant_id`          | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                        |
+| `company_id`         | `uuid`        | internal | no    | Company scope (branch composite scope).                                |
+| `branch_id`          | `uuid`        | internal | no    | Branch scope (branch composite scope).                                 |
+| `warranty_record_id` | `uuid`        | internal | no    | Composite FK -> `wty.warranty_records(...)` RESTRICT.                  |
+| `item_kind`          | `text`        | internal | no    | CHECK IN ('service','part').                                           |
+| `source_job_id`      | `uuid`        | internal | yes   | Opaque source work-job link (FR-WTY-002, nullable).                    |
+| `source_part_id`     | `uuid`        | internal | yes   | Opaque source part link (FR-WTY-002, nullable).                        |
+| `description`        | `text`        | internal | no    | Covered item description.                                              |
+| `record_version`     | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`. |
+| `created_at`         | `timestamptz` | internal | no    | Row creation timestamp.                                                |
+| `created_by`         | `uuid`        | internal | no    | Creating actor (user id).                                              |
+| `updated_at`         | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                       |
+| `updated_by`         | `uuid`        | internal | yes   | Last-updating actor.                                                   |
+| `deleted_at`         | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                   |
+| `deleted_by`         | `uuid`        | internal | yes   | Soft-deleting actor.                                                   |
+
+### `wty.warranty_records`
+
+Warranty record (branch-scoped); immutable after issue.
+
+| Column               | Type          | class    | Null? | Purpose                                                                                                                                               |
+| -------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | `uuid`        | internal | no    | Primary key (UUID).                                                                                                                                   |
+| `tenant_id`          | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                       |
+| `company_id`         | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                                               |
+| `branch_id`          | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                                                |
+| `vehicle_id`         | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT.                                                                                               |
+| `work_order_id`      | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT.                                                                                                       |
+| `delivery_record_id` | `uuid`        | internal | no    | Composite FK -> `sal.delivery_records(...)` RESTRICT (binds odometer/start_date, M-wty-2).                                                            |
+| `policy_id`          | `uuid`        | internal | no    | Composite FK -> `wty.warranty_policies(...)` RESTRICT.                                                                                                |
+| `coverage_id`        | `uuid`        | internal | no    | Composite FK -> `wty.warranty_coverage(tenant_id, company_id, id)` RESTRICT; no overlapping live record per vehicle+coverage (gist EXCLUDE, M-wty-1). |
+| `start_date`         | `date`        | internal | no    | Coverage start; bound to `delivery.delivered_at` (M-wty-2).                                                                                           |
+| `expiry_date`        | `date`        | internal | no    | Coverage expiry; CHECK `> start_date`.                                                                                                                |
+| `odometer_at_issue`  | `integer`     | internal | no    | Odometer at issue (>=0); bound to `delivery.final_odometer_reading_id`.                                                                               |
+| `odometer_limit`     | `integer`     | internal | yes   | Optional odometer ceiling (>= odometer_at_issue).                                                                                                     |
+| `status`             | `text`        | internal | no    | Lifecycle (issued/active/expired/voided/claimed_against); immutable after issue (freeze guard).                                                       |
+| `idempotency_key`    | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                  |
+| `record_version`     | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                |
+| `created_at`         | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                                               |
+| `created_by`         | `uuid`        | internal | no    | Creating actor (user id).                                                                                                                             |
+| `updated_at`         | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                      |
+| `updated_by`         | `uuid`        | internal | yes   | Last-updating actor.                                                                                                                                  |
+| `deleted_at`         | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                  |
+| `deleted_by`         | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                                                  |
+
+### `wty.warranty_status_history`
+
+Append-only warranty status ledger (SELECT+INSERT).
+
+| Column               | Type          | class    | Null? | Purpose                                                                            |
+| -------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------- |
+| `id`                 | `uuid`        | internal | no    | Primary key (UUID).                                                                |
+| `tenant_id`          | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                    |
+| `company_id`         | `uuid`        | internal | no    | Company scope (branch composite scope).                                            |
+| `branch_id`          | `uuid`        | internal | no    | Branch scope (branch composite scope).                                             |
+| `warranty_record_id` | `uuid`        | internal | no    | Composite FK -> `wty.warranty_records(...)` RESTRICT.                              |
+| `from_status`        | `text`        | internal | yes   | Prior status (NULL on first row).                                                  |
+| `to_status`          | `text`        | internal | no    | New status recorded by this ledger row.                                            |
+| `reason`             | `text`        | internal | yes   | Free-text reason.                                                                  |
+| `correlation_id`     | `uuid`        | internal | yes   | Optional correlation id linking the row to its originating command.                |
+| `actor_id`           | `uuid`        | internal | no    | Server-stamped acting user (`stamp_status_history`).                               |
+| `occurred_at`        | `timestamptz` | internal | no    | Server-stamped event time (`stamp_status_history`).                                |
+| `seq`                | `bigint`      | internal | no    | Monotonic `bigint GENERATED ALWAYS AS IDENTITY` ordering key (append-only ledger). |
+
+## §RPT — report configurations/versions/user-owned saved filters.
+
+### `rpt.report_configuration_versions`
+
+Report configuration version (monotonic; published immutable).
+
+| Column                    | Type          | class    | Null? | Purpose                                                                                                 |
+| ------------------------- | ------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `id`                      | `uuid`        | internal | no    | Primary key (UUID).                                                                                     |
+| `tenant_id`               | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                         |
+| `report_configuration_id` | `uuid`        | internal | no    | Composite FK -> `rpt.report_configurations(tenant_id, id)` RESTRICT.                                    |
+| `version_number`          | `integer`     | internal | no    | Monotonic version (>=1); `UNIQUE(tenant_id, report_configuration_id, version_number)`.                  |
+| `parameter_schema`        | `jsonb`       | internal | no    | Report parameter schema (jsonb).                                                                        |
+| `status`                  | `text`        | internal | no    | CHECK IN ('draft','published'); one published version per config (partial unique); published is frozen. |
+| `published_at`            | `timestamptz` | internal | yes   | Publish timestamp (NULL until published).                                                               |
+| `record_version`          | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                  |
+| `created_at`              | `timestamptz` | internal | no    | Row creation timestamp.                                                                                 |
+| `created_by`              | `uuid`        | internal | no    | Creating actor (user id).                                                                               |
+| `updated_at`              | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                        |
+| `updated_by`              | `uuid`        | internal | yes   | Last-updating actor.                                                                                    |
+| `deleted_at`              | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                    |
+| `deleted_by`              | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                    |
+
+### `rpt.report_configurations`
+
+Report configuration (tenant-scoped, versioned).
+
+| Column                   | Type          | class    | Null? | Purpose                                                                                         |
+| ------------------------ | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------- |
+| `id`                     | `uuid`        | internal | no    | Primary key (UUID).                                                                             |
+| `tenant_id`              | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                 |
+| `report_code`            | `text`        | internal | no    | Stable report code; `^[a-z][a-z0-9_]{1,62}$`; `UNIQUE(tenant_id, report_code)` (live).          |
+| `name`                   | `text`        | internal | no    | Human-readable name.                                                                            |
+| `scope_level`            | `text`        | internal | no    | Report scope; CHECK IN ('branch','company','tenant').                                           |
+| `export_permission_code` | `text`        | internal | no    | Export gate permission; FK -> `iam.permissions(permission_code)` RESTRICT (recorded for P1-23). |
+| `owner_user_id`          | `uuid`        | internal | no    | Owning user id.                                                                                 |
+| `status`                 | `text`        | internal | no    | CHECK IN ('draft','published','archived').                                                      |
+| `record_version`         | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                          |
+| `created_at`             | `timestamptz` | internal | no    | Row creation timestamp.                                                                         |
+| `created_by`             | `uuid`        | internal | no    | Creating actor (user id).                                                                       |
+| `updated_at`             | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                |
+| `updated_by`             | `uuid`        | internal | yes   | Last-updating actor.                                                                            |
+| `deleted_at`             | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                            |
+| `deleted_by`             | `uuid`        | internal | yes   | Soft-deleting actor.                                                                            |
+
+### `rpt.saved_filters`
+
+User-owned saved filter (owner-only RLS).
+
+| Column                    | Type          | class    | Null? | Purpose                                                                                                  |
+| ------------------------- | ------------- | -------- | ----- | -------------------------------------------------------------------------------------------------------- |
+| `id`                      | `uuid`        | internal | no    | Primary key (UUID).                                                                                      |
+| `tenant_id`               | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                          |
+| `report_configuration_id` | `uuid`        | internal | no    | Composite FK -> `rpt.report_configurations(tenant_id, id)` RESTRICT.                                     |
+| `owner_user_id`           | `uuid`        | internal | no    | Owning user; owner-only RLS pins `owner_user_id = iam.current_user_id()`; not reassignable (BR-RPT-001). |
+| `name`                    | `text`        | internal | no    | Human-readable name.                                                                                     |
+| `filter_definition`       | `jsonb`       | internal | no    | User filter definition (jsonb).                                                                          |
+| `scope_level`             | `text`        | internal | no    | CHECK IN ('branch','company','tenant'); `guard_saved_filter_scope` enforces scope_level <= report scope. |
+| `record_version`          | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                   |
+| `created_at`              | `timestamptz` | internal | no    | Row creation timestamp.                                                                                  |
+| `created_by`              | `uuid`        | internal | no    | Creating actor (user id).                                                                                |
+| `updated_at`              | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                         |
+| `updated_by`              | `uuid`        | internal | yes   | Last-updating actor.                                                                                     |
+| `deleted_at`              | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                     |
+| `deleted_by`              | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                     |

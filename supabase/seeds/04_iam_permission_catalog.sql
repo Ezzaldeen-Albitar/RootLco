@@ -44,7 +44,25 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('inv.stock.read',           'inv', 'Read stock balances and movements',       'low',    '00000000-0000-4000-8000-000000000001'),
   ('inv.stock.operate',        'inv', 'Post movements, reserve, issue, return',   'medium', '00000000-0000-4000-8000-000000000001'),
   ('inv.adjustment.approve',   'inv', 'Approve stock adjustments/opening batches','high',   '00000000-0000-4000-8000-000000000001'),
-  ('inv.cost.view',            'inv', 'View item/purchase/adjustment cost',       'high',   '00000000-0000-4000-8000-000000000001')
+  ('inv.cost.view',            'inv', 'View item/purchase/adjustment cost',       'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-11 — Billing & Payment (sal)
+  ('sal.invoice.manage',       'sal', 'Create and manage draft invoices',         'medium', '00000000-0000-4000-8000-000000000001'),
+  ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),
+  ('sal.payment.record',       'sal', 'Record receipts',                           'medium', '00000000-0000-4000-8000-000000000001'),
+  ('sal.payment.allocate',     'sal', 'Allocate receipts to invoices',             'medium', '00000000-0000-4000-8000-000000000001'),
+  ('sal.credit.manage',        'sal', 'Request and manage credit notes',           'high',   '00000000-0000-4000-8000-000000000001'),
+  ('sal.reversal.approve',     'sal', 'Approve receipt reversals (dual control)',   'high',   '00000000-0000-4000-8000-000000000001'),
+  ('sal.finance.view',         'sal', 'View financial amounts (invoices/receipts/events)', 'high', '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-11 — Delivery & Custody (sal)
+  ('sal.delivery.manage',      'sal', 'Manage deliveries, receivers, signatures',  'medium', '00000000-0000-4000-8000-000000000001'),
+  ('sal.delivery.complete',    'sal', 'Complete deliveries and close custody',      'high',   '00000000-0000-4000-8000-000000000001'),
+  ('sal.delivery.view',        'sal', 'View delivery signatures/receiver evidence', 'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-11 — Warranty (wty)
+  ('wty.policy.manage',        'wty', 'Manage warranty policies and coverage',      'medium', '00000000-0000-4000-8000-000000000001'),
+  ('wty.warranty.issue',       'wty', 'Issue warranty records',                     'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-11 — Reporting configuration (rpt)
+  ('rpt.report.configure',     'rpt', 'Manage report configurations',              'medium', '00000000-0000-4000-8000-000000000001'),
+  ('rpt.export',               'rpt', 'Export report data (audited downstream)',    'high',   '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

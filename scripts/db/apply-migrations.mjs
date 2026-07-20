@@ -43,6 +43,9 @@ const MODULE_SCHEMAS = [
   'svc',
   'quo',
   'inv',
+  'sal',
+  'wty',
+  'rpt',
 ];
 const NAME_RULE = /^(\d{4}|\d{14})_[a-z0-9_]+\.sql$/;
 
