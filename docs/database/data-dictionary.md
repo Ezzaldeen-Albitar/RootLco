@@ -3323,3 +3323,770 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 ### wo.work_orders
 
 `id`, `tenant_id`, `company_id`, `branch_id`, `reception_visit_id`, `vehicle_id`, `kind`, `state`, `parts_forward_state`, `display_number`, `opened_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+## Phase 1-10 — Service Catalog, Pricing, Quotation, and Inventory
+
+Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; quantities `numeric(12,3)`; tax rates `numeric(9,6)`. See `docs/database/svc-quo-inv-personal-data-classification.json` for the per-column classification (3 restricted cost columns gated by `inv.cost.view`).
+
+### Inventory & Stock (`inv`)
+
+#### inv.customer_supplied_parts
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `work_order_id`       | uuid                     | no       |
+| 6   | `reception_visit_ref` | uuid                     | yes      |
+| 7   | `item_ref`            | uuid                     | yes      |
+| 8   | `description`         | text                     | no       |
+| 9   | `quantity`            | numeric                  | no       |
+| 10  | `custody_state`       | text                     | no       |
+| 11  | `item_condition`      | text                     | yes      |
+| 12  | `evidence_ref`        | uuid                     | yes      |
+| 13  | `customer_owned`      | boolean                  | no       |
+| 14  | `record_version`      | integer                  | no       |
+| 15  | `created_at`          | timestamp with time zone | no       |
+| 16  | `created_by`          | uuid                     | no       |
+| 17  | `updated_at`          | timestamp with time zone | yes      |
+| 18  | `updated_by`          | uuid                     | yes      |
+| 19  | `deleted_at`          | timestamp with time zone | yes      |
+| 20  | `deleted_by`          | uuid                     | yes      |
+
+#### inv.damaged_stock
+
+| #   | Column                   | Type                     | Nullable |
+| --- | ------------------------ | ------------------------ | -------- |
+| 1   | `id`                     | uuid                     | no       |
+| 2   | `tenant_id`              | uuid                     | no       |
+| 3   | `company_id`             | uuid                     | no       |
+| 4   | `branch_id`              | uuid                     | no       |
+| 5   | `item_id`                | uuid                     | no       |
+| 6   | `from_location_id`       | uuid                     | no       |
+| 7   | `quarantine_location_id` | uuid                     | no       |
+| 8   | `quantity`               | numeric                  | no       |
+| 9   | `disposition`            | text                     | no       |
+| 10  | `reason`                 | text                     | no       |
+| 11  | `responsible_party_ref`  | uuid                     | yes      |
+| 12  | `evidence_ref`           | uuid                     | yes      |
+| 13  | `record_version`         | integer                  | no       |
+| 14  | `created_at`             | timestamp with time zone | no       |
+| 15  | `created_by`             | uuid                     | no       |
+| 16  | `updated_at`             | timestamp with time zone | yes      |
+| 17  | `updated_by`             | uuid                     | yes      |
+| 18  | `deleted_at`             | timestamp with time zone | yes      |
+| 19  | `deleted_by`             | uuid                     | yes      |
+
+#### inv.external_purchase_part_details
+
+| #   | Column                      | Type                     | Nullable |
+| --- | --------------------------- | ------------------------ | -------- |
+| 1   | `id`                        | uuid                     | no       |
+| 2   | `tenant_id`                 | uuid                     | no       |
+| 3   | `company_id`                | uuid                     | no       |
+| 4   | `branch_id`                 | uuid                     | no       |
+| 5   | `external_purchase_part_id` | uuid                     | no       |
+| 6   | `unit_cost`                 | numeric                  | no       |
+| 7   | `currency_code`             | text                     | no       |
+| 8   | `classification`            | text                     | no       |
+| 9   | `record_version`            | integer                  | no       |
+| 10  | `created_at`                | timestamp with time zone | no       |
+| 11  | `created_by`                | uuid                     | no       |
+| 12  | `updated_at`                | timestamp with time zone | yes      |
+| 13  | `updated_by`                | uuid                     | yes      |
+| 14  | `deleted_at`                | timestamp with time zone | yes      |
+| 15  | `deleted_by`                | uuid                     | yes      |
+
+#### inv.external_purchase_parts
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `work_order_id`       | uuid                     | no       |
+| 6   | `supplier_partner_id` | uuid                     | yes      |
+| 7   | `supplier_name`       | text                     | yes      |
+| 8   | `item_ref`            | uuid                     | yes      |
+| 9   | `description`         | text                     | no       |
+| 10  | `quantity`            | numeric                  | no       |
+| 11  | `status`              | text                     | no       |
+| 12  | `is_procurement`      | boolean                  | no       |
+| 13  | `evidence_ref`        | uuid                     | yes      |
+| 14  | `record_version`      | integer                  | no       |
+| 15  | `created_at`          | timestamp with time zone | no       |
+| 16  | `created_by`          | uuid                     | no       |
+| 17  | `updated_at`          | timestamp with time zone | yes      |
+| 18  | `updated_by`          | uuid                     | yes      |
+| 19  | `deleted_at`          | timestamp with time zone | yes      |
+| 20  | `deleted_by`          | uuid                     | yes      |
+
+#### inv.item_categories
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `parent_category_id` | uuid                     | yes      |
+| 4   | `code`               | text                     | no       |
+| 5   | `name`               | text                     | no       |
+| 6   | `description`        | text                     | yes      |
+| 7   | `status`             | text                     | no       |
+| 8   | `record_version`     | integer                  | no       |
+| 9   | `created_at`         | timestamp with time zone | no       |
+| 10  | `created_by`         | uuid                     | no       |
+| 11  | `updated_at`         | timestamp with time zone | yes      |
+| 12  | `updated_by`         | uuid                     | yes      |
+| 13  | `deleted_at`         | timestamp with time zone | yes      |
+| 14  | `deleted_by`         | uuid                     | yes      |
+
+#### inv.item_cost_details
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `item_id`        | uuid                     | no       |
+| 4   | `standard_cost`  | numeric                  | no       |
+| 5   | `currency_code`  | text                     | no       |
+| 6   | `classification` | text                     | no       |
+| 7   | `record_version` | integer                  | no       |
+| 8   | `created_at`     | timestamp with time zone | no       |
+| 9   | `created_by`     | uuid                     | no       |
+| 10  | `updated_at`     | timestamp with time zone | yes      |
+| 11  | `updated_by`     | uuid                     | yes      |
+| 12  | `deleted_at`     | timestamp with time zone | yes      |
+| 13  | `deleted_by`     | uuid                     | yes      |
+
+#### inv.item_master
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_category_id` | uuid                     | no       |
+| 4   | `sku`              | text                     | no       |
+| 5   | `name`             | text                     | no       |
+| 6   | `description`      | text                     | yes      |
+| 7   | `uom_id`           | uuid                     | no       |
+| 8   | `item_type`        | text                     | no       |
+| 9   | `is_stock_tracked` | boolean                  | no       |
+| 10  | `is_serialized`    | boolean                  | no       |
+| 11  | `lifecycle_status` | text                     | no       |
+| 12  | `archived_at`      | timestamp with time zone | yes      |
+| 13  | `record_version`   | integer                  | no       |
+| 14  | `created_at`       | timestamp with time zone | no       |
+| 15  | `created_by`       | uuid                     | no       |
+| 16  | `updated_at`       | timestamp with time zone | yes      |
+| 17  | `updated_by`       | uuid                     | yes      |
+| 18  | `deleted_at`       | timestamp with time zone | yes      |
+| 19  | `deleted_by`       | uuid                     | yes      |
+
+#### inv.opening_inventory_batches
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `batch_code`     | text                     | no       |
+| 6   | `as_of_date`     | date                     | no       |
+| 7   | `counted_by`     | uuid                     | no       |
+| 8   | `approved_by`    | uuid                     | yes      |
+| 9   | `approved_at`    | timestamp with time zone | yes      |
+| 10  | `status`         | text                     | no       |
+| 11  | `notes`          | text                     | yes      |
+| 12  | `record_version` | integer                  | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+| 15  | `updated_at`     | timestamp with time zone | yes      |
+| 16  | `updated_by`     | uuid                     | yes      |
+| 17  | `deleted_at`     | timestamp with time zone | yes      |
+| 18  | `deleted_by`     | uuid                     | yes      |
+
+#### inv.opening_inventory_lines
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `batch_id`       | uuid                     | no       |
+| 6   | `item_id`        | uuid                     | no       |
+| 7   | `location_id`    | uuid                     | no       |
+| 8   | `quantity`       | numeric                  | no       |
+| 9   | `record_version` | integer                  | no       |
+| 10  | `created_at`     | timestamp with time zone | no       |
+| 11  | `created_by`     | uuid                     | no       |
+| 12  | `updated_at`     | timestamp with time zone | yes      |
+| 13  | `updated_by`     | uuid                     | yes      |
+| 14  | `deleted_at`     | timestamp with time zone | yes      |
+| 15  | `deleted_by`     | uuid                     | yes      |
+
+#### inv.part_issues
+
+| #   | Column              | Type                     | Nullable |
+| --- | ------------------- | ------------------------ | -------- |
+| 1   | `id`                | uuid                     | no       |
+| 2   | `tenant_id`         | uuid                     | no       |
+| 3   | `company_id`        | uuid                     | no       |
+| 4   | `branch_id`         | uuid                     | no       |
+| 5   | `work_order_id`     | uuid                     | no       |
+| 6   | `item_id`           | uuid                     | no       |
+| 7   | `location_id`       | uuid                     | no       |
+| 8   | `reservation_id`    | uuid                     | yes      |
+| 9   | `required_part_ref` | uuid                     | yes      |
+| 10  | `quantity`          | numeric                  | no       |
+| 11  | `record_version`    | integer                  | no       |
+| 12  | `created_at`        | timestamp with time zone | no       |
+| 13  | `created_by`        | uuid                     | no       |
+| 14  | `updated_at`        | timestamp with time zone | yes      |
+| 15  | `updated_by`        | uuid                     | yes      |
+| 16  | `deleted_at`        | timestamp with time zone | yes      |
+| 17  | `deleted_by`        | uuid                     | yes      |
+
+#### inv.part_returns
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `part_issue_id`  | uuid                     | no       |
+| 6   | `quantity`       | numeric                  | no       |
+| 7   | `reason`         | text                     | yes      |
+| 8   | `record_version` | integer                  | no       |
+| 9   | `created_at`     | timestamp with time zone | no       |
+| 10  | `created_by`     | uuid                     | no       |
+| 11  | `updated_at`     | timestamp with time zone | yes      |
+| 12  | `updated_by`     | uuid                     | yes      |
+| 13  | `deleted_at`     | timestamp with time zone | yes      |
+| 14  | `deleted_by`     | uuid                     | yes      |
+
+#### inv.stock_adjustment_details
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `adjustment_id`  | uuid                     | no       |
+| 6   | `value_impact`   | numeric                  | no       |
+| 7   | `currency_code`  | text                     | no       |
+| 8   | `classification` | text                     | no       |
+| 9   | `record_version` | integer                  | no       |
+| 10  | `created_at`     | timestamp with time zone | no       |
+| 11  | `created_by`     | uuid                     | no       |
+| 12  | `updated_at`     | timestamp with time zone | yes      |
+| 13  | `updated_by`     | uuid                     | yes      |
+| 14  | `deleted_at`     | timestamp with time zone | yes      |
+| 15  | `deleted_by`     | uuid                     | yes      |
+
+#### inv.stock_adjustments
+
+| #   | Column              | Type                     | Nullable |
+| --- | ------------------- | ------------------------ | -------- |
+| 1   | `id`                | uuid                     | no       |
+| 2   | `tenant_id`         | uuid                     | no       |
+| 3   | `company_id`        | uuid                     | no       |
+| 4   | `branch_id`         | uuid                     | no       |
+| 5   | `item_id`           | uuid                     | no       |
+| 6   | `location_id`       | uuid                     | no       |
+| 7   | `direction`         | text                     | no       |
+| 8   | `quantity`          | numeric                  | no       |
+| 9   | `reason`            | text                     | no       |
+| 10  | `requires_approval` | boolean                  | no       |
+| 11  | `status`            | text                     | no       |
+| 12  | `requested_by`      | uuid                     | no       |
+| 13  | `approved_by`       | uuid                     | yes      |
+| 14  | `approved_at`       | timestamp with time zone | yes      |
+| 15  | `record_version`    | integer                  | no       |
+| 16  | `created_at`        | timestamp with time zone | no       |
+| 17  | `created_by`        | uuid                     | no       |
+| 18  | `updated_at`        | timestamp with time zone | yes      |
+| 19  | `updated_by`        | uuid                     | yes      |
+| 20  | `deleted_at`        | timestamp with time zone | yes      |
+| 21  | `deleted_by`        | uuid                     | yes      |
+
+#### inv.stock_balances
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `item_id`        | uuid                     | no       |
+| 6   | `location_id`    | uuid                     | no       |
+| 7   | `on_hand_qty`    | numeric                  | no       |
+| 8   | `reserved_qty`   | numeric                  | no       |
+| 9   | `available_qty`  | numeric                  | yes      |
+| 10  | `record_version` | integer                  | no       |
+| 11  | `created_at`     | timestamp with time zone | no       |
+| 12  | `created_by`     | uuid                     | no       |
+| 13  | `updated_at`     | timestamp with time zone | yes      |
+| 14  | `updated_by`     | uuid                     | yes      |
+
+#### inv.stock_locations
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `company_id`         | uuid                     | no       |
+| 4   | `branch_id`          | uuid                     | no       |
+| 5   | `location_code`      | text                     | no       |
+| 6   | `name`               | text                     | no       |
+| 7   | `location_type`      | text                     | no       |
+| 8   | `parent_location_id` | uuid                     | yes      |
+| 9   | `status`             | text                     | no       |
+| 10  | `record_version`     | integer                  | no       |
+| 11  | `created_at`         | timestamp with time zone | no       |
+| 12  | `created_by`         | uuid                     | no       |
+| 13  | `updated_at`         | timestamp with time zone | yes      |
+| 14  | `updated_by`         | uuid                     | yes      |
+| 15  | `deleted_at`         | timestamp with time zone | yes      |
+| 16  | `deleted_by`         | uuid                     | yes      |
+
+#### inv.stock_movements
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `item_id`        | uuid                     | no       |
+| 6   | `location_id`    | uuid                     | no       |
+| 7   | `movement_type`  | text                     | no       |
+| 8   | `direction`      | text                     | no       |
+| 9   | `quantity`       | numeric                  | no       |
+| 10  | `signed_qty`     | numeric                  | yes      |
+| 11  | `reference_kind` | text                     | no       |
+| 12  | `reference_id`   | uuid                     | no       |
+| 13  | `occurred_at`    | timestamp with time zone | no       |
+| 14  | `actor_id`       | uuid                     | no       |
+| 15  | `correlation_id` | uuid                     | yes      |
+| 16  | `notes`          | text                     | yes      |
+| 17  | `seq`            | bigint                   | no       |
+| 18  | `created_at`     | timestamp with time zone | no       |
+| 19  | `created_by`     | uuid                     | no       |
+
+#### inv.stock_reservations
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `item_id`         | uuid                     | no       |
+| 6   | `location_id`     | uuid                     | no       |
+| 7   | `work_order_id`   | uuid                     | yes      |
+| 8   | `quantity`        | numeric                  | no       |
+| 9   | `status`          | text                     | no       |
+| 10  | `idempotency_key` | text                     | yes      |
+| 11  | `correlation_id`  | uuid                     | yes      |
+| 12  | `expires_at`      | timestamp with time zone | yes      |
+| 13  | `released_reason` | text                     | yes      |
+| 14  | `record_version`  | integer                  | no       |
+| 15  | `created_at`      | timestamp with time zone | no       |
+| 16  | `created_by`      | uuid                     | no       |
+| 17  | `updated_at`      | timestamp with time zone | yes      |
+| 18  | `updated_by`      | uuid                     | yes      |
+
+#### inv.units_of_measure
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `scope`          | text                     | no       |
+| 3   | `tenant_id`      | uuid                     | yes      |
+| 4   | `code`           | text                     | no       |
+| 5   | `name`           | text                     | no       |
+| 6   | `dimension`      | text                     | no       |
+| 7   | `status`         | text                     | no       |
+| 8   | `record_version` | integer                  | no       |
+| 9   | `created_at`     | timestamp with time zone | no       |
+| 10  | `created_by`     | uuid                     | no       |
+| 11  | `updated_at`     | timestamp with time zone | yes      |
+| 12  | `updated_by`     | uuid                     | yes      |
+| 13  | `deleted_at`     | timestamp with time zone | yes      |
+| 14  | `deleted_by`     | uuid                     | yes      |
+
+### Quotation & Approvals (`quo`)
+
+#### quo.approval_decisions
+
+| #   | Column                  | Type                     | Nullable |
+| --- | ----------------------- | ------------------------ | -------- |
+| 1   | `id`                    | uuid                     | no       |
+| 2   | `tenant_id`             | uuid                     | no       |
+| 3   | `company_id`            | uuid                     | no       |
+| 4   | `branch_id`             | uuid                     | no       |
+| 5   | `quotation_revision_id` | uuid                     | no       |
+| 6   | `quotation_item_id`     | uuid                     | no       |
+| 7   | `decision`              | text                     | no       |
+| 8   | `decided_by`            | uuid                     | no       |
+| 9   | `decision_channel`      | text                     | no       |
+| 10  | `decided_at`            | timestamp with time zone | no       |
+| 11  | `evidence_ref`          | uuid                     | yes      |
+| 12  | `seq`                   | bigint                   | no       |
+| 13  | `created_at`            | timestamp with time zone | no       |
+| 14  | `created_by`            | uuid                     | no       |
+
+#### quo.approval_evidence
+
+| #   | Column                 | Type                     | Nullable |
+| --- | ---------------------- | ------------------------ | -------- |
+| 1   | `id`                   | uuid                     | no       |
+| 2   | `tenant_id`            | uuid                     | no       |
+| 3   | `company_id`           | uuid                     | no       |
+| 4   | `branch_id`            | uuid                     | no       |
+| 5   | `approval_decision_id` | uuid                     | no       |
+| 6   | `evidence_kind`        | text                     | no       |
+| 7   | `document_version_id`  | uuid                     | yes      |
+| 8   | `reference_note`       | text                     | yes      |
+| 9   | `seq`                  | bigint                   | no       |
+| 10  | `created_at`           | timestamp with time zone | no       |
+| 11  | `created_by`           | uuid                     | no       |
+
+#### quo.quotation_items
+
+| #   | Column                     | Type                     | Nullable |
+| --- | -------------------------- | ------------------------ | -------- |
+| 1   | `id`                       | uuid                     | no       |
+| 2   | `tenant_id`                | uuid                     | no       |
+| 3   | `company_id`               | uuid                     | no       |
+| 4   | `branch_id`                | uuid                     | no       |
+| 5   | `quotation_revision_id`    | uuid                     | no       |
+| 6   | `line_number`              | integer                  | no       |
+| 7   | `item_kind`                | text                     | no       |
+| 8   | `service_id`               | uuid                     | yes      |
+| 9   | `item_ref`                 | uuid                     | yes      |
+| 10  | `source_service_line_ref`  | uuid                     | yes      |
+| 11  | `source_required_part_ref` | uuid                     | yes      |
+| 12  | `price_rule_ref`           | uuid                     | yes      |
+| 13  | `description`              | text                     | yes      |
+| 14  | `currency_code`            | text                     | no       |
+| 15  | `captured_unit_price`      | numeric                  | no       |
+| 16  | `captured_quantity`        | numeric                  | no       |
+| 17  | `captured_discount`        | numeric                  | no       |
+| 18  | `captured_tax_rate`        | numeric                  | no       |
+| 19  | `captured_tax_amount`      | numeric                  | no       |
+| 20  | `captured_line_total`      | numeric                  | no       |
+| 21  | `record_version`           | integer                  | no       |
+| 22  | `created_at`               | timestamp with time zone | no       |
+| 23  | `created_by`               | uuid                     | no       |
+| 24  | `updated_at`               | timestamp with time zone | yes      |
+| 25  | `updated_by`               | uuid                     | yes      |
+| 26  | `deleted_at`               | timestamp with time zone | yes      |
+| 27  | `deleted_by`               | uuid                     | yes      |
+
+#### quo.quotation_revisions
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `company_id`              | uuid                     | no       |
+| 4   | `branch_id`               | uuid                     | no       |
+| 5   | `quotation_id`            | uuid                     | no       |
+| 6   | `revision_number`         | integer                  | no       |
+| 7   | `status`                  | text                     | no       |
+| 8   | `currency_code`           | text                     | no       |
+| 9   | `issued_at`               | timestamp with time zone | yes      |
+| 10  | `expires_at`              | timestamp with time zone | yes      |
+| 11  | `captured_subtotal`       | numeric                  | no       |
+| 12  | `captured_discount_total` | numeric                  | no       |
+| 13  | `captured_tax_total`      | numeric                  | no       |
+| 14  | `captured_grand_total`    | numeric                  | no       |
+| 15  | `record_version`          | integer                  | no       |
+| 16  | `created_at`              | timestamp with time zone | no       |
+| 17  | `created_by`              | uuid                     | no       |
+| 18  | `updated_at`              | timestamp with time zone | yes      |
+| 19  | `updated_by`              | uuid                     | yes      |
+| 20  | `deleted_at`              | timestamp with time zone | yes      |
+| 21  | `deleted_by`              | uuid                     | yes      |
+
+#### quo.quotation_status_history
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `quotation_id`   | uuid                     | no       |
+| 6   | `from_status`    | text                     | yes      |
+| 7   | `to_status`      | text                     | no       |
+| 8   | `reason`         | text                     | yes      |
+| 9   | `actor_id`       | uuid                     | no       |
+| 10  | `occurred_at`    | timestamp with time zone | no       |
+| 11  | `correlation_id` | uuid                     | yes      |
+| 12  | `seq`            | bigint                   | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+
+#### quo.quotations
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `work_order_id`       | uuid                     | no       |
+| 6   | `quotation_number`    | text                     | no       |
+| 7   | `currency_code`       | text                     | no       |
+| 8   | `payer_partner_ref`   | uuid                     | yes      |
+| 9   | `current_revision_id` | uuid                     | yes      |
+| 10  | `status`              | text                     | no       |
+| 11  | `record_version`      | integer                  | no       |
+| 12  | `created_at`          | timestamp with time zone | no       |
+| 13  | `created_by`          | uuid                     | no       |
+| 14  | `updated_at`          | timestamp with time zone | yes      |
+| 15  | `updated_by`          | uuid                     | yes      |
+| 16  | `deleted_at`          | timestamp with time zone | yes      |
+| 17  | `deleted_by`          | uuid                     | yes      |
+
+### Service Catalog & Pricing (`svc`)
+
+#### svc.branch_service_availability
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `service_id`     | uuid                     | no       |
+| 6   | `is_available`   | boolean                  | no       |
+| 7   | `status`         | text                     | no       |
+| 8   | `record_version` | integer                  | no       |
+| 9   | `created_at`     | timestamp with time zone | no       |
+| 10  | `created_by`     | uuid                     | no       |
+| 11  | `updated_at`     | timestamp with time zone | yes      |
+| 12  | `updated_by`     | uuid                     | yes      |
+| 13  | `deleted_at`     | timestamp with time zone | yes      |
+| 14  | `deleted_by`     | uuid                     | yes      |
+
+#### svc.discount_rules
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `discount_code`  | text                     | no       |
+| 4   | `name`           | text                     | no       |
+| 5   | `discount_type`  | text                     | no       |
+| 6   | `value`          | numeric                  | no       |
+| 7   | `currency_code`  | text                     | yes      |
+| 8   | `company_id`     | uuid                     | yes      |
+| 9   | `branch_id`      | uuid                     | yes      |
+| 10  | `customer_class` | text                     | yes      |
+| 11  | `service_id`     | uuid                     | yes      |
+| 12  | `effective_from` | date                     | no       |
+| 13  | `effective_to`   | date                     | yes      |
+| 14  | `status`         | text                     | no       |
+| 15  | `record_version` | integer                  | no       |
+| 16  | `created_at`     | timestamp with time zone | no       |
+| 17  | `created_by`     | uuid                     | no       |
+| 18  | `updated_at`     | timestamp with time zone | yes      |
+| 19  | `updated_by`     | uuid                     | yes      |
+| 20  | `deleted_at`     | timestamp with time zone | yes      |
+| 21  | `deleted_by`     | uuid                     | yes      |
+
+#### svc.price_list_assignments
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `price_list_id`  | uuid                     | no       |
+| 4   | `company_id`     | uuid                     | yes      |
+| 5   | `branch_id`      | uuid                     | yes      |
+| 6   | `customer_class` | text                     | yes      |
+| 7   | `priority`       | integer                  | no       |
+| 8   | `effective_from` | date                     | no       |
+| 9   | `effective_to`   | date                     | yes      |
+| 10  | `status`         | text                     | no       |
+| 11  | `record_version` | integer                  | no       |
+| 12  | `created_at`     | timestamp with time zone | no       |
+| 13  | `created_by`     | uuid                     | no       |
+| 14  | `updated_at`     | timestamp with time zone | yes      |
+| 15  | `updated_by`     | uuid                     | yes      |
+| 16  | `deleted_at`     | timestamp with time zone | yes      |
+| 17  | `deleted_by`     | uuid                     | yes      |
+
+#### svc.price_list_versions
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `price_list_id`  | uuid                     | no       |
+| 4   | `version_no`     | integer                  | no       |
+| 5   | `effective_from` | date                     | no       |
+| 6   | `effective_to`   | date                     | yes      |
+| 7   | `status`         | text                     | no       |
+| 8   | `notes`          | text                     | yes      |
+| 9   | `record_version` | integer                  | no       |
+| 10  | `created_at`     | timestamp with time zone | no       |
+| 11  | `created_by`     | uuid                     | no       |
+| 12  | `updated_at`     | timestamp with time zone | yes      |
+| 13  | `updated_by`     | uuid                     | yes      |
+| 14  | `deleted_at`     | timestamp with time zone | yes      |
+| 15  | `deleted_by`     | uuid                     | yes      |
+
+#### svc.price_lists
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `price_list_code` | text                     | no       |
+| 4   | `name`            | text                     | no       |
+| 5   | `currency_code`   | text                     | no       |
+| 6   | `description`     | text                     | yes      |
+| 7   | `status`          | text                     | no       |
+| 8   | `record_version`  | integer                  | no       |
+| 9   | `created_at`      | timestamp with time zone | no       |
+| 10  | `created_by`      | uuid                     | no       |
+| 11  | `updated_at`      | timestamp with time zone | yes      |
+| 12  | `updated_by`      | uuid                     | yes      |
+| 13  | `deleted_at`      | timestamp with time zone | yes      |
+| 14  | `deleted_by`      | uuid                     | yes      |
+
+#### svc.price_rules
+
+| #   | Column                  | Type                     | Nullable |
+| --- | ----------------------- | ------------------------ | -------- |
+| 1   | `id`                    | uuid                     | no       |
+| 2   | `tenant_id`             | uuid                     | no       |
+| 3   | `price_list_version_id` | uuid                     | no       |
+| 4   | `service_id`            | uuid                     | no       |
+| 5   | `company_id`            | uuid                     | yes      |
+| 6   | `branch_id`             | uuid                     | yes      |
+| 7   | `customer_class`        | text                     | yes      |
+| 8   | `amount`                | numeric                  | no       |
+| 9   | `tax_class_id`          | uuid                     | yes      |
+| 10  | `priority`              | integer                  | no       |
+| 11  | `status`                | text                     | no       |
+| 12  | `record_version`        | integer                  | no       |
+| 13  | `created_at`            | timestamp with time zone | no       |
+| 14  | `created_by`            | uuid                     | no       |
+| 15  | `updated_at`            | timestamp with time zone | yes      |
+| 16  | `updated_by`            | uuid                     | yes      |
+| 17  | `deleted_at`            | timestamp with time zone | yes      |
+| 18  | `deleted_by`            | uuid                     | yes      |
+
+#### svc.pricing_approval_policies
+
+| #   | Column                     | Type                     | Nullable |
+| --- | -------------------------- | ------------------------ | -------- |
+| 1   | `id`                       | uuid                     | no       |
+| 2   | `tenant_id`                | uuid                     | no       |
+| 3   | `company_id`               | uuid                     | yes      |
+| 4   | `policy_type`              | text                     | no       |
+| 5   | `threshold_kind`           | text                     | no       |
+| 6   | `threshold_value`          | numeric                  | no       |
+| 7   | `currency_code`            | text                     | yes      |
+| 8   | `required_permission_code` | text                     | no       |
+| 9   | `maker_approver_distinct`  | boolean                  | no       |
+| 10  | `effective_from`           | date                     | no       |
+| 11  | `effective_to`             | date                     | yes      |
+| 12  | `status`                   | text                     | no       |
+| 13  | `record_version`           | integer                  | no       |
+| 14  | `created_at`               | timestamp with time zone | no       |
+| 15  | `created_by`               | uuid                     | no       |
+| 16  | `updated_at`               | timestamp with time zone | yes      |
+| 17  | `updated_by`               | uuid                     | yes      |
+| 18  | `deleted_at`               | timestamp with time zone | yes      |
+| 19  | `deleted_by`               | uuid                     | yes      |
+
+#### svc.service_categories
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `parent_category_id` | uuid                     | yes      |
+| 4   | `code`               | text                     | no       |
+| 5   | `name`               | text                     | no       |
+| 6   | `description`        | text                     | yes      |
+| 7   | `sort_order`         | integer                  | yes      |
+| 8   | `status`             | text                     | no       |
+| 9   | `record_version`     | integer                  | no       |
+| 10  | `created_at`         | timestamp with time zone | no       |
+| 11  | `created_by`         | uuid                     | no       |
+| 12  | `updated_at`         | timestamp with time zone | yes      |
+| 13  | `updated_by`         | uuid                     | yes      |
+| 14  | `deleted_at`         | timestamp with time zone | yes      |
+| 15  | `deleted_by`         | uuid                     | yes      |
+
+#### svc.service_versions
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `service_id`     | uuid                     | no       |
+| 4   | `version_no`     | integer                  | no       |
+| 5   | `effective_from` | date                     | no       |
+| 6   | `effective_to`   | date                     | yes      |
+| 7   | `status`         | text                     | no       |
+| 8   | `notes`          | text                     | yes      |
+| 9   | `record_version` | integer                  | no       |
+| 10  | `created_at`     | timestamp with time zone | no       |
+| 11  | `created_by`     | uuid                     | no       |
+| 12  | `updated_at`     | timestamp with time zone | yes      |
+| 13  | `updated_by`     | uuid                     | yes      |
+| 14  | `deleted_at`     | timestamp with time zone | yes      |
+| 15  | `deleted_by`     | uuid                     | yes      |
+
+#### svc.services
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `service_category_id` | uuid                     | no       |
+| 4   | `service_code`        | text                     | no       |
+| 5   | `name`                | text                     | no       |
+| 6   | `description`         | text                     | yes      |
+| 7   | `lifecycle_status`    | text                     | no       |
+| 8   | `archived_at`         | timestamp with time zone | yes      |
+| 9   | `record_version`      | integer                  | no       |
+| 10  | `created_at`          | timestamp with time zone | no       |
+| 11  | `created_by`          | uuid                     | no       |
+| 12  | `updated_at`          | timestamp with time zone | yes      |
+| 13  | `updated_by`          | uuid                     | yes      |
+| 14  | `deleted_at`          | timestamp with time zone | yes      |
+| 15  | `deleted_by`          | uuid                     | yes      |
+
+#### svc.standard_labor_times
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `service_version_id` | uuid                     | no       |
+| 4   | `labor_code`         | text                     | yes      |
+| 5   | `standard_minutes`   | numeric                  | no       |
+| 6   | `skill_ref`          | uuid                     | yes      |
+| 7   | `status`             | text                     | no       |
+| 8   | `record_version`     | integer                  | no       |
+| 9   | `created_at`         | timestamp with time zone | no       |
+| 10  | `created_by`         | uuid                     | no       |
+| 11  | `updated_at`         | timestamp with time zone | yes      |
+| 12  | `updated_by`         | uuid                     | yes      |
+| 13  | `deleted_at`         | timestamp with time zone | yes      |
+| 14  | `deleted_by`         | uuid                     | yes      |

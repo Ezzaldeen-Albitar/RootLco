@@ -1,0 +1,39 @@
+# Phase 1-10 — Test Catalog
+
+The planned P1-10 database test suites, run within the full `npm run test:db` suite.
+All isolation and concurrency assertions run on the non-privileged `app_runtime` /
+`app_readonly` login roles; admin (BYPASSRLS) is used only for fixtures and is never
+RLS evidence. **Final per-file test counts are recorded on merge** (see
+[phase-1-10-evidence-register.md](phase-1-10-evidence-register.md)); this catalog lists
+the suites and their coverage without inventing counts.
+
+| Suite                        | Covers                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `svc-catalog`                | Category cycle guard (advisory-locked); stable `service_code` immutability; service lifecycle (`archived` terminal); effective-dated versions; gist `EXCLUDE` no-overlap on published; `publish_service_version` succession (forward-only `effective_to` close); labor-time positivity + parent-freeze; branch availability (branch∈company, archived-service block); RLS                                               |
+| `svc-pricing`                | Price list currency; published-version freeze (row + children INSERT/DELETE); `publish_price_list_version` succession; `resolve_price` single-winner (assignment → version → rule); bit-weighted specificity total order; `NULLS NOT DISTINCT` anti-ambiguity; currency inheritance/coherence; discount bounds; approval-policy structure; tax-class-needs-company CHECK                                                |
+| `quo-quotation`              | Branch-scoped quotation number; monotonic revisions; single-issued invariant; `issue_revision` totals recompute + zero-item ban + supersede; item freeze once issued; per-line arithmetic CHECKs; deferred totals-identity trigger; composite decision→item FK; one decision per revision-item; append-only decisions/evidence; document-bound evidence; `record_item_decision` current-issued gate; currency coherence |
+| `inv-reference`              | Dual-scope UoM (platform vs tenant, cross-tenant write denial); item category cycle guard; SKU immutability + trigram search; item↔UoM scope guard; restricted `item_cost_details` gate (`inv.cost.view`); location hierarchy coherence (warehouse/storage/quarantine)                                                                                                                                                  |
+| `inv-ledger`                 | `signed_qty` GENERATED; single-use `(reference_kind, reference_id, direction)`; **raw-insert movement bypass rejected** (provenance/single-use); balance coherence (`on_hand=Σ signed`, `reserved=Σ active`, `available>=0`); status-only reservation activeness; explicit `expire_reservations`                                                                                                                        |
+| `inv-operations`             | Provenance guard per kind (opening/issue/return/damage/adjustment); opening-batch approval + maker≠approver; adjustment approval + maker≠approver + over-threshold pending; issue → movement + reservation consume; return ceiling `Σ ≤ issued`; damage paired move + reservation release (H9); customer-supplied no-stock-effect; external-purchase `is_procurement=false` + status vocabulary + restricted-cost gate  |
+| `inv-concurrency`            | Single-winner last-unit reservation (loser `23514`); idempotent replay (returns existing, never `23505`); loss-time reservation release under lock; balance-writer `FOR UPDATE` serialization; hierarchy re-parent advisory-lock race                                                                                                                                                                                   |
+| `quo-concurrency`            | Single issued revision under concurrent issue; `record_item_decision` against a superseding revision (parent lock re-read)                                                                                                                                                                                                                                                                                              |
+| `p1-10-isolation`            | Cross-tenant and cross-branch read **and** write denial across `svc`/`quo`/`inv` on non-privileged roles; cross-branch cost-leak denial                                                                                                                                                                                                                                                                                 |
+| `p1-10-security`             | Auto-enumerated over all 35 tables: RLS enabled+forced; policies present; no DELETE grant; readonly SELECT-only; restricted gate (`inv.cost.view`); append-only no-UPDATE; function `SECURITY INVOKER`/`search_path`/no-`DEFINER`; worker no-grant; no-dead-permission; no scope leakage                                                                                                                                |
+| `p1-10-classification-guard` | Classification validator negatives (searchable-restricted, missing, stale, duplicate, invalid class, type-drift) + committed-registry pass                                                                                                                                                                                                                                                                              |
+| `p1-10-forward-fk`           | The three P1-09 forward FKs enforce on non-NULL refs, tolerate NULL (`MATCH SIMPLE`), and are index-covered; P1-09 suites remain green                                                                                                                                                                                                                                                                                  |
+| `p1-10-rollback`             | Clean-room from-zero apply of all 8 migrations; business tables empty after apply (only the platform UoM catalog seeded); precision scan (no float / money=`numeric(18,4)`)                                                                                                                                                                                                                                             |
+
+## Shared fixture
+
+A `p1-10-helpers` module provides cascade cleanup and platform-fixture cleanup for
+every `svc`/`quo`/`inv` table, scope/context helpers, and the work-order + item +
+location + service fixtures assembled through prior-phase primitives (so quotation and
+inventory operations satisfy their preconditions without touching `wo`/`rec`
+internals).
+
+## Cross-cutting guards that also cover P1-10
+
+`foundation` (table/routine/trigger/policy allow-lists, RLS-forced, role posture),
+`org-security` (FK-index coverage, no duplicate indexes, tenant-column invariant, no
+DELETE grant), the no-business-data guard (schema list extended to `svc`/`quo`/`inv`),
+and the money-precision scan.
