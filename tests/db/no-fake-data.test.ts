@@ -22,6 +22,10 @@ const STRUCTURAL_REFERENCE = new Set([
   'wo.work_order_transitions',
   'wo.job_states',
   'wo.job_transitions',
+  // Phase 1-10 platform unit-of-measure catalog — structurally mandatory (a
+  // quantity/movement is meaningless without a unit). Platform scope only.
+  'inv.units_of_measure',
+  'sal.payment_methods',
 ]);
 
 let admin: Pool;
@@ -45,7 +49,7 @@ describe('no-fake-data — all business tables start empty', () => {
       `SELECT table_schema, table_name
          FROM information_schema.tables
         WHERE table_type = 'BASE TABLE'
-          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec', 'wo', 'dia', 'tech', 'qms')
+          AND table_schema IN ('org', 'iam', 'shared', 'crm', 'veh', 'apt', 'rec', 'wo', 'dia', 'tech', 'qms', 'svc', 'quo', 'inv', 'sal', 'wty', 'rpt')
         ORDER BY table_schema, table_name`
     );
     const nonEmpty: string[] = [];
