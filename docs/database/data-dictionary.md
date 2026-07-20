@@ -3141,3 +3141,185 @@ Append-only reception status ledger (P1-08-DB-021). Trigger-emitted; coherence-g
 | `actor_id`           | uuid                     | NO   | —                   | internal |
 | `occurred_at`        | timestamp with time zone | NO   | `now()`             | internal |
 | `seq`                | bigint                   | NO   | generated identity  | internal |
+
+## Phase 1-9 — Work Order, Diagnostics, Technician, and Quality
+
+Generated inventory of every Phase 1-9 table (schemas `wo`, `tech`, `dia`, `qms`) and
+its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_number`,
+`description` (additional-work detail), `rework_cost`. All other columns are `internal`.
+
+### dia.diagnostic_evidence
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`
+
+### dia.diagnostic_report_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### dia.diagnostic_reports
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `template_version_id`, `diagnostic_type_id`, `status`, `revision_number`, `summary`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.diagnostic_reviews
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `review_result`, `notes`, `reviewer_id`, `reviewed_at`
+
+### dia.diagnostic_types
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.dtc_records
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `code`, `description`, `dtc_status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.findings
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `severity`, `disposition`, `description`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.inspection_templates
+
+`id`, `tenant_id`, `code`, `name`, `diagnostic_type_id`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.measurements
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `label`, `measured_value`, `unit`, `within_range`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.recommendations
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `recommendation`, `priority`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.report_item_results
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `result_value`, `not_applicable_reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.template_items
+
+`id`, `tenant_id`, `template_version_id`, `item_code`, `prompt`, `response_type`, `unit`, `is_mandatory`, `validation_rule`, `sequence`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.template_versions
+
+`id`, `tenant_id`, `template_id`, `version_number`, `status`, `published_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_check_results
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `quality_control_record_id`, `qc_check_id`, `result`, `note`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_checks
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_mandatory`, `is_safety_critical`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `quality_control_record_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### qms.quality_control_records
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `overall_result`, `checker_id`, `finalized_at`, `notes`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.reopen_attempts
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `reason`, `outcome`, `requested_by`, `requested_at`
+
+### qms.rework_link_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `rework_link_id`, `rework_cost`, `cost_currency`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.rework_links
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `original_work_order_id`, `rework_work_order_id`, `root_cause`, `corrective_action`, `responsibility`, `lead_technician_id`, `is_safety_critical`, `independent_sign_off_by`, `sign_off_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.certifications
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `authority`, `validity_months`, `is_safety_critical`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.labor_sessions
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `job_id`, `started_at`, `ended_at`, `source`, `correction_of_id`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.skill_levels
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `rank`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.skills
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `discipline`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_availability
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `available_from`, `available_to`, `availability_kind`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_certification_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_certification_id`, `certificate_number`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_certifications
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `certification_id`, `issued_on`, `expires_on`, `cert_status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_profiles
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `user_id`, `trade`, `is_active`, `employment_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_skills
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `skill_id`, `skill_level_id`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.additional_work_request_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `additional_work_request_id`, `description`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.additional_work_requests
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `originating_job_id`, `originating_finding_id`, `summary`, `state`, `fulfillment_state`, `is_required`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.customer_approval_evidence
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `customer_approval_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`
+
+### wo.customer_approvals
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `additional_work_request_id`, `deciding_party_role_id`, `decision`, `channel`, `presented_scope`, `quotation_revision_ref`, `decided_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_assignments
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `technician_profile_id`, `assignment_role`, `valid_from`, `valid_to`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_states
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_terminal`, `reason_required`, `assignment_required`, `labor_allowed`, `closure_eligible`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### wo.job_transitions
+
+`id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.jobs
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.required_parts
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `description`, `quantity`, `unit`, `item_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_service_lines
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `description`, `quantity`, `unit`, `service_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_states
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_terminal`, `is_closed`, `is_cancellation`, `reason_required`, `allows_jobs`, `allows_labor`, `allows_additional_work`, `requires_qc`, `is_reopenable`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### wo.work_order_transitions
+
+`id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_orders
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `reception_visit_id`, `vehicle_id`, `kind`, `state`, `parts_forward_state`, `display_number`, `opened_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
