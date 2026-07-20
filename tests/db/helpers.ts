@@ -242,6 +242,39 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-11 billing / payment / delivery / warranty / reporting — deleted FIRST:
+  // every sal/wty/rpt row references a Phase 1-7..1-10 parent (wo work orders, quo
+  // revisions, rec visits, veh vehicles/odometer) deleted below, so P1-11 unwinds
+  // first. Children before parents. sal.financial_events has no FK into sal (its
+  // source_id is a plain uuid), so it can go anywhere in this block.
+  await deleteFrom('rpt.saved_filters');
+  await deleteFrom('rpt.report_configuration_versions');
+  await deleteFrom('rpt.report_configurations');
+  await deleteFrom('wty.warranty_status_history');
+  await deleteFrom('wty.warranty_record_items');
+  await deleteFrom('wty.warranty_records');
+  await deleteFrom('wty.warranty_coverage');
+  await deleteFrom('wty.warranty_policies');
+  await deleteFrom('sal.financial_events');
+  await deleteFrom('sal.authorized_receivers');
+  await deleteFrom('sal.delivery_signatures');
+  await deleteFrom('sal.delivery_checklist_results');
+  await deleteFrom('sal.delivery_status_history');
+  await deleteFrom('sal.delivery_records');
+  await deleteFrom('sal.delivery_checklist_template_items');
+  await deleteFrom('sal.delivery_checklist_templates');
+  await deleteFrom('sal.payment_allocations');
+  await deleteFrom('sal.receipt_reversals');
+  await deleteFrom('sal.credit_notes');
+  await deleteFrom('sal.receipts');
+  await deleteFrom('sal.invoice_status_history');
+  await deleteFrom('sal.invoice_line_amounts');
+  await deleteFrom('sal.invoice_lines');
+  await deleteFrom('sal.invoice_amounts');
+  await deleteFrom('sal.invoice_numbering_configs');
+  await deleteFrom('sal.invoices');
+  await deleteFrom('sal.payment_methods');
+
   // Phase 1-10 service/quotation/inventory — deleted FIRST for the parts that
   // reference the Phase 1-9 work order. The wo<->quo forward FK makes the two
   // mutually referencing, so this straddles the wo block: quo items +
@@ -603,6 +636,11 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   // are left intact.
   await admin.query(
     `DELETE FROM inv.units_of_measure WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-11 platform payment-method fixtures (scope='platform', fx_ codes). Seeded
+  // platform methods (cash/card_terminal/bank_transfer) are structural reference, kept.
+  await admin.query(
+    `DELETE FROM sal.payment_methods WHERE scope = 'platform' AND method_code LIKE 'fx\\_%'`
   );
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
