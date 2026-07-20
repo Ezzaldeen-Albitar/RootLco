@@ -5,8 +5,10 @@
 
 ## Commit ledger (feature branch, by migration intent)
 
-SHAs are recorded at gate time; the column reads `(feature branch)` until the
-gate-record pull request captures the final SHAs.
+The feature branch landed as a single commit — final feature SHA
+`b9550bb4c65a3a22341a4b5b7f2f398d07f71476` — containing all 16 migrations, the test
+suite, seeds, classification, CI wiring, and documentation below. The per-migration
+rows record intent within that commit.
 
 | SHA              | Wave | Migration | Intent                                                                   |
 | ---------------- | ---- | --------- | ------------------------------------------------------------------------ |
@@ -60,12 +62,15 @@ Implemented and tested on the feature branch:
 - [x] No quotation/item table (P1-10); no backend (P1-19); no frontend (P1-29).
 - [x] Zero unresolved Critical/High at design and implementation.
 
-Pending the gate-record pull request (records these from evidenced facts):
+Recorded by the gate-record pull request (from evidenced facts):
 
-- [ ] Feature PR merged into `develop` (merge commit, two parents); final SHA
-      contained in `origin/develop`.
-- [ ] Hosted CI green on the exact final feature SHA (all required checks).
-- [ ] `main` untouched.
+- [x] Feature PR **#39** merged into `develop` — merge commit `4fff327` (parents
+      `8881834` + `b9550bb`, `--no-ff`), author Eng. Ezzaldeen Al-Bitar, committer
+      GitHub, 2026-07-20T10:02:58+03:00; final feature SHA `b9550bb` contained in
+      `origin/develop` (`4fff327`).
+- [x] Hosted CI green on the exact final feature SHA `b9550bb` — all four required
+      checks passed ("All checks have passed", "4 successful checks", "No conflicts").
+- [x] `main` untouched by this work (`origin/main` = `4992ff2`).
 
 ## Reconciliation notes
 
