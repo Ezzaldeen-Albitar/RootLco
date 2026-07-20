@@ -31,7 +31,20 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('iam.sensitive.view',       'iam', 'View sensitive/restricted data',   'high',   '00000000-0000-4000-8000-000000000001'),
   ('iam.audit.view',           'iam', 'Read the audit trail',             'medium', '00000000-0000-4000-8000-000000000001'),
   ('iam.session.view_all',     'iam', 'View all tenant sessions',         'medium', '00000000-0000-4000-8000-000000000001'),
-  ('iam.login.view_all',       'iam', 'View all tenant login history',    'medium', '00000000-0000-4000-8000-000000000001')
+  ('iam.login.view_all',       'iam', 'View all tenant login history',    'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-10 — Service Catalog & Pricing (svc)
+  ('svc.service.manage',       'svc', 'Manage service catalog and versions',    'medium', '00000000-0000-4000-8000-000000000001'),
+  ('svc.price.manage',         'svc', 'Manage price lists, rules, discounts',    'high',   '00000000-0000-4000-8000-000000000001'),
+  ('svc.price.publish',        'svc', 'Publish immutable price-list versions',   'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-10 — Quotation & Approvals (quo)
+  ('quo.quotation.manage',     'quo', 'Create and manage quotations/revisions',  'medium', '00000000-0000-4000-8000-000000000001'),
+  ('quo.decision.record',      'quo', 'Record quotation item approval decisions', 'high',  '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-10 — Inventory & Stock (inv)
+  ('inv.item.manage',          'inv', 'Manage item master, categories, UoM',     'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.stock.read',           'inv', 'Read stock balances and movements',       'low',    '00000000-0000-4000-8000-000000000001'),
+  ('inv.stock.operate',        'inv', 'Post movements, reserve, issue, return',   'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.adjustment.approve',   'inv', 'Approve stock adjustments/opening batches','high',   '00000000-0000-4000-8000-000000000001'),
+  ('inv.cost.view',            'inv', 'View item/purchase/adjustment cost',       'high',   '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

@@ -68,6 +68,8 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   // Phase 1-9 diagnostics + quality configuration catalogs — dual-scope.
   'dia.diagnostic_types',
   'qms.qc_checks',
+  // Phase 1-10 inventory unit-of-measure catalog — dual-scope.
+  'inv.units_of_measure',
 ]);
 
 let admin: Pool;
@@ -91,7 +93,7 @@ describe('tenant-column invariant', () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        LEFT JOIN pg_attribute a
          ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
-       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms') AND c.relkind = 'r'
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv') AND c.relkind = 'r'
        ORDER BY 1`
     );
     const violations: string[] = [];
@@ -122,7 +124,7 @@ describe('foreign-key index coverage (P1-03-DB-017)', () => {
          FROM pg_constraint c
          JOIN pg_class t ON t.oid = c.conrelid
          JOIN pg_namespace n ON n.oid = t.relnamespace
-         WHERE c.contype = 'f' AND n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms')
+         WHERE c.contype = 'f' AND n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv')
        )
        SELECT f.conname, f.child
        FROM fks f
@@ -151,7 +153,7 @@ describe('foreign-key index coverage (P1-03-DB-017)', () => {
        JOIN pg_class t ON t.oid = i.indrelid
        JOIN pg_namespace n ON n.oid = t.relnamespace
        JOIN pg_class ic ON ic.oid = i.indexrelid
-       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv')
          AND i.indpred IS NULL
        GROUP BY 1, 2
        HAVING count(*) > 1`
@@ -193,7 +195,7 @@ describe('role posture', () => {
   it('DELETE is granted to application roles on NO module-schema table', async () => {
     const { rows } = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq FROM information_schema.role_table_grants
-       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv')
          AND grantee IN ('app_runtime','app_readonly','app_worker')
          AND privilege_type = 'DELETE'`
     );
@@ -213,7 +215,7 @@ describe('data-dictionary coverage (P1-03-DOC-001, P1-03-SEC-003)', () => {
     const { rows } = await admin.query(
       `SELECT table_schema, table_name, column_name
        FROM information_schema.columns
-       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv')
        ORDER BY 1, 2, 3`
     );
     const missing: string[] = [];

@@ -242,6 +242,35 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-10 service/quotation/inventory — deleted FIRST for the parts that
+  // reference the Phase 1-9 work order. The wo<->quo forward FK makes the two
+  // mutually referencing, so this straddles the wo block: quo items +
+  // wo.customer_approvals are removed before quo.quotation_revisions, and
+  // quo.quotations + every wo-referencing inv row are removed before
+  // wo.work_orders (below). The forward-FK TARGET catalogs (svc.services,
+  // inv.item_master) are removed AFTER the wo block — see the second P1-10 block.
+  await deleteFrom('quo.approval_evidence');
+  await deleteFrom('quo.approval_decisions');
+  await deleteFrom('quo.quotation_status_history');
+  await deleteFrom('quo.quotation_items');
+  await deleteFrom('wo.customer_approval_evidence');
+  await deleteFrom('wo.customer_approvals');
+  await deleteFrom('quo.quotation_revisions');
+  await deleteFrom('quo.quotations');
+  await deleteFrom('inv.part_returns');
+  await deleteFrom('inv.part_issues');
+  await deleteFrom('inv.damaged_stock');
+  await deleteFrom('inv.customer_supplied_parts');
+  await deleteFrom('inv.external_purchase_part_details');
+  await deleteFrom('inv.external_purchase_parts');
+  await deleteFrom('inv.stock_adjustment_details');
+  await deleteFrom('inv.stock_adjustments');
+  await deleteFrom('inv.opening_inventory_lines');
+  await deleteFrom('inv.opening_inventory_batches');
+  await deleteFrom('inv.stock_reservations');
+  await deleteFrom('inv.stock_movements');
+  await deleteFrom('inv.stock_balances');
+
   // Phase 1-9 work-order / diagnostics / technician / quality — deleted FIRST
   // (they reference rec/veh/wo/tech). Children before parents; qms + dia before
   // wo; tech.labor_sessions before wo.jobs and tech.technician_profiles; wo
@@ -291,6 +320,26 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('wo.work_order_states');
   await deleteFrom('wo.job_transitions');
   await deleteFrom('wo.job_states');
+
+  // Phase 1-10 catalogs that are TARGETS of the wo forward FKs (svc.services,
+  // inv.item_master) — removed AFTER the wo block above deleted the referencing
+  // service lines and required parts. Children before parents.
+  await deleteFrom('svc.price_rules');
+  await deleteFrom('svc.price_list_assignments');
+  await deleteFrom('svc.price_list_versions');
+  await deleteFrom('svc.price_lists');
+  await deleteFrom('svc.discount_rules');
+  await deleteFrom('svc.pricing_approval_policies');
+  await deleteFrom('svc.standard_labor_times');
+  await deleteFrom('svc.service_versions');
+  await deleteFrom('svc.branch_service_availability');
+  await deleteFrom('svc.services');
+  await deleteFrom('svc.service_categories');
+  await deleteFrom('inv.item_cost_details');
+  await deleteFrom('inv.item_master');
+  await deleteFrom('inv.stock_locations');
+  await deleteFrom('inv.item_categories');
+  await deleteFrom('inv.units_of_measure');
 
   // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants, and
   // before the apt/veh/crm parents they reference. Reception children before the
@@ -549,6 +598,12 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
     `DELETE FROM dia.diagnostic_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
   );
   await admin.query(`DELETE FROM qms.qc_checks WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  // Phase 1-10 platform unit-of-measure fixtures (scope='platform', fx_ codes).
+  // Seeded platform units (real codes: each/hour/...) are structural reference and
+  // are left intact.
+  await admin.query(
+    `DELETE FROM inv.units_of_measure WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
   // Test-created platform fixtures use the fx_ prefix by convention.

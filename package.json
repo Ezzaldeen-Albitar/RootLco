@@ -43,6 +43,7 @@
     "validate:veh-classification": "node scripts/check-veh-classification.mjs",
     "validate:aptrec-classification": "node scripts/check-aptrec-classification.mjs",
     "validate:wo-tech-dia-qms-classification": "node scripts/check-wo-tech-dia-qms-classification.mjs",
+    "validate:svc-quo-inv-classification": "node scripts/check-svc-quo-inv-classification.mjs",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run style:check && npm run security:browser-secrets && npm run test && npm run build",
     "security:browser-secrets": "node scripts/check-browser-exposed-secrets.mjs",
     "security:scope-exclusions": "node scripts/check-scope-exclusions.mjs",

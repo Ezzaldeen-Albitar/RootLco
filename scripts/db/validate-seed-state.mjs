@@ -23,6 +23,9 @@ const MODULE_SCHEMAS = [
   'dia',
   'tech',
   'qms',
+  'svc',
+  'quo',
+  'inv',
 ];
 const STRUCTURAL_REFERENCE = new Set([
   'shared.currencies',
@@ -36,6 +39,8 @@ const STRUCTURAL_REFERENCE = new Set([
   'wo.work_order_transitions',
   'wo.job_states',
   'wo.job_transitions',
+  // Phase 1-10 platform unit-of-measure catalog (structurally mandatory). Platform scope only.
+  'inv.units_of_measure',
 ]);
 const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
 const EXPECTED_RETENTION = [
