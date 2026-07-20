@@ -2462,3 +2462,864 @@ Append-only Vehicle merge record (P1-07-DB-018); one merge per source; inserting
 | `merged_at`           | timestamp with time zone | NO   | `now()`             | internal |
 | `correlation_id`      | uuid                     | YES  | —                   | internal |
 | `seq`                 | bigint                   | NO   | identity            | internal |
+
+## Phase 1-8 — Appointment schema (generated from the live catalog, 2026-07-21)
+
+The three appointment configuration catalogs are dual-scope (platform default
+row with `tenant_id` NULL, or tenant extension) and share one column shape.
+
+### `apt.appointment_types`
+
+Dual-scope appointment type catalog. Zero rows shipped (no-fake-data).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.source_channels`
+
+Dual-scope intake source-channel catalog (reused by `rec.walk_ins`).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.cancellation_reasons`
+
+Dual-scope cancellation-reason catalog (a cancellation requires a reason).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `apt.appointments`
+
+Branch-scoped appointment master (P1-08-DB-001). Composite same-scope FKs to
+`org.branches`, `veh.vehicles`, `crm.business_partners`, and the appointment
+catalogs; lifecycle state machine; integrated cancellation/no-show; same-Vehicle
+confirmed-overlap EXCLUDE.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `vehicle_id`             | uuid                     | NO   | —                   | internal |
+| `requester_partner_id`   | uuid                     | NO   | —                   | internal |
+| `appointment_type_id`    | uuid                     | NO   | —                   | internal |
+| `source_channel_id`      | uuid                     | YES  | —                   | internal |
+| `requested_from`         | timestamp with time zone | NO   | —                   | internal |
+| `requested_to`           | timestamp with time zone | NO   | —                   | internal |
+| `confirmed_from`         | timestamp with time zone | YES  | —                   | internal |
+| `confirmed_to`           | timestamp with time zone | YES  | —                   | internal |
+| `confirmed_range`        | tstzrange                | YES  | generated           | internal |
+| `lifecycle_status`       | text                     | NO   | `'requested'`       | internal |
+| `cancellation_reason_id` | uuid                     | YES  | —                   | internal |
+| `cancelled_at`           | timestamp with time zone | YES  | —                   | internal |
+| `cancelled_by`           | uuid                     | YES  | —                   | internal |
+| `no_show_recorded_at`    | timestamp with time zone | YES  | —                   | internal |
+| `no_show_recorded_by`    | uuid                     | YES  | —                   | internal |
+| `display_number`         | text                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `apt.appointment_services`
+
+Branch-scoped appointment requested-services child (P1-08-DB-002). Intake demand
+only (not the service catalog, not a work order). Each row carries a future
+catalog reference (`future_service_id` — a placeholder uuid with NO FK until
+P1-10) OR requester free text; at least one is required. Duplicate active
+descriptors are rejected per appointment.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `appointment_id`         | uuid                     | NO   | —                   | internal |
+| `future_service_id`      | uuid                     | YES  | —                   | internal |
+| `requested_service_text` | text                     | YES  | —                   | internal |
+| `quantity`               | integer                  | YES  | —                   | internal |
+| `note`                   | text                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `apt.appointment_status_history`
+
+Append-only appointment lifecycle ledger (P1-08-DB-003). Trigger-populated from
+`apt.appointments` on real lifecycle changes (one row per change); no-op updates
+write nothing. Server-stamped `actor_id`/`occurred_at`; monotonic `seq`; a
+coherence guard anchors `to_state` to the live master so forged transitions are
+rejected. `reason`/`correlation_id` are optional GUC-captured annotations.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `company_id`     | uuid                     | NO   | —                   | internal |
+| `branch_id`      | uuid                     | NO   | —                   | internal |
+| `appointment_id` | uuid                     | NO   | —                   | internal |
+| `from_state`     | text                     | YES  | —                   | internal |
+| `to_state`       | text                     | NO   | —                   | internal |
+| `reason`         | text                     | YES  | —                   | internal |
+| `correlation_id` | uuid                     | YES  | —                   | internal |
+| `actor_id`       | uuid                     | NO   | —                   | internal |
+| `occurred_at`    | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`            | bigint                   | NO   | generated identity  | internal |
+
+## Phase 1-8 — Vehicle Reception schema (generated from the live catalog)
+
+### `rec.visit_reasons`
+
+Dual-scope reception visit-reason catalog. Zero rows shipped (no-fake-data).
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.fuel_levels`
+
+Dual-scope fuel-gauge code list captured at custody acceptance. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.warning_light_codes`
+
+Dual-scope dashboard warning-light code list. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.refusal_reasons`
+
+Dual-scope reception refusal-reason catalog. Zero rows shipped.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `scope`          | text                     | NO   | —                   | internal |
+| `tenant_id`      | uuid                     | YES  | —                   | internal |
+| `code`           | text                     | NO   | —                   | internal |
+| `name`           | text                     | NO   | —                   | internal |
+| `status`         | text                     | NO   | `'active'`          | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.walk_in_references`
+
+Walk-in origin reference (P1-08-DB-004): an unscheduled arrival a reception visit can consume. Not a fake appointment; Vehicle/partner nullable until identified.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `vehicle_id`           | uuid                     | YES  | —                   | internal |
+| `requester_partner_id` | uuid                     | YES  | —                   | internal |
+| `arrived_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `source_channel_id`    | uuid                     | YES  | —                   | internal |
+| `verification_state`   | text                     | NO   | `'unverified'`      | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.reception_visits`
+
+Reception visit master / custody boundary (P1-08-DB-005). Exactly one origin (appointment XOR walk-in); one open visit per Vehicle; captures odometer/fuel/SOC. No work order.
+
+| Column                  | Type                     | Null | Default             | Class    |
+| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`             | uuid                     | NO   | —                   | internal |
+| `company_id`            | uuid                     | NO   | —                   | internal |
+| `branch_id`             | uuid                     | NO   | —                   | internal |
+| `appointment_id`        | uuid                     | YES  | —                   | internal |
+| `walk_in_id`            | uuid                     | YES  | —                   | internal |
+| `vehicle_id`            | uuid                     | NO   | —                   | internal |
+| `odometer_reading_id`   | uuid                     | YES  | —                   | internal |
+| `fuel_level_id`         | uuid                     | YES  | —                   | internal |
+| `ev_soc_percent`        | numeric                  | YES  | —                   | internal |
+| `receiving_employee_id` | uuid                     | NO   | —                   | internal |
+| `custody_accepted_at`   | timestamp with time zone | NO   | `now()`             | internal |
+| `reception_status`      | text                     | NO   | `'opened'`          | internal |
+| `display_number`        | text                     | YES  | —                   | internal |
+| `record_version`        | integer                  | NO   | `1`                 | internal |
+| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`            | uuid                     | NO   | —                   | internal |
+| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`            | uuid                     | YES  | —                   | internal |
+| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`            | uuid                     | YES  | —                   | internal |
+
+### `rec.reception_party_roles`
+
+Dated typed party roles on a reception visit (P1-08-DB-007). Distinct taxonomy; dated (valid_to), history preserved.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `partner_id`         | uuid                     | NO   | —                   | internal |
+| `relationship_role`  | text                     | NO   | —                   | internal |
+| `valid_from`         | timestamp with time zone | NO   | `now()`             | internal |
+| `valid_to`           | timestamp with time zone | YES  | —                   | internal |
+| `assignment_source`  | text                     | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+### `rec.visit_reason_links`
+
+Governed visit-reason attachments (P1-08-DB-008). Archived reasons cannot be newly linked; label lives in rec.visit_reasons.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `visit_reason_id`    | uuid                     | NO   | —                   | internal |
+| `note`               | text                     | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+## Phase 1-8 — Vehicle Reception schema, Wave 4 (generated from the live catalog)
+
+### `rec.complaints`
+
+Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative in rec.complaint_details. Corrections linked.
+
+| Column                   | Type                     | Null | Default             | Class    |
+| ------------------------ | ------------------------ | ---- | ------------------- | -------- |
+| `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`              | uuid                     | NO   | —                   | internal |
+| `company_id`             | uuid                     | NO   | —                   | internal |
+| `branch_id`              | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`     | uuid                     | NO   | —                   | internal |
+| `reported_by_partner_id` | uuid                     | YES  | —                   | internal |
+| `category`               | text                     | NO   | —                   | internal |
+| `severity`               | text                     | NO   | `'medium'`          | internal |
+| `evidence_document_id`   | uuid                     | YES  | —                   | internal |
+| `correction_of`          | uuid                     | YES  | —                   | internal |
+| `correlation_id`         | uuid                     | YES  | —                   | internal |
+| `record_version`         | integer                  | NO   | `1`                 | internal |
+| `created_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`             | uuid                     | NO   | —                   | internal |
+| `updated_at`             | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`             | uuid                     | YES  | —                   | internal |
+| `deleted_at`             | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`             | uuid                     | YES  | —                   | internal |
+
+### `rec.complaint_details`
+
+RESTRICTED complaint narrative (P1-08-DB-009). 1:1; row-gated by iam.sensitive.view.
+
+| Column           | Type                     | Null | Default             | Class      |
+| ---------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`      | uuid                     | NO   | —                   | internal   |
+| `company_id`     | uuid                     | NO   | —                   | internal   |
+| `branch_id`      | uuid                     | NO   | —                   | internal   |
+| `complaint_id`   | uuid                     | NO   | —                   | internal   |
+| `complaint_text` | text                     | NO   | —                   | restricted |
+| `classification` | text                     | NO   | `'restricted'`      | internal   |
+| `record_version` | integer                  | NO   | `1`                 | internal   |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`     | uuid                     | NO   | —                   | internal   |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal   |
+| `updated_by`     | uuid                     | YES  | —                   | internal   |
+| `deleted_at`     | timestamp with time zone | YES  | —                   | internal   |
+| `deleted_by`     | uuid                     | YES  | —                   | internal   |
+
+### `rec.visual_inspections`
+
+Visual-inspection header (P1-08-DB-010). in_progress -> completed|cancelled; finalized headers locked.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `inspector_id`       | uuid                     | NO   | —                   | internal |
+| `inspection_status`  | text                     | NO   | `'in_progress'`     | internal |
+| `started_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `completed_at`       | timestamp with time zone | YES  | —                   | internal |
+| `record_version`     | integer                  | NO   | `1`                 | internal |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`         | uuid                     | NO   | —                   | internal |
+| `updated_at`         | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`         | uuid                     | YES  | —                   | internal |
+| `deleted_at`         | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`         | uuid                     | YES  | —                   | internal |
+
+### `rec.condition_items`
+
+Condition findings (P1-08-DB-011). New findings only while open; corrections linked. finding_note internal.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `inspection_id`        | uuid                     | NO   | —                   | internal |
+| `finding_category`     | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `severity`             | text                     | NO   | `'minor'`           | internal |
+| `finding_note`         | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `correction_of`        | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.damage_maps`
+
+Damage-map reference (P1-08-DB-012). Bound to an exact immutable document version.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `company_id`          | uuid                     | NO   | —                   | internal |
+| `branch_id`           | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`  | uuid                     | NO   | —                   | internal |
+| `document_id`         | uuid                     | NO   | —                   | internal |
+| `document_version_id` | uuid                     | NO   | —                   | internal |
+| `map_type`            | text                     | NO   | —                   | internal |
+| `perspective`         | text                     | YES  | —                   | internal |
+| `record_version`      | integer                  | NO   | `1`                 | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`          | uuid                     | YES  | —                   | internal |
+| `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`          | uuid                     | YES  | —                   | internal |
+
+### `rec.damage_marks`
+
+Damage marks (P1-08-DB-013). Normalized 0..1 coordinates on a version-bound map.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `damage_map_id`        | uuid                     | NO   | —                   | internal |
+| `mark_type`            | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `coord_x`              | numeric                  | NO   | —                   | internal |
+| `coord_y`              | numeric                  | NO   | —                   | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.warning_light_observations`
+
+Warning-light observations (P1-08-DB-014). Governed code (archived not newly selectable).
+
+| Column                  | Type                     | Null | Default             | Class    |
+| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`             | uuid                     | NO   | —                   | internal |
+| `company_id`            | uuid                     | NO   | —                   | internal |
+| `branch_id`             | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`    | uuid                     | NO   | —                   | internal |
+| `warning_light_code_id` | uuid                     | NO   | —                   | internal |
+| `observed_state`        | text                     | NO   | `'on'`              | internal |
+| `note`                  | text                     | YES  | —                   | internal |
+| `evidence_document_id`  | uuid                     | YES  | —                   | internal |
+| `record_version`        | integer                  | NO   | `1`                 | internal |
+| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`            | uuid                     | NO   | —                   | internal |
+| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`            | uuid                     | YES  | —                   | internal |
+| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`            | uuid                     | YES  | —                   | internal |
+
+### `rec.leak_observations`
+
+Visible-leak observations (P1-08-DB-015). Bounded type/zone/severity.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `leak_type`            | text                     | NO   | —                   | internal |
+| `vehicle_zone`         | text                     | NO   | —                   | internal |
+| `severity`             | text                     | NO   | `'minor'`           | internal |
+| `note`                 | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `record_version`       | integer                  | NO   | `1`                 | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+| `updated_at`           | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`           | uuid                     | YES  | —                   | internal |
+| `deleted_at`           | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`           | uuid                     | YES  | —                   | internal |
+
+### `rec.vehicle_contents`
+
+Vehicle-contents metadata (P1-08-DB-016). Restricted description/value in rec.vehicle_content_details.
+
+| Column                     | Type                     | Null | Default             | Class    |
+| -------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                       | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                | uuid                     | NO   | —                   | internal |
+| `company_id`               | uuid                     | NO   | —                   | internal |
+| `branch_id`                | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`       | uuid                     | NO   | —                   | internal |
+| `quantity`                 | integer                  | NO   | `1`                 | internal |
+| `location`                 | text                     | YES  | —                   | internal |
+| `declared_by_partner_id`   | uuid                     | YES  | —                   | internal |
+| `witnessed_by_employee_id` | uuid                     | YES  | —                   | internal |
+| `evidence_document_id`     | uuid                     | YES  | —                   | internal |
+| `correction_of`            | uuid                     | YES  | —                   | internal |
+| `record_version`           | integer                  | NO   | `1`                 | internal |
+| `created_at`               | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`               | uuid                     | NO   | —                   | internal |
+| `updated_at`               | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`               | uuid                     | YES  | —                   | internal |
+| `deleted_at`               | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`               | uuid                     | YES  | —                   | internal |
+
+### `rec.vehicle_content_details`
+
+RESTRICTED vehicle-content detail (P1-08-DB-016 / P1-OD-018). 1:1; row-gated by iam.sensitive.view.
+
+| Column              | Type                     | Null | Default             | Class      |
+| ------------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`                | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`         | uuid                     | NO   | —                   | internal   |
+| `company_id`        | uuid                     | NO   | —                   | internal   |
+| `branch_id`         | uuid                     | NO   | —                   | internal   |
+| `content_id`        | uuid                     | NO   | —                   | internal   |
+| `item_description`  | text                     | NO   | —                   | restricted |
+| `declared_value`    | numeric                  | YES  | —                   | restricted |
+| `declared_currency` | text                     | YES  | —                   | restricted |
+| `classification`    | text                     | NO   | `'restricted'`      | internal   |
+| `record_version`    | integer                  | NO   | `1`                 | internal   |
+| `created_at`        | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`        | uuid                     | NO   | —                   | internal   |
+| `updated_at`        | timestamp with time zone | YES  | —                   | internal   |
+| `updated_by`        | uuid                     | YES  | —                   | internal   |
+| `deleted_at`        | timestamp with time zone | YES  | —                   | internal   |
+| `deleted_by`        | uuid                     | YES  | —                   | internal   |
+
+## Phase 1-8 — Vehicle Reception schema, Wave 5 (generated from the live catalog)
+
+### `rec.signatures`
+
+Append-only reception signatures (P1-08-DB-017). Binds document + exact version; no raw bytes; SELECT+INSERT only.
+
+| Column                          | Type                     | Null | Default             | Class    |
+| ------------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                            | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                     | uuid                     | NO   | —                   | internal |
+| `company_id`                    | uuid                     | NO   | —                   | internal |
+| `branch_id`                     | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`            | uuid                     | NO   | —                   | internal |
+| `signer_role`                   | text                     | NO   | —                   | internal |
+| `signer_partner_id`             | uuid                     | YES  | —                   | internal |
+| `signature_document_id`         | uuid                     | NO   | —                   | internal |
+| `signature_document_version_id` | uuid                     | NO   | —                   | internal |
+| `capture_method`                | text                     | NO   | —                   | internal |
+| `purpose`                       | text                     | NO   | —                   | internal |
+| `signature_hash`                | bytea                    | YES  | —                   | internal |
+| `signed_at`                     | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`                | uuid                     | YES  | —                   | internal |
+| `created_at`                    | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                    | uuid                     | NO   | —                   | internal |
+
+### `rec.refusals`
+
+Append-only reception refusals (P1-08-DB-018). Governed reason code (no free personal text); SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `refusal_type`         | text                     | NO   | —                   | internal |
+| `refusal_reason_id`    | uuid                     | YES  | —                   | internal |
+| `refusing_partner_id`  | uuid                     | YES  | —                   | internal |
+| `witness_employee_id`  | uuid                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+
+### `rec.authorizations`
+
+Append-only reception authorizations (P1-08-DB-019). Authorizing partner must hold an active authorizing role; no work order; SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `authorizing_role`     | text                     | NO   | —                   | internal |
+| `partner_id`           | uuid                     | NO   | —                   | internal |
+| `decision`             | text                     | NO   | —                   | internal |
+| `channel`              | text                     | NO   | `'in_person'`       | internal |
+| `authorized_scope`     | jsonb                    | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `created_at`           | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`           | uuid                     | NO   | —                   | internal |
+
+### `rec.custody_history`
+
+Append-only custody ledger (P1-08-DB-020). accepted -> in_workshop -> released; no release-before-accept; no duplicate accept; SELECT+INSERT only.
+
+| Column                 | Type                     | Null | Default             | Class    |
+| ---------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                   | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`            | uuid                     | NO   | —                   | internal |
+| `company_id`           | uuid                     | NO   | —                   | internal |
+| `branch_id`            | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`   | uuid                     | NO   | —                   | internal |
+| `from_state`           | text                     | YES  | —                   | internal |
+| `to_state`             | text                     | NO   | —                   | internal |
+| `receiving_partner_id` | uuid                     | YES  | —                   | internal |
+| `releasing_partner_id` | uuid                     | YES  | —                   | internal |
+| `reason`               | text                     | YES  | —                   | internal |
+| `evidence_document_id` | uuid                     | YES  | —                   | internal |
+| `correlation_id`       | uuid                     | YES  | —                   | internal |
+| `actor_id`             | uuid                     | NO   | —                   | internal |
+| `occurred_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`                  | bigint                   | NO   | generated identity  | internal |
+
+### `rec.reception_status_history`
+
+Append-only reception status ledger (P1-08-DB-021). Trigger-emitted; coherence-guarded; converted creates no work order; SELECT+INSERT only.
+
+| Column               | Type                     | Null | Default             | Class    |
+| -------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`          | uuid                     | NO   | —                   | internal |
+| `company_id`         | uuid                     | NO   | —                   | internal |
+| `branch_id`          | uuid                     | NO   | —                   | internal |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal |
+| `from_state`         | text                     | YES  | —                   | internal |
+| `to_state`           | text                     | NO   | —                   | internal |
+| `reason`             | text                     | YES  | —                   | internal |
+| `correlation_id`     | uuid                     | YES  | —                   | internal |
+| `actor_id`           | uuid                     | NO   | —                   | internal |
+| `occurred_at`        | timestamp with time zone | NO   | `now()`             | internal |
+| `seq`                | bigint                   | NO   | generated identity  | internal |
+
+## Phase 1-9 — Work Order, Diagnostics, Technician, and Quality
+
+Generated inventory of every Phase 1-9 table (schemas `wo`, `tech`, `dia`, `qms`) and
+its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_number`,
+`description` (additional-work detail), `rework_cost`. All other columns are `internal`.
+
+### dia.diagnostic_evidence
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`
+
+### dia.diagnostic_report_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### dia.diagnostic_reports
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `template_version_id`, `diagnostic_type_id`, `status`, `revision_number`, `summary`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.diagnostic_reviews
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `review_result`, `notes`, `reviewer_id`, `reviewed_at`
+
+### dia.diagnostic_types
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.dtc_records
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `code`, `description`, `dtc_status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.findings
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `severity`, `disposition`, `description`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.inspection_templates
+
+`id`, `tenant_id`, `code`, `name`, `diagnostic_type_id`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.measurements
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `label`, `measured_value`, `unit`, `within_range`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.recommendations
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `recommendation`, `priority`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.report_item_results
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `diagnostic_report_id`, `template_item_id`, `result_value`, `not_applicable_reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.template_items
+
+`id`, `tenant_id`, `template_version_id`, `item_code`, `prompt`, `response_type`, `unit`, `is_mandatory`, `validation_rule`, `sequence`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### dia.template_versions
+
+`id`, `tenant_id`, `template_id`, `version_number`, `status`, `published_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_check_results
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `quality_control_record_id`, `qc_check_id`, `result`, `note`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_checks
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_mandatory`, `is_safety_critical`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.qc_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `quality_control_record_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### qms.quality_control_records
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `overall_result`, `checker_id`, `finalized_at`, `notes`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.reopen_attempts
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `reason`, `outcome`, `requested_by`, `requested_at`
+
+### qms.rework_link_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `rework_link_id`, `rework_cost`, `cost_currency`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### qms.rework_links
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `original_work_order_id`, `rework_work_order_id`, `root_cause`, `corrective_action`, `responsibility`, `lead_technician_id`, `is_safety_critical`, `independent_sign_off_by`, `sign_off_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.certifications
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `authority`, `validity_months`, `is_safety_critical`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.labor_sessions
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `job_id`, `started_at`, `ended_at`, `source`, `correction_of_id`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.skill_levels
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `rank`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.skills
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `discipline`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_availability
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `available_from`, `available_to`, `availability_kind`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_certification_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_certification_id`, `certificate_number`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_certifications
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `certification_id`, `issued_on`, `expires_on`, `cert_status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_profiles
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `user_id`, `trade`, `is_active`, `employment_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### tech.technician_skills
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `technician_profile_id`, `skill_id`, `skill_level_id`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.additional_work_request_details
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `additional_work_request_id`, `description`, `classification`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.additional_work_requests
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `originating_job_id`, `originating_finding_id`, `summary`, `state`, `fulfillment_state`, `is_required`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.customer_approval_evidence
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `customer_approval_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`
+
+### wo.customer_approvals
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `additional_work_request_id`, `deciding_party_role_id`, `decision`, `channel`, `presented_scope`, `quotation_revision_ref`, `decided_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_assignments
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `technician_profile_id`, `assignment_role`, `valid_from`, `valid_to`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_states
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_terminal`, `reason_required`, `assignment_required`, `labor_allowed`, `closure_eligible`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.job_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### wo.job_transitions
+
+`id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.jobs
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.required_parts
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `description`, `quantity`, `unit`, `item_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_service_lines
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `job_id`, `description`, `quantity`, `unit`, `service_ref`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_states
+
+`id`, `scope`, `tenant_id`, `code`, `name`, `is_terminal`, `is_closed`, `is_cancellation`, `reason_required`, `allows_jobs`, `allows_labor`, `allows_additional_work`, `requires_qc`, `is_reopenable`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_order_status_history
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `from_state`, `to_state`, `reason`, `correlation_id`, `actor_id`, `occurred_at`, `seq`
+
+### wo.work_order_transitions
+
+`id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+
+### wo.work_orders
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `reception_visit_id`, `vehicle_id`, `kind`, `state`, `parts_forward_state`, `display_number`, `opened_at`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`

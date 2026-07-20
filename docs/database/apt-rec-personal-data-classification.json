@@ -1,0 +1,2278 @@
+{
+  "$schema": "./classification.schema.json",
+  "description": "P1-08-SEC-003 — Appointment (apt) + Vehicle Reception (rec) personal-data / sensitivity classification registry. Every live apt/rec column is classified. Restricted columns (complaint narrative, vehicle-content description + declared value) are row-gated by iam.sensitive.view and must never be searchable. Reconciled against the live schema by scripts/check-aptrec-classification.mjs (run identically locally and in CI).",
+  "allowedClassifications": ["public", "internal", "restricted", "secret"],
+  "columnCount": 454,
+  "columns": {
+    "apt.appointment_services.appointment_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_services.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_services.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.future_service_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_services.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.appointment_services.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.appointment_services.requested_service_text": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_services.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_services.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_services.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.appointment_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "apt.appointment_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_types.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_types.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_types.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_types.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_types.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_types.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_types.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_types.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.appointment_types.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_types.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointment_types.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointment_types.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointment_types.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.appointment_type_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.cancellation_reason_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.cancelled_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.cancelled_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.confirmed_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.confirmed_range": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "tstzrange"
+    },
+    "apt.appointments.confirmed_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.display_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointments.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.lifecycle_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.appointments.no_show_recorded_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.no_show_recorded_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.appointments.requested_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.requested_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.requester_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.source_channel_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.appointments.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.appointments.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.cancellation_reasons.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.cancellation_reasons.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.cancellation_reasons.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.cancellation_reasons.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.cancellation_reasons.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.cancellation_reasons.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.cancellation_reasons.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.cancellation_reasons.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.cancellation_reasons.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.cancellation_reasons.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.cancellation_reasons.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.cancellation_reasons.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.cancellation_reasons.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.source_channels.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.source_channels.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.source_channels.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.source_channels.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.source_channels.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.source_channels.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.source_channels.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.source_channels.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "apt.source_channels.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.source_channels.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "apt.source_channels.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "apt.source_channels.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "apt.source_channels.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.authorized_scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rec.authorizations.authorizing_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.authorizations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.channel": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.authorizations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.authorizations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.decision": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.authorizations.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.authorizations.partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.authorizations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.complaint_details.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.complaint_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.complaint_text": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.complaint_details.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaint_details.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaint_details.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.complaint_details.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaint_details.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaint_details.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.category": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.complaints.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.correction_of": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaints.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaints.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.complaints.reported_by_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.severity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.complaints.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.complaints.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.complaints.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.correction_of": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.condition_items.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.condition_items.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.finding_category": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.condition_items.finding_note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.condition_items.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.inspection_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.condition_items.severity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.condition_items.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.condition_items.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.condition_items.vehicle_zone": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.custody_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.custody_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.custody_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.custody_history.receiving_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.releasing_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "rec.custody_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.custody_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_maps.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_maps.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_maps.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.map_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_maps.perspective": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_maps.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.damage_maps.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_maps.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.coord_x": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "rec.damage_marks.coord_y": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "rec.damage_marks.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_marks.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.damage_map_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_marks.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.mark_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_marks.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_marks.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.damage_marks.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_marks.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_marks.vehicle_zone": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.fuel_levels.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.fuel_levels.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.fuel_levels.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.fuel_levels.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.fuel_levels.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.fuel_levels.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.fuel_levels.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.fuel_levels.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.fuel_levels.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.fuel_levels.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.fuel_levels.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.fuel_levels.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.fuel_levels.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.leak_observations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.leak_observations.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.leak_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.leak_observations.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.leak_observations.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.leak_observations.severity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.leak_observations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.leak_observations.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.leak_observations.vehicle_zone": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_party_roles.assignment_source": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_party_roles.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_party_roles.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_party_roles.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.reception_party_roles.relationship_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_party_roles.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_party_roles.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_party_roles.valid_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_party_roles.valid_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_status_history.actor_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.from_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_status_history.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_status_history.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_status_history.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.seq": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bigint"
+    },
+    "rec.reception_status_history.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_status_history.to_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_visits.appointment_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_visits.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.custody_accepted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_visits.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_visits.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.display_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_visits.ev_soc_percent": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "rec.reception_visits.fuel_level_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.odometer_reading_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.receiving_employee_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.reception_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_visits.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.reception_visits.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_visits.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_visits.walk_in_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusal_reasons.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.refusal_reasons.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.refusal_reasons.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusal_reasons.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.refusal_reasons.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusal_reasons.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusal_reasons.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.refusal_reasons.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.refusal_reasons.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.refusal_reasons.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.refusal_reasons.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusal_reasons.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.refusal_reasons.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.refusals.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.refusals.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.refusal_reason_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.refusal_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.refusals.refusing_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.refusals.witness_employee_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.capture_method": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.signatures.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.signatures.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.purpose": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.signatures.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.signature_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.signature_document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.signature_hash": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "bytea"
+    },
+    "rec.signatures.signed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.signatures.signer_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.signer_role": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.signatures.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.classification": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.vehicle_content_details.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.content_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_content_details.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.declared_currency": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.vehicle_content_details.declared_value": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "rec.vehicle_content_details.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_content_details.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.item_description": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.vehicle_content_details.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.vehicle_content_details.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_content_details.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_content_details.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.correction_of": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_contents.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.declared_by_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_contents.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.location": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.vehicle_contents.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.vehicle_contents.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.vehicle_contents.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.vehicle_contents.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.vehicle_contents.witnessed_by_employee_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reason_links.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reason_links.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visit_reason_links.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.visit_reason_links.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reason_links.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reason_links.visit_reason_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reasons.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visit_reasons.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reasons.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reasons.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reasons.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reasons.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reasons.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visit_reasons.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.visit_reasons.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visit_reasons.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visit_reasons.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visit_reasons.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visit_reasons.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.completed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visual_inspections.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visual_inspections.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visual_inspections.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.inspection_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.visual_inspections.inspector_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.visual_inspections.started_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visual_inspections.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.visual_inspections.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.visual_inspections.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.arrived_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.walk_in_references.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.walk_in_references.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.walk_in_references.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.walk_in_references.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.walk_in_references.requester_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.source_channel_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.walk_in_references.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.vehicle_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.walk_in_references.verification_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_codes.code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_codes.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_codes.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_codes.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_codes.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_codes.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_codes.name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_codes.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.warning_light_codes.scope": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_codes.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_codes.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_codes.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_codes.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_observations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_observations.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.evidence_document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_observations.observed_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.warning_light_observations.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.warning_light_observations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.warning_light_observations.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.warning_light_observations.warning_light_code_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    }
+  }
+}

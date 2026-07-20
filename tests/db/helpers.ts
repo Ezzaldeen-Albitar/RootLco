@@ -242,6 +242,92 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
     await admin.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   };
 
+  // Phase 1-9 work-order / diagnostics / technician / quality — deleted FIRST
+  // (they reference rec/veh/wo/tech). Children before parents; qms + dia before
+  // wo; tech.labor_sessions before wo.jobs and tech.technician_profiles; wo
+  // children before masters; tech profiles before their catalogs. Dual-scope
+  // catalog tenant rows are removed here; platform rows in cleanFixtures.
+  await deleteFrom('qms.rework_link_details');
+  await deleteFrom('qms.rework_links');
+  await deleteFrom('qms.reopen_attempts');
+  await deleteFrom('qms.qc_status_history');
+  await deleteFrom('qms.qc_check_results');
+  await deleteFrom('qms.quality_control_records');
+  await deleteFrom('dia.diagnostic_reviews');
+  await deleteFrom('dia.diagnostic_evidence');
+  await deleteFrom('dia.recommendations');
+  await deleteFrom('dia.dtc_records');
+  await deleteFrom('dia.measurements');
+  await deleteFrom('dia.findings');
+  await deleteFrom('dia.report_item_results');
+  await deleteFrom('dia.diagnostic_report_status_history');
+  await deleteFrom('dia.diagnostic_reports');
+  await deleteFrom('dia.template_items');
+  await deleteFrom('dia.template_versions');
+  await deleteFrom('dia.inspection_templates');
+  await deleteFrom('tech.labor_sessions');
+  await deleteFrom('wo.customer_approval_evidence');
+  await deleteFrom('wo.customer_approvals');
+  await deleteFrom('wo.additional_work_request_details');
+  await deleteFrom('wo.additional_work_requests');
+  await deleteFrom('wo.required_parts');
+  await deleteFrom('wo.work_order_service_lines');
+  await deleteFrom('wo.job_assignments');
+  await deleteFrom('wo.job_status_history');
+  await deleteFrom('wo.jobs');
+  await deleteFrom('wo.work_order_status_history');
+  await deleteFrom('wo.work_orders');
+  await deleteFrom('tech.technician_certification_details');
+  await deleteFrom('tech.technician_certifications');
+  await deleteFrom('tech.technician_skills');
+  await deleteFrom('tech.technician_availability');
+  await deleteFrom('tech.technician_profiles');
+  await deleteFrom('tech.certifications');
+  await deleteFrom('tech.skills');
+  await deleteFrom('tech.skill_levels');
+  await deleteFrom('dia.diagnostic_types');
+  await deleteFrom('qms.qc_checks');
+  await deleteFrom('wo.work_order_transitions');
+  await deleteFrom('wo.work_order_states');
+  await deleteFrom('wo.job_transitions');
+  await deleteFrom('wo.job_states');
+
+  // Phase 1-8 appointment/reception — tenant-scoped rows before org.tenants, and
+  // before the apt/veh/crm parents they reference. Reception children before the
+  // visit master before walk-ins and the reception catalogs; then the appointment
+  // children before the master before the appointment catalogs. Config catalogs'
+  // tenant rows are removed here; their platform rows (tenant_id NULL, fx_ codes)
+  // are removed in cleanFixtures.
+  await deleteFrom('rec.reception_status_history');
+  await deleteFrom('rec.custody_history');
+  await deleteFrom('rec.authorizations');
+  await deleteFrom('rec.refusals');
+  await deleteFrom('rec.signatures');
+  await deleteFrom('rec.vehicle_content_details');
+  await deleteFrom('rec.vehicle_contents');
+  await deleteFrom('rec.complaint_details');
+  await deleteFrom('rec.complaints');
+  await deleteFrom('rec.condition_items');
+  await deleteFrom('rec.visual_inspections');
+  await deleteFrom('rec.damage_marks');
+  await deleteFrom('rec.damage_maps');
+  await deleteFrom('rec.warning_light_observations');
+  await deleteFrom('rec.leak_observations');
+  await deleteFrom('rec.reception_party_roles');
+  await deleteFrom('rec.visit_reason_links');
+  await deleteFrom('rec.reception_visits');
+  await deleteFrom('rec.walk_in_references');
+  await deleteFrom('rec.visit_reasons');
+  await deleteFrom('rec.fuel_levels');
+  await deleteFrom('rec.warning_light_codes');
+  await deleteFrom('rec.refusal_reasons');
+  await deleteFrom('apt.appointment_status_history');
+  await deleteFrom('apt.appointment_services');
+  await deleteFrom('apt.appointments');
+  await deleteFrom('apt.appointment_types');
+  await deleteFrom('apt.source_channels');
+  await deleteFrom('apt.cancellation_reasons');
+
   // Phase 1-7 vehicle — delete veh children before their parents, and all veh
   // rows before crm/org (later veh tables reference crm.business_partners and
   // org.tenants). Vehicles reference the catalogs, so delete them first; the
@@ -418,6 +504,51 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   await admin.query(
     `DELETE FROM veh.powertrain_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
   );
+  // Phase 1-8 appointment platform catalog fixtures (scope='platform', fx_ codes).
+  await admin.query(
+    `DELETE FROM apt.appointment_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.source_channels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM apt.cancellation_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-8 reception platform catalog fixtures (scope='platform', fx_ codes).
+  await admin.query(
+    `DELETE FROM rec.visit_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(`DELETE FROM rec.fuel_levels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM rec.warning_light_codes WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM rec.refusal_reasons WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  // Phase 1-9 platform catalog fixtures (scope='platform', fx_ codes). Seeded
+  // platform state-graph rows (real codes) are structural reference, not fx_, and
+  // are left intact.
+  await admin.query(
+    `DELETE FROM wo.work_order_transitions WHERE scope = 'platform' AND from_state LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM wo.work_order_states WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM wo.job_transitions WHERE scope = 'platform' AND from_state LIKE 'fx\\_%'`
+  );
+  await admin.query(`DELETE FROM wo.job_states WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(`DELETE FROM tech.skills WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
+  await admin.query(
+    `DELETE FROM tech.skill_levels WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM tech.certifications WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(
+    `DELETE FROM dia.diagnostic_types WHERE scope = 'platform' AND code LIKE 'fx\\_%'`
+  );
+  await admin.query(`DELETE FROM qms.qc_checks WHERE scope = 'platform' AND code LIKE 'fx\\_%'`);
   // Global (non-tenant) test permission fixtures use the test. code prefix.
   await admin.query(`DELETE FROM iam.permissions WHERE permission_code LIKE 'test.%'`);
   // Test-created platform fixtures use the fx_ prefix by convention.

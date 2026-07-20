@@ -8,15 +8,34 @@ import pg from 'pg';
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUPABASE_DIR = resolve(REPOSITORY_ROOT, 'supabase');
 const CONFIG_PATH = resolve(SUPABASE_DIR, 'config.toml');
-// P1-07-DB-022: crm and veh are swept too — every business-domain table must be
-// empty before and after both seed passes (no Vehicle/partner data is EVER seeded).
-const MODULE_SCHEMAS = ['org', 'iam', 'shared', 'crm', 'veh'];
+// P1-07-DB-022 / P1-08: crm, veh, apt, rec are swept too — every business-domain
+// table must be empty before and after both seed passes (no Vehicle/partner/
+// appointment/reception data is EVER seeded).
+const MODULE_SCHEMAS = [
+  'org',
+  'iam',
+  'shared',
+  'crm',
+  'veh',
+  'apt',
+  'rec',
+  'wo',
+  'dia',
+  'tech',
+  'qms',
+];
 const STRUCTURAL_REFERENCE = new Set([
   'shared.currencies',
   'shared.timezones',
   'shared.languages',
   'iam.permissions',
   'shared.retention_classes',
+  // Phase 1-9 platform Work Order + Job state graph (structurally mandatory; the
+  // transition guards enforce against these rows). Platform scope only.
+  'wo.work_order_states',
+  'wo.work_order_transitions',
+  'wo.job_states',
+  'wo.job_transitions',
 ]);
 const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
 const EXPECTED_RETENTION = [

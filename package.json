@@ -41,6 +41,8 @@
     "validate:no-fake-data": "node scripts/check-no-fake-data.mjs",
     "validate:crm-classification": "node scripts/check-crm-classification.mjs",
     "validate:veh-classification": "node scripts/check-veh-classification.mjs",
+    "validate:aptrec-classification": "node scripts/check-aptrec-classification.mjs",
+    "validate:wo-tech-dia-qms-classification": "node scripts/check-wo-tech-dia-qms-classification.mjs",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run style:check && npm run security:browser-secrets && npm run test && npm run build",
     "security:browser-secrets": "node scripts/check-browser-exposed-secrets.mjs",
     "security:scope-exclusions": "node scripts/check-scope-exclusions.mjs",

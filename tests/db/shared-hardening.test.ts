@@ -25,7 +25,7 @@ const DOCUMENT = 'df000000-0000-4000-8000-000000000002';
 const COMPANY_A2 = 'af000000-0000-4000-8000-000000000002';
 const BRANCH_A2 = 'af100000-0000-4000-8000-000000000002';
 
-const MODULE_SCHEMAS = ['crm', 'iam', 'org', 'shared', 'veh'];
+const MODULE_SCHEMAS = ['apt', 'crm', 'iam', 'org', 'rec', 'shared', 'veh'];
 const TABLE_PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 
 let admin: Pool;

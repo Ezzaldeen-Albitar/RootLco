@@ -237,7 +237,7 @@ describe('ephemeral pilot-shape provisioning', () => {
     const funcs = await admin.query(
       `SELECT n.nspname || '.' || p.proname AS fq
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname IN ('org','iam','shared','crm','veh')
+       WHERE n.nspname IN ('apt','org','iam','shared','crm','rec','veh')
          AND p.prosrc ILIKE '%' || $1 || '%'`,
       [customerMarker]
     );
@@ -245,14 +245,14 @@ describe('ephemeral pilot-shape provisioning', () => {
     const objects = await admin.query(
       `SELECT table_schema || '.' || table_name AS fq
        FROM information_schema.tables
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
          AND table_name ILIKE '%' || $1 || '%'`,
       [customerMarker]
     );
     expect(objects.rows).toEqual([]);
     const columns = await admin.query(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_schema IN ('org','iam','shared','crm','veh')
+       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh')
          AND column_name ILIKE '%' || $1 || '%'`,
       [customerMarker]
     );
