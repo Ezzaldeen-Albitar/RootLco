@@ -1,0 +1,281 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Commercial Multi-Tenant Automotive CRM and ERP Platform — API",
+    "version": "0.1.0",
+    "summary": "Backend foundation contract (Phase 1-13). No business endpoints are delivered.",
+    "description": "Shared components and conventions every later backend phase composes. The product name is deliberately absent: it is pending owner approval (ADR-011).",
+    "contact": {
+      "name": "RootLco — Root Link Company"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin. No public base URL is provisioned."
+    }
+  ],
+  "paths": {
+    "/api/v1/meta/ping": {
+      "get": {
+        "operationId": "meta.ping",
+        "summary": "Authenticated foundation health probe reporting the caller resolved scope.",
+        "tags": ["meta"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["platform.meta.ping"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session",
+        "description": "Authenticated session established by the Phase 1-14 authentication backend. P1-13 defines the contract and resolves scope; it does not implement login."
+      }
+    },
+    "schemas": {
+      "ProblemDocument": {
+        "type": "object",
+        "description": "RFC 9457 problem document. Every failure response in this API uses this shape.",
+        "required": ["type", "title", "status", "code", "correlationId"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "examples": ["urn:rootlco:error:ERR-VAL-001"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable catalog code. Clients branch on this, never on the title.",
+            "enum": [
+              "ERR-REQ-001",
+              "ERR-REQ-002",
+              "ERR-VAL-001",
+              "ERR-PAG-001",
+              "ERR-IAM-001",
+              "ERR-IAM-002",
+              "ERR-TEN-001",
+              "ERR-CTX-001",
+              "ERR-RES-001",
+              "ERR-INT-001",
+              "ERR-INT-002",
+              "ERR-CON-001",
+              "ERR-CON-002",
+              "ERR-RTE-001",
+              "ERR-STB-001",
+              "ERR-SYS-001"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "rule"],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "rule": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contract": {
+            "type": "string"
+          },
+          "requiredPermissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Money": {
+        "type": "object",
+        "description": "Exact decimal amount as a string plus an ISO-4217 code. Never a JSON number: IEEE-754 cannot represent decimal money exactly.",
+        "required": ["amount", "currency"],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "pattern": "^-?\\d{1,15}(\\.\\d{1,6})?$"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        }
+      },
+      "PageEnvelope": {
+        "type": "object",
+        "description": "Opaque-cursor page. Offset paging is not offered.",
+        "required": ["items", "hasMore"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {}
+          },
+          "nextCursor": {
+            "type": ["string", "null"]
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "idempotency-key",
+        "in": "header",
+        "required": true,
+        "description": "Client-generated key, 8–200 characters. Replaying the same key with the same request returns the original result; the same key with a different request is rejected.",
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 200
+        }
+      },
+      "IfMatch": {
+        "name": "if-match",
+        "in": "header",
+        "required": true,
+        "description": "Expected record version for optimistic concurrency.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "CorrelationId": {
+        "name": "x-correlation-id",
+        "in": "header",
+        "required": false,
+        "description": "Optional caller-supplied correlation ID. Accepted only when it is a valid UUID; anything else is replaced with a generated one.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      }
+    },
+    "headers": {
+      "CorrelationId": {
+        "description": "Correlation ID for this request. Present on every response.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ETag": {
+        "description": "Current record version, for optimistic concurrency.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RetryAfter": {
+        "description": "Seconds to wait before retrying a throttled request.",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Failure. Always an RFC 9457 problem document.",
+        "headers": {
+          "x-correlation-id": {
+            "$ref": "#/components/headers/CorrelationId"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      }
+    }
+  }
+}

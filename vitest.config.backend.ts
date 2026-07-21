@@ -1,0 +1,30 @@
+import { defineConfig } from 'vitest/config';
+import path from 'node:path';
+
+// Backend foundation harness (P1-13-BE-022).
+//
+// Split from the default `npm test` for one reason: these suites need a live
+// PostgreSQL with the Release 2 migrations applied, exactly like `test:db`.
+// Keeping them separate means `npm test` stays runnable with no database, which
+// is what makes the unit tier usable during ordinary development.
+//
+//   local: npm run supabase:start && npm run supabase:reset
+//   CI:    the postgres service container + scripts/db/apply-migrations.mjs
+//
+// Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD, shared with
+// tests/db/helpers.ts so there is one connection convention, not two.
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['tests/backend/**/*.test.ts'],
+    // Fixtures are stateful (tenants, grants, outbox rows). Files run
+    // sequentially so one suite's cleanup cannot race another's provisioning;
+    // concurrency is exercised *inside* tests, deliberately.
+    fileParallelism: false,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+  },
+  resolve: {
+    alias: { '@': path.resolve(__dirname, './src') },
+  },
+});
