@@ -64,6 +64,26 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # P1-13-BE-001 / P1-13-DO-001: the modular-monolith boundary and the
+      # handler → application service → domain service → repository layering are
+      # enforced, not advised. A cross-module internal import, a handler reaching
+      # the data layer, or a domain file importing the database blocks the merge.
+      - name: Module boundary and layering check
+        run: npm run validate:module-boundaries
+
+      # P1-13-SEC-001: an unguarded operation cannot ship. Reconciles the route
+      # tree against the operation registry: a route with no declaration, a
+      # declaration with no permissions, or an audited class with no audit action
+      # all fail here.
+      - name: Authorization coverage check
+        run: npm run validate:authorization-coverage
+
+      # P1-13-BE-020: the published contract must be structurally sound. The
+      # code/spec DIVERGENCE gate is the unit suite below, which regenerates the
+      # document from the operation registry and compares.
+      - name: OpenAPI validation
+        run: npm run validate:openapi
+
       - name: Type check
         run: npm run typecheck
 
@@ -254,6 +274,22 @@ jobs:
 
       - name: Run the database test suite (RLS, constraints, concurrency)
         run: npm run test:db
+
+      # P1-13-BE-022 / P1-13-QA-002..005: the backend foundation suites. They
+      # need the same live PostgreSQL as the database suite, so they run in this
+      # job rather than the unit job: context resolution, scoped sessions,
+      # authorization through the full stack, the transaction wrapper's
+      # all-or-nothing behaviour, idempotency, and the outbox worker.
+      #
+      # DATABASE_URL points at the same service container. The login role here is
+      # the container superuser, which is NOT isolation evidence — the suites
+      # open their own least-privilege connections through the harness, exactly
+      # as tests/db/helpers.ts does.
+      - name: Run the backend foundation test suite
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+          WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+        run: npm run test:backend
 
   secrets:
     name: Secret and sensitive-file scan

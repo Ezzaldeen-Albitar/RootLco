@@ -1,0 +1,247 @@
+/**
+ * OpenAPI foundation (P1-13-BE-020).
+ *
+ * The document is **generated from the operation registry**, not hand-written
+ * alongside it. That is the only way "the spec matches the code" can be a
+ * checked fact rather than a promise: a registered operation appears in the
+ * document automatically, and an operation removed from the code disappears
+ * from it. The committed `docs/api/openapi.v1.json` is compared against a fresh
+ * generation in CI, so any divergence fails the build.
+ *
+ * What is derived from the registry, per operation: path, method, operationId,
+ * summary, security, the required-permission extension, and the
+ * `Idempotency-Key` / `If-Match` parameters implied by its declared guards.
+ * Nothing is written twice, so nothing can disagree.
+ *
+ * Shared components (problem document, pagination envelope, money, correlation
+ * header) are defined once here and referenced everywhere, so eleven backend
+ * phases cannot each invent their own error shape.
+ */
+import { allErrorDefinitions } from '../errors/catalog';
+import { PROBLEM_CONTENT_TYPE, PROBLEM_TYPE_PREFIX } from '../errors/problem';
+import { CORRELATION_HEADER } from '../observability/correlation';
+import { IDEMPOTENCY_HEADER } from '../http/idempotency';
+import { IF_MATCH_HEADER } from '../db/concurrency';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../db/pagination';
+import { allOperations, type RegisteredOperation } from '../auth/operation-registry';
+import { DESCRIPTIVE_TITLE, VENDOR_NAME } from '@/shared/constants/app';
+
+export const OPENAPI_VERSION = '3.1.0';
+export const API_VERSION_PREFIX = '/api/v1';
+/** Bumped when the *contract* changes, independently of the app version. */
+export const API_CONTRACT_VERSION = '0.1.0';
+
+type JsonObject = Record<string, unknown>;
+
+function problemSchema(): JsonObject {
+  return {
+    type: 'object',
+    description: 'RFC 9457 problem document. Every failure response in this API uses this shape.',
+    required: ['type', 'title', 'status', 'code', 'correlationId'],
+    properties: {
+      type: { type: 'string', format: 'uri', examples: [`${PROBLEM_TYPE_PREFIX}ERR-VAL-001`] },
+      title: { type: 'string' },
+      status: { type: 'integer' },
+      code: {
+        type: 'string',
+        description: 'Stable catalog code. Clients branch on this, never on the title.',
+        enum: allErrorDefinitions().map((definition) => definition.code),
+      },
+      correlationId: { type: 'string', format: 'uuid' },
+      violations: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['path', 'rule'],
+          properties: { path: { type: 'string' }, rule: { type: 'string' } },
+        },
+      },
+      retryAfterSeconds: { type: 'integer', minimum: 0 },
+      contract: { type: 'string' },
+      requiredPermissions: { type: 'array', items: { type: 'string' } },
+    },
+  };
+}
+
+function sharedComponents(): JsonObject {
+  return {
+    securitySchemes: {
+      sessionCookie: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'session',
+        description:
+          'Authenticated session established by the Phase 1-14 authentication backend. ' +
+          'P1-13 defines the contract and resolves scope; it does not implement login.',
+      },
+    },
+    schemas: {
+      ProblemDocument: problemSchema(),
+      Money: {
+        type: 'object',
+        description:
+          'Exact decimal amount as a string plus an ISO-4217 code. Never a JSON number: ' +
+          'IEEE-754 cannot represent decimal money exactly.',
+        required: ['amount', 'currency'],
+        properties: {
+          amount: { type: 'string', pattern: '^-?\\d{1,15}(\\.\\d{1,6})?$' },
+          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+        },
+      },
+      PageEnvelope: {
+        type: 'object',
+        description: 'Opaque-cursor page. Offset paging is not offered.',
+        required: ['items', 'hasMore'],
+        properties: {
+          items: { type: 'array', items: {} },
+          nextCursor: { type: ['string', 'null'] },
+          hasMore: { type: 'boolean' },
+        },
+      },
+    },
+    parameters: {
+      IdempotencyKey: {
+        name: IDEMPOTENCY_HEADER,
+        in: 'header',
+        required: true,
+        description:
+          'Client-generated key, 8–200 characters. Replaying the same key with the same request ' +
+          'returns the original result; the same key with a different request is rejected.',
+        schema: { type: 'string', minLength: 8, maxLength: 200 },
+      },
+      IfMatch: {
+        name: IF_MATCH_HEADER,
+        in: 'header',
+        required: true,
+        description: 'Expected record version for optimistic concurrency.',
+        schema: { type: 'string' },
+      },
+      CorrelationId: {
+        name: CORRELATION_HEADER,
+        in: 'header',
+        required: false,
+        description:
+          'Optional caller-supplied correlation ID. Accepted only when it is a valid UUID; ' +
+          'anything else is replaced with a generated one.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      Cursor: {
+        name: 'cursor',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', maxLength: 512 },
+      },
+      Limit: {
+        name: 'limit',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_PAGE_SIZE,
+          default: DEFAULT_PAGE_SIZE,
+        },
+      },
+    },
+    headers: {
+      CorrelationId: {
+        description: 'Correlation ID for this request. Present on every response.',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
+      ETag: {
+        description: 'Current record version, for optimistic concurrency.',
+        schema: { type: 'string' },
+      },
+      RetryAfter: {
+        description: 'Seconds to wait before retrying a throttled request.',
+        schema: { type: 'integer' },
+      },
+    },
+    responses: {
+      Problem: {
+        description: 'Failure. Always an RFC 9457 problem document.',
+        headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
+        content: {
+          [PROBLEM_CONTENT_TYPE]: { schema: { $ref: '#/components/schemas/ProblemDocument' } },
+        },
+      },
+    },
+  };
+}
+
+/** Failure responses every operation can produce, derived from the catalog. */
+function standardFailureResponses(operation: RegisteredOperation): JsonObject {
+  const responses: JsonObject = {
+    '422': { $ref: '#/components/responses/Problem' },
+    '500': { $ref: '#/components/responses/Problem' },
+  };
+  if (!operation.public) {
+    responses['401'] = { $ref: '#/components/responses/Problem' };
+    responses['403'] = { $ref: '#/components/responses/Problem' };
+  }
+  if (operation.idempotent) responses['409'] = { $ref: '#/components/responses/Problem' };
+  if (operation.versionGuarded) {
+    responses['409'] = { $ref: '#/components/responses/Problem' };
+    responses['428'] = { $ref: '#/components/responses/Problem' };
+  }
+  if (operation.rateLimitPolicy) responses['429'] = { $ref: '#/components/responses/Problem' };
+  return responses;
+}
+
+function operationObject(operation: RegisteredOperation): JsonObject {
+  const parameters: JsonObject[] = [{ $ref: '#/components/parameters/CorrelationId' }];
+  if (operation.idempotent) parameters.push({ $ref: '#/components/parameters/IdempotencyKey' });
+  if (operation.versionGuarded) parameters.push({ $ref: '#/components/parameters/IfMatch' });
+
+  return {
+    operationId: operation.id,
+    summary: operation.summary,
+    tags: [operation.module],
+    parameters,
+    security: operation.public ? [] : [{ sessionCookie: [] }],
+    responses: {
+      '200': {
+        description: 'Success.',
+        headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
+        content: { 'application/json': { schema: { type: 'object' } } },
+      },
+      ...standardFailureResponses(operation),
+    },
+    // Machine-readable authorization metadata: the same declaration the runtime
+    // enforces, so a reviewer can diff intent against behaviour.
+    'x-required-permissions': operation.permissions,
+    'x-scope': operation.scope,
+    'x-audit-class': operation.auditClass,
+    ...(operation.featureFlag ? { 'x-feature-flag': operation.featureFlag } : {}),
+    ...(operation.rateLimitPolicy ? { 'x-rate-limit-policy': operation.rateLimitPolicy } : {}),
+    ...(operation.cacheCategory ? { 'x-cache-category': operation.cacheCategory } : {}),
+  };
+}
+
+/** Builds the full document from the registry. Deterministic: sorted by path. */
+export function buildOpenApiDocument(): JsonObject {
+  const paths: JsonObject = {};
+  for (const operation of allOperations()) {
+    const fullPath = `${API_VERSION_PREFIX}${operation.path}`;
+    const existing = (paths[fullPath] as JsonObject | undefined) ?? {};
+    existing[operation.method.toLowerCase()] = operationObject(operation);
+    paths[fullPath] = existing;
+  }
+
+  return {
+    openapi: OPENAPI_VERSION,
+    info: {
+      title: `${DESCRIPTIVE_TITLE} — API`,
+      version: API_CONTRACT_VERSION,
+      summary: 'Backend foundation contract (Phase 1-13). No business endpoints are delivered.',
+      description:
+        'Shared components and conventions every later backend phase composes. The product name ' +
+        'is deliberately absent: it is pending owner approval (ADR-011).',
+      contact: { name: VENDOR_NAME },
+    },
+    servers: [{ url: '/', description: 'Same-origin. No public base URL is provisioned.' }],
+    paths: Object.fromEntries(Object.entries(paths).sort(([a], [b]) => a.localeCompare(b))),
+    components: sharedComponents(),
+  };
+}
