@@ -87,3 +87,14 @@ database.
 execution; no fabricated evidence. The gate cannot be submitted with an unresolved
 Critical or High. Any remaining Medium is fixed or explicitly accepted with rationale,
 control, residual risk, owner, and schedule. The user performs every PR merge.
+
+### Plan outcome (recorded 2026-07-21 — closure)
+
+Every wave in the gate map above was executed and evidenced; **no remediation migration was
+required** (zero gate-blocking findings), so the schema is unchanged from the merged P1-2…P1-11
+baseline. Feature PR **#46** was merged by the repository owner into protected `develop` as
+`42f8d7f` (final feature SHA `670000e`, 4/4 hosted CI checks green), and the consolidated gate was
+re-run clean-room on the merged protected tree with **24/24 required gates PASSED**
+(`test:db` 119 files / 1149 tests). The owner-gate decision above is superseded by the record in
+`phase-1-12-owner-gate.md`, now **Go — Release 2 Database Gate Passed**; the statement here is
+retained as the planning-time position.
