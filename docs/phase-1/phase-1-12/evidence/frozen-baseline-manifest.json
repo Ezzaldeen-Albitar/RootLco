@@ -1,0 +1,546 @@
+{
+  "release": "Release 2 — Core Business Database",
+  "phase": "P1-12",
+  "source_sha": "5cd16da9d5b82c3baa42146da02ef31dbc2e45d5",
+  "protected_base": "origin/develop = 5cd16da (P1-11 gate merge #45)",
+  "postgres_major": 17,
+  "counts": {
+    "migrations": 113,
+    "seeds": 7,
+    "schemas": 17,
+    "tables": 242,
+    "columns": 3562,
+    "functions": 210,
+    "triggers": 539,
+    "policies": 585,
+    "indexes": 999,
+    "constraints": 1843,
+    "views": 0,
+    "security_definer": 0,
+    "rls_tables_not_forced": 0
+  },
+  "schema_hash": "d3b1e7e40a141152f8aff04cf582c02cffa43f8709adad936450c8019d3e4cdb",
+  "migrations": [
+    {
+      "file": "0001_extensions.sql",
+      "sha256": "1d81c20d5518a773ee8ab92b478f43d5cc6c977a37b8762202d553b64d95359c"
+    },
+    {
+      "file": "0002_base_schemas.sql",
+      "sha256": "d1f065c44a393f20b984a129ca054870da0c65f3fe00a3a2c78514fce561fd23"
+    },
+    {
+      "file": "0003_number_sequences.sql",
+      "sha256": "d12887302d7d606d51384871416c9d3545b956d4e54efc68e92ed42d59742c46"
+    },
+    {
+      "file": "20260717100000_org_reference_tables.sql",
+      "sha256": "016354c51358ce09297b62b1ff4c026846eb3188dd7db709a1f60761600c3ea7"
+    },
+    {
+      "file": "20260717101000_org_tenants.sql",
+      "sha256": "77f61293982eb76f21fb94b39f2fe24408e62270589d861369d7a6f620507091"
+    },
+    {
+      "file": "20260717102000_org_subscriptions.sql",
+      "sha256": "0821cc4b5708f21cc7e7d8fc5f43df340479f396cc61e1e18926199a760093bc"
+    },
+    {
+      "file": "20260717103000_org_companies_branches.sql",
+      "sha256": "000ce6cf1dfbdd70aac8b2d924b0cf4f18bfe31de0649a4832cead70f259b3a0"
+    },
+    {
+      "file": "20260717104000_org_operational_structure.sql",
+      "sha256": "6caddcbd3d2a03c05e1c978d7194f36cbec3fd964fe6c880f89b1f16e0fa1e0c"
+    },
+    {
+      "file": "20260717105000_org_settings_tax_features.sql",
+      "sha256": "515e606bbc9f96d79a5984fe9a52cfc6a51af21fd320cd8e5dd07e3d1e8926a5"
+    },
+    {
+      "file": "20260717106000_shared_number_sequences_org_fks.sql",
+      "sha256": "2589935f80ad7d0d4bc820583a9a948225cd8ccad708f160c9af7006caef9d5e"
+    },
+    {
+      "file": "20260717107000_org_provisioning.sql",
+      "sha256": "20486732f9ef0a6633f031c65c41ca8732a78f5d8aa623a054b070555bebd605"
+    },
+    {
+      "file": "20260718090000_iam_user_accounts_and_profiles.sql",
+      "sha256": "77274c1ef169c610d0cd9996e9ec89a9d4b507b3e992f9df59d2e845de84842b"
+    },
+    {
+      "file": "20260718091000_iam_roles_and_permissions.sql",
+      "sha256": "1f2e5e1b92ed61da8e4919e1f600bdd5d3c77417999f7ccabf0b073dd7f26b09"
+    },
+    {
+      "file": "20260718092000_iam_role_grants_and_scopes.sql",
+      "sha256": "674b3800ad3e07d9969e3349f0f258f0bca441adba3fbce6f0534a62067ea994"
+    },
+    {
+      "file": "20260718093000_iam_approval_and_sensitive_data.sql",
+      "sha256": "58fce6e9c0764668905582e8f99641f37acb731c20eceaa1172e675ac6de74c8"
+    },
+    {
+      "file": "20260718094000_iam_login_and_sessions.sql",
+      "sha256": "8ed7004dfb1befc4e5e32b849c65fb90f326ece114c8a1bb2518cf58a26b62cd"
+    },
+    {
+      "file": "20260718095000_iam_audit_subsystem.sql",
+      "sha256": "0d90ca3ca0a1b933e68a7849c5a023d5745b31383c26f0778f43dfe488a3d473"
+    },
+    {
+      "file": "20260718096000_shared_status_history.sql",
+      "sha256": "41201ddb1f4198a1585e1a9738c308252c554be82811719273909d64ab10cf32"
+    },
+    {
+      "file": "20260718097000_iam_context_and_permission_functions.sql",
+      "sha256": "b5191dfa898611ffd2b339d0b20876eaccd60325466cdfe377ccd779ab94e79e"
+    },
+    {
+      "file": "20260718098000_iam_rls_grants_hardening.sql",
+      "sha256": "43c2187cd03ed2248855ee725c74067af56f3487b69960a6e0ddf5b5df95ab2d"
+    },
+    {
+      "file": "20260718100000_shared_document_categories_and_documents.sql",
+      "sha256": "03366a0874cbef73599877b23c63ec43ee4f49f73f71a88d52de0fc507de91f6"
+    },
+    {
+      "file": "20260718101000_shared_document_versions_and_scan_results.sql",
+      "sha256": "44a4e0e6a19c9036002e88afca4a50b98deea8f023cd0c61ef83d4d08caac6ce"
+    },
+    {
+      "file": "20260718102000_shared_document_links.sql",
+      "sha256": "0a473ff41c3891d99ba274f6026d00f37f033656d4133400fe467c7b315ec29e"
+    },
+    {
+      "file": "20260718103000_shared_retention_and_legal_hold.sql",
+      "sha256": "02ea3824c59b4537b10689f14848281e39e0c06b47bbfd297ab24de8fd5e42b1"
+    },
+    {
+      "file": "20260718104000_shared_message_templates.sql",
+      "sha256": "9c0e0f54e18693855063aecf43cfd848a1e00ed8dab368e203a024146fbc8f51"
+    },
+    {
+      "file": "20260718105000_shared_outbound_messages.sql",
+      "sha256": "ab0d09a47ced548727131bf0f5f28f869a849c63f9c099a95b8b4e9d4afcc040"
+    },
+    {
+      "file": "20260718106000_shared_event_outbox.sql",
+      "sha256": "b0d050dabe5f4b769ed3a30dc2f05805cc6f02f287759108ea2aac90901fd22d"
+    },
+    {
+      "file": "20260718107000_shared_processed_events_and_error_records.sql",
+      "sha256": "d1f470c85e13f601ad6c2d1d69487ba9b57623bcacb53c9d401209cc49e8a21e"
+    },
+    {
+      "file": "20260718108000_shared_settings_and_localization.sql",
+      "sha256": "0cb9e7fa78d8cbafc1f16e643fd5f518b6c6232609ec81980a9748265867c1b3"
+    },
+    {
+      "file": "20260718109000_shared_search_metadata.sql",
+      "sha256": "4e908499b74f6be45d579b5acd58e3df6982c6530965c424f93d283ac9fd684a"
+    },
+    {
+      "file": "20260718110000_shared_tags_notes_comments.sql",
+      "sha256": "b66274b5e53f83bd11fea339e7e442533784b34a2e6b2eec4d5ff9827b7938a6"
+    },
+    {
+      "file": "20260718111000_shared_services_hardening.sql",
+      "sha256": "5ec300a089daf01762a5910332731b3a52e97564765e6768468c502a7eaeef7b"
+    },
+    {
+      "file": "20260719090000_crm_business_partners.sql",
+      "sha256": "41c194a5e26eb44e7e9e097b70fa206e14cd92938dd89708b1b91c1700024444"
+    },
+    {
+      "file": "20260719091000_crm_partner_identifiers.sql",
+      "sha256": "981758d8a624c003b411958f4bd7aa84827c5a69fc54cd3e9cb1aea4ae3227f3"
+    },
+    {
+      "file": "20260719092000_crm_profiles.sql",
+      "sha256": "b5c83c1f067e8b963325b95069517d834239b530dfb0bc829b065a8c9360070b"
+    },
+    {
+      "file": "20260719093000_crm_partner_roles.sql",
+      "sha256": "4310a074bcfa47b1064656e515b4f76f2d1edc84c36dff7648465c32d4ead133"
+    },
+    {
+      "file": "20260719094000_crm_partner_status_history.sql",
+      "sha256": "8da6a1f7a47d47ab434b01363259cd179d7c54443ab1756cfbf8646456035987"
+    },
+    {
+      "file": "20260719095000_crm_segments.sql",
+      "sha256": "39e99950de53968b8988860d94e4933a06e109d4f2a640ab6e7e6bccddad0117"
+    },
+    {
+      "file": "20260719096000_crm_customer_restrictions.sql",
+      "sha256": "1ad47ba465ebc745710f3871a63be8841d2ac26b660be2abf441a51d3afd226c"
+    },
+    {
+      "file": "20260719097000_crm_contacts_addresses.sql",
+      "sha256": "2e57dc147f4f90cac4a8bc3612a4df4d6206065464b358027a27f45384f59acd"
+    },
+    {
+      "file": "20260719098000_crm_preferences_consent.sql",
+      "sha256": "13008384ce38dfd2b3abb58e2551d6a36282d64f80b8f2bab60fa8dee7ea681e"
+    },
+    {
+      "file": "20260719099000_crm_alerts_credit.sql",
+      "sha256": "6117e8629b54011875fea54cc00b8ff438070356f278af0e2d6881815da695b2"
+    },
+    {
+      "file": "20260719100000_crm_block_history.sql",
+      "sha256": "0751cc00b63fc6192fbe8ab1bcd4160ced047aae75c24f0d3a66c76ac0090164"
+    },
+    {
+      "file": "20260719101000_crm_duplicates_merges.sql",
+      "sha256": "71893c72dbcdbe18da0bc989c085b198f459aa4fdefbd0256da252b517506b19"
+    },
+    {
+      "file": "20260719102000_crm_communication_timeline.sql",
+      "sha256": "19f7e759329ab3e30e40cc03c773afc618b13e21995e0aeb6f193b047ed7aa59"
+    },
+    {
+      "file": "20260719103000_crm_search_normalization.sql",
+      "sha256": "47a4dd8e5e00f90d424a226d5bba464638a4737781405b2565d37a50b7f7a98e"
+    },
+    {
+      "file": "20260719104000_crm_security_hardening.sql",
+      "sha256": "d79a50f3f02cb8492d81e28ad2de3ff62080c18421dedeca6d2741e4c3d2c705"
+    },
+    {
+      "file": "20260719105000_crm_review_hardening.sql",
+      "sha256": "50a8063885fc8c85b2a4f2107338171a83f7ea5864c5bc13a004b1fef0162f43"
+    },
+    {
+      "file": "20260719106000_crm_fk_index_coverage.sql",
+      "sha256": "b93f7d7bddb1570c69b126c44a28d98c810c3732a530a88d21b213d64f6f5062"
+    },
+    {
+      "file": "20260720090000_veh_normalization.sql",
+      "sha256": "bbc8aceadbedc44d82abc1f603e9a46331cea2ceb299cbff0b22455496abe46e"
+    },
+    {
+      "file": "20260720091000_veh_reference_catalogs.sql",
+      "sha256": "72ea9e87b7ec939f1479ee142b8375af8bd5ac6ee6c7476c3a2f6a8aada450f7"
+    },
+    {
+      "file": "20260720092000_veh_vehicles.sql",
+      "sha256": "759506d5917710089654b2c3c140350a24c9a240316e3a8f4010be57e0d2b055"
+    },
+    {
+      "file": "20260720093000_veh_vehicle_identifiers.sql",
+      "sha256": "53a68801b2a59ddd0d151486143e78cef0fc40b4c7e9f1ddafa98a2f20d0cada"
+    },
+    {
+      "file": "20260720094000_veh_vin_verifications.sql",
+      "sha256": "30fb5b2d77273a21d347f2939efbceaefdef1d3a0d4db9ee62d70fdca0577ba4"
+    },
+    {
+      "file": "20260720095000_veh_vehicle_attribute_history.sql",
+      "sha256": "0c677354aae2b3703010f184f1bc02233c03749eb0b34dbba2d62ca23aade4ab"
+    },
+    {
+      "file": "20260720096000_veh_engine_transmission_history.sql",
+      "sha256": "305aa21716d920ad8f4f01a203eb79856f9e60772cbf5e091129352ad899efc5"
+    },
+    {
+      "file": "20260720097000_veh_ev_and_battery.sql",
+      "sha256": "15f5986dc65ef3ea8cc32d3b21ce405924109bc6be52687e5ce81a78378eacc3"
+    },
+    {
+      "file": "20260720098000_veh_plate_history.sql",
+      "sha256": "0436ebc0f17ed3e37448888b7f3b243cea632fcb035ecffb22ea89b6333fe1bb"
+    },
+    {
+      "file": "20260720099000_veh_ownership_history.sql",
+      "sha256": "4db7f51ce1103e5b274b7c1e82fd4056b90b264bdef6cfa06e18f69520332855"
+    },
+    {
+      "file": "20260720100000_veh_relationships_and_evidence.sql",
+      "sha256": "8e193828eef998f8548880061d478baa030eef74cb5810af2fbb2df3fb232324"
+    },
+    {
+      "file": "20260720101000_veh_odometer_readings.sql",
+      "sha256": "9fef48398dd9bf36bfa93489b00f64a7969746ac23e65da2442d9e118161d0d4"
+    },
+    {
+      "file": "20260720102000_veh_vehicle_status_history.sql",
+      "sha256": "dc018a0e189675c9f8e2179bcadaeca7c9c1358b3b9f67e984e2e9dc59d52848"
+    },
+    {
+      "file": "20260720103000_veh_vehicle_alerts.sql",
+      "sha256": "3c1f08c61615d13fa4c54b44974fe4504775c99cd21c312596c0518a25edb58e"
+    },
+    {
+      "file": "20260720104000_veh_duplicates_merges.sql",
+      "sha256": "9f2f37f26a3dae75acfcada6631f7c7a629fae6ee7368ef48a6e7f4f661fb5ba"
+    },
+    {
+      "file": "20260720105000_veh_review_hardening.sql",
+      "sha256": "65fa3cb61266673c02b8089aab3815d81643e29b2220504e98f613c9c546911c"
+    },
+    {
+      "file": "20260721090000_apt_rec_schemas.sql",
+      "sha256": "cb7263bde8a9dc52e854668b28fd47f314f78160656d1b5fb655c29a929339b2"
+    },
+    {
+      "file": "20260721091000_apt_configuration_catalogs.sql",
+      "sha256": "e66652731a47426080da126984a303fb633ceea16a3914acd8e0567cf4165077"
+    },
+    {
+      "file": "20260721092000_apt_appointments.sql",
+      "sha256": "1472c4725d26e5a6c7e12827516b0c63468c87e639bac78c580de5e4c8983e8e"
+    },
+    {
+      "file": "20260721093000_apt_appointment_services.sql",
+      "sha256": "45db083315bf622899b160f88bbbebb5a666744f075baff468fba86b27dac7b2"
+    },
+    {
+      "file": "20260721094000_apt_appointment_status_history.sql",
+      "sha256": "b239941ebbed51509a70c8e5e5a16e3e9473db622be41208231b296aafa1852b"
+    },
+    {
+      "file": "20260721095000_rec_configuration_catalogs.sql",
+      "sha256": "680295667edc9bdd408edc5b8e71793c5bbf99b97173132156f67e970e051854"
+    },
+    {
+      "file": "20260721096000_rec_walk_in_references.sql",
+      "sha256": "f89ab5ff13dc2dfc065cb9542b3468aed4ce42a558567d338abf967979ec9dd0"
+    },
+    {
+      "file": "20260721097000_rec_reception_visits.sql",
+      "sha256": "5e89f3e4ee4da71c41e55d9727632068816f10082a012ce2aa0fd6263bbd9cf5"
+    },
+    {
+      "file": "20260721098000_rec_party_roles_visit_reasons.sql",
+      "sha256": "ed22cdb05842ba8604b0d0ec082e2a61eba3893090441a2216451278130ee3dc"
+    },
+    {
+      "file": "20260721099000_rec_complaints.sql",
+      "sha256": "4d2f107978ac2fc942bcbbe46c0763318a4829609ed5d50fe6e0ee62f9b5983a"
+    },
+    {
+      "file": "20260721100000_rec_inspections_conditions.sql",
+      "sha256": "7b5ef4fc44d0090dd023ef4d5f8eb0cf060851e25f9998a9504f4fe877470e93"
+    },
+    {
+      "file": "20260721101000_rec_damage_maps_marks.sql",
+      "sha256": "367f68664eb4bd68fda262c4597dfc7b19127367e8ecaaa773a323baa56a9ebe"
+    },
+    {
+      "file": "20260721102000_rec_warning_lights_leaks.sql",
+      "sha256": "e9fbc87531180c3abe254315962eab4540115e8e8e9a74059b78611c780d4191"
+    },
+    {
+      "file": "20260721103000_rec_vehicle_contents.sql",
+      "sha256": "800476f243466cb3f23ee5240a56b699d19d9262b761ba864468ab0f3f9bfb35"
+    },
+    {
+      "file": "20260721104000_rec_signatures_refusals.sql",
+      "sha256": "406cf75fa703cf8e363cada33afd1ac1b2f6a23f8c7dc9531835193f3f9bfcf4"
+    },
+    {
+      "file": "20260721105000_rec_authorization_custody.sql",
+      "sha256": "1f64905c5c5b7116c92461e227be0a016c9d06cddbd54828f5873b17f07896d3"
+    },
+    {
+      "file": "20260721106000_rec_status_history_checkin.sql",
+      "sha256": "e112b297e413a083296f2b95154b946127ed7e919a87581a4a5b5a7410787a5f"
+    },
+    {
+      "file": "20260722090000_wodiatechqms_schemas.sql",
+      "sha256": "dcca572737f2b21db827d0aa341f3095715efbc318e945957d6ef75675276d72"
+    },
+    {
+      "file": "20260722091000_wo_state_catalogs.sql",
+      "sha256": "be52f9093061224dd6a2a87a0b6eeaeaaa8651b5dc22bea433250b4a8a3b091d"
+    },
+    {
+      "file": "20260722092000_tech_catalogs.sql",
+      "sha256": "5554d54ea99b8d0b310472852856c67df5d0c115ce291fe0264bbdedd6cd7d62"
+    },
+    {
+      "file": "20260722093000_dia_qms_catalogs.sql",
+      "sha256": "32fe67467d1fc5d5a5660b0c8de81d1c2076397eec2127d716f9999db71d8232"
+    },
+    {
+      "file": "20260722094000_tech_profiles_skills_certs.sql",
+      "sha256": "38cbf2ff2aa547b14bcbb7e7dacbe7610b5088f20e643c2f4e49b7ce866b9d3c"
+    },
+    {
+      "file": "20260722095000_wo_work_orders.sql",
+      "sha256": "c4f84f58fc5a61cb76f2e6b27af0034ced10021437a9418b78e8da8d8fc3a510"
+    },
+    {
+      "file": "20260722096000_wo_status_history.sql",
+      "sha256": "31a6eea9c8c754e2ffdf42e2f7d7d8e6fca65fc453d8f00cd37555944c74e2c5"
+    },
+    {
+      "file": "20260722097000_wo_jobs.sql",
+      "sha256": "3c9dc114b4a385996a189c27b4276aecd2ace2635de33f8c962274bb2514ff09"
+    },
+    {
+      "file": "20260722098000_wo_job_assignments.sql",
+      "sha256": "832deb545fb73621b6ac50edbce56ac8e8c25dafa317a19bcfb76c85ce9014a8"
+    },
+    {
+      "file": "20260722099000_tech_labor_sessions.sql",
+      "sha256": "962a85482eeb814c9ba275045bb67b813af32d19dad7330048fc3d4b3ded59df"
+    },
+    {
+      "file": "20260722100000_wo_services_parts_approvals.sql",
+      "sha256": "96e7fc955d9351edcbd73d327b27baf70eba4b145b675f78ec86c6ec28ca5b50"
+    },
+    {
+      "file": "20260722101000_dia_templates_versions_items.sql",
+      "sha256": "29446b3dbb7b12b9c5c18e19a4a8e5454c289f57d1be07a3bc45fcf6b6bb90dd"
+    },
+    {
+      "file": "20260722102000_dia_reports.sql",
+      "sha256": "b43d5a25eb3734f05b86d8fba0a5274fec1b10601643d2f71dfdb880e144116c"
+    },
+    {
+      "file": "20260722103000_dia_findings_measurements_evidence.sql",
+      "sha256": "a0654f263bea146a850e3cf3e186261f9d034da7347aa871ef205433553c0ca2"
+    },
+    {
+      "file": "20260722104000_qms_quality_control.sql",
+      "sha256": "35d782444448355215e62c92ef4422a906f7eab6e16e31698b03a029959b1c04"
+    },
+    {
+      "file": "20260722105000_qms_rework_closure_gate.sql",
+      "sha256": "4cb5792b76b55e3e077aeea8c910a3c03cd6e4063fe13cb1bfbb70411aba137d"
+    },
+    {
+      "file": "20260723090000_svcquoinv_schemas.sql",
+      "sha256": "5cbfdcbaf6e28c869c0b5dd1c8865030f587db425f04a6a16e9505b214b56e67"
+    },
+    {
+      "file": "20260723091000_svc_catalog.sql",
+      "sha256": "8eb81cd1e90106a9040bb6d51e9ed756e0c53025708feafe095628d6153efad3"
+    },
+    {
+      "file": "20260723092000_svc_pricing.sql",
+      "sha256": "4d96e4f3eebedb0ba1f8da644f979fde06aa7b761f7a0998e1d51116fd0dfdc4"
+    },
+    {
+      "file": "20260723093000_inv_reference.sql",
+      "sha256": "bfd86fdc8c3dff4aa64f8d3825d8d729d13f53fa3d915962d2bbb2481dfdad9e"
+    },
+    {
+      "file": "20260723094000_inv_ledger.sql",
+      "sha256": "20ad3a285c3cd8b6dd7345c1526bb1afd916ff3e695fff5620196939fe42c9d8"
+    },
+    {
+      "file": "20260723095000_inv_operations.sql",
+      "sha256": "e38bb62751ffddcf162fc6e9914383dc8550c06bd16d223acf82de367cd00a8e"
+    },
+    {
+      "file": "20260723096000_quo_quotations.sql",
+      "sha256": "452368b09c1f01e4d84453f52d4fb6937d463f5030019946f28553bb27d72bd9"
+    },
+    {
+      "file": "20260723097000_wo_forward_fks.sql",
+      "sha256": "8cd6fa19c0f5bb369888166c802f8cdfc810aea8918027e40cbaeed6cad601ec"
+    },
+    {
+      "file": "20260724090000_salwtyrpt_schemas.sql",
+      "sha256": "8fbe993069516b3a1a8c6a9f3f3aec78a2d69f2c0c3e9a4918ae684f78bd9fc4"
+    },
+    {
+      "file": "20260724091000_sal_invoices.sql",
+      "sha256": "109bc9bef387a07cfdd3351f6f80cc9ea08717c74a4b201a85cfeab45499a905"
+    },
+    {
+      "file": "20260724092000_sal_payments.sql",
+      "sha256": "d2240a711bdfeb9c5ae0e5de9f7fadd96d27beff57709b60ef4e4a28956aa8e3"
+    },
+    {
+      "file": "20260724093000_sal_financial_events.sql",
+      "sha256": "a23d1b1329c49602b6bd94a6fbb137ae30d5f33c368a3abd0b46396883fb73f3"
+    },
+    {
+      "file": "20260724094000_sal_delivery.sql",
+      "sha256": "22b8de3014ea20bc267817a25e7b9e61d87879bb56c68b13c6e18c68477802c4"
+    },
+    {
+      "file": "20260724095000_wty_warranty.sql",
+      "sha256": "c11ea98516568609c68a7a99819a33b3c3a6366a32fb37ea1824588868b89b49"
+    },
+    {
+      "file": "20260724096000_rpt_reporting.sql",
+      "sha256": "9051afc4ffdb7b1c7a42808ad2967efe84bded3277b177ba07be30441f7fb33a"
+    }
+  ],
+  "seeds": [
+    {
+      "file": "seed.sql",
+      "sha256": "f43f63ecc974c8592b63fc2eb02dbbdee707287daa1c20c18bab9b486a28b18b"
+    },
+    {
+      "file": "seeds/01_reference_data.sql",
+      "sha256": "42dfce16c8da67a3e90b48c33755c6e110af3546b384a0eeead25f98c8dfa3f5"
+    },
+    {
+      "file": "seeds/04_iam_permission_catalog.sql",
+      "sha256": "06afb9f28208c1e4562610d8d57ec05bd6da00c23bb24cfbc12511018c78f2cb"
+    },
+    {
+      "file": "seeds/05_shared_reference.sql",
+      "sha256": "9d2ffa7ce62f0021748ba20d8f4f9ec12585e48a09b9c619e0e97d91d7a62054"
+    },
+    {
+      "file": "seeds/06_wo_job_state_graph.sql",
+      "sha256": "92cd1aa5380f64e9d6082723eb096fb3d6a7fed682fb93eea0e52f1a799a9f6a"
+    },
+    {
+      "file": "seeds/07_inv_units_of_measure.sql",
+      "sha256": "a3ff8bb091acdea50e64fb6954c950614d7c3554d84d651de455df692d8bfd57"
+    },
+    {
+      "file": "seeds/08_sal_payment_methods.sql",
+      "sha256": "6a436bf61fac38d07e84bc773fc88445472e4be79734106fcd5203e7b530e361"
+    }
+  ],
+  "classification": [
+    {
+      "file": "docs/database/apt-rec-personal-data-classification.json",
+      "sha256": "cdc0299052715969c9e5de5b580f03fa89e781cd7762bedcc44e26572e2808fd"
+    },
+    {
+      "file": "docs/database/crm-personal-data-classification.json",
+      "sha256": "31995d86f2da4d980eb2caba233e99b847be48f6533aafe2a1143c51b5c50e69"
+    },
+    {
+      "file": "docs/database/sal-wty-rpt-personal-data-classification.json",
+      "sha256": "1e2ecba73f6b015f5d47bf17c97586bb42cbc298eb8d7af4f7056ac03ee0d58b"
+    },
+    {
+      "file": "docs/database/svc-quo-inv-personal-data-classification.json",
+      "sha256": "98851f1a32f29792489c9eff86d15d22b1ca0433a4f120a2d09157fe78fdc449"
+    },
+    {
+      "file": "docs/database/veh-personal-data-classification.json",
+      "sha256": "5d1661cbf19802300f67bffab11b85984d20a524a2eb5ca93faf45119bceb16a"
+    },
+    {
+      "file": "docs/database/wo-tech-dia-qms-personal-data-classification.json",
+      "sha256": "b3fc3137a21dd86009a88bcdef96792cf074a25ecc5da71f2cafe2d42dd4006b"
+    }
+  ],
+  "documentation": {
+    "data_dictionary": "710f94502940cb3b9d89443a03c60e6037c7b92c654cbd9bddef45f458d8fa4a"
+  },
+  "open_decisions": [
+    "P1-OD-007",
+    "P1-OD-018..024",
+    "P1-OD-027",
+    "P1-OD-035",
+    "P1-OD-036",
+    "P1-OD-041",
+    "P1-OD-042"
+  ],
+  "baseline_fingerprint": "8968f66af6305273e60394e1fe66808d7ec90058e1bd0d96ee9cf6c32944df1e"
+}

@@ -1,0 +1,26 @@
+{
+  "totals": {
+    "foreign_keys": 537,
+    "indexes": 999,
+    "live_tables": 242
+  },
+  "gates": {
+    "all_fks_validated": true,
+    "no_runtime_reachable_destructive_cascade": true,
+    "fk_index_coverage_complete": true,
+    "no_duplicate_indexes": true,
+    "zero_dictionary_drift": true
+  },
+  "unvalidated_fks": [],
+  "runtime_reachable_destructive_cascades": [],
+  "administrative_only_destructive_cascades": [
+    "iam.audit_integrity_links -> iam.audit_records CASCADE (parent not runtime-deletable)",
+    "iam.audit_record_details -> iam.audit_records CASCADE (parent not runtime-deletable)",
+    "iam.grant_scopes -> iam.role_grants CASCADE (parent not runtime-deletable)",
+    "iam.role_permissions -> iam.roles CASCADE (parent not runtime-deletable)",
+    "shared.status_evidence -> shared.status_history CASCADE (parent not runtime-deletable)"
+  ],
+  "uncovered_fks": [],
+  "duplicate_indexes": [],
+  "undocumented_tables": []
+}
