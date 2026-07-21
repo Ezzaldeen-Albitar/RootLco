@@ -26,6 +26,12 @@ was verified on 2026-07-16 by the database test suite (68 tests passing via
 `npm run test:db`) or by direct inspection of `pg_roles` on the local Supabase
 stack (PostgreSQL 17.6, DB port 54322).
 
+The one later amendment is §5.7, the runtime foundation write surface added by
+[DBCR-P1-13-001](./change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)
+in migration `20260725090000_iam_shared_runtime_write_capabilities.sql`
+(2026-07-21). Its evidence is that change request, not the 2026-07-16 run; §2.2,
+§5.1, §5.4, §5.5 and §7 carry the cross-references.
+
 ---
 
 ## 1. Principles
@@ -108,7 +114,13 @@ SECURITY` fails with `42501` (not the owner), and `SET row_security = off`
 - **Cannot touch protected append-only history**: immutable record classes
   (status history, audit evidence) receive `INSERT` + `SELECT` grants only;
   `UPDATE`/`DELETE` by the runtime role fail with `42501` (verified against
-  the append-only fixture in `tests/db/patterns.test.ts`).
+  the append-only fixture in `tests/db/patterns.test.ts`). The audit tables are
+  the strictest instance of this class: DBCR-P1-13-001 gives the runtime role
+  `INSERT` on `iam.audit_records`, `iam.audit_record_details`,
+  `iam.audit_integrity_links` and `iam.security_events` and **no** `UPDATE`,
+  `DELETE` or `TRUNCATE` anywhere, and it deliberately does not widen the read
+  side — reading committed audit history and the security log still requires
+  the `iam.audit.view` permission (§5.7).
 - **Cannot perform administrative writes**: on `shared.number_sequences` there
   is deliberately no `INSERT` or `DELETE` policy **and** no grant — both
   attempts fail with `42501` (verified).
@@ -216,6 +228,17 @@ uncontrolled dumping ground. A runtime `CREATE TABLE` attempt fails with
 Increment G additionally grants `app_worker` `USAGE` on only `shared` and
 `iam`. It receives no schema `CREATE` and no blanket/default privilege.
 
+**No role holds `USAGE` on schema `extensions`, and none may be given it
+casually.** DBCR-P1-13-001 rehearsed the obvious grant and then measured what it
+opens: pgcrypto installs `extensions.pg_stat_statements` and
+`extensions.pg_stat_statements_info` with `SELECT` to `PUBLIC`, and a `PUBLIC`
+grant cannot be revoked for a single role — so schema USAGE would have handed the
+request role a cluster-wide statement view. The dependency was removed instead of
+paid for: `iam.audit_hash` now calls `pg_catalog.sha256`, which every role may
+execute with no grant at all. Any future proposal to grant `USAGE ON SCHEMA
+extensions` must first enumerate every `PUBLIC`-granted object the target
+extension set installs there.
+
 ### 5.2 Table level: per-object grants in the creating migration
 
 The migration that creates a table must state that table's grants in the same
@@ -293,6 +316,36 @@ callers: their `PUBLIC` default is revoked and **no** role receives `EXECUTE`.
 Note the asymmetry is intentional: `app_readonly` may read context but is not
 granted the allocator — allocation is a write.
 
+**A `SECURITY INVOKER` entry point is not one grant, it is a call chain.**
+Because the body runs with the caller's privileges, every helper it calls, every
+table it reads, and every schema it resolves through must be reachable by the
+caller too. Granting `EXECUTE` on the entry point alone produces a runtime
+`permission denied` on the first helper, not a clean refusal at the boundary.
+DBCR-P1-13-001 is the practised example: making `iam.audit_append` callable
+required `EXECUTE` on all four functions in the chain —
+
+```sql
+GRANT EXECUTE ON FUNCTION
+  iam.audit_append(uuid, uuid, text, text, text, uuid, uuid, uuid, uuid, text, jsonb)
+  TO app_runtime;
+GRANT EXECUTE ON FUNCTION iam.audit_mask(text, text)  TO app_runtime;
+GRANT EXECUTE ON FUNCTION iam.audit_canonical(uuid)   TO app_runtime;
+GRANT EXECUTE ON FUNCTION iam.audit_hash(bytea, text) TO app_runtime;
+--                                        migration 20260725090000
+```
+
+— plus RLS policies for the rows the body reads and writes. The rule that
+follows: a migration granting `EXECUTE` on an invoker function must state the
+whole reachable surface that grant implies, and must not assume any of it. The
+same review found that `iam.audit_hash` reached `extensions.digest`, and removed
+that reach rather than granting schema USAGE for it (§5.1).
+
+Deliberately still ungranted after DBCR-P1-13-001: `iam.audit_verify_chain` (an
+operator/forensic routine, not a request-path capability),
+`org.provision_organization`, and `shared.claim_outbox_events` /
+`complete_outbox_event` / `fail_outbox_event` — a producer must not be able to
+claim, complete, or fail queue work.
+
 ### 5.5 Worker grant surface added by Phase 1-5 Increment G
 
 | Object                                                          | `app_worker`           |
@@ -306,19 +359,71 @@ granted the allocator — allocation is a write.
 | DELETE, DDL, ownership, other tables/functions                  | —                      |
 
 This exact surface is paired with the deliberately all-tenant
-`wkr_event_outbox_all` policy. `app_runtime` and `app_readonly` receive zero
-grant and zero policy on the outbox and its routines.
+`wkr_event_outbox_all` policy. `app_readonly` receives zero grant and zero policy
+on the outbox and its routines, and `app_runtime` receives zero on the three
+routines. Since DBCR-P1-13-001 the runtime role does hold tenant-scoped
+`SELECT` + `INSERT` on the `shared.event_outbox` **table** (§5.7), because an
+event must be written in the producer's own transaction; the archetypes stay
+separated where it matters, since publishing an event and draining the queue
+remain different capabilities held by different roles.
 
 ### 5.6 Foundation grant surface (Phase 1-2, verified)
 
-| Object                                                                       | `app_runtime`                                   | `app_readonly` |
-| ---------------------------------------------------------------------------- | ----------------------------------------------- | -------------- |
-| Schemas `org`, `iam`, `shared`, `crm`, `veh`                                 | USAGE                                           | USAGE          |
-| `shared.number_sequences`                                                    | SELECT; UPDATE (`next_value`, `current_period`) | SELECT         |
-| `iam.current_tenant_id()` etc. (4 context readers)                           | EXECUTE                                         | EXECUTE        |
-| `shared.next_display_number(text, uuid, uuid)`                               | EXECUTE                                         | —              |
-| Trigger functions (`touch_row_metadata`, `guard_number_sequence_regression`) | — (PUBLIC revoked; trigger-invoked only)        | —              |
-| Everything else                                                              | —                                               | —              |
+| Object                                                                       | `app_runtime`                                                                | `app_readonly` |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------- |
+| Schemas `org`, `iam`, `shared`, `crm`, `veh`                                 | USAGE                                                                        | USAGE          |
+| `shared.number_sequences`                                                    | SELECT; UPDATE (`next_value`, `current_period`)                              | SELECT         |
+| `iam.current_tenant_id()` etc. (4 context readers)                           | EXECUTE                                                                      | EXECUTE        |
+| `shared.next_display_number(text, uuid, uuid)`                               | EXECUTE                                                                      | —              |
+| Trigger functions (`touch_row_metadata`, `guard_number_sequence_regression`) | — (PUBLIC revoked; trigger-invoked only)                                     | —              |
+| Everything else                                                              | — (later phases add per-object grants; the foundation write surface is §5.7) | —              |
+
+### 5.7 Runtime foundation write surface (DBCR-P1-13-001, migration `20260725090000`)
+
+The Release 2 baseline gave `app_runtime` `SELECT` only across `shared` and
+`iam`, which left the backend foundation unable to append an audit record,
+publish a domain event, store an idempotency key, or record a security event.
+Those four capabilities were granted, and nothing else was. This is the whole of
+the added surface:
+
+| Object                                                                                    | `app_runtime`              | `app_readonly` |
+| ----------------------------------------------------------------------------------------- | -------------------------- | -------------- |
+| `iam.audit_append(...)`, `iam.audit_mask`, `iam.audit_canonical`, `iam.audit_hash`        | EXECUTE                    | —              |
+| `iam.audit_records`, `iam.audit_record_details`, `iam.audit_integrity_links`              | INSERT                     | —              |
+| `iam.security_events`                                                                     | INSERT                     | —              |
+| `shared.event_outbox`                                                                     | SELECT, INSERT             | —              |
+| `shared.idempotency_keys`                                                                 | SELECT, INSERT             | —              |
+| UPDATE / DELETE / TRUNCATE on any of the above                                            | —                          | —              |
+| `iam.audit_verify_chain`, `org.provision_organization`, the three outbox worker routines  | —                          | —              |
+| `shared.processed_events`, `shared.error_records`                                         | — (worker-only, unchanged) | —              |
+| Schema `extensions`, `BYPASSRLS`, ownership, any new role, any `SECURITY DEFINER` routine | —                          | —              |
+
+Eleven RLS policies accompany the grants, every one of them
+`tenant_id = iam.current_tenant_id()` — there is no `USING (true)` and no
+`WITH CHECK (true)` in the set, so a session with no resolved tenant matches
+nothing. Two properties of the read side deserve stating plainly, because a
+casual reading of "the runtime may now write audit records" would get them wrong:
+
+- `sel_audit_records_unlinked` and `sel_audit_record_details_unlinked` expose
+  only rows that have **no chain link yet**. `iam.audit_append` writes the link
+  last, so this is the row under construction inside the current call and never a
+  committed record. **Reading audit history still requires the `iam.audit.view`
+  permission** through the pre-existing `sel_audit_*_permitted` policies, and the
+  same is true of `iam.security_events`, which gained `INSERT` and no new
+  `SELECT` policy at all.
+- `sel_audit_integrity_links_chain` is a real widening and is recorded as such:
+  any session of a tenant may now read that tenant's chain links, where before it
+  could read none. Extending a hash chain requires the previous link, and the
+  policy cannot be narrowed to "the newest link" because that needs `max(seq)`
+  over the table inside its own policy, which PostgreSQL rejects as infinite
+  recursion. The exposed columns are a per-tenant counter, an opaque record id,
+  two SHA-256 digests, and `tenant_id` — no action, actor, entity, or field
+  value. Accepted as a Low residual in DBCR-P1-13-001 §7.
+
+`shared.idempotency_keys` and `iam.security_events` have nullable `tenant_id`
+by design, for platform-scope rows. The tenant-scoped predicate evaluates to
+NULL for those rows, so a tenant session can neither read nor write them;
+platform provisioning keeps using a platform connection.
 
 ---
 
@@ -404,7 +509,10 @@ Binding rules:
    allowed lists. All four context readers and both trigger functions in
    migrations 0002–0003 are likewise `SECURITY INVOKER` with empty
    `search_path`. As of Phase 1-2 there are **zero** `SECURITY DEFINER`
-   functions in the codebase.
+   functions in the codebase, and the count is still zero across the 17 module
+   schemas after migration `20260725090000` — DBCR-P1-13-001 chose grants plus
+   tenant-scoped policies precisely so that no definer wrapper had to be
+   introduced to let the request path write.
 
 ---
 

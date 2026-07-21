@@ -46,7 +46,10 @@ contract-only service interfaces, the OpenAPI generator, and one reference endpo
 
 **What Phase 1-13 does not deliver.** No business endpoint. No login (the session authenticator
 is a port whose default fails closed). No file transfer. No notification delivery. No frontend.
-No database schema or migration change. No published domain event — the event catalog reserves
+No database schema change — the single migration this phase adds
+([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md), §10)
+alters grants, policies, and two function bodies only, and creates no table, column, constraint,
+index, sequence, or role. No published domain event — the event catalog reserves
 names only. No environment beyond Local exists (ADR-012), so this document makes no
 production-readiness, capacity, throughput, latency, failover, replica, CDN, or load-balancer
 claim of any kind. Every numeric limit named here is a **proposed validation baseline pending
@@ -323,9 +326,12 @@ and different processes. `src/server/worker/worker-db.ts` is where that separati
 
 The request path must never borrow the worker connection. The worker's all-tenant policies exist
 so a dispatcher can see every tenant's queue; granting that to a request handler would dissolve
-tenant isolation for user-facing reads. This is also why DBCR-P1-13-001 proposes tenant-scoped
-runtime grants rather than "just run as `app_worker`" — see
+tenant isolation for user-facing reads. This is why DBCR-P1-13-001 gave the runtime archetype its
+own tenant-scoped grants rather than "just run as `app_worker`" — see
 [the change request, §3](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md).
+The runtime role may now insert an event into `shared.event_outbox`; it still holds nothing on
+`shared.processed_events` or `shared.error_records` and no EXECUTE on the claim, complete, or fail
+routines, so producing an event and draining the queue remain separate powers.
 
 The two roles also report readiness separately (`src/server/health/readiness.ts`), because they
 scale, fail, and drain independently: a worker that cannot reach the queue must leave the
@@ -352,33 +358,55 @@ would let a caller believe a document exists, which is a worse failure than a cl
 
 ## 10. Failing closed on a missing database capability
 
-The Release 2 schema is frozen and P1-13 adds no migration. The frozen grant surface gives the
-`app_runtime` archetype **SELECT only** across `shared` and `iam`, so four foundation write
-capabilities are unavailable to the request path today:
+The Release 2 grant surface as frozen gave the `app_runtime` archetype **SELECT only** across
+`shared` and `iam`, so four foundation write capabilities had no path to the database at all. That
+defect was raised with executed evidence as
+**[DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)**
+and is now implemented by `20260725090000_iam_shared_runtime_write_capabilities.sql`, the 114th
+migration and the only one this phase adds. All four capabilities are available to the request
+path:
 
-| Capability              | Object                    | Current grant to `app_runtime`          |
-| ----------------------- | ------------------------- | --------------------------------------- |
-| `audit.append`          | `iam.audit_append(...)`   | No EXECUTE                              |
-| `outbox.publish`        | `shared.event_outbox`     | No INSERT                               |
-| `idempotency.store`     | `shared.idempotency_keys` | No grant, and RLS forced with no policy |
-| `security-event.record` | `iam.security_events`     | SELECT only                             |
+| Capability              | Object                                             | Grant to `app_runtime`                                                                         |
+| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `audit.append`          | `iam.audit_append(...)` and the three audit tables | EXECUTE on `audit_append`, `audit_mask`, `audit_canonical`, `audit_hash`; INSERT on the tables |
+| `outbox.publish`        | `shared.event_outbox`                              | SELECT, INSERT                                                                                 |
+| `idempotency.store`     | `shared.idempotency_keys`                          | SELECT, INSERT                                                                                 |
+| `security-event.record` | `iam.security_events`                              | INSERT                                                                                         |
 
-This is recorded as **[DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)**
-with executed evidence and a proposed additive remediation. Implementing it is not P1-13 work.
+Each of the eleven policies the migration adds is `tenant_id = iam.current_tenant_id()` — far
+narrower than the worker's `USING (true)`, and a session with no resolved tenant matches nothing.
+What was deliberately **not** granted matters as much: no UPDATE, DELETE, or TRUNCATE on any of
+these tables; nothing at all for `app_readonly`; no `BYPASSRLS`; no ownership; no `SECURITY
+DEFINER` routine (the database still holds none); no EXECUTE on `shared.claim_outbox_events`,
+`shared.complete_outbox_event`, `shared.fail_outbox_event`, or `iam.audit_verify_chain`; and no
+access to `shared.processed_events` or `shared.error_records`. Append-only stays the security
+property of the audit trail.
 
-The foundation turns that gap from an assumption into a measurement.
+**Writing an audit record is not reading audit history.** Reading `iam.audit_records`,
+`iam.audit_record_details`, or `iam.security_events` still requires the `iam.audit.view`
+permission. The two `sel_audit_*_unlinked` policies exist only so `iam.audit_append` can see the
+row it is in the middle of building: they match a record that has no chain link yet, and the
+function writes the link last, so a committed record never qualifies and the window closes inside
+the same transaction. The one deliberate widening is recorded in §7 of the change request — any
+session of a tenant may read that tenant's `iam.audit_integrity_links`, which holds a counter, an
+opaque record id, and two SHA-256 digests, and no action, actor, entity, or field value. It is
+rated Low and accepted with its reasoning stated rather than absorbed silently.
+
+The foundation still treats the capability as a measurement rather than an assumption.
 `preflightPrivileges()` (`src/server/db/capabilities.ts`) asks PostgreSQL what the current
 connection may actually do via `has_table_privilege` / `has_function_privilege`, and
 `requireCapability()` (`src/server/db/require-capability.ts`) runs **before** the write is
-attempted, so the failure names the missing capability and the change request instead of
-surfacing as a bare SQLSTATE `42501` from inside an INSERT.
+attempted, so a failure names the missing capability and the change request instead of surfacing
+as a bare SQLSTATE `42501` from inside an INSERT. "The migration is applied" is a claim about a
+deployment, not about the connection in hand; the gate now guards against a connection opened as
+the wrong role or against a database that never received the migration.
 
 **It fails closed.** There is deliberately no "skip the audit record and continue" branch. A state
 change without its evidence, or a command without its event, is worse than a refused command: it
 is a silent integrity hole nobody notices until an investigation needs the record that was never
-written. The consequence, stated plainly: **audit append, outbox publication, and idempotency
-storage are unavailable to the request path until DBCR-P1-13-001 is approved and applied, and
-operations requiring them are refused.**
+written. The consequence, stated plainly: **wherever audit append, outbox publication, or
+idempotency storage is not actually available to the connection, the operation requiring it is
+refused rather than executed unguarded.**
 
 One deliberate asymmetry: `recordSecurityEvent()` does **not** fail the request when the durable
 write is unavailable. It always emits the structured log record and the metric, attempts the
@@ -387,8 +415,9 @@ difference is that an audit record is evidence of a change that is happening, wh
 event describes an action that was already refused — the refusal is the control, and its
 telemetry is not.
 
-When the change request is applied, the preflight reports the capabilities as available and both
-gates become no-ops with no application change.
+On a database carrying the migration, the preflight reports all four capabilities as available and
+both gates pass without an application change — the code path was written once and did not move
+when the grants arrived.
 
 ## 11. Verification
 
@@ -401,8 +430,11 @@ gates become no-ops with no application change.
 
 The database-backed suites live under [`tests/backend/`](../../tests/backend/) and are run by
 `vitest.config.backend.ts` (`npm run test:backend`), split from `npm test` because they need a live
-PostgreSQL with the Release 2 migrations applied; the unit tier is
-[`tests/foundation/`](../../tests/foundation/). Conventions for both are in
+PostgreSQL with the Release 2 migrations and the DBCR-P1-13-001 grant migration applied; they
+connect as a member of the deployed `app_runtime` archetype, not as a role invented for the test
+run. The unit tier is [`tests/foundation/`](../../tests/foundation/). The database-side proof of the
+granted surface — and of everything that must remain denied — is
+`tests/db/p1-13-runtime-capabilities.test.ts` (27 tests). Conventions for both tiers are in
 [backend testing conventions](../testing/backend-testing-conventions.md). All such results are
 **development and test evidence** from the Local environment only; none of it is a statement about
 hosted behaviour, because no hosted environment exists (ADR-012).

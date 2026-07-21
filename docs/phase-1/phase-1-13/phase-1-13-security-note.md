@@ -56,30 +56,53 @@ _verified_: the distinction is the point of the exercise.
 
 ## 3. Findings
 
-Three observations were raised during review. **None is Critical or High**, and none is a defect
-left unaddressed.
+Five observations. **None is Critical**, none is left unaddressed, and the two High items were
+fixed and covered by regression tests. P1-13-F-004 and P1-13-F-005 were found later than the rest:
+they were latent in the merged feature work and unreachable until DBCR-P1-13-001 made the audit
+path executable, at which point exercising it for the first time exposed both.
 
-| Ref             | Severity         | Finding                                                                                                                                                                                                            | Exploit / failure path                                                                                                                                                                            | Disposition                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **P1-13-F-001** | **High — FIXED** | `withTransaction` issued `SET LOCAL statement_timeout = $1`. `SET` is a utility statement and cannot take a bind parameter, so **every** transaction threw SQLSTATE `42601` before the caller's first statement.   | Not a security hole — it fails closed — but the entire controlled data-access path was non-functional against a real database, and the unit tier could not see it because it opens no connection. | **Fixed** in `src/server/db/transaction.ts`: `SELECT set_config('statement_timeout', $1, true)`, which is parameterisable (no interpolation, no injection surface) and equally transaction-local. Independently reproduced against PostgreSQL 17 before and after. **Regression test:** the whole of `tests/backend/**` (58 tests) exercises the wrapper; all were red before the fix and green after. |
-| **P1-13-F-002** | Low — accepted   | `resolveClientAddress()` returns `viaTrustedProxy: true` when the peer is trusted and every forwarded entry is _also_ a trusted proxy, even though the returned IP is the peer address rather than a header value. | None. The IP is correct and the rate-limit key is correct; only the provenance flag is imprecise, and the flag is informational.                                                                  | **Accepted.** Changing it would alter behaviour a passing test pins, for no security gain. Recorded so the next reader is not surprised. Regression test: `tests/foundation/trusted-proxy.test.ts`.                                                                                                                                                                                                    |
-| **P1-13-F-003** | Low — accepted   | `parseIfMatch()` strips quotes with a permissive pattern, so an unbalanced `"7` parses as version 7.                                                                                                               | None. The value is still constrained to a positive integer and is used only as an equality predicate in a version-guarded UPDATE.                                                                 | **Accepted** as client leniency. Regression test: `tests/foundation/concurrency-helpers.test.ts`.                                                                                                                                                                                                                                                                                                      |
+| Ref             | Severity         | Finding                                                                                                                                                                                                                                                                                        | Exploit / failure path                                                                                                                                                                                                                                                                           | Disposition                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P1-13-F-001** | **High — FIXED** | `withTransaction` issued `SET LOCAL statement_timeout = $1`. `SET` is a utility statement and cannot take a bind parameter, so **every** transaction threw SQLSTATE `42601` before the caller's first statement.                                                                               | Not a security hole — it fails closed — but the entire controlled data-access path was non-functional against a real database, and the unit tier could not see it because it opens no connection.                                                                                                | **Fixed** in `src/server/db/transaction.ts`: `SELECT set_config('statement_timeout', $1, true)`, which is parameterisable (no interpolation, no injection surface) and equally transaction-local. Independently reproduced against PostgreSQL 17 before and after. **Regression test:** the whole of `tests/backend/**` (58 tests) exercises the wrapper; all were red before the fix and green after. |
+| **P1-13-F-002** | Low — accepted   | `resolveClientAddress()` returns `viaTrustedProxy: true` when the peer is trusted and every forwarded entry is _also_ a trusted proxy, even though the returned IP is the peer address rather than a header value.                                                                             | None. The IP is correct and the rate-limit key is correct; only the provenance flag is imprecise, and the flag is informational.                                                                                                                                                                 | **Accepted.** Changing it would alter behaviour a passing test pins, for no security gain. Recorded so the next reader is not surprised. Regression test: `tests/foundation/trusted-proxy.test.ts`.                                                                                                                                                                                                    |
+| **P1-13-F-003** | Low — accepted   | `parseIfMatch()` strips quotes with a permissive pattern, so an unbalanced `"7` parses as version 7.                                                                                                                                                                                           | None. The value is still constrained to a positive integer and is used only as an equality predicate in a version-guarded UPDATE.                                                                                                                                                                | **Accepted** as client leniency. Regression test: `tests/foundation/concurrency-helpers.test.ts`.                                                                                                                                                                                                                                                                                                      |
+| **P1-13-F-004** | Medium — FIXED   | `AuditDetail.classification` offered `'confidential'`, which `ck_audit_record_details_class` rejects, and omitted `'secret'`, which it accepts.                                                                                                                                                | A caller classifying a value `confidential` aborts the whole command on a CHECK violation — and because `iam.audit_mask` masks only `restricted`/`secret`, the raw values appear unmasked in the PostgreSQL error DETAIL. The strongest masking class was meanwhile unreachable from TypeScript. | **Fixed** in `src/server/audit/audit.ts`: the union is derived from `AUDIT_CLASSIFICATIONS`. **Regression test:** `tests/backend/transaction.test.ts` reconciles that constant against the live CHECK constraint, so the two cannot drift apart again.                                                                                                                                                 |
+| **P1-13-F-005** | **High — FIXED** | `appendAudit` passed its own `{field, classification, value}` objects straight through, while `iam.audit_append` reads `field`, `old`, `new`, and `class`. Every field-level audit entry therefore stored a field name with NULL before/after values at the default `internal` classification. | Audit evidence was silently content-free, and a caller's `restricted` classification was downgraded to `internal` — so a value that did arrive would not have been masked. Invisible to the existing tests, which counted audit rows rather than reading them.                                   | **Fixed** in `src/server/audit/audit.ts` by translating each entry through `toDetailEnvelope()`. Confirmed by execution against PostgreSQL 17 before the fix. **Regression test:** `tests/backend/transaction.test.ts` asserts the stored `old`/`new`/`class` for an internal, a restricted, and a secret field.                                                                                       |
 
 A fourth observation — `problemFor()` gating optional fields on truthiness rather than
 `!== undefined` — was **corrected during review** rather than logged, because it was unreachable
 today and the fix carried no behavioural risk.
 
-## 4. Change request raised, not patched
+## 4. Change request raised, then implemented
 
-**DBCR-P1-13-001.** The `app_runtime` archetype holds SELECT only across `shared` and `iam`, so
-audit append, outbox publication, idempotency storage, and security-event recording are
-unavailable to the request path. Executing the proposed grant set against a test-only rehearsal
-role additionally proved that `iam.audit_append` needs EXECUTE on three helper functions, USAGE on
-schema `extensions`, and writer-scoped SELECT policies on the three audit tables — none of which a
-reading of the migration would have revealed. All of it is now recorded in the change request.
+**DBCR-P1-13-001.** The `app_runtime` archetype held SELECT only across `shared` and `iam`, so
+audit append, outbox publication, idempotency storage, and security-event recording had no path to
+the database. The gap was raised as a change request rather than patched inside the feature work,
+and was then implemented on its own branch by migration
+`20260725090000_iam_shared_runtime_write_capabilities.sql`. Executing the proposed grant set proved
+that `iam.audit_append` also needs EXECUTE on three helper functions and writer-scoped SELECT
+policies on the three audit tables — none of which a reading of the migration would have revealed.
 
-**Security posture of the gap:** the foundation **fails closed**. There is no branch that skips an
-audit record and proceeds. The one deliberate asymmetry is `recordSecurityEvent()`, which logs and
+Two things the draft grant set asked for were **not** built, because execution showed what they
+would cost:
+
+- A tenant-wide writer SELECT policy on `iam.audit_records` would have sat beside the shipped
+  `iam.audit.view` policy and, because PostgreSQL ORs permissive policies, silently repealed that
+  read gate for every session of a tenant. The shipped policies match only a record with no chain
+  link yet — the row `iam.audit_append` is building, never a committed one. Reading audit history
+  still requires `iam.audit.view`.
+- `GRANT USAGE ON SCHEMA extensions` would have exposed `extensions.pg_stat_statements`, which the
+  extension grants to PUBLIC and which therefore cannot be revoked for one role.
+  `iam.audit_hash` uses `pg_catalog.sha256` instead, so no schema grant is made.
+
+One accepted Low widening remains and is recorded in §7 of the change request: any session of a
+tenant may read that tenant's `iam.audit_integrity_links` — a counter, an opaque record id, and two
+SHA-256 digests, with no action, actor, entity, or field value — because extending a hash chain
+requires its previous link.
+
+**Security posture:** the foundation still **fails closed**. There is no branch that skips an audit
+record and proceeds; the capability is measured on the connection in hand rather than assumed from
+the migration history. The one deliberate asymmetry is `recordSecurityEvent()`, which logs and
 continues rather than failing the request — because the denial it describes has _already been
 enforced_, and converting a clean 403 into a 500 would degrade security, not improve it.
 
@@ -93,7 +116,13 @@ enforced_, and converting a clean 403 into a 500 would degrade security, not imp
 
 ## 6. Conclusion
 
-**Zero unresolved Critical findings. Zero unresolved High findings** — the single High
-(P1-13-F-001) was fixed and is covered by the backend suite. Two Low findings are accepted and
-recorded with their reasons. One database change request is raised with executed evidence and is
-deliberately not implemented in this phase.
+**Zero unresolved Critical findings. Zero unresolved High findings** — both Highs (P1-13-F-001 and
+P1-13-F-005) and the one Medium (P1-13-F-004) were fixed and are covered by regression tests. Two
+Low findings are accepted and recorded with their reasons. One database change request was raised
+with executed evidence, deliberately kept out of the feature work, and implemented separately as
+DBCR-P1-13-001; its own accepted residual is one Low, recorded in §7 of that document.
+
+Worth saying plainly, because it is the useful lesson here: two of these defects existed in code
+that had already passed a full review and green CI, and stayed invisible because the tests counted
+rows instead of reading them. They surfaced the moment the capability became real. A test that
+asserts _that_ something was written is not evidence of _what_ was written.

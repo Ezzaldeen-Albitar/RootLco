@@ -63,6 +63,17 @@ SELECT iam.audit_append(
 );
 ```
 
-`audit_append` is the sole writer, granted to no application role today; a
-Phase-1-14 service role (or a reviewed `SECURITY DEFINER` wrapper) will be
-granted it then. Restricted/secret detail values are masked automatically.
+`audit_append` is the sole writer. Since DBCR-P1-13-001 (migration
+`20260725090000`) `app_runtime` holds `EXECUTE` on it — and, because it is
+`SECURITY INVOKER`, on its three helpers `iam.audit_mask`, `iam.audit_canonical`
+and `iam.audit_hash` — plus tenant-scoped `INSERT` on the three audit tables. No
+`SECURITY DEFINER` wrapper was introduced; the count of definer routines is still
+zero. Restricted/secret detail values are masked automatically.
+
+Being able to append is **not** being able to read: reading committed audit
+history still requires the `iam.audit.view` permission through
+`sel_audit_*_permitted`. The writer's own reads go through
+`sel_audit_records_unlinked` / `sel_audit_record_details_unlinked`, which match
+only a record with no chain link yet — the row under construction, never a
+committed one. `app_readonly` gained nothing, and no role gained `UPDATE`,
+`DELETE` or `EXECUTE` on `iam.audit_verify_chain`.

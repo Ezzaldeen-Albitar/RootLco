@@ -184,13 +184,22 @@ describe('role posture', () => {
     }
   });
 
-  it('application roles hold NO privilege on platform-only tables (idempotency keys)', async () => {
+  it('gives idempotency keys a runtime append path and app_readonly nothing', async () => {
+    // Until DBCR-P1-13-001 this table was platform-only: RLS forced with no
+    // policy and no application grant, so every app role was denied twice. The
+    // request path now reserves its own tenant's keys — SELECT and INSERT only,
+    // so a stored response can never be edited or erased — and app_readonly is
+    // still denied twice, exactly as before.
     const { rows } = await admin.query(
       `SELECT grantee, privilege_type FROM information_schema.role_table_grants
        WHERE table_schema = 'shared' AND table_name = 'idempotency_keys'
-         AND grantee IN ('app_runtime','app_readonly')`
+         AND grantee IN ('app_runtime','app_readonly')
+       ORDER BY grantee, privilege_type`
     );
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([
+      { grantee: 'app_runtime', privilege_type: 'INSERT' },
+      { grantee: 'app_runtime', privilege_type: 'SELECT' },
+    ]);
   });
 
   it('DELETE is granted to application roles on NO module-schema table', async () => {

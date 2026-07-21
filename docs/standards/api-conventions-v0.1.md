@@ -164,10 +164,14 @@ key reuse is detected by content rather than by byte-identical formatting.
 The reservation row is written **inside the caller's transaction**, so a key is durable if and only
 if the command it guards committed.
 
-> **Status today.** `shared.idempotency_keys` is not writable by the runtime role
+> **Status today.** The runtime role holds tenant-scoped SELECT and INSERT on
+> `shared.idempotency_keys`
 > ([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)),
-> so an idempotency-critical operation is **refused** rather than executed unguarded. The
-> capability gate reports this precisely; it does not degrade silently.
+> so reservation and replay work on the request path. It holds no UPDATE or DELETE: a stored key
+> and its response document cannot be rewritten, which is what makes a replay trustworthy. Where
+> the capability is not actually present on the connection, an idempotency-critical operation is
+> **refused** rather than executed unguarded — the capability gate reports that precisely and does
+> not degrade silently.
 
 ## 7. Optimistic concurrency, `If-Match`, and `ETag`
 

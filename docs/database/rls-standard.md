@@ -16,7 +16,10 @@ technical self-review, never to be described as independent review) ·
 [Number-sequence standard](./number-sequence-standard.md) ·
 Reference implementation: [`supabase/migrations/0002_base_schemas.sql`](../../supabase/migrations/0002_base_schemas.sql),
 [`supabase/migrations/0003_number_sequences.sql`](../../supabase/migrations/0003_number_sequences.sql) ·
-Proof suite: [`tests/db/rls.test.ts`](../../tests/db/rls.test.ts)
+Proof suite: [`tests/db/rls.test.ts`](../../tests/db/rls.test.ts) ·
+Later amendment: [DBCR-P1-13-001](./change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)
+(migration `20260725090000`, 2026-07-21) — the foundation write policies described
+in §5.1, §5.2 and §5.3
 
 ---
 
@@ -160,6 +163,24 @@ fixed order, keeping the prefix and scope) and record the full name in a
 Existing examples (migration 0003): `sel_number_sequences_tenant`,
 `upd_number_sequences_tenant`.
 
+Where a policy narrows by something other than the org hierarchy, the suffix
+names **that** narrowing rather than repeating `tenant` — the tenant predicate is
+mandatory regardless, so restating it in the name would carry no information.
+The eleven foundation policies added by DBCR-P1-13-001 (migration
+`20260725090000`) are the practised set. Nine take a non-hierarchy suffix:
+`ins_audit_records_writer`, `ins_audit_record_details_writer` and
+`ins_audit_integrity_links_writer` (the append path);
+`sel_audit_records_unlinked` and `sel_audit_record_details_unlinked` (rows that
+have no chain link yet); `sel_audit_integrity_links_chain` (the chain a writer
+must extend); `ins_event_outbox_producer` and `sel_event_outbox_producer` (the
+producing side of the outbox, as distinct from the worker's dispatch side); and
+`ins_security_events_runtime`. The remaining two,
+`ins_idempotency_keys_tenant` / `sel_idempotency_keys_tenant`, narrow by nothing
+beyond the tenant and so keep the plain `tenant` suffix. Every one of the eleven
+is `tenant_id = iam.current_tenant_id()`; the suffix says what else the policy is
+for. A suffix that names a capability must never be read as widening the tenant
+scope.
+
 The separate `wkr_` prefix identifies an enumerated infrastructure-worker
 policy. It is never a synonym for a tenant policy.
 
@@ -209,7 +230,17 @@ Not every table receives all four:
 - **Append-only classes** (status history, audit evidence) receive `ins_` + `sel_`
   only; UPDATE and DELETE are denied by having neither policy nor grant (verified
   against an append-only fixture in the proof suite: UPDATE/DELETE fail with
-  SQLSTATE 42501).
+  SQLSTATE 42501). A table may carry more than one `sel_` policy where the reads
+  serve different purposes: the `iam.audit_*` tables pair a permission-gated
+  `sel_*_permitted` policy (tenant **and** `iam.audit.view`) with a
+  writer-scoped `sel_*_unlinked` policy that matches only the row a running
+  `iam.audit_append` call has not yet linked into the chain. Because PostgreSQL
+  **ORs** permissive policies, a second `sel_` policy must be written so it
+  cannot subsume the first — a plain `tenant_id = iam.current_tenant_id()`
+  writer policy beside a permission-gated one silently repeals the permission
+  gate for every session of the tenant. That failure mode was found by execution
+  during DBCR-P1-13-001 and is the reason the writer read is expressed as "has
+  no chain link yet" rather than as "same tenant".
 - **Administratively provisioned tables** (e.g. `shared.number_sequences`) may
   deny INSERT and DELETE to runtime roles entirely, as migration 0003 does.
 
@@ -229,9 +260,35 @@ CREATE POLICY wkr_event_outbox_all ON shared.event_outbox
 must claim delivery obligations across every tenant without adopting a user's
 tenant context. This is an infrastructure capability on an exactly enumerated
 worker table, not `BYPASSRLS`: `app_worker` remains non-owning and
-`NOBYPASSRLS`, receives only SELECT/INSERT/UPDATE, and cannot DELETE. Runtime
-and readonly roles receive neither policy nor grant. Any new `wkr_` policy must
-document its all-tenant exposure and exact verbs in the creating migration.
+`NOBYPASSRLS`, receives only SELECT/INSERT/UPDATE, and cannot DELETE. Any new
+`wkr_` policy must document its all-tenant exposure and exact verbs in the
+creating migration.
+
+`app_readonly` receives neither policy nor grant on this table. `app_runtime`
+does not receive the `wkr_` policy either, and must never be given it: adopting
+an all-tenant policy on the request path would dissolve tenant isolation for
+every request. It instead has its own, strictly narrower producer pair added by
+DBCR-P1-13-001 —
+
+```sql
+CREATE POLICY ins_event_outbox_producer ON shared.event_outbox
+  FOR INSERT TO app_runtime
+  WITH CHECK (tenant_id = iam.current_tenant_id());
+CREATE POLICY sel_event_outbox_producer ON shared.event_outbox
+  FOR SELECT TO app_runtime
+  USING (tenant_id = iam.current_tenant_id());
+```
+
+— because an event must be written in the **producer's** transaction, which is
+the request transaction (BR-INT-001); a second connection as `app_worker` would
+be a different transaction and would reintroduce the dual-write window the outbox
+exists to eliminate. The `SELECT` policy is required because the producer writes
+with `INSERT ... RETURNING`, which is evaluated against the SELECT policy. The
+runtime receives no UPDATE, no DELETE, and no `EXECUTE` on the claim / complete /
+fail routines, so producing an event and draining the queue stay separate
+capabilities. This is the general rule for the class: where a request path
+genuinely needs a verb on a worker table, it gets its own tenant-scoped policy —
+never the `wkr_` one.
 
 Each deliberate absence must be recorded in a comment in the creating migration,
 as migration 0003 does.

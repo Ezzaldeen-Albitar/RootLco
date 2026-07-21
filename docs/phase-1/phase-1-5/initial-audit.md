@@ -28,6 +28,18 @@ P1-05-DB / P1-05-SEC / P1-05-QA task.
 > §1.4's Increment M seed (shipped as `supabase/seeds/05_shared_reference.sql`
 > plus the controlled pilot-provisioning package).
 
+> **Later amendment (2026-07-21, DBCR-P1-13-001):** the runtime grant posture recorded
+> in §1.3 and §2 — `app_runtime` holding nothing on `shared.event_outbox`,
+> `shared.processed_events`, `shared.error_records`, `shared.idempotency_keys`, and the
+> audit tables — was accurate through Release 2 and was changed by migration
+> `20260725090000_iam_shared_runtime_write_capabilities.sql`. `app_runtime` now holds
+> tenant-scoped SELECT and INSERT on `shared.event_outbox` and
+> `shared.idempotency_keys`, and INSERT on the three audit tables and
+> `iam.security_events`. `shared.processed_events` and `shared.error_records` are
+> untouched and remain worker-only, and `app_readonly` gained nothing. See
+> [DBCR-P1-13-001](../../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)
+> and the [RLS policy matrix](./shared-services-rls-policy-matrix.md).
+
 ---
 
 ## 0. Stage-A preconditions (verified before this branch was created)

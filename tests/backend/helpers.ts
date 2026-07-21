@@ -2,46 +2,35 @@
  * Backend-foundation integration harness (Phase 1-13).
  *
  * These suites exercise the foundation against a live PostgreSQL carrying the
- * frozen Release 2 schema. Three connection identities are used and the
- * difference between them is the whole point:
+ * Release 2 schema plus the DBCR-P1-13-001 remediation. Two connection
+ * identities are used and the difference between them is the whole point:
  *
- *  - ADMIN (`postgres`) — provisions fixtures and creates/drops the test-only
- *    role below. Nothing executed here is ever evidence about runtime behaviour.
+ *  - ADMIN (`postgres`) — provisions and removes fixtures, and reads back what
+ *    actually landed. Nothing executed here is ever evidence about runtime
+ *    behaviour: it bypasses RLS.
  *  - RUNTIME (`rootlco_test_runtime`, member of `app_runtime`) — the identity the
- *    application actually deploys with. Every fail-closed and isolation assertion
- *    runs here.
- *  - CR REHEARSAL (`rootlco_p1_13_cr_rehearsal`) — see the block below.
+ *    application actually deploys with. Every capability, isolation, and
+ *    fail-closed assertion runs here.
  *
  * ============================================================================
- * DBCR-P1-13-001 REHEARSAL ROLE — TEST-ONLY, NOT A SCHEMA CHANGE
+ * DBCR-P1-13-001 IS APPLIED — THE REHEARSAL ROLE IS GONE
  * ============================================================================
- * The frozen Release 2 grant surface gives `app_runtime` SELECT only across
- * `shared` and `iam`. Four foundation write capabilities are therefore
- * unavailable: `audit.append`, `outbox.publish`, `idempotency.store`, and
- * `security-event.record`. That gap is raised as change request
- * **DBCR-P1-13-001**; Phase 1-13 must NOT add or modify a migration to close it,
- * and this harness does not: no file under `supabase/` is created, edited, or
- * deleted by anything here.
+ * Until migration `20260725090000_iam_shared_runtime_write_capabilities.sql`,
+ * `app_runtime` held SELECT only across `shared` and `iam`, so four foundation
+ * write capabilities — `audit.append`, `outbox.publish`, `idempotency.store`,
+ * and `security-event.record` — were unavailable and these suites ran against a
+ * temporary rehearsal login that carried the *proposed* privileges. That role
+ * (`rootlco_p1_13_cr_rehearsal`) and the grants and policies it needed have been
+ * removed from this harness: the capabilities are real now, so proving them on
+ * anything other than the deployed identity would prove nothing.
  *
- * What `ensureCrRehearsalRole()` does instead is create a **temporary login role
- * at test runtime** holding exactly the privileges DBCR-P1-13-001 proposes, so
- * the transactional behaviour that depends on them (all-or-nothing across
- * business row + status history + audit + outbox, idempotent replay, security
- * events) can genuinely be executed and proven rather than asserted on paper.
- * `dropCrRehearsalRole()` removes the role and every policy again, so the
- * database is left exactly as the migrations left it. If the change request is
- * later approved and applied, these suites keep passing unchanged — and the
- * `capabilities` suite flips from "missing" to "available" on the runtime role,
- * which is the signal that the rehearsal is no longer needed.
- *
- * Executing the rehearsal also **measured two requirements the change request as
- * drafted does not list** (see the final report): `iam.audit_append` is SECURITY
- * INVOKER, so its caller additionally needs EXECUTE on `iam.audit_mask`,
- * `iam.audit_canonical` and `iam.audit_hash`, plus USAGE on schema `extensions`
- * (for `extensions.digest`), and it needs to READ its own tenant's
- * `audit_records`/`audit_integrity_links` to assign the next `seq` and the
- * previous chain hash — which the shipped `sel_audit_*_permitted` policies only
- * allow to a principal holding `iam.audit.view`.
+ * Two of the requirements the rehearsal measured are worth keeping in view,
+ * because they shaped the migration: `iam.audit_append` is SECURITY INVOKER, so
+ * its caller also needs EXECUTE on `iam.audit_mask`, `iam.audit_canonical` and
+ * `iam.audit_hash`; and it must READ its own tenant's chain to assign the next
+ * `seq` and the previous hash. The migration answers the second one by deriving
+ * `seq` from `iam.audit_integrity_links` and exposing only *unlinked* records to
+ * the writer, so appending never becomes a way to read audit history.
  *
  * Credentials below are the public local-dev defaults, overridable via
  * DB_HOST / DB_PORT / DB_NAME. No production credential is ever read here.
@@ -51,6 +40,7 @@ import { Pool, type ClientConfig, type PoolClient } from 'pg';
 import {
   BRANCH_A1,
   COMPANY_A1,
+  READONLY_LOGIN,
   RUNTIME_LOGIN,
   TENANT_A,
   TENANT_B,
@@ -65,6 +55,7 @@ import { buildRequestContext, type RequestContext } from '@/server/context/reque
 export {
   BRANCH_A1,
   COMPANY_A1,
+  READONLY_LOGIN,
   RUNTIME_LOGIN,
   TENANT_A,
   TENANT_B,
@@ -80,9 +71,6 @@ const PORT = Number(process.env.DB_PORT ?? 54322);
 const DATABASE = process.env.DB_NAME ?? 'postgres';
 /** Deliberately weak, deliberately fake, local test databases only. */
 const TEST_LOGIN_PASSWORD = 'rootlco-local-test-only';
-
-/** The DBCR-P1-13-001 rehearsal login. Created and dropped by this harness. */
-export const CR_REHEARSAL_LOGIN = 'rootlco_p1_13_cr_rehearsal';
 
 function dsn(user: string): string {
   // Assembled in two steps on purpose. The tracked-secret scanner matches a
@@ -123,138 +111,18 @@ export function runtimeAppPool(max = 5): Pool {
   return new Pool(poolConfig(RUNTIME_LOGIN, max));
 }
 
-/** Pool bound to the DBCR-P1-13-001 rehearsal identity. */
-export function crRehearsalPool(max = 5): Pool {
-  return new Pool(poolConfig(CR_REHEARSAL_LOGIN, max));
-}
-
 /** Pool bound to the worker archetype (`app_worker`). */
 export function workerAppPool(max = 5): Pool {
   return new Pool(poolConfig(WORKER_LOGIN, max));
 }
 
-// ---------------------------------------------------------------------------
-// DBCR-P1-13-001 rehearsal role: grants, policies, and their exact inverses.
-// ---------------------------------------------------------------------------
-
-const AUDIT_APPEND_SIGNATURE =
-  'iam.audit_append(uuid,uuid,text,text,text,uuid,uuid,uuid,uuid,text,jsonb)';
-
-/** Every privilege the change request proposes, plus the three measured extras. */
-const REHEARSAL_GRANTS: readonly string[] = [
-  `GRANT app_runtime TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT EXECUTE ON FUNCTION ${AUDIT_APPEND_SIGNATURE} TO ${CR_REHEARSAL_LOGIN}`,
-  // Measured, not assumed: audit_append is SECURITY INVOKER, so its helpers are
-  // executed with the caller's privileges too.
-  `GRANT EXECUTE ON FUNCTION iam.audit_mask(text, text) TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT EXECUTE ON FUNCTION iam.audit_canonical(uuid) TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT EXECUTE ON FUNCTION iam.audit_hash(bytea, text) TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT USAGE ON SCHEMA extensions TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT SELECT, INSERT ON shared.event_outbox TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT SELECT, INSERT ON shared.idempotency_keys TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT INSERT ON iam.security_events TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT SELECT, INSERT ON iam.audit_records TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT SELECT, INSERT ON iam.audit_record_details TO ${CR_REHEARSAL_LOGIN}`,
-  `GRANT SELECT, INSERT ON iam.audit_integrity_links TO ${CR_REHEARSAL_LOGIN}`,
-];
-
-const REHEARSAL_REVOKES: readonly string[] = [
-  `REVOKE ALL ON FUNCTION ${AUDIT_APPEND_SIGNATURE} FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON FUNCTION iam.audit_mask(text, text) FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON FUNCTION iam.audit_canonical(uuid) FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON FUNCTION iam.audit_hash(bytea, text) FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON SCHEMA extensions FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON shared.event_outbox FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON shared.idempotency_keys FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON iam.security_events FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON iam.audit_records FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON iam.audit_record_details FROM ${CR_REHEARSAL_LOGIN}`,
-  `REVOKE ALL ON iam.audit_integrity_links FROM ${CR_REHEARSAL_LOGIN}`,
-];
-
-interface RehearsalPolicy {
-  readonly name: string;
-  readonly table: string;
-  readonly command: 'INSERT' | 'SELECT';
-}
-
 /**
- * Tenant-scoped policies for the rehearsal role ONLY. Every one is
- * `tenant_id = iam.current_tenant_id()`: the change request must not be
- * rehearsed with a weaker isolation rule than the rest of the schema uses.
- *
- * The SELECT entries are not decoration. `INSERT … RETURNING` is evaluated
- * against the SELECT policy, and `iam.audit_append` reads its own tenant's
- * `audit_records` (next `seq`) and `audit_integrity_links` (previous hash)
- * before it can write the next chain link.
+ * Pool bound to the read-only archetype (`app_readonly`). DBCR-P1-13-001 granted
+ * it nothing, so it is the honest way to exercise the capability gate's
+ * fail-closed path without simulating a missing grant.
  */
-const REHEARSAL_POLICIES: readonly RehearsalPolicy[] = [
-  { name: 'cr_rehearsal_event_outbox_ins', table: 'shared.event_outbox', command: 'INSERT' },
-  { name: 'cr_rehearsal_event_outbox_sel', table: 'shared.event_outbox', command: 'SELECT' },
-  { name: 'cr_rehearsal_idempotency_ins', table: 'shared.idempotency_keys', command: 'INSERT' },
-  { name: 'cr_rehearsal_idempotency_sel', table: 'shared.idempotency_keys', command: 'SELECT' },
-  { name: 'cr_rehearsal_security_events_ins', table: 'iam.security_events', command: 'INSERT' },
-  { name: 'cr_rehearsal_audit_records_ins', table: 'iam.audit_records', command: 'INSERT' },
-  { name: 'cr_rehearsal_audit_records_sel', table: 'iam.audit_records', command: 'SELECT' },
-  { name: 'cr_rehearsal_audit_details_ins', table: 'iam.audit_record_details', command: 'INSERT' },
-  { name: 'cr_rehearsal_audit_details_sel', table: 'iam.audit_record_details', command: 'SELECT' },
-  { name: 'cr_rehearsal_audit_links_ins', table: 'iam.audit_integrity_links', command: 'INSERT' },
-  { name: 'cr_rehearsal_audit_links_sel', table: 'iam.audit_integrity_links', command: 'SELECT' },
-];
-
-function createPolicySql(policy: RehearsalPolicy): string {
-  const predicate = 'tenant_id = iam.current_tenant_id()';
-  const clause = policy.command === 'INSERT' ? 'WITH CHECK' : 'USING';
-  return (
-    `CREATE POLICY ${policy.name} ON ${policy.table} ` +
-    `FOR ${policy.command} TO ${CR_REHEARSAL_LOGIN} ${clause} (${predicate})`
-  );
-}
-
-/**
- * Creates the rehearsal role, its grants, and its policies. Idempotent: a run
- * that crashed before `dropCrRehearsalRole()` leaves objects behind, and a suite
- * must be able to start from that state.
- */
-export async function ensureCrRehearsalRole(admin: Pool): Promise<void> {
-  await admin.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${CR_REHEARSAL_LOGIN}') THEN
-        CREATE ROLE ${CR_REHEARSAL_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-      END IF;
-    END;
-    $$;
-  `);
-  for (const statement of REHEARSAL_GRANTS) {
-    await admin.query(statement);
-  }
-  for (const policy of REHEARSAL_POLICIES) {
-    await admin.query(`DROP POLICY IF EXISTS ${policy.name} ON ${policy.table}`);
-    await admin.query(createPolicySql(policy));
-  }
-}
-
-/**
- * Removes every object `ensureCrRehearsalRole()` created. Privileges are revoked
- * explicitly rather than with `DROP OWNED BY`, which the local `postgres` role is
- * not permitted to run against another role.
- */
-export async function dropCrRehearsalRole(admin: Pool): Promise<void> {
-  const exists = await admin.query<{ present: boolean }>(
-    'SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) AS present',
-    [CR_REHEARSAL_LOGIN]
-  );
-  if (exists.rows[0]?.present !== true) return;
-
-  for (const policy of REHEARSAL_POLICIES) {
-    await admin.query(`DROP POLICY IF EXISTS ${policy.name} ON ${policy.table}`);
-  }
-  for (const statement of REHEARSAL_REVOKES) {
-    await admin.query(statement);
-  }
-  await admin.query(`DROP ROLE IF EXISTS ${CR_REHEARSAL_LOGIN}`);
+export function readonlyAppPool(max = 2): Pool {
+  return new Pool(poolConfig(READONLY_LOGIN, max));
 }
 
 // ---------------------------------------------------------------------------
