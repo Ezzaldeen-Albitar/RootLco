@@ -22,6 +22,20 @@ decision's history stays readable.
 | **BROKER**                                   | Whether an external message broker replaces or fronts the outbox         | The database outbox is proven and sufficient at this stage; a broker would add an unproven delivery path beside a proven one                                                                                                                        | Consumers are registered against an interface, not a transport; the outbox remains the source of truth (ADR-014)                                                                                                                     |
 | **DBCR-P1-13-001** — **resolved 2026-07-21** | Granting the runtime archetype its four write capabilities               | The feature work must not add or modify a migration, so the defect was raised as a change request; it was then designed, executed, and evidenced separately and implemented by migration `20260725090000_iam_shared_runtime_write_capabilities.sql` | Unchanged by the resolution: capability is still measured on the connection at runtime and the foundation still fails closed. The preflight now reports all four available, with no application change                               |
 
+## Carried forward at gate closure (2026-07-21)
+
+The gate recorded **Go**. Every row above except DBCR-P1-13-001 remains open and is carried into
+Phase 1-14 unchanged; closing the gate closes none of them. Two additional items were raised by the
+gate's adversarial review and are carried with an explicit recommendation rather than left implicit:
+
+| Item                                       | Why it is carried                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ADV-01** — layering gate coverage        | The boundary checker matches alias imports only, so a relative import of the data layer from a handler passes CI. Nothing in the merged tree does this, but it is the guardrail the phase's authorization claims rest on. **Recommended to close before P1-14.** |
+| **ADV-04** — idempotency principal binding | A replay is matched on `(tenant, operation, key)` only, so a second user of the same tenant can receive the first's stored response. Latent — no idempotent business command exists yet. **Recommended to close before P1-14.**                                  |
+
+Both are recorded in full, with severity and remediation, in
+[`phase-1-13-adversarial-review.md`](./phase-1-13-adversarial-review.md).
+
 ## Rule applied throughout
 
 Where a decision was open, the phase chose the option that is **reversible and fails closed** over

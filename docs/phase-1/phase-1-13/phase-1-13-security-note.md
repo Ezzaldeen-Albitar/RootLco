@@ -126,3 +126,27 @@ Worth saying plainly, because it is the useful lesson here: two of these defects
 that had already passed a full review and green CI, and stayed invisible because the tests counted
 rows instead of reading them. They surfaced the moment the capability became real. A test that
 asserts _that_ something was written is not evidence of _what_ was written.
+
+## 7. Gate review addendum (2026-07-21)
+
+A further refute-focused review was run against the **merged** implementation — feature work and
+database remediation together — as part of closing the gate. It is recorded in full in
+[`phase-1-13-adversarial-review.md`](./phase-1-13-adversarial-review.md) and does not change the
+conclusion above: **zero unresolved Critical, zero unresolved High**.
+
+It did add four Medium findings, every one of them latent in P1-13 and becoming live in P1-14, plus
+five Low and five informational observations. Two deserve naming here, because they touch controls
+this note relies on:
+
+- **ADV-01** — the layering gate matches alias imports only, so a relative import of the data layer
+  from a handler passes CI. Confirmed by execution against a throwaway fixture. Nothing in the
+  merged tree does this, but it is the guardrail behind abuse cases 1 and 3, and it should be closed
+  before P1-14.
+- **ADV-04** — an idempotency replay is matched on `(tenant, operation, key)` only, so a second user
+  of the same tenant can receive the first user's stored response. Abuse case 17 covered "same key,
+  altered request"; it did not cover the cross-principal case. Latent, because no idempotent
+  business command exists yet.
+
+One suspected finding was **refuted by measurement** rather than argued away: the writer-scoped
+audit read predicate does not make appends scale with chain length — 50 appends took 28.5 ms on a
+20,000-link chain against 35.7 ms on an empty one.
