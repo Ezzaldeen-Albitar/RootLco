@@ -47,7 +47,7 @@ Reading rules:
 | FR-INV-01 | Authoritative integrated inventory (byte-identical structural equivalence, hash `d3b1e7e4`) | 242 tables · 3562 cols · 210 fns · 539 trig · 585 pol · 999 idx · 1843 constr · 0 views | `scripts/db/structural-review.mjs` (`live_tables=242`)                            | `structural-review.json`                                            | VALIDATED |
 | FR-FK-01  | Referential integrity: all FKs validated (orphans impossible) and all FK-index-covered      | 537 FKs                                                                                 | `structural-review.mjs` — `all_fks_validated`, `fk_index_coverage_complete`       | `structural-review.json` (`unvalidated_fks=[]`, `uncovered_fks=[]`) | PASS      |
 | FR-IDX-01 | No TRUE duplicate indexes                                                                   | 999 indexes                                                                             | `structural-review.mjs` — `no_duplicate_indexes`                                  | `structural-review.json` (`duplicate_indexes=[]`)                   | PASS      |
-| FR-E2E-01 | Integrated cross-domain lifecycle commits in one transaction and reconciles                 | svc → inv → veh → rec → wo → quo → sal → delivery → wty                                 | `tests/db/p1-12-integrated-scenario.test.ts` — 8/8 PASS                           | integrated-scenario suite (in 1141)                                 | PASS      |
+| FR-E2E-01 | Integrated cross-domain lifecycle commits in one transaction and reconciles                 | svc → inv → veh → rec → wo → quo → sal → delivery → wty                                 | `tests/db/p1-12-integrated-scenario.test.ts` — 8/8 PASS                           | `evidence/integrated-scenario-report.md` (in the closing 119/1149)  | PASS      |
 
 Cross-domain chain (FR-E2E-01), single committed transaction: service + published price → inventory
 item + warehouse + 50 on hand → vehicle → authorized visit + custody accept → work order → quotation
@@ -74,16 +74,16 @@ Only rules with **direct positive/negative evidence** from the integrated scenar
 
 ## 4. Non-functional requirements (NFR)
 
-| ID          | Non-functional requirement (evidenced)                                                               | Schema object(s)                                        | Test / validator                                                                                  | Evidence artifact                      | Status                             |
-| ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------- |
-| NFR-SEC-01  | Every tenant table RLS ENABLE + FORCE; runtime role owns nothing                                     | 242/242 tables                                          | `structural-review.mjs` + isolation suites — 0 RLS-not-forced                                     | `structural-review.json`, inventory    | PASS                               |
-| NFR-SEC-02  | 0 `SECURITY DEFINER`; all module functions INVOKER + `search_path=''` + REVOKE PUBLIC                | 210 functions                                           | inventory + `test:db` security suites                                                             | `environment-manifest.md`              | PASS                               |
-| NFR-SEC-03  | No runtime-reachable destructive cascade can destroy financial/audit history                         | 5 admin-only CASCADE FKs                                | `structural-review.mjs` — `no_runtime_reachable_destructive_cascade`                              | `structural-review.json`               | PASS                               |
-| NFR-ISO-01  | Tenant/branch isolation: tenant B + no-context see ZERO across 10 domains; cross-tenant write DENIED | 10 domain tables (2 tenants/2 branches)                 | `p1-12-integrated-scenario.test.ts` isolation matrix + crm/veh/p1-09/p1-10/p1-11 isolation suites | isolation suites (in 1141)             | PASS                               |
-| NFR-CLS-01  | Classification registers reconcile registry vs live (restricted gated, not searchable)               | crm/veh/apt-rec/wo-tech-dia-qms/svc-quo-inv/sal-wty-rpt | 6 classification validators all reconcile                                                         | `environment-manifest.md`, gate report | PASS                               |
-| NFR-CON-01  | Concurrency single-winner invariants hold with no flakiness (×3 consecutive rounds)                  | apt-rec/crm/p1-09/p1-10/p1-11/veh                       | concurrency campaign ×3 — each round 6 files / 36 tests all PASS                                  | concurrency campaign log               | PASS                               |
-| NFR-PERF-01 | Tenant-leading indexed POINT lookups use index (no seq scan), ~1 ms median (**validation baseline**) | crm/veh tenant-scoped indexes                           | `scripts/db/perf-baseline.mjs` (30 000 partners + 30 000 vehicles, ephemeral, deleted)            | `performance-baseline.json`            | VALIDATED                          |
-| NFR-SCL     | Production scalability / capacity target                                                             | —                                                       | not in P1-12 scope (validation baselines are **not** capacity claims)                             | `performance-baseline.json` note       | **UNRESOLVED** (see §7, P1-OD-027) |
+| ID          | Non-functional requirement (evidenced)                                                               | Schema object(s)                                        | Test / validator                                                                                  | Evidence artifact                                                                         | Status                             |
+| ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------- |
+| NFR-SEC-01  | Every tenant table RLS ENABLE + FORCE; runtime role owns nothing                                     | 242/242 tables                                          | `structural-review.mjs` + isolation suites — 0 RLS-not-forced                                     | `structural-review.json`, inventory                                                       | PASS                               |
+| NFR-SEC-02  | 0 `SECURITY DEFINER`; all module functions INVOKER + `search_path=''` + REVOKE PUBLIC                | 210 functions                                           | inventory + `test:db` security suites                                                             | `environment-manifest.md`                                                                 | PASS                               |
+| NFR-SEC-03  | No runtime-reachable destructive cascade can destroy financial/audit history                         | 5 admin-only CASCADE FKs                                | `structural-review.mjs` — `no_runtime_reachable_destructive_cascade`                              | `structural-review.json`                                                                  | PASS                               |
+| NFR-ISO-01  | Tenant/branch isolation: tenant B + no-context see ZERO across 10 domains; cross-tenant write DENIED | 10 domain tables (2 tenants/2 branches)                 | `p1-12-integrated-scenario.test.ts` isolation matrix + crm/veh/p1-09/p1-10/p1-11 isolation suites | module isolation suites (in 1141) + integrated isolation matrix (in the closing 119/1149) | PASS                               |
+| NFR-CLS-01  | Classification registers reconcile registry vs live (restricted gated, not searchable)               | crm/veh/apt-rec/wo-tech-dia-qms/svc-quo-inv/sal-wty-rpt | 6 classification validators all reconcile                                                         | `environment-manifest.md`, gate report                                                    | PASS                               |
+| NFR-CON-01  | Concurrency single-winner invariants hold with no flakiness (×3 consecutive rounds)                  | apt-rec/crm/p1-09/p1-10/p1-11/veh                       | concurrency campaign ×3 — each round 6 files / 36 tests all PASS                                  | concurrency campaign log                                                                  | PASS                               |
+| NFR-PERF-01 | Tenant-leading indexed POINT lookups use index (no seq scan), ~1 ms median (**validation baseline**) | crm/veh tenant-scoped indexes                           | `scripts/db/perf-baseline.mjs` (30 000 partners + 30 000 vehicles, ephemeral, deleted)            | `performance-baseline.json`                                                               | VALIDATED                          |
+| NFR-SCL     | Production scalability / capacity target                                                             | —                                                       | not in P1-12 scope (validation baselines are **not** capacity claims)                             | `performance-baseline.json` note                                                          | **UNRESOLVED** (see §7, P1-OD-027) |
 
 Measured baselines (NFR-PERF-01, proposed validation baselines only): `partner_point_lookup`
 median 1.07 ms / p95 1.50 / p99 1.75; `vehicle_point_lookup` median 1.02 ms;
@@ -94,11 +94,11 @@ median 1.07 ms / p95 1.50 / p99 1.75; `vehicle_point_lookup` median 1.02 ms;
 
 ## 5. Use cases (UC)
 
-| ID        | Use case (evidenced)                                                                | Schema object(s)               | Test / validator                           | Evidence artifact                                   | Status |
-| --------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------ | --------------------------------------------------- | ------ |
-| UC-LC-01  | End-to-end service-to-warranty lifecycle for a vehicle in one committed transaction | svc/inv/veh/rec/wo/quo/sal/wty | `p1-12-integrated-scenario.test.ts` — 8/8  | integrated-scenario suite                           | PASS   |
-| UC-ISO-01 | Multi-tenant / multi-branch isolation under the 2×2 role matrix                     | 10 domain tables               | isolation matrix + module isolation suites | isolation suites (in 1141)                          | PASS   |
-| UC-BR-01  | Backup → encrypt → restore into a fresh DB with schema-hash + control-total match   | full catalog (validation DB)   | `scripts/db/backup-restore-drill.sh`       | backup/restore drill (uncommitted, validation-only) | PASS   |
+| ID        | Use case (evidenced)                                                                | Schema object(s)               | Test / validator                           | Evidence artifact                                                                         | Status |
+| --------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------- | ------ |
+| UC-LC-01  | End-to-end service-to-warranty lifecycle for a vehicle in one committed transaction | svc/inv/veh/rec/wo/quo/sal/wty | `p1-12-integrated-scenario.test.ts` — 8/8  | integrated-scenario suite                                                                 | PASS   |
+| UC-ISO-01 | Multi-tenant / multi-branch isolation under the 2×2 role matrix                     | 10 domain tables               | isolation matrix + module isolation suites | module isolation suites (in 1141) + integrated isolation matrix (in the closing 119/1149) | PASS   |
+| UC-BR-01  | Backup → encrypt → restore into a fresh DB with schema-hash + control-total match   | full catalog (validation DB)   | `scripts/db/backup-restore-drill.sh`       | backup/restore drill (uncommitted, validation-only)                                       | PASS   |
 
 UC-BR-01 evidence (validation environment only, artifacts removed, nothing committed): custom-format
 `pg_dump` 2,941,202 bytes / 1123 ms / sha256 `9cd5ee42…c48b1b9f`; AES-256-CBC/pbkdf2 (ephemeral
@@ -144,7 +144,8 @@ registered and scheduled without being implemented in P1-12.
 
 - **FR:** 7/7 mapped and evidenced (6 PASS + 1 VALIDATED).
 - **BR:** 6/6 mapped, all PASS (positive reconciliation evidence).
-- **NFR:** 6/6 substantive NFRs PASS/VALIDATED; `NFR-SCL` (P1-OD-027) explicitly UNRESOLVED.
+- **NFR:** 7/7 substantive NFRs PASS/VALIDATED (6 PASS + 1 VALIDATED — `NFR-PERF-01`); the 8th
+  NFR row, `NFR-SCL` (P1-OD-027), is explicitly UNRESOLVED.
 - **UC:** 3/3 mapped, all PASS.
 - **RISK:** 1 recorded, REVIEWED — NON-BLOCKING (administrative-only cascade).
 - **OD:** 13 open decisions carried (P1-OD-007, 018–024, 027, 035, 036, 041, 042); P1-OD-007/027/035/036/042 tracked explicitly as UNRESOLVED.
@@ -153,3 +154,15 @@ registered and scheduled without being implemented in P1-12.
 and a committed evidence artifact; all carried open decisions are explicitly recorded as UNRESOLVED.**
 Zero unresolved Critical or High. This matrix is a self-review artifact under the Standing Technical
 Authorization Policy; the user performs every merge.
+
+**Reading rule for test-run attributions:** a cell marked `(in 1141)` refers to the Wave-1.1
+empty-rebuild run of **118 files / 1141 tests**, which predates the P1-12 integrated cross-domain
+suite authored in Wave 3. The closing figure of record is **119 files / 1149 tests**; evidence
+produced by the integrated suite is attributed to that closing run, never to the 1141 run.
+
+**Closure (recorded 2026-07-21):** the Phase 1-12 feature pull request **#46** was merged by the
+repository owner into protected `develop` as `42f8d7f` (final feature SHA `670000e`, 4/4 hosted CI
+checks green), and the consolidated gate was re-run clean-room on the merged protected tree with
+**24/24 required gates PASSED** (`test:db` 119 files / 1149 tests). The gate decision is recorded as
+**Go — Release 2 Database Gate Passed** in `phase-1-12-owner-gate.md`. The 13 carried open decisions
+above remain **UNRESOLVED** and are carried forward unchanged; none is a Release 2 database blocker.

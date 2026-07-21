@@ -46,17 +46,35 @@ final merge/CI/containment rows are completed by the gate-record PR.
 | 9    | Final adversarial review; **0 unresolved Critical/High**                                                                                             | **PASS**            | `defect-register.md`, `security-signoff-recommendation.md`     |
 | —    | No scope leakage: no new domain table, no backend/API/frontend, no general ledger/procurement/gateway/subscription billing; `main` untouched         | **PASS**            | this scorecard / boundary verification                         |
 
-## Merge / CI / containment (completed by the gate-record PR)
+## Merge / CI / containment (completed by the gate-record PR — recorded 2026-07-21)
 
-| Condition                                                                                           | Status                                 |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Feature PR merged into `develop` (two-parent merge commit; final SHA contained)                     | _Pending — recorded on gate-record PR_ |
-| All required hosted CI checks green on the exact final feature SHA                                  | _Pending — recorded on gate-record PR_ |
-| Annotated tag `release-2-database-baseline` applied to the gate merge commit (after both PRs merge) | _Planned — never before merge_         |
+| Condition                                                                                           | Status                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature PR merged into `develop` (two-parent merge commit; final SHA contained)                     | **PASS** — PR **#46** merged as `42f8d7f`; parents `5cd16da` + `670000e`; merge-commit strategy (`--no-ff`); `670000e` verified an ancestor of `origin/develop`; merge tree identical to the feature tree |
+| All required hosted CI checks green on the exact final feature SHA                                  | **PASS** — workflow `CI` run #112 on `670000e`: Lint/types/tests/build, Docker build validation, Database migrations and RLS tests, Secret and sensitive-file scan — **4/4 succeeded**                    |
+| Annotated tag `release-2-database-baseline` applied to the gate merge commit (after both PRs merge) | _Planned — not yet created; applied only to the protected **gate-record** merge commit after protected-history closure, never before_                                                                     |
+
+## Post-merge reconfirmation on the merged protected tree
+
+`npm run gate:p1-12` was re-executed in full (clean-room) on the merged protected tree
+(`origin/develop` = `42f8d7f`), not reused from the pre-merge run:
+
+| Reconfirmed                   | Result on the merged tree                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| Consolidated gate             | **24 / 24 required gates PASSED**                                               |
+| Canonical schema hash         | `d3b1e7e40a141152f8aff04cf582c02cffa43f8709adad936450c8019d3e4cdb` (unchanged)  |
+| Structural review             | 242 tables / 999 indexes / 537 FKs — 5/5 gates true                             |
+| Phase-boundary upgrade matrix | 10 / 10 boundaries → canonical hash                                             |
+| Full `test:db`                | **119 files / 1149 tests passed** (202.51 s)                                    |
+| Baseline fingerprint          | `8968f66af6305273e60394e1fe66808d7ec90058e1bd0d96ee9cf6c32944df1e` (reproduced) |
+
+Row 1.1 above records **118 files / 1141 tests**, the measured state _before_ the P1-12
+integrated cross-domain suite was authored in Wave 3. The closing figure of record is
+**119 files / 1149 tests**; both are true as of their respective runs.
 
 ## Status
 
-**PASS — every evaluated gate condition is satisfied with named evidence; zero unresolved
-Critical or High.** Performance targets pass as **PROPOSED** (owner decision P1-OD-027 pending).
-The merge / CI / containment rows are intentionally left open and are completed from evidenced
-facts by the gate-record pull request; a merge alone does not constitute the gate.
+**PASS — every gate condition is satisfied with named evidence; zero unresolved Critical or
+High.** Performance targets pass as **PROPOSED** (owner decision P1-OD-027 pending). The
+merge / CI / containment rows are now completed from evidenced facts by the gate-record pull
+request; a merge alone does not constitute the gate. The baseline tag remains planned only.

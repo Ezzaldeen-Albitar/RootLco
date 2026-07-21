@@ -109,9 +109,28 @@ authored as part of this pack; each status line records the actual verification 
 - `docs/database/data-dictionary.md` — 242/242 tables documented (drift compared in artifact #21).
 - `docs/phase-1/phase-1-12/phase-1-12-traceability.md` — FR/BR/NFR/UC/risk/OD → object/test/evidence; open decisions carried.
 
+## Closure record — pack state at gate closure (recorded 2026-07-21)
+
+The pack was assembled on the feature branch and is closed against **protected history**:
+
+| Item                               | Value                                                                                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature PR                         | **#46** — merged into `develop` as `42f8d7f` (final feature SHA `670000e`)                                                                        |
+| Protected tree of record           | `origin/develop` = `42f8d7f`; merge tree identical to the feature tree                                                                            |
+| Hosted CI on `670000e`             | 4/4 required checks succeeded (workflow `CI`, run #112)                                                                                           |
+| Post-merge reconfirmation          | `npm run gate:p1-12` re-run clean-room on the merged tree — **24/24 required gates PASSED**                                                       |
+| `test:db` at closure               | **119 files / 1149 tests green** (artifact #14 records the earlier Wave-1.1 state of 118 files / 1141 tests, before the integrated suite existed) |
+| Schema hash / baseline fingerprint | `d3b1e7e4…d3e4cdb` / `8968f66a…2944df1e` — both reproduced on the merged tree                                                                     |
+| Gate decision                      | **Go — Release 2 Database Gate Passed** (`phase-1-12-owner-gate.md`, Formal Closure Update)                                                       |
+| Baseline tag                       | `release-2-database-baseline` — **planned, not yet created**                                                                                      |
+
+Artifact contents are unchanged by closure; only the gate-control documents (this index, the
+gate scorecard, the frozen-baseline manifest wrapper, and the owner-gate record) carry the
+post-merge evidence. No evidence figure was rewritten to match a desired outcome.
+
 ## Status
 
-**COMPLETE.** All 35 evidence artifacts are catalogued with a traceable outcome. Machine-readable
-artifacts (#8–#12) are committed under `evidence/`. Aggregate result across the pack: **zero
-unresolved Critical or High**, no gate-blocking defect. Pack supports the gate decision recorded
-in `phase-1-12-owner-gate.md`.
+**COMPLETE — CLOSED.** All 35 evidence artifacts are catalogued with a traceable outcome.
+Machine-readable artifacts (#8–#12) are committed under `evidence/`. Aggregate result across the
+pack: **zero unresolved Critical or High**, no gate-blocking defect. Pack supports the gate
+decision recorded in `phase-1-12-owner-gate.md`, now **Go — Release 2 Database Gate Passed**.

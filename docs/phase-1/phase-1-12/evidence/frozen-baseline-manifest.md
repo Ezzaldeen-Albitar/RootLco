@@ -61,7 +61,9 @@ tech 9 · dia 13 · qms 7 · svc 11 · quo 6 · inv 18 · sal 19 · wty 5 · rpt
   schema hash `d3b1e7e4` (byte-identical structural equivalence); cumulative tables
   0 / 22 / 41 / 63 / 84 / 107 / 136 / 180 / 215 / 242. See `evidence/upgrade-matrix.json`.
 - **Empty rebuild:** `supabase db reset` from empty reproduces the baseline; full suite 118 files /
-  1141 tests green (201 s); seeds idempotent ×2 with business tables empty.
+  1141 tests green (201 s) at Wave 1.1 — reconfirmed post-merge at **119 files / 1149 tests** once
+  the P1-12 integrated cross-domain suite was added in Wave 3 (see “Baseline registration —
+  post-merge” below); seeds idempotent ×2 with business tables empty.
 - **Backup/restore:** restore into a fresh DB reproduces schema hash `d3b1e7e4` with matching
   control totals (currencies 3, permissions 43, payment_methods 3). See
   `backup-evidence.md` and `restore-evidence.md`.
@@ -83,8 +85,32 @@ There is no pre-existing tag convention in the repository; this is the first bas
 The full baseline verification runs via `npm run gate:p1-12` (`scripts/db/gate-p1-12.mjs`), which
 executes the required gate set in a controlled order and prints an evidence summary.
 
+---
+
+## Baseline registration — post-merge (recorded 2026-07-21)
+
+The Release 2 database baseline is registered against **protected history**, not against a
+feature branch:
+
+| Field                                 | Value                                                                                                                   |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Feature PR                            | **#46** — merged into `develop`                                                                                         |
+| Final feature SHA                     | `670000ea95ccd54ba716d359b6e4251abd149a41`                                                                              |
+| Feature merge commit (protected)      | `42f8d7f7406c0f10c5612cc81aec97921cce1170` — parents `5cd16da` + `670000e`                                              |
+| Protected tree of record              | `origin/develop` = `42f8d7f` (merge tree `ca4283db6510380a6f28fde3e8acbee02d83537d`, identical to the feature tree)     |
+| **Schema hash (reconfirmed)**         | `d3b1e7e40a141152f8aff04cf582c02cffa43f8709adad936450c8019d3e4cdb`                                                      |
+| **Baseline fingerprint (reproduced)** | `8968f66af6305273e60394e1fe66808d7ec90058e1bd0d96ee9cf6c32944df1e`                                                      |
+| Consolidated gate on the merged tree  | `npm run gate:p1-12` — **24 / 24 required gates PASSED**; `test:db` 119 files / 1149 tests green                        |
+| Baseline tag                          | `release-2-database-baseline` — **planned, not yet created**; target is the **gate-record** merge commit, after closure |
+
+The `source_sha` recorded inside `frozen-baseline-manifest.json` is the tree the manifest was
+first generated from (`5cd16da`). Because the fingerprint deliberately **excludes** `source_sha`,
+it reproduces byte-identically on the merged protected tree — as reconfirmed above — so the
+registration is anchored to content, not to a commit identifier.
+
 ## Status
 
-**FROZEN & REPRODUCIBLE.** Schema hash `d3b1e7e4` and baseline fingerprint `8968f66a` are stable
-across the feature and gate commits and are reproduced by every phase-boundary upgrade path and by
-restore. The annotated tag is **planned**, to be applied only after both PRs merge.
+**FROZEN & REPRODUCIBLE — registered against protected history.** Schema hash `d3b1e7e4` and
+baseline fingerprint `8968f66a` are stable across the feature commit, the feature merge commit,
+and this gate commit, and are reproduced by every phase-boundary upgrade path and by restore. The
+annotated tag is **planned**, to be applied only after both pull requests merge.
