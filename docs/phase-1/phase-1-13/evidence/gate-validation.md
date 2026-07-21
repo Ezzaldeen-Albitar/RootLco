@@ -106,7 +106,7 @@ earlier run in this session that overlapped them produced a spurious fixture-cle
 re-run in isolation and passed, and the overlap is recorded here rather than omitted.
 
 **One unattributed transient failure is recorded here rather than left out.** During the
-gate-branch validation (§6 below), one `test:db` run reported `1 failed | 1183 passed`. The failing
+gate-branch validation (§6.1 below), one `test:db` run reported `1 failed | 1183 passed`. The failing
 test was not captured before the run scrolled, and two immediate re-runs on the same tree were fully
 green — 1184/1184 both times. The gate branch changes documentation only, so no code path in that
 suite differs from the merged state that had already passed it twice (Wave 4 and the clean room).

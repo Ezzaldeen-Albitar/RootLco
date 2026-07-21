@@ -36,8 +36,13 @@ a resolved tenant context and no `BYPASSRLS`:
 | `SELECT * FROM shared.claim_outbox_events(…)`  | `ERROR: permission denied for function claim_outbox_events` |
 
 Four of the phase's own acceptance conditions could not be met, so DBCR-P1-13-001 was classified a
-**gate blocker** and the P1-13 owner gate stays `Pending`. Failing closed is the right safety
-behaviour; it is not a substitute for providing the service.
+**gate blocker** and, at the time this record was written, the P1-13 owner gate remained `Pending`.
+Failing closed is the right safety behaviour; it is not a substitute for providing the service.
+
+> **Status since:** this remediation merged as PR #51 (`af240f0`, merge `e615a02`), DBCR-P1-13-001
+> was closed **RESOLVED** on re-measured executable evidence, and the P1-13 owner gate was
+> subsequently recorded as **Go** and merged as PR #52 (`fecb880`, merge `6b9c904`). The `Pending`
+> above describes the state this record was written in, and is left standing for that reason.
 
 ## 2. What was built
 

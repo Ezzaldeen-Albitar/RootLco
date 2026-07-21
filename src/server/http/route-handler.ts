@@ -190,8 +190,11 @@ export async function handleOperation<T>(
 
     const expectedVersion = parseIfMatch(request.headers, operation.versionGuarded === true);
     const idempotencyKey = operation.idempotent ? requireIdempotencyKey(request.headers) : null;
+    // Bound to the resolved context, never to anything the caller sent: the
+    // principal component comes from `context.principal`, which the resolver
+    // built from the session and the database (ADV-04).
     const fingerprint = idempotencyKey
-      ? requestFingerprint({
+      ? requestFingerprint(context, {
           method: operation.method,
           path: operation.path,
           body: options.body ?? null,

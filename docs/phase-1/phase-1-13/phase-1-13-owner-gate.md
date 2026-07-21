@@ -27,6 +27,12 @@ findings that are **latent in P1-13 and become live in P1-14**. They are listed 
 dispositions, and two of them (ADV-01, ADV-04) should be closed before P1-14 builds business
 endpoints on this foundation.
 
+> **Navigation.** Every Phase 1-13 artefact is indexed in [`README.md`](./README.md).
+> Work completed _after_ this decision — the ADV-01 and ADV-04 remediation and the documentation
+> corrections — is recorded in
+> [`phase-1-13-post-gate-correction-register.md`](./phase-1-13-post-gate-correction-register.md).
+> That record does not amend this decision.
+
 ## 1. What this gate governs
 
 Phase 1-14 may not begin until the API Conventions, error catalog, event catalog, OpenAPI
@@ -35,26 +41,46 @@ approved and demonstrably green in hosted CI (canonical plan, field 33 — Backe
 
 ## 2. Protected history
 
-| Item                       | Value                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------- |
-| Feature pull request       | **#49** — `[P1-13] Build the backend architecture and shared application foundation`        |
-| Final feature SHA          | `cf8561523ca081e6c5025ba283ac1ff44fbbb5ac`                                                  |
-| Feature merge commit       | `6c3f0de132ecabc014b050a3f4d55ea0a228fb08` (parents `ecbbfe8` + `cf85615`, merge commit)    |
-| Feature merge time         | 2026-07-21 13:42:27 +0300, merged by the repository owner via the GitHub web flow           |
-| Hosted CI on `cf85615`     | 4/4 required checks green (run #121)                                                        |
-| Remediation pull request   | **#51** — `[P1-13] Enable tenant-safe backend runtime persistence`                          |
-| Final remediation SHA      | `af240f06dcbd31b260d476a762ae314494bfa063`                                                  |
-| Remediation merge commit   | `e615a0212fda0b028316206bf9f331dd86120890` (parents `6c3f0de` + `af240f0`, merge commit)    |
-| Remediation merge time     | 2026-07-21 15:22:46 +0300, merged by the repository owner via the GitHub web flow           |
-| Hosted CI on `af240f0`     | 4/4 required checks green (run #122, 4m 40s)                                                |
-| Protected `origin/develop` | `e615a0212fda0b028316206bf9f331dd86120890`                                                  |
-| Protected `origin/main`    | `728920cabfc6662074356a2480180cc8e899ead5` — not modified by this phase                     |
-| Release 2 baseline tag     | `release-2-database-baseline` → `ecbbfe8a419b8cd4794f66ba24d0a2341d015601`, still contained |
+| Item                                            | Value                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Feature pull request                            | **#49** — `[P1-13] Build the backend architecture and shared application foundation`        |
+| Final feature SHA                               | `cf8561523ca081e6c5025ba283ac1ff44fbbb5ac`                                                  |
+| Feature merge commit                            | `6c3f0de132ecabc014b050a3f4d55ea0a228fb08` (parents `ecbbfe8` + `cf85615`, merge commit)    |
+| Feature merge time                              | 2026-07-21 13:42:27 +0300, merged by the repository owner via the GitHub web flow           |
+| Hosted CI on `cf85615`                          | 4/4 required checks green (workflow `CI` run **#119**, 5m 58s)                              |
+| Remediation pull request                        | **#51** — `[P1-13] Enable tenant-safe backend runtime persistence`                          |
+| Final remediation SHA                           | `af240f06dcbd31b260d476a762ae314494bfa063`                                                  |
+| Remediation merge commit                        | `e615a0212fda0b028316206bf9f331dd86120890` (parents `6c3f0de` + `af240f0`, merge commit)    |
+| Remediation merge time                          | 2026-07-21 15:22:46 +0300, merged by the repository owner via the GitHub web flow           |
+| Hosted CI on `af240f0`                          | 4/4 required checks green (run #122, 4m 40s)                                                |
+| `origin/develop` when this decision was written | `e615a0212fda0b028316206bf9f331dd86120890`                                                  |
+| Protected `origin/main`                         | `728920cabfc6662074356a2480180cc8e899ead5` — not modified by this phase                     |
+| Release 2 baseline tag                          | `release-2-database-baseline` → `ecbbfe8a419b8cd4794f66ba24d0a2341d015601`, still contained |
 
 Both merge commits carry two parents and a `Merge pull request #N` subject, and each merge tree is
 byte-identical to the tree of the branch it merged — so neither merge introduced a change that had
-not been reviewed. Since the Release 2 tag, `develop`'s first-parent history consists of exactly
-those two merge commits: nothing was pushed directly to a protected branch.
+not been reviewed. At the time this decision was written, `develop`'s first-parent history since the
+Release 2 tag consisted of exactly those two merge commits: nothing was pushed directly to a
+protected branch.
+
+### 2.1 Completed after this decision was written
+
+This document is the content of commit `fecb880`, so it could not name the pull request that carried
+it, the run that validated it, or the merge that landed it. Those values are recorded here rather
+than left to be reconstructed:
+
+| Item                                  | Value                                                                                    |
+| ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Gate pull request                     | **#52** — `docs(P1-13): record backend foundation gate as Go`                            |
+| Final gate SHA                        | `fecb88081f4d9a27e104f58682eb00225e180b93`                                               |
+| Hosted CI on `fecb880`                | 4/4 required checks green (workflow `CI` run **#125**, 3m 45s)                           |
+| Gate merge commit                     | `6b9c90412b3b2e1690be5894c6385ab67ad45682` (parents `e615a02` + `fecb880`, merge commit) |
+| Gate merge time                       | 2026-07-21 17:09:53 +0300, merged by the repository owner via the GitHub web flow        |
+| `origin/develop` after the gate merge | `6b9c90412b3b2e1690be5894c6385ab67ad45682`                                               |
+
+With that merge, `develop`'s first-parent history since the Release 2 tag is exactly **three** merge
+commits — `6c3f0de`, `e615a02`, `6b9c904` — and gate condition 13 below, recorded as pending the
+owner's merge, is satisfied. The decision itself is unchanged; only facts that postdate it are added.
 
 ## 3. Gate conditions
 

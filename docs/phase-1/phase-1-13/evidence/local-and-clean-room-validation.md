@@ -92,3 +92,8 @@ capacity measurement, and not evidence of any production behaviour — no enviro
 exists (ADR-012), and **P1-OD-027 (NFR-SCL) remains unresolved**. Hosted CI results on the exact
 final feature SHA are recorded separately in the pull request, and are the only CI evidence that
 counts.
+
+Nothing reached protected `develop` outside the approved pull-request and hosted-CI flow. The
+work was reviewed under the Standing Technical Authorization and Solo Developer Review policies.
+This is not an independent third-party review and is not represented as one — the same statement
+the sibling evidence records carry, added here so this record is not the one exception.
