@@ -557,7 +557,7 @@ NOT claimed implemented here.
 
 ### `shared.idempotency_keys`
 
-**Scope:** platform (nullable tenant) · **Retention class:** temporary · Idempotency records; same-transaction write; app roles: none.
+**Scope:** platform (nullable tenant) · **Retention class:** temporary · Idempotency records; same-transaction write. Since DBCR-P1-13-001 `app_runtime` holds `SELECT` + `INSERT` under the tenant-scoped `sel_idempotency_keys_tenant` / `ins_idempotency_keys_tenant` policies, so a guarded command can reserve and replay its own key inside its own transaction. No `UPDATE` or `DELETE` grant exists — a stored response is immutable and expiry is an administrative sweep. `tenant_id` is nullable **by design** for platform-scope keys (e.g. the provisioning key written by `org.provision_organization`); the tenant predicate evaluates to NULL for those rows, so a tenant session can neither read nor write them and platform provisioning keeps using a platform connection. `app_readonly` holds nothing.
 
 | Column                | Type                     | Null | Default           | Classification |
 | --------------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -826,7 +826,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.audit_records`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Append-only audit event header; per-tenant `seq`; platform-only (no app grant).
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only audit event header; per-tenant `seq`. Since DBCR-P1-13-001 `app_runtime` holds `INSERT` only, tenant-scoped by `ins_audit_records_writer`, and writes exclusively through `iam.audit_append`. Its companion `sel_audit_records_unlinked` is a **writer-scoped** read, not an audit-history read: it exposes only a record that has no chain link yet, which inside `audit_append` is the row being written and after COMMIT is never any row. **Reading audit history still requires `iam.audit.view`** via `sel_audit_records_permitted`. No `UPDATE` or `DELETE` grant exists for any application role, so the hash chain remains the tamper control.
 
 | Column           | Type                     | Null | Default           | Classification |
 | ---------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -846,7 +846,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.audit_record_details`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Field-level changes; restricted/secret values stored MASKED; no raw restricted value.
+**Scope:** tenant · **Retention class:** evidence-audit · Field-level changes; restricted/secret values stored MASKED; no raw restricted value. Grants mirror the header exactly (DBCR-P1-13-001): `app_runtime` holds `INSERT` under `ins_audit_record_details_writer`, plus the writer-scoped `sel_audit_record_details_unlinked`, which exposes only details of a record that has no chain link yet — committed detail rows stay gated behind `iam.audit.view` via `sel_audit_record_details_permitted`. No `UPDATE` or `DELETE`.
 
 | Column                 | Type | Null | Default           | Classification |
 | ---------------------- | ---- | ---- | ----------------- | -------------- |
@@ -860,7 +860,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.audit_integrity_links`
 
-**Scope:** tenant · **Retention class:** immutable-financial-history · Per-tenant SHA-256 chain; 32-byte prev/record hashes; gap or alteration is detectable.
+**Scope:** tenant · **Retention class:** immutable-financial-history · Per-tenant SHA-256 chain; 32-byte prev/record hashes; gap or alteration is detectable. Since DBCR-P1-13-001 `app_runtime` holds `INSERT` (`ins_audit_integrity_links_writer`) and a plain tenant-scoped `SELECT` (`sel_audit_integrity_links_chain`), because extending a chain requires reading its last link and the sequence number is now derived from this table rather than from `iam.audit_records`. That read is the **one deliberate widening** of the audit surface (accepted Low residual, DBCR-P1-13-001 §7): any session of a tenant can read its own tenant's links, which carry a counter, an opaque record id, two SHA-256 digests and `tenant_id` — no action, actor, entity, or field value. No `UPDATE` or `DELETE`.
 
 | Column            | Type   | Null | Default           | Classification |
 | ----------------- | ------ | ---- | ----------------- | -------------- |
@@ -873,7 +873,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.security_events`
 
-**Scope:** tenant (nullable) · **Retention class:** evidence-audit · Payload-free security log; no sensitive payload; append-only, platform-only.
+**Scope:** tenant (nullable) · **Retention class:** evidence-audit · Payload-free security log; no sensitive payload; append-only. Since DBCR-P1-13-001 `app_runtime` holds `INSERT` only, tenant-scoped by `ins_security_events_runtime`, so the request path can record a denial or a rate-limit breach. **No new read path was added**: browsing the log still requires `iam.audit.view` via `sel_security_events_permitted`, and there is no `UPDATE` or `DELETE` grant, so a recorded event can never be amended or removed by an application role. `tenant_id` is nullable for platform-scope events, which remain unreachable from a tenant session because the predicate is NULL for them.
 
 | Column           | Type                     | Null | Default           | Classification |
 | ---------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -1168,7 +1168,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `shared.event_outbox`
 
-**Scope:** tenant · **Retention class:** operational · Transactional integration-event envelope. Event identity is unique per tenant; company/branch scope is structurally tenant-bound. `app_worker` has deliberate all-tenant SELECT/INSERT/UPDATE through `wkr_event_outbox_all`, while runtime/readonly have zero access. Rows begin pending; atomic invoker routines claim due/stale work and complete, retry, or dead-letter it. Worker DELETE is absent.
+**Scope:** tenant · **Retention class:** operational · Transactional integration-event envelope. Event identity is unique per tenant; company/branch scope is structurally tenant-bound. `app_worker` has deliberate all-tenant SELECT/INSERT/UPDATE through `wkr_event_outbox_all`. Since DBCR-P1-13-001 `app_runtime` additionally holds tenant-scoped `SELECT` + `INSERT` (`sel_event_outbox_producer` / `ins_event_outbox_producer`), so a request publishes its event inside the same transaction that commits the state change (BR-INT-001); the `SELECT` is required because the producer writes with `INSERT ... RETURNING`, which is evaluated against the SELECT policy. Producing is not draining: the runtime holds no `UPDATE`, no `DELETE`, and no `EXECUTE` on `shared.claim_outbox_events` / `complete_outbox_event` / `fail_outbox_event`. `app_readonly` still has zero access. Rows begin pending; atomic invoker routines claim due/stale work and complete, retry, or dead-letter it. Worker DELETE is absent.
 
 | Column              | Type                                                          | Null | Default           | Classification |
 | ------------------- | ------------------------------------------------------------- | ---- | ----------------- | -------------- |

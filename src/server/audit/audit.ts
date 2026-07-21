@@ -21,11 +21,47 @@ import type { DbHandle } from '../db/transaction';
 import { requireCapability } from '../db/require-capability';
 import type { AuditClass } from '../auth/operation-registry';
 
+/**
+ * The classifications `iam.audit_record_details.value_classification` accepts.
+ *
+ * This list is the database's, not the application's:
+ * `ck_audit_record_details_class` allows exactly these four, and `iam.audit_mask`
+ * collapses `restricted` and `secret` to a fixed marker while keeping `public`
+ * and `internal` intact. Offering a fifth value here would not widen the
+ * contract — it would abort the whole command on a CHECK violation, and the
+ * rejected row (raw values included) would surface in the PostgreSQL error
+ * DETAIL before any masking had a chance to run.
+ */
+export const AUDIT_CLASSIFICATIONS = ['public', 'internal', 'restricted', 'secret'] as const;
+
+export type AuditClassification = (typeof AUDIT_CLASSIFICATIONS)[number];
+
 /** One detail entry. `classification` drives masking in the database. */
 export interface AuditDetail {
   readonly field: string;
-  readonly classification: 'public' | 'internal' | 'confidential' | 'restricted';
+  readonly classification: AuditClassification;
+  /** Value before the change. Omit for a creation, where there is no prior value. */
+  readonly previousValue?: string | null;
+  /** Value after the change. `null` records a removal. */
   readonly value: string | null;
+}
+
+/**
+ * Translates a detail entry into the envelope `iam.audit_append` reads.
+ *
+ * The database reads `field`, `old`, `new`, and `class` out of each JSON element.
+ * Passing the TypeScript shape through unchanged would leave every one of `old`,
+ * `new`, and `class` undefined, and the function would store the field name with
+ * NULL values at the default `internal` classification — an audit record that
+ * says a field changed while recording neither what it changed from nor to.
+ */
+function toDetailEnvelope(detail: AuditDetail): Record<string, unknown> {
+  return {
+    field: detail.field,
+    old: detail.previousValue ?? null,
+    new: detail.value,
+    class: detail.classification,
+  };
 }
 
 export interface AuditInput {
@@ -77,7 +113,7 @@ export async function appendAudit(db: DbHandle, input: AuditInput): Promise<stri
       input.branchId ?? null,
       db.context.correlationId,
       input.requestRef ?? db.context.operation,
-      JSON.stringify(input.details ?? []),
+      JSON.stringify((input.details ?? []).map(toDetailEnvelope)),
     ]
   );
 

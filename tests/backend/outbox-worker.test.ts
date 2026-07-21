@@ -27,9 +27,11 @@
  *  - **Graceful shutdown loses nothing.** Stopping must stop *claiming* first and
  *    then drain what is already claimed.
  *
- * Publication runs on the DBCR-P1-13-001 rehearsal role (the producer writes in
- * its own transaction); processing runs on the worker archetype, which is the
- * only role the frozen schema grants the queue tables.
+ * Publication runs on the runtime archetype (the producer writes in its own
+ * transaction); processing runs on the worker archetype. Keeping the two
+ * identities apart is the point: after DBCR-P1-13-001 the runtime may INSERT an
+ * envelope for its own tenant and nothing more — claiming, completing, and
+ * failing remain the worker's alone, across every tenant.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -40,11 +42,9 @@ import {
   cleanBackendFixtures,
   contextFor,
   countRows,
-  crRehearsalPool,
-  dropCrRehearsalRole,
   ensureBackendFixtures,
-  ensureCrRehearsalRole,
   ensureTestLogins,
+  runtimeAppPool,
   workerAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -71,7 +71,7 @@ const CONSUMER_CODE = 'fx_p1_13_consumer';
 const SIDE_EFFECT_CODE = 'fx_p1_13_applied';
 
 let admin: Pool;
-let rehearsal: Pool;
+let runtime: Pool;
 let worker: Pool;
 
 interface PublishedEvent {
@@ -178,10 +178,9 @@ beforeAll(async () => {
   await ensureTestLogins(admin);
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
-  await ensureCrRehearsalRole(admin);
-  rehearsal = crRehearsalPool();
+  runtime = runtimeAppPool();
   worker = workerAppPool(6);
-  __setPrimaryPoolForTests(rehearsal);
+  __setPrimaryPoolForTests(runtime);
   __setWorkerPoolForTests(worker);
 });
 
@@ -196,10 +195,9 @@ beforeEach(async () => {
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   __setWorkerPoolForTests(undefined);
-  await rehearsal.end();
+  await runtime.end();
   await worker.end();
   await cleanBackendFixtures(admin);
-  await dropCrRehearsalRole(admin);
   await admin.end();
 });
 

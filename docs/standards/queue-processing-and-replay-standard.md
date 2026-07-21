@@ -50,10 +50,11 @@ from there. The outbox is the pattern, not the transport.
 
 > **Status today.** Phase 1-13 publishes **no domain events** — the
 > [Event Catalog](./event-catalog-v0.1.md) reserves names only, and every entry carries
-> `implementedIn: null`. Publication is additionally unavailable to the request path because
-> `app_runtime` holds no INSERT on `shared.event_outbox`
-> ([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)).
-> The mechanism below is implemented; the traffic is not yet there.
+> `implementedIn: null`. The producer grant is in place: `app_runtime` holds tenant-scoped SELECT
+> and INSERT on `shared.event_outbox`
+> ([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)),
+> while claiming, completing, and failing an envelope stay `app_worker`'s alone. The mechanism
+> below is implemented; the traffic is not yet there.
 
 ## 2. Producer side — write the event in the business transaction
 

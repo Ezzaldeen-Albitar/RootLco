@@ -180,19 +180,21 @@ The boundary then returns:
 a breach that is an abuse signal, not merely a client-behaviour signal, and is therefore a
 **candidate** for `iam.security_events`.
 
-The word "candidate" is precise, and two separate facts sit behind it:
+The word "candidate" is precise, and the reason is the pipeline position rather than the grant.
+**The durable write is not reachable from the pre-authentication path.** `recordSecurityEvent()`
+requires a `DbHandle`, which requires a resolved request context and an open transaction. An
+`auth-adjacent` policy is by construction evaluated _before_ either exists. Today an
+`auth-adjacent` breach therefore produces the throttle metric and the `result: 'throttled'` log
+record with its correlation ID, and nothing else. Wiring the durable record for this path is work
+for the phase that owns authentication (Phase 1-14), which is where a pre-authentication
+security-event writer belongs.
 
-1. **The durable write is not reachable from the pre-authentication path.** `recordSecurityEvent()`
-   requires a `DbHandle`, which requires a resolved request context and an open transaction. An
-   `auth-adjacent` policy is by construction evaluated _before_ either exists. Today an
-   `auth-adjacent` breach therefore produces the throttle metric and the `result: 'throttled'` log
-   record with its correlation ID, and nothing else. Wiring the durable record for this path is work
-   for the phase that owns authentication (Phase 1-14), which is where a pre-authentication
-   security-event writer belongs.
-2. **The capability is missing in any case.** The runtime role holds SELECT only on
-   `iam.security_events`
-   ([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)),
-   so `recordSecurityEvent()` skips the insert wherever it is called from.
+The grant is no longer the obstacle: the runtime role holds tenant-scoped INSERT on
+`iam.security_events`
+([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)), so
+`recordSecurityEvent()` persists the record wherever it is called with a resolved context. It holds
+no UPDATE or DELETE, and **reading** `iam.security_events` still requires the `iam.audit.view`
+permission — recording an abuse signal is not permission to browse the abuse log.
 
 Telemetry loss never escalates into a request failure: the throttle itself is the control, and the
 refusal has already happened.

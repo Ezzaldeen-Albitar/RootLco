@@ -34,11 +34,13 @@ Two further facts are stated here rather than discovered later:
 - **No message broker is introduced.** `shared.event_outbox` is the queue and the database is the
   source of truth in this phase. See the
   [Queue Processing and Replay Standard](./queue-processing-and-replay-standard.md) for why.
-- **Publication is currently unavailable to the request path.** The `app_runtime` archetype holds
-  no INSERT on `shared.event_outbox`
+- **The request path may publish, and may not dispatch.** The `app_runtime` archetype holds
+  tenant-scoped SELECT and INSERT on `shared.event_outbox`
   ([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)),
-  so `publishEvent()` fails closed rather than degrading. That gap is a change request, not a
-  design position.
+  so a producer can write its envelope inside its own transaction. It holds no UPDATE, no DELETE,
+  and no EXECUTE on the claim, complete, or fail routines: advancing an envelope's lifecycle
+  belongs to `app_worker` alone. Where the capability is not present on the connection,
+  `publishEvent()` fails closed rather than degrading.
 
 ## 2. The envelope
 

@@ -53,8 +53,10 @@ follow the rule in the banner: **1-16 is named in the digest; everything else is
 
 Today the DB-layer attributable record is the **append-only history/timeline tables** (`partner_status_history`,
 `consent_history`, `customer_block_history`, `timeline_events`) — server-stamped, `SELECT`+`INSERT` only, with
-`UPDATE`/`DELETE` rejected as `42501`. The privileged `iam.audit_append` sink is deliberately **not granted to
-the app roles**, so a separate forensic audit trail is out of Phase 1-6 scope. The append-only/timeline pattern
+`UPDATE`/`DELETE` rejected as `42501`. No `crm` write path calls the privileged `iam.audit_append` sink, so a
+separate forensic audit trail is out of Phase 1-6 scope. (The sink itself stopped being ungranted on
+2026-07-21: DBCR-P1-13-001 gave `app_runtime` tenant-scoped EXECUTE on it for the Phase 1-13 backend
+foundation. Nothing in `crm` calls it.) The append-only/timeline pattern
 already in place is the seam a forensic trail plugs into: the same "emit an immutable, ordered event" discipline
 (embodied by `emit_timeline_event`, the only sanctioned writer into `timeline_events`) extends to a
 cross-cutting audit sink without reshaping the CRM tables.
@@ -141,8 +143,9 @@ Full field-level detail is in [`crm-data-dictionary.md`](./crm-data-dictionary.m
 
 Phase 1-6 deliberately does **not** deliver, and the closeout must not be read as delivering:
 
-- **No forensic audit trail.** `iam.audit_append` is not granted to app roles; the append-only history/timeline
-  tables are the DB-layer attributable record. A dedicated forensic trail is deferred (see §3.1).
+- **No forensic audit trail.** No `crm` write path calls `iam.audit_append`; the append-only history/timeline
+  tables are the DB-layer attributable record. A dedicated forensic trail is deferred (see §3.1). The grant
+  changed on 2026-07-21 under DBCR-P1-13-001; `crm` behaviour did not.
 - **No column-masking view or function.** The _only_ sensitive-data gate is the row-level
   `iam.has_permission('iam.sensitive.view')` check against `classification`. There is no masking layer.
 - **No application-layer write-path invariants.** `identifier_type` correctness on the profile `_ref` and richer

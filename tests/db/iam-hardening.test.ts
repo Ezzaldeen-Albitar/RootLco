@@ -16,6 +16,7 @@ import {
   ensureTestLogins,
   runtimePool,
   TENANT_A,
+  TENANT_B,
   USER_A,
   withRolledBackTx,
 } from './helpers';
@@ -82,10 +83,16 @@ async function seed(): Promise<void> {
     TENANT_A,
     GRANTER,
   ]);
-  await admin.query(`SELECT iam.audit_append($1,$2,'user','update','iam.test')`, [
-    TENANT_A,
-    GRANTER,
-  ]);
+  // The second record carries a detail row, so the permission gate on
+  // iam.audit_record_details has something to gate.
+  await admin.query(
+    `SELECT iam.audit_append($1,$2,'user','update','iam.test',NULL,NULL,NULL,NULL,NULL,$3::jsonb)`,
+    [
+      TENANT_A,
+      GRANTER,
+      JSON.stringify([{ field: 'status', old: 'draft', new: 'active', class: 'internal' }]),
+    ]
+  );
 }
 
 beforeAll(async () => {
@@ -116,15 +123,52 @@ describe('permission-gated audit reads', () => {
     );
     expect(r.rows[0].n).toBe(0);
   });
-  it('audit details and integrity links are gated the same way', async () => {
+  it('audit details are gated the same way', async () => {
     const withPerm = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: U_AUD }, (c) =>
-      c.query(`SELECT count(*)::int AS n FROM iam.audit_integrity_links`)
+      c.query(`SELECT count(*)::int AS n FROM iam.audit_record_details`)
     );
-    expect(withPerm.rows[0].n).toBeGreaterThanOrEqual(2);
+    expect(withPerm.rows[0].n).toBeGreaterThanOrEqual(1);
+    const without = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: U_PLAIN }, (c) =>
+      c.query(`SELECT count(*)::int AS n FROM iam.audit_record_details`)
+    );
+    expect(without.rows[0].n).toBe(0);
+  });
+
+  it('exposes the integrity chain to any tenant session, and it carries no audit content', async () => {
+    // A DELIBERATE and bounded exception, introduced by DBCR-P1-13-001. To
+    // extend the chain, `iam.audit_append` must read its own tenant's highest
+    // seq and last record_hash — so sel_audit_integrity_links_chain is
+    // tenant-scoped rather than permission-gated. What that exposes is the
+    // whole point of the exception: a counter, an opaque record id, and two
+    // SHA-256 digests. No action, actor, entity, or field value lives here, and
+    // reading the records and details those hashes cover still requires
+    // iam.audit.view (asserted above).
     const without = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: U_PLAIN }, (c) =>
       c.query(`SELECT count(*)::int AS n FROM iam.audit_integrity_links`)
     );
-    expect(without.rows[0].n).toBe(0);
+    expect(without.rows[0].n).toBeGreaterThanOrEqual(2);
+
+    const columns = await admin.query(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema='iam' AND table_name='audit_integrity_links'
+        ORDER BY 1`
+    );
+    expect(columns.rows.map((r) => r.column_name)).toEqual([
+      'audit_record_id',
+      'id',
+      'prev_hash',
+      'record_hash',
+      'seq',
+      'tenant_id',
+    ]);
+
+    // And it is still scoped: another tenant's chain stays invisible.
+    const otherTenant = await withRolledBackTx(
+      runtime,
+      { tenantId: TENANT_B, userId: U_PLAIN },
+      (c) => c.query(`SELECT count(*)::int AS n FROM iam.audit_integrity_links`)
+    );
+    expect(otherTenant.rows[0].n).toBe(0);
   });
 });
 
@@ -159,9 +203,30 @@ describe('structural security posture (P1-04-SEC-001..003)', () => {
          AND table_name IN ('audit_records','audit_record_details','audit_integrity_links',
                             'security_events','login_audit','user_status_history')
          AND grantee IN ('app_runtime','app_readonly')
-         AND privilege_type IN ('UPDATE','DELETE','INSERT')`
+         AND privilege_type IN ('UPDATE','DELETE','TRUNCATE')`
     );
     expect(rows).toEqual([]);
+  });
+
+  it('grants INSERT on the audit tables to app_runtime alone, and to no history table', async () => {
+    // DBCR-P1-13-001: the request path appends its own evidence, so INSERT is
+    // now expected on exactly the four audit surfaces — and nowhere else. The
+    // history tables stay trigger-written, and app_readonly stays read-only.
+    const { rows } = await admin.query(
+      `SELECT grantee, table_name FROM information_schema.role_table_grants
+       WHERE table_schema='iam'
+         AND table_name IN ('audit_records','audit_record_details','audit_integrity_links',
+                            'security_events','login_audit','user_status_history')
+         AND grantee IN ('app_runtime','app_readonly')
+         AND privilege_type = 'INSERT'
+       ORDER BY grantee, table_name`
+    );
+    expect(rows).toEqual([
+      { grantee: 'app_runtime', table_name: 'audit_integrity_links' },
+      { grantee: 'app_runtime', table_name: 'audit_record_details' },
+      { grantee: 'app_runtime', table_name: 'audit_records' },
+      { grantee: 'app_runtime', table_name: 'security_events' },
+    ]);
   });
 
   it('runtime cannot inject a role_permission mapping (no INSERT grant)', async () => {

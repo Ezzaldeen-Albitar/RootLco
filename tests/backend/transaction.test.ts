@@ -18,11 +18,11 @@
  * and a count of exactly one in four places after success. Anything weaker (for
  * example checking only the business row) would pass while the outbox leaked.
  *
- * This suite runs on the DBCR-P1-13-001 rehearsal role, because `app_runtime`
- * cannot perform two of the four writes at all — see `helpers.ts` and
- * `capabilities.test.ts`. The behaviour proven here is the behaviour the change
- * request unblocks; the rehearsal is what makes the proof possible without
- * touching a migration.
+ * This suite runs on `rootlco_test_runtime` — a member of `app_runtime`, the
+ * archetype the application actually deploys with. Before DBCR-P1-13-001 was
+ * applied it could not perform two of the four writes at all and the proof had
+ * to borrow a rehearsal role; now the deployed identity does the work, so the
+ * evidence is about the real thing.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -34,12 +34,10 @@ import {
   cleanBackendFixtures,
   contextFor,
   countRows,
-  crRehearsalPool,
-  dropCrRehearsalRole,
   ensureBackendFixtures,
-  ensureCrRehearsalRole,
   ensureTestLogins,
   expectSqlState,
+  runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import {
@@ -49,11 +47,11 @@ import {
   type DbHandle,
 } from '@/server/db/transaction';
 import { __resetCapabilitiesForTests } from '@/server/db/capabilities';
-import { appendAudit } from '@/server/audit/audit';
+import { AUDIT_CLASSIFICATIONS, appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 
 let admin: Pool;
-let rehearsal: Pool;
+let runtime: Pool;
 
 interface CommandResult {
   readonly partnerId: string;
@@ -139,9 +137,8 @@ beforeAll(async () => {
   await ensureTestLogins(admin);
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
-  await ensureCrRehearsalRole(admin);
-  rehearsal = crRehearsalPool();
-  __setPrimaryPoolForTests(rehearsal);
+  runtime = runtimeAppPool();
+  __setPrimaryPoolForTests(runtime);
 });
 
 beforeEach(() => {
@@ -150,9 +147,8 @@ beforeEach(() => {
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
-  await rehearsal.end();
+  await runtime.end();
   await cleanBackendFixtures(admin);
-  await dropCrRehearsalRole(admin);
   await admin.end();
 });
 
@@ -171,6 +167,86 @@ describe('the four foundation writes commit together', () => {
       [TENANT_A, result.action]
     );
     expect(linked).toBe(1);
+  });
+
+  it('records what each field changed from and to, masked by its classification', async () => {
+    // A count of audit rows says nothing about their contents. `appendAudit`
+    // takes {field, classification, previousValue, value} while the database
+    // reads {field, old, new, class} out of each JSON element, so the two must
+    // be translated — and a mismatch is invisible to a row count: the record
+    // still lands, saying only that some field changed.
+    const action = `test.p1_13.detail_${randomUUID()}`;
+    await withTransaction(contextFor({}), (db) =>
+      appendAudit(db, {
+        action,
+        entityType: 'crm.business_partner',
+        details: [
+          {
+            field: 'display_name',
+            classification: 'internal',
+            previousValue: 'Before',
+            value: 'After',
+          },
+          { field: 'tax_number', classification: 'restricted', previousValue: 'T-1', value: 'T-2' },
+          { field: 'api_token', classification: 'secret', previousValue: 'old', value: 'new' },
+        ],
+      })
+    );
+
+    const stored = await admin.query<{
+      field_name: string;
+      old_value_masked: string | null;
+      new_value_masked: string | null;
+      value_classification: string;
+    }>(
+      `SELECT d.field_name, d.old_value_masked, d.new_value_masked, d.value_classification
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.tenant_id = $1 AND r.action = $2
+        ORDER BY d.field_name`,
+      [TENANT_A, action]
+    );
+
+    expect(stored.rows).toEqual([
+      // Restricted and secret collapse to the marker; the raw value never lands.
+      {
+        field_name: 'api_token',
+        old_value_masked: '***',
+        new_value_masked: '***',
+        value_classification: 'secret',
+      },
+      {
+        field_name: 'display_name',
+        old_value_masked: 'Before',
+        new_value_masked: 'After',
+        value_classification: 'internal',
+      },
+      {
+        field_name: 'tax_number',
+        old_value_masked: '***',
+        new_value_masked: '***',
+        value_classification: 'restricted',
+      },
+    ]);
+  });
+
+  it('accepts every classification the database allows, and no other', async () => {
+    // ck_audit_record_details_class is the contract. A value outside it aborts
+    // the whole command on a CHECK violation — and the rejected row, raw values
+    // included, appears in the PostgreSQL error DETAIL before masking runs.
+    const { rows } = await admin.query<{ definition: string }>(
+      `SELECT pg_get_constraintdef(oid) AS definition
+         FROM pg_constraint WHERE conname = 'ck_audit_record_details_class'`
+    );
+    const definition = rows[0]?.definition ?? '';
+    for (const classification of AUDIT_CLASSIFICATIONS) {
+      expect(definition, `${classification} must be accepted by the database`).toContain(
+        `'${classification}'`
+      );
+    }
+    // Exactly four, so a value added to the database without being added here
+    // (or vice versa) is caught.
+    expect(definition.match(/'[a-z]+'::text/g)).toHaveLength(AUDIT_CLASSIFICATIONS.length);
   });
 });
 

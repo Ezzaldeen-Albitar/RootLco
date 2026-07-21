@@ -24,8 +24,11 @@
  * transaction would strand keys for rolled-back commands and permanently block
  * the client's retry — turning a transient failure into a dead command.
  *
- * Runs on the DBCR-P1-13-001 rehearsal role: `shared.idempotency_keys` has no
- * app-role grant and no RLS policy in the frozen baseline.
+ * Runs on `rootlco_test_runtime` (a member of `app_runtime`). Until
+ * DBCR-P1-13-001 was applied, `shared.idempotency_keys` had no app-role grant
+ * and no RLS policy at all; it now carries a tenant-scoped SELECT + INSERT
+ * surface for exactly this path — and still no UPDATE and no DELETE, so a stored
+ * response can never be rewritten.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -37,11 +40,9 @@ import {
   cleanBackendFixtures,
   contextFor,
   countRows,
-  crRehearsalPool,
-  dropCrRehearsalRole,
   ensureBackendFixtures,
-  ensureCrRehearsalRole,
   ensureTestLogins,
+  runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction, type DbHandle } from '@/server/db/transaction';
@@ -58,7 +59,7 @@ const OPERATION_ID = 'test.idempotent-command';
 const OPERATION_CODE = toOperationCode(OPERATION_ID);
 
 let admin: Pool;
-let rehearsal: Pool;
+let runtime: Pool;
 
 function keyFor(tag: string): string {
   return `fx-p1-13-${tag}-${randomUUID()}`;
@@ -88,9 +89,8 @@ beforeAll(async () => {
   await ensureTestLogins(admin);
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
-  await ensureCrRehearsalRole(admin);
-  rehearsal = crRehearsalPool(4);
-  __setPrimaryPoolForTests(rehearsal);
+  runtime = runtimeAppPool(4);
+  __setPrimaryPoolForTests(runtime);
 });
 
 beforeEach(async () => {
@@ -101,9 +101,8 @@ beforeEach(async () => {
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
-  await rehearsal.end();
+  await runtime.end();
   await cleanBackendFixtures(admin);
-  await dropCrRehearsalRole(admin);
   await admin.end();
 });
 

@@ -1,13 +1,15 @@
 /**
  * Capability gate (DBCR-P1-13-001).
  *
- * The Release 2 grant surface gives the `app_runtime` archetype SELECT only
- * across `shared` and `iam`. The foundation needs four write capabilities that
- * are therefore unavailable until DBCR-P1-13-001 is approved and applied by the
- * phase that owns database changes.
+ * The four foundation write capabilities are granted to the `app_runtime`
+ * archetype by migration
+ * `20260725090000_iam_shared_runtime_write_capabilities.sql`, so on a correctly
+ * migrated database this gate is a no-op. It stays because "the grant is there"
+ * is an assumption about a *deployment*, not a property of the code:
  *
- * This gate makes the consequence explicit and safe:
- *
+ *  - a connection opened as the wrong role — `app_readonly`, or a future
+ *    archetype that was never granted — must be refused rather than allowed to
+ *    discover the problem halfway through a command;
  *  - the check runs **before** the write is attempted, so the failure message
  *    names the missing capability and the change request instead of surfacing as
  *    a bare SQLSTATE 42501 from inside an INSERT;
@@ -16,9 +18,6 @@
  *    without its event, is worse than a refused command — it is a silent
  *    integrity hole that nobody notices until an investigation needs the record
  *    that was never written.
- *
- * When the change request is applied, `preflightPrivileges()` reports the
- * capability as available and this gate becomes a no-op with no code change.
  */
 import { AppFailure } from '../errors/app-failure';
 import type { DbHandle } from './transaction';
@@ -43,7 +42,9 @@ export class MissingDatabaseCapabilityError extends Error {
     super(
       `Database capability "${capability}" is not available to role "${role}". ` +
         `Required grant: ${REMEDIATION[capability]}. ` +
-        'Tracked as DBCR-P1-13-001; P1-13 must not add or modify a migration.'
+        'Granted to app_runtime by DBCR-P1-13-001 (migration ' +
+        '20260725090000_iam_shared_runtime_write_capabilities.sql) — check which ' +
+        'role this connection opened as, and that the migration is applied.'
     );
   }
 }

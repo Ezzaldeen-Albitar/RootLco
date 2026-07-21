@@ -291,11 +291,16 @@ process stops accepting them.
 | `capability.idempotency.store`     | `has_table_privilege` INSERT on `shared.idempotency_keys`        |
 | `capability.security-event.record` | `has_table_privilege` INSERT on `iam.security_events`            |
 
+The four capability checks pass on a database carrying the
+[DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md)
+grant migration. They are probed rather than assumed, because the answer describes the connection
+in hand — a pool opened as the wrong role, or against a database that never received the
+migration, is exactly what the probe is for.
+
 States: `ready`, `degraded`, `unavailable`. A failing `database.*` check is **unavailable**. A
-missing write capability is **degraded, not unavailable** — reads work, and taking a whole tier out
-of rotation for a documented grant gap
-([DBCR-P1-13-001](../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md))
-would convert a change request into an outage.
+missing write capability is **degraded, not unavailable** — reads still work, and taking a whole
+tier out of rotation over one absent grant would convert a deployment defect into an outage while
+hiding which capability was actually missing.
 
 On any thrown error the report is `unavailable` with no detail: **the driver message is never
 surfaced**, because readiness output is frequently exposed more widely than application responses.

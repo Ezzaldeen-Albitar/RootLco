@@ -1,7 +1,9 @@
 # DBCR-P1-13-001 — Backend runtime write grants for the foundation primitives
 
-**Status:** OPEN — raised by Phase 1-13, **not implemented** ·
-**Raised:** 2026-07-21 · **Phase:** P1-13 (Backend Architecture and Shared Application Foundation) ·
+**Status:** **IMPLEMENTED** — migration
+[`20260725090000_iam_shared_runtime_write_capabilities.sql`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql) ·
+**Raised:** 2026-07-21 · **Implemented:** 2026-07-21 ·
+**Phase:** P1-13 (Backend Architecture and Shared Application Foundation) ·
 **Owner:** Eng. Ezzaldeen Al-Bitar (technical owner; recorded under the
 [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
 and the [Solo Developer Review Policy](../../governance/solo-developer-review-policy.md) —
@@ -9,10 +11,11 @@ owner-authorized technical self-review, never an independent third-party audit) 
 **Affects:** Release 2 database baseline `release-2-database-baseline`
 (`ecbbfe8a419b8cd4794f66ba24d0a2341d015601`), schema hash `d3b1e7e4…`.
 
-> **P1-13 changes no migration.** The Release 2 schema is frozen and applied migrations are
-> immutable (enforced by the `Assert applied migrations are immutable` CI step). This document
-> records the defect with executed evidence and the exact proposed remediation. Implementation
-> belongs to the phase authorized to change the database, after this request is approved.
+> **History of this document.** Sections 1–3 and 5 are the record as raised, when the P1-13
+> feature work could not change a migration: they describe the defect and the executed evidence
+> for it, and are preserved as written. **Section 4 was replaced** — the remediation as drafted
+> would have defeated the `iam.audit.view` read gate, and §4 now records what was actually
+> built and why it differs. Section 8 is the implementation and verification record.
 
 ---
 
@@ -132,64 +135,67 @@ and pass a smoke test. It must not be done:
 The two archetypes are correctly separated. The gap is that the runtime archetype was never
 granted its own, tenant-scoped write access to these four surfaces.
 
-## 4. Proposed remediation (additive, forward-only — NOT applied here)
+## 4. Remediation as built (supersedes the original proposal)
 
-A single additive migration, owned by the phase authorized to change the database:
+The original §4 proposed the obvious grant set. Building it exposed two defects in that draft,
+both found by execution rather than by review, and both changed the design.
 
-```sql
--- 1. Audit append: the runtime path must be able to write its own evidence.
---    Every element below was established by EXECUTION (§2.5), not by reading the
---    migration: the first two rehearsal attempts failed on the helper functions
---    and on schema USAGE.
-GRANT EXECUTE ON FUNCTION iam.audit_append(
-  uuid, uuid, text, text, text, uuid, uuid, uuid, uuid, text, jsonb
-) TO app_runtime;
--- audit_append is SECURITY INVOKER, so its helpers run as the caller.
-GRANT EXECUTE ON FUNCTION iam.audit_mask(text, text)      TO app_runtime;
-GRANT EXECUTE ON FUNCTION iam.audit_canonical(uuid)       TO app_runtime;
-GRANT EXECUTE ON FUNCTION iam.audit_hash(bytea, text)     TO app_runtime;
--- iam.audit_hash calls extensions.digest.
-GRANT USAGE ON SCHEMA extensions TO app_runtime;
+### 4.1 The drafted audit SELECT policies would have defeated `iam.audit.view`
 
-GRANT INSERT ON iam.audit_records, iam.audit_record_details, iam.audit_integrity_links
-  TO app_runtime;
-CREATE POLICY ins_audit_records_tenant ON iam.audit_records
-  FOR INSERT TO app_runtime WITH CHECK (tenant_id = iam.current_tenant_id());
--- (+ the matching INSERT policies on the two child tables)
+The draft added `sel_audit_records_writer … USING (tenant_id = iam.current_tenant_id())`. PostgreSQL
+**ORs** permissive policies, so that policy sits beside the shipped
+`sel_audit_records_permitted … AND iam.has_permission('iam.audit.view')` and wins whenever the
+tenant matches. Every authenticated session of a tenant would have been able to read that tenant's
+entire audit history without holding the permission — silently repealing P1-04-DB-023.
 
--- The writer must also READ its own tenant's chain (next seq, canonical form,
--- previous hash). The shipped sel_audit_*_permitted policies additionally require
--- iam.has_permission('iam.audit.view'), so a writer without the audit-VIEW
--- permission cannot append. Separate, writer-scoped SELECT policies are required.
-CREATE POLICY sel_audit_records_writer ON iam.audit_records
-  FOR SELECT TO app_runtime USING (tenant_id = iam.current_tenant_id());
--- (+ the matching SELECT policies on iam.audit_record_details and
---    iam.audit_integrity_links)
+The writer genuinely does need to read, so the fix was to make the read window _close_:
 
--- 2. Transactional outbox: tenant-scoped INSERT for the producer.
-GRANT INSERT, SELECT ON shared.event_outbox TO app_runtime;
-CREATE POLICY ins_event_outbox_tenant ON shared.event_outbox
-  FOR INSERT TO app_runtime WITH CHECK (tenant_id = iam.current_tenant_id());
-CREATE POLICY sel_event_outbox_tenant ON shared.event_outbox
-  FOR SELECT TO app_runtime USING (tenant_id = iam.current_tenant_id());
+- `sel_audit_records_unlinked` and `sel_audit_record_details_unlinked` expose only rows that have
+  **no chain link yet**. `iam.audit_append` writes the link last, so the row under construction
+  qualifies and every committed record — which always has its link — does not. The window shuts
+  before the function returns, inside the same transaction (proved in
+  `tests/db/p1-13-runtime-capabilities.test.ts`).
+- That is only possible because the sequence number no longer comes from `iam.audit_records`.
+  The original body read `max(seq)` across the tenant's whole audit history, which _required_ a
+  history-wide read. §4.3 covers the change.
+- `sel_audit_integrity_links_chain` remains tenant-scoped, because extending a chain means reading
+  its last link. That table holds a counter, an opaque record id, and two SHA-256 digests — no
+  action, actor, entity, or field value. This is the one deliberate widening, recorded in §7.
 
--- 3. Idempotency keys: tenant-scoped SELECT + INSERT. No UPDATE, no DELETE —
---    a stored response is immutable, and expiry is an administrative sweep.
-GRANT SELECT, INSERT ON shared.idempotency_keys TO app_runtime;
-CREATE POLICY sel_idempotency_keys_tenant ON shared.idempotency_keys
-  FOR SELECT TO app_runtime USING (tenant_id = iam.current_tenant_id());
-CREATE POLICY ins_idempotency_keys_tenant ON shared.idempotency_keys
-  FOR INSERT TO app_runtime WITH CHECK (tenant_id = iam.current_tenant_id());
+### 4.2 `GRANT USAGE ON SCHEMA extensions` was measured, and dropped
 
--- 4. Security events: INSERT only. The runtime may record a denial; it may never
---    amend or remove one.
-GRANT INSERT ON iam.security_events TO app_runtime;
-CREATE POLICY ins_security_events_tenant ON iam.security_events
-  FOR INSERT TO app_runtime WITH CHECK (tenant_id = iam.current_tenant_id());
-```
+`iam.audit_hash` called `extensions.digest` (pgcrypto), which under SECURITY INVOKER forced schema
+USAGE for the caller. Measuring what that opens showed it also exposes
+`extensions.pg_stat_statements` and `extensions.pg_stat_statements_info` — pgcrypto grants them to
+PUBLIC, and a PUBLIC grant cannot be revoked for one role.
 
-**Deliberately excluded from the proposal:** no `UPDATE` and no `DELETE` on any of these tables.
-Append-only is the security property; granting more would weaken it.
+`pg_catalog.sha256(bytea)` is core PostgreSQL, IMMUTABLE, executable by every role with no grant at
+all, and byte-identical — verified on this baseline for the empty input, a short input, and a real
+`prev_hash || canonical` chain input. `iam.audit_hash` now uses it, **no schema grant is made**, and
+hashes written before the change still verify because the function is the one the verifier uses too.
+
+### 4.3 What the migration actually does
+
+| #   | Change                                                                                                                                          | Rationale                                                                                                                                                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `iam.audit_hash` redefined to use `pg_catalog.sha256`                                                                                           | removes the `extensions` dependency (§4.2)                                                                                                                                                                                                                                                                                                                  |
+| 2   | `iam.audit_append` redefined: next `seq` read from `iam.audit_integrity_links` instead of `iam.audit_records`                                   | lets the writer's record read be narrowed to the unlinked row (§4.1). Same signature, defaults, return, SECURITY INVOKER context, empty `search_path`, advisory lock, masking, canonical form, and one-transaction behaviour. A damaged chain now fails the append on `uq_audit_records_tenant_seq` instead of extending a chain already known to be broken |
+| 3   | `GRANT EXECUTE` on `iam.audit_append`, `audit_mask`, `audit_canonical`, `audit_hash`                                                            | SECURITY INVOKER means the helpers run as the caller (§2.5)                                                                                                                                                                                                                                                                                                 |
+| 4   | `GRANT INSERT` on the three audit tables + `iam.security_events`; `GRANT SELECT, INSERT` on `shared.event_outbox` and `shared.idempotency_keys` | the four capabilities, and nothing else                                                                                                                                                                                                                                                                                                                     |
+| 5   | 11 policies, every one `tenant_id = iam.current_tenant_id()`                                                                                    | see the inventory below                                                                                                                                                                                                                                                                                                                                     |
+
+Policies added — `ins_audit_records_writer`, `sel_audit_records_unlinked`,
+`ins_audit_record_details_writer`, `sel_audit_record_details_unlinked`,
+`ins_audit_integrity_links_writer`, `sel_audit_integrity_links_chain`,
+`ins_event_outbox_producer`, `sel_event_outbox_producer`, `ins_idempotency_keys_tenant`,
+`sel_idempotency_keys_tenant`, `ins_security_events_runtime`.
+
+**Deliberately excluded:** `UPDATE`, `DELETE`, and `TRUNCATE` on every one of these tables;
+every privilege for `app_readonly`; `BYPASSRLS`; ownership of anything; any new role; any
+`SECURITY DEFINER` routine; `EXECUTE` on `iam.audit_verify_chain`, `org.provision_organization`,
+`shared.claim_outbox_events`, `shared.complete_outbox_event`, or `shared.fail_outbox_event`; and
+any access to `shared.processed_events` or `shared.error_records`. Append-only is the security
+property, and producing an event stays a different power from draining the queue.
 
 ## 5. Impact if not applied
 
@@ -206,23 +212,54 @@ outcome than a refused command.
 
 ## 6. Risk, testing, and rollback
 
-- **Risk of applying:** Low. Additive `GRANT` + tenant-scoped `WITH CHECK` policies. No table,
-  column, constraint, or function is altered; the canonical schema hash changes only by the
-  addition of the new policies, which the P1-12 upgrade-matrix tooling will re-baseline.
-- **Tenant-isolation risk:** none introduced — every proposed policy is `tenant_id =
-iam.current_tenant_id()`, narrower than the existing `app_worker` `USING (true)` policies.
-- **Test evidence required before approval:** the P1-13 backend suite already exercises the full
-  transactional path (all-or-nothing commit, idempotent replay, outbox publication, consumer
-  idempotency) against a **test-only rehearsal role** carrying exactly this privilege set, so the
-  application behaviour is proven before the grant is real.
-- **Rollback:** `REVOKE` the grants and `DROP POLICY` the four policies. No data migration, no
-  destructive step. Any rows written under the grants remain valid and readable.
+- **Risk of applying:** Low. `GRANT` plus tenant-scoped policies, and two `CREATE OR REPLACE
+FUNCTION` statements that preserve every external property of the functions they replace. No
+  table, column, constraint, index, or sequence is touched. Object counts move from 585 to 596
+  policies; tables (242), functions (210), and `SECURITY DEFINER` routines (0) are unchanged.
+- **Tenant-isolation risk:** none introduced. Every policy is
+  `tenant_id = iam.current_tenant_id()`, far narrower than the existing `app_worker`
+  `USING (true)` dispatch policies, and a session with no resolved tenant matches nothing because
+  the comparison is against NULL.
+- **Test evidence:** `tests/db/p1-13-runtime-capabilities.test.ts` (27 tests) proves the capability,
+  the isolation, the immutability, the producer/worker separation, the audit-read boundary, and
+  all-or-nothing rollback — all on `rootlco_test_runtime`, a member of `app_runtime`. The eight
+  backend suites (61 tests) now run against that same deployed identity rather than a rehearsal
+  role, and `tests/db/iam-audit.test.ts`, `iam-hardening.test.ts`, `shared-hardening.test.ts`,
+  `org-security.test.ts`, `org-provisioning.test.ts`, and `shared-event-outbox.test.ts` assert the
+  new exact surface, including everything that must remain denied.
+- **Rollback:** `REVOKE` the grants, `DROP POLICY` the eleven policies, and restore the two
+  function bodies from `20260718095000_iam_audit_subsystem.sql`. The exact statements are in the
+  migration's closing comment. No data migration, no destructive step; rows written while the
+  grants were in place stay valid, readable, and chain-verifiable.
 
-## 7. Decision record
+## 7. Accepted residual exposure
 
-| Field              | Value                                                                      |
-| ------------------ | -------------------------------------------------------------------------- |
-| Requested by       | Phase 1-13 implementation                                                  |
-| Approval owner     | RootLco founders (Product Owner), with technical sign-off by the Architect |
-| Status             | **OPEN — awaiting approval; deliberately not implemented in P1-13**        |
-| Implementing phase | To be assigned. P1-13 must not add or modify a migration.                  |
+`sel_audit_integrity_links_chain` lets any session of a tenant read that tenant's
+`iam.audit_integrity_links` rows without holding `iam.audit.view`, where before it could read
+none. This is accepted, and here is the whole of it:
+
+- **Why it cannot be narrower.** Extending a hash chain requires the previous link. Narrowing the
+  policy to "the newest link" would need `max(seq)` over the same table inside its own policy,
+  which PostgreSQL rejects as infinite recursion.
+- **What it exposes.** `seq` (a per-tenant counter), `audit_record_id` (an opaque UUID),
+  `prev_hash` and `record_hash` (SHA-256 digests), and `tenant_id`. There is no action, actor,
+  entity, or field value in the table — those live in `iam.audit_records` and
+  `iam.audit_record_details`, both of which stay gated by `iam.audit.view`.
+- **What it does not enable.** Cross-tenant reads (the policy is tenant-scoped, asserted), any
+  write (no UPDATE/DELETE grant, asserted), and any recovery of the hashed content (SHA-256
+  preimage).
+- **Severity:** Low, accepted with reason rather than silently absorbed. Asserted explicitly in
+  `tests/db/iam-hardening.test.ts` so a future widening of this table's columns has to confront it.
+
+## 8. Decision record
+
+| Field              | Value                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requested by       | Phase 1-13 implementation                                                                                                                                   |
+| Approval owner     | RootLco founders (Product Owner), with technical sign-off by the Architect                                                                                  |
+| Status             | **IMPLEMENTED** — pending owner merge of the remediation pull request                                                                                       |
+| Implementing phase | P1-13 (remediation branch `fix/p1-13-runtime-database-capabilities`)                                                                                        |
+| Migration          | `supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql` (the 114th)                                                                  |
+| Design deviations  | §4.1 (unlinked-read policies + chain-derived `seq`) and §4.2 (no `extensions` USAGE), both with evidence                                                    |
+| Residual exposure  | §7, Low, accepted                                                                                                                                           |
+| Review basis       | Owner-authorized technical self-review under the Standing Technical Authorization and Solo Developer Review policies — not an independent third-party audit |

@@ -16,7 +16,9 @@ import {
   expectSqlState,
   runtimePool,
   TENANT_A,
+  TENANT_B,
   USER_A,
+  withCommittedTx,
   withRolledBackTx,
 } from './helpers';
 
@@ -211,16 +213,22 @@ describe('iam.audit_append — concurrency cannot fork the chain', () => {
   });
 });
 
-describe('audit tables — platform-only (no runtime access in this increment)', () => {
-  it('an unauthorized runtime reads zero audit rows and cannot write or append', async () => {
+describe('audit tables — runtime may append, and still may not read history', () => {
+  it('an unauthorized runtime reads zero audit rows and cannot alter or erase them', async () => {
     await append();
     const ctx = { tenantId: TENANT_A, userId: ACTOR };
     // SELECT is granted (Increment I) but gated by iam.audit.view — ACTOR has no
-    // such permission, so the read returns zero rows (default deny).
+    // such permission. DBCR-P1-13-001 added a second, writer-scoped SELECT
+    // policy, and this assertion is what keeps the two apart: it exposes only
+    // records that have no chain link yet, which no committed record ever is.
     const sel = await withRolledBackTx(runtime, ctx, (c) =>
       c.query(`SELECT * FROM iam.audit_records`)
     );
     expect(sel.rows).toHaveLength(0);
+    const details = await withRolledBackTx(runtime, ctx, (c) =>
+      c.query(`SELECT * FROM iam.audit_record_details`)
+    );
+    expect(details.rows).toHaveLength(0);
     await withRolledBackTx(runtime, ctx, (c) =>
       expectSqlState(
         c.query(`DELETE FROM iam.audit_records WHERE tenant_id=$1`, [TENANT_A]),
@@ -233,9 +241,55 @@ describe('audit tables — platform-only (no runtime access in this increment)',
         '42501'
       )
     );
-    await withRolledBackTx(runtime, ctx, (c) =>
+  });
+
+  it('a runtime session appends a verifiable chain link for its own tenant', async () => {
+    // The capability DBCR-P1-13-001 exists to provide, exercised end to end by
+    // the deployed non-owner identity rather than by the admin connection.
+    const ctx = { tenantId: TENANT_A, userId: ACTOR };
+    const written = await withCommittedTx(runtime, ctx, (c) =>
+      c.query(
+        `SELECT iam.audit_append($1,$2,'user','runtime.append','iam.test',NULL,NULL,NULL,NULL,NULL,
+                $3::jsonb) AS id`,
+        [
+          TENANT_A,
+          ACTOR,
+          JSON.stringify([{ field: 'pin', old: '1234', new: '5678', class: 'secret' }]),
+        ]
+      )
+    );
+    const id = written.rows[0].id as string;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const record = await admin.query(`SELECT seq, action FROM iam.audit_records WHERE id=$1`, [id]);
+    expect(record.rows[0].action).toBe('runtime.append');
+    // Masking still applies: a secret value written through the runtime path is
+    // no less masked than one written by the platform.
+    const masked = await admin.query(
+      `SELECT old_value_masked, new_value_masked FROM iam.audit_record_details
+        WHERE audit_record_id=$1`,
+      [id]
+    );
+    expect(masked.rows[0]).toEqual({ old_value_masked: '***', new_value_masked: '***' });
+    expect((await verify()).ok).toBe(true);
+  });
+
+  it('a runtime session cannot append to another tenant', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACTOR }, (c) =>
       expectSqlState(
-        c.query(`SELECT iam.audit_append($1,$2,'user','x','iam.test')`, [TENANT_A, ACTOR]),
+        c.query(`SELECT iam.audit_append($1,$2,'user','cross.tenant','iam.test')`, [
+          TENANT_B,
+          ACTOR,
+        ]),
+        '42501'
+      )
+    );
+  });
+
+  it('a runtime session with no tenant context cannot append at all', async () => {
+    await withRolledBackTx(runtime, {}, (c) =>
+      expectSqlState(
+        c.query(`SELECT iam.audit_append($1,$2,'user','no.context','iam.test')`, [TENANT_A, ACTOR]),
         '42501'
       )
     );

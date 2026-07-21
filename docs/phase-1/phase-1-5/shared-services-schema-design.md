@@ -24,7 +24,7 @@ org.tenants ─┬─ shared.document_categories (dual-scope) ─ shared.documen
              │                                                              ├─ document_links (generic entity)
              │                                                              └─ legal_holds · retention_classes (platform)
              ├─ shared.message_templates (dual-scope) ─ template_versions ─ outbound_messages ── delivery_attempts
-             ├─ shared.event_outbox · processed_events · error_records   (app_worker surface only)
+             ├─ shared.event_outbox (app_worker + tenant-scoped producer) · processed_events · error_records (app_worker only)
              ├─ shared.system_settings (dual-scope) · localization_keys (platform) ── localized_texts
              ├─ shared.search_metadata (rebuildable projection)
              └─ shared.tags ── entity_tags · notes · comments (threaded)
@@ -122,9 +122,12 @@ LIMIT n)` — concurrent claimants receive disjoint sets, and the returned set
   (SELECT/INSERT/UPDATE) — plus EXECUTE on the three outbox routines and
   `iam.current_user_id()`. Its `wkr_*` policies deliberately span all tenants
   (infrastructure dispatch, probe-verified confined to the enumerated surface);
-  DELETE is structurally absent everywhere, and `app_runtime`/`app_readonly`
-  hold zero grant and zero policy on all three tables. No LOGIN credential is
-  created in this phase.
+  DELETE is structurally absent everywhere. `app_runtime`/`app_readonly` held
+  zero grant and zero policy on all three tables as delivered; since 2026-07-21
+  ([DBCR-P1-13-001](../../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md))
+  `app_runtime` holds tenant-scoped SELECT/INSERT on `event_outbox` alone, while
+  `processed_events` and `error_records` stay worker-only and `app_readonly`
+  stays at zero. No LOGIN credential is created in this phase.
 - **Tenant-only tags (K).** `tags` carries `tenant_id NOT NULL` — no platform
   tag catalogue exists, deliberately avoiding both an ungoverned platform
   vocabulary and a wider nullable-tenant exception surface. Active `tag_code`
@@ -161,9 +164,11 @@ NULL` tenant isolation:
 - **Nullable by design:** `error_records` (failures before tenant context;
   company/branch forbidden when tenant is NULL) and `processed_events`
   (platform consumers).
-- **Worker-only:** `event_outbox`, `processed_events`, `error_records` carry
-  only the all-tenant `wkr_*` policies for `app_worker`; application roles have
-  no surface at all.
+- **Worker-only:** `processed_events` and `error_records` carry only the
+  all-tenant `wkr_*` policies for `app_worker`; application roles have no
+  surface at all. `event_outbox` was in this group as delivered, and since
+  2026-07-21 also carries two tenant-scoped `app_runtime` producer policies
+  (DBCR-P1-13-001).
 
 Cross-tenant references are structurally impossible where a real parent exists:
 children FK to composite `(tenant_id, id)` candidate keys, org scope uses the

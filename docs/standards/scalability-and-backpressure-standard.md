@@ -210,7 +210,7 @@ The poll timer is `unref`'d, so waiting for the next poll never holds the proces
 
 `foundationReadiness()` and `workerReadiness()` produce the signals; they are not yet wired to HTTP
 routes (Phase 1-15 owns the richer health endpoints). A missing database write capability reports
-`degraded`, not `unavailable`, so a documented grant gap does not become an outage.
+`degraded`, not `unavailable`, so an absent grant does not take a whole tier out of rotation.
 
 ## 11. Web and worker roles scale independently
 

@@ -1,27 +1,26 @@
 /**
  * Runtime privilege preflight (P1-13-SEC-002, DBCR-P1-13-001).
  *
- * The Release 2 database is frozen, and P1-12 measured its grant surface. The
- * backend foundation needs four *write* capabilities that the current grant set
- * does not give the `app_runtime` archetype:
+ * The backend foundation needs four *write* capabilities beyond the Release 2
+ * baseline's SELECT-only surface:
  *
- *   - append an audit record  (`iam.audit_append`  — EXECUTE: owner only)
- *   - write a domain event    (`shared.event_outbox`     — INSERT: app_worker only)
- *   - store an idempotency key(`shared.idempotency_keys` — no app-role grant, no policy)
- *   - record a security event (`iam.security_events`     — SELECT only)
+ *   - append an audit record   (`iam.audit_append`        — EXECUTE)
+ *   - write a domain event     (`shared.event_outbox`     — INSERT)
+ *   - store an idempotency key (`shared.idempotency_keys` — INSERT)
+ *   - record a security event  (`iam.security_events`     — INSERT)
  *
- * That gap is raised as **DBCR-P1-13-001**, not patched here: P1-13 must not
- * add or modify a migration (phase scope, and the migration-immutability CI gate).
+ * The baseline granted none of them to `app_runtime`; **DBCR-P1-13-001** and its
+ * migration (`20260725090000_iam_shared_runtime_write_capabilities.sql`) grant
+ * all four, tenant-scoped, with no UPDATE and no DELETE.
  *
- * This module turns the gap from an assumption into a *measurement*. It asks
- * PostgreSQL what the current connection may actually do, so:
+ * This module exists because "the migration is applied" is a claim about a
+ * deployment, not a property of the code. It asks PostgreSQL what the current
+ * connection may actually do, so:
  *
- *  - the change request carries executed evidence rather than a reading of a
- *    migration file;
- *  - the foundation services fail closed with a precise message instead of a
- *    bare `42501` from three layers down;
- *  - the day the change request is approved and applied, the same preflight
- *    turns green with no application change.
+ *  - the grant surface is a *measurement* rather than an assumption, on every
+ *    environment the application boots in;
+ *  - a connection opened as the wrong role fails closed with a precise message
+ *    instead of a bare `42501` from three layers down.
  *
  * **Failing closed matters more than working.** A foundation that "degrades
  * gracefully" by skipping the audit append would produce state changes with no

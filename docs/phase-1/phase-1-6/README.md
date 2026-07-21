@@ -41,10 +41,13 @@ This phase is the database layer only. It intentionally excludes:
   the schema is the deliverable and downstream write-path invariants are a later
   concern.
 - **No worker / background processing** — no job runner, no async pipelines.
-- **No forensic audit trail** — `iam.audit_append` is not granted to any app
-  role. The full forensic audit trail is **Phase 1-16**; at this layer the
+- **No forensic audit trail** — no `crm` write path calls `iam.audit_append`.
+  The full forensic audit trail is **Phase 1-16**; at this layer the
   attributable record is the append-only history and timeline tables (see the
-  [audit and timeline matrix](./crm-audit-and-timeline-matrix.md)).
+  [audit and timeline matrix](./crm-audit-and-timeline-matrix.md)). The grant
+  itself changed on 2026-07-21: DBCR-P1-13-001 gave `app_runtime` tenant-scoped
+  EXECUTE on `iam.audit_append` for the Phase 1-13 backend foundation, which
+  does not alter anything in this phase.
 - **No real or fake business data** — crm ships **zero** business rows and
   **zero** structural-reference rows, consistent with the standing no-fake-data
   policy; the no-fake-data guard scans crm and asserts it is empty.

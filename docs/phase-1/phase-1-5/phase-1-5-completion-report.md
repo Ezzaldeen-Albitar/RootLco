@@ -10,6 +10,15 @@
 **Author:** Eng. Ezzaldeen Al-Bitar, under the
 [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
 
+> **Forward reference (2026-07-21).** This report records Phase 1-5 as delivered on 2026-07-18 and
+> is not rewritten. One statement in §5 was later superseded: `app_runtime` and `app_readonly` no
+> longer hold "nothing on the three worker tables". Migration
+> `20260725090000_iam_shared_runtime_write_capabilities.sql` grants `app_runtime` tenant-scoped
+> SELECT and INSERT on `shared.event_outbox` only; `shared.processed_events` and
+> `shared.error_records` are unchanged, `app_readonly` gained nothing, and the `app_worker` surface
+> described below is untouched. See
+> [DBCR-P1-13-001](../../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md).
+
 ## 1. What Phase 1-5 set out to do
 
 Build the shared-services PostgreSQL foundation every later domain reuses —

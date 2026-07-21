@@ -10,6 +10,7 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   TENANT_A,
+  TENANT_B,
   USER_A,
   adminPool,
   cleanFixtures,
@@ -18,6 +19,7 @@ import {
   expectSqlState,
   readonlyPool,
   runtimePool,
+  withRolledBackTx,
   workerPool,
 } from './helpers';
 
@@ -94,15 +96,49 @@ describe('shared.event_outbox — worker boundary and envelope integrity', () =>
     await expectSqlState(insertEvent('evt.aggregate-version-zero', 1, 0), '23514');
   });
 
-  it('denies runtime and readonly SELECT, runtime EXECUTE, and worker DELETE (42501)', async () => {
+  it('denies readonly SELECT, runtime dispatch EXECUTE, and worker DELETE (42501)', async () => {
     await insertEvent('evt.denials');
-    await expectSqlState(runtime.query('SELECT * FROM shared.event_outbox'), '42501');
     await expectSqlState(readonly.query('SELECT * FROM shared.event_outbox'), '42501');
+    // DBCR-P1-13-001 gave the runtime a tenant-scoped producer surface, and
+    // deliberately no dispatch capability: claiming, completing, and failing
+    // work stay app_worker's alone, so a producer can never drain the queue.
     await expectSqlState(
       runtime.query(`SELECT * FROM shared.claim_outbox_events('runtime-1', 1)`),
       '42501'
     );
+    await expectSqlState(
+      runtime.query(`SELECT shared.complete_outbox_event(gen_random_uuid(), 'runtime-1')`),
+      '42501'
+    );
+    await expectSqlState(
+      runtime.query(
+        `SELECT shared.fail_outbox_event(gen_random_uuid(), 'runtime-1', 'x', interval '1 minute', 5)`
+      ),
+      '42501'
+    );
+    // A producer may add an envelope but never advance one.
+    await expectSqlState(
+      runtime.query(`UPDATE shared.event_outbox SET status='published'`),
+      '42501'
+    );
     await expectSqlState(worker.query('DELETE FROM shared.event_outbox'), '42501');
+  });
+
+  it('shows a runtime session its own tenant envelopes and no other tenant s', async () => {
+    await insertEvent('evt.tenant-scoped');
+    const mine = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, (c) =>
+      c.query(`SELECT count(*)::int AS n FROM shared.event_outbox`)
+    );
+    expect(mine.rows[0].n).toBeGreaterThanOrEqual(1);
+    const theirs = await withRolledBackTx(runtime, { tenantId: TENANT_B, userId: USER_A }, (c) =>
+      c.query(`SELECT count(*)::int AS n FROM shared.event_outbox`)
+    );
+    expect(theirs.rows[0].n).toBe(0);
+    // No resolved tenant means no rows at all — the predicate is NULL.
+    const none = await withRolledBackTx(runtime, {}, (c) =>
+      c.query(`SELECT count(*)::int AS n FROM shared.event_outbox`)
+    );
+    expect(none.rows[0].n).toBe(0);
   });
 
   it.each(['claimed', 'published'])(
