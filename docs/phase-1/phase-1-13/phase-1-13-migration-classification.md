@@ -72,3 +72,20 @@ locally, so a divergence between the two is a failure rather than a surprise.
 
 No seed file is added or changed. The migration grants privileges; it inserts no row, and business
 tables remain empty after a clean migration exactly as the no-fake-data policy requires.
+
+## Protected-history confirmation (2026-07-21)
+
+The migration is merged. Verified against protected `origin/develop` =
+`e615a0212fda0b028316206bf9f331dd86120890`:
+
+```text
+git diff --name-status release-2-database-baseline..e615a02 -- supabase/
+A	supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql
+```
+
+One file **added**, none modified, renamed, or deleted, relative to the frozen Release 2 baseline
+tag. The hosted `Assert applied migrations are immutable` CI step passed on the exact remediation
+SHA `af240f0`, and the migration applied cleanly from an empty database in the clean room ("All 114
+migrations applied cleanly"). Post-application catalogue, identical on the rebuilt working database
+and in the clean room: 242 tables · 596 policies · 210 functions · 0 `SECURITY DEFINER` · 0 tables
+with RLS enabled but not FORCED.

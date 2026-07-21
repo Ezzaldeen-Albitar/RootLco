@@ -1,8 +1,9 @@
 # DBCR-P1-13-001 — Backend runtime write grants for the foundation primitives
 
-**Status:** **IMPLEMENTED** — migration
-[`20260725090000_iam_shared_runtime_write_capabilities.sql`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql) ·
-**Raised:** 2026-07-21 · **Implemented:** 2026-07-21 ·
+**Status:** **RESOLVED** — merged into protected `develop` (PR #51, merge commit `e615a02`) and
+verified from the merged state by executable evidence; see §9 ·
+**Migration:** [`20260725090000_iam_shared_runtime_write_capabilities.sql`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql) ·
+**Raised:** 2026-07-21 · **Implemented:** 2026-07-21 · **Resolved:** 2026-07-21 ·
 **Phase:** P1-13 (Backend Architecture and Shared Application Foundation) ·
 **Owner:** Eng. Ezzaldeen Al-Bitar (technical owner; recorded under the
 [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
@@ -257,9 +258,45 @@ none. This is accepted, and here is the whole of it:
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Requested by       | Phase 1-13 implementation                                                                                                                                   |
 | Approval owner     | RootLco founders (Product Owner), with technical sign-off by the Architect                                                                                  |
-| Status             | **IMPLEMENTED** — pending owner merge of the remediation pull request                                                                                       |
+| Status             | **RESOLVED** — merged into protected `develop` and verified from the merged state (§9)                                                                      |
 | Implementing phase | P1-13 (remediation branch `fix/p1-13-runtime-database-capabilities`)                                                                                        |
 | Migration          | `supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql` (the 114th)                                                                  |
 | Design deviations  | §4.1 (unlinked-read policies + chain-derived `seq`) and §4.2 (no `extensions` USAGE), both with evidence                                                    |
 | Residual exposure  | §7, Low, accepted                                                                                                                                           |
 | Review basis       | Owner-authorized technical self-review under the Standing Technical Authorization and Solo Developer Review policies — not an independent third-party audit |
+
+## 9. Closure — verified from protected history (2026-07-21)
+
+Resolved on executable evidence, not on the presence of a migration in the tree.
+
+| Item                            | Value                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| Remediation pull request        | #51, merged by the repository owner                                        |
+| Final remediation SHA           | `af240f06dcbd31b260d476a762ae314494bfa063`                                 |
+| Merge commit                    | `e615a0212fda0b028316206bf9f331dd86120890` (parents `6c3f0de` + `af240f0`) |
+| Hosted CI on the exact SHA      | 4/4 required checks green (run #122)                                       |
+| Protected `origin/develop`      | `e615a0212fda0b028316206bf9f331dd86120890`                                 |
+| Files changed under `supabase/` | exactly one, **added**; no earlier migration modified                      |
+
+**Re-measured on the merged state** as `rootlco_test_runtime` (a member of `app_runtime`) with a
+resolved tenant context and no `BYPASSRLS`: all four capabilities available; cross-tenant and
+context-less writes still refused with `42501`; audit history still unreadable without
+`iam.audit.view`; audit rows still immutable; the chain still verifying; producers still unable to
+claim queue work; `app_readonly` still holding nothing. Catalogue: 114 migrations, 242 tables, 596
+policies, 210 functions, 0 `SECURITY DEFINER`, 0 tables with RLS enabled but not FORCED, and exactly
+six INSERTs for `app_runtime` in `shared`+`iam` with no UPDATE, DELETE, or TRUNCATE there.
+
+Reproduced independently in a clean room — fresh clone, `npm ci`, a brand-new empty database, all
+114 migrations applied by the CI runner, seeds applied twice, every suite green, zero residue
+afterwards. Full record:
+[`gate-validation.md`](../../phase-1/phase-1-13/evidence/gate-validation.md).
+
+**Accepted residual, unchanged:** the tenant-scoped read of `iam.audit_integrity_links` (§7).
+
+**One further accepted risk identified at gate review**, recorded as ADV-03 in the
+[adversarial review](../../phase-1/phase-1-13/phase-1-13-adversarial-review.md): an actor able to
+execute arbitrary SQL as `app_runtime` can insert an audit record outside `iam.audit_append`,
+creating a permanently unlinked — and therefore readable — row, or squatting the next chain sequence
+so later appends fail closed. It is inherent to `audit_append` being `SECURITY INVOKER`, since the
+caller must hold the INSERT, and the project's zero-`SECURITY DEFINER` rule forecloses the
+alternative. Stated rather than absorbed.
