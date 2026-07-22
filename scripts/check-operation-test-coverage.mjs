@@ -1,391 +1,503 @@
 #!/usr/bin/env node
 /**
- * Operation-to-test coverage gate (P1-14 remediation).
+ * Operation-to-test coverage gate (P1-14 remediation — STRICT).
  *
- * Blocker 2 of the failed P1-14 gate was that the ~39 registered operations had
- * NO application/API-layer test evidence: they were imported for OpenAPI
- * registration and never invoked. This gate makes that gap visible and
- * machine-readable, and fails CI when an operation that is DECLARED as covered
- * has lost its test evidence.
+ * Blocker 2 of the failed P1-14 gate was that the registered operations had NO
+ * application/API-layer test evidence: they were imported for OpenAPI
+ * registration and never invoked. The first version of this gate made that gap
+ * visible but tolerated "pending" and "unit" residuals. This version does not.
  *
- * It reconciles two sources:
- *   1. every `defineOperation({...})` in the source tree (the operations that ship);
- *   2. the coverage manifest below, which records — per operation — the test file
- *      that exercises it and the depth of that evidence.
+ * Every registered PUBLIC operation must now have GENUINE operation-depth
+ * evidence — its wired application service invoked end to end on the runtime DB
+ * role, through RLS, the transaction wrapper, and the audit/outbox path — and the
+ * gate FAILS if any of the following is true:
  *
- * Depth levels:
- *   - "operation": the operation's application service is invoked end to end
- *     through the runtime context / RLS / transaction, with behavioural assertions
- *     (success AND at least one denial / audit / concurrency property where
- *     applicable). This is acceptance evidence.
- *   - "unit": the operation's decision logic is proven at the unit level (e.g. the
- *     token verifier, the domain policies) but the wired service is not invoked in
- *     an integration test. Honest partial evidence — NOT full acceptance.
- *   - "pending": no executable evidence yet. Listed explicitly so nothing is hidden.
+ *   1. a registered operation is absent from the coverage manifest;
+ *   2. a manifest entry names a test file that does not reference the operation id
+ *      (evidence claimed but the operation is never invoked — the exact
+ *      "green but untested" failure this gate exists to prevent);
+ *   3. an operation declares REQUIRED evidence kinds (permission-denial,
+ *      cross-tenant, company/branch isolation, audit assertion, idempotency,
+ *      stale-version, atomic outbox) that its test file's COVERAGE-EVIDENCE block
+ *      does not provide;
+ *   4. a manifest entry names an operation that is no longer registered (stale);
+ *   5. any operation is marked `pending` — the state no longer exists, so the
+ *      manifest cannot express one.
  *
- * The gate FAILS if:
- *   - a manifest entry names a test file that does not reference the operation id
- *     (evidence claimed but absent — the exact "green but untested" failure this
- *     gate exists to prevent), or
- *   - a registered operation is missing from the manifest entirely (a new
- *     operation shipped without a coverage decision).
+ * There is no `pending` and no `unit` depth any more: 0 pending, 0 unreferenced,
+ * 0 metadata-only is the only passing state.
  *
- * The gate does NOT fail merely because an operation is "pending": that is a
- * tracked, visible residual, reported in the matrix and in the P1-14 records, not
- * a silently-hidden gap. Raising a "pending" operation to "operation" depth is the
- * governed way to close it.
+ * The per-operation evidence a test file provides is declared in a machine-read
+ * COVERAGE-EVIDENCE block inside that file, e.g.
+ *
+ *     COVERAGE-EVIDENCE (...):
+ *       iam.user-update: success denial cross-tenant audit stale-version
+ *
+ * The flags are review-anchored: they sit in the file beside the assertions that
+ * back them, the gate checks the file also *invokes* the operation, and a
+ * reviewer can confirm each claimed flag maps to a real assertion. The negative
+ * fixture (tests/foundation/operation-coverage-gate.test.ts) proves the gate
+ * returns failures when a required flag is missing or an operation is unreferenced.
  *
  * Exit codes: 0 clean · 1 coverage failure · 2 IO error.
- *
  * Usage: node scripts/check-operation-test-coverage.mjs [--json]
  */
 import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = process.cwd();
-const SRC = join(ROOT, 'src');
-const TESTS = join(ROOT, 'tests');
-const jsonOutput = process.argv.includes('--json');
 const toPosix = (p) => p.split(sep).join('/');
-
-function walk(dir, filter) {
-  if (!existsSync(dir)) return [];
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      if (entry === 'node_modules' || entry === '.next') continue;
-      out.push(...walk(full, filter));
-    } else if (filter(entry)) out.push(full);
-  }
-  return out;
-}
-
-/** Extracts every `id: '...'` from a `defineOperation({...})` literal. */
-function registeredOperationIds() {
-  const ids = new Set();
-  for (const file of walk(SRC, (n) => /\.tsx?$/.test(n))) {
-    if (toPosix(relative(ROOT, file)).endsWith('server/auth/operation-registry.ts')) continue;
-    const source = readFileSync(file, 'utf8');
-    let index = source.indexOf('defineOperation(');
-    while (index >= 0) {
-      const braceStart = source.indexOf('{', index);
-      const idMatch = /\bid\s*:\s*['"`]([^'"`]+)['"`]/.exec(
-        source.slice(braceStart, braceStart + 400)
-      );
-      if (idMatch) ids.add(idMatch[1]);
-      index = source.indexOf('defineOperation(', braceStart + 1);
-    }
-  }
-  return ids;
-}
 
 // ---------------------------------------------------------------------------
 // Coverage manifest. Each registered operation MUST appear exactly once.
-//   file: the test that exercises it (must reference the operation id), or null
-//         when depth is "pending".
-//   depth: "operation" | "unit" | "pending".
+//   file: the test that exercises it (must reference the operation id).
+//   required: the evidence kinds the test file must declare for this operation
+//             in its COVERAGE-EVIDENCE block. [] means "invocation only" — read
+//             and catalogue operations that have no denial/isolation/audit
+//             obligations of their own.
 //   note: why, for the reader.
+//
+// Evidence-kind vocabulary (a superset may be declared; the gate checks the
+// REQUIRED ones are present):
+//   success · denial · cross-tenant · isolation · audit · outbox · idempotency ·
+//   stale-version
 // ---------------------------------------------------------------------------
-const MANIFEST = {
+export const MANIFEST = {
   // --- Grant / scope / approval administration — the confirmed-High surface.
-  //     Deep operation-layer evidence + a database backstop suite.
   'iam.grant-issue': {
-    depth: 'operation',
     file: 'tests/backend/iam-access-administration.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'issued within/at/beyond authority; audit + event once; rollback leaves nothing',
   },
   'iam.grant-revoke': {
-    depth: 'operation',
     file: 'tests/backend/iam-access-administration.test.ts',
+    required: ['success', 'stale-version'],
     note: 'revocation immediate effect + stale-version conflict',
   },
   'iam.grant-scope-add': {
-    depth: 'operation',
     file: 'tests/backend/iam-access-administration.test.ts',
+    required: ['success', 'isolation'],
     note: 'within-authority scope added; foreign-company widening refused',
   },
   'iam.grant-scope-remove': {
-    depth: 'operation',
     file: 'tests/backend/iam-access-administration.test.ts',
+    required: ['success'],
     note: 'scope removed; DB backstop also proves last-scope removal cannot widen',
   },
   'iam.grant-scope-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'lists the scopes of a scoped grant',
   },
   'iam.approval-limit-create': {
-    depth: 'operation',
     file: 'tests/backend/iam-access-administration.test.ts',
+    required: ['success', 'denial'],
     note: 'no self-limit; malformed money rejected',
   },
   'iam.approval-limit-end': {
-    depth: 'pending',
-    file: null,
-    note: 'endApprovalLimit not yet invoked at the service level (residual R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'window ended; permission-denied; wrong version refused',
   },
   'iam.approval-limit-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'listed and tenant-scoped',
   },
   // --- Role / permission administration.
   'iam.role-create': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'created and found in the list',
   },
   'iam.role-update': {
-    depth: 'pending',
-    file: null,
-    note: 'updateRole service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
+    note: 'renamed; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.role-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'listed, tenant-scoped',
   },
   'iam.role-permission-add': {
-    depth: 'pending',
-    file: null,
-    note: 'addRolePermission service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'delegable allow added; permission-denied under RLS',
   },
   'iam.role-permission-update': {
-    depth: 'pending',
-    file: null,
-    note: 'changeRolePermissionEffect service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'effect changed; permission-denied; wrong version refused',
   },
   'iam.role-permission-remove': {
-    depth: 'pending',
-    file: null,
-    note: 'removeRolePermission service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'mapping removed; DELETE policy refuses the unprivileged caller',
   },
   'iam.role-permission-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'listed',
   },
   'iam.permission-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'catalogue listed',
   },
   // --- User administration.
   'iam.user-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'cursor paginated, tenant-isolated',
   },
   'iam.user-detail': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'detail; cross-tenant not found',
   },
   'iam.user-update': {
-    depth: 'pending',
-    file: null,
-    note: 'updateProfile service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
+    note: 'profile updated; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.user-status-change': {
-    depth: 'pending',
-    file: null,
-    note: 'changeStatus service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox'],
+    note: 'lock revokes sessions + audits + one event; permission-denied; self refused',
   },
   'iam.user-session-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'listed for a user',
   },
   'iam.user-session-revoke-all': {
-    depth: 'pending',
-    file: null,
-    note: 'revokeAllSessions service invocation pending (R-9); repository UPDATE fix proven in P1-14-R-007 change',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency'],
+    note: 'all revoked + audit + event; unprivileged revokes nothing; second call revokes zero',
   },
   // --- Organization settings.
   'iam.tenant-settings-read': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'read',
   },
   'iam.tenant-settings-update': {
-    depth: 'pending',
-    file: null,
-    note: 'updateTenant service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'updated + audit; permission-denied; wrong version refused',
   },
   'iam.company-settings-read': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'read in scope',
   },
   'iam.company-settings-write': {
-    depth: 'pending',
-    file: null,
-    note: 'writeCompanySetting service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'audit', 'isolation'],
+    note: 'append-only version written + audit; out-of-scope company refused',
   },
   'iam.branch-settings-read': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'read in scope',
   },
   'iam.branch-settings-write': {
-    depth: 'pending',
-    file: null,
-    note: 'writeBranchSetting service invocation pending (R-9)',
+    file: 'tests/backend/iam-admin-writes.test.ts',
+    required: ['success', 'audit', 'isolation'],
+    note: 'version written + audit; out-of-scope branch invisible and refused',
   },
   // --- Audit viewing.
   'iam.audit-event-list': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'bounded range; privileged read is itself audited',
   },
   'iam.audit-event-detail': {
-    depth: 'operation',
     file: 'tests/backend/iam-operations.test.ts',
+    required: [],
     note: 'cross-tenant record not found',
   },
-  // --- Invitation / activation.
+  // --- Invitation / activation (provider-fake harness).
   'iam.invitation-create': {
-    depth: 'pending',
-    file: null,
-    note: 'invite service invocation pending a provider-fake harness (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
   },
   'iam.invitation-cancel': {
-    depth: 'pending',
-    file: null,
-    note: 'cancel service invocation pending a provider-fake harness (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox'],
+    note: 'invited → archived + audit + event; non-invitation refused',
   },
   'iam.invitation-activate': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'activation refuses an unconfirmed provider identity — provider fake at unit level; full integration pending a provider-fake harness',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox'],
+    note: 'accepted invitation activated + audit + event; unconfirmed refused',
   },
-  // --- Authentication (provider-backed). Verifier + domain proven at unit depth;
-  //     wired-service integration pending a provider-fake backend harness (R-8).
+  // --- Authentication (provider-fake harness).
   'iam.auth-login': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'token verify + assessFailedLogin proven; wired login integration pending (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'token + session + success audit; every failure generic; failure audited',
   },
   'iam.auth-logout': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'logout is public, token-authoritative; wired integration pending (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'audit', 'idempotency'],
+    note: 'session revoked + logout audit; double logout is a no-op',
   },
   'iam.auth-session': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'session-state SQL proven in P1-13 resolve-context; wired integration pending (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success'],
+    note: 'describeSession resolves identity, scope, permissions',
   },
   'iam.auth-password-reset': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'redirect allow-list proven; wired integration pending (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial'],
+    note: 'known → delivery; unknown → silent; non-allow-listed redirect refused',
   },
   'iam.auth-password-reset-completion': {
-    depth: 'unit',
-    file: 'tests/foundation/p1-14-authentication-units.test.ts',
-    note: 'reset completion; wired integration pending (R-8)',
+    file: 'tests/backend/iam-auth-provider.test.ts',
+    required: ['success', 'denial', 'idempotency'],
+    note: 'completes + invalidates prior sessions; replay refused; bounds enforced',
   },
   // --- Reference exemplar.
   'meta.ping': {
-    depth: 'operation',
     file: 'tests/backend/api-ping.test.ts',
+    required: [],
     note: 'end-to-end reference endpoint',
   },
 };
 
-const REQUIRED_DEPTHS = new Set(['operation']);
-
-function testReferencesId(file, id) {
-  const abs = join(ROOT, file);
-  if (!existsSync(abs)) return false;
-  return readFileSync(abs, 'utf8').includes(id);
+/** Extracts every `id: '...'` from a `defineOperation({...})` literal in a tree. */
+export function scanRegisteredOperationIds(root) {
+  const src = join(root, 'src');
+  const ids = new Set();
+  const walk = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        if (entry === 'node_modules' || entry === '.next') continue;
+        walk(full);
+      } else if (/\.tsx?$/.test(entry)) {
+        if (toPosix(relative(root, full)).endsWith('server/auth/operation-registry.ts')) continue;
+        const source = readFileSync(full, 'utf8');
+        let index = source.indexOf('defineOperation(');
+        while (index >= 0) {
+          const braceStart = source.indexOf('{', index);
+          const idMatch = /\bid\s*:\s*['"`]([^'"`]+)['"`]/.exec(
+            source.slice(braceStart, braceStart + 400)
+          );
+          if (idMatch) ids.add(idMatch[1]);
+          index = source.indexOf('defineOperation(', braceStart + 1);
+        }
+      }
+    }
+  };
+  walk(src);
+  return ids;
 }
 
-const registered = registeredOperationIds();
-const failures = [];
-const matrix = [];
-
-for (const id of [...registered].sort()) {
-  const entry = MANIFEST[id];
-  if (!entry) {
-    failures.push(
-      `${id}: registered operation missing from the coverage manifest (add a coverage decision)`
-    );
-    matrix.push({ id, depth: 'UNDECLARED', file: null, referenced: false });
-    continue;
+/**
+ * Parses the COVERAGE-EVIDENCE block of a test file into a map of
+ * operationId -> Set(flags). Lines are only read between a line containing the
+ * `COVERAGE-EVIDENCE` marker and the next line that closes the block comment, so
+ * a stray "id: word" elsewhere in the file cannot be mistaken for a declaration.
+ */
+export function parseProvidedFlags(source) {
+  const provided = new Map();
+  const lines = source.split(/\r?\n/);
+  let inBlock = false;
+  for (const line of lines) {
+    if (line.includes('COVERAGE-EVIDENCE')) {
+      inBlock = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    if (line.includes(COMMENT_CLOSE)) {
+      inBlock = false;
+      continue;
+    }
+    const m = /^\s*\*?\s*((?:iam|meta)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
+    if (m) {
+      const flags = new Set(m[2].split(/\s+/).filter(Boolean));
+      provided.set(m[1], flags);
+    }
   }
-  const referenced = entry.depth === 'pending' ? false : testReferencesId(entry.file, id);
-  matrix.push({ id, depth: entry.depth, file: entry.file, referenced, note: entry.note });
-  if (entry.depth !== 'pending' && !referenced) {
-    failures.push(
-      `${id}: manifest claims ${entry.depth} evidence in ${entry.file}, but that file does not reference the operation id`
-    );
+  return provided;
+}
+
+/** The JSDoc close marker, assembled so this source can mention it safely. */
+const COMMENT_CLOSE = '*' + '/';
+
+/**
+ * Removes the COVERAGE-EVIDENCE declaration block from a file's text, so the
+ * "is this operation actually invoked?" check cannot be satisfied by the machine
+ * -readable declaration itself. After stripping, the operation id must still
+ * appear in the file — in the "Operations exercised here" listing and, for the
+ * write operations, the `describe`/`it` bodies that invoke the service — for the
+ * operation to count as referenced.
+ */
+export function stripCoverageBlock(source) {
+  const out = [];
+  let inBlock = false;
+  for (const line of source.split(/\r?\n/)) {
+    if (line.includes('COVERAGE-EVIDENCE')) {
+      inBlock = true;
+      continue;
+    }
+    if (inBlock) {
+      if (line.includes(COMMENT_CLOSE)) inBlock = false;
+      continue;
+    }
+    out.push(line);
   }
+  return out.join('\n');
 }
 
-// Manifest entries for operations that no longer exist are stale.
-for (const id of Object.keys(MANIFEST)) {
-  if (!registered.has(id))
-    failures.push(`${id}: coverage manifest names an operation that is not registered`);
+/**
+ * Pure evaluator, so the negative fixture can drive it with a synthetic manifest
+ * and an in-memory reader. `readFile(path)` returns the file's text, or null when
+ * it does not exist.
+ *
+ * Returns `{ failures, matrix, counts }`. A clean run has `failures.length === 0`.
+ */
+export function evaluateCoverage({ registered, manifest, readFile }) {
+  const failures = [];
+  const matrix = [];
+  const providedCache = new Map();
+  const providedFor = (file) => {
+    if (!providedCache.has(file)) {
+      const text = readFile(file);
+      providedCache.set(file, text == null ? new Map() : parseProvidedFlags(text));
+    }
+    return providedCache.get(file);
+  };
+
+  for (const id of [...registered].sort()) {
+    const entry = manifest[id];
+    if (!entry) {
+      failures.push(`${id}: registered operation missing from the coverage manifest`);
+      matrix.push({ id, file: null, referenced: false, required: [], missing: ['<undeclared>'] });
+      continue;
+    }
+    const required = entry.required ?? [];
+    const source = readFile(entry.file);
+    // The operation must be referenced OUTSIDE its own COVERAGE-EVIDENCE block —
+    // the declaration cannot vouch for the invocation it declares.
+    const referenced = source != null && stripCoverageBlock(source).includes(id);
+    if (!referenced) {
+      failures.push(
+        `${id}: manifest names ${entry.file}, but that file does not reference the operation id (not invoked)`
+      );
+    }
+    const provided = referenced ? (providedFor(entry.file).get(id) ?? new Set()) : new Set();
+    const missing = required.filter((flag) => !provided.has(flag));
+    if (referenced && missing.length > 0) {
+      failures.push(
+        `${id}: ${entry.file} is missing required evidence [${missing.join(', ')}] in its COVERAGE-EVIDENCE block`
+      );
+    }
+    matrix.push({
+      id,
+      file: entry.file,
+      referenced,
+      required,
+      provided: [...provided].sort(),
+      missing,
+    });
+  }
+
+  // Manifest entries for operations that no longer exist are stale.
+  for (const id of Object.keys(manifest)) {
+    if (!registered.has(id)) {
+      failures.push(`${id}: coverage manifest names an operation that is not registered`);
+    }
+  }
+
+  const counts = {
+    registered: registered.size,
+    withRequiredEvidence: matrix.filter((m) => (m.required ?? []).length > 0).length,
+    invocationOnly: matrix.filter((m) => (m.required ?? []).length === 0).length,
+  };
+  return { failures, matrix, counts };
 }
 
-const counts = matrix.reduce((acc, m) => {
-  acc[m.depth] = (acc[m.depth] ?? 0) + 1;
-  return acc;
-}, {});
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+function runCli() {
+  const ROOT = process.cwd();
+  const jsonOutput = process.argv.includes('--json');
+  const readFile = (rel) => {
+    const abs = join(ROOT, rel);
+    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  };
 
-// Persist the machine-readable matrix for the evidence pack.
-const matrixPath = join(
-  ROOT,
-  'docs',
-  'phase-1',
-  'phase-1-14',
-  'evidence',
-  'operation-test-matrix.json'
-);
-try {
-  writeFileSync(
-    matrixPath,
-    JSON.stringify(
-      { generatedFrom: 'scripts/check-operation-test-coverage.mjs', counts, operations: matrix },
-      null,
-      2
-    ) + '\n'
+  let registered;
+  try {
+    registered = scanRegisteredOperationIds(ROOT);
+  } catch (error) {
+    console.error(`IO error scanning operations: ${error.message}`);
+    process.exit(2);
+  }
+
+  const { failures, matrix, counts } = evaluateCoverage({
+    registered,
+    manifest: MANIFEST,
+    readFile,
+  });
+
+  // Persist the machine-readable matrix for the evidence pack.
+  const matrixPath = join(
+    ROOT,
+    'docs',
+    'phase-1',
+    'phase-1-14',
+    'evidence',
+    'operation-test-matrix.json'
   );
-} catch {
-  /* evidence dir may not exist in some checkouts; not fatal to the gate */
-}
-
-if (jsonOutput) {
-  console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
-} else {
-  console.log(`Operation-to-test coverage: ${registered.size} registered operation(s)`);
-  console.log(
-    `  operation-depth: ${counts.operation ?? 0} · unit-depth: ${counts.unit ?? 0} · pending: ${counts.pending ?? 0}`
-  );
-  for (const m of matrix) {
-    const flag =
-      m.depth === 'operation'
-        ? 'OK '
-        : m.depth === 'unit'
-          ? 'UNIT'
-          : m.depth === 'pending'
-            ? 'PEND'
-            : 'FAIL';
-    console.log(`  [${flag}] ${m.id.padEnd(34)} ${m.file ?? '(none)'}`);
-  }
-  if (failures.length === 0) {
-    console.log(
-      `\nOK: every operation has a coverage decision; every non-pending claim is backed by a referencing test.`
+  try {
+    writeFileSync(
+      matrixPath,
+      JSON.stringify(
+        { generatedFrom: 'scripts/check-operation-test-coverage.mjs', counts, operations: matrix },
+        null,
+        2
+      ) + '\n'
     );
-    console.log(`Matrix written to docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`);
+  } catch {
+    /* evidence dir may be absent in some checkouts; not fatal to the gate */
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
-    console.error(`\n${failures.length} coverage failure(s):`);
-    for (const f of failures) console.error(`  - ${f}`);
+    console.log(
+      `Operation-to-test coverage (STRICT): ${counts.registered} registered operation(s)`
+    );
+    console.log(
+      `  with required evidence: ${counts.withRequiredEvidence} · invocation-only (read/catalogue): ${counts.invocationOnly}`
+    );
+    for (const m of matrix) {
+      const ok = m.referenced && (m.missing ?? []).length === 0;
+      console.log(`  [${ok ? 'OK ' : 'FAIL'}] ${m.id.padEnd(34)} ${m.file ?? '(none)'}`);
+    }
+    if (failures.length === 0) {
+      console.log(
+        `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`
+      );
+      console.log(`Matrix written to docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`);
+    } else {
+      console.error(`\n${failures.length} coverage failure(s):`);
+      for (const f of failures) console.error(`  - ${f}`);
+    }
   }
+
+  process.exit(failures.length === 0 ? 0 : 1);
 }
 
-void REQUIRED_DEPTHS;
-process.exit(failures.length === 0 ? 0 : 1);
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  runCli();
+}

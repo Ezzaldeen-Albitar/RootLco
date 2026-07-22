@@ -44,42 +44,44 @@ hosted CI, on the exact merged SHA.
 
 ## 2. History of the phase
 
-| Item                                  | Value                                                                                                                       |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Database remediation (DBCR-P1-14-001) | PR **#54** → merge `1477886`; **RESOLVED**, re-verified from the merged protected tree                                      |
-| Feature implementation                | PR **#55** → merge `c16f998` (parents `1477886` + `2359bfb`); 38 operations; no migration added or changed                  |
-| Authentication provider               | **Supabase Auth** — [ADR-019](../../adr/ADR-019-supabase-auth-as-authentication-provider.md)                                |
-| Gate review outcome                   | **Did not pass** — one confirmed High (grant scope-containment bypass) and absent operation-layer evidence                  |
-| Remediation                           | Branch `fix/p1-14-grant-scope-and-operation-evidence` — see [the remediation record](phase-1-14-grant-scope-remediation.md) |
+| Item                                  | Value                                                                                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Database remediation (DBCR-P1-14-001) | PR **#54** → merge `1477886`; **RESOLVED**, re-verified from the merged protected tree                                                                                                     |
+| Feature implementation                | PR **#55** → merge `c16f998` (parents `1477886` + `2359bfb`); 38 operations; no migration added or changed                                                                                 |
+| Authentication provider               | **Supabase Auth** — [ADR-019](../../adr/ADR-019-supabase-auth-as-authentication-provider.md)                                                                                               |
+| Gate review outcome                   | **Did not pass** — one confirmed High (grant scope-containment bypass) and absent operation-layer evidence                                                                                 |
+| Remediation (grant scope + evidence)  | Branch `fix/p1-14-grant-scope-and-operation-evidence` → PR **#56** merge `63916b8` — see [the remediation record](phase-1-14-grant-scope-remediation.md)                                   |
+| Operation-evidence completion         | Branch `fix/p1-14-operation-evidence-completion` (off `63916b8`) — see [the completion record](phase-1-14-operation-evidence-completion.md); closes R-8/R-9, fixes R-008/R-009/R-010/R-011 |
 
 ## 3. Gate conditions
 
-| #   | Condition                                                                                           | Status at time of writing                                                          |
-| --- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 1   | Authentication provider decision recorded (ADR-019); authorization state never trusted from a token | **Met** — ADR-019; re-verified in the gate review                                  |
-| 2   | Every public operation registered; every protected operation declares permission + audit metadata   | **Met** — `validate:authorization-coverage`                                        |
-| 3   | Unrestricted-grant scope-containment bypass fixed at application **and** database layers            | **Met on the remediation branch** — awaiting owner merge                           |
-| 4   | The `updated_by` runtime-privilege defect (P1-14-R-007) fixed and proven                            | **Met on the remediation branch** — awaiting owner merge                           |
-| 5   | Grant/scope/approval administration proven at operation depth (service + RLS + audit + outbox)      | **Met on the remediation branch** — awaiting owner merge                           |
-| 6   | Operation-to-test coverage gate green; coverage matrix published; residuals visible                 | **Met on the remediation branch** — 20 operation / 6 unit / 13 pending             |
-| 7   | Zero unresolved Critical findings                                                                   | **Met** — 0                                                                        |
-| 8   | Zero unresolved High findings without an approved exception                                         | **Met on the remediation branch** — the confirmed High and R-007 fixed             |
-| 9   | Local validation green with recorded exit codes                                                     | **To be evidenced on the exact final remediation SHA**                             |
-| 10  | Clean-room validation green from a clean checkout                                                   | **To be evidenced on the exact final remediation SHA**                             |
-| 11  | All required hosted CI checks green on the exact final remediation SHA                              | **To be evidenced**                                                                |
-| 12  | Feature and remediation pull requests merged into `develop` by the repository owner                 | **PR #55 merged; the remediation PR is not merged — the implementer never merges** |
-| 13  | Gate record committed into protected history with a Go decision                                     | **Not started — this document is Pending**                                         |
-| 14  | Migration posture: one additive remediation migration; no existing migration modified               | **Met on the remediation branch** — migration 116, ROLLBACK-SAFE                   |
-| 15  | No P1-15 work started                                                                               | **Met** — no P1-15 branch, commit, route, or migration exists                      |
+| #   | Condition                                                                                           | Status at time of writing                                                                                                              |
+| --- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Authentication provider decision recorded (ADR-019); authorization state never trusted from a token | **Met** — ADR-019; re-verified in the gate review                                                                                      |
+| 2   | Every public operation registered; every protected operation declares permission + audit metadata   | **Met** — `validate:authorization-coverage`                                                                                            |
+| 3   | Unrestricted-grant scope-containment bypass fixed at application **and** database layers            | **Met on the remediation branch** — awaiting owner merge                                                                               |
+| 4   | The runtime-privilege `updated_by` defects fixed and proven (P1-14-R-007 **and** R-010)             | **Met** — R-007 on `63916b8`; R-010 (roles/user_accounts/tenants) on the completion branch                                             |
+| 5   | **Every** registered operation proven at operation depth (service + RLS + context + audit/outbox)   | **Met on the completion branch** — 39/39 operation depth; awaiting owner merge                                                         |
+| 6   | Operation-to-test coverage gate green; coverage matrix published; residuals visible                 | **Met on the completion branch** — 39 operation / 0 unit / 0 pending; strict gate + negative fixture                                   |
+| 7   | Zero unresolved Critical findings                                                                   | **Met** — 0                                                                                                                            |
+| 8   | Zero unresolved High findings without an approved exception                                         | **Met on the completion branch** — the confirmed High, R-007, and the four operation-evidence findings (R-008/R-009/R-010/R-011) fixed |
+| 9   | Local validation green with recorded exit codes                                                     | **To be evidenced on the exact final remediation SHA**                                                                                 |
+| 10  | Clean-room validation green from a clean checkout                                                   | **To be evidenced on the exact final remediation SHA**                                                                                 |
+| 11  | All required hosted CI checks green on the exact final remediation SHA                              | **To be evidenced**                                                                                                                    |
+| 12  | Feature and remediation pull requests merged into `develop` by the repository owner                 | **PR #55 merged; the remediation PR is not merged — the implementer never merges**                                                     |
+| 13  | Gate record committed into protected history with a Go decision                                     | **Not started — this document is Pending**                                                                                             |
+| 14  | Migration posture: one additive remediation migration; no existing migration modified               | **Met on the remediation branch** — migration 116, ROLLBACK-SAFE                                                                       |
+| 15  | No P1-15 work started                                                                               | **Met** — no P1-15 branch, commit, route, or migration exists                                                                          |
 
 ## 4. Known open items carried into the gate
 
-- **Operation-evidence residuals (R-8, R-9).** 6 operations have unit-depth evidence and 13 remain
-  `pending` operation-depth evidence (the write side of role/permission/user/settings administration,
-  approval-limit end, and wired auth/invitation integration). These are visible in the coverage
-  matrix and enforced by `validate:operation-coverage`; they are governed follow-ups, not silent
-  gaps. Whether they block a Go is the approval owner's decision.
-- **Database-suite intermittency (R-5).** Carried from the feature phase, undiagnosed, severity Low.
+- **Operation-evidence residuals (R-8, R-9) — CLOSED** on the completion branch. All 39 operations
+  now carry operation-depth evidence; 0 `pending`, 0 `unit`. Building that evidence surfaced four
+  latent runtime defects (R-008 citext cast; R-009 session `user_id`; R-010 `updated_by` on
+  roles/user_accounts/tenants; R-011 last-holder `FOR UPDATE` undercount) — all fixed additively and
+  recorded in [the completion record](phase-1-14-operation-evidence-completion.md).
+- **Database-suite intermittency (R-5).** Carried from the feature phase, **undiagnosed, not
+  resolved, severity Low.** Not addressed by this work; re-run recorded in the completion validation.
 - **Dependency-vulnerability scanning (R-3).** Not implemented and not claimed.
 - **P1-OD-027 (NFR-SCL).** Unresolved; every numeric limit remains a proposed validation baseline.
 - **Open decisions** `AUTH-SESSION-TRANSPORT`, `IAM-SELF-ONBOARDING`, `IAM-BASELINE-PERMISSION` —

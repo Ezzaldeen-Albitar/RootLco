@@ -266,13 +266,18 @@ export class AuthorizationRepository extends Repository {
     expectedVersion: number,
     changes: { name?: string; description?: string | null; archive?: boolean }
   ): Promise<number> {
+    // `updated_by` (and record_version) are trigger-stamped by
+    // shared.touch_row_metadata → iam.current_user_id(); the runtime role holds
+    // column UPDATE on (name, description, deleted_at) only, so naming `updated_by`
+    // in the SET list is refused with 42501 before any row is touched. The R-007
+    // fix removed the explicit set from role_permissions/role_grants/approval_limits
+    // /user_sessions but missed this method — see P1-14-R-010.
     const result = await this.run(
       db,
       `UPDATE iam.roles
           SET name        = COALESCE($4, name),
               description = CASE WHEN $5::boolean THEN $6 ELSE description END,
-              deleted_at  = CASE WHEN $7::boolean THEN now() ELSE deleted_at END,
-              updated_by  = $8
+              deleted_at  = CASE WHEN $7::boolean THEN now() ELSE deleted_at END
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3`,
       [
         db.context.principal.tenantId,
@@ -282,7 +287,6 @@ export class AuthorizationRepository extends Repository {
         changes.description !== undefined,
         changes.description ?? null,
         changes.archive === true,
-        db.context.principal.userId,
       ]
     );
     return result.rowCount ?? 0;
@@ -549,10 +553,25 @@ export class AuthorizationRepository extends Repository {
    * Counts principals other than `excludingUserId` who would still hold
    * `permissionCode` through an active grant.
    *
-   * `FOR UPDATE` on the candidate grants is what makes the last-administrator
-   * rule race-safe: two concurrent revocations would otherwise both observe two
-   * remaining holders and both proceed, leaving zero. Locking the rows the
-   * decision depends on serialises them.
+   * This is a **read** of who holds a permission, and it must count every holder
+   * the caller can see under the tenant-wide `sel_role_grants_tenant` SELECT
+   * policy — regardless of whether the caller may *administer* those grants.
+   *
+   * It deliberately does NOT use `FOR UPDATE OF g` (P1-14-R-011). Under RLS a
+   * locking read also has to satisfy the target table's UPDATE policy, and
+   * `upd_role_grants_admin` requires `iam.grant.manage`. The last-holder guard is
+   * called from `changeUserStatus`, whose caller holds `iam.user.manage` but not
+   * necessarily `iam.grant.manage` — so `FOR UPDATE` silently dropped every other
+   * holder's grant row, the guard under-counted to zero, and a legitimate lock or
+   * archive was refused with a false "this would leave the tenant unadministrable".
+   * A row lock the caller is not entitled to take cannot be part of a *read*.
+   *
+   * The last-administrator rule is defence-in-depth for an availability invariant
+   * (a tenant stays administrable; ADR-008 lets an owner/operator restore it), not
+   * a security boundary, so the vanishing-small concurrent-double-revocation window
+   * a snapshot read leaves open is an acceptable trade for a guard that actually
+   * counts. Both callers run the count inside the same transaction as their write,
+   * so each decides on a consistent snapshot.
    */
   async countOtherHoldersOf(
     db: DbHandle,
@@ -561,24 +580,20 @@ export class AuthorizationRepository extends Repository {
   ): Promise<number> {
     const row = await this.runOne<{ holders: number }>(
       db,
-      `WITH candidate AS (
-         SELECT g.id, g.user_id
-           FROM iam.role_grants g
-           JOIN iam.role_permissions rp
-             ON rp.tenant_id = g.tenant_id AND rp.role_id = g.role_id AND rp.effect = 'allow'
-           JOIN iam.permissions p ON p.id = rp.permission_id
-           JOIN iam.user_accounts u ON u.tenant_id = g.tenant_id AND u.id = g.user_id
-          WHERE g.tenant_id = $1
-            AND p.permission_code = $2
-            AND g.user_id <> $3
-            AND g.status = 'active'
-            AND g.valid_from <= now()
-            AND (g.valid_to IS NULL OR g.valid_to > now())
-            AND u.status = 'active'
-            AND u.deleted_at IS NULL
-          FOR UPDATE OF g
-       )
-       SELECT count(DISTINCT user_id)::int AS holders FROM candidate`,
+      `SELECT count(DISTINCT g.user_id)::int AS holders
+         FROM iam.role_grants g
+         JOIN iam.role_permissions rp
+           ON rp.tenant_id = g.tenant_id AND rp.role_id = g.role_id AND rp.effect = 'allow'
+         JOIN iam.permissions p ON p.id = rp.permission_id
+         JOIN iam.user_accounts u ON u.tenant_id = g.tenant_id AND u.id = g.user_id
+        WHERE g.tenant_id = $1
+          AND p.permission_code = $2
+          AND g.user_id <> $3
+          AND g.status = 'active'
+          AND g.valid_from <= now()
+          AND (g.valid_to IS NULL OR g.valid_to > now())
+          AND u.status = 'active'
+          AND u.deleted_at IS NULL`,
       [db.context.principal.tenantId, permissionCode, excludingUserId]
     );
     return row?.holders ?? 0;

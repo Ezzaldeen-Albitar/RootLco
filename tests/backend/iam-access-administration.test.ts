@@ -26,6 +26,13 @@
  * Operations exercised here (coverage-gate references):
  *   iam.grant-issue  iam.grant-revoke  iam.grant-scope-add  iam.grant-scope-remove
  *   iam.approval-limit-create
+ *
+ * COVERAGE-EVIDENCE (machine-checked by scripts/check-operation-test-coverage.mjs):
+ *   iam.grant-issue: success denial cross-tenant audit outbox
+ *   iam.grant-revoke: success stale-version
+ *   iam.grant-scope-add: success isolation
+ *   iam.grant-scope-remove: success
+ *   iam.approval-limit-create: success denial
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';

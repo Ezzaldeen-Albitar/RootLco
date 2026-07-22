@@ -78,13 +78,17 @@ export class OrganizationRepository extends Repository {
     expectedVersion: number,
     changes: { displayName?: string; defaultLocale?: string; defaultTimezone?: string }
   ): Promise<number> {
+    // `updated_by` is trigger-stamped (shared.touch_row_metadata → current actor);
+    // the runtime role holds column UPDATE on (display_name, default_locale,
+    // default_timezone) only, so naming `updated_by` in the SET list is refused
+    // with 42501 before any row is touched. See P1-14-R-010 (the R-007 sweep
+    // missed org.tenants).
     const result = await this.run(
       db,
       `UPDATE org.tenants
           SET display_name     = COALESCE($3, display_name),
               default_locale   = COALESCE($4, default_locale),
-              default_timezone = COALESCE($5, default_timezone),
-              updated_by       = $6
+              default_timezone = COALESCE($5, default_timezone)
         WHERE id = $1 AND record_version = $2`,
       [
         db.context.principal.tenantId,
@@ -92,7 +96,6 @@ export class OrganizationRepository extends Repository {
         changes.displayName ?? null,
         changes.defaultLocale ?? null,
         changes.defaultTimezone ?? null,
-        db.context.principal.userId,
       ]
     );
     return result.rowCount ?? 0;

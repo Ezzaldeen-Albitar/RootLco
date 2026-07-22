@@ -119,9 +119,15 @@ export class IdentityRepository extends Repository {
   ): Promise<AccountRow | null> {
     const record = await this.runOne<AccountRecord>(
       db,
+      // `email` is a `citext` column, so `email = $3` (a text parameter) is
+      // already case-insensitive: the comparison uses the column's citext type.
+      // An explicit `$3::citext` cast is NOT used because the `citext` *type name*
+      // lives in the `extensions` schema, which is deliberately absent from the
+      // app_runtime search_path (and app_runtime holds no USAGE there) — so a
+      // name cast raises "type citext does not exist" at runtime. See P1-14-R-008.
       `SELECT ${ACCOUNT_COLUMNS}
          FROM iam.user_accounts
-        WHERE tenant_id = $1 AND identity_provider = $2 AND email = $3::citext
+        WHERE tenant_id = $1 AND identity_provider = $2 AND email = $3
           AND deleted_at IS NULL
         LIMIT 1`,
       [db.context.principal.tenantId, identityProvider, email]
@@ -160,10 +166,13 @@ export class IdentityRepository extends Repository {
   ): Promise<AccountRow> {
     const record = await this.runOne<AccountRecord>(
       db,
+      // `$4` (text) is assignment-cast into the `citext` email column by the
+      // column's own type; no explicit `::citext` name cast is used, because the
+      // type name is not on the app_runtime search_path (P1-14-R-008).
       `INSERT INTO iam.user_accounts
          (tenant_id, identity_provider, provider_subject, email, display_name,
           status, mfa_required, created_by)
-       VALUES ($1, $2, $3, $4::citext, $5, 'invited', $6, $7)
+       VALUES ($1, $2, $3, $4, $5, 'invited', $6, $7)
        RETURNING ${ACCOUNT_COLUMNS}`,
       [
         db.context.principal.tenantId,
@@ -193,12 +202,16 @@ export class IdentityRepository extends Repository {
     expectedVersion: number,
     changes: { displayName?: string; mfaRequired?: boolean }
   ): Promise<number> {
+    // `updated_by` is trigger-stamped (shared.touch_row_metadata →
+    // iam.current_user_id()); app_runtime holds column UPDATE on (email,
+    // display_name, status, mfa_required, deleted_at) only, so naming `updated_by`
+    // in the SET list is refused with 42501 before any row is touched. The R-007
+    // sweep fixed the session methods but missed this one — see P1-14-R-010.
     const result = await this.run(
       db,
       `UPDATE iam.user_accounts
           SET display_name = COALESCE($4, display_name),
-              mfa_required = COALESCE($5, mfa_required),
-              updated_by   = $6
+              mfa_required = COALESCE($5, mfa_required)
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3
           AND deleted_at IS NULL`,
       [
@@ -207,7 +220,6 @@ export class IdentityRepository extends Repository {
         expectedVersion,
         changes.displayName ?? null,
         changes.mfaRequired ?? null,
-        db.context.principal.userId,
       ]
     );
     return result.rowCount ?? 0;
@@ -288,6 +300,17 @@ export class IdentityRepository extends Repository {
   async insertSession(
     db: DbHandle,
     input: {
+      /**
+       * The authenticated account the session belongs to. This is the resolved
+       * account id, NOT `db.context.principal.userId`: login runs under a
+       * bootstrap context whose principal is the *tenant* (there is no user yet
+       * when the transaction opens), and sets `app.user_id` to the account only
+       * after resolving it. Keying the session on the context principal wrote the
+       * tenant id into `user_id`, which `ins_user_sessions_self`
+       * (user_id = iam.current_user_id()) then rejected — login could never open a
+       * session. See P1-14-R-009.
+       */
+      userId: string;
       sessionRef: string;
       expiresAt: Date | null;
       ipHash: string | null;
@@ -303,7 +326,7 @@ export class IdentityRepository extends Repository {
        ON CONFLICT (session_ref) DO NOTHING`,
       [
         db.context.principal.tenantId,
-        db.context.principal.userId,
+        input.userId,
         input.sessionRef,
         input.expiresAt,
         input.ipHash,
