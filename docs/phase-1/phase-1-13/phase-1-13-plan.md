@@ -116,28 +116,28 @@ removed.
 
 | Task         | Description                                          | Implementation                                                                                          | Status                                                                                    |
 | ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| P1-13-BE-001 | Module-boundary structure with enforced import rules | `src/modules/`, `eslint.config.mjs`, `scripts/check-module-boundaries.mjs` (rules B1–B7)                | Implemented — gate evidence pending                                                       |
-| P1-13-BE-002 | Layered-service standard and composition             | `src/server/layering.ts`, `src/modules/meta/**`                                                         | Implemented — gate evidence pending                                                       |
-| P1-13-BE-003 | Controlled data-access layer with scoped sessions    | `src/server/db/transaction.ts`, `repository.ts`, `pool.ts`                                              | Implemented — gate evidence pending                                                       |
-| P1-13-BE-004 | Tenant/company/branch context resolution             | `src/server/context/**`                                                                                 | Implemented — gate evidence pending                                                       |
-| P1-13-BE-005 | Authorization middleware                             | `src/server/auth/authorization.ts`, `operation-registry.ts`                                             | Implemented — gate evidence pending                                                       |
-| P1-13-BE-006 | Request-validation standard                          | `src/server/http/validation.ts`                                                                         | Implemented — gate evidence pending                                                       |
-| P1-13-BE-007 | Response format and error model                      | `src/server/errors/**`                                                                                  | Implemented — gate evidence pending                                                       |
-| P1-13-BE-008 | Correlation-ID propagation                           | `src/server/observability/correlation.ts`                                                               | Implemented — gate evidence pending                                                       |
-| P1-13-BE-009 | Structured logging (Pino) with scrubbing             | `src/server/observability/logger.ts`, `redaction.ts`                                                    | Implemented — gate evidence pending                                                       |
+| P1-13-BE-001 | Module-boundary structure with enforced import rules | `src/modules/`, `eslint.config.mjs`, `scripts/check-module-boundaries.mjs` (rules B1–B7)                | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-002 | Layered-service standard and composition             | `src/server/layering.ts`, `src/modules/meta/**`                                                         | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-003 | Controlled data-access layer with scoped sessions    | `src/server/db/transaction.ts`, `repository.ts`, `pool.ts`                                              | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-004 | Tenant/company/branch context resolution             | `src/server/context/**`                                                                                 | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-005 | Authorization middleware                             | `src/server/auth/authorization.ts`, `operation-registry.ts`                                             | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-006 | Request-validation standard                          | `src/server/http/validation.ts`                                                                         | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-007 | Response format and error model                      | `src/server/errors/**`                                                                                  | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-008 | Correlation-ID propagation                           | `src/server/observability/correlation.ts`                                                               | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-009 | Structured logging (Pino) with scrubbing             | `src/server/observability/logger.ts`, `redaction.ts`                                                    | Implemented — evidenced at the P1-13 gate                                                 |
 | P1-13-BE-010 | Error-monitoring integration                         | `src/server/observability/monitoring.ts` — **port with a recording transport; no platform provisioned** | Implemented as a port — see §36.1                                                         |
-| P1-13-BE-011 | Transaction wrapper                                  | `src/server/db/transaction.ts`                                                                          | Implemented — gate evidence pending                                                       |
+| P1-13-BE-011 | Transaction wrapper                                  | `src/server/db/transaction.ts`                                                                          | Implemented — evidenced at the P1-13 gate                                                 |
 | P1-13-BE-012 | Idempotency service                                  | `src/server/http/idempotency.ts`                                                                        | Implemented — runtime grant delivered by DBCR-P1-13-001; still gated, still fails closed  |
-| P1-13-BE-013 | Optimistic concurrency                               | `src/server/db/concurrency.ts`                                                                          | Implemented — gate evidence pending                                                       |
-| P1-13-BE-014 | Feature-flag evaluation                              | `src/server/auth/entitlement.ts`                                                                        | Implemented — gate evidence pending                                                       |
+| P1-13-BE-013 | Optimistic concurrency                               | `src/server/db/concurrency.ts`                                                                          | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-014 | Feature-flag evaluation                              | `src/server/auth/entitlement.ts`                                                                        | Implemented — evidenced at the P1-13 gate                                                 |
 | P1-13-BE-015 | Domain-event publisher                               | `src/server/events/**`                                                                                  | Implemented — runtime INSERT delivered by DBCR-P1-13-001; still gated, still fails closed |
-| P1-13-BE-016 | Outbox processor worker                              | `src/server/worker/**`                                                                                  | Implemented — gate evidence pending                                                       |
-| P1-13-BE-017 | Consumer idempotency helper                          | `src/server/worker/consumer-registry.ts`                                                                | Implemented — gate evidence pending                                                       |
+| P1-13-BE-016 | Outbox processor worker                              | `src/server/worker/**`                                                                                  | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-017 | Consumer idempotency helper                          | `src/server/worker/consumer-registry.ts`                                                                | Implemented — evidenced at the P1-13 gate                                                 |
 | P1-13-BE-018 | File-service interface (contract only)               | `src/server/contracts/file-service.ts`                                                                  | Implemented as contract + stub                                                            |
 | P1-13-BE-019 | Notification-service interface (contract only)       | `src/server/contracts/notification-service.ts`                                                          | Implemented as contract + stub                                                            |
-| P1-13-BE-020 | OpenAPI foundation                                   | `src/server/openapi/document.ts`, `docs/api/openapi.v1.json`, `scripts/check-openapi.mjs`               | Implemented — gate evidence pending                                                       |
-| P1-13-BE-021 | Reference endpoint `GET /api/v1/meta/ping`           | `src/app/api/v1/meta/ping/route.ts`                                                                     | Implemented — gate evidence pending                                                       |
-| P1-13-BE-022 | Backend test foundation                              | `vitest.config.backend.ts`, `tests/backend/**`, `tests/foundation/**`                                   | Implemented — gate evidence pending                                                       |
+| P1-13-BE-020 | OpenAPI foundation                                   | `src/server/openapi/document.ts`, `docs/api/openapi.v1.json`, `scripts/check-openapi.mjs`               | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-021 | Reference endpoint `GET /api/v1/meta/ping`           | `src/app/api/v1/meta/ping/route.ts`                                                                     | Implemented — evidenced at the P1-13 gate                                                 |
+| P1-13-BE-022 | Backend test foundation                              | `vitest.config.backend.ts`, `tests/backend/**`, `tests/foundation/**`                                   | Implemented — evidenced at the P1-13 gate                                                 |
 
 ## 14. Frontend work
 
@@ -148,23 +148,23 @@ the OpenAPI foundation produced here.
 
 | Task          | Description                                                                                                                                   | Implementation                                                                  | Status                                                                                   |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| P1-13-SEC-001 | Authorization-coverage tooling; an unguarded operation fails the build                                                                        | `scripts/check-authorization-coverage.mjs`, `defineOperation()` runtime refusal | Implemented — gate evidence pending                                                      |
-| P1-13-SEC-002 | Context integrity: no client scope reaches `set_config`; immutable context; repository refuses without context; runtime role has no BYPASSRLS | `src/server/context/**`, `src/server/db/repository.ts`, `capabilities.ts`       | Implemented — gate evidence pending                                                      |
+| P1-13-SEC-001 | Authorization-coverage tooling; an unguarded operation fails the build                                                                        | `scripts/check-authorization-coverage.mjs`, `defineOperation()` runtime refusal | Implemented — evidenced at the P1-13 gate                                                |
+| P1-13-SEC-002 | Context integrity: no client scope reaches `set_config`; immutable context; repository refuses without context; runtime role has no BYPASSRLS | `src/server/context/**`, `src/server/db/repository.ts`, `capabilities.ts`       | Implemented — evidenced at the P1-13 gate                                                |
 | P1-13-SEC-003 | Rate-limiting foundation                                                                                                                      | `src/server/http/rate-limit.ts`, `trusted-proxy.ts`                             | Implemented — limits are proposed baselines                                              |
 | P1-13-SEC-004 | Audit-emission helpers bound to the transaction wrapper                                                                                       | `src/server/audit/audit.ts`                                                     | Implemented — runtime grant delivered by DBCR-P1-13-001; still gated, still fails closed |
-| P1-13-SEC-005 | Abuse-risk review of the foundation                                                                                                           | [`phase-1-13-security-note.md`](./phase-1-13-security-note.md)                  | Pending completion                                                                       |
-| P1-13-SEC-006 | Backend secrets handling; secret scanning extended to backend packages                                                                        | `npm run security:all` over the whole tracked tree                              | Implemented — gate evidence pending                                                      |
+| P1-13-SEC-005 | Abuse-risk review of the foundation                                                                                                           | [`phase-1-13-security-note.md`](./phase-1-13-security-note.md)                  | Complete — evidenced at the P1-13 gate                                                   |
+| P1-13-SEC-006 | Backend secrets handling; secret scanning extended to backend packages                                                                        | `npm run security:all` over the whole tracked tree                              | Implemented — evidenced at the P1-13 gate                                                |
 
 ## 16. QA work
 
-| Task         | Description                                                                        | Status           |
-| ------------ | ---------------------------------------------------------------------------------- | ---------------- |
-| P1-13-QA-001 | Unit tests: validation, error mapping, context, flag evaluation, envelope building | Pending evidence |
-| P1-13-QA-002 | Integration tests for the transaction wrapper, including failure injection         | Pending evidence |
-| P1-13-QA-003 | Idempotency and concurrency tests                                                  | Pending evidence |
-| P1-13-QA-004 | Authorization and RLS tests through the full stack                                 | Pending evidence |
-| P1-13-QA-005 | Outbox processor tests                                                             | Pending evidence |
-| P1-13-QA-006 | Error-path and OpenAPI contract tests                                              | Pending evidence |
+| Task         | Description                                                                        | Status                      |
+| ------------ | ---------------------------------------------------------------------------------- | --------------------------- |
+| P1-13-QA-001 | Unit tests: validation, error mapping, context, flag evaluation, envelope building | Evidenced at the P1-13 gate |
+| P1-13-QA-002 | Integration tests for the transaction wrapper, including failure injection         | Evidenced at the P1-13 gate |
+| P1-13-QA-003 | Idempotency and concurrency tests                                                  | Evidenced at the P1-13 gate |
+| P1-13-QA-004 | Authorization and RLS tests through the full stack                                 | Evidenced at the P1-13 gate |
+| P1-13-QA-005 | Outbox processor tests                                                             | Evidenced at the P1-13 gate |
+| P1-13-QA-006 | Error-path and OpenAPI contract tests                                              | Evidenced at the P1-13 gate |
 
 ## 17. DevOps work
 
@@ -257,7 +257,9 @@ structured logging without failing the request.
 ## 27. Acceptance criteria
 
 As field 27 of the canonical plan, evidenced against
-[`phase-1-13-owner-gate.md`](./phase-1-13-owner-gate.md) §2.
+[`phase-1-13-owner-gate.md`](./phase-1-13-owner-gate.md) §3 (“Gate conditions”).
+The pointer previously read “§2”, which was correct against the Pending version of that document;
+in the Go version §2 is “Protected history” and the conditions moved to §3.
 
 ## 28. Test cases
 

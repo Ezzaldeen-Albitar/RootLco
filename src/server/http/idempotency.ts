@@ -33,6 +33,8 @@ import { createHash } from 'node:crypto';
 import { AppFailure } from '../errors/app-failure';
 import type { DbHandle } from '../db/transaction';
 import { isSqlState, SQLSTATE } from '../db/repository';
+import type { RequestContext } from '../context/request-context';
+import { log } from '../observability/logger';
 
 /** Header carrying the client's idempotency key. */
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -88,10 +90,67 @@ function canonicalize(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-/** SHA-256 over method, path, and canonicalised body. */
-export function requestFingerprint(input: { method: string; path: string; body: unknown }): string {
+/**
+ * Length-prefixed framing, so no combination of component values can produce the
+ * same byte sequence as a different combination. Without it, a path ending in a
+ * separator and a body beginning with one would hash identically to their
+ * neighbours — a fingerprint collision reachable from request data.
+ */
+function framed(parts: readonly string[]): string {
+  return parts.map((part) => `${Buffer.byteLength(part, 'utf8')}:${part}`).join('|');
+}
+
+/**
+ * Identifies the fingerprint scheme. Any change to what is bound must change
+ * this string, so keys written under an older scheme can never be mistaken for
+ * a match under a newer one.
+ */
+const FINGERPRINT_SCHEME = 'rootlco.idempotency.v2.principal-bound';
+
+/**
+ * SHA-256 over the **principal-bound** canonical request (ADV-04).
+ *
+ * The fingerprint binds tenant, principal, method, path and canonicalised body.
+ * Binding the principal is what stops one user of a tenant replaying another
+ * user's key: the stored fingerprint will not match, so the second caller gets
+ * the ordinary `ERR-INT-001` conflict instead of the first caller's response.
+ *
+ * ## Why the whole context is the parameter
+ *
+ * The principal is read from `RequestContext`, which `resolve-context.ts` builds
+ * from the authenticated session and the database. It is frozen and no field of
+ * it ever originates in a request body, query string, or header. Taking the
+ * context rather than a `userId: string` is deliberate: a caller cannot pass an
+ * attacker-supplied `body.userId` into a parameter that only accepts the
+ * server-resolved context object, so principal spoofing is prevented by the
+ * shape of the API rather than by reviewer vigilance.
+ *
+ * Fails closed: an operation reaching here without a resolved principal gets
+ * `ERR-IAM-002` rather than an unbound fingerprint that any caller could match.
+ */
+export function requestFingerprint(
+  context: RequestContext,
+  input: { method: string; path: string; body: unknown }
+): string {
+  const tenantId = context.principal?.tenantId;
+  const userId = context.principal?.userId;
+  if (!tenantId || !userId) {
+    throw new AppFailure('ERR-IAM-002', {
+      message: 'Idempotent operations require an authenticated principal',
+    });
+  }
+
   return createHash('sha256')
-    .update(`${input.method.toUpperCase()}\n${input.path}\n${canonicalize(input.body)}`)
+    .update(
+      framed([
+        FINGERPRINT_SCHEME,
+        tenantId,
+        userId,
+        input.method.toUpperCase(),
+        input.path,
+        canonicalize(input.body),
+      ])
+    )
     .digest('hex');
 }
 
@@ -104,6 +163,7 @@ export interface IdempotencyOutcome<T> {
 interface StoredRow {
   request_fingerprint: string;
   response_document: unknown;
+  created_by: string;
 }
 
 async function readExisting(
@@ -112,7 +172,7 @@ async function readExisting(
   key: string
 ): Promise<StoredRow | null> {
   const result = await db.query<StoredRow>(
-    `SELECT request_fingerprint, response_document
+    `SELECT request_fingerprint, response_document, created_by
        FROM shared.idempotency_keys
       WHERE tenant_id = $1 AND operation = $2 AND idempotency_key = $3`,
     [db.context.principal.tenantId, operationCode, key]
@@ -120,7 +180,34 @@ async function readExisting(
   return result.rows[0] ?? null;
 }
 
-function conflict(): AppFailure {
+/**
+ * The single conflict answer for every mismatch (ADV-04).
+ *
+ * A key reused with a different body and a key belonging to a different
+ * principal produce the **same** `ERR-INT-001` with the same message. That is
+ * deliberate: a distinct "this key is someone else's" answer would let a caller
+ * probe which keys exist and who owns them, turning the conflict response into
+ * an enumeration oracle. The distinction is recorded server-side instead.
+ *
+ * Nothing about the stored row reaches the caller — not the response document,
+ * not the fingerprint, not the owner.
+ */
+function conflict(db: DbHandle, existing: StoredRow, operationCode: string): AppFailure {
+  const principalMismatch = existing.created_by !== db.context.principal.userId;
+
+  // Server-side evidence, correlation-scoped. Deliberately omitted: the
+  // idempotency key, either fingerprint, the stored response, and the owning
+  // principal's identifier — logs are read by more people than the response is.
+  log.warn('Idempotency key conflict', {
+    correlationId: db.context.correlationId,
+    tenantRef: db.context.principal.tenantId,
+    actorRef: db.context.principal.userId,
+    operation: operationCode,
+    errorCode: 'ERR-INT-001',
+    result: 'failure',
+    context: { reason: principalMismatch ? 'principal-mismatch' : 'payload-mismatch' },
+  });
+
   return new AppFailure('ERR-INT-001', {
     message: 'Idempotency key was already used with a different request',
   });
@@ -142,7 +229,11 @@ export async function withIdempotency<T>(
 
   const existing = await readExisting(db, operationCode, input.key);
   if (existing) {
-    if (existing.request_fingerprint !== input.fingerprint) throw conflict();
+    // The fingerprint carries the principal, so a different user of the same
+    // tenant fails this comparison and never reaches the stored response.
+    if (existing.request_fingerprint !== input.fingerprint) {
+      throw conflict(db, existing, operationCode);
+    }
     return { value: existing.response_document as T, replayed: true };
   }
 
@@ -206,6 +297,11 @@ export async function resolveRace(
       message: 'Idempotency race resolved to no stored response',
     });
   }
-  if (existing.request_fingerprint !== race.fingerprint) throw conflict();
+  // The race winner may be a different principal. The fingerprint carries the
+  // principal, so this comparison rejects that case as an ordinary conflict —
+  // the loser never receives the winner's stored response.
+  if (existing.request_fingerprint !== race.fingerprint) {
+    throw conflict(db, existing, race.operationCode);
+  }
   return { response: existing.response_document };
 }

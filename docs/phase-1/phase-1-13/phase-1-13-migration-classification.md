@@ -11,6 +11,36 @@ Naming: the timestamp prefix continues after the last Phase 1-11 file
 (`20260724096000_rpt_reporting.sql`). Phase 1-12 introduced no migration — it validated and froze
 the Release 2 baseline — so this is the first migration since that freeze, and the 114th overall.
 
+## Known defect in the migration's own header comment
+
+`20260725090000_iam_shared_runtime_write_capabilities.sql` describes itself inconsistently. Its
+purpose block says the migration adds "**one** in-place redefinition of `iam.audit_append`", and its
+rollback classification line says "grants, policies, and **one** function body only" — but its own
+"Objects created" block, three dozen lines further down, correctly lists **two**:
+
+```
+--   Functions (redefined in place): iam.audit_hash(bytea, text),
+--                                  iam.audit_append(uuid, uuid, text, text,
+--                                  text, uuid, uuid, uuid, uuid, text, jsonb)
+```
+
+**Two is correct.** The file contains exactly two `CREATE OR REPLACE FUNCTION` statements, and both
+redefinitions are described in the body: section 1 replaces `iam.audit_hash`'s use of
+`extensions.digest(…, 'sha256')` with `pg_catalog.sha256` (byte-identical, so previously written
+hashes still verify), and section 3 reseats `iam.audit_append`'s chain sequence on
+`iam.audit_integrity_links`.
+
+**Why the header was not simply corrected.** Applied migrations are immutable once merged, and CI
+enforces it: the `Database migrations and RLS tests` job fails a pull request whose diff against the
+base branch shows any `M`, `D` or `R` under `supabase/migrations/`. A comment-only correction was
+prepared, verified to change zero SQL statements, and then **reverted** when that control was run
+locally and rejected it — correctly. The rule does not carve out comments, and it should not: a rule
+that permits "harmless" edits to applied migrations stops being a rule.
+
+The record therefore lives here, in the controlled document that describes the migration, rather than
+in the migration. No forward migration was written for it, because a migration whose only content is
+a corrected comment would add a permanent chain entry to fix a documentation defect.
+
 ## Category matrix
 
 Each migration is classified across the five categories used since Phase 1-9: **schema** (tables,
@@ -19,9 +49,9 @@ columns, constraints), **security** (roles, grants, RLS), **function** (routines
 Technical Authorization and Solo Developer Review policies — owner-authorized technical
 self-review, not an independent third-party audit.
 
-| Migration                                                  | schema |                security                |             function             | index | reference | Rollback class                                                     |
-| ---------------------------------------------------------- | :----: | :------------------------------------: | :------------------------------: | :---: | :-------: | ------------------------------------------------------------------ |
-| `20260725090000_iam_shared_runtime_write_capabilities.sql` |   —    | ✓ (6 grants, 11 policies, 0 new roles) | ✓ (`audit_hash`, `audit_append`) |   —   |     —     | **ROLLBACK-SAFE** (grants, policies, and two function bodies only) |
+| Migration                                                  | schema |                                security                                 |             function             | index | reference | Rollback class                                                     |
+| ---------------------------------------------------------- | :----: | :---------------------------------------------------------------------: | :------------------------------: | :---: | :-------: | ------------------------------------------------------------------ |
+| `20260725090000_iam_shared_runtime_write_capabilities.sql` |   —    | ✓ (10 GRANT statements = 6 table + 4 EXECUTE, 11 policies, 0 new roles) | ✓ (`audit_hash`, `audit_append`) |   —   |     —     | **ROLLBACK-SAFE** (grants, policies, and two function bodies only) |
 
 ## Notes
 

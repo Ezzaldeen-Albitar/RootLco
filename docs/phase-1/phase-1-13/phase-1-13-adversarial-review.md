@@ -15,6 +15,11 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 ---
 
+> **Closed post-gate.** ADV-01 and ADV-04 were both remediated with regression tests after the
+> gate merged, on branch `fix/p1-13-post-gate-hardening`. See
+> [`phase-1-13-post-gate-correction-register.md`](./phase-1-13-post-gate-correction-register.md).
+> The P1-13 Go decision is unchanged; these were accepted _for_ P1-13 and closed _before_ P1-14.
+
 ## 1. Method
 
 A refute-focused pass over the merged feature work and the database remediation together. The
