@@ -136,17 +136,33 @@ describe('iam.login_audit — append-only, server-stamped, own-history', () => {
     expect(anon.rows).toHaveLength(0);
   });
 
-  it('runtime cannot append, update, or delete login audit', async () => {
+  it('runtime appends its OWN login audit but never another principal history', async () => {
+    // DBCR-P1-14-001 granted INSERT so the authentication path can record its own
+    // attempt. `ins_login_audit_self` scopes it to `user_id = current_user_id()`,
+    // or an administrator holding `iam.user.manage` for a lockout recorded against
+    // somebody else. ACC_A holds no grant, so it may write only its own row.
     const ctx = { tenantId: TENANT_A, userId: ACC_A };
+    const own = await withRolledBackTx(runtime, ctx, (c) =>
+      c.query(
+        `INSERT INTO iam.login_audit (tenant_id, user_id, event_type) VALUES ($1,$2,'success')`,
+        [TENANT_A, ACC_A]
+      )
+    );
+    expect(own.rowCount).toBe(1);
+
     await withRolledBackTx(runtime, ctx, (c) =>
       expectSqlState(
         c.query(
           `INSERT INTO iam.login_audit (tenant_id, user_id, event_type) VALUES ($1,$2,'success')`,
-          [TENANT_A, ACC_A]
+          [TENANT_A, ACC_A2]
         ),
         '42501'
       )
     );
+  });
+
+  it('login audit stays append-only: no UPDATE and no DELETE were granted', async () => {
+    const ctx = { tenantId: TENANT_A, userId: ACC_A };
     await withRolledBackTx(runtime, ctx, (c) =>
       expectSqlState(
         c.query(`UPDATE iam.login_audit SET detail='x' WHERE user_id=$1`, [ACC_A]),
@@ -192,13 +208,44 @@ describe('iam.user_sessions — own sessions only, opaque ref, no tokens', () =>
     });
   });
 
-  it('runtime cannot write sessions', async () => {
+  it('runtime issues a session for ITSELF but never for another principal', async () => {
+    // DBCR-P1-14-001 granted INSERT so the login path can record the session it
+    // just issued. `ins_user_sessions_self` scopes it to the resolved principal,
+    // which is why it needs no permission: requiring one would break login for
+    // ordinary users, and whoever held it could forge somebody else's session.
+    const own = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACC_A }, (c) =>
+      c.query(
+        `INSERT INTO iam.user_sessions (tenant_id, user_id, session_ref, created_by) VALUES ($1,$2,'sess-self-1',$2)`,
+        [TENANT_A, ACC_A]
+      )
+    );
+    expect(own.rowCount).toBe(1);
+
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACC_A }, (c) =>
       expectSqlState(
         c.query(
-          `INSERT INTO iam.user_sessions (tenant_id, user_id, session_ref, created_by) VALUES ($1,$2,'x',$3)`,
-          [TENANT_A, ACC_A, ACTOR]
+          `INSERT INTO iam.user_sessions (tenant_id, user_id, session_ref, created_by) VALUES ($1,$2,'sess-forged',$3)`,
+          [TENANT_A, ACC_A2, ACTOR]
         ),
+        '42501'
+      )
+    );
+  });
+
+  it('runtime holds no privilege to re-own a session or forge its issue time', async () => {
+    const attempts: ReadonlyArray<readonly [string, unknown[]]> = [
+      [`UPDATE iam.user_sessions SET user_id = $2 WHERE tenant_id = $1`, [TENANT_A, ACC_A2]],
+      [`UPDATE iam.user_sessions SET session_ref = 'swapped' WHERE tenant_id = $1`, [TENANT_A]],
+      [`UPDATE iam.user_sessions SET issued_at = now() WHERE tenant_id = $1`, [TENANT_A]],
+    ];
+    for (const [sql, params] of attempts) {
+      await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACC_A }, (c) =>
+        expectSqlState(c.query(sql, params), '42501')
+      );
+    }
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: ACC_A }, (c) =>
+      expectSqlState(
+        c.query(`DELETE FROM iam.user_sessions WHERE tenant_id = $1`, [TENANT_A]),
         '42501'
       )
     );

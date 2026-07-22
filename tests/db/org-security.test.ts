@@ -202,17 +202,26 @@ describe('role posture', () => {
     ]);
   });
 
-  it('DELETE is granted to application roles on NO module-schema table', async () => {
+  it('DELETE is granted to application roles on EXACTLY two association tables', async () => {
+    // The rule is unchanged for every table that holds a business record or a
+    // history row: soft delete is an UPDATE, and hard delete is never an
+    // application capability. DBCR-P1-14-001 added the only two exceptions, both
+    // pure association rows with no soft-delete column and nothing to preserve:
+    // withdrawing a role→permission mapping and withdrawing a grant scope are
+    // genuine removals, and modelling them as anything else would leave a
+    // revoked permission visibly still mapped.
     const { rows } = await admin.query(
-      `SELECT table_schema || '.' || table_name AS fq FROM information_schema.role_table_grants
-       WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv','sal','wty','rpt')
-         AND grantee IN ('app_runtime','app_readonly','app_worker')
-         AND privilege_type = 'DELETE'`
+      `SELECT table_schema || '.' || table_name AS fq, grantee
+         FROM information_schema.role_table_grants
+        WHERE table_schema IN ('apt','org','iam','shared','crm','rec','veh','wo','dia','tech','qms','svc','quo','inv','sal','wty','rpt')
+          AND grantee IN ('app_runtime','app_readonly','app_worker')
+          AND privilege_type = 'DELETE'
+        ORDER BY 1, 2`
     );
-    expect(
-      rows,
-      'soft delete is an UPDATE; hard delete is never an application capability'
-    ).toEqual([]);
+    expect(rows).toEqual([
+      { fq: 'iam.grant_scopes', grantee: 'app_runtime' },
+      { fq: 'iam.role_permissions', grantee: 'app_runtime' },
+    ]);
   });
 });
 

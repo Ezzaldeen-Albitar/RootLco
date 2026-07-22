@@ -86,13 +86,31 @@ describe('org.tenants — platform administration is not an application capabili
     });
   });
 
-  it('runtime cannot UPDATE its own tenant row (42501)', async () => {
-    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
-      await expectSqlState(
-        c.query(`UPDATE org.tenants SET display_name = 'renamed' WHERE id = $1`, [TENANT_A]),
-        '42501'
+  it('runtime without org.settings.manage changes no tenant row', async () => {
+    // DBCR-P1-14-001 moved this boundary from the privilege layer to the policy
+    // layer: `app_runtime` now holds UPDATE on three settings columns, gated by
+    // `upd_tenants_settings` on `org.settings.manage`. USER_A holds no grant, so
+    // the policy matches nothing — and a policy denial on UPDATE affects zero
+    // rows rather than raising, which is what this asserts.
+    const result = await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, (c) =>
+      c.query(`UPDATE org.tenants SET display_name = 'renamed' WHERE id = $1`, [TENANT_A])
+    );
+    expect(result.rowCount).toBe(0);
+  });
+
+  it('runtime holds no privilege on any tenant column beyond the three settings columns', async () => {
+    // The grant itself is the control for everything else: status, record_version
+    // and the identity columns were never granted, so they are refused before any
+    // policy is consulted.
+    for (const sql of [
+      `UPDATE org.tenants SET tenant_code = 'renamed_code' WHERE id = $1`,
+      `UPDATE org.tenants SET status = 'suspended' WHERE id = $1`,
+      `UPDATE org.tenants SET record_version = 99 WHERE id = $1`,
+    ]) {
+      await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, (c) =>
+        expectSqlState(c.query(sql, [TENANT_A]), '42501')
       );
-    });
+    }
   });
 
   it('runtime cannot DELETE a tenant (42501)', async () => {
