@@ -78,10 +78,92 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+
+  // ---- Authentication (P1-14, ADR-019) ------------------------------------
+  //
+  // Every value below is server-only and is never echoed. The provider itself is
+  // reached through the `IdentityProvider` port; these settings describe what a
+  // token must satisfy before the request is allowed to continue.
+
+  /**
+   * Value written to and matched against `iam.user_accounts.identity_provider`.
+   * Constrained to the column's own format so a misconfiguration fails here
+   * rather than as a CHECK violation on the first invitation.
+   */
+  AUTH_IDENTITY_PROVIDER: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$')
+    .default('supabase'),
+
+  /** Expected `iss`. A token minted by another issuer is rejected outright. */
+  AUTH_JWT_ISSUER: z.string().min(1).optional(),
+  /** Expected `aud`. GoTrue issues `authenticated` for a signed-in user. */
+  AUTH_JWT_AUDIENCE: z.string().min(1).default('authenticated'),
+  /**
+   * Accepted signing algorithms, comma-separated.
+   *
+   * An allow-list rather than "whatever the header says" is the control that
+   * stops the `alg: none` and the RS256→HS256 confusion attacks: the verifier
+   * decides the algorithm, the token does not.
+   */
+  AUTH_JWT_ALGORITHMS: z.string().default('HS256'),
+  /** Shared secret for HS* verification. Absent means the app cannot authenticate. */
+  AUTH_JWT_SECRET: z.string().min(1).optional(),
+  /**
+   * Tolerance for clock drift between the provider and this process, in seconds.
+   * Bounded: an unbounded skew turns `exp` into a suggestion.
+   */
+  AUTH_CLOCK_SKEW_SECONDS: bounded(0, 300, 60),
+
+  /** Server-enforced idle timeout. Measured from the session's last activity. */
+  SESSION_IDLE_TIMEOUT_MINUTES: bounded(1, 1_440, 30),
+  /**
+   * How stale `last_seen_at` may get before a request refreshes it. Refreshing
+   * on every request would mean a write per read; refreshing never would make
+   * the idle timeout fire on active sessions. This is the throttle between them.
+   */
+  SESSION_ACTIVITY_REFRESH_SECONDS: bounded(5, 3_600, 60),
+
+  /**
+   * Exact, absolute redirect destinations permitted for password-reset and
+   * invitation links, comma-separated.
+   *
+   * EMPTY BY DEFAULT, and an empty list rejects every caller-supplied redirect.
+   * That is the only safe default: forwarding an arbitrary `redirectTo` to the
+   * provider is an open redirect that arrives carrying a single-use token.
+   */
+  AUTH_REDIRECT_ALLOWLIST: z.string().default(''),
+
+  /**
+   * Exact origins permitted by CORS, comma-separated. Empty means same-origin
+   * only, which is the deployed shape today: no separate frontend origin exists.
+   */
+  CORS_ALLOWED_ORIGINS: z.string().default(''),
+
+  /** Consecutive failed logins before the account is locked. */
+  LOGIN_MAX_FAILED_ATTEMPTS: bounded(1, 100, 5),
+  /** Window over which consecutive failures are counted, in minutes. */
+  LOGIN_FAILURE_WINDOW_MINUTES: bounded(1, 1_440, 15),
 });
 
-export type BackendConfig = Omit<z.infer<typeof schema>, 'TRUSTED_PROXY_IPS'> & {
+/** Splits a comma-separated setting into trimmed, non-empty entries. */
+function commaList(value: string): readonly string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+type RawBackendConfig = z.infer<typeof schema>;
+
+export type BackendConfig = Omit<
+  RawBackendConfig,
+  'TRUSTED_PROXY_IPS' | 'AUTH_JWT_ALGORITHMS' | 'AUTH_REDIRECT_ALLOWLIST' | 'CORS_ALLOWED_ORIGINS'
+> & {
   readonly TRUSTED_PROXY_IPS: readonly string[];
+  readonly AUTH_JWT_ALGORITHMS: readonly string[];
+  readonly AUTH_REDIRECT_ALLOWLIST: readonly string[];
+  readonly CORS_ALLOWED_ORIGINS: readonly string[];
 };
 
 export class BackendConfigError extends Error {
@@ -111,12 +193,19 @@ export function backendConfig(): BackendConfig {
     throw new BackendConfigError(detail);
   }
 
-  const { TRUSTED_PROXY_IPS, ...rest } = parsed.data;
+  const {
+    TRUSTED_PROXY_IPS,
+    AUTH_JWT_ALGORITHMS,
+    AUTH_REDIRECT_ALLOWLIST,
+    CORS_ALLOWED_ORIGINS,
+    ...rest
+  } = parsed.data;
   cached = {
     ...rest,
-    TRUSTED_PROXY_IPS: TRUSTED_PROXY_IPS.split(',')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
+    TRUSTED_PROXY_IPS: commaList(TRUSTED_PROXY_IPS),
+    AUTH_JWT_ALGORITHMS: commaList(AUTH_JWT_ALGORITHMS),
+    AUTH_REDIRECT_ALLOWLIST: commaList(AUTH_REDIRECT_ALLOWLIST),
+    CORS_ALLOWED_ORIGINS: commaList(CORS_ALLOWED_ORIGINS),
   };
   return cached;
 }

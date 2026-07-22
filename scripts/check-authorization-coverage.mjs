@@ -168,6 +168,32 @@ function extractDeclarations(source, file) {
   return declarations;
 }
 
+/**
+ * Reads the controlled audit-action catalog out of its source file.
+ *
+ * The registry already validates `auditAction` against this catalog at module
+ * load, which covers anything a test imports. This second read closes the other
+ * half: a route that no test imports still fails CI, for the same reason the
+ * script re-derives the route list instead of trusting the registry.
+ */
+function readAuditActionCatalog() {
+  const file = join(SRC, 'server', 'auth', 'audit-actions.ts');
+  if (!existsSync(file)) return null;
+  const source = stripComments(readFileSync(file, 'utf8'));
+  const start = source.indexOf('AUDIT_ACTIONS');
+  if (start < 0) return null;
+  const catalog = new Map();
+  // Entries are `{ code: '…', class: '…', entityType: '…', description: '…' }`.
+  for (const match of source
+    .slice(start)
+    .matchAll(/\bcode:\s*'([^']+)'\s*,\s*class:\s*'([^']+)'/g)) {
+    catalog.set(match[1], match[2]);
+  }
+  return catalog.size > 0 ? catalog : null;
+}
+
+const auditActionCatalog = readAuditActionCatalog();
+
 const sourceFiles = walk(SRC, (name) => /\.(ts|tsx)$/.test(name));
 const declarations = [];
 for (const file of sourceFiles) {
@@ -201,6 +227,27 @@ for (const declaration of declarations) {
   if (declaration.auditClass !== 'none' && !declaration.auditAction) {
     failures.push(`${label}: audit class "${declaration.auditClass}" without an auditAction`);
   }
+  if (declaration.auditClass !== 'none' && declaration.auditAction && auditActionCatalog) {
+    const registeredClass = auditActionCatalog.get(declaration.auditAction);
+    if (!registeredClass) {
+      failures.push(
+        `${label}: audit action "${declaration.auditAction}" is not in the audit-action catalog ` +
+          '(src/server/auth/audit-actions.ts)'
+      );
+    } else if (registeredClass !== declaration.auditClass) {
+      failures.push(
+        `${label}: declares audit class "${declaration.auditClass}" but the catalog classifies ` +
+          `"${declaration.auditAction}" as "${registeredClass}"`
+      );
+    }
+  }
+}
+
+if (!auditActionCatalog) {
+  failures.push(
+    'src/server/auth/audit-actions.ts: the audit-action catalog could not be read, so audit ' +
+      'actions cannot be validated. A missing catalog is a failure, not a skipped check.'
+  );
 }
 
 // Every route file must contribute at least one declaration.
@@ -211,11 +258,24 @@ for (const routeFile of routeFiles) {
   }
 }
 
+/**
+ * Translates an OpenAPI-style path parameter into the App Router's directory
+ * spelling: `/iam/users/{userId}` → `src/app/api/v1/iam/users/[userId]`.
+ *
+ * The declaration uses `{param}` because that is what OpenAPI publishes and what
+ * the registry's path pattern accepts; Next.js spells the same thing `[param]`
+ * on disk. Before P1-14 no route had a parameter, so the two spellings never had
+ * to be reconciled and a parameterised route would have been reported as missing.
+ */
+function toRouteDirectory(declaredPath) {
+  return `src/app/api/v1${declaredPath.replace(/\{([a-zA-Z0-9_]+)\}/g, '[$1]')}`;
+}
+
 // Every declaration that names an HTTP route must have a route file to serve it.
 const routeDirs = new Set(routeFiles.map((file) => file.replace(/\/route\.ts$/, '')));
 for (const declaration of declarations) {
   if (!declaration.path || !declaration.file.startsWith('src/app/')) continue;
-  const expected = `src/app/api/v1${declaration.path}`;
+  const expected = toRouteDirectory(declaration.path);
   if (!routeDirs.has(expected)) {
     failures.push(
       `${declaration.id}: declares path ${declaration.path} but no route file at ${expected}/route.ts`

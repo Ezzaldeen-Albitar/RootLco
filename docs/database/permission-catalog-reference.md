@@ -11,27 +11,57 @@ permission. Authorization is by these codes, never by role name.
 
 ## Catalog
 
-| Code                      | Domain | Risk   | Meaning                        |
-| ------------------------- | ------ | ------ | ------------------------------ |
-| `org.tenant.read`         | org    | low    | Read tenant profile            |
-| `org.company.read`        | org    | low    | Read legal companies           |
-| `org.company.manage`      | org    | medium | Create/update companies        |
-| `org.branch.read`         | org    | low    | Read branches                  |
-| `org.branch.manage`       | org    | medium | Create/update branches         |
-| `org.department.manage`   | org    | medium | Manage departments/structure   |
-| `org.settings.manage`     | org    | high   | Manage company/branch settings |
-| `org.tax.manage`          | org    | high   | Manage tax classes/rates       |
-| `org.subscription.manage` | org    | high   | Manage subscriptions           |
-| `iam.user.read`           | iam    | low    | Read user directory            |
-| `iam.user.manage`         | iam    | high   | Provision/lifecycle users      |
-| `iam.role.read`           | iam    | low    | Read roles/mappings            |
-| `iam.role.manage`         | iam    | high   | Create/update roles            |
-| `iam.grant.manage`        | iam    | high   | Grant/revoke roles             |
-| `iam.approval.manage`     | iam    | high   | Manage approval limits         |
-| `iam.sensitive.view`      | iam    | high   | View sensitive/restricted data |
-| `iam.audit.view`          | iam    | medium | Read the audit trail           |
-| `iam.session.view_all`    | iam    | medium | View all tenant sessions       |
-| `iam.login.view_all`      | iam    | medium | View all tenant login history  |
+**Reconciled against the executable seed on 2026-07-22 (Phase 1-14, finding PC-2).** This document
+listed the 19 codes Phase 1-4 introduced and was never updated as Phases 1-10 … 1-11 added their
+own; the seed contained 43. `supabase/seeds/04_iam_permission_catalog.sql` is the source of
+truth, and `tests/db/iam-seeds.test.ts` asserts the count, so this table is a rendering of it
+rather than a second authority. Regenerating it after a seed change is part of that change.
+
+| Code                      | Domain | Risk   | Meaning                                           |
+| ------------------------- | ------ | ------ | ------------------------------------------------- |
+| `iam.approval.manage`     | iam    | high   | Manage approval limits                            |
+| `iam.audit.view`          | iam    | medium | Read the audit trail                              |
+| `iam.grant.manage`        | iam    | high   | Grant and revoke roles                            |
+| `iam.login.view_all`      | iam    | medium | View all tenant login history                     |
+| `iam.role.manage`         | iam    | high   | Create and update roles                           |
+| `iam.role.read`           | iam    | low    | Read roles and mappings                           |
+| `iam.sensitive.view`      | iam    | high   | View sensitive data                               |
+| `iam.session.view_all`    | iam    | medium | View all tenant sessions                          |
+| `iam.user.manage`         | iam    | high   | Provision and lifecycle users                     |
+| `iam.user.read`           | iam    | low    | Read user directory                               |
+| `inv.adjustment.approve`  | inv    | high   | Approve stock adjustments/opening batches         |
+| `inv.cost.view`           | inv    | high   | View item/purchase/adjustment cost                |
+| `inv.item.manage`         | inv    | medium | Manage item master, categories, UoM               |
+| `inv.stock.operate`       | inv    | medium | Post movements, reserve, issue, return            |
+| `inv.stock.read`          | inv    | low    | Read stock balances and movements                 |
+| `org.branch.manage`       | org    | medium | Create and update branches                        |
+| `org.branch.read`         | org    | low    | Read branches                                     |
+| `org.company.manage`      | org    | medium | Create and update companies                       |
+| `org.company.read`        | org    | low    | Read legal companies                              |
+| `org.department.manage`   | org    | medium | Manage departments/structure                      |
+| `org.settings.manage`     | org    | high   | Manage company/branch settings                    |
+| `org.subscription.manage` | org    | high   | Manage tenant subscriptions                       |
+| `org.tax.manage`          | org    | high   | Manage tax classes and rates                      |
+| `org.tenant.read`         | org    | low    | Read tenant profile                               |
+| `quo.decision.record`     | quo    | high   | Record quotation item approval decisions          |
+| `quo.quotation.manage`    | quo    | medium | Create and manage quotations/revisions            |
+| `rpt.export`              | rpt    | high   | Export report data (audited downstream)           |
+| `rpt.report.configure`    | rpt    | medium | Manage report configurations                      |
+| `sal.credit.manage`       | sal    | high   | Request and manage credit notes                   |
+| `sal.delivery.complete`   | sal    | high   | Complete deliveries and close custody             |
+| `sal.delivery.manage`     | sal    | medium | Manage deliveries, receivers, signatures          |
+| `sal.delivery.view`       | sal    | high   | View delivery signatures/receiver evidence        |
+| `sal.finance.view`        | sal    | high   | View financial amounts (invoices/receipts/events) |
+| `sal.invoice.issue`       | sal    | high   | Issue invoices (allocate numbers)                 |
+| `sal.invoice.manage`      | sal    | medium | Create and manage draft invoices                  |
+| `sal.payment.allocate`    | sal    | medium | Allocate receipts to invoices                     |
+| `sal.payment.record`      | sal    | medium | Record receipts                                   |
+| `sal.reversal.approve`    | sal    | high   | Approve receipt reversals (dual control)          |
+| `svc.price.manage`        | svc    | high   | Manage price lists, rules, discounts              |
+| `svc.price.publish`       | svc    | high   | Publish immutable price-list versions             |
+| `svc.service.manage`      | svc    | medium | Manage service catalog and versions               |
+| `wty.policy.manage`       | wty    | medium | Manage warranty policies and coverage             |
+| `wty.warranty.issue`      | wty    | medium | Issue warranty records                            |
 
 ## Baseline roles (provisioning-time, configuration-led)
 

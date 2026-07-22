@@ -24,8 +24,9 @@ This file is the Architecture Decision Register produced by Phase 1-1 task P1-01
 | [ADR-016](./ADR-016-cdn-readiness.md)                                     | CDN Readiness                                     | Accepted by owner instruction — for the asset classification, cache-control rules, versioning and ETag strategy, tenant-isolation rule, and purge ownership. Open — for the CDN itself and its provider; none is provisioned or approved.                                                  | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for provisioning any CDN, provider, region or platform                |
 | [ADR-017](./ADR-017-read-replica-readiness.md)                            | Read-Replica Readiness                            | Accepted by owner instruction — for the routing rules and activation preconditions. Open — for the replica itself; none is provisioned or approved, and the replica configuration is deliberately inert.                                                                                   | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for provisioning any replica, hosted project, region or plan          |
 | [ADR-018](./ADR-018-database-sharding-deferral.md)                        | Database Sharding Deferral                        | Accepted by owner instruction — for the deferral, the sharding-ready properties, and the evidence threshold. Open — for sharding itself, which is deliberately deferred. The current database is not sharded.                                                                              | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for any future decision to shard                                      |
+| [ADR-019](./ADR-019-supabase-auth-as-authentication-provider.md)          | Supabase Auth as Authentication Provider          | Accepted by owner instruction — for the authentication and session provider, the provider/IAM responsibility split, and the adapter boundary. Open — for the hosted Supabase project, region and plan (inherited from ADR-003), and for MFA, SSO, SAML, SCIM and social providers.         | Eng. Ezzaldeen Al-Bitar (technical); Eng. Ezzaldeen Al-Bitar and Eng. Bilal Jradat (jointly) for the still-Open commercial matters inherited from ADR-003          |
 
-Records ADR-001 to ADR-013 carry the date 2026-07-16. Records ADR-014 to ADR-018 carry the date 2026-07-21 and were produced by Phase 1-13 (Backend Architecture and Shared Application Foundation).
+Records ADR-001 to ADR-013 carry the date 2026-07-16. Records ADR-014 to ADR-018 carry the date 2026-07-21 and were produced by Phase 1-13 (Backend Architecture and Shared Application Foundation). Record ADR-019 carries the date 2026-07-22 and was produced by Phase 1-14 (Authentication, Authorization, and Administration Backend).
 
 ## Status vocabulary
 
@@ -50,7 +51,7 @@ This arrangement is an owner decision about where the canonical documentation li
 
 ## How to add an ADR
 
-1. **Take the next number.** The highest number in use is ADR-018, so the next record is ADR-019. Numbers are never reused, including for superseded records.
+1. **Take the next number.** The highest number in use is ADR-019, so the next record is ADR-020. Numbers are never reused, including for superseded records.
 2. **Name the file** `ADR-0NN-short-kebab-case-title.md` in this directory, matching the convention of the existing eighteen.
 3. **Use the mandatory heading template**, in this order, with every heading present:
 
@@ -87,6 +88,7 @@ The following are genuinely open across the set. No owner approval exists for an
 - **Any read replica** — Open (ADR-017). None is provisioned. `DATABASE_REPLICA_URL` is accepted as configuration and is deliberately inert: replica routing returns the primary. No failover and no replica-lag figure is claimed.
 - **Database sharding** — Open (ADR-018), deliberately deferred. The current PostgreSQL database is **not** sharded. Reconsideration requires measured evidence from a hosted deployment.
 - **Consistent hashing** — Open (ADR-014), deliberately deferred. No utility exists. ADR-014 records the rules any future utility must satisfy, including that placement is never an authorization or tenant-isolation control.
+- **Multi-factor authentication, single sign-on, SAML, SCIM, and social identity providers** — Open (ADR-019). None is selected, configured, or approved, and none is in Phase 1-14 scope. `iam.user_accounts.mfa_required` exists as a column and nothing enforces it. The authentication _provider_ is decided (Supabase Auth); these additional factors and federation mechanisms are not.
 
 Separately, open decision **P1-OD-027 (NFR-SCL)** is unresolved. Every numeric limit recorded in ADR-014 to ADR-018 and in the Phase 1-13 standards under [../standards/](../standards/) is a proposed validation baseline pending measurement, never an approved production target.
 
