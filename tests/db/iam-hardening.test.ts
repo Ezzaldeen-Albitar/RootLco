@@ -208,10 +208,15 @@ describe('structural security posture (P1-04-SEC-001..003)', () => {
     expect(rows).toEqual([]);
   });
 
-  it('grants INSERT on the audit tables to app_runtime alone, and to no history table', async () => {
+  it('grants INSERT on the audit and identity-history tables to app_runtime alone', async () => {
     // DBCR-P1-13-001: the request path appends its own evidence, so INSERT is
-    // now expected on exactly the four audit surfaces — and nowhere else. The
-    // history tables stay trigger-written, and app_readonly stays read-only.
+    // expected on the four audit surfaces. DBCR-P1-14-001 added the two identity
+    // history surfaces the authentication and administration backend must write:
+    // `login_audit` (self-scoped, or an administrator recording a lockout) and
+    // `user_status_history` (gated on iam.user.manage, and stamped with
+    // iam.current_user_id() by tg_user_status_history_stamp so authorship cannot
+    // be forged). All six stay append-only — the UPDATE/DELETE assertion above
+    // still covers them — and app_readonly stays read-only throughout.
     const { rows } = await admin.query(
       `SELECT grantee, table_name FROM information_schema.role_table_grants
        WHERE table_schema='iam'
@@ -225,11 +230,13 @@ describe('structural security posture (P1-04-SEC-001..003)', () => {
       { grantee: 'app_runtime', table_name: 'audit_integrity_links' },
       { grantee: 'app_runtime', table_name: 'audit_record_details' },
       { grantee: 'app_runtime', table_name: 'audit_records' },
+      { grantee: 'app_runtime', table_name: 'login_audit' },
       { grantee: 'app_runtime', table_name: 'security_events' },
+      { grantee: 'app_runtime', table_name: 'user_status_history' },
     ]);
   });
 
-  it('runtime cannot inject a role_permission mapping (no INSERT grant)', async () => {
+  it('runtime cannot inject a role_permission mapping without iam.role.manage', async () => {
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: U_AUD }, async (c) => {
       const p = await c.query(
         `SELECT id FROM iam.permissions WHERE permission_code='iam.audit.view'`
