@@ -81,11 +81,13 @@ server-stamps `edited_at`. All proven in
 ## 3. An outbox row inside a producer transaction
 
 The envelope INSERT must ride in **the same transaction** as the business
-change it announces — that is the entire point of the outbox. Today
-`app_worker` is the only application role holding INSERT on
-`shared.event_outbox` (the future backend producer grant is a later-phase
-decision); the guard trigger forces every new row to start
-`pending`/unstamped/attempt 0.
+change it announces — that is the entire point of the outbox. Since 2026-07-21
+([DBCR-P1-13-001](../../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md))
+`app_runtime` holds tenant-scoped SELECT and INSERT on `shared.event_outbox`,
+so the producer below is the request path itself, writing only its own tenant's
+envelopes. `app_worker` additionally holds UPDATE and the three lifecycle
+functions, which the producer does not; the guard trigger forces every new row
+to start `pending`/unstamped/attempt 0.
 
 ```sql
 BEGIN;
@@ -179,10 +181,12 @@ binds to this foundation:
   [runbook](../../database/pilot-provisioning-runbook.md)) — never seeded.
 - **Runtime role posture.** APIs read through `app_runtime`/`app_readonly`
   under the transaction-scoped context contract: SELECT-only tables plus the
-  four enumerated EXECUTE grants. Every mutation is a backend/platform
-  operation, and the worker surface belongs exclusively to the NOLOGIN
-  `app_worker` archetype (no standing credential exists). An API must never
-  require a broader database privilege than this posture grants.
+  four enumerated EXECUTE grants, and — since 2026-07-21, DBCR-P1-13-001 —
+  tenant-scoped INSERT on `shared.event_outbox`. Every other mutation of a
+  Phase-1-5 table is a backend/platform operation, and the dispatch surface
+  (UPDATE plus claim/complete/fail) belongs exclusively to the `app_worker`
+  archetype. An API must never require a broader database privilege than this
+  posture grants.
 - **Not implemented, not claimed.** No notification rendering, no delivery
   providers, no worker processes, and no outbox publisher exist. Phase 1-6 is
   not started, and no CRM (or any other domain) schema exists — every

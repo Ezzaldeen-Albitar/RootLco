@@ -109,6 +109,10 @@ and controls: [evidence register §3](./phase-1-6-evidence-register.md) and
 - **No forensic audit trail yet.** `iam.audit_append` is not granted to app
   roles; the DB-layer attributable record is the append-only history/timeline
   tables. The forensic trail is Phase 1-16.
+  _(Amended 2026-07-21: the grant statement was true at Phase 1-6 closure and is
+  kept as written. DBCR-P1-13-001 has since given `app_runtime` tenant-scoped
+  EXECUTE on `iam.audit_append` for the Phase 1-13 backend foundation; no `crm`
+  write path calls it, so nothing in this report's scope changed.)_
 - **No application or API layer, no worker, no provider integration** — out of
   scope for a database phase.
 - **Segments, alerts, and all business tables are empty** — they are populated

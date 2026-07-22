@@ -4,6 +4,15 @@
 **Classification:** Confidential · **Phase:** 1-5 · **Date:** 2026-07-18 ·
 **Author:** Eng. Ezzaldeen Al-Bitar
 
+> **Amendment — 2026-07-21,
+> [DBCR-P1-13-001](../../database/change-requests/DBCR-P1-13-001-backend-runtime-write-grants.md).**
+> The producer grant this contract described as a later-phase decision now exists. Migration
+> `20260725090000_iam_shared_runtime_write_capabilities.sql` gives `app_runtime` tenant-scoped
+> SELECT and INSERT on `shared.event_outbox` under `sel_event_outbox_producer` and
+> `ins_event_outbox_producer`. Nothing else in the contract moved: the envelope, the guard trigger,
+> the claim/complete/fail semantics, and the worker's exclusive hold on the three lifecycle
+> functions are unchanged. §6 carries the amended access model.
+
 ## 1. Scope
 
 The transactional-outbox database contract — `shared.event_outbox`, the
@@ -100,7 +109,7 @@ dead-letter row always carries a non-blank `last_error`. Operator re-drive of
 dead-letter rows is a deliberately deferred later-phase concern; no such
 function exists.
 
-## 6. Access model — worker-only, deliberately all-tenant
+## 6. Access model — all-tenant dispatch, tenant-scoped production
 
 - `app_worker` is a NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
   NOREPLICATION, NOBYPASSRLS archetype. **No standing LOGIN credential is
@@ -114,9 +123,17 @@ function exists.
   user tenant session. This is not BYPASSRLS — FORCE RLS stays on — and the
   Phase 1-5 adversarial review (2026-07-18) probe-verified that the all-tenant
   surface is confined to the enumerated worker tables.
-- `app_runtime` and `app_readonly` have **zero** grant and **zero** policy on
-  the table and functions; their SELECT and EXECUTE attempts fail with
-  `42501`.
+- As delivered in Phase 1-5, `app_runtime` and `app_readonly` had **zero**
+  grant and **zero** policy on the table and functions. Since DBCR-P1-13-001
+  (2026-07-21) `app_runtime` holds SELECT and INSERT on the table under two
+  policies scoped `tenant_id = iam.current_tenant_id()` — a producer writes and
+  reads back its own tenant's envelopes and no others. It holds **no** UPDATE,
+  DELETE, or TRUNCATE and **no** EXECUTE on the three lifecycle functions, so it
+  cannot claim, complete, fail, or dead-letter anything: producing an event and
+  draining the queue stay separate powers held by separate roles.
+  `app_readonly` remains at zero grant and zero policy; its SELECT attempts
+  still fail with `42501`, as do every runtime EXECUTE attempt on the three
+  functions and every runtime UPDATE or DELETE on the table.
 
 ## 7. Consumer-side pairing — `shared.processed_events`
 
@@ -130,9 +147,11 @@ intervention is a later-phase concern.
 
 ## 8. Evidence
 
-`tests/db/shared-event-outbox.test.ts` (13 tests) exercises duplicate
-event-key rejection, envelope CHECKs, role-boundary denials (runtime/readonly
-SELECT, runtime EXECUTE, worker DELETE), claim stamping and attempt
+`tests/db/shared-event-outbox.test.ts` (13 tests at the Phase 1-5 closeout;
+extended by DBCR-P1-13-001 to assert the amended surface) exercises duplicate
+event-key rejection, envelope CHECKs, role-boundary denials (readonly SELECT,
+runtime EXECUTE on the lifecycle functions, runtime UPDATE and DELETE, worker
+DELETE) and the tenant-scoped producer surface, claim stamping and attempt
 accounting, disjoint parallel claims across two worker connections,
 stale-lease reclaim by a different claimant, wrong-claimant complete/fail
 raising, retry scheduling and its due-time gate, dead-letter at the attempt

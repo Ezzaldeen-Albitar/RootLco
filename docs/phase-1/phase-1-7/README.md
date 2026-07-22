@@ -51,10 +51,13 @@ relationships.
   dimension only (see the [plate contract](./veh-plate-normalization-contract.md)).
 - **No duplicate scoring engine** — candidate STORAGE with explainable,
   PII-free basis only (Phase 1-16 scores).
-- **No forensic audit integration** — `iam.audit_append` is not granted to any
-  app role (Phase 1-16); the attributable record at this layer is the
+- **No forensic audit integration** — no `veh` write path calls
+  `iam.audit_append` (Phase 1-16); the attributable record at this layer is the
   append-only history set (see the
-  [audit and history matrix](./veh-audit-and-history-matrix.md)).
+  [audit and history matrix](./veh-audit-and-history-matrix.md)). The grant
+  itself changed on 2026-07-21: DBCR-P1-13-001 gave `app_runtime` tenant-scoped
+  EXECUTE on `iam.audit_append` for the Phase 1-13 backend foundation, which
+  does not alter anything in this phase.
 - **No real or fake business data** — veh ships **zero** rows of any kind; the
   no-fake-data guard and the extended seed-state validator both sweep veh.
 

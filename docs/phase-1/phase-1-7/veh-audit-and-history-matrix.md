@@ -1,10 +1,16 @@
 # Vehicle Audit and History Matrix (P1-07)
 
 What is recorded, where, and by which mechanism — and what is deliberately NOT
-claimed. **No forensic audit integration exists in this phase**:
-`iam.audit_append` is not granted to any app role; the forensic trail is
-Phase 1-16/1-17. The attributable record at the database layer is the
-append-only history set below.
+claimed. **No forensic audit integration exists in this phase**: no `veh` write
+path calls `iam.audit_append`, and the forensic trail is Phase 1-16/1-17. The
+attributable record at the database layer is the append-only history set below.
+
+> **Amended 2026-07-21 (DBCR-P1-13-001).** This page originally said
+> `iam.audit_append` "is not granted to any app role". That is no longer true —
+> `app_runtime` now holds EXECUTE on it, tenant-scoped, so the Phase 1-13 backend
+> foundation can emit audit records. Nothing about the `veh` ledgers below
+> changed: they are still trigger-written, and no `veh` code path appends an
+> audit record.
 
 | Ledger                      | Trigger mechanism                                                                                | What writes it                  | Attribution                                                        | Forgery posture                                                                                                                                                                                               |
 | --------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

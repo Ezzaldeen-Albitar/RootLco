@@ -26,7 +26,23 @@ const PROBE_DB = 'p1_12_upgrade_probe';
 
 // Phase → last migration index (0-based, inclusive), computed from the migration
 // Phase headers (see docs/phase-1/phase-1-12/phase-1-12-gate-plan.md).
-const CUTOFFS = { 2: 1, 3: 10, 4: 19, 5: 31, 6: 48, 7: 64, 8: 81, 9: 97, 10: 105, 11: 112 };
+//
+// Phase 12 introduced no migration — it validated and froze the Release 2
+// baseline — so index 112 is both the phase-11 and the Release 2 boundary.
+// Phase 13 adds exactly one: the DBCR-P1-13-001 remediation at index 113.
+const CUTOFFS = {
+  2: 1,
+  3: 10,
+  4: 19,
+  5: 31,
+  6: 48,
+  7: 64,
+  8: 81,
+  9: 97,
+  10: 105,
+  11: 112,
+  13: 113,
+};
 
 const SEEDS = [
   'seed.sql',
@@ -72,8 +88,10 @@ async function dropProbe(admin) {
 }
 
 async function main() {
-  if (migrations.length !== 113)
-    console.warn(`WARN: expected 113 migrations, found ${migrations.length}`);
+  // 113 was the frozen Release 2 baseline; 114 adds the DBCR-P1-13-001
+  // remediation. Anything else means a migration arrived unrecorded.
+  if (migrations.length !== 114)
+    console.warn(`WARN: expected 114 migrations, found ${migrations.length}`);
 
   // Canonical full-rebuild hash (from the main DB — already the reference).
   const mainClient = new pg.Client({ ...base, database: process.env.PGDATABASE ?? 'postgres' });

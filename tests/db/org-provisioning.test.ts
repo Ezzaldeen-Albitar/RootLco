@@ -417,9 +417,30 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
     });
   });
 
-  it('runtime has no access to the idempotency table at all (42501)', async () => {
+  it('never shows a runtime session the platform-scope provisioning key', async () => {
+    // DBCR-P1-13-001 gave the request path a tenant-scoped idempotency surface.
+    // The provisioning key is deliberately platform-scope (tenant_id NULL), and
+    // `tenant_id = iam.current_tenant_id()` is NULL for such a row — so it stays
+    // invisible to every tenant session, and a tenant cannot claim its key.
+    const platformKeys = await admin.query(
+      `SELECT count(*)::int AS n FROM shared.idempotency_keys WHERE tenant_id IS NULL`
+    );
+    expect(platformKeys.rows[0].n).toBeGreaterThanOrEqual(1);
+
     await withRolledBackTx(runtime, { tenantId: tenantBId }, async (client) => {
-      await expectSqlState(client.query('SELECT count(*) FROM shared.idempotency_keys'), '42501');
+      const visible = await client.query(
+        `SELECT count(*)::int AS n FROM shared.idempotency_keys WHERE tenant_id IS NULL`
+      );
+      expect(visible.rows[0].n).toBe(0);
+      await expectSqlState(
+        client.query(
+          `INSERT INTO shared.idempotency_keys
+             (tenant_id, operation, idempotency_key, request_fingerprint, response_document, created_by)
+           VALUES (NULL, 'org_provisioning', 'fx-key-hijack-attempt', repeat('a',32), '{}'::jsonb, $1)`,
+          [USER_A]
+        ),
+        '42501'
+      );
     });
   });
 });

@@ -27,6 +27,16 @@ const BRANCH_A2 = 'af100000-0000-4000-8000-000000000002';
 
 const MODULE_SCHEMAS = ['apt', 'crm', 'iam', 'org', 'rec', 'shared', 'veh'];
 const TABLE_PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+/** Every table privilege PostgreSQL can grant, so nothing hides outside the four. */
+const ALL_TABLE_PRIVILEGES = [
+  'SELECT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'TRUNCATE',
+  'REFERENCES',
+  'TRIGGER',
+];
 
 let admin: Pool;
 
@@ -98,19 +108,70 @@ describe('module security posture', () => {
     expect(violations, `Unsafe module routines:\n${violations.join('\n')}`).toEqual([]);
   });
 
-  it('gives runtime and readonly zero effective privilege on the exact worker-boundary tables', async () => {
+  /**
+   * The four foundation surfaces after DBCR-P1-13-001. `app_runtime` gained an
+   * append path and nothing else; `app_readonly` gained nothing at all. This is
+   * an EXACT map — a privilege that appears here and not in the migration, or
+   * vice versa, fails the test.
+   */
+  const FOUNDATION_SURFACE: Readonly<Record<string, Readonly<Record<string, string[]>>>> = {
+    app_runtime: {
+      'shared.idempotency_keys': ['INSERT', 'SELECT'],
+      'shared.event_outbox': ['INSERT', 'SELECT'],
+      'shared.processed_events': [],
+      'shared.error_records': [],
+      'iam.audit_records': ['INSERT', 'SELECT'],
+      'iam.audit_record_details': ['INSERT', 'SELECT'],
+      'iam.audit_integrity_links': ['INSERT', 'SELECT'],
+      'iam.security_events': ['INSERT', 'SELECT'],
+    },
+    app_readonly: {
+      'shared.idempotency_keys': [],
+      'shared.event_outbox': [],
+      'shared.processed_events': [],
+      'shared.error_records': [],
+      'iam.audit_records': ['SELECT'],
+      'iam.audit_record_details': ['SELECT'],
+      'iam.audit_integrity_links': ['SELECT'],
+      'iam.security_events': ['SELECT'],
+    },
+  };
+
+  it('gives runtime and readonly EXACTLY the approved foundation privilege surface', async () => {
+    for (const [role, tables] of Object.entries(FOUNDATION_SURFACE)) {
+      for (const [table, expected] of Object.entries(tables)) {
+        const held: string[] = [];
+        for (const privilege of ALL_TABLE_PRIVILEGES) {
+          const { rows } = await admin.query(`SELECT has_table_privilege($1, $2, $3) AS allowed`, [
+            role,
+            table,
+            privilege,
+          ]);
+          if (rows[0].allowed) held.push(privilege);
+        }
+        expect(held.sort(), `${role} privilege surface on ${table}`).toEqual([...expected].sort());
+      }
+    }
+  });
+
+  it('never lets an application role mutate or remove audit, outbox, or idempotency rows', async () => {
+    // Append-only is the security property: the runtime may add evidence, and
+    // may never edit or erase it. TRUNCATE would erase a whole table at once, so
+    // it is checked alongside UPDATE and DELETE rather than assumed absent.
     const roles = ['app_runtime', 'app_readonly'];
     const tables = [
-      'shared.idempotency_keys',
+      'iam.audit_records',
+      'iam.audit_record_details',
+      'iam.audit_integrity_links',
+      'iam.security_events',
       'shared.event_outbox',
-      'shared.processed_events',
-      'shared.error_records',
+      'shared.idempotency_keys',
     ];
     const violations: string[] = [];
 
     for (const role of roles) {
       for (const table of tables) {
-        for (const privilege of TABLE_PRIVILEGES) {
+        for (const privilege of ['UPDATE', 'DELETE', 'TRUNCATE']) {
           const { rows } = await admin.query(`SELECT has_table_privilege($1, $2, $3) AS allowed`, [
             role,
             table,
@@ -121,37 +182,57 @@ describe('module security posture', () => {
       }
     }
 
-    expect(violations, `Unexpected worker-boundary privileges: ${violations.join(', ')}`).toEqual(
-      []
-    );
+    expect(violations, `Mutable audit/queue surface: ${violations.join(', ')}`).toEqual([]);
   });
 
-  it('keeps approved IAM audit reads while denying every app-role mutation', async () => {
-    const roles = ['app_runtime', 'app_readonly'];
-    const tables = [
-      'iam.audit_records',
-      'iam.audit_record_details',
-      'iam.audit_integrity_links',
-      'iam.security_events',
-    ];
+  it('gives app_runtime exactly the approved iam/shared function surface', async () => {
+    // DBCR-P1-13-001 added the four audit-append routines. It deliberately did
+    // NOT add iam.audit_verify_chain (a forensic routine) or any outbox worker
+    // routine — producing an event and draining the queue stay separate powers.
+    const { rows } = await admin.query(
+      `SELECT n.nspname || '.' || p.proname AS routine
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname IN ('iam', 'shared')
+         AND has_function_privilege('app_runtime', p.oid, 'EXECUTE')
+       ORDER BY 1`
+    );
+    expect(rows.map((r) => r.routine)).toEqual([
+      'iam.allowed_branch_ids',
+      'iam.allowed_company_ids',
+      'iam.audit_append',
+      'iam.audit_canonical',
+      'iam.audit_hash',
+      'iam.audit_mask',
+      'iam.current_branch_ids',
+      'iam.current_company_ids',
+      'iam.current_tenant_id',
+      'iam.current_user_id',
+      'iam.has_permission',
+      'iam.has_permission_in_scope',
+      'shared.document_deletion_eligibility',
+      'shared.document_ids_for_entity',
+      'shared.missing_translations',
+      'shared.next_display_number',
+      'shared.resolve_setting',
+    ]);
+  });
 
-    for (const role of roles) {
-      for (const table of tables) {
-        const { rows } = await admin.query(
-          `SELECT has_table_privilege($1, $2, 'SELECT') AS can_select,
-                  has_table_privilege($1, $2, 'INSERT') AS can_insert,
-                  has_table_privilege($1, $2, 'UPDATE') AS can_update,
-                  has_table_privilege($1, $2, 'DELETE') AS can_delete`,
-          [role, table]
-        );
-        expect(rows[0], `${role} privilege contract for ${table}`).toEqual({
-          can_select: true,
-          can_insert: false,
-          can_update: false,
-          can_delete: false,
-        });
-      }
-    }
+  it('grants no application role USAGE on schema extensions', async () => {
+    // iam.audit_hash uses pg_catalog.sha256 precisely so the SECURITY INVOKER
+    // append chain needs no cross-schema grant. USAGE on `extensions` would also
+    // expose extensions.pg_stat_statements, which pgcrypto grants to PUBLIC.
+    const { rows } = await admin.query(
+      `SELECT r.rolname, has_schema_privilege(r.rolname, 'extensions', 'USAGE') AS usage
+         FROM pg_roles r
+        WHERE r.rolname IN ('app_runtime', 'app_readonly', 'app_worker')
+        ORDER BY 1`
+    );
+    expect(rows).toEqual([
+      { rolname: 'app_readonly', usage: false },
+      { rolname: 'app_runtime', usage: false },
+      { rolname: 'app_worker', usage: false },
+    ]);
   });
 
   it('gives app_worker exactly the approved table privilege surface', async () => {
