@@ -66,13 +66,26 @@ function problemSchema(): JsonObject {
 function sharedComponents(): JsonObject {
   return {
     securitySchemes: {
-      sessionCookie: {
-        type: 'apiKey',
-        in: 'cookie',
-        name: 'session',
+      /**
+       * Bearer, not cookie (P1-14, ADR-019).
+       *
+       * P1-13 reserved a `sessionCookie` scheme in anticipation. P1-14 ships
+       * bearer tokens instead: with no ambient credential, a cross-site request
+       * cannot attach one, so CSRF is removed from the threat model by
+       * construction rather than mitigated. A browser cookie design, with the
+       * SameSite/HttpOnly/Secure and double-submit machinery it needs, is a
+       * decision for the phase that introduces a browser client.
+       */
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
         description:
-          'Authenticated session established by the Phase 1-14 authentication backend. ' +
-          'P1-13 defines the contract and resolves scope; it does not implement login.',
+          'Access token issued by the authentication provider (ADR-019). Verified locally on ' +
+          'every request: signature, issuer, audience, algorithm allow-list, expiry, and bounded ' +
+          'clock skew. The token proves identity only — permissions and scope are resolved from ' +
+          'the database per request, so a revoked grant stops working immediately rather than at ' +
+          'token expiry.',
       },
     },
     schemas: {
@@ -199,7 +212,7 @@ function operationObject(operation: RegisteredOperation): JsonObject {
     summary: operation.summary,
     tags: [operation.module],
     parameters,
-    security: operation.public ? [] : [{ sessionCookie: [] }],
+    security: operation.public ? [] : [{ bearerAuth: [] }],
     responses: {
       '200': {
         description: 'Success.',
@@ -234,10 +247,15 @@ export function buildOpenApiDocument(): JsonObject {
     info: {
       title: `${DESCRIPTIVE_TITLE} — API`,
       version: API_CONTRACT_VERSION,
-      summary: 'Backend foundation contract (Phase 1-13). No business endpoints are delivered.',
+      summary:
+        'Backend foundation (Phase 1-13) plus the authentication, authorization, and ' +
+        'administration surface (Phase 1-14).',
       description:
-        'Shared components and conventions every later backend phase composes. The product name ' +
-        'is deliberately absent: it is pending owner approval (ADR-011).',
+        'Shared components and conventions every later backend phase composes, and the identity ' +
+        'and access-administration operations built on them. Sessions are bearer tokens issued by ' +
+        'the authentication provider recorded in ADR-019; authorization is evaluated in the ' +
+        'database on every request and is never carried in a token. The product name is ' +
+        'deliberately absent: it is pending owner approval (ADR-011).',
       contact: { name: VENDOR_NAME },
     },
     servers: [{ url: '/', description: 'Same-origin. No public base URL is provisioned.' }],

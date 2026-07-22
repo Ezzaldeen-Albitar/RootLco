@@ -21,6 +21,34 @@ import { buildOpenApiDocument } from '@/server/openapi/document';
 // puts the operation in the registry. If a route is not imported anywhere the
 // authorization-coverage check catches it; here we only need the registry filled.
 import '@/app/api/v1/meta/ping/route';
+import '@/app/api/v1/auth/login/route';
+import '@/app/api/v1/auth/logout/route';
+import '@/app/api/v1/auth/session/route';
+import '@/app/api/v1/auth/password-reset/route';
+import '@/app/api/v1/auth/password-reset/completion/route';
+import '@/app/api/v1/iam/invitations/route';
+import '@/app/api/v1/iam/invitations/[userId]/route';
+import '@/app/api/v1/iam/invitations/[userId]/activation/route';
+import '@/app/api/v1/iam/users/route';
+import '@/app/api/v1/iam/users/[userId]/route';
+import '@/app/api/v1/iam/users/[userId]/status/route';
+import '@/app/api/v1/iam/users/[userId]/sessions/route';
+import '@/app/api/v1/iam/permissions/route';
+import '@/app/api/v1/iam/roles/route';
+import '@/app/api/v1/iam/roles/[roleId]/route';
+import '@/app/api/v1/iam/roles/[roleId]/permissions/route';
+import '@/app/api/v1/iam/roles/[roleId]/permissions/[mappingId]/route';
+import '@/app/api/v1/iam/grants/route';
+import '@/app/api/v1/iam/grants/[grantId]/route';
+import '@/app/api/v1/iam/grants/[grantId]/scopes/route';
+import '@/app/api/v1/iam/grants/[grantId]/scopes/[scopeId]/route';
+import '@/app/api/v1/iam/approval-limits/route';
+import '@/app/api/v1/iam/approval-limits/[limitId]/route';
+import '@/app/api/v1/audit-events/route';
+import '@/app/api/v1/audit-events/[recordId]/route';
+import '@/app/api/v1/org/tenant/route';
+import '@/app/api/v1/org/companies/[companyId]/settings/route';
+import '@/app/api/v1/org/branches/[branchId]/settings/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -51,9 +79,34 @@ describe('OpenAPI contract', () => {
     };
     const ping = document.paths['/api/v1/meta/ping']?.['get'];
     expect(ping?.operationId).toBe('meta.ping');
-    expect(ping?.['x-required-permissions']).toEqual(['platform.meta.ping']);
+    // `org.tenant.read`, not the unregistered `platform.meta.ping` P1-13
+    // declared — see finding PC-1 in the route file.
+    expect(ping?.['x-required-permissions']).toEqual(['org.tenant.read']);
     // A secured operation must not advertise itself as public.
     expect(ping?.security).not.toEqual([]);
+  });
+
+  it('declares a permission that exists in the seeded catalog for every secured operation', () => {
+    // The catalog is the authority for what the platform's permission model
+    // defines. A code that is not in it can never evaluate true, so an operation
+    // declaring one is permanently unreachable — which is exactly the defect
+    // `platform.meta.ping` was (PC-1). The list mirrors
+    // `supabase/seeds/04_iam_permission_catalog.sql`; `tests/db/iam-seeds.test.ts`
+    // asserts the seed itself, so the two cannot both drift unnoticed.
+    const SEEDED_DOMAINS = ['iam', 'inv', 'org', 'quo', 'rpt', 'sal', 'svc', 'wty'];
+    const document = JSON.parse(generated) as {
+      paths: Record<string, Record<string, { 'x-required-permissions'?: string[] }>>;
+    };
+    for (const item of Object.values(document.paths)) {
+      for (const [method, operation] of Object.entries(item)) {
+        if (!['get', 'post', 'put', 'patch', 'delete'].includes(method)) continue;
+        for (const code of operation['x-required-permissions'] ?? []) {
+          expect(SEEDED_DOMAINS, `permission "${code}" uses an unseeded domain`).toContain(
+            code.split('.')[0]
+          );
+        }
+      }
+    }
   });
 
   it('declares every failure response as the shared problem document', () => {

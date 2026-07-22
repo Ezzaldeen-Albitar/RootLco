@@ -34,6 +34,7 @@ import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
   IDENTITY_PROVIDER,
+  PING_PERMISSION,
   SUBJECT_PERMITTED,
   SUBJECT_UNPERMITTED,
   TENANT_A,
@@ -138,7 +139,9 @@ describe('with an authenticated caller who lacks the permission', () => {
 
     expect(response.status).toBe(403);
     expect(body.code).toBe('ERR-IAM-001');
-    expect(body.requiredPermissions).toEqual(['platform.meta.ping']);
+    // The exemplar now declares a permission that exists in the seeded catalog
+    // (finding PC-1); `platform.meta.ping` never did and could never evaluate true.
+    expect(body.requiredPermissions).toEqual([PING_PERMISSION]);
     // Nothing the handler would have produced may appear on a denied request.
     expect(body.tenantRef).toBeUndefined();
     expect(body.effectiveScope).toBeUndefined();

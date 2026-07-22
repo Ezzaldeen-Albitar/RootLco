@@ -26,6 +26,8 @@ export const ERROR_CODES = [
   'ERR-TEN-001',
   'ERR-CTX-001',
   'ERR-RES-001',
+  'ERR-RES-002',
+  'ERR-DEP-001',
   'ERR-INT-001',
   'ERR-INT-002',
   'ERR-CON-001',
@@ -156,6 +158,26 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'client',
     description:
       'The addressed resource does not exist within the resolved scope. Indistinguishable from "exists but out of scope" by design.',
+  },
+  'ERR-RES-002': {
+    code: 'ERR-RES-002',
+    title: 'Resource already exists',
+    status: 409,
+    owner: 'resource',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The command would create a resource that already exists within the resolved scope. Used where the duplicate is safe to acknowledge — an invitation for an address already invited, a role code already taken. Never used on an authentication path, where acknowledging existence would be an enumeration oracle.',
+  },
+  'ERR-DEP-001': {
+    code: 'ERR-DEP-001',
+    title: 'Upstream dependency unavailable',
+    status: 503,
+    owner: 'platform',
+    retryable: true,
+    class: 'server',
+    description:
+      'A required external dependency — currently only the authentication provider — was unreachable, timed out, or returned a fault. The request performed no work and may be retried. The dependency is never named to the caller.',
   },
   'ERR-INT-001': {
     code: 'ERR-INT-001',

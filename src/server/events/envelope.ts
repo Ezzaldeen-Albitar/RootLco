@@ -45,8 +45,36 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'iam.role_grant',
     owner: 'iam',
-    implementedIn: null,
+    implementedIn: 'P1-14',
     description: 'A role grant was created, modified, or revoked for a user.',
+  },
+  {
+    code: 'EVT-IAM-002',
+    eventType: 'user.invited',
+    schemaVersion: 1,
+    aggregateType: 'iam.user_account',
+    owner: 'iam',
+    implementedIn: 'P1-14',
+    description: 'A user was invited to a tenant and an invited account was created for them.',
+  },
+  {
+    code: 'EVT-IAM-003',
+    eventType: 'user.status.changed',
+    schemaVersion: 1,
+    aggregateType: 'iam.user_account',
+    owner: 'iam',
+    implementedIn: 'P1-14',
+    description:
+      'An account moved between invited, active, locked, and archived. One event covers every transition because consumers react to the resulting state, not to the verb.',
+  },
+  {
+    code: 'EVT-IAM-004',
+    eventType: 'session.revoked',
+    schemaVersion: 1,
+    aggregateType: 'iam.user_session',
+    owner: 'iam',
+    implementedIn: 'P1-14',
+    description: 'A session was revoked. Revocation is terminal and takes effect immediately.',
   },
   {
     code: 'EVT-CRM-001',
@@ -168,6 +196,22 @@ export function buildEventEnvelope(input: BuildEnvelopeInput): EventEnvelope {
   }
   if (!PRODUCER.test(input.producer)) {
     throw new EventEnvelopeError(`Producer "${input.producer}" violates the column format`);
+  }
+  // The catalog's `owner` column is enforced, not documentary: the owning module
+  // is the authority for what an event name means, and a second module
+  // publishing it would make the meaning ambiguous with no way to tell which
+  // producer a consumer is reacting to. The producer id is `<module>` or
+  // `<module>.<component>`, so the leading segment is the claim being checked.
+  //
+  // P1-13 documented this rule in the Event Catalog standard without
+  // implementing it; P1-14 implements it rather than leaving a security-shaped
+  // claim unbacked.
+  const producerModule = input.producer.split('.')[0];
+  if (producerModule !== entry.owner) {
+    throw new EventEnvelopeError(
+      `Producer "${input.producer}" may not publish "${input.eventType}": the catalog assigns ` +
+        `that event to module "${entry.owner}".`
+    );
   }
   if (input.eventKey.trim().length === 0 || input.eventKey.length > EVENT_KEY_MAX) {
     throw new EventEnvelopeError(`Event key must be 1–${EVENT_KEY_MAX} non-blank characters`);

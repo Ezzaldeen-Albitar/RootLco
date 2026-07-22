@@ -71,6 +71,15 @@ export interface HandlerInput {
   readonly params: Readonly<Record<string, string>>;
   /** Expected record version from `If-Match`, when the operation is guarded. */
   readonly expectedVersion: number | null;
+  /**
+   * The correlation ID this request will answer with (P1-14).
+   *
+   * Authenticated handlers can read it off `context`; a **public** handler has no
+   * context, and re-deriving it from the headers would mint a *different* UUID
+   * whenever the caller supplied none — so the log would disagree with the
+   * `X-Correlation-Id` the caller received. Passing it removes that trap.
+   */
+  readonly correlationId: string;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -161,8 +170,7 @@ export async function handleOperation<T>(
     }
 
     if (operation.public) {
-      const result = await handlePublic(operation, request, handler, options, correlationId);
-      return result;
+      return handlePublic(operation, request, handler, options, correlationId);
     }
 
     const claims = await sessionAuthenticator().authenticate(request);
@@ -213,6 +221,7 @@ export async function handleOperation<T>(
             request,
             params: Object.freeze({ ...(options.params ?? {}) }),
             expectedVersion,
+            correlationId,
           });
 
         if (!idempotencyKey || !fingerprint) return execute();
@@ -277,6 +286,7 @@ async function handlePublic<T>(
     request,
     params: Object.freeze({ ...(options.params ?? {}) }),
     expectedVersion: null,
+    correlationId,
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });
   return new Response(JSON.stringify(result.body), {
