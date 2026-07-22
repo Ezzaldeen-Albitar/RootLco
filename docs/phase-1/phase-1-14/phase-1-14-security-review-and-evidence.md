@@ -76,44 +76,63 @@ is claimed.
 Run against the local Supabase stack (PostgreSQL 17) on the merged protected schema
 (115 migrations, no migration added or changed by this branch).
 
-| Command                                   | Exit                                  |
-| ----------------------------------------- | ------------------------------------- |
-| `npm run typecheck`                       | 0                                     |
-| `npm run lint`                            | 0                                     |
-| `npm run format:check`                    | 0                                     |
-| `npm run style:check`                     | 0                                     |
-| `npm run validate:module-boundaries`      | 0 — 107 files, no violation           |
-| `npm run validate:authorization-coverage` | 0 — **39 operations**, 29 route files |
-| `npm run validate:openapi`                | 0 — 29 paths, 39 operations           |
-| `npm run validate:canonical-docs`         | 0                                     |
-| `npm run security:all`                    | 0 — 836 tracked files                 |
-| `npm run test`                            | 0 — 24 files, **354 tests**           |
-| `npm run test:backend`                    | 0 — 8 files, **69 tests**             |
-| `npm run test:db`                         | 0 — 121 files, **1248 tests**         |
-| `npm run build`                           | 0 — 28 API routes emitted             |
+| Command                                   | Exit                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                       | 0                                                                                           |
+| `npm run lint`                            | 0                                                                                           |
+| `npm run format:check`                    | 0                                                                                           |
+| `npm run style:check`                     | 0                                                                                           |
+| `npm run validate:module-boundaries`      | 0 — 107 files, no violation                                                                 |
+| `npm run validate:authorization-coverage` | 0 — **39 operations**, 29 route files                                                       |
+| `npm run validate:openapi`                | 0 — 29 paths, 39 operations                                                                 |
+| `npm run validate:canonical-docs`         | 0                                                                                           |
+| `npm run security:all`                    | 0 — 836 tracked files                                                                       |
+| `npm run test`                            | 0 — 24 files, **354 tests**                                                                 |
+| `npm run test:backend`                    | 0 — 8 files, **69 tests**                                                                   |
+| `npm run test:db`                         | 0 — 121 files, **1248 tests** — but see §3.1: 1 of 3 runs failed one unidentified assertion |
+| `npm run build`                           | 0 — 28 API routes emitted                                                                   |
 
-### 3.1 A transient failure, recorded rather than hidden
+### 3.1 Two transient failures, recorded rather than hidden
 
-The **first** `npm run test` run of the final validation pass aborted with
+Both are recorded because a run that failed once is a fact about this validation, and quietly
+re-running until green is how a flaky suite becomes an invisible one.
+
+**Unit suite — worker IPC fault.** The first `npm run test` of the final pass aborted with
 `Serialized Error: { code: 'ERR_IPC_CHANNEL_CLOSED' }` — a Vitest worker-IPC fault, not a test
-assertion. The immediate re-run passed all 354 tests. No cause was identified, so none is claimed;
-it is recorded here because a run that failed once is a fact about this validation, and quietly
-re-running until green is how a flaky suite becomes an invisible one. It is unrelated to the
-assertions in this phase, all of which are deterministic and none of which touch IPC.
+assertion. The immediate re-run passed all 354. No cause was identified, so none is claimed. It is
+unrelated to the assertions in this phase, all of which are deterministic and none of which touch
+IPC.
 
-The pre-existing intermittent `shared-event-outbox` assertion recorded in §6a of the remediation
-evidence **did not recur** in this phase's runs. It remains open and undiagnosed.
+**Database suite — one unidentified failing assertion.** Three full `npm run test:db` runs were
+executed on this branch:
+
+| Run | Result                                        |
+| --- | --------------------------------------------- |
+| 1   | 121 files, **1248 passed**, exit 0            |
+| 2   | 121 files, **1 failed / 1247 passed**, exit 1 |
+| 3   | 121 files, **1248 passed**, exit 0            |
+
+**Run 2's failing test was not identified.** The console output was not captured before the summary
+scrolled, and the two subsequent runs did not reproduce it — so there is no evidence to name a test,
+and none is named. Stating "it was the known outbox flake" would be a guess presented as a finding,
+which is worse than admitting the gap.
+
+What can be said: the suite is deterministic in its assertions, the same 1248 tests passed in the
+runs either side of it, and a pre-existing intermittent `shared-event-outbox` assertion is already
+recorded as unresolved in §6a of the remediation evidence. Whether run 2 was that flake or another
+is **unknown**. The correct disposition is to capture per-file output on the next failure rather
+than to close this on an assumption; that is recorded as residual risk R-5.
 
 ## 4. Residual risks
 
-| ID  | Risk                                                                                                               | Why it is accepted                                                                                                                                                                                                          |
-| --- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R-1 | `ip_hash` / `user_agent_hash` are SHA-256 with no key. For an IPv4 address the space is small enough to enumerate. | **Pseudonymisation, not anonymisation** — stated plainly in the code. The column contract asks for a hash and storing the raw value would be worse. Keying it would need a key-management decision this phase does not own. |
-| R-2 | A browser client holding a bearer token in JavaScript is XSS-exposed in a way an `HttpOnly` cookie is not.         | No browser client exists; frontend is out of Phase 1 scope. The cookie/CSRF design is an explicit open decision for the phase that introduces one.                                                                          |
-| R-3 | No dependency-vulnerability scanning runs anywhere in the pipeline.                                                | Out of scope for this phase and **not claimed as implemented**. Adding one is a CI decision with its own governance.                                                                                                        |
-| R-4 | No real-provider integration test runs in CI.                                                                      | ADR-019 requires CI to run without provider credentials. The fake mints real JWTs verified by the real verifier, so the verification path is genuinely exercised; the SDK call shapes are not.                              |
-| R-5 | The `shared-event-outbox` intermittent assertion remains undiagnosed.                                              | Pre-existing, unrelated to this phase, and carried forward unchanged rather than closed without a cause.                                                                                                                    |
-| R-6 | Every numeric limit in this phase is a proposed validation baseline.                                               | **P1-OD-027 (NFR-SCL) is unresolved.** No load evidence exists in any environment beyond Local.                                                                                                                             |
+| ID  | Risk                                                                                                                                                                                                                  | Why it is accepted                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-1 | `ip_hash` / `user_agent_hash` are SHA-256 with no key. For an IPv4 address the space is small enough to enumerate.                                                                                                    | **Pseudonymisation, not anonymisation** — stated plainly in the code. The column contract asks for a hash and storing the raw value would be worse. Keying it would need a key-management decision this phase does not own.                                                                                                                                                                                            |
+| R-2 | A browser client holding a bearer token in JavaScript is XSS-exposed in a way an `HttpOnly` cookie is not.                                                                                                            | No browser client exists; frontend is out of Phase 1 scope. The cookie/CSRF design is an explicit open decision for the phase that introduces one.                                                                                                                                                                                                                                                                     |
+| R-3 | No dependency-vulnerability scanning runs anywhere in the pipeline.                                                                                                                                                   | Out of scope for this phase and **not claimed as implemented**. Adding one is a CI decision with its own governance.                                                                                                                                                                                                                                                                                                   |
+| R-4 | No real-provider integration test runs in CI.                                                                                                                                                                         | ADR-019 requires CI to run without provider credentials. The fake mints real JWTs verified by the real verifier, so the verification path is genuinely exercised; the SDK call shapes are not.                                                                                                                                                                                                                         |
+| R-5 | The database suite is not reliably green run-to-run: one of three full runs on this branch failed a single assertion that was **not identified**, and a pre-existing `shared-event-outbox` flake remains undiagnosed. | Carried forward as an open defect, not closed on an assumption. Whether the two are the same thing is unknown. The next occurrence must have its per-file output captured before anything is concluded. Hosted CI builds a fresh database per run and executes the same files in the same parallel mode, so it can occur there; if it does, the run is re-triggered and the recurrence recorded, never explained away. |
+| R-6 | Every numeric limit in this phase is a proposed validation baseline.                                                                                                                                                  | **P1-OD-027 (NFR-SCL) is unresolved.** No load evidence exists in any environment beyond Local.                                                                                                                                                                                                                                                                                                                        |
 
 ## 5. Open decisions carried
 
