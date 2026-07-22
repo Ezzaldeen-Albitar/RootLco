@@ -87,6 +87,7 @@
 --                 upd_document_links_unlink, ins_outbound_messages_enqueue,
 --                 ins_message_templates_tenant, upd_message_templates_tenant,
 --                 ins_template_versions_tenant, upd_template_versions_tenant,
+--                 lck_template_versions_reference,
 --                 wkr_outbound_messages_dispatch, wkr_delivery_attempts_all,
 --                 wkr_search_metadata_all
 -- ============================================================================
@@ -365,6 +366,27 @@ CREATE POLICY upd_template_versions_tenant ON shared.template_versions
     AND iam.has_permission('org.settings.manage')
   );
 
+-- Lock-only policy (finding P1-15-R-001).
+--
+-- `shared.guard_outbound_message_scope` resolves the referenced template with
+-- `SELECT ... FROM shared.template_versions WHERE id = ... FOR SHARE`. Under RLS a
+-- *locking* read must additionally satisfy an UPDATE policy — the same mechanism
+-- behind Phase 1-14 finding R-011. With only `upd_template_versions_tenant`
+-- present, the lock admits no row for a platform template (`tenant_id IS NULL`),
+-- and none at all for a sender who does not also hold `org.settings.manage`, so
+-- the guard reports "template version does not exist" and enqueueing against a
+-- platform template — the entire reason platform templates exist — is impossible.
+--
+-- This policy admits the row for LOCKING only. It can never permit a write:
+-- permissive policies OR their `WITH CHECK`, this one contributes `false`, and the
+-- only other check demands `tenant_id = iam.current_tenant_id()`. Because
+-- `tenant_id` is deliberately absent from the UPDATE column grant, a platform row
+-- cannot be re-tenanted into passing that check. Lockable, never mutable.
+CREATE POLICY lck_template_versions_reference ON shared.template_versions
+  FOR UPDATE TO app_runtime
+  USING (tenant_id IS NULL OR tenant_id = iam.current_tenant_id())
+  WITH CHECK (false);
+
 -- ----------------------------------------------------------------------------
 -- 6. Worker policies. Deliberately tenant-blind, matching the pattern already
 --    established by wkr_error_records_all and wkr_processed_events_all: a
@@ -394,6 +416,7 @@ CREATE POLICY wkr_search_metadata_all ON shared.search_metadata
 -- DROP POLICY wkr_search_metadata_all           ON shared.search_metadata;
 -- DROP POLICY wkr_delivery_attempts_all         ON shared.delivery_attempts;
 -- DROP POLICY wkr_outbound_messages_dispatch    ON shared.outbound_messages;
+-- DROP POLICY lck_template_versions_reference   ON shared.template_versions;
 -- DROP POLICY upd_template_versions_tenant      ON shared.template_versions;
 -- DROP POLICY ins_template_versions_tenant      ON shared.template_versions;
 -- DROP POLICY upd_message_templates_tenant      ON shared.message_templates;

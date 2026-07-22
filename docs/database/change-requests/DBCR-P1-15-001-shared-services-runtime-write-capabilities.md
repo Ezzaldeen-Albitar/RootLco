@@ -45,18 +45,18 @@ Run as the login **`rootlco_test_runtime`** — a member of `app_runtime` with
 insert into shared.<table> default values;
 ```
 
-| Target table | Observed result |
-| --- | --- |
-| `shared.status_history` | `ERROR: permission denied for table status_history` |
-| `shared.status_evidence` | `ERROR: permission denied for table status_evidence` |
-| `shared.documents` | `ERROR: permission denied for table documents` |
+| Target table               | Observed result                                        |
+| -------------------------- | ------------------------------------------------------ |
+| `shared.status_history`    | `ERROR: permission denied for table status_history`    |
+| `shared.status_evidence`   | `ERROR: permission denied for table status_evidence`   |
+| `shared.documents`         | `ERROR: permission denied for table documents`         |
 | `shared.document_versions` | `ERROR: permission denied for table document_versions` |
 | `shared.outbound_messages` | `ERROR: permission denied for table outbound_messages` |
 | `shared.delivery_attempts` | `ERROR: permission denied for table delivery_attempts` |
 | `shared.message_templates` | `ERROR: permission denied for table message_templates` |
 | `shared.template_versions` | `ERROR: permission denied for table template_versions` |
-| `shared.search_metadata` | `ERROR: permission denied for table search_metadata` |
-| `shared.error_records` | `ERROR: permission denied for table error_records` |
+| `shared.search_metadata`   | `ERROR: permission denied for table search_metadata`   |
+| `shared.error_records`     | `ERROR: permission denied for table error_records`     |
 
 All ten fail at the privilege layer with SQLSTATE `42501` before any constraint, trigger, or policy is
 reached.
@@ -75,10 +75,10 @@ The first probe in this change request queried `app_runtime` only, so `error_rec
 `processed_events` reported "no privilege" and were initially read as gaps. **That reading was
 wrong**, and a probe across all three application roles corrects it:
 
-| Table | Actual state |
-| --- | --- |
-| `shared.error_records` | `app_worker` holds `INSERT, SELECT, UPDATE`, policy `wkr_error_records_all` (`ALL`, `USING(true) WITH CHECK(true)`) |
-| `shared.processed_events` | `app_worker` holds `INSERT, SELECT`, policy `wkr_processed_events_all` (`ALL`, `USING(true) WITH CHECK(true)`) |
+| Table                     | Actual state                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `shared.error_records`    | `app_worker` holds `INSERT, SELECT, UPDATE`, policy `wkr_error_records_all` (`ALL`, `USING(true) WITH CHECK(true)`) |
+| `shared.processed_events` | `app_worker` holds `INSERT, SELECT`, policy `wkr_processed_events_all` (`ALL`, `USING(true) WITH CHECK(true)`)      |
 
 Both are **deliberate worker-owned contracts that already work**. The deliberately cross-tenant
 worker policy is the established pattern in this schema, because the worker drains every tenant's
@@ -96,26 +96,26 @@ of granting `app_runtime` everything the first probe reported as denied.
 
 ### 2.2 Current policy state (target tables)
 
-| Table | Policies for `app_runtime` |
-| --- | --- |
-| `status_history`, `status_evidence`, `documents`, `document_versions`, `document_links`, `outbound_messages`, `delivery_attempts`, `search_metadata` | `sel_*_tenant` — **SELECT only** |
-| `message_templates`, `template_versions` | `sel_*_visible` — **SELECT only** |
-| `error_records` | none for `app_runtime`; `wkr_error_records_all` (**ALL**) for `app_worker` only |
+| Table                                                                                                                                                | Policies for `app_runtime`                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `status_history`, `status_evidence`, `documents`, `document_versions`, `document_links`, `outbound_messages`, `delivery_attempts`, `search_metadata` | `sel_*_tenant` — **SELECT only**                                                |
+| `message_templates`, `template_versions`                                                                                                             | `sel_*_visible` — **SELECT only**                                               |
+| `error_records`                                                                                                                                      | none for `app_runtime`; `wkr_error_records_all` (**ALL**) for `app_worker` only |
 
 No write policy exists for the runtime role anywhere in this set.
 
 ## 3. Affected Phase 1-15 work
 
-| P1-15 capability | Blocked table(s) | Correct actor |
-| --- | --- | --- |
-| Status-transition service (history append, evidence) | `status_history`, `status_evidence` | `app_runtime` (synchronous with the business transition) |
-| Attachment authorization and pre-acceptance lifecycle | `documents`, `document_versions`, `document_links` | `app_runtime` |
-| Notification **enqueue** | `outbound_messages` (initial insert) | `app_runtime` |
-| Notification **dispatch + provider evidence** | `outbound_messages` (lifecycle), `delivery_attempts` | `app_worker` |
-| Template management and versioning | `message_templates`, `template_versions` | `app_runtime`, permission-gated, tenant scope only |
-| Search projection maintenance | `search_metadata` | to be decided by the capability matrix (`app_runtime` vs `app_worker`) |
-| Durable error recording | `error_records` | **`app_worker` — already granted, no change required** |
-| Consumer bookkeeping | `processed_events` | **`app_worker` — already granted, no change required** |
+| P1-15 capability                                      | Blocked table(s)                                     | Correct actor                                                          |
+| ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| Status-transition service (history append, evidence)  | `status_history`, `status_evidence`                  | `app_runtime` (synchronous with the business transition)               |
+| Attachment authorization and pre-acceptance lifecycle | `documents`, `document_versions`, `document_links`   | `app_runtime`                                                          |
+| Notification **enqueue**                              | `outbound_messages` (initial insert)                 | `app_runtime`                                                          |
+| Notification **dispatch + provider evidence**         | `outbound_messages` (lifecycle), `delivery_attempts` | `app_worker`                                                           |
+| Template management and versioning                    | `message_templates`, `template_versions`             | `app_runtime`, permission-gated, tenant scope only                     |
+| Search projection maintenance                         | `search_metadata`                                    | to be decided by the capability matrix (`app_runtime` vs `app_worker`) |
+| Durable error recording                               | `error_records`                                      | **`app_worker` — already granted, no change required**                 |
+| Consumer bookkeeping                                  | `processed_events`                                   | **`app_worker` — already granted, no change required**                 |
 
 Number allocation, event publication, and idempotency are **not** blocked: the allocator's
 column-restricted `UPDATE`, `event_outbox` `INSERT`, and `idempotency_keys` `INSERT` already exist.

@@ -221,6 +221,11 @@ describe('role posture', () => {
     expect(rows).toEqual([
       { fq: 'iam.grant_scopes', grantee: 'app_runtime' },
       { fq: 'iam.role_permissions', grantee: 'app_runtime' },
+      // DBCR-P1-15-001 added the third and only other exception, and it is not a
+      // business record either: shared.search_metadata rows are a derived search
+      // projection owned by the worker. Removing a stale projection entry is a
+      // genuine delete with nothing to preserve, and no request role holds it.
+      { fq: 'shared.search_metadata', grantee: 'app_worker' },
     ]);
   });
 });

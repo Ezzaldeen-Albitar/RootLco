@@ -11,21 +11,21 @@
 
 ## 1. Decision summary
 
-| Table | `app_runtime` | `app_worker` | `app_readonly` |
-| --- | --- | --- | --- |
-| `status_history` | **none — withheld** | none | SELECT (unchanged) |
-| `status_evidence` | **none — withheld** | none | SELECT (unchanged) |
-| `documents` | INSERT (column-restricted) | none | SELECT (unchanged) |
-| `document_versions` | INSERT (column-restricted) + `UPDATE (status)` | none | SELECT (unchanged) |
-| `document_links` | INSERT (column-restricted) + `UPDATE (deleted_at)` | none | SELECT (unchanged) |
-| `file_scan_results` | **none — hard security limit** | **none** | SELECT (unchanged) |
-| `outbound_messages` | INSERT (column-restricted, enqueue only) | `UPDATE (status, failure_class)` | SELECT (unchanged) |
-| `delivery_attempts` | **none** | INSERT (column-restricted) | SELECT (unchanged) |
-| `message_templates` | INSERT + `UPDATE (name, description, active_version_id, status, deleted_at)` | none | SELECT (unchanged) |
-| `template_versions` | INSERT + `UPDATE (subject, body, content_hash, status, approved_by)` | none | SELECT (unchanged) |
-| `search_metadata` | **none — withheld** | INSERT + `UPDATE (normalized_value, classification, source_updated_at)` + DELETE | SELECT (unchanged) |
-| `error_records` | none | **unchanged — already correct** | none |
-| `processed_events` | none | **unchanged — already correct** | none |
+| Table               | `app_runtime`                                                                | `app_worker`                                                                     | `app_readonly`     |
+| ------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------ |
+| `status_history`    | **none — withheld**                                                          | none                                                                             | SELECT (unchanged) |
+| `status_evidence`   | **none — withheld**                                                          | none                                                                             | SELECT (unchanged) |
+| `documents`         | INSERT (column-restricted)                                                   | none                                                                             | SELECT (unchanged) |
+| `document_versions` | INSERT (column-restricted) + `UPDATE (status)`                               | none                                                                             | SELECT (unchanged) |
+| `document_links`    | INSERT (column-restricted) + `UPDATE (deleted_at)`                           | none                                                                             | SELECT (unchanged) |
+| `file_scan_results` | **none — hard security limit**                                               | **none**                                                                         | SELECT (unchanged) |
+| `outbound_messages` | INSERT (column-restricted, enqueue only)                                     | `UPDATE (status, failure_class)`                                                 | SELECT (unchanged) |
+| `delivery_attempts` | **none**                                                                     | INSERT (column-restricted)                                                       | SELECT (unchanged) |
+| `message_templates` | INSERT + `UPDATE (name, description, active_version_id, status, deleted_at)` | none                                                                             | SELECT (unchanged) |
+| `template_versions` | INSERT + `UPDATE (subject, body, content_hash, status, approved_by)`         | none                                                                             | SELECT (unchanged) |
+| `search_metadata`   | **none — withheld**                                                          | INSERT + `UPDATE (normalized_value, classification, source_updated_at)` + DELETE | SELECT (unchanged) |
+| `error_records`     | none                                                                         | **unchanged — already correct**                                                  | none               |
+| `processed_events`  | none                                                                         | **unchanged — already correct**                                                  | none               |
 
 `app_readonly` receives **no write capability of any kind**. No `DELETE` is granted to
 `app_runtime` anywhere. No `TRUNCATE`, `REFERENCES`, or `TRIGGER` privilege is granted to any role.
@@ -37,13 +37,13 @@
 `shared.status_history` **cannot bind a transition to a business aggregate**, and the gap is
 structural rather than a matter of privilege:
 
-| Property | `shared.status_history` | `wo.work_order_status_history` (the module pattern) |
-| --- | --- | --- |
-| Aggregate binding | **no foreign key on `entity_id`** — the only FK is `fk_status_history_tenant` → `org.tenants(id)` | `FOREIGN KEY (tenant_id, company_id, branch_id, work_order_id)` → `wo.work_orders(...)` — composite and scope-carrying |
-| `entity_type` vocabulary | `CHECK (btrim(entity_type) <> '')` only — no allow-list, enum, or reference table | n/a (the FK is the binding) |
-| State vocabulary | `CHECK (from_state IS DISTINCT FROM to_state)` only | format-checked (`^[a-z][a-z0-9_]{1,62}$`) |
-| Coherence guard | **none** | `tg_work_order_status_history_coherence` |
-| Scope columns | none — no `company_id` / `branch_id`, so scope-aware authorization is not expressible | present |
+| Property                 | `shared.status_history`                                                                           | `wo.work_order_status_history` (the module pattern)                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Aggregate binding        | **no foreign key on `entity_id`** — the only FK is `fk_status_history_tenant` → `org.tenants(id)` | `FOREIGN KEY (tenant_id, company_id, branch_id, work_order_id)` → `wo.work_orders(...)` — composite and scope-carrying |
+| `entity_type` vocabulary | `CHECK (btrim(entity_type) <> '')` only — no allow-list, enum, or reference table                 | n/a (the FK is the binding)                                                                                            |
+| State vocabulary         | `CHECK (from_state IS DISTINCT FROM to_state)` only                                               | format-checked (`^[a-z][a-z0-9_]{1,62}$`)                                                                              |
+| Coherence guard          | **none**                                                                                          | `tg_work_order_status_history_coherence`                                                                               |
+| Scope columns            | none — no `company_id` / `branch_id`, so scope-aware authorization is not expressible             | present                                                                                                                |
 
 Verified independently: `shared.status_history` carries exactly one non-internal trigger
 (`tg_status_history_stamp`, which stamps `actor_id` and `occurred_at`), `shared.status_evidence`

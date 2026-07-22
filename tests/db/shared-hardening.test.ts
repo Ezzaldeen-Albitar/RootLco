@@ -264,14 +264,21 @@ describe('module security posture', () => {
     const effective = rows.map((r) => `${r.table_name} ${r.privilege}`);
     expect(effective).toEqual(
       [
+        // DBCR-P1-15-001 (migration 117) added the asynchronous dispatch and
+        // projection surface. The INSERT/UPDATE grants there are column-scoped,
+        // so only the table-level privileges they imply appear here.
+        'shared.delivery_attempts SELECT',
         'shared.error_records INSERT',
         'shared.error_records SELECT',
         'shared.error_records UPDATE',
         'shared.event_outbox INSERT',
         'shared.event_outbox SELECT',
         'shared.event_outbox UPDATE',
+        'shared.outbound_messages SELECT',
         'shared.processed_events INSERT',
         'shared.processed_events SELECT',
+        'shared.search_metadata DELETE',
+        'shared.search_metadata SELECT',
       ].sort()
     );
   });
