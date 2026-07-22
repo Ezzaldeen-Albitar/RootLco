@@ -62,7 +62,13 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('wty.warranty.issue',       'wty', 'Issue warranty records',                     'medium', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Reporting configuration (rpt)
   ('rpt.report.configure',     'rpt', 'Manage report configurations',              'medium', '00000000-0000-4000-8000-000000000001'),
-  ('rpt.export',               'rpt', 'Export report data (audited downstream)',    'high',   '00000000-0000-4000-8000-000000000001')
+  ('rpt.export',               'rpt', 'Export report data (audited downstream)',    'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-15 — Shared services (shared). DBCR-P1-15-001. Two codes only, each
+  -- naming one concrete capability. Template administration deliberately reuses
+  -- the existing org.settings.manage: a message template is tenant configuration,
+  -- and minting a second code for it would split one authority across two names.
+  ('shared.document.manage',   'shared', 'Create document metadata, pre-acceptance versions and links', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('shared.notification.send', 'shared', 'Enqueue outbound notifications',           'medium', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
