@@ -4,7 +4,12 @@
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
 **Raised by:** Eng. Ezzaldeen Al-Bitar, during Phase 1-15 (Shared Services Backend) Wave 0 ·
 **Date raised:** 2026-07-22 ·
-**Status:** **Open — blocking P1-15 feature execution** ·
+**Status:** **Remediated — awaiting owner merge.** Migration 117 implements the approved change and is
+proven by 51 executable proofs; this record becomes Resolved only after the remediation is merged into
+protected `develop` and the capability is re-verified from the merged protected state as the runtime
+role. See the
+[remediation record](../../phase-1/phase-1-15/phase-1-15-database-remediation-record.md) and
+[migration classification](../../phase-1/phase-1-15/phase-1-15-migration-classification.md). ·
 **Severity:** **High** — every mandatory P1-15 write capability is impossible against the protected
 schema ·
 **Protected state inspected:** `origin/develop` = `c7edc51`, `origin/main` = `8ca1da2`, 116 migrations ·

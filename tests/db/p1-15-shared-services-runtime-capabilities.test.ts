@@ -62,6 +62,7 @@ const DOC_A = 'a0000000-0000-4000-8000-0000000f15e1';
 const DOC_B = 'b0000000-0000-4000-8000-0000000f15e1';
 const TEMPLATE_PLATFORM = '00000000-0000-4000-8000-0000000f15f1';
 const TPLVER_PLATFORM = '00000000-0000-4000-8000-0000000f15f2';
+const TPLVER_PLATFORM_DRAFT = '00000000-0000-4000-8000-0000000f15f3';
 
 /** Exactly the permissions this migration's policies gate on. */
 const SHARED_PERMISSIONS = [
@@ -111,7 +112,9 @@ async function seedSharedFixtures(): Promise<void> {
       [TENANT_A, TENANT_B],
     ]);
   }
-  await admin.query(`DELETE FROM shared.template_versions WHERE id = $1`, [TPLVER_PLATFORM]);
+  await admin.query(`DELETE FROM shared.template_versions WHERE id = ANY($1::uuid[])`, [
+    [TPLVER_PLATFORM, TPLVER_PLATFORM_DRAFT],
+  ]);
   await admin.query(`DELETE FROM shared.message_templates WHERE id = $1`, [TEMPLATE_PLATFORM]);
 
   for (const [id, tenant, code, name] of [
@@ -222,6 +225,17 @@ async function seedSharedFixtures(): Promise<void> {
     TEMPLATE_PLATFORM,
     TPLVER_PLATFORM,
   ]);
+
+  // A platform version left in DRAFT. The lifecycle guard permits draft content to
+  // change, so this row isolates the POLICY layer: if tenant runtime can mutate it,
+  // the lock policy is a write path. It must not be able to.
+  await admin.query(
+    `INSERT INTO shared.template_versions
+       (id, tenant_id, template_id, version_number, subject, body, content_hash, created_by)
+     VALUES ($1, NULL, $2, 2, 'Draft subject', 'Draft body',
+             decode(repeat('cd', 32), 'hex'), $3)`,
+    [TPLVER_PLATFORM_DRAFT, TEMPLATE_PLATFORM, SYS]
+  );
 }
 
 beforeAll(async () => {
@@ -238,7 +252,9 @@ afterAll(async () => {
     TEMPLATE_PLATFORM,
   ]);
   await cleanFixtures(admin);
-  await admin.query(`DELETE FROM shared.template_versions WHERE id = $1`, [TPLVER_PLATFORM]);
+  await admin.query(`DELETE FROM shared.template_versions WHERE id = ANY($1::uuid[])`, [
+    [TPLVER_PLATFORM, TPLVER_PLATFORM_DRAFT],
+  ]);
   await admin.query(`DELETE FROM shared.message_templates WHERE id = $1`, [TEMPLATE_PLATFORM]);
   await Promise.all([runtime.end(), readonly.end(), worker.end()]);
   await admin.end();
@@ -809,6 +825,61 @@ describe('P1-15 / tenant template administration', () => {
            VALUES (NULL, $1, 2, 's', 'b', decode(repeat('ab', 32), 'hex'), $2)`,
           [TEMPLATE_PLATFORM, DOC_ADMIN_A]
         ),
+        '42501'
+      );
+    });
+  });
+
+  // Adversarial regression for finding P1-15-R-001. lck_template_versions_reference
+  // deliberately admits a platform row into the USING clause so the enqueue guard's
+  // FOR SHARE lock can resolve it. This proves that widening cannot be turned into
+  // a write: the policy's WITH CHECK is false, the only other check demands
+  // tenant ownership, and tenant_id is not grantable on UPDATE.
+  it('an approved platform version is immutable — the lifecycle guard refuses', async () => {
+    await withRolledBackTx(runtime, AS_DOC_ADMIN_A, async (c: Q) => {
+      await expectSqlState(
+        c.query(`UPDATE shared.template_versions SET subject = 'hijacked' WHERE id = $1`, [
+          TPLVER_PLATFORM,
+        ]),
+        '23514',
+        'P0001'
+      );
+    });
+  });
+
+  it('the lock policy cannot be used to mutate a DRAFT platform version', async () => {
+    // The lifecycle guard permits draft content to change, so the only thing
+    // standing between tenant runtime and this row is the policy layer — and it
+    // refuses explicitly. lck_template_versions_reference admits the row into
+    // USING (that is its whole purpose: the enqueue guard must be able to take a
+    // FOR SHARE lock on it), but contributes WITH CHECK false, and the only other
+    // check demands tenant ownership this row cannot have. The write therefore
+    // fails the row-level security check outright rather than silently matching
+    // nothing, which is the stronger of the two denial shapes.
+    await withRolledBackTx(runtime, AS_DOC_ADMIN_A, async (c: Q) => {
+      await expectSqlState(
+        c.query(`UPDATE shared.template_versions SET subject = 'hijacked' WHERE id = $1`, [
+          TPLVER_PLATFORM_DRAFT,
+        ]),
+        '42501'
+      );
+    });
+    const after = await admin.query<{ subject: string }>(
+      `SELECT subject FROM shared.template_versions WHERE id = $1`,
+      [TPLVER_PLATFORM_DRAFT]
+    );
+    expect(after.rows[0]?.subject).toBe('Draft subject');
+  });
+
+  it('a platform template version cannot be re-tenanted into the caller tenant', async () => {
+    await withRolledBackTx(runtime, AS_DOC_ADMIN_A, async (c: Q) => {
+      // tenant_id is absent from the UPDATE column grant, so this is refused at
+      // the privilege layer before any policy is consulted.
+      await expectSqlState(
+        c.query(`UPDATE shared.template_versions SET tenant_id = $2 WHERE id = $1`, [
+          TPLVER_PLATFORM,
+          TENANT_A,
+        ]),
         '42501'
       );
     });
