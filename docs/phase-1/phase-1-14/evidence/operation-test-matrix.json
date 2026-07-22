@@ -1,283 +1,530 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "operation": 20,
-    "pending": 13,
-    "unit": 6
+    "registered": 39,
+    "withRequiredEvidence": 24,
+    "invocationOnly": 15
   },
   "operations": [
     {
       "id": "iam.approval-limit-create",
-      "depth": "operation",
       "file": "tests/backend/iam-access-administration.test.ts",
       "referenced": true,
-      "note": "no self-limit; malformed money rejected"
+      "required": [
+        "success",
+        "denial"
+      ],
+      "provided": [
+        "denial",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.approval-limit-end",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "endApprovalLimit not yet invoked at the service level (residual R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.approval-limit-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "listed and tenant-scoped"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.audit-event-detail",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "cross-tenant record not found"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.audit-event-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "bounded range; privileged read is itself audited"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.auth-login",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "token verify + assessFailedLogin proven; wired login integration pending (R-8)"
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.auth-logout",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "logout is public, token-authoritative; wired integration pending (R-8)"
+      "required": [
+        "success",
+        "audit",
+        "idempotency"
+      ],
+      "provided": [
+        "audit",
+        "idempotency",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.auth-password-reset",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "redirect allow-list proven; wired integration pending (R-8)"
+      "required": [
+        "success",
+        "denial"
+      ],
+      "provided": [
+        "denial",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.auth-password-reset-completion",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "reset completion; wired integration pending (R-8)"
+      "required": [
+        "success",
+        "denial",
+        "idempotency"
+      ],
+      "provided": [
+        "denial",
+        "idempotency",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.auth-session",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "session-state SQL proven in P1-13 resolve-context; wired integration pending (R-8)"
+      "required": [
+        "success"
+      ],
+      "provided": [
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.branch-settings-read",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "read in scope"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.branch-settings-write",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "writeBranchSetting service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "isolation",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.company-settings-read",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "read in scope"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.company-settings-write",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "writeCompanySetting service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "isolation",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.grant-issue",
-      "depth": "operation",
       "file": "tests/backend/iam-access-administration.test.ts",
       "referenced": true,
-      "note": "issued within/at/beyond authority; audit + event once; rollback leaves nothing"
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.grant-revoke",
-      "depth": "operation",
       "file": "tests/backend/iam-access-administration.test.ts",
       "referenced": true,
-      "note": "revocation immediate effect + stale-version conflict"
+      "required": [
+        "success",
+        "stale-version"
+      ],
+      "provided": [
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.grant-scope-add",
-      "depth": "operation",
       "file": "tests/backend/iam-access-administration.test.ts",
       "referenced": true,
-      "note": "within-authority scope added; foreign-company widening refused"
+      "required": [
+        "success",
+        "isolation"
+      ],
+      "provided": [
+        "isolation",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.grant-scope-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "lists the scopes of a scoped grant"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.grant-scope-remove",
-      "depth": "operation",
       "file": "tests/backend/iam-access-administration.test.ts",
       "referenced": true,
-      "note": "scope removed; DB backstop also proves last-scope removal cannot widen"
+      "required": [
+        "success"
+      ],
+      "provided": [
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.invitation-activate",
-      "depth": "unit",
-      "file": "tests/foundation/p1-14-authentication-units.test.ts",
+      "file": "tests/backend/iam-auth-provider.test.ts",
       "referenced": true,
-      "note": "activation refuses an unconfirmed provider identity — provider fake at unit level; full integration pending a provider-fake harness"
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.invitation-cancel",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "cancel service invocation pending a provider-fake harness (R-8)"
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.invitation-create",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "invite service invocation pending a provider-fake harness (R-8)"
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.permission-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "catalogue listed"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.role-create",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "created and found in the list"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.role-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "listed, tenant-scoped"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.role-permission-add",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "addRolePermission service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.role-permission-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "listed"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.role-permission-remove",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "removeRolePermission service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.role-permission-update",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "changeRolePermissionEffect service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.role-update",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "updateRole service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.tenant-settings-read",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "read"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.tenant-settings-update",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "updateTenant service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.user-detail",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "detail; cross-tenant not found"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.user-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "cursor paginated, tenant-isolated"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.user-session-list",
-      "depth": "operation",
       "file": "tests/backend/iam-operations.test.ts",
       "referenced": true,
-      "note": "listed for a user"
+      "required": [],
+      "provided": [],
+      "missing": []
     },
     {
       "id": "iam.user-session-revoke-all",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "revokeAllSessions service invocation pending (R-9); repository UPDATE fix proven in P1-14-R-007 change"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox",
+        "idempotency"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "idempotency",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.user-status-change",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "changeStatus service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "iam.user-update",
-      "depth": "pending",
-      "file": null,
-      "referenced": false,
-      "note": "updateProfile service invocation pending (R-9)"
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
     },
     {
       "id": "meta.ping",
-      "depth": "operation",
       "file": "tests/backend/api-ping.test.ts",
       "referenced": true,
-      "note": "end-to-end reference endpoint"
+      "required": [],
+      "provided": [],
+      "missing": []
     }
   ]
 }

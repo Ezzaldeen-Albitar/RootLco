@@ -222,6 +222,7 @@ export class AuthenticationService extends ApplicationService {
       }
 
       await this.identities.insertSession(db, {
+        userId: account.id,
         sessionRef: session.sessionRef,
         expiresAt: session.expiresAt,
         ipHash: pseudonymise(meta.clientIp),
