@@ -46,19 +46,46 @@ import { IdentityPolicy } from '../domain/identity-policy';
 /** SQLSTATE for an EXCLUDE-constraint violation (overlapping effective windows). */
 const EXCLUSION_VIOLATION = '23P01';
 
-/** Normalises an incoming scope into the exact shape the domain policy takes. */
-function toScopeRequest(scope: {
+/** The exact incoming scope shape a caller may submit for a grant. */
+interface IncomingScope {
   scopeType: 'company' | 'branch' | 'department';
   companyId: string;
   branchId?: string | null | undefined;
   departmentId?: string | null | undefined;
-}): ScopeRequest {
+}
+
+/** Normalises an incoming scope into the exact shape the domain policy takes. */
+function toScopeRequest(scope: IncomingScope): ScopeRequest {
   return {
     scopeType: scope.scopeType,
     companyId: scope.companyId,
     branchId: scope.branchId ?? null,
     departmentId: scope.departmentId ?? null,
   };
+}
+
+/**
+ * Normalises the requested scope list before any containment decision:
+ * coerces `null`/`undefined` sub-fields to `null` and removes exact duplicates
+ * (same type + company + branch + department). Deduplication is deterministic
+ * and happens *before* validation so a caller cannot smuggle an unvalidated
+ * scope past the loop by repeating an allowed one, and so a duplicate can never
+ * become a second `iam.grant_scopes` row (which would otherwise trip
+ * `uq_grant_scopes_row`). An empty or omitted list normalises to `[]`, which the
+ * caller interprets as an explicit unrestricted request — never as "skip
+ * validation".
+ */
+function normalizeScopes(scopes: readonly IncomingScope[] | null | undefined): ScopeRequest[] {
+  const seen = new Set<string>();
+  const out: ScopeRequest[] = [];
+  for (const scope of scopes ?? []) {
+    const request = toScopeRequest(scope);
+    const key = `${request.scopeType}|${request.companyId}|${request.branchId ?? ''}|${request.departmentId ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(request);
+  }
+  return out;
 }
 
 export class AccessAdministrationService extends ApplicationService {
@@ -359,13 +386,23 @@ export class AccessAdministrationService extends ApplicationService {
     const codes = await this.authorization.allowCodesOfRole(db, input.roleId);
     this.delegationPolicy.assertDelegable(facts, codes, 'allow');
 
-    const scopes = input.scopes ?? [];
+    // Scope containment (P1-14 confirmed-High remediation). An empty/omitted/null
+    // scope list is an explicit request for an UNRESTRICTED (tenant-wide) grant,
+    // not "nothing to validate" — so it takes the unrestricted authority path,
+    // which only a tenant-wide administrator passes. A non-empty list is
+    // validated scope-by-scope after normalisation (duplicates removed), and any
+    // single invalid scope throws, which rolls the whole transaction back so no
+    // partial grant commits. The database backstop enforces the identical rule.
+    const scopes = normalizeScopes(input.scopes);
     const scopeMode = scopes.length > 0 ? 'scoped' : 'unrestricted';
-    for (const scope of scopes) {
-      const request = toScopeRequest(scope);
-      this.delegationPolicy.assertScopeShape(request);
-      this.delegationPolicy.assertScopeWithinAuthority(facts, request);
-      await this.assertScopeBelongsTogether(db, scope);
+    if (scopeMode === 'unrestricted') {
+      this.delegationPolicy.assertUnrestrictedDelegationAllowed(facts);
+    } else {
+      for (const request of scopes) {
+        this.delegationPolicy.assertScopeShape(request);
+        this.delegationPolicy.assertScopeWithinAuthority(facts, request);
+        await this.assertScopeBelongsTogether(db, request);
+      }
     }
 
     const grantId = await this.authorization.insertGrant(db, {
@@ -376,13 +413,13 @@ export class AccessAdministrationService extends ApplicationService {
       approvalRef: input.approvalRef ?? null,
     });
 
-    for (const scope of scopes) {
+    for (const request of scopes) {
       await this.authorization.insertScope(db, {
         grantId,
-        scopeType: scope.scopeType,
-        companyId: scope.companyId,
-        branchId: scope.branchId ?? null,
-        departmentId: scope.departmentId ?? null,
+        scopeType: request.scopeType,
+        companyId: request.companyId,
+        branchId: request.branchId ?? null,
+        departmentId: request.departmentId ?? null,
       });
     }
 
@@ -754,6 +791,7 @@ export class AccessAdministrationService extends ApplicationService {
       actorUnrestricted: context.companyIds.length === 0 && context.branchIds.length === 0,
       actorCompanyIds: new Set(context.companyIds),
       actorBranchIds: new Set(context.branchIds),
+      actorScopes: await this.authorization.heldScopesOfCaller(db),
     };
   }
 }

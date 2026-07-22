@@ -44,7 +44,7 @@ import { IdentityRepository, type AccountRow } from '../data/identity-repository
 import { AuthorizationRepository } from '../data/authorization-repository';
 import { IdentityPolicy } from '../domain/identity-policy';
 import { CredentialPolicy } from '../domain/credential-policy';
-import { DelegationPolicy } from '../domain/delegation-policy';
+import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import type { IdentityProvider } from '../provider/identity-provider';
 import { ProviderFailure } from '../provider/identity-provider';
 import { toAppFailureFromProvider } from '../provider/provider-errors';
@@ -347,7 +347,7 @@ export class InvitationService extends ApplicationService {
   }
 
   /** Reads the caller's own delegable authority, measured in the database. */
-  private async delegationFacts(db: DbHandle) {
+  private async delegationFacts(db: DbHandle): Promise<GrantFacts> {
     const context = this.contextOf(db);
     return {
       actorUserId: context.principal.userId,
@@ -355,6 +355,7 @@ export class InvitationService extends ApplicationService {
       actorUnrestricted: context.companyIds.length === 0 && context.branchIds.length === 0,
       actorCompanyIds: new Set(context.companyIds),
       actorBranchIds: new Set(context.branchIds),
+      actorScopes: await this.authorization.heldScopesOfCaller(db),
     };
   }
 }

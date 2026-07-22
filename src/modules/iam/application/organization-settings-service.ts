@@ -30,7 +30,7 @@ import {
   type SettingRow,
   type TenantRow,
 } from '../data/organization-repository';
-import { DelegationPolicy } from '../domain/delegation-policy';
+import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import { AuthorizationRepository } from '../data/authorization-repository';
 
 export interface TenantSettingsView {
@@ -347,18 +347,29 @@ export class OrganizationSettingsService extends ApplicationService {
     return permissions.has('iam.sensitive.view');
   }
 
-  private async requireCompanyInScope(db: DbHandle, companyId: string): Promise<void> {
+  /**
+   * Builds scope-containment facts for the caller, at full granularity. Uses the
+   * same authoritative held-scope query as grant administration so a branch-scoped
+   * administrator cannot manage a company's settings (only that branch's), which
+   * the flattened company/branch context sets alone could not express.
+   */
+  private async scopeFacts(db: DbHandle): Promise<GrantFacts> {
     const context = this.contextOf(db);
-    this.delegationPolicy.assertScopeWithinAuthority(
-      {
-        actorUserId: context.principal.userId,
-        actorPermissions: new Set<string>(),
-        actorUnrestricted: context.companyIds.length === 0,
-        actorCompanyIds: new Set(context.companyIds),
-        actorBranchIds: new Set(context.branchIds),
-      },
-      { scopeType: 'company', companyId }
-    );
+    return {
+      actorUserId: context.principal.userId,
+      actorPermissions: new Set<string>(),
+      actorUnrestricted: context.companyIds.length === 0 && context.branchIds.length === 0,
+      actorCompanyIds: new Set(context.companyIds),
+      actorBranchIds: new Set(context.branchIds),
+      actorScopes: await this.authorization.heldScopesOfCaller(db),
+    };
+  }
+
+  private async requireCompanyInScope(db: DbHandle, companyId: string): Promise<void> {
+    this.delegationPolicy.assertScopeWithinAuthority(await this.scopeFacts(db), {
+      scopeType: 'company',
+      companyId,
+    });
     if (!(await this.organization.companyExists(db, companyId))) {
       throw new AppFailure('ERR-RES-001', { message: 'Company not found in this tenant' });
     }
@@ -370,17 +381,11 @@ export class OrganizationSettingsService extends ApplicationService {
     if (!companyId) {
       throw new AppFailure('ERR-RES-001', { message: 'Branch not found in this tenant' });
     }
-    const context = this.contextOf(db);
-    this.delegationPolicy.assertScopeWithinAuthority(
-      {
-        actorUserId: context.principal.userId,
-        actorPermissions: new Set<string>(),
-        actorUnrestricted: context.companyIds.length === 0 && context.branchIds.length === 0,
-        actorCompanyIds: new Set(context.companyIds),
-        actorBranchIds: new Set(context.branchIds),
-      },
-      { scopeType: 'branch', companyId, branchId }
-    );
+    this.delegationPolicy.assertScopeWithinAuthority(await this.scopeFacts(db), {
+      scopeType: 'branch',
+      companyId,
+      branchId,
+    });
     return companyId;
   }
 }

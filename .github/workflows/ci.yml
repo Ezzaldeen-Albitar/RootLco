@@ -78,6 +78,14 @@ jobs:
       - name: Authorization coverage check
         run: npm run validate:authorization-coverage
 
+      # P1-14 remediation: every registered operation must carry a coverage
+      # decision, and every non-pending claim must be backed by a referencing
+      # test. A registered operation with no decision, or an evidence claim whose
+      # test no longer references it, fails here. "pending" operations are tracked,
+      # visible residuals in docs/phase-1/phase-1-14/evidence/operation-test-matrix.json.
+      - name: Operation-to-test coverage check
+        run: npm run validate:operation-coverage
+
       # P1-13-BE-020: the published contract must be structurally sound. The
       # code/spec DIVERGENCE gate is the unit suite below, which regenerates the
       # document from the operation registry and compares.

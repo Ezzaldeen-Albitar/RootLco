@@ -53,6 +53,7 @@
     "gate:p1-12": "node scripts/db/gate-p1-12.mjs",
     "validate:module-boundaries": "node scripts/check-module-boundaries.mjs",
     "validate:authorization-coverage": "node scripts/check-authorization-coverage.mjs",
+    "validate:operation-coverage": "node scripts/check-operation-test-coverage.mjs",
     "validate:openapi": "node scripts/check-openapi.mjs",
     "gate:p1-13": "npm run validate:module-boundaries && npm run validate:authorization-coverage && npm run validate:openapi && npm run lint && npm run typecheck && npm run format:check && npm run security:all && npm run test && npm run test:backend",
     "verify": "npm run lint && npm run typecheck && npm run format:check && npm run style:check && npm run security:browser-secrets && npm run test && npm run build",

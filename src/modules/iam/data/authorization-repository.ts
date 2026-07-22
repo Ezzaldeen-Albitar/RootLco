@@ -147,6 +147,47 @@ export class AuthorizationRepository extends Repository {
     return new Set(result.rows.map((row) => row.permission_code));
   }
 
+  /**
+   * The scopes the CALLER themselves hold, at full granularity, from their own
+   * active grants. This is the authoritative input to scope containment
+   * (P1-14 grant-scope remediation): unlike the flattened company/branch sets in
+   * the request context, it preserves whether the caller holds a whole company
+   * or only a branch within it. `iam.current_user_id()` is the server-set actor;
+   * no client value is trusted. RLS (`sel_role_grants_tenant` /
+   * `sel_grant_scopes_tenant`) keeps this within the caller's tenant.
+   */
+  async heldScopesOfCaller(db: DbHandle): Promise<
+    ReadonlyArray<{
+      scopeType: 'company' | 'branch' | 'department';
+      companyId: string;
+      branchId: string | null;
+      departmentId: string | null;
+    }>
+  > {
+    const result = await this.run<{
+      scope_type: 'company' | 'branch' | 'department';
+      company_id: string;
+      branch_id: string | null;
+      department_id: string | null;
+    }>(
+      db,
+      `SELECT DISTINCT s.scope_type, s.company_id, s.branch_id, s.department_id
+         FROM iam.role_grants g
+         JOIN iam.grant_scopes s
+           ON s.tenant_id = g.tenant_id AND s.grant_id = g.id
+        WHERE g.user_id = iam.current_user_id()
+          AND g.status = 'active'
+          AND g.valid_from <= now()
+          AND (g.valid_to IS NULL OR g.valid_to > now())`
+    );
+    return result.rows.map((row) => ({
+      scopeType: row.scope_type,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      departmentId: row.department_id,
+    }));
+  }
+
   // ---- Roles -------------------------------------------------------------
 
   async findRoleById(db: DbHandle, roleId: string): Promise<RoleRow | null> {
@@ -341,18 +382,15 @@ export class AuthorizationRepository extends Repository {
     expectedVersion: number,
     effect: 'allow' | 'deny'
   ): Promise<number> {
+    // `updated_by` (and record_version) are trigger-stamped; the runtime role has
+    // column UPDATE on `effect` only, so setting `updated_by` here is refused. See
+    // P1-14-R-007.
     const result = await this.run(
       db,
       `UPDATE iam.role_permissions
-          SET effect = $4, updated_by = $5
+          SET effect = $4
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3`,
-      [
-        db.context.principal.tenantId,
-        mappingId,
-        expectedVersion,
-        effect,
-        db.context.principal.userId,
-      ]
+      [db.context.principal.tenantId, mappingId, expectedVersion, effect]
     );
     return result.rowCount ?? 0;
   }
@@ -461,10 +499,12 @@ export class AuthorizationRepository extends Repository {
   ): Promise<number> {
     const result = await this.run(
       db,
+      // `updated_by` is trigger-stamped (column not granted to the runtime role);
+      // see P1-14-R-007.
       `UPDATE iam.role_grants
-          SET status = 'revoked', revoked_at = now(), revoke_reason = $4, updated_by = $5
+          SET status = 'revoked', revoked_at = now(), revoke_reason = $4
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3 AND status = 'active'`,
-      [db.context.principal.tenantId, grantId, expectedVersion, reason, db.context.principal.userId]
+      [db.context.principal.tenantId, grantId, expectedVersion, reason]
     );
     return result.rowCount ?? 0;
   }
@@ -667,18 +707,14 @@ export class AuthorizationRepository extends Repository {
     expectedVersion: number,
     effectiveTo: string
   ): Promise<number> {
+    // `updated_by` is trigger-stamped; the runtime role has column UPDATE on
+    // `effective_to` only, so setting it here is refused. See P1-14-R-007.
     const result = await this.run(
       db,
       `UPDATE iam.approval_limits
-          SET effective_to = $4::date, updated_by = $5
+          SET effective_to = $4::date
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3`,
-      [
-        db.context.principal.tenantId,
-        limitId,
-        expectedVersion,
-        effectiveTo,
-        db.context.principal.userId,
-      ]
+      [db.context.principal.tenantId, limitId, expectedVersion, effectiveTo]
     );
     return result.rowCount ?? 0;
   }

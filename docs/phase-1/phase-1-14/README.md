@@ -15,8 +15,14 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 ## Status
 
-**The feature implementation is complete and awaiting review. The owner gate is not open and no
-gate record exists.**
+**The feature implementation was merged (PR #55), the owner-gate review did NOT pass, and a
+governed remediation is in progress on `fix/p1-14-grant-scope-and-operation-evidence`.** The gate
+found one **confirmed High** (unrestricted-grant scope-containment bypass) and the absence of
+application-layer operation evidence; the remediation fixes both at the application and database
+layers, fixes a second High surfaced in the process (P1-14-R-007), adds an operation-to-test coverage
+gate, and creates the owner-gate record (in **Pending**) that was missing from the feature delivery.
+See the [grant-scope remediation record](phase-1-14-grant-scope-remediation.md) and the
+[owner gate](phase-1-14-owner-gate.md).
 
 The phase began with a read-only precondition verification, which found one blocking database
 capability gap. Per the phase's database rule that gap was raised as a controlled change

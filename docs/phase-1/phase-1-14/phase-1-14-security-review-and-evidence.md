@@ -25,6 +25,20 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 **No unresolved Critical or High finding exists in this implementation.**
 
+> **Post-gate update (2026-07-22).** The P1-14 owner-gate review found two blockers the six findings
+> above did not: a **confirmed High** unrestricted-grant scope-containment bypass, and the absence of
+> operation-layer test evidence. Both are remediated on branch
+> `fix/p1-14-grant-scope-and-operation-evidence`; the remediation also surfaced and fixed **P1-14-R-007**
+> (High) — five IAM UPDATE statements set `updated_by`, a column the runtime role cannot write, so
+> session revocation, grant revocation, role-permission changes and approval-limit ending were
+> non-functional at runtime. Full account:
+> [phase-1-14-grant-scope-remediation.md](phase-1-14-grant-scope-remediation.md).
+
+| ID                | Severity | Finding                                                                                                                              | Disposition                                                                                                                                                           |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-14-R-GATE-HIGH | High     | `issueGrant` skipped scope containment for an empty scope list; `ins_role_grants_delegable` is scope-blind (`iam.has_permission`)    | **Fixed** at both layers — `assertUnrestrictedDelegationAllowed` + granular `scopeCovers`, and migration 116 deferred constraint triggers. 20 DB + 16 service proofs. |
+| P1-14-R-007       | High     | Five IAM UPDATEs set `updated_by`, outside `app_runtime`'s column grant — session/grant/role-permission/approval writes failed 42501 | **Fixed** — the `touch_row_metadata` trigger stamps `updated_by`; the explicit set removed. Proven by the revocation/stale-version service tests.                     |
+
 ## 2. Attack surface reviewed
 
 Each row states what was reviewed and where the control lives. "Tested" means a named test asserts it.
