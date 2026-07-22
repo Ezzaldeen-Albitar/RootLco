@@ -337,42 +337,64 @@ export class AuthenticationService extends ApplicationService {
    * rows (the policy's `USING` excludes it) and that is treated as success. A
    * logout that failed the second time would be a defect, not a control.
    */
-  async logout(db: DbHandle, accessToken: string): Promise<void> {
-    // The session reference is read back out of the token the caller presented,
-    // so a caller cannot log another principal's session out by naming it: the
-    // only session they can reach is the one they hold a token for, and the
-    // revoke statement is additionally scoped to their tenant.
-    let sessionRef: string | null = null;
+  async logout(accessToken: string, meta: RequestMetadata): Promise<void> {
+    // Holding the token is the only authority needed to end the session that
+    // token belongs to (finding P1-14-R-001). Requiring a *permission* to log
+    // out meant a principal holding no administrative grant — a technician, say
+    // — could not end their own session, which is the wrong direction to fail:
+    // the inability to sign out is a security problem, not a usability one.
+    //
+    // Nothing here is trusted from the caller beyond the token itself. The
+    // tenant and subject come from the verified token, the account must exist
+    // and match, and the revoke statement is scoped to that tenant and to the
+    // session reference the token carries — so a caller cannot end anyone
+    // else's session, and cannot end one in another tenant.
+    let verified;
     try {
-      sessionRef = (await this.provider.verifyToken(accessToken)).sessionRef;
+      verified = await this.provider.verifyToken(accessToken);
     } catch {
-      // An unverifiable token cannot identify a session. The provider call below
-      // is still attempted, and the request still succeeds: logout is idempotent
-      // and must not fail for a caller who is already logged out.
+      // An unusable token identifies no session. Logout is idempotent and must
+      // succeed for a caller who is already signed out.
+      return;
     }
+    if (!verified.tenantId || !verified.sessionRef) return;
 
-    if (sessionRef) {
-      await this.identities.revokeSessionByRef(db, sessionRef, 'Signed out by the account holder.');
+    const context = this.bootstrapContext(verified.tenantId, meta.correlationId, 'iam.auth.logout');
+
+    await withTransaction(context, async (db) => {
+      await db.query("SELECT set_config('app.user_id', '', true)");
+      const account = await this.identities.findByProviderSubject(
+        db,
+        this.provider.name,
+        verified.subject
+      );
+      if (!account) return;
+
+      await db.query("SELECT set_config('app.user_id', $1, true)", [account.id]);
+      await this.identities.revokeSessionByRef(
+        db,
+        verified.sessionRef as string,
+        'Signed out by the account holder.'
+      );
       await this.identities.appendLoginAudit(db, {
-        userId: db.context.principal.userId,
+        userId: account.id,
         eventType: 'logout',
-        ipHash: null,
-        userAgentHash: null,
+        ipHash: pseudonymise(meta.clientIp),
+        userAgentHash: pseudonymise(meta.userAgent),
         detail: null,
       });
-    }
+    });
+
     try {
       await this.provider.revokeSession(accessToken);
     } catch (error) {
-      // The RootLco session is already revoked, which is what makes the token
-      // useless here. A provider that cannot be reached must not turn a
+      // The RootLco session row is already revoked, which is what makes the
+      // token useless here. A provider that cannot be reached must not turn a
       // successful logout into a failure the caller is tempted to retry.
       log.warn('Provider session revocation failed after local revocation', {
         module: 'iam',
         operation: 'iam.auth.logout',
-        correlationId: db.context.correlationId,
-        tenantRef: db.context.principal.tenantId,
-        actorRef: db.context.principal.userId,
+        correlationId: meta.correlationId,
         result: 'failure',
         context: { reason: error instanceof ProviderFailure ? error.reason : 'unknown' },
       });

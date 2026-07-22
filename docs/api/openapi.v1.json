@@ -171,18 +171,14 @@
     "/api/v1/auth/logout": {
       "post": {
         "operationId": "iam.auth-logout",
-        "summary": "End the current session.",
+        "summary": "End the session the presented bearer token belongs to.",
         "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
           }
         ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
+        "security": [],
         "responses": {
           "200": {
             "description": "Success.",
@@ -199,12 +195,6 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
           "422": {
             "$ref": "#/components/responses/Problem"
           },
@@ -215,10 +205,10 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.read"],
+        "x-required-permissions": [],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-command",
+        "x-rate-limit-policy": "auth-adjacent",
         "x-cache-category": "never"
       }
     },
