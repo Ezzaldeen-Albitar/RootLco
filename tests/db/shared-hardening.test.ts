@@ -189,6 +189,18 @@ describe('module security posture', () => {
     // DBCR-P1-13-001 added the four audit-append routines. It deliberately did
     // NOT add iam.audit_verify_chain (a forensic routine) or any outbox worker
     // routine — producing an event and draining the queue stay separate powers.
+    //
+    // DBCR-P1-14-001 added exactly one more: iam.change_user_status, the
+    // validated account-lifecycle transition. It is SECURITY INVOKER, so the
+    // EXECUTE grant confers nothing by itself — the caller still needs the
+    // underlying table privileges and must still satisfy every policy.
+    // iam.audit_verify_chain remains withheld.
+    //
+    // The P1-14 grant-scope remediation (migration 20260727090000) added one more:
+    // iam.grant_delegation_within_authority, the SECURITY-INVOKER predicate the
+    // deferred scope-containment constraint trigger calls. Its trigger-body
+    // companion iam.enforce_grant_delegation_within_authority is NOT granted (a
+    // constraint trigger fires without the caller holding EXECUTE on its function).
     const { rows } = await admin.query(
       `SELECT n.nspname || '.' || p.proname AS routine
        FROM pg_proc p
@@ -204,10 +216,12 @@ describe('module security posture', () => {
       'iam.audit_canonical',
       'iam.audit_hash',
       'iam.audit_mask',
+      'iam.change_user_status',
       'iam.current_branch_ids',
       'iam.current_company_ids',
       'iam.current_tenant_id',
       'iam.current_user_id',
+      'iam.grant_delegation_within_authority',
       'iam.has_permission',
       'iam.has_permission_in_scope',
       'shared.document_deletion_eligibility',

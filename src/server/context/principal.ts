@@ -31,6 +31,23 @@ export interface PrincipalClaims {
   readonly providerSubject: string;
   /** Tenant the session was issued for. Verified against the account row. */
   readonly tenantId: string;
+  /**
+   * Server-side session reference (`iam.user_sessions.session_ref`), added by
+   * Phase 1-14.
+   *
+   * A verified provider token proves the token has not expired; it cannot prove
+   * the session behind it is still live, because revocation happens in RootLco
+   * and a token already issued is unaware of it. When this is present,
+   * `resolveRequestContext()` reads the session row and denies a revoked, hard
+   * expired, or idle-timed-out session — which is what makes revocation
+   * immediate rather than effective at token expiry.
+   *
+   * Optional only so that Phase 1-13's `StaticClaimsAuthenticator` fixtures keep
+   * working. Every real authenticator sets it; a claim set without it can only
+   * come from a test double, and the sessionless path performs no session check
+   * because there is no session to check.
+   */
+  readonly sessionRef?: string | null;
 }
 
 /** Resolves claims from an inbound request, or null when unauthenticated. */

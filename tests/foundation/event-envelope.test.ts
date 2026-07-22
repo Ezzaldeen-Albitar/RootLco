@@ -157,9 +157,48 @@ describe('reserved-name registry', () => {
       expect(entry.schemaVersion).toBeGreaterThanOrEqual(1);
       expect(entry.owner.length).toBeGreaterThan(0);
       expect(entry.description.length).toBeGreaterThan(0);
-      // P1-13 reserves names only; nothing claims an implementation yet.
-      expect(entry.implementedIn).toBeNull();
+      // `implementedIn` is either null (reserved only) or a phase identifier.
+      // P1-13 asserted "always null", which was true while nothing published;
+      // the rule the catalog actually states is that the field is set in the
+      // same change that adds a producer, never before. Asserting the rule keeps
+      // the control after P1-14 started publishing, where "always null" would
+      // have had to be deleted.
+      if (entry.implementedIn !== null) {
+        expect(entry.implementedIn).toMatch(/^P1-\d{2}$/);
+      }
     }
+  });
+
+  it('marks exactly the events P1-14 publishes as implemented, and no others', () => {
+    // A name is not "implemented" because someone hopes to publish it. This is
+    // the list with a real producer in `src/modules/iam`; anything else claiming
+    // an implementation is a documentation defect, not a feature.
+    const implemented = EVENT_CATALOG.filter((entry) => entry.implementedIn !== null).map(
+      (entry) => entry.eventType
+    );
+    expect(implemented.sort()).toEqual([
+      'access.grant.changed',
+      'session.revoked',
+      'user.invited',
+      'user.status.changed',
+    ]);
+    for (const entry of EVENT_CATALOG) {
+      if (implemented.includes(entry.eventType)) {
+        expect(entry.implementedIn).toBe('P1-14');
+        expect(entry.owner).toBe('iam');
+      }
+    }
+  });
+
+  it('refuses a producer from a module that does not own the event', () => {
+    // The catalog's `owner` column is enforced, not documentary: two modules
+    // publishing one name would make the name's meaning ambiguous.
+    expect(() =>
+      buildEventEnvelope({ ...VALID, eventType: 'access.grant.changed', producer: 'crm' })
+    ).toThrow(/may not publish/);
+    expect(() =>
+      buildEventEnvelope({ ...VALID, eventType: 'access.grant.changed', producer: 'iam.whatever' })
+    ).not.toThrow();
   });
 
   it('finds a registered event and reports an unregistered one as undefined', () => {

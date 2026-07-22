@@ -21,7 +21,14 @@
  * `public: true` exists for genuinely unauthenticated endpoints (health probes).
  * It is deliberately verbose to write and is reported by the coverage check, so
  * it can never be the quiet default.
+ *
+ * P1-14 additionally checks `auditAction` against the controlled audit-action
+ * catalog (`audit-actions.ts`). Presence was never enough: two operations
+ * recording the same fact under different spellings produce an audit trail that
+ * cannot be queried completely, and the table is append-only so the divergence
+ * cannot be repaired afterwards.
  */
+import { auditActionViolation } from './audit-actions';
 
 /** Which scope the operation must resolve before the handler body runs. */
 export type ScopeRequirement = 'tenant' | 'company' | 'branch';
@@ -85,7 +92,14 @@ export class OperationRegistrationError extends Error {
 }
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
-const PATH_PATTERN = /^\/[a-z0-9\-/{}]*$/;
+/**
+ * Each segment is either a lower-case literal or a `{camelCase}` parameter.
+ *
+ * P1-13's pattern was a character class, which accepted `/a{b}c}` and rejected
+ * `{userId}` (no upper case) — fine while no route had a parameter, wrong as
+ * soon as one did. This form states the grammar instead of the alphabet.
+ */
+const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}))+$/;
 
 /**
  * Registers an operation. Throws — loudly, at import time — when the declaration
@@ -139,6 +153,14 @@ export function defineOperation(declaration: OperationDeclaration): RegisteredOp
     throw new OperationRegistrationError(
       `Operation "${declaration.id}" declares an auditAction but audit class "none".`
     );
+  }
+  const catalogViolation = auditActionViolation(
+    declaration.id,
+    auditClass,
+    declaration.auditAction
+  );
+  if (catalogViolation) {
+    throw new OperationRegistrationError(catalogViolation);
   }
 
   const routeKey = `${declaration.method} ${declaration.path}`;

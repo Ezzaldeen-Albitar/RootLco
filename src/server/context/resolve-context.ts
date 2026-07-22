@@ -18,12 +18,24 @@
  * `scope_mode = 'unrestricted'` on any active grant means tenant-wide: the
  * caller gets no company/branch narrowing, matching `iam.allowed_company_ids()`
  * semantics where an unset list means "tenant scope".
+ *
+ * ## Session state (P1-14)
+ *
+ * A verified provider token proves only that the token has not expired. It
+ * cannot prove the session is still live: revocation happens in RootLco, and a
+ * token already in the holder's hands knows nothing about it. So when the claims
+ * carry a `sessionRef`, this file also reads `iam.user_sessions` and refuses a
+ * session that is revoked, hard-expired, or idle-timed-out — in the *same*
+ * read-only transaction, using the database's clock. That is what makes
+ * revocation immediate rather than effective at token expiry, and it is why the
+ * account state and the session state are never trusted from the token.
  */
 import { AppFailure } from '../errors/app-failure';
 import type { PrincipalClaims } from './principal';
 import type { DbHandle } from '../db/transaction';
-import { withReadOnlyTransaction } from '../db/transaction';
+import { withReadOnlyTransaction, withTransaction } from '../db/transaction';
 import { buildRequestContext, type RequestContext } from './request-context';
+import { backendConfig } from '../config/backend-config';
 
 /** The scope a principal actually holds, as measured in the database. */
 export interface ResolvedScope {
@@ -134,6 +146,92 @@ export function narrowScope(
   };
 }
 
+/** What the session row says about a live session, as measured in the database. */
+interface SessionState {
+  readonly sessionId: string;
+  readonly revoked: boolean;
+  readonly hardExpired: boolean;
+  readonly idleExpired: boolean;
+  /** True when `last_seen_at` is stale enough to be worth refreshing. */
+  readonly refreshDue: boolean;
+}
+
+/**
+ * Reads the session row for a resolved principal (P1-14).
+ *
+ * Requires `app.user_id` to be set, because `sel_user_sessions_own` is scoped to
+ * `iam.current_user_id()`. The three expiry questions are answered in SQL rather
+ * than in TypeScript so they use the **database's** clock: comparing a Postgres
+ * timestamp against `Date.now()` would make the idle timeout depend on the drift
+ * between two machines, and an application server whose clock runs slow would
+ * silently extend every session.
+ */
+async function readSessionState(
+  db: DbHandle,
+  sessionRef: string,
+  idleTimeoutMinutes: number,
+  refreshAfterSeconds: number
+): Promise<SessionState | null> {
+  const result = await db.query<{
+    id: string;
+    revoked: boolean;
+    hard_expired: boolean;
+    idle_expired: boolean;
+    refresh_due: boolean;
+  }>(
+    `SELECT id,
+            revoked_at IS NOT NULL                                        AS revoked,
+            (expires_at IS NOT NULL AND expires_at <= now())              AS hard_expired,
+            (COALESCE(last_seen_at, issued_at)
+               <= now() - make_interval(mins => $2::int))                 AS idle_expired,
+            (COALESCE(last_seen_at, issued_at)
+               <= now() - make_interval(secs => $3::int))                 AS refresh_due
+       FROM iam.user_sessions
+      WHERE session_ref = $1
+      LIMIT 1`,
+    [sessionRef, idleTimeoutMinutes, refreshAfterSeconds]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    sessionId: row.id,
+    revoked: row.revoked,
+    hardExpired: row.hard_expired,
+    idleExpired: row.idle_expired,
+    refreshDue: row.refresh_due,
+  };
+}
+
+/**
+ * Records activity on a live session, in its own short transaction.
+ *
+ * Separate from the resolution transaction because that one is READ ONLY on
+ * purpose — context resolution must not be able to write — and separate from the
+ * request transaction because a request that fails or is denied still happened,
+ * and the session was still used.
+ *
+ * Throttled by `SESSION_ACTIVITY_REFRESH_SECONDS`: without a throttle this is a
+ * write on every read. Failure is swallowed deliberately — losing an activity
+ * timestamp must never convert a good request into a 500. The worst case is that
+ * the idle timeout fires early, which fails in the safe direction.
+ */
+async function touchSession(context: RequestContext, sessionId: string): Promise<void> {
+  try {
+    await withTransaction(context, async (db) => {
+      // `revoked_at IS NULL` mirrors the policy's USING clause: a session
+      // revoked between the read and this write must not be refreshed.
+      await db.query(
+        `UPDATE iam.user_sessions
+            SET last_seen_at = now()
+          WHERE id = $1 AND revoked_at IS NULL`,
+        [sessionId]
+      );
+    });
+  } catch {
+    // Intentionally silent: see the note above.
+  }
+}
+
 export interface ResolveContextInput {
   readonly claims: PrincipalClaims;
   readonly correlationId: string;
@@ -165,12 +263,30 @@ export async function resolveRequestContext(input: ResolveContextInput): Promise
     module: input.module,
   });
 
-  const resolved = await withReadOnlyTransaction(bootstrap, async (db) => {
+  const config = backendConfig();
+  const sessionRef = input.claims.sessionRef ?? null;
+
+  const { resolved, session } = await withReadOnlyTransaction(bootstrap, async (db) => {
     // Re-set user_id to empty: the bootstrap context above carries the tenant id
     // in the user slot purely to satisfy the UUID contract of the builder, and it
     // must not be mistaken for an authenticated user by any policy.
     await db.query("SELECT set_config('app.user_id', '', true)");
-    return resolveScopeFor(db, input.claims);
+    const account = await resolveScopeFor(db, input.claims);
+    if (!account || !sessionRef) return { resolved: account, session: null };
+
+    // The session row is readable only by its owner (`sel_user_sessions_own`), so
+    // the principal must be in context before it can be read. This is the first
+    // point at which the principal is known to be genuine.
+    await db.query("SELECT set_config('app.user_id', $1, true)", [account.userId]);
+    return {
+      resolved: account,
+      session: await readSessionState(
+        db,
+        sessionRef,
+        config.SESSION_IDLE_TIMEOUT_MINUTES,
+        config.SESSION_ACTIVITY_REFRESH_SECONDS
+      ),
+    };
   });
 
   if (!resolved) {
@@ -179,9 +295,18 @@ export async function resolveRequestContext(input: ResolveContextInput): Promise
     });
   }
 
+  if (sessionRef) {
+    // Uniform denial for all four cases. A response that distinguished "revoked"
+    // from "expired" from "unknown session" would tell a holder of a stolen token
+    // exactly which one they hold and whether it is worth replaying.
+    if (!session || session.revoked || session.hardExpired || session.idleExpired) {
+      throw new AppFailure('ERR-IAM-002', { message: 'Session is not active' });
+    }
+  }
+
   const narrowed = narrowScope(resolved, input.requestedScope);
 
-  return buildRequestContext({
+  const context = buildRequestContext({
     correlationId: input.correlationId,
     ...(input.causationId !== undefined ? { causationId: input.causationId } : {}),
     principal: { userId: resolved.userId, tenantId: resolved.tenantId },
@@ -190,4 +315,8 @@ export async function resolveRequestContext(input: ResolveContextInput): Promise
     operation: input.operation,
     module: input.module,
   });
+
+  if (session?.refreshDue) await touchSession(context, session.sessionId);
+
+  return context;
 }

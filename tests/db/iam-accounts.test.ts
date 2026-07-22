@@ -104,17 +104,34 @@ describe('iam.user_accounts — writes are platform-only', () => {
     );
   });
 
-  it('runtime cannot UPDATE or DELETE an account (no grant)', async () => {
+  it('runtime without iam.user.manage changes no account, and can never DELETE one', async () => {
+    // DBCR-P1-14-001 granted INSERT and a five-column UPDATE on this table, gated
+    // by `upd_user_accounts_admin` on `iam.user.manage`. ACTOR holds no grant, so
+    // the UPDATE matches no row. DELETE was deliberately NOT granted at all —
+    // identity is archived through `status`/`deleted_at`, never destroyed — so it
+    // is still refused at the privilege layer.
     const ctx = { tenantId: TENANT_A, userId: ACTOR };
-    await withRolledBackTx(runtime, ctx, (c) =>
-      expectSqlState(
-        c.query(`UPDATE iam.user_accounts SET display_name = 'hacked' WHERE id = $1`, [ACC_A1]),
-        '42501'
-      )
+    const updated = await withRolledBackTx(runtime, ctx, (c) =>
+      c.query(`UPDATE iam.user_accounts SET display_name = 'hacked' WHERE id = $1`, [ACC_A1])
     );
+    expect(updated.rowCount).toBe(0);
     await withRolledBackTx(runtime, ctx, (c) =>
       expectSqlState(c.query(`DELETE FROM iam.user_accounts WHERE id = $1`, [ACC_A1]), '42501')
     );
+  });
+
+  it('runtime holds no privilege on the identity columns, whatever it is granted', async () => {
+    // The column grant excludes identity_provider, provider_subject and tenant_id,
+    // so an administrator holding iam.user.manage still cannot re-point an account
+    // at a different external identity or move it between tenants.
+    const ctx = { tenantId: TENANT_A, userId: ACTOR };
+    for (const sql of [
+      `UPDATE iam.user_accounts SET identity_provider = 'other' WHERE id = $1`,
+      `UPDATE iam.user_accounts SET provider_subject = 'moved' WHERE id = $1`,
+      `UPDATE iam.user_accounts SET tenant_id = tenant_id WHERE id = $1`,
+    ]) {
+      await withRolledBackTx(runtime, ctx, (c) => expectSqlState(c.query(sql, [ACC_A1]), '42501'));
+    }
   });
 
   it('identity columns are immutable (even to admin)', async () => {

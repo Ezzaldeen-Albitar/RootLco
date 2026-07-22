@@ -98,7 +98,11 @@ export function decodeCursor(encoded: string, contract: OrderingContract): Curso
 /** Builds a page request from already-validated query input. */
 export function pageRequest(
   contract: OrderingContract,
-  input: { limit?: number; cursor?: string | undefined }
+  // `limit?: number | undefined` rather than `limit?: number`: under
+  // `exactOptionalPropertyTypes` those are different types, and the P1-13
+  // signature accepted an explicit `undefined` for `cursor` but not for `limit`.
+  // Callers routinely have both as `T | undefined` after validation.
+  input: { limit?: number | undefined; cursor?: string | undefined }
 ): PageRequest {
   return {
     limit: resolveLimit(input.limit),

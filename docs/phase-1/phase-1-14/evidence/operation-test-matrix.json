@@ -1,0 +1,530 @@
+{
+  "generatedFrom": "scripts/check-operation-test-coverage.mjs",
+  "counts": {
+    "registered": 39,
+    "withRequiredEvidence": 24,
+    "invocationOnly": 15
+  },
+  "operations": [
+    {
+      "id": "iam.approval-limit-create",
+      "file": "tests/backend/iam-access-administration.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial"
+      ],
+      "provided": [
+        "denial",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.approval-limit-end",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.approval-limit-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.audit-event-detail",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.audit-event-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.auth-login",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.auth-logout",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "audit",
+        "idempotency"
+      ],
+      "provided": [
+        "audit",
+        "idempotency",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.auth-password-reset",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial"
+      ],
+      "provided": [
+        "denial",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.auth-password-reset-completion",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "idempotency"
+      ],
+      "provided": [
+        "denial",
+        "idempotency",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.auth-session",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success"
+      ],
+      "provided": [
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.branch-settings-read",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.branch-settings-write",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "isolation",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.company-settings-read",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.company-settings-write",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "isolation",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.grant-issue",
+      "file": "tests/backend/iam-access-administration.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.grant-revoke",
+      "file": "tests/backend/iam-access-administration.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "stale-version"
+      ],
+      "provided": [
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.grant-scope-add",
+      "file": "tests/backend/iam-access-administration.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "isolation"
+      ],
+      "provided": [
+        "isolation",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.grant-scope-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.grant-scope-remove",
+      "file": "tests/backend/iam-access-administration.test.ts",
+      "referenced": true,
+      "required": [
+        "success"
+      ],
+      "provided": [
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.invitation-activate",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.invitation-cancel",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.invitation-create",
+      "file": "tests/backend/iam-auth-provider.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.permission-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.role-create",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.role-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.role-permission-add",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.role-permission-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.role-permission-remove",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.role-permission-update",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.role-update",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.tenant-settings-read",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.tenant-settings-update",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.user-detail",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.user-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.user-session-list",
+      "file": "tests/backend/iam-operations.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    },
+    {
+      "id": "iam.user-session-revoke-all",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox",
+        "idempotency"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "idempotency",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.user-status-change",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "audit",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "denial",
+        "outbox",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "iam.user-update",
+      "file": "tests/backend/iam-admin-writes.test.ts",
+      "referenced": true,
+      "required": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "stale-version"
+      ],
+      "provided": [
+        "audit",
+        "cross-tenant",
+        "denial",
+        "stale-version",
+        "success"
+      ],
+      "missing": []
+    },
+    {
+      "id": "meta.ping",
+      "file": "tests/backend/api-ping.test.ts",
+      "referenced": true,
+      "required": [],
+      "provided": [],
+      "missing": []
+    }
+  ]
+}

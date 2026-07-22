@@ -58,19 +58,52 @@ describe('accepted declarations', () => {
     expect(registered.permissions).toEqual([]);
   });
 
-  it('accepts an audited operation that names its audit action', () => {
+  it('accepts an audited operation that names a catalogued audit action', () => {
     const registered = defineOperation({
       ...BASE,
       id: 'iam.grant-role',
       method: 'POST',
       path: '/iam/role-grants',
-      permissions: ['iam.role.grant'],
+      permissions: ['iam.grant.manage'],
       auditClass: 'privileged',
-      auditAction: 'iam.role.granted',
+      // From the controlled catalog. P1-13's fixture used `iam.role.granted`,
+      // which was never registered anywhere — exactly the free-form-string
+      // problem the catalog now prevents.
+      auditAction: 'iam.grant.issued',
     });
 
     expect(registered.auditClass).toBe('privileged');
-    expect(registered.auditAction).toBe('iam.role.granted');
+    expect(registered.auditAction).toBe('iam.grant.issued');
+  });
+
+  it('rejects an audit action that is not in the controlled catalog', () => {
+    expect(() =>
+      defineOperation({
+        ...BASE,
+        id: 'iam.invent-action',
+        method: 'POST',
+        path: '/iam/invented',
+        permissions: ['iam.grant.manage'],
+        auditClass: 'privileged',
+        auditAction: 'iam.role.granted',
+      })
+    ).toThrow(/not in the audit-action catalog/);
+  });
+
+  it('rejects an audit action filed under the wrong class', () => {
+    // `iam.grant.revoked` is a security action. Declaring it as `privileged`
+    // would quietly change how the record is triaged.
+    expect(() =>
+      defineOperation({
+        ...BASE,
+        id: 'iam.misclassified',
+        method: 'DELETE',
+        path: '/iam/misclassified',
+        permissions: ['iam.grant.manage'],
+        auditClass: 'privileged',
+        auditAction: 'iam.grant.revoked',
+      })
+    ).toThrow(/catalog classifies that action as "security"/);
   });
 
   it('returns every registration sorted by id', () => {

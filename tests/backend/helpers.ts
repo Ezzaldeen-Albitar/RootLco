@@ -148,8 +148,17 @@ export const SUBJECT_DENIED_BY_RULE = 'fx_p1_13_denied';
 export const SUBJECT_SCOPED = 'fx_p1_13_scoped';
 export const SUBJECT_TENANT_B = 'fx_p1_13_tenant_b';
 
-/** Permission the reference endpoint declares. Not in the frozen seed set. */
-export const PING_PERMISSION = 'platform.meta.ping';
+/**
+ * Permission the reference endpoint declares.
+ *
+ * P1-13 declared `platform.meta.ping`, which is **not in the seeded catalog** —
+ * so this harness had to insert a `platform`-domain permission row of its own to
+ * make the exemplar reachable, and in doing so hid the defect it was papering
+ * over (finding PC-1). P1-14 changed the operation to `org.tenant.read`, which
+ * the seed really contains, so the fixture row is gone and the test now exercises
+ * a permission the platform actually defines.
+ */
+export const PING_PERMISSION = 'org.tenant.read';
 /** Permission used by the authorization suite. Removed by the `test.` sweep. */
 export const COMMAND_PERMISSION = 'test.p1_13.command';
 
@@ -191,12 +200,15 @@ async function seedFixtures(client: PoolClient): Promise<void> {
     ]
   );
 
+  // Only the `test.`-prefixed fixture permission is inserted. `PING_PERMISSION`
+  // is now a real seeded code and must not be re-created here: inserting a row
+  // that the seed already owns would make the suite pass against a fixture
+  // rather than against the platform catalog.
   await client.query(
     `INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
-     VALUES ($1, 'platform', 'Foundation reference probe (Phase 1-13 fixture).', 'low', $3),
-            ($2, 'test',     'Phase 1-13 authorization fixture.',                'low', $3)
+     VALUES ($1, 'test', 'Phase 1-13 authorization fixture.', 'low', $2)
      ON CONFLICT (permission_code) DO NOTHING`,
-    [PING_PERMISSION, COMMAND_PERMISSION, USER_A]
+    [COMMAND_PERMISSION, USER_A]
   );
 
   await client.query(
@@ -298,15 +310,16 @@ export async function ensureBackendFixtures(admin: Pool): Promise<void> {
 }
 
 /**
- * Removes every fixture row. `cleanFixtures` covers the tenant cascade and the
- * `fx_`/`test.` prefixed platform rows; the reference endpoint's permission code
- * is not prefixed (it must match the operation declaration exactly), so it is
- * removed here — after the tenant cascade has dropped the mappings that
- * reference it.
+ * Removes every fixture row.
+ *
+ * `cleanFixtures` covers the tenant cascade and the `fx_`/`test.` prefixed
+ * platform rows, which is now everything this harness creates. It deliberately
+ * does **not** delete `PING_PERMISSION` any more: that code belongs to the
+ * seeded catalog, and removing it would leave the database missing a governed
+ * reference row — which `validate:seed-state` would then, correctly, fail on.
  */
 export async function cleanBackendFixtures(admin: Pool): Promise<void> {
   await cleanFixtures(admin);
-  await admin.query('DELETE FROM iam.permissions WHERE permission_code = $1', [PING_PERMISSION]);
 }
 
 /** Builds a frozen request context for a suite. Never used outside tests. */
