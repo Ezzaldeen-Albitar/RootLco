@@ -28,6 +28,19 @@
 import { DomainService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 
+/**
+ * One scope the actor actually holds, at full granularity. Read server-side
+ * from the actor's active grants; never client-supplied. A `company` held scope
+ * has only `companyId`; a `branch` scope has `companyId` + `branchId`; a
+ * `department` scope has all three.
+ */
+export interface HeldScope {
+  readonly scopeType: 'company' | 'branch' | 'department';
+  readonly companyId: string;
+  readonly branchId?: string | null;
+  readonly departmentId?: string | null;
+}
+
 export interface GrantFacts {
   /** The administrator performing the action. */
   readonly actorUserId: string;
@@ -39,6 +52,12 @@ export interface GrantFacts {
   readonly actorCompanyIds: ReadonlySet<string>;
   /** Branches the actor may act in. Empty when unrestricted. */
   readonly actorBranchIds: ReadonlySet<string>;
+  /**
+   * The actor's held scopes at full granularity — the authoritative input to
+   * scope containment. Empty when unrestricted (the whole tenant is covered by
+   * {@link GrantFacts.actorUnrestricted}).
+   */
+  readonly actorScopes: readonly HeldScope[];
 }
 
 export interface ScopeRequest {
@@ -46,6 +65,36 @@ export interface ScopeRequest {
   readonly companyId: string;
   readonly branchId?: string | null;
   readonly departmentId?: string | null;
+}
+
+/**
+ * True when the actor's `held` scope covers the requested `scope`.
+ *
+ * Coverage is hierarchical: holding a company covers its branches and
+ * departments; holding a branch covers its departments; holding a department
+ * covers only itself. A held scope never covers something broader than itself
+ * (a branch does not cover its company).
+ */
+function scopeCovers(held: HeldScope, scope: ScopeRequest): boolean {
+  if (held.companyId !== scope.companyId) return false;
+  switch (held.scopeType) {
+    case 'company':
+      // The whole company — covers a company/branch/department request in it.
+      return true;
+    case 'branch':
+      // Covers the same branch or a department within it; not the company.
+      return scope.branchId != null && held.branchId === scope.branchId;
+    case 'department':
+      // Covers only the exact department.
+      return (
+        scope.branchId != null &&
+        held.branchId === scope.branchId &&
+        scope.departmentId != null &&
+        held.departmentId === scope.departmentId
+      );
+    default:
+      return false;
+  }
 }
 
 export class DelegationPolicy extends DomainService {
@@ -92,29 +141,60 @@ export class DelegationPolicy extends DomainService {
   }
 
   /**
-   * Refuses a scope the actor does not hold.
+   * Refuses an **unrestricted** (tenant-wide) delegation by a scoped actor.
    *
-   * An unrestricted actor holds the whole tenant and narrows to nothing, which
-   * is why `actorCompanyIds` being empty means "everything" for them and
-   * "nothing" for everyone else. Getting that backwards is how a scoped
-   * administrator silently becomes tenant-wide.
+   * This is the control the P1-14 gate found missing (confirmed High): an empty
+   * requested scope list is a request for a tenant-wide grant, NOT "nothing to
+   * validate". Only an actor who themselves hold tenant-wide authority may issue
+   * one. A company- or branch-scoped administrator must be refused here, before
+   * a scope-less grant is written — otherwise the broadest possible delegation
+   * would be the one delegation nobody checked.
+   *
+   * `actorUnrestricted` is derived server-side from the caller's own resolved
+   * grants (`iam.role_grants` / `iam.grant_scopes`), never from client input.
+   * The database backstop (`iam.enforce_grant_delegation_within_authority`,
+   * migration 20260727090000) refuses the same insert independently, so a defect
+   * here cannot produce an escalation.
+   */
+  assertUnrestrictedDelegationAllowed(facts: GrantFacts): void {
+    if (!facts.actorUnrestricted) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'A scoped administrator may not issue an unrestricted (tenant-wide) grant; ' +
+          'specify the companies or branches the grant applies to',
+      });
+    }
+  }
+
+  /**
+   * Refuses a scope the actor does not hold, at the actor's own granularity.
+   *
+   * The rule is containment, not mere membership: a requested scope is within
+   * authority only if the actor holds a scope that *covers* it.
+   *
+   *  - An unrestricted actor covers everything in the tenant.
+   *  - A **company**-level authority (a `company` scope the actor holds) covers
+   *    that company and every branch/department beneath it.
+   *  - A **branch**-level authority covers that branch and its departments, but
+   *    NOT the whole company — so a branch-scoped administrator cannot delegate
+   *    a company-wide grant (requirement: branch authority ⇏ company-wide).
+   *  - A **department**-level authority covers only that department.
+   *
+   * The flattened `actorCompanyIds` set alone cannot express this, because a
+   * branch scope carries its parent company into that set; membership there does
+   * NOT mean the actor holds the whole company. Containment is therefore decided
+   * from the actor's held scopes at full granularity (`actorScopes`), and the
+   * same rule is enforced independently in the database backstop.
    */
   assertScopeWithinAuthority(facts: GrantFacts, scope: ScopeRequest): void {
     if (facts.actorUnrestricted) return;
 
-    if (!facts.actorCompanyIds.has(scope.companyId)) {
-      // Uniform denial: never states whether the company exists.
+    const covered = facts.actorScopes.some((held) => scopeCovers(held, scope));
+    if (!covered) {
+      // Uniform denial: never states whether the company or branch exists, nor
+      // which of the actor's scopes would have been required.
       throw new AppFailure('ERR-IAM-001', {
-        message: 'Requested company is outside the administrator granted scope',
-      });
-    }
-    if (
-      scope.branchId &&
-      facts.actorBranchIds.size > 0 &&
-      !facts.actorBranchIds.has(scope.branchId)
-    ) {
-      throw new AppFailure('ERR-IAM-001', {
-        message: 'Requested branch is outside the administrator granted scope',
+        message: 'Requested scope is outside the administrator granted authority',
       });
     }
   }

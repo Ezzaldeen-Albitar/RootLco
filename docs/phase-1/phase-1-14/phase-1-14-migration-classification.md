@@ -11,11 +11,14 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 ## 1. Migrations added by Phase 1-14
 
-| Migration                                                        | Class                              | Rollback          | Change request                                                                                               |
-| ---------------------------------------------------------------- | ---------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| `20260726090000_iam_org_runtime_administration_capabilities.sql` | **Security** (grants and policies) | **ROLLBACK-SAFE** | [DBCR-P1-14-001](../../database/change-requests/DBCR-P1-14-001-runtime-administration-write-capabilities.md) |
+| Migration                                                        | Class                                          | Rollback          | Change request                                                                                               |
+| ---------------------------------------------------------------- | ---------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| `20260726090000_iam_org_runtime_administration_capabilities.sql` | **Security** (grants and policies)             | **ROLLBACK-SAFE** | [DBCR-P1-14-001](../../database/change-requests/DBCR-P1-14-001-runtime-administration-write-capabilities.md) |
+| `20260727090000_iam_grant_delegation_scope_backstop.sql`         | **Security** (functions + constraint triggers) | **ROLLBACK-SAFE** | P1-14 gate remediation — [remediation record](phase-1-14-grant-scope-remediation.md)                         |
 
-Migration count moves **114 → 115**. No earlier migration is modified, renamed or deleted; CI's
+Migration count moves **114 → 115 → 116**. The 116th is the grant-delegation scope-containment
+backstop added by the post-gate remediation (see §8). No earlier migration is modified, renamed or
+deleted; CI's
 "Assert applied migrations are immutable" step
 (`git diff --diff-filter=MDR origin/<base>...HEAD -- supabase/migrations/`) reports nothing.
 
@@ -94,7 +97,34 @@ against a clean rebuild. Section 6 of
 [DBCR-P1-14-001](../../database/change-requests/DBCR-P1-14-001-runtime-administration-write-capabilities.md)
 records what each group proves.
 
-## 7. Governance
+## 8. Migration 116 — grant-delegation scope-containment backstop
+
+Added by the post-gate remediation (branch `fix/p1-14-grant-scope-and-operation-evidence`) to close
+the confirmed-High unrestricted-grant scope-containment bypass at the database layer.
+
+**Security, not schema.** The migration creates two functions and two constraint triggers and grants
+one `EXECUTE`; it creates no table, column, constraint, index or sequence and modifies no existing
+object. `iam.grant_delegation_within_authority(uuid)` is `STABLE SECURITY INVOKER` with an empty
+`search_path`; **`SECURITY DEFINER` count stays 0**. The two DEFERRABLE INITIALLY DEFERRED constraint
+triggers (`tg_role_grants_delegation_authority`, `tg_grant_scopes_delegation_authority`) validate that
+a grant does not delegate authority beyond the acting `app_runtime` administrator's own scope, and
+raise SQLSTATE `42501` otherwise. A superuser or BYPASSRLS role bypasses RLS and this backstop alike,
+preserving the bootstrap boundary.
+
+**ROLLBACK-SAFE.** No data is written or destroyed. The exact inverse — 2 `DROP TRIGGER` and 2
+`DROP FUNCTION` statements — is recorded verbatim at the foot of the migration file.
+
+| Metric                           | Before (115) | After (116) | Change |
+| -------------------------------- | ------------ | ----------- | ------ |
+| Migrations                       | 115          | 116         | +1     |
+| Tables                           | 242          | 242         | none   |
+| Functions                        | 210          | 212         | +2     |
+| `SECURITY DEFINER` functions     | 0            | 0           | none   |
+| Non-internal triggers            | 539          | 541         | +2     |
+| RLS policies                     | 615          | 615         | none   |
+| Relations owned by `app_*` roles | 0            | 0           | none   |
+
+## 9. Governance
 
 Nothing reached protected develop outside the approved pull-request and hosted-CI flow. The
 work was reviewed under the Standing Technical Authorization and Solo Developer Review

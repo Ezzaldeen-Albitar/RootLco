@@ -322,24 +322,29 @@ export class IdentityRepository extends Repository {
    * idempotent.
    */
   async revokeSessionByRef(db: DbHandle, sessionRef: string, reason: string): Promise<number> {
+    // `updated_by` is set by the tg_user_sessions_touch_metadata trigger
+    // (shared.touch_row_metadata → iam.current_user_id()); the runtime role holds
+    // no column privilege on `updated_by`, so setting it explicitly here would be
+    // refused. See P1-14-R-007.
     const result = await this.run(
       db,
       `UPDATE iam.user_sessions
-          SET revoked_at = now(), revoke_reason = $3, updated_by = $4
+          SET revoked_at = now(), revoke_reason = $3
         WHERE tenant_id = $1 AND session_ref = $2 AND revoked_at IS NULL`,
-      [db.context.principal.tenantId, sessionRef, reason, db.context.principal.userId]
+      [db.context.principal.tenantId, sessionRef, reason]
     );
     return result.rowCount ?? 0;
   }
 
   /** Revokes every live session of a user. Privileged; requires `iam.user.manage`. */
   async revokeAllSessionsFor(db: DbHandle, userId: string, reason: string): Promise<number> {
+    // `updated_by` is trigger-stamped; see revokeSessionByRef and P1-14-R-007.
     const result = await this.run(
       db,
       `UPDATE iam.user_sessions
-          SET revoked_at = now(), revoke_reason = $3, updated_by = $4
+          SET revoked_at = now(), revoke_reason = $3
         WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-      [db.context.principal.tenantId, userId, reason, db.context.principal.userId]
+      [db.context.principal.tenantId, userId, reason]
     );
     return result.rowCount ?? 0;
   }

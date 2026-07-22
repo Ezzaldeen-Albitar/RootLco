@@ -11,6 +11,11 @@
  * a truncated signature, a missing `exp`, an issuer or audience from somewhere
  * else — and they assert the verifier's *uniform* refusal, because a verifier
  * that says which check failed is an oracle for iterating on a forged token.
+ *
+ * Operation decision-logic proven here at UNIT depth (coverage-gate references;
+ * wired-service integration for these is a tracked residual, R-8):
+ *   iam.auth-login  iam.auth-logout  iam.auth-session  iam.auth-password-reset
+ *   iam.auth-password-reset-completion  iam.invitation-activate
  */
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
@@ -348,12 +353,20 @@ describe('delegation and escalation rules', () => {
   const COMPANY = '44444444-4444-4444-8444-444444444444';
   const BRANCH = '55555555-5555-4555-8555-555555555555';
 
+  const OTHER_COMPANY = '66666666-6666-4666-8666-666666666666';
+  const OTHER_BRANCH = '77777777-7777-4777-8777-777777777777';
+  const DEPARTMENT = '88888888-8888-4888-8888-888888888888';
+
+  // Default actor: a BRANCH-scoped administrator (holds branch BRANCH of company
+  // COMPANY). The branch's parent company appears in actorCompanyIds — which is
+  // exactly why membership there must NOT grant company-wide authority.
   const facts = (over: Partial<Parameters<typeof policy.assertDelegable>[0]> = {}) => ({
     actorUserId: ACTOR,
     actorPermissions: new Set(['iam.user.manage']),
     actorUnrestricted: false,
     actorCompanyIds: new Set([COMPANY]),
     actorBranchIds: new Set([BRANCH]),
+    actorScopes: [{ scopeType: 'branch' as const, companyId: COMPANY, branchId: BRANCH }],
     ...over,
   });
 
@@ -376,15 +389,129 @@ describe('delegation and escalation rules', () => {
   });
 
   it('treats an empty held-scope set as "everything" only for an unrestricted actor', () => {
-    const scoped = facts({ actorCompanyIds: new Set<string>(), actorUnrestricted: false });
+    const scoped = facts({
+      actorCompanyIds: new Set<string>(),
+      actorUnrestricted: false,
+      actorScopes: [],
+    });
     expect(() =>
       policy.assertScopeWithinAuthority(scoped, { scopeType: 'company', companyId: COMPANY })
-    ).toThrow(/outside the administrator granted scope/);
+    ).toThrow(/outside the administrator granted authority/);
 
     const unrestricted = facts({ actorCompanyIds: new Set<string>(), actorUnrestricted: true });
     expect(() =>
       policy.assertScopeWithinAuthority(unrestricted, { scopeType: 'company', companyId: COMPANY })
     ).not.toThrow();
+  });
+
+  it('refuses an unrestricted (tenant-wide) delegation by a scoped actor (confirmed-High fix)', () => {
+    // The whole point of the remediation: an empty scope list is a tenant-wide
+    // grant, and a scoped administrator may not issue one.
+    expect(() => policy.assertUnrestrictedDelegationAllowed(facts())).toThrow(
+      /may not issue an unrestricted/
+    );
+    const unrestricted = facts({ actorUnrestricted: true });
+    expect(() => policy.assertUnrestrictedDelegationAllowed(unrestricted)).not.toThrow();
+  });
+
+  it('a branch-scoped actor cannot delegate a company-wide scope', () => {
+    // The branch's company is in actorCompanyIds, but holding a branch is not
+    // holding the company: a company-wide request must be refused.
+    expect(() =>
+      policy.assertScopeWithinAuthority(facts(), { scopeType: 'company', companyId: COMPANY })
+    ).toThrow(/outside the administrator granted authority/);
+  });
+
+  it('a branch-scoped actor may delegate its own branch and a department within it', () => {
+    expect(() =>
+      policy.assertScopeWithinAuthority(facts(), {
+        scopeType: 'branch',
+        companyId: COMPANY,
+        branchId: BRANCH,
+      })
+    ).not.toThrow();
+    expect(() =>
+      policy.assertScopeWithinAuthority(facts(), {
+        scopeType: 'department',
+        companyId: COMPANY,
+        branchId: BRANCH,
+        departmentId: DEPARTMENT,
+      })
+    ).not.toThrow();
+  });
+
+  it('a branch-scoped actor cannot delegate another branch or another company', () => {
+    expect(() =>
+      policy.assertScopeWithinAuthority(facts(), {
+        scopeType: 'branch',
+        companyId: COMPANY,
+        branchId: OTHER_BRANCH,
+      })
+    ).toThrow(/outside the administrator granted authority/);
+    expect(() =>
+      policy.assertScopeWithinAuthority(facts(), {
+        scopeType: 'company',
+        companyId: OTHER_COMPANY,
+      })
+    ).toThrow(/outside the administrator granted authority/);
+  });
+
+  it('a company-scoped actor covers its company, branches and departments, but not another company', () => {
+    const companyScoped = facts({
+      actorBranchIds: new Set<string>(),
+      actorScopes: [{ scopeType: 'company' as const, companyId: COMPANY }],
+    });
+    for (const scope of [
+      { scopeType: 'company' as const, companyId: COMPANY },
+      { scopeType: 'branch' as const, companyId: COMPANY, branchId: BRANCH },
+      {
+        scopeType: 'department' as const,
+        companyId: COMPANY,
+        branchId: BRANCH,
+        departmentId: DEPARTMENT,
+      },
+    ]) {
+      expect(() => policy.assertScopeWithinAuthority(companyScoped, scope)).not.toThrow();
+    }
+    expect(() =>
+      policy.assertScopeWithinAuthority(companyScoped, {
+        scopeType: 'company',
+        companyId: OTHER_COMPANY,
+      })
+    ).toThrow(/outside the administrator granted authority/);
+  });
+
+  it('a department-scoped actor covers only that exact department', () => {
+    const deptScoped = facts({
+      actorBranchIds: new Set<string>(),
+      actorScopes: [
+        {
+          scopeType: 'department' as const,
+          companyId: COMPANY,
+          branchId: BRANCH,
+          departmentId: DEPARTMENT,
+        },
+      ],
+    });
+    expect(() =>
+      policy.assertScopeWithinAuthority(deptScoped, {
+        scopeType: 'department',
+        companyId: COMPANY,
+        branchId: BRANCH,
+        departmentId: DEPARTMENT,
+      })
+    ).not.toThrow();
+    // Cannot widen to the branch or company that contains the department.
+    expect(() =>
+      policy.assertScopeWithinAuthority(deptScoped, {
+        scopeType: 'branch',
+        companyId: COMPANY,
+        branchId: BRANCH,
+      })
+    ).toThrow(/outside the administrator granted authority/);
+    expect(() =>
+      policy.assertScopeWithinAuthority(deptScoped, { scopeType: 'company', companyId: COMPANY })
+    ).toThrow(/outside the administrator granted authority/);
   });
 
   it('enforces the shape each scope type requires', () => {

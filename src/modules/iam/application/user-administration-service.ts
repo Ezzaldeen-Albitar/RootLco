@@ -31,7 +31,7 @@ import { publishEvent } from '@/server/events/publisher';
 import { IdentityRepository, USER_ORDERING, type AccountRow } from '../data/identity-repository';
 import { AuthorizationRepository } from '../data/authorization-repository';
 import { IdentityPolicy, type AccountState } from '../domain/identity-policy';
-import { DelegationPolicy } from '../domain/delegation-policy';
+import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import type { IdentityProvider } from '../provider/identity-provider';
 
 /** What a user record looks like on the wire. */
@@ -340,7 +340,7 @@ export class UserAdministrationService extends ApplicationService {
     return account;
   }
 
-  private async delegationFacts(db: DbHandle) {
+  private async delegationFacts(db: DbHandle): Promise<GrantFacts> {
     const context = this.contextOf(db);
     return {
       actorUserId: context.principal.userId,
@@ -348,6 +348,7 @@ export class UserAdministrationService extends ApplicationService {
       actorUnrestricted: context.companyIds.length === 0 && context.branchIds.length === 0,
       actorCompanyIds: new Set(context.companyIds),
       actorBranchIds: new Set(context.branchIds),
+      actorScopes: await this.authorization.heldScopesOfCaller(db),
     };
   }
 }
