@@ -28,6 +28,8 @@
  * The admin connection provisions fixtures and reads back. It carries BYPASSRLS
  * and is never evidence about runtime behaviour.
  */
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Client, Pool } from 'pg';
 import {
@@ -267,11 +269,18 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('migration 117 is applied and the count is exactly 117', async () => {
-    const { rows } = await admin.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM supabase_migrations.schema_migrations`
-    );
-    expect(Number(rows[0]?.n)).toBe(117);
+  it('the repository declares exactly 117 migrations, ending with migration 117', () => {
+    // Counted from the repository, not from `supabase_migrations.schema_migrations`:
+    // that bookkeeping table is created by the Supabase CLI and does not exist in
+    // CI, where the database is built by `npm run db:apply-migrations` against a
+    // plain postgres image. The *applied* effect of migration 117 is proven by the
+    // grant and policy inventory assertions below, which read the live catalog.
+    const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
+    const files = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    expect(files).toHaveLength(117);
+    expect(files.at(-1)).toBe('20260728090000_shared_services_runtime_write_capabilities.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {
