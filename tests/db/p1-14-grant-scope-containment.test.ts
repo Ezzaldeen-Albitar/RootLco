@@ -463,6 +463,34 @@ describe('P1-14 grant-scope containment — durability, deletion, revocation', (
     expect(left.rowCount).toBe(0);
   });
 
+  it('a scoped administrator cannot reactivate a revoked unrestricted grant (UPDATE arm)', async () => {
+    // A revoked unrestricted grant to the grantee, created by the owner.
+    const gid = 'c0000000-0000-4000-8000-00000000dead';
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (id, tenant_id, user_id, role_id, scope_mode, status, revoked_at, revoke_reason, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','revoked',now(),'offboarded',$5,$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [gid, TENANT_A, U_GRANTEE, ROLE_TARGET, SYS]
+    );
+    const client = await runtime.connect();
+    try {
+      await client.query('BEGIN');
+      await setContext(client, AS_COMPANY);
+      // upd_role_grants_admin lets the company admin update it (has grant.manage);
+      // the deferred backstop then refuses the now-active unrestricted grant.
+      await client.query(
+        `UPDATE iam.role_grants SET status='active', revoked_at=NULL, revoke_reason=NULL WHERE id=$1`,
+        [gid]
+      );
+      await expectSqlState(client.query('SET CONSTRAINTS ALL IMMEDIATE'), '42501');
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+    await admin.query(`DELETE FROM iam.role_grants WHERE id=$1`, [gid]);
+  });
+
   it('25. revoking the administrator authority removes it immediately', async () => {
     // With the company admin's own authority revoked, has_permission is false and
     // a subsequent grant attempt is refused by the delegability policy (42501).
