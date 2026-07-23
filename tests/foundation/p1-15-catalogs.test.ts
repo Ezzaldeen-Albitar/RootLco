@@ -189,6 +189,7 @@ describe('error catalog', () => {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_AUDIT_ACTIONS = [
+  'crm.customer.created',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',
@@ -442,6 +443,7 @@ describe('registered operations against the audit-action catalog', () => {
 const EXPECTED_EVENT_TYPES = [
   'access.grant.changed',
   'appointment.changed',
+  'business-partner.created',
   'business-partner.merged',
   'document.accepted',
   'document.link.changed',

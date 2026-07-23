@@ -72,6 +72,8 @@ import '@/app/api/v1/health/live/route';
 import '@/app/api/v1/health/ready/route';
 // --- Phase 1-16 CRM backend ----------------------------------------------
 import '@/app/api/v1/customers/route';
+import '@/app/api/v1/customers/individuals/route';
+import '@/app/api/v1/customers/companies/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

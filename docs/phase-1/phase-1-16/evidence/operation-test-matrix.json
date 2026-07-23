@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 1,
-    "publicApi": 1,
-    "operationDepth": 1,
+    "registered": 3,
+    "publicApi": 3,
+    "operationDepth": 3,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -11,6 +11,42 @@
     "metadataOnly": 0
   },
   "operations": [
+    {
+      "id": "crm.company-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/companies",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
     {
       "id": "crm.customer-search",
       "surface": "public-api",
@@ -23,6 +59,44 @@
       "declared": ["denial", "cross-tenant"],
       "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
       "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.individual-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/individuals",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

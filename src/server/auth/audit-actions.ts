@@ -329,6 +329,15 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An export of tenant data was authorized: resource, field set, scope, and row estimate were approved. Authorization only — P1-15 generates no file.',
   },
+
+  // ---- CRM (P1-16) --------------------------------------------------------
+  {
+    code: 'crm.customer.created',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer was created. One code covers individuals and organizations: the recorded fact is that a customer now exists, and the party type is a detail of it rather than a different event.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

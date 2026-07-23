@@ -143,6 +143,16 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'bounded allow-listed read; a tenant-B customer is unreachable (cross-tenant); an invalid cursor and an oversized query are refused (denial); safe projection only, no sensitive identifier',
   },
+  'crm.individual-create': {
+    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'partner + individual profile + audit + outbox commit in one transaction; an injected failure leaves none of the four (rollback); the created customer is invisible from tenant B (cross-tenant)',
+  },
+  'crm.company-create': {
+    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'organization counterpart; proves the party-type discriminator comes from the path, so a company profile can never attach to an individual partner',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],

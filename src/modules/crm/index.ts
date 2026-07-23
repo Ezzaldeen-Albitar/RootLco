@@ -7,10 +7,14 @@
  * or SQL.
  */
 import { composeModule } from '@/server/layering';
+import { sharedServicesModule } from '@/modules/shared-services';
 import { CustomerSearchRepository } from './data/customer-search-repository';
+import { CustomerRepository } from './data/customer-repository';
 import { CustomerSearchService } from './application/customer-search-service';
+import { CustomerCreationService } from './application/customer-creation-service';
 
 export type { CustomerSearchHit, CustomerSearchInput } from './application/customer-search-service';
+export type { CreatedCustomer } from './application/customer-creation-service';
 export {
   CUSTOMER_PARTY_TYPES,
   CUSTOMER_LIFECYCLE_STATUSES,
@@ -18,11 +22,28 @@ export {
   type CustomerPartyType,
   type CustomerLifecycleStatus,
 } from './domain/customer-search';
+export {
+  CREATABLE_LIFECYCLE_STATUSES,
+  MAX_PERSON_NAME,
+  MAX_COMPANY_NAME,
+  type CreatableLifecycleStatus,
+} from './domain/customer-creation';
 
-/** Composition root: constructs the module's services once per process. */
+/**
+ * Composition root: constructs the module's services once per process.
+ *
+ * Customer numbering is borrowed from the shared-services module through its
+ * public surface (`@/modules/shared-services`) — CRM does not own a sequence
+ * implementation, and re-implementing one would give the platform two ways to
+ * allocate a number that could drift apart.
+ */
 export const crmModule = composeModule({
   module: 'crm',
-  create: () => ({
-    customerSearch: new CustomerSearchService(new CustomerSearchRepository()),
-  }),
+  create: () => {
+    const customers = new CustomerRepository();
+    return {
+      customerSearch: new CustomerSearchService(new CustomerSearchRepository()),
+      customerCreation: new CustomerCreationService(customers, sharedServicesModule().numbers),
+    };
+  },
 });
