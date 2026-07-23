@@ -973,16 +973,44 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
-function writeMatrix(path, payload) {
+/**
+ * Writes one evidence matrix in **Prettier's** JSON shape.
+ *
+ * `JSON.stringify(x, null, 2)` always expands an array over multiple lines;
+ * Prettier collapses a short one onto a single line. That difference is
+ * invisible until CI runs this gate (which rewrites the file) *before*
+ * `format:check` (which then fails on the file the gate just produced) — a
+ * failure that cannot be reproduced by formatting the committed artifact,
+ * because the committed artifact is fine. Formatting here makes the generator's
+ * output and the formatter's expectation the same thing by construction.
+ *
+ * Prettier is resolved lazily so the gate still runs (unformatted) in a
+ * checkout without dev dependencies; the surrounding try/catch keeps a missing
+ * evidence directory non-fatal, as before.
+ */
+async function writeMatrix(path, payload) {
+  const json = JSON.stringify(payload, null, 2) + '\n';
+  let formatted = json;
+  try {
+    const prettier = await import('prettier');
+    // The repo's own .prettierrc must be resolved explicitly: a programmatic
+    // `format()` does not read it, so without this the output is formatted at
+    // Prettier's default print width and `format:check` disagrees with us
+    // about where an array fits on one line.
+    const config = (await prettier.resolveConfig(path)) ?? {};
+    formatted = await prettier.format(json, { ...config, parser: 'json', filepath: path });
+  } catch {
+    /* no prettier available: fall back to the raw shape rather than failing */
+  }
   try {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(payload, null, 2) + '\n');
+    writeFileSync(path, formatted);
   } catch {
     /* evidence dir may be absent in some checkouts; not fatal to the gate */
   }
 }
 
-function runCli() {
+async function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
@@ -1005,7 +1033,7 @@ function runCli() {
   });
 
   const generatedFrom = 'scripts/check-operation-test-coverage.mjs';
-  writeMatrix(
+  await writeMatrix(
     join(ROOT, 'docs', 'phase-1', 'phase-1-14', 'evidence', 'operation-test-matrix.json'),
     {
       generatedFrom,
@@ -1013,7 +1041,7 @@ function runCli() {
       operations: matrix,
     }
   );
-  writeMatrix(
+  await writeMatrix(
     join(ROOT, 'docs', 'phase-1', 'phase-1-15', 'evidence', 'operation-test-matrix.json'),
     {
       generatedFrom,
@@ -1021,7 +1049,7 @@ function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX)),
     }
   );
-  writeMatrix(
+  await writeMatrix(
     join(ROOT, 'docs', 'phase-1', 'phase-1-16', 'evidence', 'operation-test-matrix.json'),
     {
       generatedFrom,
@@ -1081,5 +1109,8 @@ function runCli() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  runCli();
+  runCli().catch((error) => {
+    console.error(`Operation-coverage gate failed: ${error.message}`);
+    process.exit(2);
+  });
 }
