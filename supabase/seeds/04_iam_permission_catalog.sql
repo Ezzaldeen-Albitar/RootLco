@@ -72,7 +72,8 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Phase 1-16 — CRM Backend (crm). DBCR-P1-16-001 enables runtime authorship of
   -- customer notes on shared.notes (SELECT-only before this change). One code,
   -- naming one concrete capability; the RLS write policies on shared.notes gate on it.
-  ('crm.customer.note.write',  'crm', 'Author and edit customer notes',            'medium', '00000000-0000-4000-8000-000000000001')
+  ('crm.customer.note.write',  'crm', 'Author and edit customer notes',            'medium', '00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.read',        'crm', 'Search and read customers in the tenant',   'low',    '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
