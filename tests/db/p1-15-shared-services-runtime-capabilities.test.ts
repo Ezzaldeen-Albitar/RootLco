@@ -269,7 +269,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 118 migrations, with 117 and 118 last', () => {
+  it('the repository declares exactly 119 migrations, with 118 and 119 last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -280,13 +280,15 @@ describe('P1-15 / global security posture', () => {
     // replaces two function bodies and adds no relation, grant or policy, so
     // every inventory assertion in this file is unchanged by it — which is the
     // point of asserting the count here rather than trusting the file list.
+    // 119 is DBCR-P1-16-001, which grants app_runtime a CRM-customer-scoped write
+    // surface on shared.notes; its two added policies are asserted below.
     const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(118);
-    expect(files.at(-2)).toBe('20260728090000_shared_services_runtime_write_capabilities.sql');
-    expect(files.at(-1)).toBe('20260729090000_shared_number_sequence_period_hardening.sql');
+    expect(files).toHaveLength(119);
+    expect(files.at(-2)).toBe('20260729090000_shared_number_sequence_period_hardening.sql');
+    expect(files.at(-1)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {
@@ -369,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 45', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 46', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -379,13 +381,15 @@ describe('P1-15 / global security posture', () => {
       { permission_code: 'shared.document.manage', n: '1' },
       { permission_code: 'shared.notification.send', n: '1' },
     ]);
+    // 45 platform permissions through DBCR-P1-15-001; DBCR-P1-16-001 adds the
+    // first crm code, crm.customer.note.write, taking the catalog to 46.
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    expect(Number(total.rows[0]?.n)).toBe(45);
+    expect(Number(total.rows[0]?.n)).toBe(46);
   });
 
-  it('the exact write-policy inventory of the whole shared schema is unchanged apart from migration 117', async () => {
+  it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
     const { rows } = await admin.query<{ polname: string }>(
       `SELECT p.polname FROM pg_policy p
          JOIN pg_class c ON c.oid = p.polrelid
@@ -403,12 +407,17 @@ describe('P1-15 / global security posture', () => {
       'ins_idempotency_keys_tenant',
       // --- added by migration 117 ---
       'ins_message_templates_tenant',
+      // --- added by migration 119 (DBCR-P1-16-001) ---
+      'ins_notes_crm_customer',
+      // --- added by migration 117 ---
       'ins_outbound_messages_enqueue',
       'ins_template_versions_tenant',
       'lck_template_versions_reference',
       'upd_document_links_unlink',
       'upd_document_versions_reject',
       'upd_message_templates_tenant',
+      // --- added by migration 119 (DBCR-P1-16-001) ---
+      'upd_notes_crm_customer',
       // --- pre-existing ---
       'upd_number_sequences_tenant',
       // --- added by migration 117 ---
