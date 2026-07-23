@@ -101,6 +101,12 @@ jobs:
       - name: Style lint (SCSS)
         run: npm run style:check
 
+      # This repository uses non-ASCII deliberately, which makes encoding damage
+      # both likely and hard to see: mojibake renders as plausible punctuation in
+      # a diff viewer, and a BOM is invisible until it breaks a parser.
+      - name: Encoding hygiene (BOM, U+FFFD, mojibake)
+        run: npm run validate:encoding
+
       - name: Unit tests
         run: npm run test
 
