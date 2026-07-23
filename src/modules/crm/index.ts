@@ -12,10 +12,12 @@ import { CustomerSearchRepository } from './data/customer-search-repository';
 import { CustomerRepository } from './data/customer-repository';
 import { CustomerProfileRepository } from './data/customer-profile-repository';
 import { CustomerGovernanceRepository } from './data/customer-governance-repository';
+import { CustomerIdentityRepository } from './data/customer-identity-repository';
 import { CustomerSearchService } from './application/customer-search-service';
 import { CustomerCreationService } from './application/customer-creation-service';
 import { CustomerProfileService } from './application/customer-profile-service';
 import { CustomerGovernanceService } from './application/customer-governance-service';
+import { CustomerIdentityService } from './application/customer-identity-service';
 
 export type { CustomerSearchHit, CustomerSearchInput } from './application/customer-search-service';
 export type { CreatedCustomer } from './application/customer-creation-service';
@@ -65,6 +67,24 @@ export {
   type RestrictionType,
   type SettableLifecycleState,
 } from './domain/customer-governance';
+export type {
+  MergeResult,
+  ReviewResult,
+  ScanResult,
+  VehicleLinkResult,
+} from './application/customer-identity-service';
+export {
+  CANDIDATE_THRESHOLD,
+  DUPLICATE_DECISIONS,
+  DUPLICATE_STATUSES,
+  MATCH_SIGNALS,
+  TIMELINE_EVENT_TYPES,
+  VEHICLE_RELATIONSHIP_ROLES,
+  type DuplicateDecision,
+  type DuplicateStatus,
+  type TimelineEventType,
+  type VehicleRelationshipRole,
+} from './domain/customer-identity';
 export {
   CUSTOMER_PARTY_TYPES,
   CUSTOMER_LIFECYCLE_STATUSES,
@@ -96,6 +116,7 @@ export const crmModule = composeModule({
       customerCreation: new CustomerCreationService(customers, sharedServicesModule().numbers),
       customerProfile: new CustomerProfileService(new CustomerProfileRepository()),
       customerGovernance: new CustomerGovernanceService(new CustomerGovernanceRepository()),
+      customerIdentity: new CustomerIdentityService(new CustomerIdentityRepository()),
     };
   },
 });

@@ -696,6 +696,66 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/customer-duplicates/{candidateId}/review": {
+      "post": {
+        "operationId": "crm.duplicate-review",
+        "summary": "Record a review decision on a duplicate candidate.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.duplicate.review"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/customers": {
       "get": {
         "operationId": "crm.customer-search",
@@ -984,6 +1044,180 @@
           }
         },
         "x-required-permissions": ["crm.customer.profile.write"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/customers/{customerId}/duplicate-scans": {
+      "post": {
+        "operationId": "crm.duplicate-scan",
+        "summary": "Score a customer against comparable ones and record duplicate candidates.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.duplicate.review"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/customers/{customerId}/history": {
+      "get": {
+        "operationId": "crm.customer-history",
+        "summary": "Read the governance history of a customer.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/customers/{customerId}/merge": {
+      "post": {
+        "operationId": "crm.customer-merge",
+        "summary": "Merge a duplicate customer into the surviving record.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.merge"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1284,6 +1518,120 @@
           }
         },
         "x-required-permissions": ["crm.customer.governance.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/customers/{customerId}/timeline": {
+      "get": {
+        "operationId": "crm.customer-timeline",
+        "summary": "Read the customer timeline, newest first.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/customers/{customerId}/vehicles": {
+      "post": {
+        "operationId": "crm.vehicle-link",
+        "summary": "Link a customer to a vehicle in a relationship role.",
+        "tags": ["crm"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["crm.customer.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",

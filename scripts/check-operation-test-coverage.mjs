@@ -200,6 +200,37 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
     note: 'no_service blocks the customer in the same transaction with a status transition and block-history entry; a short reason is refused before anything is written',
   },
+  // --- Identity: duplicates, merge, history, timeline, vehicle linkage. ----
+  'crm.duplicate-scan': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'deterministic weighted scoring over tenant data; a dismissed pair is not re-raised by a re-scan; no cross-tenant customer is ever compared',
+  },
+  'crm.duplicate-review': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'concurrency'],
+    note: 'only dismissed is recordable, so a reviewer cannot mark a pair merged without a merge; a second review of the same candidate is refused',
+  },
+  'crm.customer-merge': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback', 'concurrency'],
+    note: 'same-record, cross-tenant, already-merged, and merge-into-merged are all refused; merge record plus redirect plus audit plus event commit together or not at all',
+  },
+  'crm.customer-history': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'projection over four append-only sources; server-fixed ordering; bounded',
+  },
+  'crm.customer-timeline': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'keyset page with an id tie-break, so equal occurred_at values cannot skip or repeat a row across a page boundary',
+  },
+  'crm.vehicle-link': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'both sides resolved under the tenant first; a duplicate open role for the same pair is refused; creates no vehicle schema',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],

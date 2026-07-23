@@ -84,7 +84,13 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('crm.customer.governance.manage','crm','Manage customer alerts, tags, and lifecycle status','medium','00000000-0000-4000-8000-000000000001'),
   -- Restrictions get their own code: raising an alert and refusing to serve
   -- somebody are not the same authority.
-  ('crm.customer.restriction.manage','crm','Impose and lift customer restrictions','high','00000000-0000-4000-8000-000000000001')
+  ('crm.customer.restriction.manage','crm','Impose and lift customer restrictions','high','00000000-0000-4000-8000-000000000001'),
+  -- Duplicate scanning and reviewing are one authority: both are judgement
+  -- about whether two records are the same person, and neither combines them.
+  ('crm.customer.duplicate.review','crm','Scan for and review duplicate customer candidates','medium','00000000-0000-4000-8000-000000000001'),
+  -- Merge is separate and higher: it is irreversible in practice.
+  ('crm.customer.merge',       'crm', 'Merge a duplicate customer into a survivor','high',  '00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

@@ -82,7 +82,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'crm.business_partner',
     owner: 'crm',
-    implementedIn: null,
+    implementedIn: 'P1-16',
     description: 'Two business partners were merged; the survivor is the aggregate.',
   },
   {

@@ -83,6 +83,12 @@ import '@/app/api/v1/customers/[customerId]/alerts/route';
 import '@/app/api/v1/customers/[customerId]/tags/route';
 import '@/app/api/v1/customers/[customerId]/status/route';
 import '@/app/api/v1/customers/[customerId]/restrictions/route';
+import '@/app/api/v1/customers/[customerId]/duplicate-scans/route';
+import '@/app/api/v1/customer-duplicates/[candidateId]/review/route';
+import '@/app/api/v1/customers/[customerId]/merge/route';
+import '@/app/api/v1/customers/[customerId]/history/route';
+import '@/app/api/v1/customers/[customerId]/timeline/route';
+import '@/app/api/v1/customers/[customerId]/vehicles/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

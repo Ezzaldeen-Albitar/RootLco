@@ -399,6 +399,32 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A commercial or service restriction was imposed on a customer, with its reason and any approval reference.',
   },
+  {
+    code: 'crm.customer.duplicates_scanned',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer was scored against comparable ones and duplicate candidates were recorded. The scan decides nothing; it produces candidates for a human to review.',
+  },
+  {
+    code: 'crm.customer.duplicate_reviewed',
+    class: 'privileged',
+    entityType: 'crm.duplicate_candidate',
+    description: 'A human recorded a decision on a duplicate candidate pair.',
+  },
+  {
+    code: 'crm.customer.merged',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A duplicate customer was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
+  },
+  {
+    code: 'crm.customer.vehicle_linked',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description: 'A customer was linked to an existing vehicle in a relationship role.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
