@@ -211,15 +211,32 @@ export async function handleOperation<T>(
     // address can be resolved, and `resolveClientAddress` returns null unless
     // the platform supplies a peer address or a trusted proxy is configured.
     //
-    // For a liveness probe that would be worse than no limit: a hostile caller
-    // could exhaust the shared bucket and the orchestrator's own probe would
-    // start receiving 429, which the orchestrator reads as an unhealthy pod. The
-    // control would cause the outage it exists to prevent. So a public
-    // operation is throttled only when there is a real address to key on, and
-    // the gap is recorded rather than papered over — see the readiness section
-    // of `docs/phase-1/phase-1-15/health-endpoints.md`.
+    // For a liveness probe that is worse than no limit: a hostile caller could
+    // exhaust the shared bucket and the orchestrator's own probe would start
+    // receiving 429, which the orchestrator reads as an unhealthy pod. The
+    // control would cause the outage it exists to prevent.
+    //
+    // That argument is about the probe, NOT about the route being public, and
+    // writing the condition against `operation.public` alone silently extended
+    // it to the four unauthenticated `iam.auth-*` routes — which meant login,
+    // logout and password reset were throttled by nothing in a deployment with
+    // no peer address, while their own `publicReason` text said they were
+    // bounded at ten a minute. Before P1-15 the pre-auth branch had no skip at
+    // all, so this phase *removed* a control the previous phase shipped
+    // (PMR-006 / R-14).
+    //
+    // So the exemption belongs to the property the argument is about: a policy
+    // that is not `securityRelevant`. `public-probe` keeps it; `auth-adjacent`
+    // never gets it and degrades to the coarse bucket instead. A security
+    // control is never dropped for want of a key. The coarse bucket's own
+    // availability exposure is real and is recorded as R-14 rather than
+    // papered over — see the readiness section of
+    // `docs/phase-1/phase-1-15/health-endpoints.md`.
     const skipUnkeyedPublicThrottle =
-      operation.public && preAuthPolicy?.keyBy.includes('ip') === true && !client.ip;
+      operation.public &&
+      preAuthPolicy?.keyBy.includes('ip') === true &&
+      preAuthPolicy.securityRelevant === false &&
+      !client.ip;
 
     if (preAuthPolicy && config.RATE_LIMIT_ENABLED && !skipUnkeyedPublicThrottle) {
       await enforceRateLimit(preAuthPolicy, {

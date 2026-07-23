@@ -59,7 +59,9 @@ Which configuration runs a file is decided by its directory, not by its name:
 
 | [`p1-15-public-policy-resolution.test.ts`](../../../tests/foundation/p1-15-public-policy-resolution.test.ts) | Which rate-limit policy a public operation is **actually** throttled by, as opposed to which one it declares — the one place where those two can diverge silently. Carries the regression lock for PMR-001: the four unauthenticated `iam.auth-*` routes must keep `auth-adjacent` (10/min, security-relevant) rather than being widened to `public-probe` (120/min, not), and a public operation declaring no policy must not resolve to none. The committed registrations are scanned from source, with a count assertion so the scan cannot pass by matching nothing. | 11 |
 
-**Unit-tier subtotal: 320 tests across 12 files.**
+| [`p1-15-public-throttle-fallback.test.ts`](../../../tests/foundation/p1-15-public-throttle-fallback.test.ts) | Whether a public route is throttled **at all** when no client address resolves — the second half of the same divergence PMR-001 covers. Carries the regression lock for PMR-006: the pipeline's unkeyable-policy skip belongs to a policy that is not `securityRelevant`, so the four `iam.auth-*` routes degrade to a shared bucket rather than to nothing, while the health probes keep the exemption the skip was written for. Starts by asserting its own premise — that the default configuration really does resolve no address — so the suite cannot pass vacuously. | 7 |
+
+**Unit-tier subtotal: 327 tests across 13 files.**
 
 ### 2.2 Database tier — `npm run test:db`, live PostgreSQL
 
@@ -96,9 +98,9 @@ behaviour. Both statements apply to every database suite in this phase.
 
 **Backend-tier subtotal: 205 tests across 4 files.**
 
-**P1-15 total: 790 tests across 25 files.**
+**P1-15 total: 797 tests across 26 files.**
 
-Thirty-seven of those arrived **after** the feature merged: the suites and additions that lock DBCR-P1-15-002 and the post-merge findings.
+Forty-four of those arrived **after** the feature merged: the suites and additions that lock DBCR-P1-15-002 and the post-merge findings.
 They are counted here rather than in a separate ledger, because a catalogue that reported the phase's
 coverage as of the moment it was declared ready would be describing a tree nobody now runs.
 

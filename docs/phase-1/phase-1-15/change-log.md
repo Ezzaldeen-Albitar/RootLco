@@ -132,6 +132,37 @@ The P1-15 owner gate stays **Pending** while this remediation is unmerged. A Go 
 open, reproduced High would be exactly the kind of record this project's review policy exists to
 prevent.
 
+### 2.4 After the second merge — PMR-006, the throttle this phase removed
+
+Remediation PR #62 merged as **`4d1eff2`** on 2026-07-23; post-merge CI #156 was green on that
+commit, and the merged tree is byte-identical to the reviewed head `533ba9e`.
+
+The gate pass that followed asked a question the earlier reviews had not: **what did this phase
+change about the previous phase's controls?** One answer had been sitting in §5 of the post-merge
+review, filed as "recorded, not fixed" with an infrastructure reason. The reason was wrong.
+
+`handleOperation` skipped the pre-authentication throttle whenever an operation was `public`, its
+policy keyed on `ip`, and no client address resolved. The justification written above it is entirely
+about liveness probes — a shared bucket in front of a probe causes the outage the limit exists to
+prevent — but the condition was written against `public`, which also names the four unauthenticated
+`iam.auth-*` routes. `TRUSTED_PROXY_IPS` is empty by default and no handler passes a peer address, so
+the skip always fired. At `e50d501`, the branch had **no skip at all** and those routes were enforced.
+P1-15 did not fail to add a limit; it removed one.
+
+Reproduced on `4d1eff2` before any change: twelve sequential `iam.auth-login` requests through the
+pipeline, all `200`.
+
+| Item          | Value                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| Branch        | `fix/p1-15-public-auth-throttle-restoration`                                             |
+| Branched from | `4d1eff2` (protected `develop`, the PR #62 merge)                                        |
+| Finding       | **PMR-006**, re-adjudicated from "recorded" to Medium/**Fixed** — see §4.1 of the review |
+| Change        | The skip now requires `securityRelevant === false`; nothing else in the pipeline moves   |
+| Residual      | The coarse shared bucket, still open as **R-14** and stated as an availability exposure  |
+
+No migration, no database object, no grant, no policy and no schema change. One conjunct, one new
+unit suite, and the documents that had claimed the wrong thing.
+
 ## 3. Added
 
 ### 3.1 The `shared-services` module

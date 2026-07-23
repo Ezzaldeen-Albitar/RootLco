@@ -285,6 +285,20 @@ The rule that produced the earlier disclosure still holds and still binds: **no 
 document may rest on an uncommitted file.** None does — the evidence index treats any claim that
 would depend on one as unbacked.
 
+### 9.1 What arrived after the feature merge
+
+This manifest was generated from the feature branch and its §1–§8 totals are that branch's diff. Two
+remediations followed it into the phase, each on its own branch, each through its own pull request,
+and neither is counted in the totals above. They are listed here so the manifest does not read as the
+complete phase inventory:
+
+| PR      | Branch                                           | Paths | What                                                                                                                                                                                                           |
+| ------- | ------------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#62** | `fix/p1-15-number-allocation-function-hardening` | 21    | Migration **118** (DBCR-P1-15-002) plus the PMR-001/002/004/005 fixes and their three new suites. Merged as `4d1eff2`.                                                                                         |
+| **#63** | `fix/p1-15-public-auth-throttle-restoration`     | —     | One conjunct in `src/server/http/route-handler.ts` restoring the `auth-adjacent` throttle P1-15 removed from the four unauthenticated auth routes (**PMR-006**), one new suite, and the documents it corrects. |
+
+Neither adds a business table, a seed row, or a grant. PR #63 adds no migration at all.
+
 ## 10. Status
 
 The P1-15 owner gate is **Pending**. This manifest describes what exists on a pushed but **unmerged**
