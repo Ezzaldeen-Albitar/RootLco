@@ -144,6 +144,75 @@ const schema = z.object({
   LOGIN_MAX_FAILED_ATTEMPTS: bounded(1, 100, 5),
   /** Window over which consecutive failures are counted, in minutes. */
   LOGIN_FAILURE_WINDOW_MINUTES: bounded(1, 1_440, 15),
+
+  // ---- Shared services (P1-15) --------------------------------------------
+  //
+  // Object storage and message delivery are reached through ports. **No
+  // production provider is provisioned for either** (ADR-012 remains open), and
+  // the default below says so rather than quietly selecting one: `unconfigured`
+  // refuses to sign a URL or contact a provider at all. A deterministic local
+  // adapter exists for development and tests and is selected explicitly.
+
+  /**
+   * Environment token that forms the first segment of every storage key
+   * (`docs/database/storage-key-convention.md` §3).
+   *
+   * Read from the same variable the client reads so one deployment cannot
+   * disagree with itself about which environment it is. It is duplicated here
+   * rather than imported because `storage_key` is immutable once written: a key
+   * minted under the wrong token can never be corrected, only superseded by a
+   * new version, so the value must be validated on the server path too.
+   */
+  NEXT_PUBLIC_APP_ENV: z.enum(['local', 'development', 'staging', 'production']).default('local'),
+
+  /**
+   * Object-storage adapter. `unconfigured` (default) refuses every call;
+   * `local_fake` is the deterministic in-process adapter used by tests and
+   * development, which reaches no network and issues no usable URL.
+   */
+  STORAGE_PROVIDER: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$')
+    .default('unconfigured'),
+  /** Bucket/container name. Never a path, never caller-supplied. */
+  STORAGE_BUCKET: z.string().min(1).default('rootlco-attachments'),
+  /**
+   * Signed-URL lifetimes. Bounded on BOTH sides: a URL that lives for hours is a
+   * bearer credential in a browser history, and one that lives for two seconds
+   * cannot survive a slow upload. Upload gets the longer window because the
+   * transfer itself happens inside it.
+   */
+  STORAGE_UPLOAD_URL_TTL_SECONDS: bounded(30, 900, 600),
+  STORAGE_DOWNLOAD_URL_TTL_SECONDS: bounded(15, 600, 120),
+  /**
+   * Platform ceiling on a single object, in bytes. This is a *ceiling*, not the
+   * limit: `shared.document_categories.max_size_bytes` is authoritative per
+   * category and is always enforced as well. 25 MiB by default.
+   */
+  STORAGE_MAX_UPLOAD_BYTES: bounded(1_024, 268_435_456, 26_214_400),
+
+  /**
+   * Message-delivery adapter. `unconfigured` (default) refuses to deliver;
+   * enqueueing still works, because the outbound row is the durable record and
+   * delivery is the worker's separate concern.
+   */
+  NOTIFICATION_PROVIDER: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$')
+    .default('unconfigured'),
+  /** Per-attempt provider timeout. A hung provider must not hold a worker slot. */
+  NOTIFICATION_PROVIDER_TIMEOUT_MS: bounded(100, 60_000, 5_000),
+  /** Rendered message ceiling, in characters, across every channel. */
+  NOTIFICATION_MAX_RENDERED_CHARS: bounded(256, 262_144, 20_000),
+
+  /**
+   * Budget for the whole readiness probe. A probe that can block indefinitely
+   * turns a slow dependency into an outage of the orchestrator's health check.
+   */
+  READINESS_TIMEOUT_MS: bounded(50, 10_000, 2_000),
+
+  /** Largest row estimate an export authorization will approve synchronously. */
+  EXPORT_MAX_ROWS: bounded(1, 1_000_000, 50_000),
 });
 
 /** Splits a comma-separated setting into trimmed, non-empty entries. */

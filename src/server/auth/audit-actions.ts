@@ -223,6 +223,116 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'org.branch_setting',
     description: 'A branch setting was written as a new immutable version row.',
   },
+
+  // ---- Organization status (P1-15 transition engine) ----------------------
+  {
+    code: 'org.branch.status_changed',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      'A branch moved between active and inactive through the status-transition engine, with the reason recorded in org.branch_status_history.',
+  },
+
+  // ---- Attachments (P1-15) ------------------------------------------------
+  //
+  // Upload and download authorization are recorded as SECURITY actions rather
+  // than privileged ones. Issuing a signed URL hands out a bearer capability to
+  // bytes: the audit record is the only durable evidence that it happened, and
+  // it must be triaged alongside authentication and grant changes rather than
+  // alongside ordinary administration.
+  {
+    code: 'shared.document.created',
+    class: 'privileged',
+    entityType: 'shared.document',
+    description: 'Document metadata was created; no bytes exist yet.',
+  },
+  {
+    code: 'shared.document.upload_authorized',
+    class: 'security',
+    entityType: 'shared.document',
+    description:
+      'An upload was authorized: a storage key was reserved and a short-lived signed upload URL was issued.',
+  },
+  {
+    code: 'shared.document.version_registered',
+    class: 'privileged',
+    entityType: 'shared.document_version',
+    description:
+      'A document version was registered as pending. Acceptance is a separate action and requires scan evidence that no application role can write.',
+  },
+  {
+    code: 'shared.document.version_rejected',
+    class: 'privileged',
+    entityType: 'shared.document_version',
+    description: 'A pending document version was rejected; the state is terminal.',
+  },
+  {
+    code: 'shared.document.download_authorized',
+    class: 'security',
+    entityType: 'shared.document_version',
+    description: 'A short-lived signed download URL was issued for an accepted version.',
+  },
+  {
+    code: 'shared.document.linked',
+    class: 'privileged',
+    entityType: 'shared.document_link',
+    description: 'A document was linked to a business entity, making it reachable from that entity.',
+  },
+  {
+    code: 'shared.document.unlinked',
+    class: 'privileged',
+    entityType: 'shared.document_link',
+    description: 'A document link was withdrawn; reachability through that entity ends.',
+  },
+
+  // ---- Notifications and templates (P1-15) --------------------------------
+  {
+    code: 'shared.notification.enqueued',
+    class: 'privileged',
+    entityType: 'shared.outbound_message',
+    description:
+      'An outbound message was enqueued from an approved template version. Rendered content is not persisted; only its integrity digest is.',
+  },
+  {
+    code: 'shared.template.created',
+    class: 'privileged',
+    entityType: 'shared.message_template',
+    description: 'A tenant message template was created.',
+  },
+  {
+    code: 'shared.template.updated',
+    class: 'privileged',
+    entityType: 'shared.message_template',
+    description: 'A tenant message template’s name, description, status, or active version changed.',
+  },
+  {
+    code: 'shared.template.version_created',
+    class: 'privileged',
+    entityType: 'shared.template_version',
+    description: 'A draft template version was created or its draft content was revised.',
+  },
+  {
+    code: 'shared.template.version_approved',
+    class: 'approval',
+    entityType: 'shared.template_version',
+    description:
+      'A draft template version was approved. Approved content is immutable and is what messages are sent from.',
+  },
+  {
+    code: 'shared.template.version_retired',
+    class: 'privileged',
+    entityType: 'shared.template_version',
+    description: 'An approved template version was retired and can no longer become active.',
+  },
+
+  // ---- Export (P1-15) -----------------------------------------------------
+  {
+    code: 'shared.export.authorized',
+    class: 'export',
+    entityType: 'shared.export_request',
+    description:
+      'An export of tenant data was authorized: resource, field set, scope, and row estimate were approved. Authorization only — P1-15 generates no file.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

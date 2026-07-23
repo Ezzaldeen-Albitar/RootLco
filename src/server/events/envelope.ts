@@ -127,8 +127,70 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'shared.outbound_message',
     owner: 'shared',
-    implementedIn: null,
+    implementedIn: 'P1-15',
     description: 'An outbound message changed delivery state.',
+  },
+
+  // ---- Shared services (P1-15) --------------------------------------------
+  //
+  // Every entry below is owned by `shared`, including the one about an `org`
+  // aggregate: the P1-15 status-transition engine is the publisher, and the
+  // catalog's `owner` names the module allowed to publish, not the schema the
+  // aggregate lives in. Giving it to `org` would mean no module could publish
+  // it, since no `org` module exists.
+  //
+  // Names carry no version suffix. The planning text used `…​.v1`; the schema
+  // version is a separate column (`schema_version`) and duplicating it in the
+  // wire name would produce two ways to express the same fact.
+  {
+    code: 'EVT-DOC-002',
+    eventType: 'document.version.registered',
+    schemaVersion: 1,
+    aggregateType: 'shared.document',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A pending document version was registered against a document. Carries no storage key and no checksum — a consumer that needs either reads the row under its own authorization.',
+  },
+  {
+    code: 'EVT-DOC-003',
+    eventType: 'document.link.changed',
+    schemaVersion: 1,
+    aggregateType: 'shared.document',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A document was linked to, or unlinked from, a business entity. One event covers both because consumers react to the resulting reachability.',
+  },
+  {
+    code: 'EVT-NTF-002',
+    eventType: 'message.enqueued',
+    schemaVersion: 1,
+    aggregateType: 'shared.outbound_message',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'An outbound message was enqueued. Carries no recipient, no rendered content, and no template body.',
+  },
+  {
+    code: 'EVT-TPL-001',
+    eventType: 'message-template.version.changed',
+    schemaVersion: 1,
+    aggregateType: 'shared.message_template',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A template version was created, approved, retired, or activated. One event because consumers cache by template and need to invalidate on any of them.',
+  },
+  {
+    code: 'EVT-ORG-001',
+    eventType: 'organization.branch.status.changed',
+    schemaVersion: 1,
+    aggregateType: 'org.branch',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A branch was activated or deactivated through the status-transition engine.',
   },
 ]);
 

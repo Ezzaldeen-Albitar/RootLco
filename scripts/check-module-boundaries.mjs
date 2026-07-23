@@ -304,6 +304,29 @@ const RULES = [
     },
   },
   {
+    id: 'B11-handlers-do-not-hold-service-contracts',
+    describe:
+      'Route Handlers call a module application service, never a foundation service contract (FileService, NotificationService) directly.',
+    check: ({ file, specifier, target }) => {
+      if (!/^app\//.test(file)) return null;
+      if (!target || !/^server\/contracts(\/|$)/.test(target)) return null;
+      return (
+        `handler imports a foundation service contract ("${specifier}" → ${target}); the contract is ` +
+        'implemented and installed by a module — call that module\'s application service instead'
+      );
+    },
+  },
+  {
+    id: 'B12-domain-layer-holds-no-providers',
+    describe:
+      'A module domain layer holds rules only: it must not reach a provider port or adapter, which is I/O by definition.',
+    check: ({ file, specifier, target }) => {
+      if (!/^modules\/[^/]+\/domain\//.test(file)) return null;
+      if (!target || !/^modules\/[^/]+\/provider(\/|$)/.test(target)) return null;
+      return `domain-layer file imports a provider ("${specifier}" → ${target}); pass the result in as an argument instead`;
+    },
+  },
+  {
     id: 'B8-project-imports-must-resolve',
     describe:
       'A project-local import that cannot be resolved to a canonical path is refused, so no import escapes the rules by being unclassifiable.',
