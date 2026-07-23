@@ -266,6 +266,123 @@ export const MANIFEST = {
     required: [],
     note: 'end-to-end reference endpoint',
   },
+
+  // -------------------------------------------------------------------------
+  // P1-15 shared services.
+  //
+  // The evidence obligations below follow the same rule as P1-14: a write that
+  // can leak across a tenant declares `cross-tenant`; a write guarded by
+  // `If-Match` declares `stale-version`; a write that publishes declares
+  // `outbox`; a command whose replay must not duplicate declares `idempotency`.
+  // Read and catalogue operations carry `[]` — invocation is the whole
+  // obligation, because they change nothing and have no denial of their own
+  // beyond the permission the pipeline already enforces.
+  // -------------------------------------------------------------------------
+  'shared.attachment-upload-authorize': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'document created + signed upload URL issued; unpermissioned refused; tenant-B invisible',
+  },
+  'shared.attachment-version-register': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'pending version + audit + one event; forged token for another tenant refused',
+  },
+  'shared.attachment-version-reject': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'pending → rejected is the only runtime transition; a non-pending version is refused',
+  },
+  'shared.attachment-download-authorize': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'accepted version signs; a pending version is ERR-DOC-001',
+  },
+  'shared.attachment-link-create': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'reachability established + audit + event; unregistered entity type refused',
+  },
+  'shared.attachment-link-withdraw': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'soft withdrawal; the row survives because the attachment fact is evidence',
+  },
+  'shared.notification-enqueue': {
+    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency'],
+    note: 'pending row + audit + one event; consent refusal; same dedupe key twice is one row',
+  },
+  'shared.template-create': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'tenant template created; platform scope refused; duplicate identity conflicts',
+  },
+  'shared.template-update': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'grantable columns only; wrong version refused',
+  },
+  'shared.template-version-create': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox'],
+    note: 'draft created + audit + event; a version is always born a draft',
+  },
+  'shared.template-version-revise': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'stale-version'],
+    note: 'draft content revised; approved content is immutable',
+  },
+  'shared.template-version-approve': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version'],
+    note: 'approver taken from the session; approved content can no longer be revised',
+  },
+  'shared.template-version-retire': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'refused while active; permitted after deactivation',
+  },
+  'shared.template-activation-set': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit', 'stale-version'],
+    note: 'only an approved version may become active',
+  },
+  'shared.template-version-preview': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success'],
+    note: 'renders with sample values and sends nothing',
+  },
+  'shared.branch-status-change': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'isolation', 'audit', 'outbox', 'stale-version'],
+    note: 'state + module-owned history + audit + one event; repeat is ERR-TRN-001; stale version refused',
+  },
+  'shared.branch-status-read': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: [],
+    note: 'current state and reachable next states',
+  },
+  'shared.export-authorize': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: ['success', 'denial', 'audit'],
+    note: 'both permissions required; sensitive field refused; export-class audit record written',
+  },
+  'shared.export-catalogue': {
+    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    required: [],
+    note: 'registry metadata; identical for every caller holding rpt.export',
+  },
+  'shared.health-live': {
+    file: 'tests/backend/p1-15-dispatch-and-health.test.ts',
+    required: ['success'],
+    note: 'exact two-key payload; touches nothing',
+  },
+  'shared.health-ready': {
+    file: 'tests/backend/p1-15-dispatch-and-health.test.ts',
+    required: ['success'],
+    note: 'bounded probe; names and booleans only, no role or driver detail',
+  },
 };
 
 /** Extracts every `id: '...'` from a `defineOperation({...})` literal in a tree. */
@@ -319,7 +436,10 @@ export function parseProvidedFlags(source) {
       inBlock = false;
       continue;
     }
-    const m = /^\s*\*?\s*((?:iam|meta)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
+    // `shared` joined `iam` and `meta` with P1-15. The prefix list is explicit
+    // rather than a wildcard so a typo in a declaration is a missing flag —
+    // which fails the gate — instead of a silently accepted new namespace.
+    const m = /^\s*\*?\s*((?:iam|meta|shared)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
       provided.set(m[1], flags);

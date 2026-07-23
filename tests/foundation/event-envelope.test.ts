@@ -169,24 +169,38 @@ describe('reserved-name registry', () => {
     }
   });
 
-  it('marks exactly the events P1-14 publishes as implemented, and no others', () => {
-    // A name is not "implemented" because someone hopes to publish it. This is
-    // the list with a real producer in `src/modules/iam`; anything else claiming
-    // an implementation is a documentation defect, not a feature.
+  it('marks exactly the events with a real producer as implemented, and no others', () => {
+    // A name is not "implemented" because someone hopes to publish it. Each entry
+    // below has a real `publishEvent()` call in the module the catalog assigns it
+    // to; anything else claiming an implementation is a documentation defect, not
+    // a feature.
+    //
+    // P1-15 added five: four `shared.*` producers in `src/modules/shared-services`
+    // plus `message.delivery.changed`, which the worker-side dispatcher drives.
+    // `document.accepted` is deliberately NOT here — acceptance is unavailable
+    // while no application role may write `shared.file_scan_results`.
     const implemented = EVENT_CATALOG.filter((entry) => entry.implementedIn !== null).map(
       (entry) => entry.eventType
     );
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
+      'document.link.changed',
+      'document.version.registered',
+      'message-template.version.changed',
+      'message.delivery.changed',
+      'message.enqueued',
+      'organization.branch.status.changed',
       'session.revoked',
       'user.invited',
       'user.status.changed',
     ]);
+
+    const OWNER_BY_PHASE: Readonly<Record<string, string>> = { 'P1-14': 'iam', 'P1-15': 'shared' };
     for (const entry of EVENT_CATALOG) {
-      if (implemented.includes(entry.eventType)) {
-        expect(entry.implementedIn).toBe('P1-14');
-        expect(entry.owner).toBe('iam');
-      }
+      if (!implemented.includes(entry.eventType)) continue;
+      const phase = entry.implementedIn as string;
+      expect(OWNER_BY_PHASE[phase], `${entry.eventType} phase ${phase}`).toBeDefined();
+      expect(entry.owner).toBe(OWNER_BY_PHASE[phase]);
     }
   });
 
