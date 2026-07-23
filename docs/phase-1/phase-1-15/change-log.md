@@ -50,8 +50,8 @@ for the reason above; their subjects are exact and `git log` resolves them.
 | `80eade3` | `[P1-15] Prove every public operation at route depth, and derive the obligation from the registration`                        |
 | `084bc6a` | `[P1-15] Make three source comments true: write the two missing suites, correct the two wrong paths`                          |
 | `0596ae9` | `[P1-15] Add an encoding-hygiene gate, and run it in CI`                                                                      |
-| _(this)_  | `[P1-15] Correct the documentation package to the evidence that now exists`                                                   |
-| _(last)_  | `[P1-15] Record the clean-room validation on the final SHA`                                                                   |
+| `739aec7` | `[P1-15] Correct the documentation package to the evidence that now exists`                                                   |
+| _(this)_  | `[P1-15] Record the clean-room validation on the final SHA`                                                                   |
 
 ### 2.1 Why the last four commits exist
 
@@ -66,11 +66,12 @@ quietly fixing:
    were, and the other nineteen had service-level evidence with no route-level evidence at all.
 
 `80eade3` closes the second; `084bc6a` and `0596ae9` close three source-comment defects and an
-unenforced encoding rule that the first review surfaced on the way; this commit corrects every
-document that still described the earlier state; and the last re-runs the clean room on the exact
-final SHA.
+unenforced encoding rule that the first review surfaced on the way; `739aec7` corrects every document
+that still described the earlier state; and **this** commit carries the rewritten
+[clean-room record](clean-room-validation.md), whose second run is executed on **this commit itself**
+— which is the only way a branch tip can be covered by a record it contains.
 
-### 2.1 P1-15 work already on protected `develop`
+### 2.2 P1-15 work already on protected `develop`
 
 The database remediation this phase depends on was merged before the feature branch was resumed, so it
 is P1-15 work that is **not** in the feature diff. It is listed here because a change log that omitted

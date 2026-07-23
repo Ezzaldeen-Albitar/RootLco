@@ -180,6 +180,43 @@ seven-key pin to still exist and still name exactly those seven keys, and requir
 contain no reference to `/api/v1/health`. If a future phase ever repointed the old path at the new
 projection, the pin would have had to change — which is why both assertions are kept together.
 
+## 6.1 Rate limiting: what it does, and exactly where it stops (P1-15-SR-004)
+
+Both probes are `public: true`, and a public request never reaches the
+post-authentication throttle — it has no tenant and no user to key on. Until the final adversarial
+pass caught it, that meant **the two most exposed endpoints in the deployment were throttled by
+nothing at all**, because `low-risk-metadata` keys on tenant.
+
+The fix and its boundary are both worth stating precisely, because the obvious version of this fix
+is worse than the defect.
+
+`policyFor()` now substitutes a dedicated `public-probe` policy — keyed on **operation + client
+address**, 120 requests a minute — for _any_ `public: true` operation, and the pipeline enforces it
+**before** the handler. Two things follow. The two probes are separate buckets, so exhausting one
+cannot silence the other; and any future public operation inherits the policy without anyone
+remembering to ask.
+
+**Where it stops.** `resolveClientAddress()` returns `null` unless the platform supplies a peer
+address or `TRUSTED_PROXY_IPS` names a proxy. Neither is true in the current deployment: the App
+Router handlers pass no peer address, and the trusted-proxy list is empty by default. With a null
+address an ip-keyed policy collapses to **one global bucket** — and enforcing _that_ on a liveness
+probe would be an own goal, because a hostile caller could exhaust the shared bucket and the
+orchestrator's own probe would begin receiving `429`, which an orchestrator reads as an unhealthy
+pod. The control would cause the outage it exists to prevent.
+
+So the pipeline **skips** an ip-keyed policy on a public operation when no address is resolvable.
+Concretely:
+
+| Deployment                                                                       | Behaviour                                       |
+| -------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Behind a configured trusted proxy, or on a platform that supplies a peer address | Throttled per client, per operation, at 120/min |
+| Neither (the current state)                                                      | **Not throttled** — as before                   |
+
+The collapse property is pinned by `tests/foundation/rate-limit.test.ts`: an omitted address and an
+explicit `null` produce the same key, a real address produces a different one. Closing the remaining
+half means plumbing a peer address from the platform, which is an infrastructure decision rather
+than an application one.
+
 ## 7. What is deliberately not claimed
 
 This section exists because health endpoints are the part of a system most often described as more

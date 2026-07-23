@@ -31,16 +31,16 @@ Nothing is listed from memory or from a plan: a path that is not in that command
 this manifest. The command above is the authority; the tables below are its categorised form, and the
 category totals are what a reviewer should reconcile against.
 
-**Totals:** **112** paths — **96 added (`A`)**, **16 modified (`M`)**, **0 deleted, 0 renamed**.
+**Totals:** **123** paths — **100 added (`A`)**, **23 modified (`M`)**, **0 deleted, 0 renamed**.
 
 | Kind                           | Total | Added | Modified |
 | ------------------------------ | ----- | ----- | -------- |
 | Module source                  | 28    | 28    | 0        |
-| Route handlers                 | 20    | 20    | 0        |
-| Foundation changes             | 5     | 0     | 5        |
+| Route handlers                 | 22    | 20    | 2        |
+| Foundation changes             | 9     | 0     | 9        |
 | CI / tooling scripts           | 3     | 1     | 2        |
-| Tests                          | 22    | 19    | 3        |
-| Documentation and API contract | 31    | 29    | 2        |
+| Tests                          | 26    | 21    | 5        |
+| Documentation and API contract | 32    | 30    | 2        |
 | Repository configuration       | 3     | 0     | 3        |
 
 Repository configuration is `package.json` (one script added), `.prettierignore` (the second
