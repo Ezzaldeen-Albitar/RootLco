@@ -74,7 +74,12 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- naming one concrete capability; the RLS write policies on shared.notes gate on it.
   ('crm.customer.note.write',  'crm', 'Author and edit customer notes',            'medium', '00000000-0000-4000-8000-000000000001'),
   ('crm.customer.read',        'crm', 'Search and read customers in the tenant',   'low',    '00000000-0000-4000-8000-000000000001'),
-  ('crm.customer.create',      'crm', 'Create individual and company customers',   'medium', '00000000-0000-4000-8000-000000000001')
+  ('crm.customer.create',      'crm', 'Create individual and company customers',   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Contacts, addresses, and delivery preferences. Separated from consent below:
+  -- editing a phone number is routine data maintenance, while a consent decision
+  -- changes what the platform is permitted to do to a person.
+  ('crm.customer.profile.write','crm','Maintain customer contacts, addresses, and preferences','medium','00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.consent.write','crm','Record customer consent decisions',         'high',   '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

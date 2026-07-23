@@ -153,6 +153,27 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'organization counterpart; proves the party-type discriminator comes from the path, so a company profile can never attach to an individual partner',
   },
+  // --- Profile components: the re-parenting and IDOR surface. --------------
+  'crm.contact-add': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'parent comes from the path; a cross-tenant customer id answers the same 404 as an unknown one, so the route is not an existence oracle',
+  },
+  'crm.address-add': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'same nesting guarantee as contacts; country code is format-validated only while the country reference decision is open',
+  },
+  'crm.preference-set': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'upsert keyed by (customer, channel, purpose); proves a preference never writes consent history',
+  },
+  'crm.consent-record': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'append-only; server-stamped actor and effective_at; a contact point owned by another customer is refused; an injected failure leaves no consent row, audit row, or event',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],

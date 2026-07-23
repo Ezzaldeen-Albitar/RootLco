@@ -96,6 +96,16 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
       'A customer was created. One event covers individuals and organizations because a consumer reacts to a customer existing, not to which profile table holds its name. The payload carries no personal data: a consumer that needs the name reads the aggregate under its own authorization.',
   },
   {
+    code: 'EVT-CRM-003',
+    eventType: 'consent.changed',
+    schemaVersion: 1,
+    aggregateType: 'crm.business_partner',
+    owner: 'crm',
+    implementedIn: 'P1-16',
+    description:
+      'A customer consent decision was recorded. Published because consent changes what the whole platform may do to that customer, so notification and messaging consumers must react. Carries the prior status so a consumer can tell a grant from a re-affirmation.',
+  },
+  {
     code: 'EVT-VEH-001',
     eventType: 'vehicle.relationship.changed',
     schemaVersion: 1,

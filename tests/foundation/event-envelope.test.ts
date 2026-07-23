@@ -188,6 +188,7 @@ describe('reserved-name registry', () => {
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
       'business-partner.created',
+      'consent.changed',
       'document.link.changed',
       'document.version.registered',
       'message-template.version.changed',

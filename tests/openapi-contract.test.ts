@@ -74,6 +74,10 @@ import '@/app/api/v1/health/ready/route';
 import '@/app/api/v1/customers/route';
 import '@/app/api/v1/customers/individuals/route';
 import '@/app/api/v1/customers/companies/route';
+import '@/app/api/v1/customers/[customerId]/contacts/route';
+import '@/app/api/v1/customers/[customerId]/addresses/route';
+import '@/app/api/v1/customers/[customerId]/preferences/route';
+import '@/app/api/v1/customers/[customerId]/consents/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

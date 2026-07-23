@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 63,
-    "publicApi": 63,
+    "registered": 67,
+    "publicApi": 67,
     "internal": 0,
-    "withRequiredEvidence": 48,
+    "withRequiredEvidence": 52,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -17,9 +17,9 @@
       "metadataOnly": 0
     },
     "p1_16": {
-      "registered": 3,
-      "publicApi": 3,
-      "operationDepth": 3,
+      "registered": 7,
+      "publicApi": 7,
+      "operationDepth": 7,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -28,6 +28,55 @@
     }
   },
   "operations": [
+    {
+      "id": "crm.address-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/addresses",
+      "public": false,
+      "files": [
+        "tests/backend/p1-16-customer-profile.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
     {
       "id": "crm.company-create",
       "surface": "public-api",
@@ -71,6 +120,110 @@
         "denial",
         "idempotency",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.consent-record",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/consents",
+      "public": false,
+      "files": [
+        "tests/backend/p1-16-customer-profile.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox",
+        "rollback"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.contact-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/contacts",
+      "public": false,
+      "files": [
+        "tests/backend/p1-16-customer-profile.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
         "route",
         "service",
         "success"
@@ -165,6 +318,55 @@
         "idempotency",
         "outbox",
         "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.preference-set",
+      "surface": "public-api",
+      "method": "PUT",
+      "path": "/customers/{customerId}/preferences",
+      "public": false,
+      "files": [
+        "tests/backend/p1-16-customer-profile.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
         "route",
         "service",
         "success"

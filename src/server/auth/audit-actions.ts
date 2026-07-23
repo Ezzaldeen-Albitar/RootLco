@@ -338,6 +338,33 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A customer was created. One code covers individuals and organizations: the recorded fact is that a customer now exists, and the party type is a detail of it rather than a different event.',
   },
+  {
+    code: 'crm.customer.contact_added',
+    class: 'privileged',
+    entityType: 'crm.contact_point',
+    description:
+      'A contact channel was attached to a customer. The record names the channel and points at the row; the contact value itself is personal data and stays out of the audit trail.',
+  },
+  {
+    code: 'crm.customer.address_added',
+    class: 'privileged',
+    entityType: 'crm.address',
+    description: 'An address was attached to a customer.',
+  },
+  {
+    code: 'crm.customer.preference_changed',
+    class: 'privileged',
+    entityType: 'crm.communication_preference',
+    description:
+      'A customer communication preference was set for one channel and purpose. A preference is not consent and never grants it.',
+  },
+  {
+    code: 'crm.customer.consent_changed',
+    class: 'privileged',
+    entityType: 'crm.consent_history',
+    description:
+      'A customer consent decision was recorded. The record carries the prior effective status so the transition is readable without replaying the whole history.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

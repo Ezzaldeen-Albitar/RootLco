@@ -10,11 +10,32 @@ import { composeModule } from '@/server/layering';
 import { sharedServicesModule } from '@/modules/shared-services';
 import { CustomerSearchRepository } from './data/customer-search-repository';
 import { CustomerRepository } from './data/customer-repository';
+import { CustomerProfileRepository } from './data/customer-profile-repository';
 import { CustomerSearchService } from './application/customer-search-service';
 import { CustomerCreationService } from './application/customer-creation-service';
+import { CustomerProfileService } from './application/customer-profile-service';
 
 export type { CustomerSearchHit, CustomerSearchInput } from './application/customer-search-service';
 export type { CreatedCustomer } from './application/customer-creation-service';
+export type {
+  ConsentRecorded,
+  ProfileComponentCreated,
+} from './application/customer-profile-service';
+export {
+  ADDRESS_TYPES,
+  COMMUNICATION_PURPOSES,
+  CONSENT_KINDS,
+  CONTACT_CHANNELS,
+  MAX_ADDRESS_LINE,
+  MAX_CONTACT_VALUE,
+  MAX_LABEL,
+  RECORDABLE_CONSENT_STATUSES,
+  type AddressType,
+  type CommunicationPurpose,
+  type ConsentKind,
+  type ContactChannel,
+  type RecordableConsentStatus,
+} from './domain/customer-profile';
 export {
   CUSTOMER_PARTY_TYPES,
   CUSTOMER_LIFECYCLE_STATUSES,
@@ -44,6 +65,7 @@ export const crmModule = composeModule({
     return {
       customerSearch: new CustomerSearchService(new CustomerSearchRepository()),
       customerCreation: new CustomerCreationService(customers, sharedServicesModule().numbers),
+      customerProfile: new CustomerProfileService(new CustomerProfileRepository()),
     };
   },
 });
