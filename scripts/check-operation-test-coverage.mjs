@@ -1,268 +1,325 @@
 #!/usr/bin/env node
 /**
- * Operation-to-test coverage gate (P1-14 remediation — STRICT).
+ * Operation-to-test coverage gate (P1-14 remediation — STRICT; P1-15 — DERIVED).
  *
- * Blocker 2 of the failed P1-14 gate was that the registered operations had NO
- * application/API-layer test evidence: they were imported for OpenAPI
- * registration and never invoked. The first version of this gate made that gap
- * visible but tolerated "pending" and "unit" residuals. This version does not.
+ * ===========================================================================
+ * WHAT THIS GATE IS FOR
+ * ===========================================================================
+ * Blocker 2 of the failed P1-14 gate was that registered operations had NO
+ * application-layer test evidence: they were imported for OpenAPI registration
+ * and never invoked. The first version made that gap visible but tolerated
+ * "pending" and "unit" residuals. The second removed those states.
  *
- * Every registered PUBLIC operation must now have GENUINE operation-depth
- * evidence — its wired application service invoked end to end on the runtime DB
- * role, through RLS, the transaction wrapper, and the audit/outbox path — and the
- * gate FAILS if any of the following is true:
+ * This version closes the remaining hole, which P1-15 exposed: a manifest that
+ * DECLARES what evidence an operation owes can always be weakened by editing
+ * the manifest. So for the P1-15 (`shared.`) surface the obligations are no
+ * longer declared at all — they are **derived from the operation's own
+ * `defineOperation({...})` registration**:
  *
+ *   every shared operation                     → route · service · success
+ *   not `public: true`                         → authorization
+ *   `public: true`                             → unauthenticated
+ *   a `{param}` in the path                    → cross-tenant
+ *   `idempotent: true`                         → idempotency
+ *   `versionGuarded: true`                     → stale-version
+ *   `auditClass` other than `none`             → audit
+ *   `scope` of `company` or `branch`           → isolation
+ *
+ * Marking an operation idempotent therefore *creates* the obligation to prove
+ * replay; declaring an audit class *creates* the obligation to prove the record
+ * is written. Neither can be dropped by editing this file, because neither is
+ * written in this file. Manifest `required` entries are additive on top
+ * (`outbox`, `denial`, `provider` — obligations the registration cannot know
+ * about), so the manifest can make the gate stricter and never looser.
+ *
+ * P1-14's `iam.` entries keep exactly the evidence model they were gated with:
+ * the derived floor applies to `shared.` only, so nothing about the existing
+ * P1-14 evidence is weakened, relaxed, or re-interpreted here.
+ *
+ * ===========================================================================
+ * FAILURE CONDITIONS
+ * ===========================================================================
  *   1. a registered operation is absent from the coverage manifest;
- *   2. a manifest entry names a test file that does not reference the operation id
- *      (evidence claimed but the operation is never invoked — the exact
- *      "green but untested" failure this gate exists to prevent);
- *   3. an operation declares REQUIRED evidence kinds (permission-denial,
- *      cross-tenant, company/branch isolation, audit assertion, idempotency,
- *      stale-version, atomic outbox) that its test file's COVERAGE-EVIDENCE block
- *      does not provide;
- *   4. a manifest entry names an operation that is no longer registered (stale);
- *   5. any operation is marked `pending` — the state no longer exists, so the
- *      manifest cannot express one.
- *
- * There is no `pending` and no `unit` depth any more: 0 pending, 0 unreferenced,
- * 0 metadata-only is the only passing state.
+ *   2. a manifest entry names a file that does not reference the operation id
+ *      (evidence claimed but the operation is never invoked);
+ *   3. an operation's effective requirements (derived ∪ declared) are not all
+ *      present in the union of its files' COVERAGE-EVIDENCE declarations;
+ *   4. a manifest entry names an operation that is no longer registered;
+ *   5. a manifest entry carries `pending` — the state does not exist;
+ *   6. a `shared.` operation's evidence is metadata-only (no `route` and no
+ *      `service` flag), or unit-only (every evidence file is a pure-unit
+ *      suite under `tests/foundation/`);
+ *   7. a `shared.` operation declares an empty `required` list — invocation-only
+ *      is not an acceptable state for a new public operation.
  *
  * The per-operation evidence a test file provides is declared in a machine-read
  * COVERAGE-EVIDENCE block inside that file, e.g.
  *
  *     COVERAGE-EVIDENCE (...):
- *       iam.user-update: success denial cross-tenant audit stale-version
+ *       shared.template-create: route service authorization success audit
  *
- * The flags are review-anchored: they sit in the file beside the assertions that
- * back them, the gate checks the file also *invokes* the operation, and a
+ * The flags are review-anchored: they sit in the file beside the assertions
+ * that back them, the gate checks the file also *invokes* the operation, and a
  * reviewer can confirm each claimed flag maps to a real assertion. The negative
  * fixture (tests/foundation/operation-coverage-gate.test.ts) proves the gate
- * returns failures when a required flag is missing or an operation is unreferenced.
+ * returns a failure for every category above.
  *
  * Exit codes: 0 clean · 1 coverage failure · 2 IO error.
  * Usage: node scripts/check-operation-test-coverage.mjs [--json]
  */
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const toPosix = (p) => p.split(sep).join('/');
 
+/** The namespace whose obligations are derived rather than declared. */
+export const DERIVED_PREFIX = 'shared.';
+
+/**
+ * Evidence-kind vocabulary. A declaration may provide a superset; the gate
+ * checks the effective REQUIRED ones are present.
+ *
+ *   route            the exported HTTP handler is invoked with a real Request
+ *                    and its Response is asserted
+ *   service          the wired application service runs on the runtime DB role
+ *   authorization    a caller lacking the declared permission is refused 403
+ *   unauthenticated  a `public: true` route answers with NO authenticator
+ *                    installed and discloses nothing a session would protect
+ *   success          the happy path is asserted end to end
+ *   denial           a validation or state refusal is asserted
+ *   cross-tenant     a real row belonging to the other tenant is unreachable
+ *   isolation        a caller narrowed by grant scope is refused out of scope
+ *   audit            the audit record is read back and counted
+ *   outbox           exactly one event row is read back and counted
+ *   idempotency      a replay produces one row, not two
+ *   stale-version    a wrong If-Match is refused with a conflict
+ *   provider         a provider fake is driven and its behaviour asserted
+ */
+export const EVIDENCE_KINDS = Object.freeze([
+  'route',
+  'service',
+  'authorization',
+  'unauthenticated',
+  'success',
+  'denial',
+  'cross-tenant',
+  'isolation',
+  'audit',
+  'outbox',
+  'idempotency',
+  'stale-version',
+  'provider',
+]);
+
 // ---------------------------------------------------------------------------
 // Coverage manifest. Each registered operation MUST appear exactly once.
-//   file: the test that exercises it (must reference the operation id).
-//   required: the evidence kinds the test file must declare for this operation
-//             in its COVERAGE-EVIDENCE block. [] means "invocation only" — read
-//             and catalogue operations that have no denial/isolation/audit
-//             obligations of their own.
-//   note: why, for the reader.
-//
-// Evidence-kind vocabulary (a superset may be declared; the gate checks the
-// REQUIRED ones are present):
-//   success · denial · cross-tenant · isolation · audit · outbox · idempotency ·
-//   stale-version
+//   files:    every test that exercises it (each must reference the id).
+//   required: evidence kinds DECLARED on top of the derived floor. For `iam.`
+//             operations this is the whole requirement, unchanged from P1-14.
+//   note:     why, for the reader.
 // ---------------------------------------------------------------------------
 export const MANIFEST = {
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
-    file: 'tests/backend/iam-access-administration.test.ts',
+    files: ['tests/backend/iam-access-administration.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'issued within/at/beyond authority; audit + event once; rollback leaves nothing',
   },
   'iam.grant-revoke': {
-    file: 'tests/backend/iam-access-administration.test.ts',
+    files: ['tests/backend/iam-access-administration.test.ts'],
     required: ['success', 'stale-version'],
     note: 'revocation immediate effect + stale-version conflict',
   },
   'iam.grant-scope-add': {
-    file: 'tests/backend/iam-access-administration.test.ts',
+    files: ['tests/backend/iam-access-administration.test.ts'],
     required: ['success', 'isolation'],
     note: 'within-authority scope added; foreign-company widening refused',
   },
   'iam.grant-scope-remove': {
-    file: 'tests/backend/iam-access-administration.test.ts',
+    files: ['tests/backend/iam-access-administration.test.ts'],
     required: ['success'],
     note: 'scope removed; DB backstop also proves last-scope removal cannot widen',
   },
   'iam.grant-scope-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'lists the scopes of a scoped grant',
   },
   'iam.approval-limit-create': {
-    file: 'tests/backend/iam-access-administration.test.ts',
+    files: ['tests/backend/iam-access-administration.test.ts'],
     required: ['success', 'denial'],
     note: 'no self-limit; malformed money rejected',
   },
   'iam.approval-limit-end': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'window ended; permission-denied; wrong version refused',
   },
   'iam.approval-limit-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'listed and tenant-scoped',
   },
   // --- Role / permission administration.
   'iam.role-create': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'created and found in the list',
   },
   'iam.role-update': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
     note: 'renamed; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.role-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'listed, tenant-scoped',
   },
   'iam.role-permission-add': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
   },
   'iam.role-permission-update': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'effect changed; permission-denied; wrong version refused',
   },
   'iam.role-permission-remove': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit'],
     note: 'mapping removed; DELETE policy refuses the unprivileged caller',
   },
   'iam.role-permission-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'listed',
   },
   'iam.permission-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'catalogue listed',
   },
   // --- User administration.
   'iam.user-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'cursor paginated, tenant-isolated',
   },
   'iam.user-detail': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'detail; cross-tenant not found',
   },
   'iam.user-update': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
     note: 'profile updated; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.user-status-change': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'lock revokes sessions + audits + one event; permission-denied; self refused',
   },
   'iam.user-session-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'listed for a user',
   },
   'iam.user-session-revoke-all': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency'],
     note: 'all revoked + audit + event; unprivileged revokes nothing; second call revokes zero',
   },
   // --- Organization settings.
   'iam.tenant-settings-read': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'read',
   },
   'iam.tenant-settings-update': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'updated + audit; permission-denied; wrong version refused',
   },
   'iam.company-settings-read': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'read in scope',
   },
   'iam.company-settings-write': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'audit', 'isolation'],
     note: 'append-only version written + audit; out-of-scope company refused',
   },
   'iam.branch-settings-read': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'read in scope',
   },
   'iam.branch-settings-write': {
-    file: 'tests/backend/iam-admin-writes.test.ts',
+    files: ['tests/backend/iam-admin-writes.test.ts'],
     required: ['success', 'audit', 'isolation'],
     note: 'version written + audit; out-of-scope branch invisible and refused',
   },
   // --- Audit viewing.
   'iam.audit-event-list': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'bounded range; privileged read is itself audited',
   },
   'iam.audit-event-detail': {
-    file: 'tests/backend/iam-operations.test.ts',
+    files: ['tests/backend/iam-operations.test.ts'],
     required: [],
     note: 'cross-tenant record not found',
   },
   // --- Invitation / activation (provider-fake harness).
   'iam.invitation-create': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
   },
   'iam.invitation-cancel': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'invited → archived + audit + event; non-invitation refused',
   },
   'iam.invitation-activate': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'accepted invitation activated + audit + event; unconfirmed refused',
   },
   // --- Authentication (provider-fake harness).
   'iam.auth-login': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
   },
   'iam.auth-logout': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'audit', 'idempotency'],
     note: 'session revoked + logout audit; double logout is a no-op',
   },
   'iam.auth-session': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success'],
     note: 'describeSession resolves identity, scope, permissions',
   },
   'iam.auth-password-reset': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial'],
     note: 'known → delivery; unknown → silent; non-allow-listed redirect refused',
   },
   'iam.auth-password-reset-completion': {
-    file: 'tests/backend/iam-auth-provider.test.ts',
+    files: ['tests/backend/iam-auth-provider.test.ts'],
     required: ['success', 'denial', 'idempotency'],
     note: 'completes + invalidates prior sessions; replay refused; bounds enforced',
   },
   // --- Reference exemplar.
   'meta.ping': {
-    file: 'tests/backend/api-ping.test.ts',
+    files: ['tests/backend/api-ping.test.ts'],
     required: [],
     note: 'end-to-end reference endpoint',
   },
@@ -270,125 +327,222 @@ export const MANIFEST = {
   // -------------------------------------------------------------------------
   // P1-15 shared services.
   //
-  // The evidence obligations below follow the same rule as P1-14: a write that
-  // can leak across a tenant declares `cross-tenant`; a write guarded by
-  // `If-Match` declares `stale-version`; a write that publishes declares
-  // `outbox`; a command whose replay must not duplicate declares `idempotency`.
-  // Read and catalogue operations carry `[]` — invocation is the whole
-  // obligation, because they change nothing and have no denial of their own
-  // beyond the permission the pipeline already enforces.
+  // Every entry below names TWO files, and the split is the point:
+  //
+  //   `p1-15-operation-routes.test.ts`  drives the exported HTTP handler, so it
+  //     carries `route`, the authorization verdict, and the status codes;
+  //   the service suites drive the wired service directly, so they carry the
+  //     deeper repository, provider and rollback properties.
+  //
+  // The union is what the operation owes. `required` here lists only what the
+  // registration cannot derive — `outbox`, `denial`, `provider`.
   // -------------------------------------------------------------------------
   'shared.attachment-upload-authorize': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'cross-tenant', 'audit'],
-    note: 'document created + signed upload URL issued; unpermissioned refused; tenant-B invisible',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial'],
+    note: 'document created + signed upload URL issued; unpermissioned refused; tenant-B category invisible',
   },
   'shared.attachment-version-register': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
-    note: 'pending version + audit + one event; forged token for another tenant refused',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial', 'outbox'],
+    note: 'pending version + audit + one event; a genuine tenant-B token is refused',
   },
   'shared.attachment-version-reject': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'audit'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial'],
     note: 'pending → rejected is the only runtime transition; a non-pending version is refused',
   },
   'shared.attachment-download-authorize': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'audit'],
-    note: 'accepted version signs; a pending version is ERR-DOC-001',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial', 'provider'],
+    note: 'accepted version signs and the signature verifies; a pending version is ERR-DOC-001',
   },
   'shared.attachment-link-create': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial', 'outbox'],
     note: 'reachability established + audit + event; unregistered entity type refused',
   },
   'shared.attachment-link-withdraw': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'audit'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
   'shared.notification-enqueue': {
-    file: 'tests/backend/p1-15-attachments-notifications.test.ts',
-    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency'],
-    note: 'pending row + audit + one event; consent refusal; same dedupe key twice is one row',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-attachments-notifications.test.ts',
+    ],
+    required: ['denial', 'outbox', 'provider'],
+    note: 'pending row + audit + one event; consent refusal; dedupe; no provider call in the transaction',
   },
   'shared.template-create': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial', 'cross-tenant'],
     note: 'tenant template created; platform scope refused; duplicate identity conflicts',
   },
   'shared.template-update': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit', 'stale-version'],
-    note: 'grantable columns only; wrong version refused',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial'],
+    note: 'grantable columns only; wrong version refused; missing If-Match is 428',
   },
   'shared.template-version-create': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit', 'outbox'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial', 'outbox'],
     note: 'draft created + audit + event; a version is always born a draft',
   },
   'shared.template-version-revise': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'stale-version'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial'],
     note: 'draft content revised; approved content is immutable',
   },
   'shared.template-version-approve': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit', 'outbox', 'stale-version'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial', 'outbox'],
     note: 'approver taken from the session; approved content can no longer be revised',
   },
   'shared.template-version-retire': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit', 'stale-version'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial', 'outbox'],
     note: 'refused while active; permitted after deactivation',
   },
   'shared.template-activation-set': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit', 'stale-version'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial'],
     note: 'only an approved version may become active',
   },
   'shared.template-version-preview': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success'],
-    note: 'renders with sample values and sends nothing',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial'],
+    note: 'renders with sample values and sends nothing; a missing variable is 422, never 500',
   },
   'shared.branch-status-change': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'isolation', 'audit', 'outbox', 'stale-version'],
-    note: 'state + module-owned history + audit + one event; repeat is ERR-TRN-001; stale version refused',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial', 'outbox'],
+    note: 'state + module-owned history + audit + one event; repeat is ERR-TRN-001',
   },
   'shared.branch-status-read': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
     required: [],
-    note: 'current state and reachable next states',
+    note: 'current state and reachable next states; out-of-scope branch refused',
   },
   'shared.export-authorize': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
-    required: ['success', 'denial', 'audit'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
+    required: ['denial'],
     note: 'both permissions required; sensitive field refused; export-class audit record written',
   },
   'shared.export-catalogue': {
-    file: 'tests/backend/p1-15-templates-transitions-export.test.ts',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-templates-transitions-export.test.ts',
+    ],
     required: [],
     note: 'registry metadata; identical for every caller holding rpt.export',
   },
   'shared.health-live': {
-    file: 'tests/backend/p1-15-dispatch-and-health.test.ts',
-    required: ['success'],
-    note: 'exact two-key payload; touches nothing',
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-dispatch-and-health.test.ts',
+    ],
+    required: [],
+    note: 'exact two-key payload; answers with no authenticator installed; touches nothing',
   },
   'shared.health-ready': {
-    file: 'tests/backend/p1-15-dispatch-and-health.test.ts',
-    required: ['success'],
+    files: [
+      'tests/backend/p1-15-operation-routes.test.ts',
+      'tests/backend/p1-15-dispatch-and-health.test.ts',
+    ],
+    required: [],
     note: 'bounded probe; names and booleans only, no role or driver detail',
   },
 };
 
-/** Extracts every `id: '...'` from a `defineOperation({...})` literal in a tree. */
-export function scanRegisteredOperationIds(root) {
+// ---------------------------------------------------------------------------
+// Registry scanning
+// ---------------------------------------------------------------------------
+
+const literalString = (source, key) => {
+  const m = new RegExp(`\\b${key}\\s*:\\s*['"\`]([^'"\`]*)['"\`]`).exec(source);
+  return m ? m[1] : null;
+};
+const literalTrue = (source, key) => new RegExp(`\\b${key}\\s*:\\s*true\\b`).test(source);
+
+/**
+ * Extracts one `defineOperation({...})` literal, starting at its opening brace,
+ * by balancing braces. Returns null when the literal is unterminated.
+ */
+function literalAt(source, braceStart) {
+  let depth = 0;
+  for (let i = braceStart; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(braceStart, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Scans every `defineOperation({...})` in `src`, returning a Map of
+ * id -> facts. `surface` is derived from WHERE the registration lives: an
+ * operation registered inside an App Router `route.ts` is reachable over HTTP
+ * and is therefore public API surface; anything else is internal.
+ */
+export function scanRegisteredOperations(root) {
   const src = join(root, 'src');
-  const ids = new Set();
+  const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir)) {
@@ -397,23 +551,68 @@ export function scanRegisteredOperationIds(root) {
       if (st.isDirectory()) {
         if (entry === 'node_modules' || entry === '.next') continue;
         walk(full);
-      } else if (/\.tsx?$/.test(entry)) {
-        if (toPosix(relative(root, full)).endsWith('server/auth/operation-registry.ts')) continue;
-        const source = readFileSync(full, 'utf8');
-        let index = source.indexOf('defineOperation(');
-        while (index >= 0) {
-          const braceStart = source.indexOf('{', index);
-          const idMatch = /\bid\s*:\s*['"`]([^'"`]+)['"`]/.exec(
-            source.slice(braceStart, braceStart + 400)
-          );
-          if (idMatch) ids.add(idMatch[1]);
-          index = source.indexOf('defineOperation(', braceStart + 1);
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry)) continue;
+      const rel = toPosix(relative(root, full));
+      if (rel.endsWith('server/auth/operation-registry.ts')) continue;
+      const source = readFileSync(full, 'utf8');
+      let index = source.indexOf('defineOperation(');
+      while (index >= 0) {
+        const braceStart = source.indexOf('{', index);
+        const literal = braceStart >= 0 ? literalAt(source, braceStart) : null;
+        if (literal) {
+          const id = literalString(literal, 'id');
+          if (id) {
+            operations.set(id, {
+              id,
+              module: literalString(literal, 'module'),
+              method: literalString(literal, 'method'),
+              path: literalString(literal, 'path'),
+              scope: literalString(literal, 'scope'),
+              auditClass: literalString(literal, 'auditClass'),
+              public: literalTrue(literal, 'public'),
+              idempotent: literalTrue(literal, 'idempotent'),
+              versionGuarded: literalTrue(literal, 'versionGuarded'),
+              surface: /^src\/app\/api\/.*\/route\.tsx?$/.test(rel) ? 'public-api' : 'internal',
+              source: rel,
+            });
+          }
         }
+        index = source.indexOf('defineOperation(', braceStart + 1);
       }
     }
   };
   walk(src);
-  return ids;
+  return operations;
+}
+
+/** Back-compatible id-only view. */
+export function scanRegisteredOperationIds(root) {
+  return new Set(scanRegisteredOperations(root).keys());
+}
+
+/**
+ * The evidence an operation owes purely because of how it registered itself.
+ *
+ * Applies to the `shared.` namespace only: P1-14's evidence model is the one it
+ * was gated with and is not re-interpreted here.
+ */
+export function derivedRequirements(operation) {
+  if (!operation || typeof operation.id !== 'string') return [];
+  if (!operation.id.startsWith(DERIVED_PREFIX)) return [];
+
+  const required = ['route', 'service', 'success'];
+  required.push(operation.public ? 'unauthenticated' : 'authorization');
+  // A caller-supplied resource identifier in the path IS the cross-tenant risk.
+  if (!operation.public && typeof operation.path === 'string' && operation.path.includes('{')) {
+    required.push('cross-tenant');
+  }
+  if (operation.idempotent) required.push('idempotency');
+  if (operation.versionGuarded) required.push('stale-version');
+  if (operation.auditClass && operation.auditClass !== 'none') required.push('audit');
+  if (operation.scope === 'company' || operation.scope === 'branch') required.push('isolation');
+  return [...new Set(required)];
 }
 
 /**
@@ -442,7 +641,9 @@ export function parseProvidedFlags(source) {
     const m = /^\s*\*?\s*((?:iam|meta|shared)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
-      provided.set(m[1], flags);
+      const existing = provided.get(m[1]);
+      if (existing) for (const flag of flags) existing.add(flag);
+      else provided.set(m[1], flags);
     }
   }
   return provided;
@@ -476,16 +677,36 @@ export function stripCoverageBlock(source) {
   return out.join('\n');
 }
 
+/** A pure-unit suite. Evidence for a public operation may not live only here. */
+const isPureUnitFile = (file) => file.startsWith('tests/foundation/');
+
+/** Normalises `registered` to a Map of id -> facts (facts may be minimal). */
+function asOperationMap(registered) {
+  if (registered instanceof Map) return registered;
+  const map = new Map();
+  for (const id of registered) map.set(id, { id });
+  return map;
+}
+
+/** Normalises a manifest entry's file list. */
+const filesOf = (entry) => {
+  if (Array.isArray(entry.files)) return entry.files;
+  if (typeof entry.file === 'string') return [entry.file];
+  return [];
+};
+
 /**
  * Pure evaluator, so the negative fixture can drive it with a synthetic manifest
  * and an in-memory reader. `readFile(path)` returns the file's text, or null when
- * it does not exist.
+ * it does not exist. `registered` may be a Set of ids (no derived obligations
+ * are computed) or a Map of id -> registration facts (they are).
  *
  * Returns `{ failures, matrix, counts }`. A clean run has `failures.length === 0`.
  */
 export function evaluateCoverage({ registered, manifest, readFile }) {
   const failures = [];
   const matrix = [];
+  const operations = asOperationMap(registered);
   const providedCache = new Map();
   const providedFor = (file) => {
     if (!providedCache.has(file)) {
@@ -495,51 +716,137 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     return providedCache.get(file);
   };
 
-  for (const id of [...registered].sort()) {
+  for (const id of [...operations.keys()].sort()) {
+    const operation = operations.get(id);
     const entry = manifest[id];
     if (!entry) {
       failures.push(`${id}: registered operation missing from the coverage manifest`);
-      matrix.push({ id, file: null, referenced: false, required: [], missing: ['<undeclared>'] });
+      matrix.push({
+        id,
+        files: [],
+        referenced: false,
+        required: [],
+        provided: [],
+        missing: ['<undeclared>'],
+      });
       continue;
     }
-    const required = entry.required ?? [];
-    const source = readFile(entry.file);
-    // The operation must be referenced OUTSIDE its own COVERAGE-EVIDENCE block —
-    // the declaration cannot vouch for the invocation it declares.
-    const referenced = source != null && stripCoverageBlock(source).includes(id);
-    if (!referenced) {
-      failures.push(
-        `${id}: manifest names ${entry.file}, but that file does not reference the operation id (not invoked)`
-      );
+    if (entry.pending) {
+      failures.push(`${id}: coverage manifest carries "pending", which is not a permitted state`);
     }
-    const provided = referenced ? (providedFor(entry.file).get(id) ?? new Set()) : new Set();
+
+    const derived = derivedRequirements(operation);
+    const declared = entry.required ?? [];
+    const required = [...new Set([...derived, ...declared])];
+
+    const files = filesOf(entry);
+    if (files.length === 0) {
+      failures.push(`${id}: coverage manifest names no test file`);
+    }
+
+    const provided = new Set();
+    let referenced = files.length > 0;
+    for (const file of files) {
+      const source = readFile(file);
+      // The operation must be referenced OUTSIDE its own COVERAGE-EVIDENCE
+      // block — the declaration cannot vouch for the invocation it declares.
+      const inThisFile = source != null && stripCoverageBlock(source).includes(id);
+      if (!inThisFile) {
+        referenced = false;
+        failures.push(
+          `${id}: manifest names ${file}, but that file does not reference the operation id (not invoked)`
+        );
+        continue;
+      }
+      for (const flag of providedFor(file).get(id) ?? []) provided.add(flag);
+    }
+
     const missing = required.filter((flag) => !provided.has(flag));
     if (referenced && missing.length > 0) {
       failures.push(
-        `${id}: ${entry.file} is missing required evidence [${missing.join(', ')}] in its COVERAGE-EVIDENCE block`
+        `${id}: [${files.join(', ')}] is missing required evidence [${missing.join(', ')}] in its COVERAGE-EVIDENCE block`
       );
     }
+
+    const isDerived = id.startsWith(DERIVED_PREFIX);
+    const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
+    const unitOnly = files.length > 0 && files.every(isPureUnitFile);
+    if (isDerived && metadataOnly) {
+      failures.push(
+        `${id}: evidence is metadata-only — no route and no service invocation is declared`
+      );
+    }
+    if (isDerived && unitOnly) {
+      failures.push(
+        `${id}: evidence is unit-only — every named file is a pure-unit suite under tests/foundation/`
+      );
+    }
+    // Invocation-only is structurally impossible for a `shared.` operation: the
+    // derived floor always contains route, service, success and one of
+    // authorization / unauthenticated. This check fires only if that floor is
+    // ever edited away, which is exactly when it matters.
+    if (isDerived && required.length === 0) {
+      failures.push(`${id}: invocation-only is not a permitted state for a public operation`);
+    }
+    // An operation registered outside an App Router `route.ts` is not reachable
+    // over HTTP. Reclassifying one is allowed, but only in the open: the
+    // manifest must say why, so "internal" can never become a way to escape
+    // acceptance evidence quietly.
+    if (isDerived && operation.surface === 'internal' && !entry.internalReason) {
+      failures.push(
+        `${id}: registered outside src/app/api/**/route.ts but carries no manifest internalReason`
+      );
+    }
+
     matrix.push({
       id,
-      file: entry.file,
+      surface: operation.surface ?? 'unknown',
+      method: operation.method ?? null,
+      path: operation.path ?? null,
+      public: operation.public === true,
+      files,
       referenced,
+      derived,
+      declared,
       required,
       provided: [...provided].sort(),
       missing,
+      metadataOnly,
+      unitOnly,
     });
   }
 
   // Manifest entries for operations that no longer exist are stale.
   for (const id of Object.keys(manifest)) {
-    if (!registered.has(id)) {
+    if (!operations.has(id)) {
       failures.push(`${id}: coverage manifest names an operation that is not registered`);
     }
   }
 
+  const derivedRows = matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX));
+  const atOperationDepth = (m) =>
+    m.referenced &&
+    m.missing.length === 0 &&
+    m.provided.includes('route') &&
+    m.provided.includes('service') &&
+    (m.provided.includes('authorization') || m.provided.includes('unauthenticated'));
+
   const counts = {
-    registered: registered.size,
-    withRequiredEvidence: matrix.filter((m) => (m.required ?? []).length > 0).length,
-    invocationOnly: matrix.filter((m) => (m.required ?? []).length === 0).length,
+    registered: operations.size,
+    publicApi: matrix.filter((m) => m.surface === 'public-api').length,
+    internal: matrix.filter((m) => m.surface === 'internal').length,
+    withRequiredEvidence: matrix.filter((m) => m.required.length > 0).length,
+    invocationOnly: matrix.filter((m) => m.required.length === 0).length,
+    p1_15: {
+      registered: derivedRows.length,
+      publicApi: derivedRows.filter((m) => m.surface === 'public-api').length,
+      operationDepth: derivedRows.filter(atOperationDepth).length,
+      invocationOnly: derivedRows.filter((m) => m.required.length === 0).length,
+      pending: 0,
+      unitOnly: derivedRows.filter((m) => m.unitOnly).length,
+      unreferenced: derivedRows.filter((m) => !m.referenced).length,
+      metadataOnly: derivedRows.filter((m) => m.metadataOnly).length,
+    },
   };
   return { failures, matrix, counts };
 }
@@ -547,6 +854,15 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
+function writeMatrix(path, payload) {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(payload, null, 2) + '\n');
+  } catch {
+    /* evidence dir may be absent in some checkouts; not fatal to the gate */
+  }
+}
+
 function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
@@ -557,7 +873,7 @@ function runCli() {
 
   let registered;
   try {
-    registered = scanRegisteredOperationIds(ROOT);
+    registered = scanRegisteredOperations(ROOT);
   } catch (error) {
     console.error(`IO error scanning operations: ${error.message}`);
     process.exit(2);
@@ -569,27 +885,23 @@ function runCli() {
     readFile,
   });
 
-  // Persist the machine-readable matrix for the evidence pack.
-  const matrixPath = join(
-    ROOT,
-    'docs',
-    'phase-1',
-    'phase-1-14',
-    'evidence',
-    'operation-test-matrix.json'
+  const generatedFrom = 'scripts/check-operation-test-coverage.mjs';
+  writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-14', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts,
+      operations: matrix,
+    }
   );
-  try {
-    writeFileSync(
-      matrixPath,
-      JSON.stringify(
-        { generatedFrom: 'scripts/check-operation-test-coverage.mjs', counts, operations: matrix },
-        null,
-        2
-      ) + '\n'
-    );
-  } catch {
-    /* evidence dir may be absent in some checkouts; not fatal to the gate */
-  }
+  writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-15', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_15,
+      operations: matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX)),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -597,18 +909,32 @@ function runCli() {
     console.log(
       `Operation-to-test coverage (STRICT): ${counts.registered} registered operation(s)`
     );
+    console.log(`  public API surface: ${counts.publicApi} · internal: ${counts.internal}`);
     console.log(
       `  with required evidence: ${counts.withRequiredEvidence} · invocation-only (read/catalogue): ${counts.invocationOnly}`
     );
     for (const m of matrix) {
-      const ok = m.referenced && (m.missing ?? []).length === 0;
-      console.log(`  [${ok ? 'OK ' : 'FAIL'}] ${m.id.padEnd(34)} ${m.file ?? '(none)'}`);
+      const ok = m.referenced && m.missing.length === 0;
+      console.log(
+        `  [${ok ? 'OK ' : 'FAIL'}] ${m.id.padEnd(36)} ${m.files.join(' + ') || '(none)'}`
+      );
     }
+    const p = counts.p1_15;
+    console.log('');
+    console.log(`P1-15 registered public operations: ${p.registered}`);
+    console.log(`P1-15 operation-depth: ${p.operationDepth}`);
+    console.log(`P1-15 invocation-only: ${p.invocationOnly}`);
+    console.log(`P1-15 pending: ${p.pending}`);
+    console.log(`P1-15 unit-only: ${p.unitOnly}`);
+    console.log(`P1-15 unreferenced: ${p.unreferenced}`);
+    console.log(`P1-15 metadata-only: ${p.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`
       );
-      console.log(`Matrix written to docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`);
+      console.log(
+        `Matrix written to docs/phase-1/phase-1-14|15/evidence/operation-test-matrix.json`
+      );
     } else {
       console.error(`\n${failures.length} coverage failure(s):`);
       for (const f of failures) console.error(`  - ${f}`);
