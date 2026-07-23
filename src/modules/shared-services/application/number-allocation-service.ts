@@ -176,7 +176,7 @@ export class NumberAllocationService extends ApplicationService {
   }
 
   /**
-   * Maps the two SQLSTATEs the function raises on purpose.
+   * Maps the SQLSTATEs the allocation path raises on purpose.
    *
    * `no_data_found` means the sequence is recognised but not provisioned in this
    * scope — a configuration gap the caller cannot fix by changing the request,
@@ -184,9 +184,24 @@ export class NumberAllocationService extends ApplicationService {
    * `insufficient_privilege` means the requested company or branch is outside
    * the session's resolved scope, which is an authorization denial and is
    * reported with the same uniform shape as any other.
+   * `check_violation` means the period guard refused to let the run move
+   * backwards (DBCR-P1-15-002). The allocation is aborted, nothing is issued,
+   * and the correct client behaviour is to retry in a fresh transaction — so it
+   * is reported as a conflict rather than as a fault, which would say nothing.
    */
   private translate(error: unknown, definition: SequenceDefinition): unknown {
     const state = sqlState(error);
+    if (state === ALLOCATION_SQLSTATE.periodRegression) {
+      metrics().increment(METRICS.numberAllocationCount, {
+        sequence: definition.code,
+        result: 'period-regression',
+      });
+      return new AppFailure('ERR-CON-001', {
+        message:
+          'The sequence period moved backwards and the allocation was refused; retry in a new transaction',
+        cause: error,
+      });
+    }
     if (state === ALLOCATION_SQLSTATE.noSequenceInScope) {
       metrics().increment(METRICS.numberAllocationCount, {
         sequence: definition.code,

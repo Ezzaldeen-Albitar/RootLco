@@ -859,6 +859,37 @@ describe('shared.notification-enqueue', () => {
     expect(messages.callCount).toBe(before);
   });
 
+  it('resolves one scope for the row, the audit record and the event (PMR-004)', async () => {
+    // A caller may name a branch and leave the company to the session. The row
+    // resolved it that way; the audit record and the outbox event did not, so a
+    // branch-scoped enqueue wrote `(company, branch)` to the message and
+    // `(null, branch)` to the outbox — which
+    // `ck_event_outbox_branch_requires_company` refuses, turning a valid request
+    // into a fault. The three now read one resolved value.
+    const context = contextFor({
+      userId: U_SHARED,
+      operation: 'shared.p1-15-evidence',
+      module: 'shared-services',
+      companyIds: [COMPANY_A1],
+    });
+    const input = queueInput({ companyId: null, branchId: null });
+
+    const result = await withTransaction(context, (db) => notifications.queueMessage(db, input));
+
+    const scopes = await admin.query<{ src: string; company_id: string | null }>(
+      `SELECT 'message' AS src, company_id FROM shared.outbound_messages WHERE id = $1
+       UNION ALL
+       SELECT 'outbox'  AS src, company_id FROM shared.event_outbox
+        WHERE tenant_id = $2 AND event_key = $3`,
+      [result.messageId, TENANT_A, `message.enqueued:${result.messageId}`]
+    );
+    expect(scopes.rows).toHaveLength(2);
+    const [a, b] = scopes.rows;
+    // Same company on both, and it is the one the session supplied — not null.
+    expect(a?.company_id).toBe(COMPANY_A1);
+    expect(b?.company_id).toBe(COMPANY_A1);
+  });
+
   it('denial: a principal without shared.notification.send is refused by the INSERT policy (42501)', async () => {
     const input = queueInput();
     const error = await withTransaction(asUnpriv(), (db) =>

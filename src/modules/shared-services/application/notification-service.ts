@@ -142,6 +142,20 @@ export class SharedNotificationService extends ApplicationService implements Not
     // Anything else is stored only as a tenant-salted digest, so the ledger never
     // holds a reversible external identity.
     const isUser = await this.messages.isTenantUser(db, recipientRef);
+
+    // The scope is resolved ONCE and reused by the row, the audit record and the
+    // event. It used to be resolved three times: the row fell back to the
+    // session's company, the audit and the event did not. A caller that named a
+    // branch without naming its company therefore wrote a row with
+    // `(company, branch)` and an outbox entry with `(null, branch)` - which
+    // `ck_event_outbox_branch_requires_company` refuses, turning a valid
+    // branch-scoped enqueue into a fault (PMR-005). Three readings of one fact
+    // is the bug; one reading is the fix.
+    const scope = {
+      companyId: input.companyId ?? context.companyIds[0] ?? null,
+      branchId: input.branchId ?? null,
+    };
+
     const result = await this.messages.enqueue(db, {
       id: crypto.randomUUID(),
       channel,
@@ -152,8 +166,7 @@ export class SharedNotificationService extends ApplicationService implements Not
       bodySha256: bodyDigest(canonicalRenderedForm(rendered)),
       dedupeKey,
       consentRef: input.consentEvaluation.consentRecordId,
-      companyId: input.companyId ?? context.companyIds[0] ?? null,
-      branchId: input.branchId ?? null,
+      ...scope,
     });
 
     if (!result) {
@@ -177,8 +190,7 @@ export class SharedNotificationService extends ApplicationService implements Not
       action: 'shared.notification.enqueued',
       entityType: 'shared.outbound_message',
       entityId: result.messageId,
-      companyId: input.companyId ?? null,
-      branchId: input.branchId ?? null,
+      ...scope,
       details: [
         { field: 'channel', classification: 'public', value: channel },
         { field: 'purpose', classification: 'public', value: version.template_purpose },
@@ -207,8 +219,7 @@ export class SharedNotificationService extends ApplicationService implements Not
       // the row it describes.
       payload: { channel, purpose: version.template_purpose, locale: input.locale },
       eventKey: `message.enqueued:${result.messageId}`,
-      companyId: input.companyId ?? null,
-      branchId: input.branchId ?? null,
+      ...scope,
     });
 
     metrics().increment(METRICS.notificationEnqueueCount, { channel, result: 'success' });

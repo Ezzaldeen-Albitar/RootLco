@@ -50,7 +50,7 @@ import {
   withIdempotency,
 } from './idempotency';
 import { parseIfMatch, toETag } from '../db/concurrency';
-import { RATE_LIMIT_POLICIES, enforceRateLimit } from './rate-limit';
+import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './rate-limit';
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
@@ -108,25 +108,51 @@ function successHeaders(correlationId: string, recordVersion?: number): Record<s
   };
 }
 
-function policyFor(operation: RegisteredOperation) {
+/** A policy a request with no session can actually be keyed by. */
+function isSessionless(policy: RateLimitPolicy): boolean {
+  return !policy.keyBy.includes('tenant') && !policy.keyBy.includes('user');
+}
+
+/**
+ * Resolves the rate-limit policy a registered operation is actually throttled by.
+ *
+ * Exported for tests. It is the one place where a *declared* policy and an
+ * *enforced* policy can diverge, and a defect here is silent by construction —
+ * the route still works, it is just throttled by something other than what its
+ * own registration says. That is exactly the shape that needs a direct
+ * assertion rather than an end-to-end one.
+ */
+export function policyFor(operation: RegisteredOperation): RateLimitPolicy | undefined {
   const name = operation.rateLimitPolicy;
-  if (!name) return undefined;
-  const policy = RATE_LIMIT_POLICIES[name];
-  if (!policy) {
+  const declared = name ? RATE_LIMIT_POLICIES[name] : undefined;
+  if (name && !declared) {
     throw new Error(`Operation ${operation.id} references unknown rate-limit policy "${name}"`);
   }
+
+  if (!operation.public) return declared;
+
   // A public operation has no tenant and no user, so a policy keyed on either
-  // would put every caller in the world in one bucket. Whatever a public
-  // operation declares, it is throttled by `public-probe` — operation + client
-  // address — which are the only dimensions that exist without a session.
-  if (operation.public) {
-    const publicPolicy = RATE_LIMIT_POLICIES['public-probe'];
-    if (!publicPolicy) {
-      throw new Error('The "public-probe" rate-limit policy is missing from the catalogue');
-    }
-    return publicPolicy;
+  // would put every caller in the world into one bucket. Such a policy is
+  // replaced — and so is *no policy at all*, because `defineOperation()` does
+  // not require one and an unthrottled public route is the defect this branch
+  // exists to prevent.
+  //
+  // A declared policy that is already sessionless is KEPT, and that distinction
+  // is load-bearing: the four unauthenticated `iam.auth-*` operations declare
+  // `auth-adjacent` (10/min, `securityRelevant: true`), and an earlier version of
+  // this function substituted `public-probe` (120/min, not security-relevant) for
+  // them unconditionally. That silently gave credential stuffing twelve times the
+  // budget and stopped a breach raising a security signal, while their own
+  // `publicReason` text still said they were bounded by `auth-adjacent`. Keeping a
+  // sessionless declaration means the substitution can only ever make a public
+  // route *more* throttled, never less.
+  if (declared && isSessionless(declared)) return declared;
+
+  const publicPolicy = RATE_LIMIT_POLICIES['public-probe'];
+  if (!publicPolicy) {
+    throw new Error('The "public-probe" rate-limit policy is missing from the catalogue');
   }
-  return policy;
+  return publicPolicy;
 }
 
 /**
