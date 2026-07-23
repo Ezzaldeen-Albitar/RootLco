@@ -182,15 +182,17 @@ lands in full.
 
 ### R-11 — a Phase 1-5 suite leaves reference rows changed
 
-`tests/db/shared-retention.test.ts` deliberately overwrites `min_retention_days` and
-`allows_deletion` for three retention classes, so its eligibility-function tests have known finite,
-indefinite and no-delete periods. Its own comment says so. It does not restore them.
+`tests/db/shared-retention.test.ts:59` deliberately overwrites `min_retention_days` and
+`allows_deletion` for three retention classes — through an `INSERT … ON CONFLICT DO UPDATE` in setup,
+outside any rolled-back transaction — so its eligibility-function tests have known finite, indefinite
+and no-delete periods. Its own comment says so. It does not restore them.
 
 The consequence is narrow and entirely local: on a freshly rebuilt database `validate:seed-state`
 passes; after `npm run test:db` it fails with _"Retention classes do not match the five governed
 values"_. Hosted CI is unaffected, and not by luck — `.github/workflows/ci.yml` runs
-`db:apply-migrations` (line 233) → `validate:seed-state` (line 236) → the classification checks →
-`test:db` (line 284), so the seed assertion always measures a database no suite has touched.
+`db:apply-migrations` (line 239) → `validate:seed-state` (line 242) → the classification checks →
+`test:db` (line 290), so the seed assertion always measures a database no suite has touched. That
+ordering is a fact about CI, **not** a resolution of the defect.
 
 **P1-15 does not fix this.** Changing another phase's test to restore state is a change to that
 phase's evidence, and making that change inside a feature pull request — to make this phase's own

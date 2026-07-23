@@ -124,8 +124,9 @@ Neither is caused by migration 117, and neither affects hosted CI.
    `shared.retention_classes.min_retention_days` and does not restore it. On a fresh
    `supabase db reset` the gate passes with
    _"7 declared files applied twice; five exact retention classes; every business table empty; counts
-   idempotent."_ CI runs it at `ci.yml` line 236, immediately after `db:apply-migrations` and **before**
-   `test:db` (line 284), so CI is unaffected. This is **pre-existing test pollution**, recorded here
+   idempotent."_ The exact mutating test is `tests/db/shared-retention.test.ts:59`. CI runs the seed
+   assertion at `ci.yml` line 242, immediately after `db:apply-migrations` (line 239) and **before**
+   `test:db` (line 290), so CI is unaffected. This is **pre-existing test pollution**, recorded here
    rather than hidden, and is not a P1-15 defect.
 2. **`validate:canonical-docs` fails locally** because it verifies the canonical Word documents that
    live **outside** the repository by owner decision. It fails identically on the untouched baseline

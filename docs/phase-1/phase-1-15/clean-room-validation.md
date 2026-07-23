@@ -24,14 +24,14 @@ earlier clean-room result is therefore stale and is not inherited. This record r
 
 It records **two runs**, and says which is which:
 
-| Run   | Commit         | What it is                                                           |
-| ----- | -------------- | -------------------------------------------------------------------- |
-| **A** | `739aec7`      | The full sequence on the candidate, before this document existed     |
-| **B** | the branch tip | The same full sequence, re-run **after** this document was committed |
+| Run   | Commit         | What it is                                                       |
+| ----- | -------------- | ---------------------------------------------------------------- |
+| **A** | `739aec7`      | The full sequence on the candidate, before this document existed |
+| **B** | the branch tip | The same full sequence, re-run on the **exact final SHA** pushed |
 
 Run B is the one that matters, and its exit codes are reproduced in the pull-request description —
-because a file cannot contain the hash of the commit that introduces it, and engineering a way for it
-to appear to is exactly the kind of thing this record exists to prevent. What _can_ be checked from
+because no file can contain the hash of the commit that carries it, and engineering a way for it to
+appear to is exactly the kind of thing this record exists to prevent. What _can_ be checked from
 inside the repository is that the two commits differ only by documentation:
 
 ```bash
@@ -321,11 +321,11 @@ and crashed the renderer with a `TypeError`. The check is now
 Run A is complete on `739aec79acb2bb708c014beedd98a43b2ee3bb48` with **55 of 57 steps at exit 0**,
 and the two non-zero exits diagnosed, attributed and classified above.
 
-Run B — the same 57 steps on the **exact final SHA of this branch**, the commit that introduces this
-file — is the run that covers the tip. Its SHA and its exit codes are stated in the pull-request
-description, which is written after that commit exists and can therefore name it. Nothing in this
-document should be read as claiming that run A executed on the final SHA; it did not, by
-construction, and that is why run B exists.
+Run B — the same 57 steps on the **exact final SHA of this branch**, in a worktree created fresh at
+that commit with its own `npm ci` — is the run that covers the tip. Its SHA and its exit codes are
+stated in the pull-request description, which is written after that commit exists and can therefore
+name it. Nothing in this document should be read as claiming that run A executed on the final SHA; it
+did not, by construction, and that is why run B exists.
 
 The genuinely independent execution is **hosted CI on the exact final SHA**, which runs the same
 gates on a machine this one has no influence over. A clean room removes "it works because of

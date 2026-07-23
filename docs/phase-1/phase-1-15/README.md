@@ -119,6 +119,7 @@ the package lands.
 | [Operation inventory](operation-inventory.md)                       | Per-operation acceptance evidence for all 21 new operations: route, service, authorization, and every obligation the registration derives  | In this package |
 | [Traceability matrix](traceability-matrix.md)                       | Requirement to implementation to test, in both directions                                                                                  | In this package |
 | [Evidence index](evidence-index.md)                                 | Commands run, exit codes, and where each artefact lives                                                                                    | In this package |
+| [Clean-room validation](clean-room-validation.md)                   | The full 57-step sequence, both runs, every exit code, and the two non-zero exits diagnosed rather than retried                            | In this package |
 
 ## Related records outside this folder
 
