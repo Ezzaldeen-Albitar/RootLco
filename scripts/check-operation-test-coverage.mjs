@@ -174,6 +174,32 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
     note: 'append-only; server-stamped actor and effective_at; a contact point owned by another customer is refused; an injected failure leaves no consent row, audit row, or event',
   },
+  // --- Governance: the records that constrain how staff treat a customer. ---
+  'crm.note-add': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'consumes DBCR-P1-16-001; the policies pin author and entity type, so an author cannot be forged and a note cannot attach to a non-CRM entity; the body never reaches the audit trail',
+  },
+  'crm.alert-raise': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'advisory only; proves an alert changes no lifecycle state',
+  },
+  'crm.tag-assign': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'segment plus assignment; re-tagging is a no-op, not a conflict',
+  },
+  'crm.customer-status-set': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'concurrency'],
+    note: 'transition graph refuses no-ops and illegal moves; record_version makes a simultaneous change fail closed rather than overwrite; the append-only history is unwritable by UPDATE',
+  },
+  'crm.restriction-impose': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
+    note: 'no_service blocks the customer in the same transaction with a status transition and block-history entry; a short reason is refused before anything is written',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],

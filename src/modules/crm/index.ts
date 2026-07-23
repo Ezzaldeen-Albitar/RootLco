@@ -11,9 +11,11 @@ import { sharedServicesModule } from '@/modules/shared-services';
 import { CustomerSearchRepository } from './data/customer-search-repository';
 import { CustomerRepository } from './data/customer-repository';
 import { CustomerProfileRepository } from './data/customer-profile-repository';
+import { CustomerGovernanceRepository } from './data/customer-governance-repository';
 import { CustomerSearchService } from './application/customer-search-service';
 import { CustomerCreationService } from './application/customer-creation-service';
 import { CustomerProfileService } from './application/customer-profile-service';
+import { CustomerGovernanceService } from './application/customer-governance-service';
 
 export type { CustomerSearchHit, CustomerSearchInput } from './application/customer-search-service';
 export type { CreatedCustomer } from './application/customer-creation-service';
@@ -36,6 +38,33 @@ export {
   type ContactChannel,
   type RecordableConsentStatus,
 } from './domain/customer-profile';
+export type {
+  GovernanceRecordCreated,
+  LifecycleChanged,
+  RestrictionImposed,
+  TagAssigned,
+} from './application/customer-governance-service';
+export {
+  ALERT_SEVERITIES,
+  ALERT_TYPES,
+  CUSTOMER_NOTE_ENTITY_TYPE,
+  LIFECYCLE_TRANSITIONS,
+  MAX_ALERT_MESSAGE,
+  MAX_NOTE_BODY,
+  MAX_REASON,
+  MAX_SEGMENT_CODE,
+  MIN_REASON,
+  NOTE_CLASSIFICATIONS,
+  NOTE_VISIBILITIES,
+  RESTRICTION_TYPES,
+  SETTABLE_LIFECYCLE_STATES,
+  type AlertSeverity,
+  type AlertType,
+  type NoteClassification,
+  type NoteVisibility,
+  type RestrictionType,
+  type SettableLifecycleState,
+} from './domain/customer-governance';
 export {
   CUSTOMER_PARTY_TYPES,
   CUSTOMER_LIFECYCLE_STATUSES,
@@ -66,6 +95,7 @@ export const crmModule = composeModule({
       customerSearch: new CustomerSearchService(new CustomerSearchRepository()),
       customerCreation: new CustomerCreationService(customers, sharedServicesModule().numbers),
       customerProfile: new CustomerProfileService(new CustomerProfileRepository()),
+      customerGovernance: new CustomerGovernanceService(new CustomerGovernanceRepository()),
     };
   },
 });

@@ -365,6 +365,40 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A customer consent decision was recorded. The record carries the prior effective status so the transition is readable without replaying the whole history.',
   },
+  {
+    code: 'crm.customer.note_added',
+    class: 'privileged',
+    entityType: 'shared.note',
+    description:
+      'A note was authored against a customer. Classification and visibility are recorded; the note body is not, because it may itself be restricted content.',
+  },
+  {
+    code: 'crm.customer.alert_raised',
+    class: 'privileged',
+    entityType: 'crm.customer_alert',
+    description:
+      'An advisory alert was raised against a customer. Alerts inform staff; they do not restrict what the platform will do.',
+  },
+  {
+    code: 'crm.customer.tag_assigned',
+    class: 'privileged',
+    entityType: 'crm.partner_segment_assignment',
+    description: 'A segment tag was assigned to a customer.',
+  },
+  {
+    code: 'crm.customer.status_changed',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer lifecycle status moved, with the recorded reason. The append-only transition also lands in crm.partner_status_history, which no application role may rewrite.',
+  },
+  {
+    code: 'crm.customer.restriction_imposed',
+    class: 'privileged',
+    entityType: 'crm.customer_restriction',
+    description:
+      'A commercial or service restriction was imposed on a customer, with its reason and any approval reference.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

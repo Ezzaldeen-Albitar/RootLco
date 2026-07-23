@@ -190,10 +190,15 @@ describe('error catalog', () => {
 
 const EXPECTED_AUDIT_ACTIONS = [
   'crm.customer.address_added',
+  'crm.customer.alert_raised',
   'crm.customer.consent_changed',
   'crm.customer.contact_added',
   'crm.customer.created',
+  'crm.customer.note_added',
   'crm.customer.preference_changed',
+  'crm.customer.restriction_imposed',
+  'crm.customer.status_changed',
+  'crm.customer.tag_assigned',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',

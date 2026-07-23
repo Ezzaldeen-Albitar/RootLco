@@ -78,6 +78,11 @@ import '@/app/api/v1/customers/[customerId]/contacts/route';
 import '@/app/api/v1/customers/[customerId]/addresses/route';
 import '@/app/api/v1/customers/[customerId]/preferences/route';
 import '@/app/api/v1/customers/[customerId]/consents/route';
+import '@/app/api/v1/customers/[customerId]/notes/route';
+import '@/app/api/v1/customers/[customerId]/alerts/route';
+import '@/app/api/v1/customers/[customerId]/tags/route';
+import '@/app/api/v1/customers/[customerId]/status/route';
+import '@/app/api/v1/customers/[customerId]/restrictions/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
