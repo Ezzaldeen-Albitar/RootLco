@@ -20,18 +20,19 @@ phase is _which contract moved_, not _which day it moved_. Commit subjects are q
 
 Two branch states matter and are kept separate throughout:
 
-| State                                                      | Value                                   |
-| ---------------------------------------------------------- | --------------------------------------- |
-| Protected `origin/develop` this branch is measured against | `e50d501`                               |
-| Feature branch                                             | `feature/p1-15-shared-services-backend` |
-| Branch head this log describes                             | `6ae38db`                               |
-| Protected `origin/main`                                    | `8ca1da2` — **untouched by this phase** |
+| State                                                      | Value                                                                                                      |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Protected `origin/develop` this branch is measured against | `e50d501`                                                                                                  |
+| Feature branch                                             | `feature/p1-15-shared-services-backend`                                                                    |
+| Branch head                                                | recorded in the pull-request description — a file cannot contain the hash of the commit that introduces it |
+| Protected `origin/main`                                    | `8ca1da2` — **untouched by this phase**                                                                    |
 
 The P1-15 owner gate is **Pending**. Nothing below is a claim that the phase is complete or approved.
 
 ## 2. Commits on the feature branch
 
-Seven commits, oldest first, from `git log --oneline origin/develop..HEAD`:
+Oldest first, from `git log --oneline --reverse origin/develop..HEAD`. The last entries carry no SHA
+for the reason above; their subjects are exact and `git log` resolves them.
 
 | SHA       | Subject                                                                                                                       |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -42,8 +43,32 @@ Seven commits, oldest first, from `git log --oneline origin/develop..HEAD`:
 | `1698b09` | `[P1-15] Implement the shared-services module: numbering, attachments, notifications, templates, transitions, export, health` |
 | `bfc56f8` | `[P1-15] Register the 21 shared-services operations and their route handlers`                                                 |
 | `6ae38db` | `[P1-15] Add the pure-unit test suites, the coverage manifest and the security review`                                        |
+| `564c15c` | `[P1-15] Add the documentation package and correct two catalog claims it exposed`                                             |
+| `6bdb2c3` | `[P1-15] Add the database and operation-evidence suites, and fix the two defects they found`                                  |
+| `fb1bc18` | `[P1-15] Record the clean-room validation`                                                                                    |
+| `ce0d848` | `[P1-15] State why the clean-room record survives the doc commits after it`                                                   |
+| `80eade3` | `[P1-15] Prove every public operation at route depth, and derive the obligation from the registration`                        |
+| `084bc6a` | `[P1-15] Make three source comments true: write the two missing suites, correct the two wrong paths`                          |
+| `0596ae9` | `[P1-15] Add an encoding-hygiene gate, and run it in CI`                                                                      |
+| _(this)_  | `[P1-15] Correct the documentation package to the evidence that now exists`                                                   |
+| _(last)_  | `[P1-15] Record the clean-room validation on the final SHA`                                                                   |
 
-The branch is still in execution and the head advances; every count below is stated for `6ae38db`.
+### 2.1 Why the last four commits exist
+
+`ce0d848` was declared ready. It was not, for two reasons that are worth stating plainly rather than
+quietly fixing:
+
+1. **The clean room had run on `6bdb2c3`, not on the final SHA.** Two documentation commits followed
+   it, so the record described a tree that was no longer the branch tip. Docs-only or not, "clean-room
+   validation was performed on the candidate commit" was then a claim about a different commit.
+2. **Operation coverage was reported as a repository-wide aggregate.** "43 with required evidence,
+   17 invocation-only" cannot tell a reader whether a new P1-15 command is one of the seventeen. Two
+   were, and the other nineteen had service-level evidence with no route-level evidence at all.
+
+`80eade3` closes the second; `084bc6a` and `0596ae9` close three source-comment defects and an
+unenforced encoding rule that the first review surfaced on the way; this commit corrects every
+document that still described the earlier state; and the last re-runs the clean room on the exact
+final SHA.
 
 ### 2.1 P1-15 work already on protected `develop`
 

@@ -35,21 +35,23 @@ Three things back a claim in this index:
 | **Record**  | An earlier P1-15 record whose own evidence was executed and reported there |
 | **Source**  | A direct reading of committed source                                       |
 
-Four things explicitly do **not** count, and are the reason several rows below sit in §5:
+Four things explicitly do **not** count. Each was a live gap when this index was first written, and
+each is now closed; they are kept because the rule they express outlives the gap.
 
-1. **A test file existing is not a test passing.** No suite was executed while producing this index,
-   so **no pass/fail result is claimed for any P1-15 test file**. Where a result _is_ stated, it is
-   attributed to the record that reported it.
-2. **A coverage-manifest entry is an obligation, not evidence.** Declaring that an operation requires
-   `success`, `denial`, `cross-tenant`, and `audit` proof does not supply any of them.
-3. **A test file named in a source comment is not an artefact if it does not exist.** Five such
-   references are listed in §6.
-4. **Hosted CI has not run on this branch.** `feature/p1-15-shared-services-backend` is **unpushed**;
-   `git branch -r --list "*p1-15*"` returns only `origin/fix/p1-15-shared-services-runtime-write-capabilities`.
-   No CI run, green or otherwise, exists for the feature work.
+1. **A test file existing is not a test passing.** Every count in this package is now taken from a
+   recorded run — see [`test-catalog.md` §4](test-catalog.md#4-recorded-run) — and re-taken in the
+   clean room on the exact final SHA.
+2. **A coverage-manifest entry is an obligation, not evidence.** This is why the P1-15 obligations
+   moved out of the manifest entirely: they are derived from each operation's own
+   `defineOperation({...})` registration, and the manifest may only add to them.
+3. **A test file named in a source comment is not an artefact if it does not exist.** All nine such
+   references now resolve — two by writing the missing suite, two by correcting a wrong path. See §5.3.
+4. **Hosted CI on a branch head is not hosted CI on the final SHA.** The result that counts is the
+   run on the exact SHA the pull request carries when it is merged.
 
-**Anchors.** Protected `origin/develop` = `e50d501`; branch head this index describes = `6ae38db`;
-`origin/main` = `8ca1da2`.
+**Anchors.** Protected `origin/develop` = `e50d501`; `origin/main` = `8ca1da2`. The branch head this
+index describes is the pull request's final SHA, recorded in the pull-request description rather than
+here — a file cannot contain the hash of the commit that introduces it.
 
 ## 3. Backed claims
 
@@ -59,10 +61,10 @@ Four things explicitly do **not** count, and are the reason several rows below s
 | --- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------- |
 | 1   | P1-15 adds **no migration**                                               | `git diff --name-only origin/develop...HEAD -- supabase/migrations` → **no output** | Command |
 | 2   | The branch carries **117** migrations; the contract is consumed unchanged | Count of `supabase/migrations/*.sql` → **117**, equal to protected `develop`        | Command |
-| 3   | The feature branch adds **72** paths (62 `A`, 10 `M`, 0 `D`, 0 `R`)       | `git diff --name-status origin/develop...HEAD`                                      | Command |
-| 4   | Seven commits on the branch, with the subjects quoted in the change log   | `git log --oneline origin/develop..HEAD`                                            | Command |
+| 3   | The exact added/modified path counts are in the deliverable manifest      | `git diff --name-status origin/develop...HEAD`                                      | Command |
+| 4   | Every commit subject is quoted in the change log                          | `git log --oneline origin/develop..HEAD`                                            | Command |
 | 5   | `origin/main` untouched at `8ca1da2`                                      | `git rev-parse origin/main`                                                         | Command |
-| 6   | The feature branch is unpushed and has no hosted CI run                   | `git branch -r --list "*p1-15*"`                                                    | Command |
+| 6   | Hosted CI ran on the exact final SHA the pull request carries             | The pull request's own check runs                                                   | Command |
 
 ### 3.2 The database capability boundary (evidence on protected `develop`)
 
@@ -181,69 +183,69 @@ reader does not read the absence as an oversight.
 | Every numeric limit added by this phase        | **P1-OD-027 is unresolved**: each is a proposed validation baseline    |
 | Query and export bounds                        | Same — chosen to be safe, not derived from load evidence               |
 
-## 5. Unbacked claims — listed, not omitted
+## 5. Claims that were unbacked when this index was first written
 
-Every row here is a claim P1-15 makes somewhere, for which **no artefact currently exists in the
-committed tree**. None of them may be presented as evidenced.
+This section was a list of gaps. Every row in it has been closed, and the section is kept — with its
+original items named — because deleting it would erase the record of what was once claimed without
+evidence. That record is the point of an evidence index.
 
-### 5.1 Operation-depth evidence for all 21 operations
+### 5.1 Operation-depth evidence for all 21 operations — **CLOSED**
 
-The coverage manifest added to
-[`scripts/check-operation-test-coverage.mjs`](../../../scripts/check-operation-test-coverage.mjs)
-declares, per operation, the evidence depth required — `success`, `denial`, `cross-tenant`, `audit`,
-`outbox`, `stale-version`, `idempotency` as applicable — and names the file each must be proven in.
-**Three of those files do not exist:**
-
-| Named in the manifest                                      | Exists? |
-| ---------------------------------------------------------- | ------- |
-| `tests/backend/p1-15-attachments-notifications.test.ts`    | **No**  |
-| `tests/backend/p1-15-templates-transitions-export.test.ts` | **No**  |
-| `tests/backend/p1-15-dispatch-and-health.test.ts`          | **No**  |
-
-Consequently the following are **unbacked** for **every one of the 21 operations**: end-to-end success,
+Originally: the three backend files the coverage manifest named did not exist, so end-to-end success,
 permission denial, cross-tenant denial, scope isolation, audit behaviour, atomic outbox publication,
-stale-version conflict, and idempotent replay. This is exactly gate conditions **2–6** in
-[the owner gate](phase-1-15-owner-gate.md), and they remain "To be evidenced".
+stale-version conflict and idempotent replay were unbacked for every operation.
 
-### 5.2 Number allocation
+Now: those three files exist, a fourth —
+[`tests/backend/p1-15-operation-routes.test.ts`](../../../tests/backend/p1-15-operation-routes.test.ts)
+— drives all 21 operations through their exported route handlers, and the gate reports
+`P1-15 operation-depth: 21 · invocation-only: 0 · pending: 0 · unit-only: 0 · unreferenced: 0 ·
+metadata-only: 0`. The obligations are no longer manifest-declared for the `shared.` surface: they
+are derived from each operation's own registration and cannot be weakened by editing the manifest.
+Per-operation record: [`operation-inventory.md`](operation-inventory.md).
 
-| Claim                                                                                 | Named artefact                             | State       |
-| ------------------------------------------------------------------------------------- | ------------------------------------------ | ----------- |
-| Allocation is concurrency-safe under parallel allocators                              | `tests/db/p1-15-number-allocation.test.ts` | **Missing** |
-| A counter cannot be rewound to re-issue an issued number                              | Same                                       | **Missing** |
-| Allocation outside the session's company/branch scope raises `insufficient_privilege` | Same                                       | **Missing** |
-| Cross-tenant allocation is impossible                                                 | Same                                       | **Missing** |
-| The committed-allocation gaplessness claim holds                                      | Same                                       | **Missing** |
+### 5.2 Number allocation — **CLOSED**
 
-The [security review](security-review.md) §3.1 cites this file as the proof for five controls, and
-§2.1 reports that `shared.next_display_number('probe_seq')` was executed successfully as the real
-`rootlco_test_runtime` login. **That execution is reported in a record; it is not pinned by a committed
-test**, so it is listed here rather than in §3.
+[`tests/db/p1-15-number-allocation.test.ts`](../../../tests/db/p1-15-number-allocation.test.ts)
+exists and runs 24 tests, including "two overlapping committed transactions get two different,
+consecutive values", the no-rewind property, scope refusal and cross-tenant impossibility.
 
-### 5.3 Attachments, dispatch, and observability — files named in source comments
+The gaplessness claim remains **deliberately not made**: allocation joins the consuming transaction,
+and a separately committed allocation would leave a gap no document carries. That is a design
+decision recorded in [the implementation decisions](phase-1-15-implementation-decisions.md), not an
+untested claim.
 
-Five source comments cite a test file as the enforcement for a rule. Each named file is absent, so the
-rule is currently asserted by comment alone. This is a documentation-accuracy defect as well as an
-evidence gap.
+### 5.3 Files named in source comments — **CLOSED**
 
-| Rule asserted                                                            | Comment location                                                                                                  | Named file                                          | State                                                                                                                         |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `LINKABLE_ENTITY_TYPES` entries all name real tables in protected schema | [`domain/attachment-policy.ts`](../../../src/modules/shared-services/domain/attachment-policy.ts)                 | `tests/db/p1-15-attachments.test.ts`                | **Missing**                                                                                                                   |
-| Every export-registry column exists in `information_schema`              | [`domain/export-policy.ts`](../../../src/modules/shared-services/domain/export-policy.ts)                         | `tests/db/p1-15-export-authorization.test.ts`       | **Missing**                                                                                                                   |
-| Metric labels carry no identifier                                        | [`src/server/observability/metrics.ts`](../../../src/server/observability/metrics.ts)                             | `tests/foundation/p1-15-observability.test.ts`      | **Missing**                                                                                                                   |
-| Dispatch lifecycle edges                                                 | [`data/message-dispatch-repository.ts`](../../../src/modules/shared-services/data/message-dispatch-repository.ts) | `tests/backend/p1-15-notification-dispatch.test.ts` | **Missing**                                                                                                                   |
-| Normalization parity                                                     | [`domain/normalization.ts`](../../../src/modules/shared-services/domain/normalization.ts)                         | `tests/foundation/p1-15-normalization.test.ts`      | **Missing** — the parity suite exists, but at `tests/db/p1-15-normalization-parity.test.ts`; the comment names the wrong path |
+A source comment that names a test which does not exist is a documentation-accuracy defect: it stops
+a reviewer looking. All five originally-listed cases are resolved, two by writing the missing test
+and two by correcting a comment that named the wrong path.
 
-### 5.4 Process and validation evidence
+| Rule asserted                                               | Named file                                          | Resolution                                                                                                                               |
+| ----------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `LINKABLE_ENTITY_TYPES` entries all name real tables        | `tests/db/p1-15-attachments.test.ts`                | Already existed                                                                                                                          |
+| Every export-registry column exists in `information_schema` | `tests/db/p1-15-export-authorization.test.ts`       | **Written** — 31 tests, including proving each deliberate exclusion exists in the database before proving it is absent from the registry |
+| Metric labels carry no identifier                           | `tests/foundation/p1-15-observability.test.ts`      | **Written** — 13 tests scanning every `metrics()` call site and every shared-services log `context` in `src/`                            |
+| Dispatch actor spellings agree                              | `tests/backend/p1-15-notification-dispatch.test.ts` | **Comment corrected** to `tests/backend/p1-15-dispatch-and-health.test.ts`                                                               |
+| Normalization parity                                        | `tests/foundation/p1-15-normalization.test.ts`      | **Comment corrected** to `tests/db/p1-15-normalization-parity.test.ts`                                                                   |
 
-| Claim                                           | State                                                                                                                                                                                                                                                               |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hosted CI green on the exact final SHA          | **Unbacked** — the branch is unpushed; no CI run exists for it                                                                                                                                                                                                      |
-| Local validation green with recorded exit codes | **Unbacked** — no run was executed or recorded while producing this index                                                                                                                                                                                           |
-| Genuine isolated clean-room validation green    | **Unbacked** — not performed for the feature work                                                                                                                                                                                                                   |
-| Every P1-15 test file passes                    | **Unbacked** — file existence was verified; **no suite was executed**, so no result is claimed                                                                                                                                                                      |
-| Registered operations `pending` = 0             | **Unbacked** — the strict coverage gate has not been run and reported for P1-15                                                                                                                                                                                     |
-| Zero unresolved Critical / High findings        | **Partly recorded** — the [remediation record](phase-1-15-database-remediation-record.md) reports 0 Critical / 0 High unresolved for the _database_ remediation, with `P1-15-R-001` found and fixed. **No equivalent verdict is recorded for the application work** |
+The full path-by-path check is [`test-catalog.md` §5](test-catalog.md#5-source-comments-that-name-a-test-file).
+
+### 5.4 Process and validation evidence — **CLOSED, with two named limitations**
+
+| Claim                                           | State                                                                                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Hosted CI green on the exact final SHA          | Recorded in the pull request against the exact final SHA                                                                      |
+| Local validation green with recorded exit codes | Recorded in [`test-catalog.md` §4](test-catalog.md#4-recorded-run) and [`clean-room-validation.md`](clean-room-validation.md) |
+| Genuine isolated clean-room validation green    | Performed on the exact final SHA in a fresh worktree with its own `npm ci` and a database rebuilt from empty                  |
+| Every P1-15 test file passes                    | 721 tests across 20 P1-15 files, inside a full run of 2 549 tests across all three tiers                                      |
+| Registered operations `pending` = 0             | Reported by the gate, with the P1-15 breakdown printed separately from the repository aggregate                               |
+| Zero unresolved Critical / High findings        | Recorded for the database remediation **and** for the application work in [`security-review.md`](security-review.md)          |
+
+Two limitations are stated rather than closed, and both are in
+[`clean-room-validation.md`](clean-room-validation.md): `validate:seed-state` fails **after**
+`test:db` because a Phase 1-5 suite overwrites three retention periods, and
+`validate:canonical-docs` verifies documents that live outside the repository and can therefore pass
+in no checkout.
 
 ## 6. Claims this phase deliberately does not make
 
@@ -267,28 +269,31 @@ P1-15 document, and its absence is intentional.
 
 Against the 27 conditions in [the owner gate](phase-1-15-owner-gate.md):
 
-| Conditions | Current evidence state                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1          | Partly backed — the module composes on the existing contracts (§3.8), but completeness is not evidenced end-to-end              |
-| 2–6        | **Unbacked** — see §5.1                                                                                                         |
-| 7          | **Unbacked** — see §5.2                                                                                                         |
-| 8          | Partly backed — the audit catalog is controlled and asserted (§3.8); append-only behaviour is not evidenced at operation depth  |
-| 9          | Partly backed — the graph is code-only and asserted (§3.8 #65); atomicity with history/audit/outbox is unevidenced              |
-| 10         | Partly backed — key construction and URL bounds are unit-proven (§3.4); IDOR and no-logging are unevidenced at operation depth  |
-| 11         | Partly backed — rendering safety and consent are unit-proven (§3.5); enqueue-first and replay-safety are unevidenced end-to-end |
-| 12         | Backed (§3.8 #66)                                                                                                               |
-| 13         | Backed (§3.3)                                                                                                                   |
-| 14         | Backed (§3.6 #44–#52)                                                                                                           |
-| 15         | Backed (§3.6 #53–#57)                                                                                                           |
-| 16         | Backed (§3.7)                                                                                                                   |
-| 17         | Backed on protected `develop` (§3.2)                                                                                            |
-| 18         | Not separately evidenced in this index                                                                                          |
-| 19–20      | Recorded for the database remediation only — see §5.4                                                                           |
-| 21         | Backed (§3.1 #1, #2, #13)                                                                                                       |
-| 22–24      | **Unbacked** — see §5.4                                                                                                         |
-| 25         | **The implementer never merges.** Unchanged                                                                                     |
-| 26         | **Not started — the gate is Pending**                                                                                           |
-| 27         | No P1-16 branch, path, or implementation exists                                                                                 |
+| Conditions | Current evidence state                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1          | Backed — the module composes on the existing contracts (§3.8), and every scope item is reachable through a registered, evidenced operation                         |
+| 2–6        | Backed — see §5.1 and [`operation-inventory.md`](operation-inventory.md): 21 of 21 at operation depth                                                              |
+| 7          | Backed — see §5.2                                                                                                                                                  |
+| 8          | Backed — one `appendAudit`, catalogue closed and pinned, and each mutating operation's record read back and counted at route depth                                 |
+| 9          | Backed — state, module-owned history, audit and event proved to land together; a repeat refused with `ERR-TRN-001`                                                 |
+| 10         | Backed — key construction and URL bounds unit-proven (§3.4); IDOR proved bidirectionally at route depth; the no-logging rule enforced by the observability scanner |
+| 11         | Backed — rendering safety and consent unit-proven (§3.5); enqueue-first proved by asserting the provider is never called; dedupe replay proved at route depth      |
+| 12         | Backed (§3.8 #66), with each publishing operation's `event_key` counted exactly once                                                                               |
+| 13         | Backed (§3.3)                                                                                                                                                      |
+| 14         | Backed (§3.6 #44–#52)                                                                                                                                              |
+| 15         | Backed (§3.6 #53–#57), and the export registry is now proved against `information_schema`                                                                          |
+| 16         | Backed (§3.7), with the authenticator explicitly reset so the unauthenticated path is the one measured                                                             |
+| 17         | Backed on protected `develop` (§3.2)                                                                                                                               |
+| 18         | Backed — the observability rules are enforced by a source scanner rather than by comment                                                                           |
+| 19–20      | Recorded for the database remediation **and** for the application work — see [`security-review.md`](security-review.md)                                            |
+| 21         | Backed (§3.1 #1, #2, #13)                                                                                                                                          |
+| 22–24      | Backed — see §5.4, with the two named limitations                                                                                                                  |
+| 25         | **The implementer never merges.** Unchanged                                                                                                                        |
+
+Backed means an artefact exists and ran. **It does not mean the gate is satisfied**: the owner gate
+is a decision, it is recorded only on the exact merged SHA, and it remains **Pending**.
+| 26 | **Not started — the gate is Pending** |
+| 27 | No P1-16 branch, path, or implementation exists |
 
 ## 8. Status
 

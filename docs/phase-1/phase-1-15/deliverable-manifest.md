@@ -20,27 +20,31 @@ Every row comes from one command, run against the branch as committed:
 git diff --name-status origin/develop...HEAD
 ```
 
-| Anchor                              | Value                                   |
-| ----------------------------------- | --------------------------------------- |
-| Protected `origin/develop`          | `e50d501`                               |
-| Feature branch                      | `feature/p1-15-shared-services-backend` |
-| Branch head this manifest describes | **`6ae38db`**                           |
-| Protected `origin/main`             | `8ca1da2` — untouched by this phase     |
+| Anchor                     | Value                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Protected `origin/develop` | `e50d501`                                                                                                  |
+| Feature branch             | `feature/p1-15-shared-services-backend`                                                                    |
+| Branch head                | recorded in the pull-request description — a file cannot contain the hash of the commit that introduces it |
+| Protected `origin/main`    | `8ca1da2` — untouched by this phase                                                                        |
 
 Nothing is listed from memory or from a plan: a path that is not in that command's output is not in
-this manifest. The branch is a moving target while the phase is in execution, so the head SHA is stated
-above and this manifest must be regenerated whenever it advances.
+this manifest. The command above is the authority; the tables below are its categorised form, and the
+category totals are what a reviewer should reconcile against.
 
-**Totals:** **72** paths — **62 added (`A`)**, **10 modified (`M`)**, **0 deleted, 0 renamed**.
+**Totals:** **112** paths — **96 added (`A`)**, **16 modified (`M`)**, **0 deleted, 0 renamed**.
 
-| Kind                           | Paths |
-| ------------------------------ | ----- |
-| Module source                  | 28    |
-| Route handlers                 | 20    |
-| Foundation changes             | 5     |
-| CI / tooling scripts           | 2     |
-| Tests                          | 11    |
-| Documentation and API contract | 6     |
+| Kind                           | Total | Added | Modified |
+| ------------------------------ | ----- | ----- | -------- |
+| Module source                  | 28    | 28    | 0        |
+| Route handlers                 | 20    | 20    | 0        |
+| Foundation changes             | 5     | 0     | 5        |
+| CI / tooling scripts           | 3     | 1     | 2        |
+| Tests                          | 22    | 19    | 3        |
+| Documentation and API contract | 31    | 29    | 2        |
+| Repository configuration       | 3     | 0     | 3        |
+
+Repository configuration is `package.json` (one script added), `.prettierignore` (the second
+generated coverage matrix), and `.github/workflows/ci.yml` (the encoding-hygiene step).
 
 ## 2. Migration posture — **P1-15 adds no migration**
 
@@ -185,9 +189,17 @@ Counts verified by counting added catalog lines per file in `git diff origin/dev
 | M      | [`scripts/check-module-boundaries.mjs`](../../../scripts/check-module-boundaries.mjs)             | Rules **B11** (a handler may not import a foundation service contract) and **B12** (a domain layer may not reach a provider) |
 | M      | [`scripts/check-operation-test-coverage.mjs`](../../../scripts/check-operation-test-coverage.mjs) | Coverage manifest entries declaring the required evidence depth for all 21 P1-15 operations                                  |
 
-The coverage-manifest entries are **obligations, not evidence**: they name the test files each operation
-must be proven in, and three of those files do not yet exist. See
-[the evidence index](evidence-index.md) §5.
+A third script was added: [`scripts/check-encoding.mjs`](../../../scripts/check-encoding.mjs), which
+refuses a byte-order mark, a U+FFFD replacement character, or a mojibake signature in any tracked
+text file, and runs in the CI `quality` job.
+
+The coverage script no longer merely records obligations. For the `shared.` surface it **derives**
+them from each operation's own `defineOperation({...})` — `idempotent` implies idempotency,
+`versionGuarded` implies stale-version, an audit class implies audit, a `{param}` implies
+cross-tenant, branch scope implies isolation — so the obligation cannot be weakened by editing the
+manifest. It prints a P1-15 breakdown separately from the repository aggregate, and every failure
+category it can report is proved by
+[the negative fixture](../../../tests/foundation/operation-coverage-gate.test.ts).
 
 ## 7. Tests (9 added, 2 modified)
 
@@ -205,10 +217,22 @@ must be proven in, and three of those files do not yet exist. See
 | M      | [`tests/foundation/event-envelope.test.ts`](../../../tests/foundation/event-envelope.test.ts)                       | Extended for the new catalog entries                                                            |
 | M      | [`tests/openapi-contract.test.ts`](../../../tests/openapi-contract.test.ts)                                         | Published contract against the registered operations                                            |
 
-Ten of the eleven are **pure-unit or catalog** suites. One (`p1-15-normalization-parity`) requires a
-database. **No integration suite exercising a registered operation end-to-end is committed**, so gate
-conditions 2–6 in [the owner gate](phase-1-15-owner-gate.md) are not yet evidenced. That gap is
-enumerated claim by claim in [the evidence index](evidence-index.md) rather than left implicit.
+The table above lists the suites the phase opened with. The full set is **22 test paths — 19 added,
+3 modified** — and the complete per-file inventory with test counts is
+[the test catalogue](test-catalog.md) §2. What has changed most since the phase opened is the depth:
+
+| Tier              | Files  | Tests   |
+| ----------------- | ------ | ------- |
+| Unit / foundation | 9      | 278     |
+| Database          | 7      | 239     |
+| Backend           | 4      | 204     |
+| **P1-15 total**   | **20** | **721** |
+
+The backend tier includes
+[`tests/backend/p1-15-operation-routes.test.ts`](../../../tests/backend/p1-15-operation-routes.test.ts),
+which drives **all 21 registered operations through their exported route handlers** — so gate
+conditions 2–6 now have artefacts rather than obligations. The per-operation record is
+[the operation inventory](operation-inventory.md).
 
 ## 8. Documentation and API contract (5 added, 1 modified)
 

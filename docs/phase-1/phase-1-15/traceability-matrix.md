@@ -273,34 +273,43 @@ test rather than passing unnoticed.
 
 ## 4. Registered operations → evidence obligation
 
-One row per P1-15 operation, mapping it to the backend file the coverage manifest names and the
-evidence kinds that file must carry. **Every row's state is the same today**, and it is stated once
-rather than repeated 21 times: the named file does not exist, `npm run validate:operation-coverage`
-exits `1`, and no operation-depth evidence is claimed.
+One row per P1-15 operation. **Every row is at operation depth**, and the state is stated once
+rather than repeated 21 times: `npm run validate:operation-coverage` exits `0` and reports
+`P1-15 operation-depth: 21 · invocation-only: 0 · pending: 0 · unit-only: 0 · unreferenced: 0 ·
+metadata-only: 0`.
 
-| Operation                              | Named backend file                           | Required evidence kinds                                   |
-| -------------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| `shared.attachment-upload-authorize`   | `p1-15-attachments-notifications.test.ts`    | success, denial, cross-tenant, audit                      |
-| `shared.attachment-version-register`   | `p1-15-attachments-notifications.test.ts`    | success, denial, cross-tenant, audit, outbox              |
-| `shared.attachment-version-reject`     | `p1-15-attachments-notifications.test.ts`    | success, denial, audit                                    |
-| `shared.attachment-download-authorize` | `p1-15-attachments-notifications.test.ts`    | success, denial, audit                                    |
-| `shared.attachment-link-create`        | `p1-15-attachments-notifications.test.ts`    | success, denial, cross-tenant, audit, outbox              |
-| `shared.attachment-link-withdraw`      | `p1-15-attachments-notifications.test.ts`    | success, denial, audit                                    |
-| `shared.notification-enqueue`          | `p1-15-attachments-notifications.test.ts`    | success, denial, cross-tenant, audit, outbox, idempotency |
-| `shared.template-create`               | `p1-15-templates-transitions-export.test.ts` | success, denial, cross-tenant, audit                      |
-| `shared.template-update`               | `p1-15-templates-transitions-export.test.ts` | success, denial, audit, stale-version                     |
-| `shared.template-version-create`       | `p1-15-templates-transitions-export.test.ts` | success, denial, audit, outbox                            |
-| `shared.template-version-revise`       | `p1-15-templates-transitions-export.test.ts` | success, denial, stale-version                            |
-| `shared.template-version-approve`      | `p1-15-templates-transitions-export.test.ts` | success, denial, audit, outbox, stale-version             |
-| `shared.template-version-retire`       | `p1-15-templates-transitions-export.test.ts` | success, denial, audit, stale-version                     |
-| `shared.template-activation-set`       | `p1-15-templates-transitions-export.test.ts` | success, denial, audit, stale-version                     |
-| `shared.template-version-preview`      | `p1-15-templates-transitions-export.test.ts` | success                                                   |
-| `shared.branch-status-change`          | `p1-15-templates-transitions-export.test.ts` | success, denial, isolation, audit, outbox, stale-version  |
-| `shared.branch-status-read`            | `p1-15-templates-transitions-export.test.ts` | _(invocation only — a read that changes nothing)_         |
-| `shared.export-authorize`              | `p1-15-templates-transitions-export.test.ts` | success, denial, audit                                    |
-| `shared.export-catalogue`              | `p1-15-templates-transitions-export.test.ts` | _(invocation only — registry metadata)_                   |
-| `shared.health-live`                   | `p1-15-dispatch-and-health.test.ts`          | success                                                   |
-| `shared.health-ready`                  | `p1-15-dispatch-and-health.test.ts`          | success                                                   |
+Evidence for each operation is spread across **two** files by design: the route suite carries the
+HTTP-layer properties, the service suite carries the repository, provider and rollback properties,
+and the gate unions their declarations while requiring the operation to be invoked in **both**. The
+per-operation record, with the property proved for each kind, is
+[`operation-inventory.md`](operation-inventory.md).
+
+Obligations marked **(derived)** are computed by the gate from the operation's own
+`defineOperation({...})` registration and cannot be removed by editing the coverage manifest.
+
+| Operation                              | Route-depth file                 | Service-depth file                           | Evidence kinds                                                                                                     |
+| -------------------------------------- | -------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `shared.attachment-upload-authorize`   | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, audit, idempotency _(derived)_ · cross-tenant, denial                      |
+| `shared.attachment-version-register`   | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, audit, idempotency _(derived)_ · cross-tenant, denial, outbox              |
+| `shared.attachment-version-reject`     | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, cross-tenant, audit _(derived)_ · denial                                   |
+| `shared.attachment-download-authorize` | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, cross-tenant, audit _(derived)_ · denial, provider                         |
+| `shared.attachment-link-create`        | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, cross-tenant, idempotency, audit _(derived)_ · denial, outbox              |
+| `shared.attachment-link-withdraw`      | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, cross-tenant, audit _(derived)_ · denial, outbox                           |
+| `shared.notification-enqueue`          | `p1-15-operation-routes.test.ts` | `p1-15-attachments-notifications.test.ts`    | route, service, authorization, success, idempotency, audit _(derived)_ · cross-tenant, denial, outbox, provider    |
+| `shared.template-create`               | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, idempotency, audit _(derived)_ · cross-tenant, denial                      |
+| `shared.template-update`               | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit _(derived)_ · denial                    |
+| `shared.template-version-create`       | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, idempotency, audit _(derived)_ · denial, outbox              |
+| `shared.template-version-revise`       | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit _(derived)_ · denial                    |
+| `shared.template-version-approve`      | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit _(derived)_ · denial, outbox            |
+| `shared.template-version-retire`       | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit _(derived)_ · denial, outbox            |
+| `shared.template-activation-set`       | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit _(derived)_ · denial                    |
+| `shared.template-version-preview`      | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant _(derived)_ · denial                                          |
+| `shared.branch-status-change`          | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, stale-version, audit, isolation _(derived)_ · denial, outbox |
+| `shared.branch-status-read`            | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, cross-tenant, isolation _(derived)_                                        |
+| `shared.export-authorize`              | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success, audit _(derived)_ · denial                                                 |
+| `shared.export-catalogue`              | `p1-15-operation-routes.test.ts` | `p1-15-templates-transitions-export.test.ts` | route, service, authorization, success _(derived)_                                                                 |
+| `shared.health-live`                   | `p1-15-operation-routes.test.ts` | `p1-15-dispatch-and-health.test.ts`          | route, service, unauthenticated, success _(derived)_                                                               |
+| `shared.health-ready`                  | `p1-15-operation-routes.test.ts` | `p1-15-dispatch-and-health.test.ts`          | route, service, unauthenticated, success _(derived)_                                                               |
 
 ## 5. Gate conditions this matrix speaks to
 
@@ -308,23 +317,23 @@ Only the conditions the artefacts above bear on are listed. Everything else in t
 [owner gate](phase-1-15-owner-gate.md) is unchanged, and **every condition remains "To be evidenced"
 until the approval owner records a decision on the exact merged SHA.**
 
-| Gate condition                                                    | What exists today                                                                                                             |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1 — every scope item implemented on the existing contracts        | Implemented; composed on P1-5 / P1-13 / P1-14 contracts with no competing framework. Not independently re-verified.           |
-| 2–5 — operation-depth, coverage, denial, audit/idempotency/outbox | **Not satisfied.** The three backend suites do not exist and the coverage gate exits `1`.                                     |
-| 6 — provider fakes, no production credentials in CI               | Both providers are ports with local adapters; the defaults are `unconfigured`. Timeout and fault behaviour is not yet tested. |
-| 7 — number allocation                                             | In-process and transactional by construction; concurrency not exercised in this phase.                                        |
-| 8 — audit append-only, catalog-controlled, no second store        | One `appendAudit`; catalogue closed and pinned by exact inventory.                                                            |
-| 9 — transitions cannot skip policy or be client-defined           | Graph registered in code; atomicity asserted by construction, not yet by test.                                                |
-| 10–11 — attachment safety, notification and template safety       | Key rules, URL bindings and rendering safety Proven in the unit tier; route-level cases outstanding.                          |
-| 12 — registered event semantics and naming convention             | Five events registered; catalogue pinned.                                                                                     |
-| 13 — normalization does not contradict P1-6 / P1-7                | **Proven** differentially against the live functions.                                                                         |
-| 14 — bounded, allow-listed, injection-safe query primitives       | **Proven**, asserted against emitted SQL.                                                                                     |
-| 15 — export authorization does not claim generation               | Enforced in the response shape; policy Proven in the unit tier.                                                               |
-| 16 — health safe, non-leaking, bounded, reconciled                | **Proven** for disclosure; `/api/health` unmodified on this branch.                                                           |
-| 17 / 21 — RLS default-deny, migration posture                     | **Proven** on the local database by the 51-test capability suite. Not yet re-verified in hosted CI on a final SHA.            |
-| 22–24 — local, clean-room, and hosted CI validation               | **Not satisfied.** One local partial run is recorded; no clean-room run and no hosted CI run on a final SHA exists.           |
-| 25–27 — merge, gate record, no P1-16 work                         | The implementer never merges. The gate record is **Pending**. No P1-16 work has started.                                      |
+| Gate condition                                                    | What exists today                                                                                                                                                                       |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — every scope item implemented on the existing contracts        | Implemented; composed on P1-5 / P1-13 / P1-14 contracts with no competing framework. Not independently re-verified.                                                                     |
+| 2–5 — operation-depth, coverage, denial, audit/idempotency/outbox | **Satisfied for all 21 operations.** Route + service depth, permission denial, cross-tenant, audit, idempotency, stale-version, outbox and isolation as the registration requires each. |
+| 6 — provider fakes, no production credentials in CI               | Both providers are ports with local adapters; the defaults are `unconfigured`. Timeout, outage, rejection and dead-letter behaviour is exercised by the dispatch suite.                 |
+| 7 — number allocation                                             | In-process and transactional by construction; concurrency exercised by the number-allocation database suite.                                                                            |
+| 8 — audit append-only, catalog-controlled, no second store        | One `appendAudit`; catalogue closed and pinned by exact inventory; every mutating operation's record is read back and counted at route depth.                                           |
+| 9 — transitions cannot skip policy or be client-defined           | Graph registered in code; state, module-owned history, audit and event proved to land together, and a repeat refused with `ERR-TRN-001`.                                                |
+| 10–11 — attachment safety, notification and template safety       | Key rules, URL bindings and rendering safety proven in the unit tier **and** at route depth, including the 422-not-500 prototype case and the no-content-in-the-response rule.          |
+| 12 — registered event semantics and naming convention             | Five events registered; catalogue pinned; each publishing operation's `event_key` counted exactly once.                                                                                 |
+| 13 — normalization does not contradict P1-6 / P1-7                | **Proven** differentially against the live functions.                                                                                                                                   |
+| 14 — bounded, allow-listed, injection-safe query primitives       | **Proven**, asserted against emitted SQL.                                                                                                                                               |
+| 15 — export authorization does not claim generation               | Enforced in the response shape (`generated: false`) and asserted at route depth; policy proven in the unit tier.                                                                        |
+| 16 — health safe, non-leaking, bounded, reconciled                | **Proven** for disclosure, with the authenticator explicitly reset so the unauthenticated path is the one measured; `/api/health` unmodified on this branch.                            |
+| 17 / 21 — RLS default-deny, migration posture                     | **Proven** on the local database by the 51-test capability suite, and re-verified in hosted CI on the final SHA.                                                                        |
+| 22–24 — local, clean-room, and hosted CI validation               | Recorded in [`clean-room-validation.md`](clean-room-validation.md) on the exact final SHA, and in hosted CI on the same SHA. The **owner gate itself remains Pending.**                 |
+| 25–27 — merge, gate record, no P1-16 work                         | The implementer never merges. The gate record is **Pending**. No P1-16 work has started.                                                                                                |
 
 ## 6. Delivery provenance
 

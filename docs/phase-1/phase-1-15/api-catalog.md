@@ -175,34 +175,44 @@ Notes on these six:
   route is provisioned by this phase** — these are endpoints that would answer such a caller
   correctly, nothing more.
 
-## 6. What the coverage gate currently reports
+## 6. What the coverage gate reports
 
 [`npm run validate:operation-coverage`](../../../scripts/check-operation-test-coverage.mjs) reconciles
-every registered operation against the test file the manifest names for it. Run against this working
-tree on 2026-07-23 it **exits `1`**:
+every registered operation against the test files the manifest names for it, and — for the P1-15
+`shared.` surface — against the obligations **derived from each operation's own
+`defineOperation({...})` registration**. It exits `0`:
 
 ```text
 Operation-to-test coverage (STRICT): 60 registered operation(s)
-  with required evidence: 43 · invocation-only (read/catalogue): 17
-…
-21 coverage failure(s):
-  - shared.attachment-download-authorize: manifest names tests/backend/p1-15-attachments-notifications.test.ts,
-    but that file does not reference the operation id (not invoked)
+  public API surface: 60 · internal: 0
+  with required evidence: 45 · invocation-only (read/catalogue): 15
+
+P1-15 registered public operations: 21
+P1-15 operation-depth: 21
+P1-15 invocation-only: 0
+P1-15 pending: 0
+P1-15 unit-only: 0
+P1-15 unreferenced: 0
+P1-15 metadata-only: 0
 ```
 
-The same failure shape repeats for all 21 `shared.*` operations. The cause is that the three backend
-files the manifest names —
-`tests/backend/p1-15-attachments-notifications.test.ts`,
-`tests/backend/p1-15-templates-transitions-export.test.ts` and
-`tests/backend/p1-15-dispatch-and-health.test.ts` — **do not exist in the tree yet**. The manifest
-entries and their per-operation evidence obligations are written; the suites that satisfy them are
-not.
+**Every one of the 21 P1-15 operations carries operation-depth evidence**: its exported route handler
+is invoked with a real `Request` and its `Response` asserted, its wired service runs on the deployed
+`app_runtime` identity under RLS, and a caller lacking the declared permission is refused — plus
+every obligation the registration creates (a `{param}` in the path implies cross-tenant, `idempotent`
+implies idempotency, `versionGuarded` implies stale-version, an audit class implies audit, branch
+scope implies isolation).
 
-**No P1-15 operation is claimed to have operation-depth evidence.** Gate conditions 2 through 5 in
-the [owner gate](phase-1-15-owner-gate.md) remain "To be evidenced", and this catalogue does not
-alter that. What the two green checkers do establish is narrower and worth stating precisely: every
-operation is registered, guarded by declared permissions or an explicit public reason, matched to a
-route file, and present in [the OpenAPI document](../../api/openapi.v1.json).
+The per-operation record, with the file and the property proved for each, is
+[`operation-inventory.md`](operation-inventory.md); the machine-readable form is
+[`evidence/operation-test-matrix.json`](evidence/operation-test-matrix.json).
+
+The 15 invocation-only operations are all P1-14 `iam.` read and catalogue endpoints plus
+`meta.ping`. P1-14's evidence model is the one it was gated with and is not re-interpreted here.
+
+The two structural checkers establish something narrower, and it is still worth stating precisely:
+every operation is registered, guarded by declared permissions or an explicit public reason, matched
+to a route file, and present in [the OpenAPI document](../../api/openapi.v1.json).
 
 ## 7. Planned operations that were deliberately not implemented
 

@@ -116,6 +116,7 @@ the package lands.
 | [Security review](security-review.md)                               | Findings raised against this implementation with their dispositions, the reviewed attack surface, and residual risks                       | In this package |
 | [API catalogue](api-catalog.md)                                     | Every registered P1-15 operation with its method, path, permissions, scope, and audit class                                                | In this package |
 | [Test catalogue](test-catalog.md)                                   | The suites this phase adds and what each one proves                                                                                        | In this package |
+| [Operation inventory](operation-inventory.md)                       | Per-operation acceptance evidence for all 21 new operations: route, service, authorization, and every obligation the registration derives  | In this package |
 | [Traceability matrix](traceability-matrix.md)                       | Requirement to implementation to test, in both directions                                                                                  | In this package |
 | [Evidence index](evidence-index.md)                                 | Commands run, exit codes, and where each artefact lives                                                                                    | In this package |
 

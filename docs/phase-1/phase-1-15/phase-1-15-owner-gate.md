@@ -90,6 +90,39 @@ the evidence exists on the exact final SHA.
 | 26  | Gate record committed into protected history with a Go decision                                                                                                                                   | **Not started — this document is Pending** |
 | 27  | No P1-16 work started                                                                                                                                                                             | To be evidenced                            |
 
+### 3.1 Where the pre-merge evidence for each condition now lives
+
+Every status above is still **"To be evidenced"**, and that is not an oversight. This gate is
+evaluated on the **exact merged SHA**, which does not exist while the pull request is open, and the
+approval owner fills the column after re-verifying from protected `develop`. Nothing on a feature
+branch can close a condition here.
+
+What the table does not do is tell a reader where to look. This does. It is a pointer list, not a
+status list, and no row of it may be read as a satisfied condition.
+
+| #     | Pre-merge artefact on `feature/p1-15-shared-services-backend`                                                                                      |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | [`phase-1-15-architecture.md`](phase-1-15-architecture.md), [`phase-1-15-implementation-decisions.md`](phase-1-15-implementation-decisions.md)     |
+| 2–5   | [`operation-inventory.md`](operation-inventory.md) — 21 of 21 at operation depth, with the per-operation property proved for each evidence kind    |
+| 3     | `npm run validate:operation-coverage` prints the P1-15 breakdown separately from the repository aggregate                                          |
+| 6     | `tests/backend/p1-15-dispatch-and-health.test.ts` — timeout, outage, rejection, bounded retry, dead-letter, and the unconfigured provider          |
+| 7     | `tests/db/p1-15-number-allocation.test.ts` — 24 tests including two overlapping committed transactions                                             |
+| 8     | `tests/foundation/p1-15-catalogs.test.ts` plus the audit read-backs in the route suite                                                             |
+| 9     | `tests/db/p1-15-transitions.test.ts` and the route suite's state + history + audit + event assertions                                              |
+| 10    | `tests/foundation/p1-15-storage-key.test.ts`, `p1-15-signed-urls.test.ts`, and the bidirectional IDOR proofs in the route suite                    |
+| 11    | `tests/foundation/p1-15-template-rendering.test.ts`, `p1-15-notification-policy.test.ts`, and the "provider never called" assertion at route depth |
+| 12    | `tests/foundation/p1-15-catalogs.test.ts` and the per-operation `event_key` counts                                                                 |
+| 13    | `tests/db/p1-15-normalization-parity.test.ts`                                                                                                      |
+| 14    | `tests/foundation/p1-15-query-primitives.test.ts`                                                                                                  |
+| 15    | `tests/foundation/p1-15-export-policy.test.ts`, `tests/db/p1-15-export-authorization.test.ts`                                                      |
+| 16    | `tests/foundation/p1-15-health.test.ts` and the unauthenticated route proofs                                                                       |
+| 17/21 | `tests/db/p1-15-shared-services-runtime-capabilities.test.ts`; **P1-15 adds no migration**                                                         |
+| 18    | `npm run security:browser-secrets`; `tests/foundation/p1-15-observability.test.ts` for the label and log-context rules                             |
+| 19/20 | [`security-review.md`](security-review.md)                                                                                                         |
+| 22/23 | [`test-catalog.md`](test-catalog.md), [`clean-room-validation.md`](clean-room-validation.md)                                                       |
+| 24    | The pull request's own check runs on the exact final SHA                                                                                           |
+| 27    | No `p1-16` branch and no `p1-16` path exists                                                                                                       |
+
 ## 4. Known open items carried into the phase
 
 - **P1-OD-027 (NFR-SCL).** Unresolved. Every numeric limit in this phase is a proposed validation
