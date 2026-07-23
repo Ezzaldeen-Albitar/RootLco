@@ -299,11 +299,7 @@ export class TemplateRepository extends Repository {
    * name the approver would make the approval record unfalsifiable in the wrong
    * direction. `approved_at` is stamped by the lifecycle guard.
    */
-  async approveVersion(
-    db: DbHandle,
-    versionId: string,
-    expectedVersion: number
-  ): Promise<number> {
+  async approveVersion(db: DbHandle, versionId: string, expectedVersion: number): Promise<number> {
     const context = this.assertContext(db);
     const result = await this.run(
       db,

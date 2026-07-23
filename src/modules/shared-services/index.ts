@@ -75,7 +75,10 @@ export type {
   ApplyTransitionInput,
   TransitionResult,
 } from './application/status-transition-service';
-export type { DetailedUploadAuthorization, LinkDocumentInput } from './application/attachment-service';
+export type {
+  DetailedUploadAuthorization,
+  LinkDocumentInput,
+} from './application/attachment-service';
 export type { QueuedWithRendering } from './application/notification-service';
 export type { CreateTemplateInput, TemplateVersionView } from './application/template-service';
 export type {

@@ -119,7 +119,11 @@ export class MessageDispatcher {
     });
     if (started === 0) return { outcome: 'skipped', reason: 'lost-race' };
 
-    const attemptNumber = await this.repository.nextAttemptNumber(db, message.tenant_id, message.id);
+    const attemptNumber = await this.repository.nextAttemptNumber(
+      db,
+      message.tenant_id,
+      message.id
+    );
     const provider = this.provider();
 
     try {
@@ -260,7 +264,11 @@ export class MessageDispatcher {
     message: DispatchCandidate,
     input: { summary: string; failureClass: string; from: string }
   ): Promise<number> {
-    const attemptNumber = await this.repository.nextAttemptNumber(db, message.tenant_id, message.id);
+    const attemptNumber = await this.repository.nextAttemptNumber(
+      db,
+      message.tenant_id,
+      message.id
+    );
     await this.repository.transition(db, {
       tenantId: message.tenant_id,
       messageId: message.id,

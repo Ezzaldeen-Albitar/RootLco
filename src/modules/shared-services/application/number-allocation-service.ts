@@ -37,10 +37,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import { sqlState } from '@/server/db/repository';
 import { log } from '@/server/observability/logger';
 import { metrics, METRICS } from '@/server/observability/metrics';
-import {
-  ALLOCATION_SQLSTATE,
-  NumberSequenceRepository,
-} from '../data/number-sequence-repository';
+import { ALLOCATION_SQLSTATE, NumberSequenceRepository } from '../data/number-sequence-repository';
 import {
   findSequenceDefinition,
   SEQUENCE_CODE_PATTERN,

@@ -96,10 +96,7 @@ export class AttachmentService extends ApplicationService implements FileService
   // Frozen FileService surface
   // -------------------------------------------------------------------------
 
-  async authorizeUpload(
-    db: DbHandle,
-    input: AuthorizeUploadInput
-  ): Promise<UploadAuthorization> {
+  async authorizeUpload(db: DbHandle, input: AuthorizeUploadInput): Promise<UploadAuthorization> {
     const detailed = await this.authorizeUploadDetailed(db, input);
     return {
       uploadToken: detailed.uploadToken,
@@ -136,7 +133,9 @@ export class AttachmentService extends ApplicationService implements FileService
     if (!contentTypeAllowed(input.contentType, category.allowed_content_types)) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Content type is not permitted for this category',
-        safeDetails: { violations: [{ path: 'body.contentType', rule: 'content_type_not_allowed' }] },
+        safeDetails: {
+          violations: [{ path: 'body.contentType', rule: 'content_type_not_allowed' }],
+        },
       });
     }
 
@@ -279,7 +278,9 @@ export class AttachmentService extends ApplicationService implements FileService
     if (!keyBelongsToTenant(storageKey, context.principal.tenantId)) {
       // Unreachable while buildStorageKey derives the tenant from the context;
       // kept because this is the assertion that would matter if it ever stopped.
-      throw new AppFailure('ERR-SYS-001', { message: 'Derived storage key left the tenant prefix' });
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'Derived storage key left the tenant prefix',
+      });
     }
 
     const ceiling = Math.min(token.maxBytes, config.STORAGE_MAX_UPLOAD_BYTES);
@@ -314,7 +315,9 @@ export class AttachmentService extends ApplicationService implements FileService
       throw error;
     }
     if (!versionId) {
-      throw new AppFailure('ERR-IAM-001', { message: 'Version registration was refused by policy' });
+      throw new AppFailure('ERR-IAM-001', {
+        message: 'Version registration was refused by policy',
+      });
     }
 
     await appendAudit(db, {
@@ -402,7 +405,11 @@ export class AttachmentService extends ApplicationService implements FileService
       branchId: version.branch_id,
       details: [
         { field: 'document_id', classification: 'internal', value: version.document_id },
-        { field: 'version_number', classification: 'public', value: String(version.version_number) },
+        {
+          field: 'version_number',
+          classification: 'public',
+          value: String(version.version_number),
+        },
         { field: 'ttl_seconds', classification: 'public', value: String(ttl) },
       ],
     });

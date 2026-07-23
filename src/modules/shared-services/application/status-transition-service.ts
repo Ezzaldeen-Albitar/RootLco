@@ -140,7 +140,12 @@ export class StatusTransitionService extends ApplicationService {
       companyId: snapshot.companyId,
       branchId: snapshot.branchId,
       details: [
-        { field: 'status', classification: 'internal', previousValue: snapshot.state, value: definition.to },
+        {
+          field: 'status',
+          classification: 'internal',
+          previousValue: snapshot.state,
+          value: definition.to,
+        },
         // The reason is operator-authored free text about a business decision.
         // `internal` rather than `public`: it may name a person or a dispute.
         { field: 'reason', classification: 'internal', value: reason },

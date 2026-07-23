@@ -113,7 +113,8 @@ function reject(path: string, rule: string, message: string): never {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 /** Validates one scalar against a declared type; returns the bindable value. */
 function coerceScalar(
@@ -271,7 +272,10 @@ export interface ResolvedSort {
 }
 
 /** Resolves the sort, falling back to the contract default. */
-export function resolveSort(contract: QueryContract, requested: SortInput | undefined): ResolvedSort {
+export function resolveSort(
+  contract: QueryContract,
+  requested: SortInput | undefined
+): ResolvedSort {
   const wanted = requested ?? contract.defaultSort;
   const field = contract.sortable.find((entry) => entry.name === wanted.field);
   if (!field) {

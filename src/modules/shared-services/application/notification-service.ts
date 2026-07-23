@@ -67,10 +67,7 @@ export interface QueuedWithRendering {
   readonly rendered: RenderedMessage;
 }
 
-export class SharedNotificationService
-  extends ApplicationService
-  implements NotificationService
-{
+export class SharedNotificationService extends ApplicationService implements NotificationService {
   protected readonly module = 'shared-services';
 
   constructor(
@@ -127,11 +124,10 @@ export class SharedNotificationService
 
     let rendered: RenderedMessage;
     try {
-      rendered = renderTemplate(
-        { subject: version.subject, body: version.body },
-        input.variables,
-        { channel, maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS }
-      );
+      rendered = renderTemplate({ subject: version.subject, body: version.body }, input.variables, {
+        channel,
+        maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
+      });
     } catch (error) {
       metrics().increment(METRICS.templateRenderFailureCount, {
         channel,

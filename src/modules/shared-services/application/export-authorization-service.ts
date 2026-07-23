@@ -156,7 +156,13 @@ export class ExportAuthorizationService extends ApplicationService {
     // $1 is the tenant predicate in `ExportRepository.estimate`, so filter
     // parameters start at $2.
     const filter = buildFilterPredicate(
-      { key: `export.${resource.code}`, filterable: resource.filterable, sortable: [], defaultSort: { field: '', direction: 'asc' }, idColumn: 'id' },
+      {
+        key: `export.${resource.code}`,
+        filterable: resource.filterable,
+        sortable: [],
+        defaultSort: { field: '', direction: 'asc' },
+        idColumn: 'id',
+      },
       input.filters,
       2,
       { mayReadSensitive: maySeeSensitive }
@@ -199,7 +205,11 @@ export class ExportAuthorizationService extends ApplicationService {
         // The reason is operator-authored free text and may name a person or a
         // legal matter.
         { field: 'reason', classification: 'restricted', value: reason },
-        { field: 'sensitive_fields_included', classification: 'internal', value: String(maySeeSensitive) },
+        {
+          field: 'sensitive_fields_included',
+          classification: 'internal',
+          value: String(maySeeSensitive),
+        },
       ],
     });
 

@@ -169,7 +169,11 @@ export interface TemplateFacts {
  */
 export function assertTemplateUsable(
   facts: TemplateFacts,
-  request: { readonly channel: SupportedChannel; readonly locale: string; readonly tenantId: string }
+  request: {
+    readonly channel: SupportedChannel;
+    readonly locale: string;
+    readonly tenantId: string;
+  }
 ): void {
   if (facts.versionStatus !== 'approved') {
     throw new NotificationPolicyError(

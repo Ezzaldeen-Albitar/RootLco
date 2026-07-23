@@ -189,8 +189,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     aggregateType: 'org.branch',
     owner: 'shared',
     implementedIn: 'P1-15',
-    description:
-      'A branch was activated or deactivated through the status-transition engine.',
+    description: 'A branch was activated or deactivated through the status-transition engine.',
   },
 ]);
 

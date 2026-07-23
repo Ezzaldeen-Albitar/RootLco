@@ -99,7 +99,9 @@ function stripDangerousCharacters(value: string, keepNewlines: boolean): string 
   // The control ranges are written as \uXXXX escapes, so the source itself holds
   // no invisible bytes and the ESLint no-control-regex rule has nothing to flag.
   const withoutControls = value.replace(
-    keepNewlines ? /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g : /[\u0000-\u001F\u007F-\u009F]/g,
+    keepNewlines
+      ? /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g
+      : /[\u0000-\u001F\u007F-\u009F]/g,
     ''
   );
   return withoutControls.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/gu, '');
@@ -188,7 +190,9 @@ export function renderTemplate(
     source.replace(PLACEHOLDER, (_whole, name: string) => prepared.get(name)?.[part] ?? '');
 
   const subject =
-    content.subject === null ? null : substitute(content.subject, 'subject').replace(/\s+/g, ' ').trim();
+    content.subject === null
+      ? null
+      : substitute(content.subject, 'subject').replace(/\s+/g, ' ').trim();
   const body = substitute(content.body, 'body');
 
   const size = (subject?.length ?? 0) + body.length;

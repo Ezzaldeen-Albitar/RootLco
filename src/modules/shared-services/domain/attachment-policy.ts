@@ -159,10 +159,7 @@ export const SHA256_HEX = /^[0-9a-f]{64}$/;
  * Verifying that the stored object matches its declared type belongs to whatever
  * scans it, which is the same missing component as the malware scanner.
  */
-export function contentTypeAllowed(
-  declared: string,
-  allowed: readonly string[]
-): boolean {
+export function contentTypeAllowed(declared: string, allowed: readonly string[]): boolean {
   if (!CONTENT_TYPE.test(declared)) return false;
   return allowed.includes(declared);
 }

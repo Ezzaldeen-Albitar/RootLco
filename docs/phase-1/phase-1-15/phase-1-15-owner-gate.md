@@ -17,7 +17,7 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 ## Provenance of this record — read first
 
 This document is created **at the opening of the phase, in the Pending state, and ships with the
-feature delivery**. That is deliberate. The Phase 1-14 owner gate was *missing* from its feature pull
+feature delivery**. That is deliberate. The Phase 1-14 owner gate was _missing_ from its feature pull
 request and had to be created afterwards during remediation governance — a failure that phase
 recorded against itself. This record exists from the start so the same omission cannot recur, and so
 the gate is visibly open and tracked while the work is being done rather than reconstructed after it.
@@ -44,14 +44,14 @@ green in hosted CI on the exact merged SHA.
 
 ## 2. Starting state this phase builds on
 
-| Item | Value |
-| --- | --- |
-| Protected `origin/develop` at branch creation | `c7edc512657077ab31cc98e7b748b4bf90af06d5` |
-| Protected `origin/main` | `8ca1da257fc89585f2bb45459e435ec124b8a5a7` (P1-14 promoted via owner PR #57) |
-| P1-14 decision | **Go** — Authentication, Authorization, and Administration Backend Gate Passed |
-| Feature branch | `feature/p1-15-shared-services-backend` |
-| Database baseline inherited | 116 migrations; `shared` schema contracts delivered by Phase 1-5 |
-| P1-15 state before this phase | **Not started** — no branch, commit, pull request, route, or migration existed |
+| Item                                          | Value                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Protected `origin/develop` at branch creation | `c7edc512657077ab31cc98e7b748b4bf90af06d5`                                     |
+| Protected `origin/main`                       | `8ca1da257fc89585f2bb45459e435ec124b8a5a7` (P1-14 promoted via owner PR #57)   |
+| P1-14 decision                                | **Go** — Authentication, Authorization, and Administration Backend Gate Passed |
+| Feature branch                                | `feature/p1-15-shared-services-backend`                                        |
+| Database baseline inherited                   | 116 migrations; `shared` schema contracts delivered by Phase 1-5               |
+| P1-15 state before this phase                 | **Not started** — no branch, commit, pull request, route, or migration existed |
 
 Contract inventory: [Initial Audit and Contract Inventory](phase-1-15-initial-audit.md).
 
@@ -60,35 +60,35 @@ Contract inventory: [Initial Audit and Contract Inventory](phase-1-15-initial-au
 Status values are filled from executable evidence only. "To be evidenced" is the honest state until
 the evidence exists on the exact final SHA.
 
-| #   | Condition | Status |
-| --- | --- | --- |
-| 1 | Every mandatory P1-15 scope item implemented and composed on the existing P1-5/P1-13/P1-14 contracts, with no competing framework | To be evidenced |
-| 2 | Every registered public P1-15 operation carries genuine **operation-depth** evidence (service + repository + runtime context + authorization + RLS + transaction + audit/outbox where applicable) | To be evidenced |
-| 3 | Registered operations `pending` = 0, unit-only substitutions = 0, unreferenced = 0 | To be evidenced |
-| 4 | Every protected operation proves permission denial; every tenant-scoped operation proves cross-tenant denial; company/branch operations prove scope isolation | To be evidenced |
-| 5 | Every mutation proves audit behaviour; critical commands prove idempotency; versioned mutations prove stale-version conflict; event-producing mutations prove atomic outbox | To be evidenced |
-| 6 | Provider operations prove timeout/failure behaviour against deterministic fakes, with **no production provider credentials in CI** | To be evidenced |
-| 7 | Number allocation is concurrency-safe, never client-scoped, never auto-provisioning, and its gapless claim matches the database contract exactly | To be evidenced |
-| 8 | Audit remains append-only and catalog-controlled; no second audit store exists | To be evidenced |
-| 9 | Status transitions cannot skip policy, cannot be defined by the client, and are atomic with history/audit/outbox | To be evidenced |
-| 10 | Attachment access is tenant-safe (no IDOR, no traversal, no key collision, no client-chosen key); signed URLs are short-lived, bound, and never logged | To be evidenced |
-| 11 | Notifications are enqueue-first (no provider call inside the business transaction) and replay-safe; templates are versioned, schema-validated, and safely rendered with no SSTI | To be evidenced |
-| 12 | Events use registered semantics and the repository's existing name/schema-version convention | To be evidenced |
-| 13 | Search / phone / VIN normalization is deterministic and does not contradict the frozen P1-6 / P1-7 contracts | To be evidenced |
-| 14 | Pagination, filtering, and sorting are bounded, allow-listed, and injection-safe, with negative fixtures | To be evidenced |
-| 15 | Export **authorization** is permission-, scope-, and sensitive-field-controlled, and does not claim export generation | To be evidenced |
-| 16 | Health endpoints are safe, non-leaking, bounded, and reconciled with the pre-existing health route | To be evidenced |
-| 17 | Runtime RLS remains default-deny; no application role gains `BYPASSRLS`, superuser, `LOGIN`, or ownership | To be evidenced |
-| 18 | No provider secret reaches browser code | To be evidenced |
-| 19 | Zero unresolved Critical findings | To be evidenced |
-| 20 | Zero unresolved High findings without an approved exception | To be evidenced |
-| 21 | Migration posture: migrations 1–116 unmodified; any new migration additive, rollback-safe, and governed through a controlled database change request | To be evidenced |
-| 22 | Local validation green with recorded exit codes | To be evidenced |
-| 23 | Genuine isolated clean-room validation green, with limitations recorded accurately rather than hidden | To be evidenced |
-| 24 | All required hosted CI checks green on the exact final SHA | To be evidenced |
-| 25 | Feature pull request merged into `develop` by the repository owner | **The implementer never merges** |
-| 26 | Gate record committed into protected history with a Go decision | **Not started — this document is Pending** |
-| 27 | No P1-16 work started | To be evidenced |
+| #   | Condition                                                                                                                                                                                         | Status                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | Every mandatory P1-15 scope item implemented and composed on the existing P1-5/P1-13/P1-14 contracts, with no competing framework                                                                 | To be evidenced                            |
+| 2   | Every registered public P1-15 operation carries genuine **operation-depth** evidence (service + repository + runtime context + authorization + RLS + transaction + audit/outbox where applicable) | To be evidenced                            |
+| 3   | Registered operations `pending` = 0, unit-only substitutions = 0, unreferenced = 0                                                                                                                | To be evidenced                            |
+| 4   | Every protected operation proves permission denial; every tenant-scoped operation proves cross-tenant denial; company/branch operations prove scope isolation                                     | To be evidenced                            |
+| 5   | Every mutation proves audit behaviour; critical commands prove idempotency; versioned mutations prove stale-version conflict; event-producing mutations prove atomic outbox                       | To be evidenced                            |
+| 6   | Provider operations prove timeout/failure behaviour against deterministic fakes, with **no production provider credentials in CI**                                                                | To be evidenced                            |
+| 7   | Number allocation is concurrency-safe, never client-scoped, never auto-provisioning, and its gapless claim matches the database contract exactly                                                  | To be evidenced                            |
+| 8   | Audit remains append-only and catalog-controlled; no second audit store exists                                                                                                                    | To be evidenced                            |
+| 9   | Status transitions cannot skip policy, cannot be defined by the client, and are atomic with history/audit/outbox                                                                                  | To be evidenced                            |
+| 10  | Attachment access is tenant-safe (no IDOR, no traversal, no key collision, no client-chosen key); signed URLs are short-lived, bound, and never logged                                            | To be evidenced                            |
+| 11  | Notifications are enqueue-first (no provider call inside the business transaction) and replay-safe; templates are versioned, schema-validated, and safely rendered with no SSTI                   | To be evidenced                            |
+| 12  | Events use registered semantics and the repository's existing name/schema-version convention                                                                                                      | To be evidenced                            |
+| 13  | Search / phone / VIN normalization is deterministic and does not contradict the frozen P1-6 / P1-7 contracts                                                                                      | To be evidenced                            |
+| 14  | Pagination, filtering, and sorting are bounded, allow-listed, and injection-safe, with negative fixtures                                                                                          | To be evidenced                            |
+| 15  | Export **authorization** is permission-, scope-, and sensitive-field-controlled, and does not claim export generation                                                                             | To be evidenced                            |
+| 16  | Health endpoints are safe, non-leaking, bounded, and reconciled with the pre-existing health route                                                                                                | To be evidenced                            |
+| 17  | Runtime RLS remains default-deny; no application role gains `BYPASSRLS`, superuser, `LOGIN`, or ownership                                                                                         | To be evidenced                            |
+| 18  | No provider secret reaches browser code                                                                                                                                                           | To be evidenced                            |
+| 19  | Zero unresolved Critical findings                                                                                                                                                                 | To be evidenced                            |
+| 20  | Zero unresolved High findings without an approved exception                                                                                                                                       | To be evidenced                            |
+| 21  | Migration posture: migrations 1–116 unmodified; any new migration additive, rollback-safe, and governed through a controlled database change request                                              | To be evidenced                            |
+| 22  | Local validation green with recorded exit codes                                                                                                                                                   | To be evidenced                            |
+| 23  | Genuine isolated clean-room validation green, with limitations recorded accurately rather than hidden                                                                                             | To be evidenced                            |
+| 24  | All required hosted CI checks green on the exact final SHA                                                                                                                                        | To be evidenced                            |
+| 25  | Feature pull request merged into `develop` by the repository owner                                                                                                                                | **The implementer never merges**           |
+| 26  | Gate record committed into protected history with a Go decision                                                                                                                                   | **Not started — this document is Pending** |
+| 27  | No P1-16 work started                                                                                                                                                                             | To be evidenced                            |
 
 ## 4. Known open items carried into the phase
 

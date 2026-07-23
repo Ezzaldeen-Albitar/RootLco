@@ -312,7 +312,7 @@ const RULES = [
       if (!target || !/^server\/contracts(\/|$)/.test(target)) return null;
       return (
         `handler imports a foundation service contract ("${specifier}" → ${target}); the contract is ` +
-        'implemented and installed by a module — call that module\'s application service instead'
+        "implemented and installed by a module — call that module's application service instead"
       );
     },
   },

@@ -101,10 +101,7 @@ export function findAggregate(aggregate: string): AggregateDefinition | undefine
 }
 
 /** The definition for a target state, or `undefined` when none is registered. */
-export function findTransition(
-  aggregate: string,
-  to: string
-): TransitionDefinition | undefined {
+export function findTransition(aggregate: string, to: string): TransitionDefinition | undefined {
   return TRANSITIONS.find((entry) => entry.aggregate === aggregate && entry.to === to);
 }
 

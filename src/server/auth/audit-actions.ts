@@ -276,7 +276,8 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     code: 'shared.document.linked',
     class: 'privileged',
     entityType: 'shared.document_link',
-    description: 'A document was linked to a business entity, making it reachable from that entity.',
+    description:
+      'A document was linked to a business entity, making it reachable from that entity.',
   },
   {
     code: 'shared.document.unlinked',
@@ -303,7 +304,8 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     code: 'shared.template.updated',
     class: 'privileged',
     entityType: 'shared.message_template',
-    description: 'A tenant message template’s name, description, status, or active version changed.',
+    description:
+      'A tenant message template’s name, description, status, or active version changed.',
   },
   {
     code: 'shared.template.version_created',

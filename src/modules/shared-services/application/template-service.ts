@@ -49,7 +49,7 @@ export interface CreateTemplateInput {
   readonly channel: RenderableChannel;
   readonly purpose: (typeof MESSAGE_PURPOSES)[number];
   readonly localeCode: string;
-  readonly description?: string | null;
+  readonly description?: string | null | undefined;
 }
 
 export interface TemplateVersionView {
@@ -171,7 +171,13 @@ export class TemplateService extends ApplicationService {
             ]
           : []),
         ...(changes.description !== undefined
-          ? [{ field: 'description', classification: 'internal' as const, value: changes.description }]
+          ? [
+              {
+                field: 'description',
+                classification: 'internal' as const,
+                value: changes.description,
+              },
+            ]
           : []),
       ],
     });
@@ -243,11 +249,7 @@ export class TemplateService extends ApplicationService {
     ]);
   }
 
-  async approveVersion(
-    db: DbHandle,
-    versionId: string,
-    expectedVersion: number
-  ): Promise<void> {
+  async approveVersion(db: DbHandle, versionId: string, expectedVersion: number): Promise<void> {
     const version = await this.requireTenantVersion(db, versionId);
     if (version.status !== 'draft') {
       throw new AppFailure('ERR-TRN-001', { message: 'Only a draft version may be approved' });
@@ -332,9 +334,7 @@ export class TemplateService extends ApplicationService {
       action: 'shared.template.updated',
       entityType: 'shared.message_template',
       entityId: templateId,
-      details: [
-        { field: 'active_version_id', classification: 'internal', value: versionId },
-      ],
+      details: [{ field: 'active_version_id', classification: 'internal', value: versionId }],
     });
     await this.publishTemplateChange(db, templateId, expectedVersion + 1, 'activated');
   }
@@ -355,14 +355,10 @@ export class TemplateService extends ApplicationService {
     const version = await this.requireVisibleVersion(db, versionId);
     const config = backendConfig();
     try {
-      const rendered = renderTemplate(
-        { subject: version.subject, body: version.body },
-        variables,
-        {
-          channel: version.template_channel as RenderableChannel,
-          maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
-        }
-      );
+      const rendered = renderTemplate({ subject: version.subject, body: version.body }, variables, {
+        channel: version.template_channel as RenderableChannel,
+        maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
+      });
       metrics().increment(METRICS.templateRenderCount, {
         channel: version.template_channel,
         result: 'success',
