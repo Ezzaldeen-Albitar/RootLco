@@ -77,6 +77,18 @@ const toPosix = (p) => p.split(sep).join('/');
 export const DERIVED_PREFIX = 'shared.';
 
 /**
+ * P1-16 (`crm.`) is gated with the SAME derived evidence model as P1-15
+ * (`shared.`): the obligations are derived from the registration, not declared,
+ * so editing the manifest cannot weaken the floor. Both namespaces share every
+ * derived rule below; only the per-phase count blocks are reported separately.
+ */
+export const P1_16_PREFIX = 'crm.';
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX];
+/** True when an operation id belongs to a derived-evidence namespace. */
+export const isDerivedId = (id) =>
+  typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
+
+/**
  * Evidence-kind vocabulary. A declaration may provide a superset; the gate
  * checks the effective REQUIRED ones are present.
  *
@@ -120,6 +132,17 @@ export const EVIDENCE_KINDS = Object.freeze([
 //   note:     why, for the reader.
 // ---------------------------------------------------------------------------
 export const MANIFEST = {
+  // ========================================================================
+  // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
+  // the floor (route, service, success, authorization) is derived from the
+  // registration; `required` below adds the extra obligations this operation
+  // owes beyond that floor.
+  // ========================================================================
+  'crm.customer-search': {
+    files: ['tests/backend/p1-16-customer-search.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded allow-listed read; a tenant-B customer is unreachable (cross-tenant); an invalid cursor and an oversized query are refused (denial); safe projection only, no sensitive identifier',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],
@@ -600,7 +623,7 @@ export function scanRegisteredOperationIds(root) {
  */
 export function derivedRequirements(operation) {
   if (!operation || typeof operation.id !== 'string') return [];
-  if (!operation.id.startsWith(DERIVED_PREFIX)) return [];
+  if (!isDerivedId(operation.id)) return [];
 
   const required = ['route', 'service', 'success'];
   required.push(operation.public ? 'unauthenticated' : 'authorization');
@@ -635,10 +658,13 @@ export function parseProvidedFlags(source) {
       inBlock = false;
       continue;
     }
-    // `shared` joined `iam` and `meta` with P1-15. The prefix list is explicit
-    // rather than a wildcard so a typo in a declaration is a missing flag —
-    // which fails the gate — instead of a silently accepted new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
+    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16. The
+    // prefix list is explicit rather than a wildcard so a typo in a declaration
+    // is a missing flag — which fails the gate — instead of a silently accepted
+    // new namespace.
+    const m = /^\s*\*?\s*((?:iam|meta|shared|crm)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      line
+    );
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
       const existing = provided.get(m[1]);
@@ -823,7 +849,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     }
   }
 
-  const derivedRows = matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX));
+  const phaseRows = (prefix) => matrix.filter((m) => m.id.startsWith(prefix));
+  const derivedRows = phaseRows(DERIVED_PREFIX);
+  const crmRows = phaseRows(P1_16_PREFIX);
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -831,22 +859,25 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     m.provided.includes('service') &&
     (m.provided.includes('authorization') || m.provided.includes('unauthenticated'));
 
+  const phaseCounts = (rows) => ({
+    registered: rows.length,
+    publicApi: rows.filter((m) => m.surface === 'public-api').length,
+    operationDepth: rows.filter(atOperationDepth).length,
+    invocationOnly: rows.filter((m) => m.required.length === 0).length,
+    pending: 0,
+    unitOnly: rows.filter((m) => m.unitOnly).length,
+    unreferenced: rows.filter((m) => !m.referenced).length,
+    metadataOnly: rows.filter((m) => m.metadataOnly).length,
+  });
+
   const counts = {
     registered: operations.size,
     publicApi: matrix.filter((m) => m.surface === 'public-api').length,
     internal: matrix.filter((m) => m.surface === 'internal').length,
     withRequiredEvidence: matrix.filter((m) => m.required.length > 0).length,
     invocationOnly: matrix.filter((m) => m.required.length === 0).length,
-    p1_15: {
-      registered: derivedRows.length,
-      publicApi: derivedRows.filter((m) => m.surface === 'public-api').length,
-      operationDepth: derivedRows.filter(atOperationDepth).length,
-      invocationOnly: derivedRows.filter((m) => m.required.length === 0).length,
-      pending: 0,
-      unitOnly: derivedRows.filter((m) => m.unitOnly).length,
-      unreferenced: derivedRows.filter((m) => !m.referenced).length,
-      metadataOnly: derivedRows.filter((m) => m.metadataOnly).length,
-    },
+    p1_15: phaseCounts(derivedRows),
+    p1_16: phaseCounts(crmRows),
   };
   return { failures, matrix, counts };
 }
@@ -902,6 +933,14 @@ function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX)),
     }
   );
+  writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-16', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_16,
+      operations: matrix.filter((m) => m.id.startsWith(P1_16_PREFIX)),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -928,6 +967,15 @@ function runCli() {
     console.log(`P1-15 unit-only: ${p.unitOnly}`);
     console.log(`P1-15 unreferenced: ${p.unreferenced}`);
     console.log(`P1-15 metadata-only: ${p.metadataOnly}`);
+    const q = counts.p1_16;
+    console.log('');
+    console.log(`P1-16 registered public operations: ${q.registered}`);
+    console.log(`P1-16 operation-depth: ${q.operationDepth}`);
+    console.log(`P1-16 invocation-only: ${q.invocationOnly}`);
+    console.log(`P1-16 pending: ${q.pending}`);
+    console.log(`P1-16 unit-only: ${q.unitOnly}`);
+    console.log(`P1-16 unreferenced: ${q.unreferenced}`);
+    console.log(`P1-16 metadata-only: ${q.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

@@ -70,6 +70,8 @@ import '@/app/api/v1/exports/authorizations/route';
 import '@/app/api/v1/exports/resources/route';
 import '@/app/api/v1/health/live/route';
 import '@/app/api/v1/health/ready/route';
+// --- Phase 1-16 CRM backend ----------------------------------------------
+import '@/app/api/v1/customers/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -115,8 +117,20 @@ describe('OpenAPI contract', () => {
     // `supabase/seeds/04_iam_permission_catalog.sql`; `tests/db/iam-seeds.test.ts`
     // asserts the seed itself, so the two cannot both drift unnoticed.
     // `shared` joined the list with DBCR-P1-15-001, which seeded
-    // `shared.document.manage` and `shared.notification.send`.
-    const SEEDED_DOMAINS = ['iam', 'inv', 'org', 'quo', 'rpt', 'sal', 'shared', 'svc', 'wty'];
+    // `shared.document.manage` and `shared.notification.send`. `crm` joins with
+    // Phase 1-16 (crm.customer.read, crm.customer.note.write, …).
+    const SEEDED_DOMAINS = [
+      'crm',
+      'iam',
+      'inv',
+      'org',
+      'quo',
+      'rpt',
+      'sal',
+      'shared',
+      'svc',
+      'wty',
+    ];
     const document = JSON.parse(generated) as {
       paths: Record<string, Record<string, { 'x-required-permissions'?: string[] }>>;
     };

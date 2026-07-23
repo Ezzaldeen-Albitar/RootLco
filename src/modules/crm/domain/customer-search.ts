@@ -88,7 +88,12 @@ export interface CustomerSearchInput {
  * never silently diverge on a single row.
  */
 export function normalizeNameFragment(raw: string): string {
-  return raw.trim().replace(/\s+/g, ' ').toLowerCase();
+  const collapsed = raw.trim().replace(/\s+/g, ' ').toLowerCase();
+  // Escape LIKE metacharacters so a caller can never inject a wildcard: a `%` or
+  // `_` in the fragment becomes a literal (matched with `ESCAPE '\'` in the
+  // repository), and the trailing `%` the repository appends is the ONLY
+  // wildcard — keeping the match a bounded prefix, never a full-table scan.
+  return collapsed.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 /**

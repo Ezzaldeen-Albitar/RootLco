@@ -59,8 +59,10 @@ export class CustomerSearchRepository extends Repository {
     if (filter.namePrefix !== null) {
       // Prefix match on the column-side normalisation, so a stored name and the
       // query fragment are compared under the same frozen rule and no row can
-      // silently diverge. Prefix (not `%x%`) keeps it index-eligible.
-      where.push(`crm.normalize_name(display_name) LIKE $${param} || '%'`);
+      // silently diverge. Prefix (not `%x%`) keeps it index-eligible. The
+      // fragment is LIKE-escaped in the domain and matched with `ESCAPE '\'`, so
+      // the appended `%` is the only wildcard — caller `%`/`_` are literals.
+      where.push(`crm.normalize_name(display_name) LIKE $${param} || '%' ESCAPE '\\'`);
       values.push(filter.namePrefix);
       param += 1;
     }
@@ -80,7 +82,12 @@ export class CustomerSearchRepository extends Repository {
       param += 1;
     }
 
-    const keyset = keysetFragment(page, { sort: 'created_at', id: 'id' }, CUSTOMER_SEARCH_ORDERING, param);
+    const keyset = keysetFragment(
+      page,
+      { sort: 'created_at', id: 'id' },
+      CUSTOMER_SEARCH_ORDERING,
+      param
+    );
     values.push(...keyset.values);
 
     const sql = `

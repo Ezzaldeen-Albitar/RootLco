@@ -1,0 +1,31 @@
+{
+  "generatedFrom": "scripts/check-operation-test-coverage.mjs",
+  "counts": {
+    "registered": 1,
+    "publicApi": 1,
+    "operationDepth": 1,
+    "invocationOnly": 0,
+    "pending": 0,
+    "unitOnly": 0,
+    "unreferenced": 0,
+    "metadataOnly": 0
+  },
+  "operations": [
+    {
+      "id": "crm.customer-search",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-search.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    }
+  ]
+}
