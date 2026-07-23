@@ -2254,7 +2254,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.manage"],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -2314,7 +2314,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.manage"],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",

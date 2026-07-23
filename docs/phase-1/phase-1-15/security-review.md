@@ -158,15 +158,104 @@ control is "not implemented" says so.
   allow-list and is not verified against the bytes.
 - **No homoglyph or confusable detection exists** in search normalization.
 
-## 5. Finding disposition
+## 5. The final refute-oriented pass
 
-| ID                                                                                       | Severity     | Status                                                                                             |
-| ---------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------- |
-| P1-15-R-001 — platform template versions unlockable under RLS, making enqueue impossible | High         | **Resolved** before merge, in migration 117; regression pinned by a platform-template enqueue test |
-| P1-15-SR-001 — the numbering privilege reading (§2.1)                                    | Not a defect | **Withdrawn** after executable disproof; recorded so the method is auditable                       |
+The review in §3 was written by the engineer who wrote the code. That is a known weakness of the
+Solo Developer Review Policy, and the way to reduce it is not to assert more confidently but to make
+the review adversarial and then make the adversary argue with itself.
 
-No unresolved Critical finding. No unresolved High finding. Medium and Low findings, if any survive
-the final adversarial pass, are listed in [the risk register](risk-register.md) with an explicit
-disposition rather than being closed silently.
+### 5.1 Method
+
+Sixteen named attack surfaces — the ones set out in the remediation order — were each reviewed
+independently against the committed source. Every candidate finding was then handed to **three
+further independent skeptics**, each given a different lens and instructed to **default to refuted
+when not certain**:
+
+| Lens            | The question it had to answer                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| Correctness     | is the described behaviour actually what the committed code does?                                       |
+| Controls        | does another layer — an RLS policy, a constraint, a route schema, a pipeline step — already prevent it? |
+| Reproducibility | can the described input actually reach the described line, given the schema and the authorization gate? |
+
+A candidate survived only on a **majority** verdict. Diversity rather than repetition is the point:
+three identical reviewers catch what one catches, three different lenses catch what one misses.
+
+**19 candidates. 12 survived. 7 were refuted**, and the refuted ones are listed in §5.4 rather than
+deleted, because a review that reports only its hits hides its precision.
+
+### 5.2 What the pass found, and what happened to each
+
+Everything below is fixed on this branch except the last row, which cannot be fixed on this branch
+and says so.
+
+| ID               | Severity | Finding                                                                                                                                                                                                                                                                                                                                                             | Disposition                                                                                                                                                                                                                                                                                             |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-15-SR-002** | **High** | The idempotency fingerprint bound the registered path **template**, not the resolved route parameters. Two requests naming different documents with one `Idempotency-Key` and an identical body produced the same digest, so the second executed nothing and was served the first's stored response — a privileged command reporting success without performing it. | **Resolved.** Resolved parameters are now a length-prefixed component of the digest and the scheme string moved to `v3`, so a key written under `v2` can never match. Pinned by `tests/backend/p1-15-operation-routes.test.ts` and the foundation fingerprint suite.                                    |
+| **P1-15-SR-004** | **High** | Both unauthenticated health probes were throttled by nothing. `low-risk-metadata` is keyed on tenant, a public request has no tenant, and the post-authentication throttle is never reached on the public path.                                                                                                                                                     | **Resolved.** A `public-probe` policy keyed on operation + client address was added, and `policyFor()` substitutes it for **any** `public: true` operation, enforced before the handler. Future public operations inherit it.                                                                           |
+| **P1-15-SR-006** | **High** | `iam.user-session-revoke-all` could revoke nothing and report success. PostgreSQL applies SELECT policies to an `UPDATE ... WHERE`; a caller holding `iam.user.manage` without `iam.session.view_all` matched zero rows, and the request answered `200 {"revoked": 0}` with a `security` audit record while the session stayed live.                                | **Resolved.** Both revoking operations now declare the read permission they depend on, so the outcome is a 403 at the gate rather than a silent no-op. The database behaviour is pinned live by `tests/db/p1-15-session-revocation-visibility.test.ts`.                                                 |
+| **P1-15-SR-005** | Medium   | The `SignedUrl` port said the URL is "never stored". It is: an idempotent operation's response document is written to `shared.idempotency_keys`, and the upload authorization's response contains the URL.                                                                                                                                                          | **Resolved as a documentation defect.** The claim is corrected in the port rather than softened, with the three bounds that make the residual acceptable stated and checkable. Removing the URL from the stored response would turn a retry into a silent failure — the same class of defect as SR-002. |
+| **P1-15-SR-007** | Medium   | Setting a template to `status: 'disabled'` stopped nothing: enqueue read the _version's_ approval and never the _template's_ status.                                                                                                                                                                                                                                | **Resolved.** `assertTemplateUsable` reads it and refuses with a named rule, `template_disabled`, so the operator sees the reason they caused rather than a channel mismatch.                                                                                                                           |
+| **P1-15-SR-009** | Medium   | The rendered-size ceiling was enforced **after** substitution, so it bounded the result and nothing about the work. Substitution is multiplicative; a few kilobytes of template and value could allocate hundreds of megabytes before being rejected.                                                                                                               | **Resolved.** The projected size is computed exactly in one pass over the template and refused before anything is built.                                                                                                                                                                                |
+| **P1-15-SR-010** | Medium   | `registerVersion` re-derived the storage key but read `contentType` and `maxBytes` **straight out of the unsigned upload token**, so a forged token set a content type the category forbids and a ceiling larger than the category allows — contradicting the compensating control R-05 rests on.                                                                   | **Resolved.** The category is re-read from the document (itself loaded under RLS) and both are re-checked against it.                                                                                                                                                                                   |
+| **P1-15-SR-012** | Medium   | The transition engine checked the origin state against a snapshot and guarded the write with `expectedVersion`, but never compared the two, so a caller with a stale `If-Match` passed an origin check against a state they had not observed.                                                                                                                       | **Resolved.** The versions are compared before anything is written, and the caller gets the conflict rather than an origin-state message about a row that has moved.                                                                                                                                    |
+| **P1-15-SR-013** | Medium   | A cursor whose contract key was correct but whose tie-breaker was not a UUID reached PostgreSQL and raised `22P02` as a 500, where every other malformed cursor is `ERR-PAG-001` — letting a caller distinguish a valid ordering key from an invalid one by status code.                                                                                            | **Resolved.** The tie-breaker is validated as a UUID and the sort value is length-bounded, both at decode.                                                                                                                                                                                              |
+| **P1-15-SR-011** | Low      | `stripDangerousCharacters` removed U+200E/U+200F but not U+061C ARABIC LETTER MARK or U+2060 WORD JOINER, so an invisible direction mark survived into rendered content. U+061C matters here more than in most codebases: Arabic is a primary content language.                                                                                                     | **Resolved.** Both are stripped; ordinary Arabic text is asserted to survive untouched.                                                                                                                                                                                                                 |
+| **P1-15-SR-008** | Low      | `MessageDispatcher` ignored `DeliveryOutcome.accepted`: a provider answering a structured refusal had the attempt recorded as `accepted` and the message driven to `delivered`.                                                                                                                                                                                     | **Refuted as unreachable** — no shipped adapter returns `accepted: false` — and **corrected anyway**, because the field is part of the port contract and an adapter written against it would have been silently ignored. A structured refusal is now a non-retryable failure.                           |
+| **P1-15-SR-014** | Medium   | `shared.next_display_number` derives its period key from `now()`, which is transaction-start time. A transaction that began just before a period boundary can rewind `current_period` and restart the run at 1, re-issuing an already-used number.                                                                                                                  | **OPEN.** See §5.3.                                                                                                                                                                                                                                                                                     |
+
+### 5.3 The one finding this branch does not fix
+
+**P1-15-SR-014 is real, is Medium, and is left open deliberately.**
+
+It lives in `shared.next_display_number`, a **database function** shipped in migration 0003. Fixing
+it means changing that function, which means a migration — and P1-15 adds no migration and may not.
+A database change belongs to a controlled change request with its own review, not to a feature
+branch that happens to have found it.
+
+What bounds it today, stated so the risk is sized rather than dismissed:
+
+- **`shared.number_sequences` holds zero rows.** No sequence is provisioned, none ships (the
+  no-fake-data policy forbids it), and P1-15 provisions none — `NumberAllocationService` refuses
+  with `not-provisioned` rather than creating one.
+- The defect requires `period_reset_rule` other than `never`, which is a per-row operator choice
+  that nothing has yet made.
+- The window is the boundary instant of the configured period, for a transaction that began before
+  it and committed after.
+
+So the correct statement is: **a latent defect in the database contract, not reachable through any
+code path this phase ships, recorded here and in
+[the risk register](risk-register.md) so it is not rediscovered as a surprise.** It is carried to the
+owner as an input to the next database change request rather than fixed quietly here.
+
+### 5.4 What was refuted, and why that is worth recording
+
+Seven candidates did not survive. Recording them is not padding: an adversarial pass that reports
+only its hits gives no way to judge its precision, and a reader who cannot see the misses cannot
+calibrate the hits.
+
+They were refuted on the grounds the lenses were given — a control at another layer already
+prevented it, the described input could not reach the described line, or the code did not do what
+the finding claimed. Among them: a claim that `local_fake` providers were selectable in production
+(the composition reads a configuration value that is `unconfigured` by default and the local adapter
+signs against a `.invalid` host), and a claim that the readiness probe leaks connection state
+(bounded by `READINESS_TIMEOUT_MS`, and the projection carries names and booleans only).
+
+The full per-candidate verdicts, with the files each skeptic read, are in the review transcript.
+
+## 6. Finding disposition
+
+| ID                                                                                       | Severity     | Status                                                                                                                   |
+| ---------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| P1-15-R-001 — platform template versions unlockable under RLS, making enqueue impossible | High         | **Resolved** before merge, in migration 117; regression pinned by a platform-template enqueue test                       |
+| P1-15-SR-001 — the numbering privilege reading (§2.1)                                    | Not a defect | **Withdrawn** after executable disproof; recorded so the method is auditable                                             |
+| P1-15-SR-002, SR-004, SR-006                                                             | High         | **Resolved** on this branch, each with a regression test                                                                 |
+| P1-15-SR-005, SR-007, SR-009, SR-010, SR-012, SR-013                                     | Medium       | **Resolved** on this branch                                                                                              |
+| P1-15-SR-008, SR-011                                                                     | Low          | **Resolved** on this branch                                                                                              |
+| **P1-15-SR-014**                                                                         | **Medium**   | **Open** — database contract; remediation requires a change request. Not reachable through any P1-15 code path. See §5.3 |
+
+**Unresolved Critical: 0. Unresolved High: 0. Unresolved Medium: 1 (SR-014). Unresolved Low: 0.**
+
+Every "Resolved" above means a committed change plus a committed test that fails without it. None of
+them means "reviewed and judged acceptable".
 
 The Phase 1-15 owner gate remains **Pending**.

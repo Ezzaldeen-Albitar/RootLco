@@ -95,6 +95,28 @@ export class DocumentRepository extends Repository {
   }
 
   /**
+   * Loads a category by its identifier.
+   *
+   * Used at version registration to re-check the content type and the size
+   * ceiling against the **category**, rather than against the unsigned upload
+   * token that names them (P1-15-SR-010). The id comes from a document already
+   * loaded under RLS, so it is a server-resolved fact and not a caller claim.
+   */
+  async findCategoryById(db: DbHandle, categoryId: string): Promise<CategoryRow | null> {
+    const context = this.assertContext(db);
+    return this.runOne<CategoryRow>(
+      db,
+      `SELECT id, category_code, scope, allowed_content_types, max_size_bytes,
+              default_classification, default_retention_class, status
+         FROM shared.document_categories
+        WHERE id = $1
+          AND deleted_at IS NULL
+          AND (scope = 'platform' OR tenant_id = $2)`,
+      [categoryId, context.principal.tenantId]
+    );
+  }
+
+  /**
    * Creates document metadata.
    *
    * `id` is generated here rather than by the column default so the storage key

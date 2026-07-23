@@ -59,6 +59,15 @@ export interface TemplateVersionRow {
   readonly template_channel: string;
   readonly template_locale: string;
   readonly template_purpose: string;
+  /**
+   * The TEMPLATE's status, not the version's.
+   *
+   * Selected because `shared.template-update` offers `status: 'disabled'` and,
+   * until P1-15-SR-007, nothing read it back: a template an administrator had
+   * deliberately disabled still produced messages, because enqueue only ever
+   * looked at the *version's* approval state.
+   */
+  readonly template_status: string;
 }
 
 export class TemplateRepository extends Repository {
@@ -252,7 +261,8 @@ export class TemplateRepository extends Repository {
               t.tenant_id   AS template_tenant_id,
               t.channel     AS template_channel,
               t.locale_code AS template_locale,
-              t.purpose     AS template_purpose
+              t.purpose     AS template_purpose,
+              t.status      AS template_status
          FROM shared.template_versions v
          JOIN shared.message_templates t ON t.id = v.template_id
         WHERE v.id = $1

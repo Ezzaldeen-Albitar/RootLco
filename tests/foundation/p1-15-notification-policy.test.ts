@@ -279,6 +279,7 @@ describe('template usability', () => {
   const APPROVED: TemplateFacts = {
     versionId: 'c0000000-0000-4000-8000-000000000001',
     versionStatus: 'approved',
+    templateStatus: 'active',
     templateTenantId: null, // platform template
     channel: 'email',
     localeCode: 'en',
@@ -305,6 +306,28 @@ describe('template usability', () => {
       expect(
         refusal(() => assertTemplateUsable({ ...APPROVED, versionStatus: status }, REQUEST)).rule
       ).toBe('template_not_approved');
+    }
+  });
+
+  it('refuses a DISABLED template even when the version is approved (P1-15-SR-007)', () => {
+    // Approval and status are different switches with different owners: approval
+    // says the wording was reviewed, status says the template is in service.
+    // Reading only the first is why disabling a template used to stop nothing.
+    const error = refusal(() =>
+      assertTemplateUsable({ ...APPROVED, templateStatus: 'disabled' }, REQUEST)
+    );
+    expect(error.rule).toBe('template_disabled');
+    // And it is refused for the reason it was actually refused for, rather than
+    // falling through to a channel or locale message that would send an operator
+    // looking in the wrong place.
+    expect(error.message).toContain('disabled');
+  });
+
+  it('refuses any template status that is not exactly active', () => {
+    for (const status of ['disabled', 'archived', 'ACTIVE', '']) {
+      expect(
+        refusal(() => assertTemplateUsable({ ...APPROVED, templateStatus: status }, REQUEST)).rule
+      ).toBe('template_disabled');
     }
   });
 

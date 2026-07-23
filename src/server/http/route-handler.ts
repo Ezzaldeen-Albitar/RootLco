@@ -115,6 +115,17 @@ function policyFor(operation: RegisteredOperation) {
   if (!policy) {
     throw new Error(`Operation ${operation.id} references unknown rate-limit policy "${name}"`);
   }
+  // A public operation has no tenant and no user, so a policy keyed on either
+  // would put every caller in the world in one bucket. Whatever a public
+  // operation declares, it is throttled by `public-probe` — operation + client
+  // address — which are the only dimensions that exist without a session.
+  if (operation.public) {
+    const publicPolicy = RATE_LIMIT_POLICIES['public-probe'];
+    if (!publicPolicy) {
+      throw new Error('The "public-probe" rate-limit policy is missing from the catalogue');
+    }
+    return publicPolicy;
+  }
   return policy;
 }
 
@@ -137,8 +148,16 @@ export async function handleOperation<T>(
   const startedAt = performance.now();
   const config = backendConfig();
   const policy = policyFor(operation);
+  // A `public: true` operation never reaches the post-authentication throttle,
+  // because it never authenticates. Until this was fixed (P1-15-SR-004) a policy
+  // keyed by tenant or user — which is most of them — meant a public route was
+  // throttled by nothing at all, and the two health probes are the most exposed
+  // endpoints in the deployment. For a public operation the policy is therefore
+  // enforced BEFORE the handler, keyed by operation and client address, which
+  // are the only dimensions that exist without a session.
   const preAuthPolicy =
-    policy && !policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')
+    policy &&
+    (operation.public || (!policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')))
       ? policy
       : undefined;
   const postAuthPolicy = policy && preAuthPolicy === undefined ? policy : undefined;
@@ -204,7 +223,11 @@ export async function handleOperation<T>(
     const fingerprint = idempotencyKey
       ? requestFingerprint(context, {
           method: operation.method,
+          // The registered TEMPLATE plus the RESOLVED parameters. The template
+          // alone is identical for every target of a parameterised route, so
+          // binding it alone let one key replay across resources (P1-15-SR-002).
           path: operation.path,
+          params: options.params ?? {},
           body: options.body ?? null,
         })
       : null;

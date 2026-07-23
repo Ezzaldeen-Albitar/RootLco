@@ -111,6 +111,7 @@ export class SharedNotificationService extends ApplicationService implements Not
         {
           versionId: version.id,
           versionStatus: version.status,
+          templateStatus: version.template_status,
           templateTenantId: version.template_tenant_id,
           channel: version.template_channel,
           localeCode: version.template_locale,

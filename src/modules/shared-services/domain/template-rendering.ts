@@ -112,7 +112,16 @@ function stripDangerousCharacters(value: string, keepNewlines: boolean): string 
       : /[\u0000-\u001F\u007F-\u009F]/g,
     ''
   );
-  return withoutControls.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/gu, '');
+  // U+061C ARABIC LETTER MARK and U+2060 WORD JOINER are outside the two ranges
+  // above and were surviving into rendered output while their U+200E / U+200F
+  // twins were removed (P1-15-SR-011). U+061C matters here more than in most
+  // codebases: this platform's primary content language is Arabic, so an
+  // invisible Arabic-specific direction mark is exactly the character an
+  // attacker would reach for.
+  return withoutControls.replace(
+    /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/gu,
+    ''
+  );
 }
 
 /** Every distinct placeholder a template uses, in first-appearance order. */
@@ -204,6 +213,44 @@ export function renderTemplate(
       subject: stripDangerousCharacters(raw, false).replace(/\s+/g, ' ').trim(),
       body: escapeHtml(stripDangerousCharacters(raw, true)),
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Bound the WORK, not only the RESULT (P1-15-SR-009).
+  //
+  // The ceiling below used to be checked after substitution, which bounds what
+  // is returned and bounds nothing at all about what is built. Substitution is
+  // multiplicative: a template body may repeat one placeholder thousands of
+  // times, and each occurrence expands to the whole supplied value. A few
+  // kilobytes of authored template and a few kilobytes of caller-supplied
+  // variable therefore produced a multi-hundred-megabyte string — allocated in
+  // full, then measured, then thrown away as a 500.
+  //
+  // The projected size is exact rather than an estimate: it is the source
+  // length, minus the bytes each placeholder occurrence removes, plus the bytes
+  // its prepared value adds. Refusing here costs one pass over the template and
+  // allocates nothing.
+  // ---------------------------------------------------------------------
+  const projected = (source: string, part: 'subject' | 'body'): number => {
+    let total = source.length;
+    PLACEHOLDER.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = PLACEHOLDER.exec(source)) !== null) {
+      const name = match[1];
+      if (!name) continue;
+      total += (prepared.get(name)?.[part].length ?? 0) - match[0].length;
+    }
+    return total;
+  };
+
+  const projectedSize =
+    (content.subject === null ? 0 : projected(content.subject, 'subject')) +
+    projected(content.body, 'body');
+  if (projectedSize > options.maxRenderedChars) {
+    throw new TemplateRenderError(
+      `Rendered message would be ${projectedSize} characters; the ceiling is ${options.maxRenderedChars}`,
+      'rendered_too_large'
+    );
   }
 
   const substitute = (source: string, part: 'subject' | 'body'): string =>

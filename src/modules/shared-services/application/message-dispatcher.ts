@@ -138,12 +138,37 @@ export class MessageDispatcher {
         config.NOTIFICATION_PROVIDER_TIMEOUT_MS
       );
 
+      // ------------------------------------------------------------------
+      // A provider that answers `accepted: false` has REFUSED the message
+      // (P1-15-SR-008).
+      //
+      // This branch used to record the attempt as `accepted` and then drive the
+      // message `sent -> delivered` regardless, so a refusal was written into
+      // the ledger as a completed delivery. `DeliveryOutcome.accepted` exists
+      // precisely to let an adapter refuse without throwing — a provider that
+      // returns a structured "no" is the normal case for a suppression list or
+      // an invalid destination — and ignoring it made the field decorative.
+      //
+      // A structured refusal is not a transport fault, so it is NOT retryable:
+      // repeating it produces the same answer and burns the budget. It is
+      // therefore converted into the same non-retryable failure a
+      // `MessageProviderError` of kind `rejected` produces, and dead-lettered by
+      // the shared path below.
+      // ------------------------------------------------------------------
+      if (!outcome.accepted) {
+        throw new MessageProviderError(
+          'Provider refused the message',
+          'rejected',
+          'provider_refused_message'
+        );
+      }
+
       await this.repository.recordAttempt(db, {
         tenantId: message.tenant_id,
         messageId: message.id,
         attemptNumber,
         providerCode: provider.code,
-        status: outcome.accepted ? 'delivered' : 'accepted',
+        status: 'delivered',
         providerMessageRef: outcome.providerMessageRef,
         responseCode: outcome.responseCode,
       });

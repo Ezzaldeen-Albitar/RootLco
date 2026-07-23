@@ -142,6 +142,27 @@ export const RATE_LIMIT_POLICIES: Readonly<Record<string, RateLimitPolicy>> = Ob
     securityRelevant: false,
     rationale: 'General write path. Generous enough to be invisible to real use.',
   },
+  /**
+   * The only policy an unauthenticated (`public: true`) operation may use.
+   *
+   * A public route has no tenant and no user, so any policy keyed on either
+   * collapses every caller in the world into one bucket — which throttles the
+   * orchestrator's own probe as readily as an attacker, and lets one attacker
+   * starve it. `route-handler.ts` substitutes this policy for a public
+   * operation's declared one and enforces it BEFORE the handler, which is the
+   * only place a public request can be throttled at all (P1-15-SR-004).
+   */
+  'public-probe': {
+    name: 'public-probe',
+    limit: 120,
+    windowMs: 60_000,
+    keyBy: ['operation', 'ip'],
+    securityRelevant: false,
+    rationale:
+      'Unauthenticated health probes. Keyed by client address because no tenant or user exists; ' +
+      'generous enough for an orchestrator polling every second, bounded enough that one source ' +
+      'cannot make the probe itself the outage.',
+  },
   'low-risk-metadata': {
     name: 'low-risk-metadata',
     limit: 600,

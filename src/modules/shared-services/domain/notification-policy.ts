@@ -60,6 +60,7 @@ export type PolicyRule =
   | 'consent_not_granted'
   | 'consent_stale'
   | 'template_not_approved'
+  | 'template_disabled'
   | 'template_wrong_tenant';
 
 export class NotificationPolicyError extends Error {
@@ -152,6 +153,15 @@ export function assertDedupeKey(dedupeKey: string): string {
 export interface TemplateFacts {
   readonly versionId: string;
   readonly versionStatus: string;
+  /**
+   * The TEMPLATE's status — `active` or `disabled`.
+   *
+   * A version's approval and a template's status are different switches with
+   * different owners: approval says "this wording was reviewed", status says
+   * "this template is in service". Reading only the first is why disabling a
+   * template used to stop nothing (P1-15-SR-007).
+   */
+  readonly templateStatus: string;
   /** `null` for a platform template. */
   readonly templateTenantId: string | null;
   readonly channel: string;
@@ -179,6 +189,16 @@ export function assertTemplateUsable(
     throw new NotificationPolicyError(
       'Messages may only be sent from an approved template version',
       'template_not_approved'
+    );
+  }
+  // Checked before tenant and channel, because a disabled template is a
+  // deliberate administrative decision and deserves the refusal that names it —
+  // not a channel-mismatch message that sends the operator looking in the wrong
+  // place.
+  if (facts.templateStatus !== 'active') {
+    throw new NotificationPolicyError(
+      'Messages may not be sent from a disabled template',
+      'template_disabled'
     );
   }
   if (facts.templateTenantId !== null && facts.templateTenantId !== request.tenantId) {

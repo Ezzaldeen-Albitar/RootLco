@@ -283,7 +283,38 @@ export class AttachmentService extends ApplicationService implements FileService
       });
     }
 
-    const ceiling = Math.min(token.maxBytes, config.STORAGE_MAX_UPLOAD_BYTES);
+    // -----------------------------------------------------------------------
+    // Re-check against the CATEGORY, not only against the token (P1-15-SR-010).
+    //
+    // The upload token is unsigned by design (R-05), and the whole compensating
+    // control is the claim that "every field of the token is re-derived or
+    // re-checked here". That claim was not true of `contentType` and `maxBytes`:
+    // both were read straight out of the token, so a forged token could set a
+    // content type the category forbids and a ceiling larger than the category
+    // allows. The category is the governed limit; the token carries convenience,
+    // never authority.
+    //
+    // The category is re-read from the DOCUMENT, which was loaded under RLS
+    // above — so this is a server-resolved fact, not another token claim.
+    // -----------------------------------------------------------------------
+    const category = await this.documents.findCategoryById(db, document.category_id);
+    if (!category || category.status !== 'active') {
+      throw new AppFailure('ERR-RES-001', { message: 'Document category not found or disabled' });
+    }
+    if (!contentTypeAllowed(token.contentType, category.allowed_content_types)) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Content type is not permitted for this category',
+        safeDetails: {
+          violations: [{ path: 'body.uploadToken', rule: 'content_type_not_allowed' }],
+        },
+      });
+    }
+
+    const ceiling = Math.min(
+      token.maxBytes,
+      Number(category.max_size_bytes),
+      config.STORAGE_MAX_UPLOAD_BYTES
+    );
     if (!Number.isInteger(input.byteSize) || input.byteSize < 1 || input.byteSize > ceiling) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Registered size is outside the authorized range',

@@ -165,9 +165,15 @@ describe('keysetFragment', () => {
 
 describe('buildPage', () => {
   const read = (row: Row) => ({ sortValue: row.createdAt, id: row.id });
+  // UUIDs rather than `row-0`: every paginated relation in this schema has a
+  // `uuid` primary key, and P1-15-SR-013 made `decodeCursor` say so — a cursor
+  // whose tie-breaker is not a UUID is now `ERR-PAG-001` instead of reaching
+  // PostgreSQL and raising 22P02 as a 500. The fixture matches the real shape.
+  const idOf = (index: number): string =>
+    `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
   const rowsOf = (count: number): Row[] =>
     Array.from({ length: count }, (_unused, index) => ({
-      id: `row-${index}`,
+      id: idOf(index),
       createdAt: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
     }));
 
@@ -177,11 +183,11 @@ describe('buildPage', () => {
 
     expect(page.hasMore).toBe(true);
     expect(page.items).toHaveLength(3);
-    expect(page.items.map((row) => row.id)).toEqual(['row-0', 'row-1', 'row-2']);
+    expect(page.items.map((row) => row.id)).toEqual([idOf(0), idOf(1), idOf(2)]);
     expect(page.nextCursor).not.toBeNull();
 
     const decoded = decodeCursor(page.nextCursor!, DESC);
-    expect(decoded).toEqual({ k: DESC.key, v: '2026-07-03T00:00:00.000Z', i: 'row-2' });
+    expect(decoded).toEqual({ k: DESC.key, v: '2026-07-03T00:00:00.000Z', i: idOf(2) });
   });
 
   it('mints no cursor when the page is the last one', () => {

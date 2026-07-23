@@ -105,6 +105,20 @@ export class StatusTransitionService extends ApplicationService {
       throw new AppFailure('ERR-RES-001', { message: 'Aggregate not found in the caller scope' });
     }
 
+    // The origin check below reads `snapshot`, and the UPDATE further down is
+    // guarded by `expectedVersion`. Comparing them here makes the two agree
+    // *before* anything is written (P1-15-SR-012): otherwise a caller whose
+    // `If-Match` is stale still passes the origin check against a state they did
+    // not observe, and only the UPDATE's row count catches it — after the shape
+    // of the decision has already been settled on a version the caller never
+    // saw. Refusing first also gives the caller the conflict rather than an
+    // origin-state message about a row that has since moved.
+    if (snapshot.recordVersion !== input.expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The aggregate changed since it was read',
+      });
+    }
+
     if (!definition.from.includes(snapshot.state)) {
       metrics().increment(METRICS.transitionConflictCount, {
         aggregate: definition.aggregate,

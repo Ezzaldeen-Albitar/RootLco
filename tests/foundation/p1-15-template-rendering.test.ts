@@ -637,3 +637,73 @@ describe('no filesystem path and no module is reachable through a value', () => 
     expect(rendered.body).toBe('Hi Ada');
   });
 });
+
+// ===========================================================================
+// P1-15-SR-009 and P1-15-SR-011 — bounds and invisibles, found by the final
+// adversarial pass and fixed before merge.
+// ===========================================================================
+
+describe('the rendered-size ceiling bounds the WORK, not only the result (P1-15-SR-009)', () => {
+  it('refuses before building a string it would only throw away', () => {
+    // Substitution is multiplicative: one placeholder repeated N times expands
+    // to N copies of the value. Two kilobytes of template and two kilobytes of
+    // value used to allocate ~4 MB, measure it, and reject it — and the same
+    // shape at realistic sizes allocated hundreds of megabytes before failing.
+    const body = '{{v}}'.repeat(2_000);
+    const variables = { v: 'x'.repeat(2_000) };
+
+    const failure = renderFailure({ subject: null, body }, variables);
+    expect(failure.rule).toBe('rendered_too_large');
+    // The message states the PROJECTED size, which is what makes it possible to
+    // tell the refusal happened before the allocation rather than after it.
+    expect(failure.message).toContain('would be');
+  });
+
+  it('projects the size exactly, so a template just under the ceiling still renders', () => {
+    // 100 occurrences of a 90-character value plus 10 characters of literal text
+    // is 9 010 characters — under the 10 000 ceiling. An estimate that rounded
+    // up would refuse this; the projection must not.
+    const body = '0123456789' + '{{v}}'.repeat(100);
+    const rendered = renderTemplate({ subject: null, body }, { v: 'y'.repeat(90) }, OPTIONS);
+    expect(rendered.body.length).toBe(10 + 100 * 90);
+  });
+
+  it('counts the subject too, because the ceiling is the whole message', () => {
+    const failure = renderFailure({ subject: '{{v}}', body: '{{v}}' }, { v: 'z'.repeat(9_000) });
+    expect(failure.rule).toBe('rendered_too_large');
+  });
+});
+
+describe('invisible direction marks are stripped from values (P1-15-SR-011)', () => {
+  const ARABIC_LETTER_MARK = String.fromCharCode(0x061c);
+  const WORD_JOINER = String.fromCharCode(0x2060);
+
+  it('removes U+061C ARABIC LETTER MARK, which matters most in this product', () => {
+    const rendered = renderTemplate(
+      { subject: 'Hi {{name}}', body: 'Hi {{name}}' },
+      { name: `A${ARABIC_LETTER_MARK}B` },
+      OPTIONS
+    );
+    expect(rendered.body).not.toContain(ARABIC_LETTER_MARK);
+    expect(rendered.subject).not.toContain(ARABIC_LETTER_MARK);
+    expect(rendered.body).toBe('Hi AB');
+  });
+
+  it('removes U+2060 WORD JOINER, the other survivor of the original ranges', () => {
+    const rendered = renderTemplate(
+      { subject: null, body: 'Hi {{name}}' },
+      { name: `A${WORD_JOINER}B` },
+      OPTIONS
+    );
+    expect(rendered.body).toBe('Hi AB');
+  });
+
+  it('still keeps ordinary Arabic text intact — the strip is of invisibles only', () => {
+    const rendered = renderTemplate(
+      { subject: null, body: 'Hi {{name}}' },
+      { name: 'محمد' },
+      OPTIONS
+    );
+    expect(rendered.body).toBe('Hi محمد');
+  });
+});

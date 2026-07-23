@@ -52,8 +52,34 @@ export interface SignUrlRequest {
 
 export interface SignedUrl {
   /**
-   * The signed URL. Treat as a bearer credential: never logged, never audited,
-   * never stored, never returned in an error.
+   * The signed URL. Treat as a bearer credential: **never logged, never
+   * audited, never returned in an error.**
+   *
+   * ## Where it IS persisted, and why the earlier "never stored" was wrong
+   *
+   * It said "never stored" and that was not true (P1-15-SR-005). An idempotent
+   * operation's response document is written to `shared.idempotency_keys`
+   * so a retried request can be answered with the same result, and for
+   * `shared.attachment-upload-authorize` that response contains this URL. A
+   * comment claiming otherwise is worse than no comment, so it is corrected
+   * rather than quietly softened.
+   *
+   * The exposure is bounded on three sides and each bound is checkable:
+   *
+   *  - `shared.idempotency_keys` is tenant-scoped with SELECT and INSERT
+   *    policies only — no application role may UPDATE or DELETE a row, and no
+   *    role can read another tenant's;
+   *  - the URL it holds is valid for at most
+   *    `STORAGE_UPLOAD_URL_TTL_SECONDS`, itself capped by
+   *    `ABSOLUTE_MAX_URL_TTL_SECONDS` (900 s), so the stored copy is a dead
+   *    string for all but the first minutes of the row's life;
+   *  - the capability it carries is over one object in the caller's OWN
+   *    tenant, at a key that tenant's own request reserved.
+   *
+   * Removing the URL from the stored document is not the fix: a replay that
+   * answers without the capability answers with something the caller cannot
+   * use, which converts a retry into a silent failure — exactly the class of
+   * defect P1-15-SR-002 was.
    */
   readonly url: string;
   /** HTTP method the URL is valid for. */
