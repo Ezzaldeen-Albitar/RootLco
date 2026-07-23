@@ -305,7 +305,10 @@ export function boundOrderingContract(
   tenantId: string
 ): OrderingContract {
   const fingerprint = createHash('sha256')
-    .update([contract.key, sort.canonical, filterCanonical, tenantId].join(' '))
+    // NUL separator, written as an escape so the source holds no invisible byte.
+    // A printable separator could appear inside a filter value and let two
+    // different filter sets hash identically.
+    .update([contract.key, sort.canonical, filterCanonical, tenantId].join('\u0000'))
     .digest('hex')
     .slice(0, 16);
   return { key: `${contract.key}#${fingerprint}`, direction: sort.direction };

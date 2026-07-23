@@ -317,7 +317,7 @@ describe('safeContentDispositionFilename', () => {
 
   it('strips every C0 control character and DEL, not only the newline pair', () => {
     const controls = Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)).join('');
-    expect(safeContentDispositionFilename(`fx${controls}.pdf`)).toBe('fx.pdf');
+    expect(safeContentDispositionFilename(`fx${controls}\u007F.pdf`)).toBe('fx.pdf');
   });
 
   it('strips the parameter-injection characters " ; \\ and ,', () => {

@@ -150,7 +150,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
   // aggregate lives in. Giving it to `org` would mean no module could publish
   // it, since no `org` module exists.
   //
-  // Names carry no version suffix. The planning text used `…​.v1`; the schema
+  // Names carry no version suffix. The planning text used `….v1`; the schema
   // version is a separate column (`schema_version`) and duplicating it in the
   // wire name would produce two ways to express the same fact.
   {

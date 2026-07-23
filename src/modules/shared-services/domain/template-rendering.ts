@@ -17,7 +17,7 @@
  * byte identical — which is what makes `outbound_messages.body_sha256` a usable
  * integrity digest rather than a decoration.
  *
- * ## Escaping is per channel, and the body is not the untrusted part
+ * ## The body is not the untrusted part; the variables are
  *
  * The template body is authored by an administrator holding
  * `org.settings.manage`. The **variables** are the untrusted part: they carry
@@ -27,6 +27,14 @@
  * `subject` is treated as a header, not as content: CR and LF are removed
  * outright rather than escaped, because a subject line that contains one splits
  * the header no matter how it is quoted.
+ *
+ * **Escaping does not currently branch on channel, and this file does not claim
+ * it does.** `RenderOptions.channel` is carried because callers and metrics need
+ * it and because a future channel may need different escaping — but both
+ * channels the database accepts (`email`, `in_app`) render their body into
+ * markup, so both get the same HTML escaping today. A channel that needs
+ * something else must add the branch and the test that proves it; until then,
+ * saying "escaping is per channel" would describe a branch that does not exist.
  */
 
 /** Placeholder name grammar. Deliberately narrow — no dots, no indexing. */
@@ -139,6 +147,18 @@ export function renderTemplate(
     throw new TemplateRenderError('Template body is blank', 'empty_body');
   }
 
+  // `Object.prototype.hasOwnProperty.call(...)`, never `variables[name]`.
+  //
+  // `variables` arrives as a plain object, so a placeholder named after an
+  // `Object.prototype` member — `constructor`, `toString`, `valueOf`,
+  // `hasOwnProperty` — resolves *up the prototype chain* to a function instead of
+  // being `undefined`. The missing-variable check would pass, and the inherited
+  // function would then reach the string handling and throw a `TypeError`: an
+  // administrator-authored template using one of those names would turn a clean
+  // 422 into a 500. Found by `tests/foundation/p1-15-template-rendering.test.ts`.
+  const owns = (name: string): boolean => Object.prototype.hasOwnProperty.call(variables, name);
+  const valueOf = (name: string): unknown => (owns(name) ? variables[name] : undefined);
+
   const supplied = Object.keys(variables);
   const badNames = supplied.filter((name) => !VARIABLE_NAME_PATTERN.test(name));
   if (badNames.length > 0) {
@@ -148,7 +168,7 @@ export function renderTemplate(
       badNames.slice(0, 10)
     );
   }
-  const badValues = supplied.filter((name) => typeof variables[name] !== 'string');
+  const badValues = supplied.filter((name) => typeof valueOf(name) !== 'string');
   if (badValues.length > 0) {
     throw new TemplateRenderError(
       'Every template variable value must be a string',
@@ -158,7 +178,7 @@ export function renderTemplate(
   }
 
   const used = templateVariables(content);
-  const missing = used.filter((name) => variables[name] === undefined);
+  const missing = used.filter((name) => !owns(name));
   if (missing.length > 0) {
     throw new TemplateRenderError(
       'Template placeholders have no supplied value',
@@ -179,7 +199,7 @@ export function renderTemplate(
   // itself performs no transformation a value could influence.
   const prepared = new Map<string, { subject: string; body: string }>();
   for (const name of used) {
-    const raw = variables[name] as string;
+    const raw = valueOf(name) as string;
     prepared.set(name, {
       subject: stripDangerousCharacters(raw, false).replace(/\s+/g, ' ').trim(),
       body: escapeHtml(stripDangerousCharacters(raw, true)),

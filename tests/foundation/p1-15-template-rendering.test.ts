@@ -31,16 +31,20 @@
  * `String.fromCharCode`/`\uXXXX` escape, so this source file itself contains no
  * raw control bytes for an editor, a diff, or a copy-paste to silently destroy.
  *
- * Three observations recorded here rather than changed, because this file may
- * not edit `src/`:
- *   1. `RenderOptions.channel` is required but never read by `renderTemplate`;
- *      escaping is identical for `email` and `in_app` today.
- *   2. Subject values are stripped and collapsed but NOT HTML-escaped - correct
- *      for an email header, worth knowing for any surface that renders a subject
- *      into markup.
- *   3. A placeholder named after an `Object.prototype` member (`constructor`,
- *      `toString`, ...) is refused, but by a TypeError rather than by
- *      `TemplateRenderError('missing_variable')`. See the final test.
+ * Two behaviours worth knowing, pinned here rather than assumed:
+ *   1. `RenderOptions.channel` is carried but does not branch the escaping;
+ *      `email` and `in_app` render identically today, because both put their
+ *      body into markup. The engine's own header says so rather than claiming a
+ *      per-channel branch that does not exist.
+ *   2. Subject values are stripped and collapsed but NOT HTML-escaped — correct
+ *      for an RFC 5322 header, worth knowing for any surface that renders a
+ *      subject into markup.
+ *
+ * This file found one real defect: a placeholder named after an
+ * `Object.prototype` member resolved up the prototype chain, slipped past the
+ * missing-variable check, and crashed with a `TypeError` — a 500 where a 422
+ * belonged. The engine now uses `Object.prototype.hasOwnProperty.call(...)`, and
+ * the final test pins both the correct error and the safety property.
  */
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -597,28 +601,39 @@ describe('no filesystem path and no module is reachable through a value', () => 
     expect(source).not.toMatch(/new\s+Function\s*\(/);
   });
 
-  it('never lets a value inherited from Object.prototype reach the output', () => {
-    // `variables` is a plain object, so `variables['constructor']` resolves up the
-    // prototype chain to a function rather than to `undefined`. The engine must
-    // not render it, and it does not.
+  it('reports a placeholder named after an Object.prototype member as missing', () => {
+    // `variables` is a plain object, so `variables['constructor']` resolves up
+    // the prototype chain to a *function* rather than to `undefined`. A naive
+    // `variables[name] === undefined` check therefore passes it through, and the
+    // inherited function reaches the string handling and throws a `TypeError` —
+    // an administrator-authored template using one of these names would turn a
+    // clean 422 into a 500.
     //
-    // DEFECT REPORTED, NOT FIXED HERE (this file may not edit `src/`): the
-    // refusal arrives as a TypeError out of `stripDangerousCharacters`, not as
-    // `TemplateRenderError('missing_variable')`, because the missing-variable
-    // check is `variables[name] === undefined` against a prototype-bearing
-    // object. The assertions below pin only the safety property that genuinely
-    // holds - nothing inherited is ever rendered - and deliberately do not bless
-    // the error type as correct.
-    let rendered: RenderedMessage | null = null;
-    expect(() => {
-      rendered = renderTemplate({ subject: null, body: 'Hi {{constructor}}' }, {}, OPTIONS);
-    }).toThrow();
-    expect(rendered).toBeNull();
-
-    for (const inherited of ['toString', 'valueOf', 'hasOwnProperty']) {
-      expect(() =>
-        renderTemplate({ subject: null, body: `Hi {{${inherited}}}` }, {}, OPTIONS)
-      ).toThrow();
+    // This test found that defect; the engine now uses
+    // `Object.prototype.hasOwnProperty.call(...)`, so the refusal is the correct
+    // cataloged one. Both halves are pinned: the right error type, AND the
+    // safety property that nothing inherited is ever rendered.
+    for (const inherited of [
+      'constructor',
+      'toString',
+      'valueOf',
+      'hasOwnProperty',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+    ]) {
+      const failure = renderFailure({ subject: null, body: `Hi {{${inherited}}}` }, {});
+      expect(failure.rule, inherited).toBe('missing_variable');
+      expect(failure.names, inherited).toEqual([inherited]);
     }
+
+    // Supplying the name as an OWN property is ordinary and must still work — the
+    // fix must not have made these names unusable, only unsafe-by-inheritance.
+    const rendered: RenderedMessage = renderTemplate(
+      { subject: null, body: 'Hi {{constructor}}' },
+      { constructor: 'Ada' },
+      OPTIONS
+    );
+    expect(rendered.body).toBe('Hi Ada');
   });
 });

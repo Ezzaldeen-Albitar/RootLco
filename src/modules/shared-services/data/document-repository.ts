@@ -151,20 +151,44 @@ export class DocumentRepository extends Repository {
   }
 
   /**
-   * Next version number for a document, under a lock on the document row.
+   * Next version number for a document, serialised by a transaction-scoped
+   * advisory lock.
    *
-   * `FOR UPDATE` on `shared.documents` — not on the versions — is what
-   * serialises two concurrent registrations for the same document. Computing
-   * `max(version_number) + 1` without it would let both readers see the same
-   * maximum and one lose to `uq_document_versions_number`; with it, the second
-   * waits and computes the correct next number. The lock is available because
-   * the row is the caller's own tenant's and `app_runtime` holds SELECT on it.
+   * ## Why not `SELECT … FROM shared.documents … FOR UPDATE`
+   *
+   * That was the first implementation, and it cannot work on the deployed role.
+   * PostgreSQL requires **UPDATE (or DELETE) privilege** on a table for *any*
+   * row-locking clause — `FOR UPDATE`, `FOR NO KEY UPDATE`, even `FOR SHARE` —
+   * and DBCR-P1-15-001 deliberately grants `app_runtime` no UPDATE at all on
+   * `shared.documents`. The lock was therefore refused with SQLSTATE 42501
+   * before the version INSERT was ever attempted, so version registration could
+   * not succeed. Found by `tests/backend/p1-15-attachments-notifications.test.ts`,
+   * which drove the real service on the real role.
+   *
+   * The withholding is correct and stays: the request runtime has no business
+   * mutating a document row. What was wrong was taking a *lock* that needs a
+   * *write* privilege in order to perform a read.
+   *
+   * ## Why an advisory lock
+   *
+   * `pg_advisory_xact_lock` needs no table privilege, is scoped to the caller's
+   * transaction, and is released by COMMIT or ROLLBACK — so a rolled-back
+   * registration cannot leave a lock behind. The key is derived from the tenant
+   * and the document, so two documents never contend and two tenants never
+   * collide on a shared counter.
+   *
+   * `uq_document_versions_number` remains the authority: the advisory lock makes
+   * a collision rare, and the constraint makes one impossible. A caller that
+   * loses the race anyway gets a unique violation, which
+   * `AttachmentService.registerVersion` reports as a conflict rather than
+   * retrying silently behind their back.
    */
   async nextVersionNumber(db: DbHandle, documentId: string): Promise<number> {
     const context = this.assertContext(db);
     await this.run(
       db,
-      `SELECT id FROM shared.documents WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      `SELECT pg_advisory_xact_lock(
+                hashtextextended('shared.document_versions:' || $1::text || ':' || $2::text, 0))`,
       [context.principal.tenantId, documentId]
     );
     const row = await this.runOne<{ next: string }>(
