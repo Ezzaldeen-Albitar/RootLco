@@ -269,18 +269,24 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 117 migrations, ending with migration 117', () => {
+  it('the repository declares exactly 118 migrations, with 117 and 118 last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
     // plain postgres image. The *applied* effect of migration 117 is proven by the
     // grant and policy inventory assertions below, which read the live catalog.
+    //
+    // 118 is DBCR-P1-15-002, the post-merge remediation for P1-15-SR-014. It
+    // replaces two function bodies and adds no relation, grant or policy, so
+    // every inventory assertion in this file is unchanged by it — which is the
+    // point of asserting the count here rather than trusting the file list.
     const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(117);
-    expect(files.at(-1)).toBe('20260728090000_shared_services_runtime_write_capabilities.sql');
+    expect(files).toHaveLength(118);
+    expect(files.at(-2)).toBe('20260728090000_shared_services_runtime_write_capabilities.sql');
+    expect(files.at(-1)).toBe('20260729090000_shared_number_sequence_period_hardening.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {

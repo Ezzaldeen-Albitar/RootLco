@@ -89,6 +89,49 @@ it would misrepresent what the phase did.
 Migration 117 arrives on the feature branch **through protected history**, not as a duplicate — see
 [the remediation verification](phase-1-15-remediation-verification.md) §4.
 
+### 2.3 After the merge — DBCR-P1-15-002, migration 118
+
+Feature PR #61 merged into protected `develop` as **`0b843bf`** on 2026-07-23, and post-merge CI #154
+was green on that commit. The gate review that followed did not inherit the feature branch's
+dispositions, and one of them did not survive contact with the protected database.
+
+**P1-15-SR-014 was reproduced, not re-quoted.** `shared.next_display_number()` read `now()` —
+transaction-start time — for its period key, so an allocation whose transaction began before a period
+boundary restarted the run at 1 and stamped the older key back onto the row. As `rootlco_test_runtime`
+on `0b843bf` it **re-issued `2026-07-23-000001`** after that number had already been issued, and the
+regression trigger permitted the rewind.
+
+The feature branch's reason for leaving it open was correct — a database function needs a migration,
+and P1-15 adds none — but it was a reason, not a disposition. The fix therefore lives in its own
+change request and its own migration, on a branch of its own:
+
+| Item              | Value                                                                  |
+| ----------------- | ---------------------------------------------------------------------- |
+| Branch            | `fix/p1-15-number-allocation-function-hardening`                       |
+| Branched from     | `0b843bf` (protected `develop`, the PR #61 merge)                      |
+| Change request    | DBCR-P1-15-002                                                         |
+| Migration         | **118** — `20260729090000_shared_number_sequence_period_hardening.sql` |
+| Application layer | `NumberAllocationService` maps the guard's `23514` to `ERR-CON-001`    |
+
+**The same review found three more defects, and one of them was mine.** A thirty-surface
+refute-oriented pass over the merged state — every candidate then handed to three verifiers told to
+default to refuted, and every survivor reproduced by hand before it was acted on — raised 21
+candidates. Four are fixed on this branch:
+
+| ID      | Severity | What                                                                                                                                                                                                                                                                                                                                                        |
+| ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PMR-001 | **High** | The P1-15-SR-004 fix substituted `public-probe` for **every** public operation, silently downgrading the four unauthenticated `iam.auth-*` routes from `auth-adjacent` (10/min, security-relevant) to 120/min and not security-relevant — while their own committed text still claimed `auth-adjacent`. A regression P1-15 introduced into P1-14's surface. |
+| PMR-002 | Medium   | The same function returned before the public branch when an operation declared no policy, so a future public route without one would have been throttled by nothing.                                                                                                                                                                                        |
+| PMR-004 | Medium   | The regression guard could be bypassed by _inventing_ a period: `SET current_period = NULL` on a yearly sequence at 42 was accepted, and the next allocation re-issued `FXY-2026-001`. Found while verifying the first draft of migration 118, which did not close it.                                                                                      |
+| PMR-005 | Medium   | Notification enqueue resolved its scope three times, so a branch-scoped enqueue wrote `(company, branch)` to the message row and `(null, branch)` to the outbox — which the outbox CHECK refuses.                                                                                                                                                           |
+
+Full record, including the eleven findings that are **recorded and not fixed here** and the seven
+that were refuted, in [the post-merge security review](post-merge-security-review.md).
+
+The P1-15 owner gate stays **Pending** while this remediation is unmerged. A Go recorded over an
+open, reproduced High would be exactly the kind of record this project's review policy exists to
+prevent.
+
 ## 3. Added
 
 ### 3.1 The `shared-services` module

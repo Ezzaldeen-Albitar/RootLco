@@ -201,7 +201,7 @@ and says so.
 | **P1-15-SR-013** | Medium   | A cursor whose contract key was correct but whose tie-breaker was not a UUID reached PostgreSQL and raised `22P02` as a 500, where every other malformed cursor is `ERR-PAG-001` — letting a caller distinguish a valid ordering key from an invalid one by status code.                                                                                            | **Resolved.** The tie-breaker is validated as a UUID and the sort value is length-bounded, both at decode.                                                                                                                                                                                                                     |
 | **P1-15-SR-011** | Low      | `stripDangerousCharacters` removed U+200E/U+200F but not U+061C ARABIC LETTER MARK or U+2060 WORD JOINER, so an invisible direction mark survived into rendered content. U+061C matters here more than in most codebases: Arabic is a primary content language.                                                                                                     | **Resolved.** Both are stripped; ordinary Arabic text is asserted to survive untouched.                                                                                                                                                                                                                                        |
 | **P1-15-SR-008** | Low      | `MessageDispatcher` ignored `DeliveryOutcome.accepted`: a provider answering a structured refusal had the attempt recorded as `accepted` and the message driven to `delivered`.                                                                                                                                                                                     | **Refuted as unreachable** — no shipped adapter returns `accepted: false` — and **corrected anyway**, because the field is part of the port contract and an adapter written against it would have been silently ignored. A structured refusal is now a non-retryable failure.                                                  |
-| **P1-15-SR-014** | Medium   | `shared.next_display_number` derives its period key from `now()`, which is transaction-start time. A transaction that began just before a period boundary can rewind `current_period` and restart the run at 1, re-issuing an already-used number.                                                                                                                  | **OPEN.** See §5.3.                                                                                                                                                                                                                                                                                                            |
+| **P1-15-SR-014** | Medium   | `shared.next_display_number` derived its period key from `now()`, which is transaction-start time. A transaction that began just before a period boundary rewound `current_period`, restarted the run at 1, and re-issued an already-used number — reproduced on protected `develop`.                                                                               | **RESOLVED** by migration 118 (DBCR-P1-15-002). See §5.3.                                                                                                                                                                                                                                                                      |
 
 ### 5.2.1 The first fix for SR-004 was wrong, and the second one says where it stops
 
@@ -228,29 +228,59 @@ way would be the kind of claim this review exists to catch. What is true:
 Closing the remaining half requires plumbing a peer address from the platform, which is an
 infrastructure decision, not an application one.
 
-### 5.3 The one finding this branch does not fix
+### 5.3 P1-15-SR-014 — reopened after the merge, reproduced, and closed by migration 118
 
-**P1-15-SR-014 is real, is Medium, and is left open deliberately.**
+This section said the finding was left open deliberately, because fixing a database function means a
+migration and P1-15 adds none. That was the right call for the feature branch. It was **not** a
+disposition, and the post-merge gate review does not inherit it.
 
-It lives in `shared.next_display_number`, a **database function** shipped in migration 0003. Fixing
-it means changing that function, which means a migration — and P1-15 adds no migration and may not.
-A database change belongs to a controlled change request with its own review, not to a feature
-branch that happens to have found it.
+**Reproduced on protected `develop` (`0b843bf`), as `rootlco_test_runtime`.** Two allocations issued
+`2026-07-23-000001` and `2026-07-23-000002`. The row was then placed in the state a next-period
+transaction leaves behind — `next_value = 2`, `current_period = 2026-07-24`, exactly the write the
+allocator itself performs. The next allocation, whose `now()` still resolved to `2026-07-23`, issued
+**`2026-07-23-000001` a second time** and rewound `current_period`. The regression trigger did not
+fire: its counter check only refuses a decrease when the period is unchanged, and here the period
+changed — backwards.
 
-What bounds it today, stated so the risk is sized rather than dismissed:
+**Why the earlier bound did not hold.** "`shared.number_sequences` holds zero rows" is a fact about
+today's configuration, not about the contract. `org.provision_organization()` inserts sequence rows
+with an operator-supplied `period_reset_rule`, so the vulnerable configuration is one ordinary
+authorized provisioning action away, and `NumberAllocationService` reaches the function directly once
+it exists. Latent is not absent.
 
-- **`shared.number_sequences` holds zero rows.** No sequence is provisioned, none ships (the
-  no-fake-data policy forbids it), and P1-15 provisions none — `NumberAllocationService` refuses
-  with `not-provisioned` rather than creating one.
-- The defect requires `period_reset_rule` other than `never`, which is a per-row operator choice
-  that nothing has yet made.
-- The window is the boundary instant of the configured period, for a transaction that began before
-  it and committed after.
+**Disposition: fixed in the database, through a separate change request.** An application-layer guard
+would have covered only the callers this phase owns and left the protected function defective for
+every future one, so the fix belongs where the defect is. Migration **118**
+([DBCR-P1-15-002](../../database/change-requests/DBCR-P1-15-002-number-sequence-period-hardening.md)):
 
-So the correct statement is: **a latent defect in the database contract, not reachable through any
-code path this phase ships, recorded here and in
-[the risk register](risk-register.md) so it is not rediscovered as a surprise.** It is carried to the
-owner as an input to the next database change request rather than fixed quietly here.
+1. the allocator reads `clock_timestamp()` — statement time, after the row lock — so the key names the
+   period the allocation actually commits in;
+2. `guard_number_sequence_regression()` refuses any `current_period` that is not the clock's current
+   key on a period-resetting sequence whose reset rule is unchanged;
+3. `NumberAllocationService` maps the guard's `23514` to `ERR-CON-001`, which names the correct client
+   action, instead of letting it surface as a fault.
+
+Point 2 is stronger than the first draft, and the reason is recorded rather than hidden: "may only
+move forward" was written first and was **not enough**. `next_value` may legitimately fall together
+with a period change, so `SET current_period = NULL` on a yearly sequence at value 42 was accepted and
+the next allocation re-issued `FXY-2026-001`. That second defect is **PMR-004** in
+[the post-merge security review](post-merge-security-review.md).
+
+**Regression lock:** `tests/db/p1-15-number-sequence-period-hardening.test.ts` (19 proofs) and
+`tests/foundation/p1-15-number-allocation-translation.test.ts` (6 proofs).
+
+**Severity stays Medium.** It is an integrity defect on issued document numbers, bounded by an
+operator having configured a period-resetting sequence, and no tenant-isolation, authorization or RLS
+boundary was ever involved.
+
+### 5.3.1 What the post-merge review found beyond SR-014
+
+The same review found a **High** regression that this phase introduced into P1-14's surface — the
+SR-004 fix substituted `public-probe` for every public operation, silently downgrading the four
+unauthenticated `iam.auth-*` routes from `auth-adjacent` — plus three further Mediums. All four are
+fixed on the remediation branch. Eleven more findings are recorded and not fixed, and seven were
+refuted. The full record, with evidence, reproduction and disposition for each, is
+[the post-merge security review](post-merge-security-review.md).
 
 ### 5.4 What was refuted, and why that is worth recording
 
@@ -269,16 +299,23 @@ The full per-candidate verdicts, with the files each skeptic read, are in the re
 
 ## 6. Finding disposition
 
-| ID                                                                                       | Severity     | Status                                                                                                                   |
-| ---------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| P1-15-R-001 — platform template versions unlockable under RLS, making enqueue impossible | High         | **Resolved** before merge, in migration 117; regression pinned by a platform-template enqueue test                       |
-| P1-15-SR-001 — the numbering privilege reading (§2.1)                                    | Not a defect | **Withdrawn** after executable disproof; recorded so the method is auditable                                             |
-| P1-15-SR-002, SR-004, SR-006                                                             | High         | **Resolved** on this branch, each with a regression test                                                                 |
-| P1-15-SR-005, SR-007, SR-009, SR-010, SR-012, SR-013                                     | Medium       | **Resolved** on this branch                                                                                              |
-| P1-15-SR-008, SR-011                                                                     | Low          | **Resolved** on this branch                                                                                              |
-| **P1-15-SR-014**                                                                         | **Medium**   | **Open** — database contract; remediation requires a change request. Not reachable through any P1-15 code path. See §5.3 |
+| ID                                                                                       | Severity     | Status                                                                                                                          |
+| ---------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| P1-15-R-001 — platform template versions unlockable under RLS, making enqueue impossible | High         | **Resolved** before merge, in migration 117; regression pinned by a platform-template enqueue test                              |
+| P1-15-SR-001 — the numbering privilege reading (§2.1)                                    | Not a defect | **Withdrawn** after executable disproof; recorded so the method is auditable                                                    |
+| P1-15-SR-002, SR-004, SR-006                                                             | High         | **Resolved** on this branch, each with a regression test                                                                        |
+| P1-15-SR-005, SR-007, SR-009, SR-010, SR-012, SR-013                                     | Medium       | **Resolved** on this branch                                                                                                     |
+| P1-15-SR-008, SR-011                                                                     | Low          | **Resolved** on this branch                                                                                                     |
+| **P1-15-SR-014**                                                                         | **Medium**   | **Resolved** after the merge, in migration 118 (DBCR-P1-15-002), with 19 database and 6 application regression proofs. See §5.3 |
 
-**Unresolved Critical: 0. Unresolved High: 0. Unresolved Medium: 1 (SR-014). Unresolved Low: 0.**
+**Unresolved Critical: 0. Unresolved High: 0. Unresolved Medium: 0. Unresolved Low: 0 — for the
+findings raised in _this_ review.**
+
+That sentence is scoped on purpose. The post-merge review that followed the merge raised its own
+findings against the same code, four of which are fixed on the remediation branch and eleven of which
+are recorded and not fixed. Its tally is its own, in
+[post-merge-security-review.md](post-merge-security-review.md) §7, and reading this line as the
+project's total would be exactly the kind of collapsed accounting these documents exist to prevent.
 
 Every "Resolved" above means a committed change plus a committed test that fails without it. None of
 them means "reviewed and judged acceptable".

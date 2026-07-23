@@ -303,10 +303,22 @@ accepted in the [Role and Grant Standard](./role-and-grant-standard.md).
 
 ## 7. Period reset semantics and formatting
 
-Period keys are computed **in UTC** (`now() AT TIME ZONE 'UTC'`) at allocation
-time. Local business calendars are a presentation/configuration concern of
+Period keys are computed **in UTC** (`clock_timestamp() AT TIME ZONE 'UTC'`) at
+allocation time — statement time, read **after** the row lock is taken, never
+`now()`. Local business calendars are a presentation/configuration concern of
 later phases; the allocator itself is jurisdiction-neutral (no timezone or
 calendar assumption is hard-coded — Jordan included).
+
+> **Why `clock_timestamp()` and not `now()`.** `now()` is transaction-start time
+> and does not advance while a transaction is open, so a transaction that began
+> before a boundary and allocated after it computed the **old** key — and because
+> the reset test below is a plain inequality, an older key restarted the run at 1
+> and stamped itself back onto the row, re-issuing numbers that period had already
+> used. That was **P1-15-SR-014**, reproduced on protected `develop` and closed by
+> migration 118
+> ([DBCR-P1-15-002](./change-requests/DBCR-P1-15-002-number-sequence-period-hardening.md)).
+> Every allocator reads the same database clock, so the key is monotonic across
+> concurrent callers by construction.
 
 | `period_reset_rule` | Period key format | Example key  |
 | ------------------- | ----------------- | ------------ |
@@ -317,8 +329,10 @@ calendar assumption is hard-coded — Jordan included).
 
 Reset is **lazy**: the first allocation whose computed period key differs from
 `current_period` issues value `1` and stamps the new key. No scheduled job
-touches the counter. The regression guard permits the counter to move
-backwards **only** together with a period change (§2.3).
+touches the counter. The regression guard permits the counter to move backwards
+**only** together with a period change (§2.3) — and since migration 118 a period
+change is only legitimate when it is the key the database clock yields now, so a
+writer can no longer invent one to carry a rewind past the guard.
 
 Rendering: `display_number = replace(prefix_template, '{period}',
 coalesce(period_key, '')) || padded_value`, where the value is zero-padded to
@@ -448,18 +462,18 @@ transactional numbering.
 
 ## 11. Binding rules — summary
 
-| #   | Rule                                                                                                                                                                  |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | UUIDs are never shown to humans, never authorization tokens, and never display numbers. Human-facing document numbers come only from `shared.next_display_number()`.  |
-| 2   | No global cross-tenant sequence exists and none may ever be created; every sequence row is tenant-owned.                                                              |
-| 3   | Sequence provisioning and retirement are administrative configuration actions (ADR-008). Runtime roles must never gain INSERT/DELETE on `shared.number_sequences`.    |
-| 4   | Tenant-specific sequences (including Benzene's) are controlled provisioning data in a later configuration package — never schema, never hard-coded, not in Phase 1-2. |
-| 5   | Allocation happens in the same transaction as the business write that consumes the number.                                                                            |
-| 6   | The allocator never accepts a tenant parameter; the tenant comes from the server-resolved transaction context only.                                                   |
-| 7   | Business-level gaps (voids, period resets) are tolerated and never renumbered.                                                                                        |
-| 8   | Counters may never be rewound except as part of a period change (enforced by trigger).                                                                                |
-| 9   | Document tables carrying display numbers must add tenant-scoped uniqueness on that column (Phase 1-3+ obligation).                                                    |
-| 10  | Rendered numbers widen past `pad_width` and are never truncated (defect found and fixed pre-merge, §10.2; regression-tested).                                         |
+| #   | Rule                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | UUIDs are never shown to humans, never authorization tokens, and never display numbers. Human-facing document numbers come only from `shared.next_display_number()`.                                                                              |
+| 2   | No global cross-tenant sequence exists and none may ever be created; every sequence row is tenant-owned.                                                                                                                                          |
+| 3   | Sequence provisioning and retirement are administrative configuration actions (ADR-008). Runtime roles must never gain INSERT/DELETE on `shared.number_sequences`.                                                                                |
+| 4   | Tenant-specific sequences (including Benzene's) are controlled provisioning data in a later configuration package — never schema, never hard-coded, not in Phase 1-2.                                                                             |
+| 5   | Allocation happens in the same transaction as the business write that consumes the number.                                                                                                                                                        |
+| 6   | The allocator never accepts a tenant parameter; the tenant comes from the server-resolved transaction context only.                                                                                                                               |
+| 7   | Business-level gaps (voids, period resets) are tolerated and never renumbered.                                                                                                                                                                    |
+| 8   | Counters may never be rewound except as part of a period change, and a period key may only ever be set to the one the database clock yields now (enforced by trigger; the second half was added by migration 118 after P1-15-SR-014 and PMR-004). |
+| 9   | Document tables carrying display numbers must add tenant-scoped uniqueness on that column (Phase 1-3+ obligation).                                                                                                                                |
+| 10  | Rendered numbers widen past `pad_width` and are never truncated (defect found and fixed pre-merge, §10.2; regression-tested).                                                                                                                     |
 
 ## 12. Related documents
 

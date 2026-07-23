@@ -293,12 +293,18 @@ authority:
 **SR-001** was raised and then **withdrawn after executable disproof** — it is recorded in the review
 as _not a defect_ rather than deleted, so the method stays auditable.
 
-**SR-014** (**Medium**) remains **open**: it is a defect in a database function, `shared` numbering is
-currently unreachable (`shared.number_sequences` has **0 rows** — verified on the rebuilt database),
-and P1-15 is authorized to add **no migration**. Remediation requires a change request. It is carried
-as **R-13** rather than silently fixed outside the authorized scope.
+**SR-014** (**Medium**) was **open at these two SHAs**: a defect in a database function, with `shared`
+numbering unreachable (`shared.number_sequences` has **0 rows** — verified on the rebuilt database),
+and P1-15 authorized to add **no migration**. It was carried as **R-13** rather than silently fixed
+outside the authorized scope.
 
-**Unresolved Critical: 0. Unresolved High: 0. Unresolved Medium: 1 (SR-014). Unresolved Low: 0.**
+> **It did not stay open.** After feature PR #61 merged, the post-merge gate review reproduced it on
+> protected `develop` — an allocation re-issued a number that had already been issued — and it is
+> closed by **migration 118**
+> ([DBCR-P1-15-002](../../database/change-requests/DBCR-P1-15-002-number-sequence-period-hardening.md)).
+> The clean-room record for that remediation is §8 below.
+
+**At the two SHAs recorded above: Unresolved Critical 0, High 0, Medium 1 (SR-014), Low 0.**
 
 Two earlier defects found by the suites on the deployed role, both fixed and both locked:
 

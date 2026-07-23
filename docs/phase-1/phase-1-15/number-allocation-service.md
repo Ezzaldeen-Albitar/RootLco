@@ -273,6 +273,32 @@ not.
 Equally, this phase adds no throughput, latency, or contention figure. The serialisation hot spot the
 standard documents in its §10.3 is unchanged by P1-15, and no measurement of it was taken here.
 
+## 6.1 The period contract, and the defect that changed it after the merge
+
+The service reads no clock and decides no period: the period key is computed inside
+`shared.next_display_number()`, from the sequence row's own `period_reset_rule`. That was true before
+and after the correction below; what changed is which clock the function reads.
+
+Until migration 118 the function used **`now()`**, which PostgreSQL fixes at transaction start. A
+transaction that began before a period boundary and allocated after it therefore computed the _older_
+key — and because the reset test is a plain inequality, an older key restarted the run at 1 and
+stamped itself back onto the row, **re-issuing numbers that period had already used**. That is
+P1-15-SR-014. It was recorded but not fixed by the feature branch, which adds no migration;
+it was reproduced on protected `develop` during the post-merge gate review and closed by
+[DBCR-P1-15-002](../../database/change-requests/DBCR-P1-15-002-number-sequence-period-hardening.md).
+
+Two things follow for a caller of this service:
+
+- **Nothing in the call signature changes.** `allocate()` takes the same input and returns the same
+  `AllocatedNumber`. The period key is now taken from `clock_timestamp()` after the row lock, so it
+  names the period the allocation actually commits in however long the transaction has been open.
+- **One new failure is possible, and it is retryable.** The regression guard now refuses a backwards
+  `current_period` move, raising `23514`; the service maps that to **`ERR-CON-001`** with a message
+  naming the correct action — retry in a new transaction. Nothing is issued and nothing moves when it
+  fires. With the allocator reading a single database clock it should not fire at all; it exists so a
+  raw caller of the function, or a host clock stepped backwards, aborts loudly instead of silently
+  duplicating a number.
+
 ## 7. Related documents
 
 - [Number Sequence and Display Number Standard](../../database/number-sequence-standard.md) — the

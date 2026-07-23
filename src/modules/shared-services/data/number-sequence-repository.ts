@@ -18,12 +18,27 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 
-/** SQLSTATEs `shared.next_display_number()` raises deliberately. */
+/** SQLSTATEs the allocation path raises deliberately. */
 export const ALLOCATION_SQLSTATE = {
   /** `RAISE … USING ERRCODE = 'no_data_found'` — no sequence row in this scope. */
   noSequenceInScope: 'P0002',
   /** `RAISE … USING ERRCODE = 'insufficient_privilege'` — scope or context refused. */
   scopeRefused: '42501',
+  /**
+   * `check_violation`, raised by `shared.guard_number_sequence_regression()`.
+   *
+   * Reachable from the allocation path in exactly one situation, and only since
+   * DBCR-P1-15-002 made it so: the row's `current_period` is *later* than the key
+   * the allocator computes, so writing the computed key back would move the
+   * period backwards. The allocator now reads `clock_timestamp()`, and every
+   * allocator shares one database clock, so this cannot arise from a stale
+   * transaction — it needs the host clock itself to have stepped backwards.
+   *
+   * It is mapped rather than left to surface as a fault because the correct
+   * client behaviour is *retry in a new transaction*, and `ERR-SYS-001` does not
+   * say that.
+   */
+  periodRegression: '23514',
 } as const;
 
 export interface AllocationRequest {
