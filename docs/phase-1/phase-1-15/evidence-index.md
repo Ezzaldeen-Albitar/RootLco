@@ -237,7 +237,7 @@ The full path-by-path check is [`test-catalog.md` §5](test-catalog.md#5-source-
 | Hosted CI green on the exact final SHA          | Recorded in the pull request against the exact final SHA                                                                      |
 | Local validation green with recorded exit codes | Recorded in [`test-catalog.md` §4](test-catalog.md#4-recorded-run) and [`clean-room-validation.md`](clean-room-validation.md) |
 | Genuine isolated clean-room validation green    | Performed on the exact final SHA in a fresh worktree with its own `npm ci` and a database rebuilt from empty                  |
-| Every P1-15 test file passes                    | 721 tests across 20 P1-15 files, inside a full run of 2 549 tests across all three tiers                                      |
+| Every P1-15 test file passes                    | 753 tests across 22 P1-15 files, inside a full run of 2 587 tests across all three tiers                                      |
 | Registered operations `pending` = 0             | Reported by the gate, with the P1-15 breakdown printed separately from the repository aggregate                               |
 | Zero unresolved Critical / High findings        | Recorded for the database remediation **and** for the application work in [`security-review.md`](security-review.md)          |
 

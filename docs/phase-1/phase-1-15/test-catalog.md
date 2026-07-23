@@ -111,10 +111,10 @@ Full run of all three tiers against the working tree of `feature/p1-15-shared-se
 
 | Tier              | Command                | Files   | Tests    | Exit |
 | ----------------- | ---------------------- | ------- | -------- | ---- |
-| Unit / foundation | `npm test`             | 35      | 703      | 0    |
+| Unit / foundation | `npm test`             | 35      | 709      | 0    |
 | Backend           | `npm run test:backend` | 16      | 363      | 0    |
 | Database          | `npm run test:db`      | 130     | 1515     | 0    |
-| **Total**         |                        | **181** | **2581** |      |
+| **Total**         |                        | **181** | **2587** |      |
 
 This is a **local** run. The clean-room record re-takes every number on the exact final SHA in a
 fresh worktree with its own `npm ci` and a database rebuilt from empty, and hosted CI re-takes them

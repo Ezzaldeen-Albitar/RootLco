@@ -223,10 +223,10 @@ The table above lists the suites the phase opened with. The full set is **22 tes
 
 | Tier              | Files  | Tests   |
 | ----------------- | ------ | ------- |
-| Unit / foundation | 9      | 278     |
-| Database          | 7      | 239     |
+| Unit / foundation | 10     | 303     |
+| Database          | 8      | 246     |
 | Backend           | 4      | 204     |
-| **P1-15 total**   | **20** | **721** |
+| **P1-15 total**   | **22** | **753** |
 
 The backend tier includes
 [`tests/backend/p1-15-operation-routes.test.ts`](../../../tests/backend/p1-15-operation-routes.test.ts),

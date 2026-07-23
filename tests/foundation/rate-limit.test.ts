@@ -227,3 +227,70 @@ describe('in-memory store', () => {
     expect((await store.hit('k', WINDOW_MS, 1_100)).count).toBe(1);
   });
 });
+
+// ===========================================================================
+// The public-probe policy, and the reason a public route is throttled only when
+// there is a real address to key on (P1-15-SR-004).
+// ===========================================================================
+
+describe('public-probe: the only policy an unauthenticated operation may use', () => {
+  const POLICY = RATE_LIMIT_POLICIES['public-probe']!;
+
+  it('exists, and is keyed on the only two dimensions a public request has', () => {
+    expect(POLICY).toBeDefined();
+    expect([...POLICY.keyBy]).toEqual(['operation', 'ip']);
+    expect(POLICY.keyBy).not.toContain('tenant');
+    expect(POLICY.keyBy).not.toContain('user');
+  });
+
+  it('is generous enough for an orchestrator polling every second', () => {
+    // A liveness probe at 1 Hz is 60 requests a minute. The limit must leave
+    // room for several replicas before it starts refusing the orchestrator.
+    expect(POLICY.limit).toBeGreaterThanOrEqual(120);
+    expect(POLICY.windowMs).toBe(60_000);
+  });
+
+  it('separates the two probes, so one cannot exhaust the other', () => {
+    expect(
+      rateLimitKey(POLICY, { operation: 'shared.health-live', clientIp: '203.0.113.7' })
+    ).not.toBe(rateLimitKey(POLICY, { operation: 'shared.health-ready', clientIp: '203.0.113.7' }));
+  });
+
+  it('separates callers when an address IS resolved', () => {
+    expect(
+      rateLimitKey(POLICY, { operation: 'shared.health-live', clientIp: '203.0.113.7' })
+    ).not.toBe(rateLimitKey(POLICY, { operation: 'shared.health-live', clientIp: '198.51.100.9' }));
+  });
+
+  it('collapses to ONE shared bucket when no address can be resolved — which is why the pipeline skips it', () => {
+    // `resolveClientAddress` returns null unless the platform supplies a peer
+    // address or a trusted proxy is configured. With a null address every caller
+    // in the world lands in the same bucket, so enforcing the limit would let a
+    // hostile caller exhaust it and make the orchestrator's own probe start
+    // receiving 429 — the control causing the outage it exists to prevent.
+    //
+    // `route-handler.ts` therefore skips an ip-keyed policy on a public
+    // operation when the address is unknown, and the gap is recorded rather than
+    // papered over. This assertion is the reason, kept beside the fact.
+    const anonymous = rateLimitKey(POLICY, { operation: 'shared.health-live', clientIp: null });
+    // An omitted address and an explicit null land in the same bucket, which is
+    // the property that makes the collapse total rather than partial.
+    const alsoAnonymous = rateLimitKey(POLICY, { operation: 'shared.health-live' });
+    expect(anonymous).toBe(alsoAnonymous);
+    expect(anonymous).not.toBe(
+      rateLimitKey(POLICY, { operation: 'shared.health-live', clientIp: '203.0.113.7' })
+    );
+  });
+
+  it('is the only policy in the catalogue keyed on ip without a tenant or user', () => {
+    const ipOnly = Object.values(RATE_LIMIT_POLICIES).filter(
+      (policy) =>
+        policy.keyBy.includes('ip') &&
+        !policy.keyBy.includes('tenant') &&
+        !policy.keyBy.includes('user')
+    );
+    // `auth-adjacent` is the other pre-authentication policy; both are listed so
+    // adding a third is a visible change rather than a silent one.
+    expect(ipOnly.map((policy) => policy.name).sort()).toEqual(['auth-adjacent', 'public-probe']);
+  });
+});

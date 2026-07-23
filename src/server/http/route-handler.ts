@@ -181,7 +181,21 @@ export async function handleOperation<T>(
       headers: request.headers,
     });
 
-    if (preAuthPolicy && config.RATE_LIMIT_ENABLED) {
+    // A policy keyed on `ip` degrades to ONE GLOBAL BUCKET when no client
+    // address can be resolved, and `resolveClientAddress` returns null unless
+    // the platform supplies a peer address or a trusted proxy is configured.
+    //
+    // For a liveness probe that would be worse than no limit: a hostile caller
+    // could exhaust the shared bucket and the orchestrator's own probe would
+    // start receiving 429, which the orchestrator reads as an unhealthy pod. The
+    // control would cause the outage it exists to prevent. So a public
+    // operation is throttled only when there is a real address to key on, and
+    // the gap is recorded rather than papered over — see the readiness section
+    // of `docs/phase-1/phase-1-15/health-endpoints.md`.
+    const skipUnkeyedPublicThrottle =
+      operation.public && preAuthPolicy?.keyBy.includes('ip') === true && !client.ip;
+
+    if (preAuthPolicy && config.RATE_LIMIT_ENABLED && !skipUnkeyedPublicThrottle) {
       await enforceRateLimit(preAuthPolicy, {
         operation: operation.id,
         clientIp: client.ip,
