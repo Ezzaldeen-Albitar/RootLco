@@ -31,20 +31,27 @@ Nothing is listed from memory or from a plan: a path that is not in that command
 this manifest. The command above is the authority; the tables below are its categorised form, and the
 category totals are what a reviewer should reconcile against.
 
-**Totals:** **123** paths — **100 added (`A`)**, **23 modified (`M`)**, **0 deleted, 0 renamed**.
+**Totals:** **124** paths — **100 added (`A`)**, **24 modified (`M`)**, **0 deleted, 0 renamed**.
 
-| Kind                           | Total | Added | Modified |
-| ------------------------------ | ----- | ----- | -------- |
-| Module source                  | 28    | 28    | 0        |
-| Route handlers                 | 22    | 20    | 2        |
-| Foundation changes             | 9     | 0     | 9        |
-| CI / tooling scripts           | 3     | 1     | 2        |
-| Tests                          | 26    | 21    | 5        |
-| Documentation and API contract | 32    | 30    | 2        |
-| Repository configuration       | 3     | 0     | 3        |
+| Kind                           | Total   | Added   | Modified |
+| ------------------------------ | ------- | ------- | -------- |
+| Module source                  | 28      | 28      | 0        |
+| Route handlers                 | 22      | 20      | 2        |
+| Foundation changes             | 9       | 0       | 9        |
+| CI / tooling scripts           | 3       | 1       | 2        |
+| Tests                          | 26      | 21      | 5        |
+| Documentation and API contract | 33      | 30      | 3        |
+| Repository configuration       | 3       | 0       | 3        |
+| **Total**                      | **124** | **100** | **24**   |
 
 Repository configuration is `package.json` (one script added), `.prettierignore` (the second
 generated coverage matrix), and `.github/workflows/ci.yml` (the encoding-hygiene step).
+
+**The category table is the authority; the per-section tables below are illustrative.** Sections 3–8
+name the files that carry the phase's argument, not every path — where a section's own heading count
+is smaller than its category row, the difference is later additions listed in
+[the test catalogue](test-catalog.md) and [the change log](change-log.md), and the reconciliation is
+the command at the top of this section.
 
 ## 2. Migration posture — **P1-15 adds no migration**
 
@@ -168,7 +175,7 @@ segment is not a portable Markdown link target.
 **No operation was created for number allocation.** The colon-verb planning label is rejected by the
 registry's path grammar, and a standalone endpoint would commit a number that no business row consumes.
 
-## 5. Foundation changes (5 modified)
+## 5. Foundation changes (9 modified — 5 catalog files here, 4 more below)
 
 All additive. No existing entry was edited, removed, or repurposed.
 
@@ -182,7 +189,17 @@ All additive. No existing entry was edited, removed, or repurposed.
 
 Counts verified by counting added catalog lines per file in `git diff origin/develop...HEAD`.
 
-## 6. CI / tooling (2 modified)
+The other four foundation modifications came out of the final security review rather than the
+catalogs, and each is a fix with a regression test:
+
+| Status | Path                                                                            | Changed                                                                                  |
+| ------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| M      | [`src/server/http/idempotency.ts`](../../../src/server/http/idempotency.ts)     | SR-002 — resolved path params are now their own framed fingerprint component             |
+| M      | [`src/server/http/route-handler.ts`](../../../src/server/http/route-handler.ts) | SR-002 and SR-004 — params into the fingerprint; the `public-probe` policy and its bound |
+| M      | [`src/server/http/rate-limit.ts`](../../../src/server/http/rate-limit.ts)       | SR-004 — the `public-probe` policy, keyed on operation and client address                |
+| M      | [`src/server/db/pagination.ts`](../../../src/server/db/pagination.ts)           | SR-013 — cursor tie-breakers bounded and shape-validated                                 |
+
+## 6. CI / tooling (3 paths — 1 added, 2 modified)
 
 | Status | Path                                                                                              | Change                                                                                                                       |
 | ------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -201,7 +218,7 @@ manifest. It prints a P1-15 breakdown separately from the repository aggregate, 
 category it can report is proved by
 [the negative fixture](../../../tests/foundation/operation-coverage-gate.test.ts).
 
-## 7. Tests (9 added, 2 modified)
+## 7. Tests (26 paths — 21 added, 5 modified; the nine the phase opened with are named here)
 
 | Status | Path                                                                                                                | Covers                                                                                          |
 | ------ | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -234,7 +251,7 @@ which drives **all 21 registered operations through their exported route handler
 conditions 2–6 now have artefacts rather than obligations. The per-operation record is
 [the operation inventory](operation-inventory.md).
 
-## 8. Documentation and API contract (5 added, 1 modified)
+## 8. Documentation and API contract (33 paths — 30 added, 3 modified; the six named here are the ones the phase opened with)
 
 | Status | Path                                                                                                       |
 | ------ | ---------------------------------------------------------------------------------------------------------- |
@@ -246,28 +263,32 @@ conditions 2–6 now have artefacts rather than obligations. The per-operation r
 | M      | [`docs/api/openapi.v1.json`](../../../docs/api/openapi.v1.json)                                            |
 
 Two further P1-15 records — [the database remediation record](phase-1-15-database-remediation-record.md)
-and [the migration classification](phase-1-15-migration-classification.md) — are **not** in this
-manifest because they already reached protected `develop` through pull request #60.
+and [the migration classification](phase-1-15-migration-classification.md) — reached protected
+`develop` through pull request #60 rather than being created here. The migration classification is
+therefore absent from the diff entirely; the remediation record appears as one of the three **`M`**
+paths, because the final documentation pass corrected two stale `ci.yml` line citations inside it.
 
-## 9. Working tree at the time of writing
+The other two modified documentation paths are [`docs/api/openapi.v1.json`](../../../docs/api/openapi.v1.json)
+(regenerated for the 21 new operations) and
+[`docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`](../phase-1-14/evidence/operation-test-matrix.json)
+(regenerated by the rewritten coverage gate; the P1-14 evidence model itself is unchanged).
 
-Recorded because a manifest that silently presented a dirty tree as the deliverable would be inaccurate.
-At **2026-07-23 11:12** local, `git status --porcelain` reported one modified file
-(`docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`) and a set of untracked Phase 1-15
-documentation records, including this one, still being written.
+## 9. Regeneration and working-tree discipline
 
-The working tree was **actively changing** while this manifest was produced — the branch head advanced
-from `bfc56f8` to `6ae38db` mid-writing. Two consequences follow, and both are stated rather than
-smoothed over:
+An earlier revision of this manifest was written while the branch head was still moving, and said so.
+That is no longer the situation: this revision is regenerated from
+`git diff --name-status origin/develop...HEAD` on the **final SHA**, against a working tree that
+`git status --porcelain` reports as **empty**, and the totals in §1 are that command's output rather
+than a recollection of it.
 
-1. This manifest is accurate **for `6ae38db`** and must be regenerated at the final SHA before the
-   pull request is opened.
-2. **No claim in any P1-15 document may rest on an uncommitted file**, and none does — the evidence
-   index treats every claim that would depend on one as unbacked.
+The rule that produced the earlier disclosure still holds and still binds: **no claim in any P1-15
+document may rest on an uncommitted file.** None does — the evidence index treats any claim that
+would depend on one as unbacked.
 
 ## 10. Status
 
-The P1-15 owner gate is **Pending**. This manifest describes what exists on an **unpushed, unmerged**
-feature branch — no remote branch for it exists, so no hosted CI run exists for it either. It is not a
-statement that the deliverable is complete, evidenced, or approved. `origin/main` is untouched at
-`8ca1da2`, and nothing reached protected `develop` outside the approved pull-request and hosted-CI flow.
+The P1-15 owner gate is **Pending**. This manifest describes what exists on a pushed but **unmerged**
+feature branch, offered for review as pull request #61. It is not a statement that the deliverable is
+complete, evidenced, or approved — that is the gate's decision, and the gate has not been taken.
+`origin/main` is untouched at `8ca1da2`, and nothing reached protected `develop` outside the approved
+pull-request and hosted-CI flow.
