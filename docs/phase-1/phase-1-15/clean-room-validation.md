@@ -141,7 +141,26 @@ and crashed the renderer with a `TypeError`. The check is now
 ## 6. Status
 
 Clean-room validation is complete on `6bdb2c35bd63c1c7bb8301f10f2269c5c1daeeba`, with the two
-non-zero exits above diagnosed and attributed. If the candidate SHA moves — for example to fix a
-hosted-CI failure — this record is re-run and re-stated for the new SHA rather than inherited.
+non-zero exits above diagnosed and attributed.
+
+### 6.1 Why this record is not invalidated by the commits after it
+
+This document is itself a commit, so the branch tip necessarily moves past the SHA the run was
+performed on. That is only acceptable while the difference is **not executable**, and the claim is
+made checkable rather than asserted:
+
+```bash
+git diff --name-only 6bdb2c3..HEAD -- . ':!docs'
+```
+
+must be **empty** — every commit after the clean-room SHA touches `docs/` and nothing else. If it is
+not empty, this record does not cover the tip and must be re-run.
+
+The genuinely independent execution is **hosted CI on the exact final SHA**, which runs the same
+gates on a machine this one has no influence over. A clean room removes "it works because of
+something uncommitted in my tree"; only CI removes "it works because of this machine".
+
+If the candidate SHA moves for an **executable** reason — for example to fix a hosted-CI failure —
+this record is re-run and re-stated for the new SHA rather than inherited.
 
 The Phase 1-15 owner gate remains **Pending**.
