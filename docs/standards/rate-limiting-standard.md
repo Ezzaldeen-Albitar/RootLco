@@ -222,6 +222,30 @@ visible, and a limiter failure is never silent.
 > including `low-risk-metadata`. The per-class differentiation above is a requirement on the adapter
 > and its call site, not a description of current behaviour.
 
+### 8.1 When the key cannot be formed
+
+§8 is about the limiter failing. This is the other case: the limiter works, and the **dimension the
+policy keys on does not exist**. `rateLimitKey()` substitutes `-` for a missing dimension, so the
+policy still evaluates — but every caller lands in one bucket, and the limit becomes a global budget
+rather than a per-caller one.
+
+The rule is the same shape as §8 and turns on the same property:
+
+| Policy class              | Key unavailable                                          | Reasoning                                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `securityRelevant: true`  | **Enforce on the coarse bucket.** Never skip             | A bounded attacker rate is worth more than uninterrupted service on the endpoint the limit protects. Skipping deletes the control silently, and silence is the failure mode that gets shipped |
+| `securityRelevant: false` | **May skip**, where a shared bucket is itself the hazard | A shared bucket in front of a liveness probe lets one caller make the probe report an unhealthy pod — the control causing the outage it exists to prevent                                     |
+
+The coarse bucket is a **degradation, not a control**, and a phase that relies on it records the
+residual rather than describing the policy as if it were keyed. The real remedy is to supply the
+missing dimension; for `ip` that means a peer address from the platform, which is infrastructure work.
+
+> **Why this section exists.** Phase 1-15 added a skip for an unkeyable ip-policy, wrote the
+> condition against `operation.public` rather than against security relevance, and thereby removed
+> the `auth-adjacent` limit from four unauthenticated authentication routes that the previous phase
+> had enforced. It was caught at the phase gate, not before. See
+> [PMR-006](../phase-1/phase-1-15/post-merge-security-review.md) §4.1.
+
 ## 9. Exemptions must be explicit
 
 - **There is no implicit exemption.** An operation that declares no `rateLimitPolicy` is not

@@ -188,13 +188,18 @@ pass caught it, that meant **the two most exposed endpoints in the deployment we
 nothing at all**, because `low-risk-metadata` keys on tenant.
 
 The fix and its boundary are both worth stating precisely, because the obvious version of this fix
-is worse than the defect.
+was worse than the defect — twice, in two different ways, and both are recorded here rather than
+smoothed over.
 
-`policyFor()` now substitutes a dedicated `public-probe` policy — keyed on **operation + client
-address**, 120 requests a minute — for _any_ `public: true` operation, and the pipeline enforces it
-**before** the handler. Two things follow. The two probes are separate buckets, so exhausting one
-cannot silence the other; and any future public operation inherits the policy without anyone
-remembering to ask.
+**Substitution.** `policyFor()` replaces a public operation's declared policy with `public-probe` —
+keyed on **operation + client address**, 120 requests a minute — only when the declaration is
+session-keyed or missing. A declaration that is _already_ sessionless is kept. The first version of
+this fix substituted unconditionally, which silently downgraded the four unauthenticated `iam.auth-*`
+routes from `auth-adjacent` (10/min, security-relevant) to `public-probe` (**PMR-001**, fixed in
+PR #62). The two health probes declare `low-risk-metadata`, which keys on tenant, so they _are_
+substituted — and correctly so, because of the declaration, not because they are public. The
+pipeline enforces the resolved policy **before** the handler. The two probes are separate buckets, so
+exhausting one cannot silence the other.
 
 **Where it stops.** `resolveClientAddress()` returns `null` unless the platform supplies a peer
 address or `TRUSTED_PROXY_IPS` names a proxy. Neither is true in the current deployment: the App
@@ -204,18 +209,28 @@ probe would be an own goal, because a hostile caller could exhaust the shared bu
 orchestrator's own probe would begin receiving `429`, which an orchestrator reads as an unhealthy
 pod. The control would cause the outage it exists to prevent.
 
-So the pipeline **skips** an ip-keyed policy on a public operation when no address is resolvable.
-Concretely:
+So the pipeline **skips** an unkeyable ip-policy — but only when that policy is **not**
+`securityRelevant`. Writing the condition against `public` alone extended a probe-specific argument
+to the four unauthenticated auth routes, which meant login, logout and password reset were throttled
+by nothing at all while their own registrations said otherwise; before P1-15 the pre-authentication
+branch had no skip and those routes were enforced. That is **PMR-006 / R-14**, and it is why the
+condition now names the property the argument is actually about.
 
-| Deployment                                                                       | Behaviour                                       |
-| -------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Behind a configured trusted proxy, or on a platform that supplies a peer address | Throttled per client, per operation, at 120/min |
-| Neither (the current state)                                                      | **Not throttled** — as before                   |
+| Operation                                             | Address resolvable                              | No address resolvable                                    |
+| ----------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
+| Health probes (`public-probe`, not security-relevant) | Throttled per client, per operation, at 120/min | **Skipped** — a shared bucket here is the outage         |
+| `iam.auth-*` (`auth-adjacent`, security-relevant)     | Throttled per client, per operation, at 10/min  | Enforced on **one shared bucket** at 10/min, not skipped |
+
+The coarse bucket is a degradation, not a fix: with no address, ten requests a minute are shared by
+every caller of that operation, so a hostile caller can deny logins. That availability exposure is
+recorded in [risk-register.md](risk-register.md) R-14 and is preferred, on an unauthenticated
+credential endpoint, to unbounded credential stuffing. Closing **both** halves means plumbing a peer
+address from the platform, which is an infrastructure decision rather than an application one.
 
 The collapse property is pinned by `tests/foundation/rate-limit.test.ts`: an omitted address and an
-explicit `null` produce the same key, a real address produces a different one. Closing the remaining
-half means plumbing a peer address from the platform, which is an infrastructure decision rather
-than an application one.
+explicit `null` produce the same key, a real address produces a different one. The behaviour above is
+pinned by `tests/foundation/p1-15-public-throttle-fallback.test.ts` (7 proofs), which fails against
+the unnarrowed skip.
 
 ## 7. What is deliberately not claimed
 

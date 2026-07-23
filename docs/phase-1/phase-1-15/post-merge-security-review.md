@@ -2,7 +2,8 @@
 
 **Company:** RootLco — Root Link Company ·
 **Product:** [PRODUCT NAME — Pending Final Approval] ·
-**Reviewed state:** protected `origin/develop` = **`0b843bf`** (the PR #61 merge) ·
+**Reviewed state:** protected `origin/develop` = **`0b843bf`** (the PR #61 merge), re-verified against
+**`4d1eff2`** (the PR #62 merge) during the gate pass, which reopened §4.1 ·
 **Date:** 2026-07-23 ·
 **Prepared by:** Eng. Ezzaldeen Al-Bitar — owner-authorized technical self-review under the
 [Standing Technical Authorization Policy](../../governance/standing-technical-authorization-policy.md)
@@ -133,25 +134,85 @@ described.
 for the row, the audit record and the event" in
 `tests/backend/p1-15-attachments-notifications.test.ts`.
 
+## 4.1 The finding this review first got wrong
+
+### PMR-006 — P1-15 removed the throttle P1-14 shipped on the four unauthenticated auth routes · **Medium** · **Fixed**
+
+This entry was originally filed in §5 as "recorded, not fixed", with the reason "closing it needs a
+peer address plumbed from the platform — an infrastructure decision, not an application one". The
+gate re-verification reopened it, and that reason does not survive contact with the code.
+
+**Evidence.** `handleOperation` computed
+
+```ts
+const skipUnkeyedPublicThrottle =
+  operation.public && preAuthPolicy?.keyBy.includes('ip') === true && !client.ip;
+```
+
+and skipped the pre-authentication throttle when it held. `TRUSTED_PROXY_IPS` defaults to empty and
+no App Router handler passes a `peerAddress`, so `client.ip` is always null in this deployment and
+the skip always fired for a `public` operation with an ip-keyed policy — which is all six, including
+`iam.auth-login`, `iam.auth-logout`, `iam.auth-password-reset` and
+`iam.auth-password-reset-completion`.
+
+**Why it is a regression rather than a gap.** At `e50d501` — protected `develop` as Phase 1-14
+shipped it — the same branch read:
+
+```ts
+if (preAuthPolicy && config.RATE_LIMIT_ENABLED) {
+  await enforceRateLimit(preAuthPolicy, { operation: operation.id, clientIp: client.ip });
+}
+```
+
+There was no skip. `auth-adjacent` is sessionless, so `preAuthPolicy` resolved to it and enforcement
+ran with a null address, producing one shared bucket at ten a minute. P1-15 did not fail to add a
+control; it **removed** one, and did so through a condition whose stated justification is entirely
+about liveness probes.
+
+**Reproduction, on the exact protected merge `4d1eff2`, before any change:** twelve sequential
+requests through `handleOperation` for `iam.auth-login` with no peer address and no trusted proxy
+returned `200` twelve times — `expected [ 200, 200 ] to deeply equal [ 429, 429 ]`. The two control
+assertions in the same run passed: the health probe was correctly exempt, and with a trusted proxy
+configured the bucket was correctly per client.
+
+**Impact.** Unbounded credential stuffing against `/api/v1/auth/login`, and no security-relevant
+throttle signal, while the route's own `publicReason`, the `auth-adjacent` rationale, the security
+review and §6.1 of `health-endpoints.md` all stated a ten-a-minute bound. It is the same class as
+**PMR-001** and larger in magnitude: PMR-001 loosened the limit twelvefold, PMR-006 removed it.
+
+**Fix.** The exemption now belongs to the property its own argument is about — a policy that is not
+`securityRelevant`. `public-probe` keeps it; `auth-adjacent` never gets it and degrades to the coarse
+shared bucket instead. Nothing else in the pipeline changes, and no probe behaviour changes.
+
+**Residual, stated rather than closed.** The coarse bucket is a global budget: a hostile caller can
+exhaust ten requests a minute and deny logins. That availability exposure is real, is preferred here
+to unbounded stuffing on a credential endpoint, and stays open as **R-14**. The actual fix for both
+halves is a peer address from the platform.
+
+**Regression test.** `tests/foundation/p1-15-public-throttle-fallback.test.ts` (7 proofs): the
+premise (no address resolves under the default configuration), the four auth operations each
+throttling at the eleventh request, the probe keeping its exemption, the per-client bucket when an
+address does resolve, and one noisy client being throttled while another is not.
+
 ## 5. Confirmed, recorded, and NOT fixed here
 
 These survived verification. None is Critical or High. They are recorded with their evidence so the
 next cycle starts from a finding rather than a rediscovery — and so that nobody reads their absence
 from §2–4 as a refutation.
 
-| ID      | Severity | Finding                                                                                                                                                                                                                            | Why not now                                                                                                                                                                                                                                                                       |
-| ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PMR-006 | Medium   | The four unauthenticated auth routes are, in **this** deployment, throttled by nothing: `resolveClientAddress()` returns null unless the platform supplies a peer address or `TRUSTED_PROXY_IPS` names a proxy, and neither holds. | Closing it needs a peer address plumbed from the platform — an infrastructure decision, not an application one. PMR-001's fix restores the _correct_ policy; it cannot manufacture a client address. Recorded as **R-14**.                                                        |
-| PMR-007 | Medium   | A keyset cursor carries its sort value as an ISO string with millisecond precision, while `timestamptz` keeps microseconds; two rows inside the same millisecond can straddle a page edge and one be skipped.                      | A P1-13 foundation contract used by every paginated module. Changing the cursor's value encoding is a cross-module change that needs its own review, and no P1-15 surface ships a paginated list yet. Recorded as **R-15**.                                                       |
-| PMR-008 | Medium   | No executable dependency-vulnerability control runs in CI.                                                                                                                                                                         | Unchanged, deliberate, and already recorded — see [risk-register.md](risk-register.md). Two of three verifiers refuted it as a defect on the ground that it is a documented owner decision; it is listed here because the _fact_ is true, not because the classification changed. |
-| PMR-009 | Low      | `isProvisioned()` / `describe()` apply neither of the two scope validations `allocate()` applies, so they answer for company/branch scopes the session does not hold.                                                              | A read that returns a boolean about configuration, under RLS, for a scope the caller named. No data crosses a tenant. Worth aligning; not worth widening this remediation.                                                                                                        |
-| PMR-010 | Low      | `shared.document.upload_authorized` omits the company/branch scope that every sibling attachment audit record carries.                                                                                                             | Audit completeness, no security boundary. Batch with the next audit-catalog change.                                                                                                                                                                                               |
-| PMR-011 | Low      | Outbox `aggregate_version` mixes a child version number with the aggregate's `record_version`, producing repeated and non-monotonic values on one stream.                                                                          | A consumer-ordering concern for a consumer that does not exist yet; the outbox worker is P1-13 scaffolding with no registered consumer.                                                                                                                                           |
-| PMR-012 | Low      | An RLS scope denial on notification enqueue surfaces as `ERR-SYS-001`, not `ERR-IAM-001`; the mapped branch is unreachable because the policy denies by matching zero rows rather than raising.                                    | Same class as P1-15-SR-006 and understood; the honest fix is to detect the zero-row denial, which touches the repository contract.                                                                                                                                                |
-| PMR-013 | Low      | `verify()` throws `URIError` instead of refusing when a signed-URL path carries a malformed percent-escape.                                                                                                                        | A malformed URL is refused either way; the shape of the refusal is wrong, not the outcome.                                                                                                                                                                                        |
-| PMR-014 | Low      | Timestamp filter validation accepts calendar-invalid dates (e.g. `2026-02-31`), turning a client error into a database error.                                                                                                      | Bounded, no injection, no disclosure. Belongs with PMR-007 in a query-primitives pass.                                                                                                                                                                                            |
-| PMR-015 | Low      | The readiness probe abandons its in-flight transaction on timeout, holding a pooled connection past its own budget.                                                                                                                | Resource behaviour under a dependency stall, not a security property. Recorded for the scalability work P1-OD-027 already owns.                                                                                                                                                   |
-| PMR-016 | Info     | The audit-contract document states a catalog size and one action code that the committed catalog does not contain.                                                                                                                 | Documentation accuracy; corrected when the audit catalog is next touched.                                                                                                                                                                                                         |
+| ID      | Severity | Finding                                                                                                                                                                                                       | Why not now                                                                                                                                                                                                                                                                       |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PMR-006 | Medium   | ~~The four unauthenticated auth routes are, in **this** deployment, throttled by nothing.~~ **Reopened, re-adjudicated and fixed — see §4.1.**                                                                | The disposition below was wrong. It is kept visible rather than deleted, because a review that quietly rewrites its own dispositions cannot be audited.                                                                                                                           |
+| PMR-007 | Medium   | A keyset cursor carries its sort value as an ISO string with millisecond precision, while `timestamptz` keeps microseconds; two rows inside the same millisecond can straddle a page edge and one be skipped. | A P1-13 foundation contract used by every paginated module. Changing the cursor's value encoding is a cross-module change that needs its own review, and no P1-15 surface ships a paginated list yet. Recorded as **R-15**.                                                       |
+| PMR-008 | Medium   | No executable dependency-vulnerability control runs in CI.                                                                                                                                                    | Unchanged, deliberate, and already recorded — see [risk-register.md](risk-register.md). Two of three verifiers refuted it as a defect on the ground that it is a documented owner decision; it is listed here because the _fact_ is true, not because the classification changed. |
+| PMR-009 | Low      | `isProvisioned()` / `describe()` apply neither of the two scope validations `allocate()` applies, so they answer for company/branch scopes the session does not hold.                                         | A read that returns a boolean about configuration, under RLS, for a scope the caller named. No data crosses a tenant. Worth aligning; not worth widening this remediation.                                                                                                        |
+| PMR-010 | Low      | `shared.document.upload_authorized` omits the company/branch scope that every sibling attachment audit record carries.                                                                                        | Audit completeness, no security boundary. Batch with the next audit-catalog change.                                                                                                                                                                                               |
+| PMR-011 | Low      | Outbox `aggregate_version` mixes a child version number with the aggregate's `record_version`, producing repeated and non-monotonic values on one stream.                                                     | A consumer-ordering concern for a consumer that does not exist yet; the outbox worker is P1-13 scaffolding with no registered consumer.                                                                                                                                           |
+| PMR-012 | Low      | An RLS scope denial on notification enqueue surfaces as `ERR-SYS-001`, not `ERR-IAM-001`; the mapped branch is unreachable because the policy denies by matching zero rows rather than raising.               | Same class as P1-15-SR-006 and understood; the honest fix is to detect the zero-row denial, which touches the repository contract.                                                                                                                                                |
+| PMR-013 | Low      | `verify()` throws `URIError` instead of refusing when a signed-URL path carries a malformed percent-escape.                                                                                                   | A malformed URL is refused either way; the shape of the refusal is wrong, not the outcome.                                                                                                                                                                                        |
+| PMR-014 | Low      | Timestamp filter validation accepts calendar-invalid dates (e.g. `2026-02-31`), turning a client error into a database error.                                                                                 | Bounded, no injection, no disclosure. Belongs with PMR-007 in a query-primitives pass.                                                                                                                                                                                            |
+| PMR-015 | Low      | The readiness probe abandons its in-flight transaction on timeout, holding a pooled connection past its own budget.                                                                                           | Resource behaviour under a dependency stall, not a security property. Recorded for the scalability work P1-OD-027 already owns.                                                                                                                                                   |
+| PMR-016 | Info     | The audit-contract document states a catalog size and one action code that the committed catalog does not contain.                                                                                            | Documentation accuracy; corrected when the audit catalog is next touched.                                                                                                                                                                                                         |
 
 ## 6. Refuted
 
@@ -167,17 +228,34 @@ cannot be audited for what it dismissed.
 
 ## 7. Disposition
 
-| Severity     | Raised | Fixed here | Recorded, not fixed | Refuted |
-| ------------ | ------ | ---------- | ------------------- | ------- |
-| **Critical** | 0      | 0          | 0                   | 0       |
-| **High**     | 1      | **1**      | 0                   | 0       |
-| **Medium**   | 6      | **3**      | 3                   | 0       |
-| **Low**      | 9      | 0          | 7                   | 2       |
-| Info         | 5      | 0          | 1                   | 4       |
+| Severity     | Raised | Fixed | Recorded, not fixed | Refuted |
+| ------------ | ------ | ----- | ------------------- | ------- |
+| **Critical** | 0      | 0     | 0                   | 0       |
+| **High**     | 1      | **1** | 0                   | 0       |
+| **Medium**   | 6      | **4** | 2                   | 0       |
+| **Low**      | 9      | 0     | 7                   | 2       |
+| Info         | 5      | 0     | 1                   | 4       |
 
-**Unresolved Critical: 0. Unresolved High: 0.** Three Mediums (PMR-006, PMR-007, PMR-008) are
-recorded rather than fixed, each with a stated reason that is about scope and review discipline, not
-about difficulty.
+Four Mediums are fixed: PMR-003, PMR-004, PMR-005 in PR #62, and **PMR-006 in the follow-up
+remediation** described in §4.1. Two Mediums (PMR-007, PMR-008) remain recorded rather than fixed,
+each with a stated reason that is about scope and review discipline, not about difficulty.
 
-**The Phase 1-15 owner gate therefore remains Pending.** It is not converted by this remediation, and
-it may not be converted while any of it is unmerged.
+**Unresolved Critical: 0. Unresolved High: 0.**
+
+**The Phase 1-15 owner gate therefore remains Pending.** It is not converted by either remediation,
+and it may not be converted while any of them is unmerged.
+
+### 7.1 What the PMR-006 reversal says about this review
+
+One finding in this document was filed with a disposition that the code did not support, and it took
+a second pass — running the gate verification rather than re-reading the review — to catch it. Two
+things are worth recording.
+
+The **wrong reason was plausible**: "it needs a peer address from the platform" is true of the
+per-client control, and it is not true of whether a control runs at all. A disposition that names a
+real constraint can still be answering a different question from the one asked.
+
+And the **fix and the finding came from different lenses**: the original review asked "is this route
+protected?", got "not without an address", and stopped. The gate pass asked "what did this phase
+change about the previous phase's controls?", which is the question that made the removal visible.
+That second question is now part of the gate procedure rather than a thing that happened to be asked.
