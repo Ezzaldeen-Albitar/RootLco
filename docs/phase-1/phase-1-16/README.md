@@ -27,12 +27,54 @@ consumed as they stand on protected `develop`. If a mandatory CRM operation cann
 the real runtime role because of a database gap, that gap is raised as a controlled change request and
 delivered in its own remediation pull request — never as a convenience migration inside this feature.
 
-| Step                                                                             | State                                                                                |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Wave 0 reality, contract, schema, and runtime-capability inventory               | **In progress** — [initial audit](phase-1-16-initial-audit.md)                       |
-| Conflicts between planning text and frozen contracts resolved                    | **In progress** — [implementation decisions](phase-1-16-implementation-decisions.md) |
-| CRM application module implemented on the P1-6 / P1-13 / P1-14 / P1-15 contracts | **In feature execution** — [architecture](phase-1-16-architecture.md)                |
-| Owner gate                                                                       | **Pending** — no decision recorded                                                   |
+| Step                                                                             | State                                                                                  |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Wave 0 reality, contract, schema, and runtime-capability inventory               | **Complete** — one blocker found (notes), delivered as DBCR-P1-16-001 / PR #66         |
+| Remaining-capability database feasibility audit                                  | **Complete — no further blockers**; every capability lands on a runtime-writable table |
+| CRM application module implemented on the P1-6 / P1-13 / P1-14 / P1-15 contracts | **Complete** — 18 operations, 18 at operation depth, all weak coverage categories zero |
+| Owner gate                                                                       | **Pending** — no decision recorded                                                     |
+
+### Delivered operations
+
+All 18 are registered, guarded, represented in `docs/api/openapi.v1.json`, and carry
+operation-depth backend evidence executed against a real database on the least-privilege
+`app_runtime` role.
+
+| Operation                 | Route                                   | Permission                        |
+| ------------------------- | --------------------------------------- | --------------------------------- |
+| `crm.customer-search`     | `GET /customers`                        | `crm.customer.read`               |
+| `crm.individual-create`   | `POST /customers/individuals`           | `crm.customer.create`             |
+| `crm.company-create`      | `POST /customers/companies`             | `crm.customer.create`             |
+| `crm.contact-add`         | `POST /customers/{id}/contacts`         | `crm.customer.profile.write`      |
+| `crm.address-add`         | `POST /customers/{id}/addresses`        | `crm.customer.profile.write`      |
+| `crm.preference-set`      | `PUT /customers/{id}/preferences`       | `crm.customer.profile.write`      |
+| `crm.consent-record`      | `POST /customers/{id}/consents`         | `crm.customer.consent.write`      |
+| `crm.note-add`            | `POST /customers/{id}/notes`            | `crm.customer.note.write`         |
+| `crm.alert-raise`         | `POST /customers/{id}/alerts`           | `crm.customer.governance.manage`  |
+| `crm.tag-assign`          | `POST /customers/{id}/tags`             | `crm.customer.governance.manage`  |
+| `crm.customer-status-set` | `PUT /customers/{id}/status`            | `crm.customer.governance.manage`  |
+| `crm.restriction-impose`  | `POST /customers/{id}/restrictions`     | `crm.customer.restriction.manage` |
+| `crm.duplicate-scan`      | `POST /customers/{id}/duplicate-scans`  | `crm.customer.duplicate.review`   |
+| `crm.duplicate-review`    | `POST /customer-duplicates/{id}/review` | `crm.customer.duplicate.review`   |
+| `crm.customer-merge`      | `POST /customers/{id}/merge`            | `crm.customer.merge`              |
+| `crm.customer-history`    | `GET /customers/{id}/history`           | `crm.customer.read`               |
+| `crm.customer-timeline`   | `GET /customers/{id}/timeline`          | `crm.customer.read`               |
+| `crm.vehicle-link`        | `POST /customers/{id}/vehicles`         | `crm.customer.vehicle.manage`     |
+
+### Route-shape deviation — owner decision recorded here
+
+The plan text writes the duplicate review and merge routes with a colon verb
+(`{candidateId}:review`, `{customerId}:merge`). They are delivered as `/review` and `/merge`
+sub-resources instead, for two independent reasons:
+
+1. The phase's own route convention rules out colon-verb paths in favour of noun/sub-resource
+   shapes, and every other operation in this phase follows that convention.
+2. A path segment containing `:` cannot be a directory name on Windows, where this repository is
+   developed. The colon form is therefore **unbuildable here**, not merely discouraged.
+
+Operation identifiers, permissions, request and response contracts, and semantics are exactly as
+specified. Only the separator differs. If the owner requires the colon form, it needs a
+platform-level routing decision (a catch-all segment parser) rather than a route rename.
 
 ## What this phase delivers
 
