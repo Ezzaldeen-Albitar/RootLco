@@ -16,6 +16,348 @@
     }
   ],
   "paths": {
+    "/api/v1/attachments/documents/{documentId}/download-authorizations": {
+      "post": {
+        "operationId": "shared.attachment-download-authorize",
+        "summary": "Issue a short-lived signed download URL for an accepted version.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "security",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/attachments/documents/{documentId}/links": {
+      "post": {
+        "operationId": "shared.attachment-link-create",
+        "summary": "Link a document to a business entity.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/attachments/links/{linkId}": {
+      "delete": {
+        "operationId": "shared.attachment-link-withdraw",
+        "summary": "Withdraw a document link. The row is retained with a withdrawal stamp.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/attachments/upload-authorizations": {
+      "post": {
+        "operationId": "shared.attachment-upload-authorize",
+        "summary": "Create document metadata and issue a short-lived signed upload URL.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "security",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/attachments/versions": {
+      "post": {
+        "operationId": "shared.attachment-version-register",
+        "summary": "Register an uploaded object as a pending document version.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/attachments/versions/{versionId}/rejection": {
+      "post": {
+        "operationId": "shared.attachment-version-reject",
+        "summary": "Reject a pending document version. The state is terminal.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.document.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/audit-events": {
       "get": {
         "operationId": "iam.audit-event-list",
@@ -348,6 +690,202 @@
           }
         },
         "x-required-permissions": ["iam.user.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/exports/authorizations": {
+      "post": {
+        "operationId": "shared.export-authorize",
+        "summary": "Authorize an export of tenant data. Produces no file.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rpt.export"],
+        "x-scope": "tenant",
+        "x-audit-class": "export",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/exports/resources": {
+      "get": {
+        "operationId": "shared.export-catalogue",
+        "summary": "List the resources and fields this deployment can export.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rpt.export"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/health/live": {
+      "get": {
+        "operationId": "shared.health-live",
+        "summary": "Liveness probe. Reports that the process is running; touches nothing.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": [],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "shared.health-ready",
+        "summary": "Readiness probe. Reports a bounded dependency verdict with no internal detail.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": [],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -1716,7 +2254,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.manage"],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -1776,9 +2314,255 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.manage"],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/message-templates": {
+      "post": {
+        "operationId": "shared.template-create",
+        "summary": "Create a tenant message template.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/message-templates/{templateId}": {
+      "patch": {
+        "operationId": "shared.template-update",
+        "summary": "Rename, re-describe, or disable a tenant message template.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/message-templates/{templateId}/active-version": {
+      "put": {
+        "operationId": "shared.template-activation-set",
+        "summary": "Set or clear the active version of a tenant message template.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/message-templates/{templateId}/versions": {
+      "post": {
+        "operationId": "shared.template-version-create",
+        "summary": "Create the next draft version of a tenant message template.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
@@ -1834,6 +2618,66 @@
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/notifications": {
+      "post": {
+        "operationId": "shared.notification-enqueue",
+        "summary": "Enqueue an outbound message from an approved template version.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["shared.notification.send"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
     },
@@ -2175,6 +3019,364 @@
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
+    },
+    "/api/v1/organization/branches/{branchId}/status": {
+      "post": {
+        "operationId": "shared.branch-status-change",
+        "summary": "Activate or deactivate a branch through the transition engine.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "shared.branch-status-read",
+        "summary": "Read a branch status and the transitions available from it.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.branch.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/template-versions/{versionId}": {
+      "patch": {
+        "operationId": "shared.template-version-revise",
+        "summary": "Revise the content of a draft template version.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/template-versions/{versionId}/approval": {
+      "post": {
+        "operationId": "shared.template-version-approve",
+        "summary": "Approve a draft template version. Approved content is immutable.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "approval",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/template-versions/{versionId}/preview": {
+      "post": {
+        "operationId": "shared.template-version-preview",
+        "summary": "Render a template version with sample values. Sends nothing.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/template-versions/{versionId}/retirement": {
+      "post": {
+        "operationId": "shared.template-version-retire",
+        "summary": "Retire an approved template version.",
+        "tags": ["shared-services"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
     }
   },
   "components": {
@@ -2224,6 +3426,10 @@
               "ERR-CON-002",
               "ERR-RTE-001",
               "ERR-STB-001",
+              "ERR-DOC-001",
+              "ERR-NTF-001",
+              "ERR-EXP-001",
+              "ERR-TRN-001",
               "ERR-SYS-001"
             ]
           },

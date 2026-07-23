@@ -26,6 +26,34 @@ export const METRICS = {
   outboxRetryCount: 'outbox.retry.count',
   outboxDeadLetterCount: 'outbox.dead_letter.count',
   workerProcessingDuration: 'worker.processing.duration_ms',
+
+  // --- Shared services (P1-15) --------------------------------------------
+  //
+  // Every label these instruments carry is catalogue metadata — a sequence
+  // code, an aggregate name, a channel, a result word. None is an identifier:
+  // an attachment id, storage key, dedupe key, recipient, VIN, or tenant would
+  // both explode cardinality and turn the metrics store into an enumeration
+  // oracle for data it has no isolation for. `tests/foundation/p1-15-observability.test.ts`
+  // asserts that, so the rule is enforced rather than remembered.
+  numberAllocationCount: 'numbering.allocation.count',
+  auditAppendFailureCount: 'audit.append.failure_count',
+  transitionCount: 'transition.applied.count',
+  transitionConflictCount: 'transition.conflict.count',
+  attachmentAuthorizationCount: 'attachment.authorization.count',
+  signedUrlCount: 'storage.signed_url.count',
+  signedUrlDuration: 'storage.signed_url.duration_ms',
+  notificationEnqueueCount: 'notification.enqueue.count',
+  notificationDeliveryCount: 'notification.delivery.count',
+  notificationRetryCount: 'notification.retry.count',
+  notificationDeadLetterCount: 'notification.dead_letter.count',
+  templateRenderCount: 'template.render.count',
+  templateRenderFailureCount: 'template.render.failure_count',
+  eventRejectionCount: 'event.rejected.count',
+  normalizationRejectionCount: 'normalization.rejected.count',
+  queryLimitRejectionCount: 'query.limit_rejected.count',
+  exportAuthorizationCount: 'export.authorization.count',
+  readinessCheckDuration: 'readiness.dependency.duration_ms',
+  readinessCheckCount: 'readiness.dependency.count',
 } as const;
 
 export type MetricName = (typeof METRICS)[keyof typeof METRICS];

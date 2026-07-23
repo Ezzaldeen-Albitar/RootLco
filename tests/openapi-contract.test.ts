@@ -49,6 +49,27 @@ import '@/app/api/v1/audit-events/[recordId]/route';
 import '@/app/api/v1/org/tenant/route';
 import '@/app/api/v1/org/companies/[companyId]/settings/route';
 import '@/app/api/v1/org/branches/[branchId]/settings/route';
+// --- Phase 1-15 shared services ------------------------------------------
+import '@/app/api/v1/attachments/upload-authorizations/route';
+import '@/app/api/v1/attachments/versions/route';
+import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
+import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
+import '@/app/api/v1/attachments/documents/[documentId]/links/route';
+import '@/app/api/v1/attachments/links/[linkId]/route';
+import '@/app/api/v1/notifications/route';
+import '@/app/api/v1/message-templates/route';
+import '@/app/api/v1/message-templates/[templateId]/route';
+import '@/app/api/v1/message-templates/[templateId]/versions/route';
+import '@/app/api/v1/message-templates/[templateId]/active-version/route';
+import '@/app/api/v1/template-versions/[versionId]/route';
+import '@/app/api/v1/template-versions/[versionId]/approval/route';
+import '@/app/api/v1/template-versions/[versionId]/retirement/route';
+import '@/app/api/v1/template-versions/[versionId]/preview/route';
+import '@/app/api/v1/organization/branches/[branchId]/status/route';
+import '@/app/api/v1/exports/authorizations/route';
+import '@/app/api/v1/exports/resources/route';
+import '@/app/api/v1/health/live/route';
+import '@/app/api/v1/health/ready/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -93,7 +114,9 @@ describe('OpenAPI contract', () => {
     // `platform.meta.ping` was (PC-1). The list mirrors
     // `supabase/seeds/04_iam_permission_catalog.sql`; `tests/db/iam-seeds.test.ts`
     // asserts the seed itself, so the two cannot both drift unnoticed.
-    const SEEDED_DOMAINS = ['iam', 'inv', 'org', 'quo', 'rpt', 'sal', 'svc', 'wty'];
+    // `shared` joined the list with DBCR-P1-15-001, which seeded
+    // `shared.document.manage` and `shared.notification.send`.
+    const SEEDED_DOMAINS = ['iam', 'inv', 'org', 'quo', 'rpt', 'sal', 'shared', 'svc', 'wty'];
     const document = JSON.parse(generated) as {
       paths: Record<string, Record<string, { 'x-required-permissions'?: string[] }>>;
     };

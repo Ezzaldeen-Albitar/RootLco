@@ -12,6 +12,34 @@
  *
  * Revocation is terminal — both session UPDATE policies carry
  * `revoked_at IS NULL` in `USING`, so a revoked session cannot be resurrected.
+ *
+ * ===========================================================================
+ * WHY REVOCATION ALSO DECLARES `iam.session.view_all` (P1-15-SR-006)
+ * ===========================================================================
+ * It looks redundant beside `iam.user.manage`, which is what the
+ * `upd_user_sessions_admin` UPDATE policy checks. It is not.
+ *
+ * PostgreSQL applies **SELECT** policies to an `UPDATE` whose `WHERE` clause
+ * reads columns of the relation, and revocation's WHERE clause does exactly
+ * that (`tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`). The two
+ * SELECT policies on `iam.user_sessions` are `sel_user_sessions_own`
+ * (`user_id = iam.current_user_id()`) and `sel_user_sessions_admin`
+ * (`iam.has_permission('iam.session.view_all')`).
+ *
+ * So a caller holding `iam.user.manage` **without** `iam.session.view_all`
+ * could not see another user's session rows, the scan matched nothing, and the
+ * UPDATE policy that names their permission was never reached. The request
+ * answered `200 {"revoked": 0}`, appended a `security`-class audit record, and
+ * published a `session.revoked` event — while the compromised session stayed
+ * live. A security control that reports success and does nothing is worse than
+ * one that fails, because nothing surfaces it.
+ *
+ * Declaring the read permission moves that outcome to a 403 at the gate, before
+ * any audit record or event is written. It is the honest declaration: this
+ * operation genuinely cannot function without read visibility of the rows it
+ * intends to change. The alternative — a new SELECT policy gated on
+ * `iam.user.manage` — is a database change and belongs to a change request, not
+ * to a feature branch.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -44,7 +72,8 @@ export const USER_SESSION_REVOKE_OPERATION = defineOperation({
   method: 'DELETE',
   path: '/iam/users/{userId}/sessions',
   summary: 'Revoke every live session of a user.',
-  permissions: ['iam.user.manage'],
+  // Both, and the second is not redundant — see the note at the top of this file.
+  permissions: ['iam.user.manage', 'iam.session.view_all'],
   scope: 'tenant',
   auditClass: 'security',
   auditAction: 'iam.session.revoked_all',

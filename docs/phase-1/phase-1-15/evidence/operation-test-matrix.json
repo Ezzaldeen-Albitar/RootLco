@@ -1,0 +1,962 @@
+{
+  "generatedFrom": "scripts/check-operation-test-coverage.mjs",
+  "counts": {
+    "registered": 21,
+    "publicApi": 21,
+    "operationDepth": 21,
+    "invocationOnly": 0,
+    "pending": 0,
+    "unitOnly": 0,
+    "unreferenced": 0,
+    "metadataOnly": 0
+  },
+  "operations": [
+    {
+      "id": "shared.attachment-download-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/download-authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "provider"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial",
+        "provider"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "provider",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-link-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/links",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-link-withdraw",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/attachments/links/{linkId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-upload-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/upload-authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-version-register",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/versions",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-version-reject",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/versions/{versionId}/rejection",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.branch-status-change",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/organization/branches/{branchId}/status",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.branch-status-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/organization/branches/{branchId}/status",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation"
+      ],
+      "declared": [],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.export-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/exports/authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.export-catalogue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/exports/resources",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization"
+      ],
+      "declared": [],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization"
+      ],
+      "provided": [
+        "authorization",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.health-live",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/health/live",
+      "public": true,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-dispatch-and-health.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "declared": [],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "provided": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.health-ready",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/health/ready",
+      "public": true,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-dispatch-and-health.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "declared": [],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "provided": [
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.notification-enqueue",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/notifications",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox",
+        "provider"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "provider"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "provider",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-activation-set",
+      "surface": "public-api",
+      "method": "PUT",
+      "path": "/message-templates/{templateId}/active-version",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/message-templates",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "cross-tenant"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/message-templates/{templateId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-approve",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/approval",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/message-templates/{templateId}/versions",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-preview",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/preview",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/retirement",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "denial",
+        "outbox"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-revise",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/template-versions/{versionId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "denial"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    }
+  ]
+}

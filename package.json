@@ -39,6 +39,7 @@
     "style:check": "stylelint \"src/**/*.scss\" --max-warnings 0",
     "style:fix": "stylelint \"src/**/*.scss\" --fix",
     "validate:canonical-docs": "node scripts/validate-canonical-documents.mjs",
+    "validate:encoding": "node scripts/check-encoding.mjs",
     "validate:no-fake-data": "node scripts/check-no-fake-data.mjs",
     "validate:crm-classification": "node scripts/check-crm-classification.mjs",
     "validate:veh-classification": "node scripts/check-veh-classification.mjs",

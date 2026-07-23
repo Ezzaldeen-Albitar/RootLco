@@ -12,6 +12,15 @@
  * of `iam.user.manage` cannot be locked or archived — a tenant must stay
  * administrable.
  *
+ * `iam.session.view_all` is declared alongside `iam.user.manage` for the reason
+ * set out in `sessions/route.ts` (P1-15-SR-006): the session revocation this
+ * operation performs runs an `UPDATE ... WHERE`, PostgreSQL applies the SELECT
+ * policies to it, and a caller who cannot read the rows revokes nothing while
+ * the response and the audit record report a completed lock. Locking a user
+ * whose sessions stay live is not a partial success — it is a control that
+ * reports what it did not do, so the read permission is required rather than
+ * assumed.
+ *
  * The audit action varies with the target state, so it is recorded by the
  * service rather than by the registration. The registration declares
  * `iam.user.locked` as the representative action for the operation; the service
@@ -40,7 +49,7 @@ export const USER_STATUS_OPERATION = defineOperation({
   method: 'POST',
   path: '/iam/users/{userId}/status',
   summary: 'Lock, unlock, or archive a user and revoke their sessions.',
-  permissions: ['iam.user.manage'],
+  permissions: ['iam.user.manage', 'iam.session.view_all'],
   scope: 'tenant',
   auditClass: 'security',
   auditAction: 'iam.user.locked',
