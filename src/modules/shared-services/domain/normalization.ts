@@ -13,8 +13,10 @@
  *    `normalizeEmail` reproduce `veh.normalize_vin`, `crm.normalize_phone` and
  *    `crm.normalize_email` character for character, including the edge cases that
  *    look like bugs (a lone `'+'` survives; Arabic-Indic digits normalize away to
- *    `null`). `tests/foundation/p1-15-normalization.test.ts` proves the mirrors
- *    agree with the live functions over a shared corpus.
+ *    `null`). `tests/db/p1-15-normalization-parity.test.ts` proves the mirrors
+ *    agree with the live functions over a shared corpus — a database suite, not
+ *    a unit one, because the only honest way to prove parity is to run both
+ *    implementations over the same corpus and compare.
  *  - **never silently repair.** Validation is reported *alongside* the normalized
  *    value, never applied to it. A VIN containing `I`, `O` or `Q` normalizes
  *    unchanged and is reported as implausible; the caller decides. Silent repair

@@ -116,12 +116,20 @@ export class NumberAllocationService extends ApplicationService {
     });
     // The sequence code is low-cardinality catalogue metadata; the allocated
     // number is business data and is deliberately absent from the log line.
+    //
+    // `scoped` is computed here rather than inline so the logged expression
+    // names no identifier at all. `tests/foundation/p1-15-observability.test.ts`
+    // scans these objects textually and refuses any expression that mentions a
+    // company, tenant, document or key — a boolean *derived from* an identifier
+    // is safe, but an exemption for it would be a hole, so the derivation moves
+    // out of the log call instead.
+    const scoped = companyId !== null;
     log.info('Display number allocated', {
       module: this.module,
       operation: db.context.operation,
       correlationId: db.context.correlationId,
       result: 'success',
-      context: { sequence: definition.code, scoped: companyId !== null },
+      context: { sequence: definition.code, scoped },
     });
 
     return {

@@ -228,6 +228,6 @@ export class MessageDispatchRepository {
  *
  * Re-declared rather than imported from `worker-db.ts` so this repository does
  * not depend on the pool module for a constant; both spellings are asserted
- * equal by `tests/backend/p1-15-notification-dispatch.test.ts`.
+ * equal by `tests/backend/p1-15-dispatch-and-health.test.ts`.
  */
 const SYSTEM_ACTOR = '00000000-0000-4000-8000-000000000001';
