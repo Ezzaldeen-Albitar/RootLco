@@ -175,10 +175,13 @@ describe('reserved-name registry', () => {
     // to; anything else claiming an implementation is a documentation defect, not
     // a feature.
     //
-    // P1-15 added five: four `shared.*` producers in `src/modules/shared-services`
-    // plus `message.delivery.changed`, which the worker-side dispatcher drives.
-    // `document.accepted` is deliberately NOT here — acceptance is unavailable
-    // while no application role may write `shared.file_scan_results`.
+    // P1-15 added four, all published from `src/modules/shared-services` on the
+    // request path. Two shared names are deliberately still absent:
+    // `document.accepted`, because acceptance is unavailable while no
+    // application role may write `shared.file_scan_results`; and
+    // `message.delivery.changed`, because delivery state changes on the worker
+    // archetype, which has no `RequestContext` and therefore cannot call
+    // `publishEvent()`.
     const implemented = EVENT_CATALOG.filter((entry) => entry.implementedIn !== null).map(
       (entry) => entry.eventType
     );
@@ -187,7 +190,6 @@ describe('reserved-name registry', () => {
       'document.link.changed',
       'document.version.registered',
       'message-template.version.changed',
-      'message.delivery.changed',
       'message.enqueued',
       'organization.branch.status.changed',
       'session.revoked',

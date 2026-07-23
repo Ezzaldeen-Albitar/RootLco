@@ -216,7 +216,6 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.branch.status_changed',
   'org.company.settings_updated',
   'org.tenant.settings_updated',
-  'shared.document.created',
   'shared.document.download_authorized',
   'shared.document.linked',
   'shared.document.unlinked',
@@ -243,7 +242,9 @@ const EXPECTED_AUDIT_ACTIONS = [
  */
 const P1_15_AUDIT_ACTIONS: readonly { code: string; class: string; entityType: string }[] = [
   { code: 'org.branch.status_changed', class: 'privileged', entityType: 'org.branch' },
-  { code: 'shared.document.created', class: 'privileged', entityType: 'shared.document' },
+  // `shared.document.created` was registered and then removed: creating document
+  // metadata and authorizing its upload are one command, so they are one record.
+  // A catalog entry with no producer is a claim about a fact nobody records.
   {
     code: 'shared.document.download_authorized',
     class: 'security',
@@ -456,12 +457,18 @@ const EXPECTED_EVENT_TYPES = [
   'vehicle.relationship.changed',
 ];
 
-/** Names P1-15 implements a publisher for. Every one is owned by `shared`. */
+/**
+ * Names P1-15 implements a publisher for. Every one is owned by `shared`.
+ *
+ * `message.delivery.changed` is reserved and owned by `shared` but is NOT here:
+ * delivery state changes on the worker archetype, which has no `RequestContext`,
+ * and `publishEvent()` cannot be called without one. Its `implementedIn` stays
+ * `null`, which is what keeps the catalog a statement about real producers.
+ */
 const EXPECTED_P1_15_EVENT_TYPES = [
   'document.link.changed',
   'document.version.registered',
   'message-template.version.changed',
-  'message.delivery.changed',
   'message.enqueued',
   'organization.branch.status.changed',
 ];

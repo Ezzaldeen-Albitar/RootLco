@@ -241,17 +241,11 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   // it must be triaged alongside authentication and grant changes rather than
   // alongside ordinary administration.
   {
-    code: 'shared.document.created',
-    class: 'privileged',
-    entityType: 'shared.document',
-    description: 'Document metadata was created; no bytes exist yet.',
-  },
-  {
     code: 'shared.document.upload_authorized',
     class: 'security',
     entityType: 'shared.document',
     description:
-      'An upload was authorized: a storage key was reserved and a short-lived signed upload URL was issued.',
+      'An upload was authorized: document metadata was created, a storage key was reserved, and a short-lived signed upload URL was issued. Creation and authorization are one command and therefore one record — a separate `shared.document.created` code was registered and then removed, because a catalog entry with no producer is a claim about a fact nobody records.',
   },
   {
     code: 'shared.document.version_registered',

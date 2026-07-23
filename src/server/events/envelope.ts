@@ -126,8 +126,19 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     eventType: 'message.delivery.changed',
     schemaVersion: 1,
     aggregateType: 'shared.outbound_message',
+    // Deliberately still unimplemented after P1-15, and the reason is
+    // structural rather than an omission: delivery state changes on the
+    // **worker** archetype, which has no `RequestContext` (see
+    // `server/worker/worker-db.ts` — its policies are all-tenant precisely
+    // because a dispatcher must see every tenant's queue). `publishEvent()`
+    // takes its tenant, actor, and correlation from that context and cannot be
+    // called without one. The durable record of a delivery state change is the
+    // message row plus its append-only `shared.delivery_attempts` history;
+    // emitting an envelope as well needs a worker-side publication path that
+    // this phase did not build. Marking it implemented would have been a claim
+    // about a producer that does not exist.
     owner: 'shared',
-    implementedIn: 'P1-15',
+    implementedIn: null,
     description: 'An outbound message changed delivery state.',
   },
 
