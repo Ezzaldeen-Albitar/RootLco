@@ -448,6 +448,19 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A duplicate vehicle was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
   },
+  {
+    code: 'veh.vehicle.duplicates_scanned',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle was scored against comparable ones and duplicate candidates were recorded. The scan decides nothing; it produces candidates for a human to review.',
+  },
+  {
+    code: 'veh.vehicle.duplicate_reviewed',
+    class: 'privileged',
+    entityType: 'veh.duplicate_candidate',
+    description: 'A human recorded a decision on a duplicate vehicle candidate pair.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

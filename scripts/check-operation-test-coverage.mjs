@@ -163,6 +163,16 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
   },
+  'veh.vehicle-duplicate-scan': {
+    files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'conservative deterministic weighted scoring (near-VIN typo/transposition + active-versus-historical plate, corroborated by exact make/model/year); records a candidate only at/above threshold with a strong signal — a lone near-VIN or a make/model/year-only match is NOT recorded (false-positive); a re-scan neither duplicates nor re-scores a frozen candidate and never reopens a dismissal; no cross-tenant vehicle is ever compared; an unknown vehicle is 404 (denial)',
+  },
+  'veh.vehicle-duplicate-review': {
+    files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'records a human dismissal on an open candidate (only dismissed is settable; merged is set by the merge op); an already-reviewed candidate is 409 and an unknown or cross-tenant candidate the same 404 (denial/cross-tenant); the decision is audited with the prior status',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the

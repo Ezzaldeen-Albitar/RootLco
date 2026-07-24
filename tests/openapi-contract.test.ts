@@ -93,6 +93,8 @@ import '@/app/api/v1/customers/[customerId]/vehicles/route';
 import '@/app/api/v1/vehicles/route';
 import '@/app/api/v1/vehicles/[vehicleId]/route';
 import '@/app/api/v1/vehicles/[vehicleId]/merge/route';
+import '@/app/api/v1/vehicles/[vehicleId]/duplicate-scans/route';
+import '@/app/api/v1/vehicle-duplicates/[candidateId]/review/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

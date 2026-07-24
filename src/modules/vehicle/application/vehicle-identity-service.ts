@@ -19,12 +19,40 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { VehicleIdentityRepository } from '../data/vehicle-identity-repository';
-import { VehicleIdentityError, assertMergeable } from '../domain/vehicle-identity';
+import {
+  VehicleIdentityError,
+  assertMergeable,
+  isNearVin,
+  orderPair,
+  scoreComparison,
+  type DuplicateDecision,
+} from '../domain/vehicle-identity';
 
 export interface MergeResult {
   readonly mergeId: string;
   readonly sourceId: string;
   readonly survivorId: string;
+}
+
+export interface ScanResult {
+  readonly vehicleId: string;
+  readonly compared: number;
+  readonly candidates: readonly { candidateId: string; otherId: string; score: number }[];
+}
+
+export interface ReviewResult {
+  readonly candidateId: string;
+  readonly status: string;
+}
+
+/** The most comparison vehicles a single scan will score. Bounds the work and the
+ * candidate set; the pre-filter is already narrow, so this is a backstop. */
+const SCAN_COMPARE_LIMIT = 200;
+
+/** Do two normalized plate sets share a member? */
+function sharesPlate(left: readonly string[], right: readonly string[]): boolean {
+  const set = new Set(right);
+  return left.some((plate) => set.has(plate));
 }
 
 export class VehicleIdentityService extends ApplicationService {
@@ -126,6 +154,101 @@ export class VehicleIdentityService extends ApplicationService {
     });
 
     return { mergeId, sourceId, survivorId: input.survivorId };
+  }
+
+  /**
+   * Scores this vehicle against comparable ones and records the candidates that
+   * clear the threshold. Deterministic and explainable: the same data always
+   * yields the same score and the same `match_basis`, and a candidate is only
+   * recorded when a strong signal (near-VIN or a moved plate) is corroborated.
+   */
+  async scanForDuplicates(db: DbHandle, vehicleId: string): Promise<ScanResult> {
+    const profile = await this.identity.loadScanProfile(db, vehicleId);
+    if (!profile) {
+      throw new AppFailure('ERR-RES-001', { message: 'Vehicle was not found' });
+    }
+
+    const comparables = await this.identity.findComparableVehicles(
+      db,
+      vehicleId,
+      profile,
+      SCAN_COMPARE_LIMIT
+    );
+
+    const candidates: { candidateId: string; otherId: string; score: number }[] = [];
+    for (const other of comparables) {
+      const otherPlates = await this.identity.loadPlates(db, other.id);
+      const scored = scoreComparison({
+        nearVin: isNearVin(profile.vinNormalized, other.vinNormalized),
+        plateCross:
+          sharesPlate(profile.activePlates, otherPlates.historical) ||
+          sharesPlate(otherPlates.active, profile.historicalPlates),
+        makeModelYear:
+          profile.makeId !== null &&
+          profile.modelId !== null &&
+          profile.modelYear !== null &&
+          profile.makeId === other.makeId &&
+          profile.modelId === other.modelId &&
+          profile.modelYear === other.modelYear,
+      });
+      if (!scored.isCandidate) continue;
+
+      const pair = orderPair(vehicleId, other.id);
+      const recorded = await this.identity.upsertCandidate(db, pair, scored.score, scored.basis);
+      candidates.push({ candidateId: recorded.id, otherId: other.id, score: scored.score });
+    }
+
+    await appendAudit(db, {
+      action: 'veh.vehicle.duplicates_scanned',
+      entityType: 'veh.vehicle',
+      entityId: vehicleId,
+      details: [
+        { field: 'compared', classification: 'public', value: String(comparables.length) },
+        { field: 'candidates', classification: 'public', value: String(candidates.length) },
+      ],
+    });
+
+    return { vehicleId, compared: comparables.length, candidates };
+  }
+
+  /**
+   * Records a human decision on a candidate. Only `dismissed` is recordable;
+   * `merged` is set by the merge operation, so a reviewer cannot mark a pair
+   * reconciled without a merge actually happening.
+   */
+  async reviewCandidate(
+    db: DbHandle,
+    candidateId: string,
+    input: { decision: DuplicateDecision; reason: string }
+  ): Promise<ReviewResult> {
+    const candidate = await this.identity.findCandidate(db, candidateId);
+    if (!candidate) {
+      throw new AppFailure('ERR-RES-001', { message: 'Duplicate candidate was not found' });
+    }
+    if (candidate.status !== 'open') {
+      throw new AppFailure('ERR-RES-002', {
+        message: `Candidate has already been ${candidate.status}`,
+      });
+    }
+
+    const changed = await this.identity.reviewCandidate(db, candidateId, input.decision);
+    if (changed === 0) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The candidate was reviewed by someone else while this request was in flight',
+      });
+    }
+
+    await appendAudit(db, {
+      action: 'veh.vehicle.duplicate_reviewed',
+      entityType: 'veh.duplicate_candidate',
+      entityId: candidateId,
+      details: [
+        { field: 'status', classification: 'public', previousValue: 'open', value: input.decision },
+        { field: 'reason', classification: 'internal', value: input.reason },
+      ],
+    });
+
+    return { candidateId, status: input.decision };
   }
 
   private orFail<T>(build: () => T): T {

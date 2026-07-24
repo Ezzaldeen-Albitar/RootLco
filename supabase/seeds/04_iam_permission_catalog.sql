@@ -101,7 +101,11 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('veh.vehicle.manage',       'veh', 'Create and edit vehicles in the caller tenant','medium','00000000-0000-4000-8000-000000000001'),
   -- Merge is separate and higher: it is irreversible in practice (the source is
   -- frozen and redirected to the survivor), so it carries its own high-risk code.
-  ('veh.vehicle.merge',        'veh', 'Merge a duplicate vehicle into a survivor',    'high',  '00000000-0000-4000-8000-000000000001')
+  ('veh.vehicle.merge',        'veh', 'Merge a duplicate vehicle into a survivor',    'high',  '00000000-0000-4000-8000-000000000001'),
+  -- Scanning for and reviewing duplicate candidates are one authority: both are
+  -- judgement about whether two records are the same vehicle, and neither combines
+  -- them (that is the separate, higher veh.vehicle.merge).
+  ('veh.vehicle.duplicate.review','veh','Scan for and review duplicate vehicle candidates','medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

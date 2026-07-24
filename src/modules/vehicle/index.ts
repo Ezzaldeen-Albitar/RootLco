@@ -23,9 +23,15 @@ import { VehicleIdentityService } from './application/vehicle-identity-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
-export type { MergeResult } from './application/vehicle-identity-service';
+export type { MergeResult, ScanResult, ReviewResult } from './application/vehicle-identity-service';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
-export { MAX_APPROVAL_REF } from './domain/vehicle-identity';
+export {
+  DUPLICATE_DECISIONS,
+  MAX_APPROVAL_REF,
+  MAX_REASON,
+  MIN_REASON,
+  type DuplicateDecision,
+} from './domain/vehicle-identity';
 export {
   MAX_PLATE_FRAGMENT,
   MAX_VIN_FRAGMENT,
