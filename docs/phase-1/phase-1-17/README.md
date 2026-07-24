@@ -34,7 +34,7 @@ request — never as a convenience migration inside this feature.
 | Wave 1 — canonical requirements + dependency audit (P1-7/13/14/15/16 all Go) | **Complete**                                                                             |
 | Wave 2 — vehicle runtime feasibility audit                                   | **Complete — NO BLOCKERS** (no feature migration / no DBCR required)                     |
 | Waves 3–11 — vehicle module implementation (20 operations)                   | **Complete** — see the operation inventory below                                         |
-| Local validation (23-gate CI-equivalent battery)                             | **Complete** — Unit 733 / DB 1547 / Backend 550, build + all guards green                |
+| Local validation (23-gate CI-equivalent battery)                             | **Complete** — Unit 733 / DB 1547 / Backend 567, build + all guards green                |
 | Owner gate                                                                   | **Pending** — no decision recorded                                                       |
 
 ## Feasibility result (Wave 2)
@@ -82,28 +82,28 @@ machine-readable matrix is `docs/phase-1/phase-1-17/evidence/operation-test-matr
 slice; the global aggregate at `docs/phase-1/phase-1-14/evidence/operation-test-matrix.json` is
 regenerated at the same time).
 
-| Operation                             | Method / path                                                   | Permission                        | Audit      |
-| ------------------------------------- | --------------------------------------------------------------- | --------------------------------- | ---------- |
-| `veh.vehicle-search`                  | `GET /vehicles`                                                 | `veh.vehicle.read`                | none       |
-| `veh.vehicle-create`                  | `POST /vehicles`                                                | `veh.vehicle.manage`              | privileged |
-| `veh.vehicle-update`                  | `PATCH /vehicles/{vehicleId}`                                   | `veh.vehicle.manage`              | privileged |
-| `veh.vehicle-duplicate-scan`          | `POST /vehicles/{vehicleId}/duplicate-scans`                    | `veh.vehicle.duplicate.review`    | privileged |
-| `veh.vehicle-duplicate-review`        | `POST /vehicle-duplicates/{candidateId}/review`                 | `veh.vehicle.duplicate.review`    | privileged |
-| `veh.vehicle-merge`                   | `POST /vehicles/{vehicleId}/merge`                              | `veh.vehicle.merge`               | privileged |
-| `veh.vehicle-plate-history`           | `GET /vehicles/{vehicleId}/plates`                              | `veh.vehicle.read`                | none       |
-| `veh.vehicle-plate-assign`            | `POST /vehicles/{vehicleId}/plates`                             | `veh.vehicle.manage`              | privileged |
-| `veh.vehicle-ownership-history`       | `GET /vehicles/{vehicleId}/ownerships`                          | `veh.vehicle.read`                | none       |
-| `veh.vehicle-ownership-transfer`      | `POST /vehicles/{vehicleId}/ownerships`                         | `veh.vehicle.relationship.manage` | privileged |
-| `veh.vehicle-relationship-list`       | `GET /vehicles/{vehicleId}/relationships`                       | `veh.vehicle.read`                | none       |
-| `veh.vehicle-authorized-party-add`    | `POST /vehicles/{vehicleId}/authorized-parties`                 | `veh.vehicle.relationship.manage` | privileged |
-| `veh.vehicle-authorized-party-retire` | `POST /vehicles/{vehicleId}/authorized-parties/{id}/retirement` | `veh.vehicle.relationship.manage` | privileged |
-| `veh.vehicle-odometer-history`        | `GET /vehicles/{vehicleId}/odometer-readings`                   | `veh.vehicle.read`                | none       |
-| `veh.vehicle-odometer-record`         | `POST /vehicles/{vehicleId}/odometer-readings`                  | `veh.vehicle.odometer.record`     | privileged |
-| `veh.vehicle-ev-profile-read`         | `GET /vehicles/{vehicleId}/ev-profile`                          | `veh.vehicle.read`                | none       |
-| `veh.vehicle-ev-profile-set`          | `POST /vehicles/{vehicleId}/ev-profile`                         | `veh.vehicle.manage`              | privileged |
-| `veh.vehicle-status-change`           | `PATCH /vehicles/{vehicleId}/status`                            | `veh.vehicle.status.manage`       | privileged |
-| `veh.vehicle-history`                 | `GET /vehicles/{vehicleId}/history`                             | `veh.vehicle.read`                | none       |
-| `veh.vehicle-document-list`           | `GET /vehicles/{vehicleId}/documents`                           | `shared.document.manage`          | none       |
+| Operation                             | Method / path                                                               | Permission                        | Audit      |
+| ------------------------------------- | --------------------------------------------------------------------------- | --------------------------------- | ---------- |
+| `veh.vehicle-search`                  | `GET /vehicles`                                                             | `veh.vehicle.read`                | none       |
+| `veh.vehicle-create`                  | `POST /vehicles`                                                            | `veh.vehicle.manage`              | privileged |
+| `veh.vehicle-update`                  | `PATCH /vehicles/{vehicleId}`                                               | `veh.vehicle.manage`              | privileged |
+| `veh.vehicle-duplicate-scan`          | `POST /vehicles/{vehicleId}/duplicate-scans`                                | `veh.vehicle.duplicate.review`    | privileged |
+| `veh.vehicle-duplicate-review`        | `POST /vehicle-duplicates/{candidateId}/review`                             | `veh.vehicle.duplicate.review`    | privileged |
+| `veh.vehicle-merge`                   | `POST /vehicles/{vehicleId}/merge`                                          | `veh.vehicle.merge`               | privileged |
+| `veh.vehicle-plate-history`           | `GET /vehicles/{vehicleId}/plates`                                          | `veh.vehicle.read`                | none       |
+| `veh.vehicle-plate-assign`            | `POST /vehicles/{vehicleId}/plates`                                         | `veh.vehicle.manage`              | privileged |
+| `veh.vehicle-ownership-history`       | `GET /vehicles/{vehicleId}/ownerships`                                      | `veh.vehicle.read`                | none       |
+| `veh.vehicle-ownership-transfer`      | `POST /vehicles/{vehicleId}/ownerships`                                     | `veh.vehicle.relationship.manage` | privileged |
+| `veh.vehicle-relationship-list`       | `GET /vehicles/{vehicleId}/relationships`                                   | `veh.vehicle.read`                | none       |
+| `veh.vehicle-authorized-party-add`    | `POST /vehicles/{vehicleId}/authorized-parties`                             | `veh.vehicle.relationship.manage` | privileged |
+| `veh.vehicle-authorized-party-retire` | `POST /vehicles/{vehicleId}/authorized-parties/{relationshipId}/retirement` | `veh.vehicle.relationship.manage` | privileged |
+| `veh.vehicle-odometer-history`        | `GET /vehicles/{vehicleId}/odometer-readings`                               | `veh.vehicle.read`                | none       |
+| `veh.vehicle-odometer-record`         | `POST /vehicles/{vehicleId}/odometer-readings`                              | `veh.vehicle.odometer.record`     | privileged |
+| `veh.vehicle-ev-profile-read`         | `GET /vehicles/{vehicleId}/ev-profile`                                      | `veh.vehicle.read`                | none       |
+| `veh.vehicle-ev-profile-set`          | `POST /vehicles/{vehicleId}/ev-profile`                                     | `veh.vehicle.manage`              | privileged |
+| `veh.vehicle-status-change`           | `PATCH /vehicles/{vehicleId}/status`                                        | `veh.vehicle.status.manage`       | privileged |
+| `veh.vehicle-history`                 | `GET /vehicles/{vehicleId}/history`                                         | `veh.vehicle.read`                | none       |
+| `veh.vehicle-document-list`           | `GET /vehicles/{vehicleId}/documents`                                       | `shared.document.manage`          | none       |
 
 **Permissions.** This phase adds all **seven** `veh` permission codes (`veh.vehicle.read`, `.manage`,
 `.merge`, `.duplicate.review`, `.relationship.manage`, `.odometer.record`, `.status.manage`) and
@@ -121,11 +121,14 @@ changes are separate, higher capabilities. **No application role holds physical 
 `.ev_profile_set`, and `.status_changed`. Details name which columns changed and enum categories,
 never sensitive values (see Observability).
 
-**Events.** This phase implements the three reserved vehicle event types — `vehicle.created`
-(EVT-VEH-002), `vehicle.relationship.changed` (EVT-VEH-001, published by ownership transfer and
-authorized-party changes), and `vehicle.merged` (EVT-VEH-003). No new event type is invented by the
-odometer, EV, status, history, or document operations: odometer and EV writes emit no event, and a
-status change publishes none — the append-only status-history ledger is its durable record.
+**Events.** This phase publishes three vehicle event types, and only one of them was a reservation.
+`vehicle.relationship.changed` (EVT-VEH-001) is the Chapter 4 Table 4.5 reservation; this phase
+implements it, published by ownership transfer and by authorized-party changes. `vehicle.created`
+(EVT-VEH-002) and `vehicle.merged` (EVT-VEH-003) are **new P1-17 allocations beyond that
+reservation** — registered in the catalog in the same change that adds their producers, as P1-15 did
+for its own document and template events. No further event type is invented by the odometer, EV,
+status, history, or document operations: odometer and EV writes emit no event, and a status change
+publishes none — the append-only status-history ledger is its durable record.
 
 ## Controlled-transaction conformance (BE-016)
 
@@ -163,16 +166,16 @@ only enum categories and ids.
 
 Local 23-gate CI-equivalent battery, all green on the exact feature SHA:
 
-| Suite / gate                                                                               | Result                                                           |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Unit (`npm run test`)                                                                      | **733 passed** (floor maintained)                                |
-| Database (`npm run test:db`)                                                               | **1547 passed** (floor maintained; schema frozen)                |
-| Backend (`npm run test:backend`)                                                           | **550 passed** (raised from the 455 floor by the new operations) |
-| `typecheck` / `lint` / `format:check` / `style:check`                                      | green                                                            |
-| `security:all` (tracked/browser secrets, scope exclusions, no-fake-data)                   | green                                                            |
-| `validate:module-boundaries` / `authorization-coverage` / `operation-coverage` / `openapi` | green                                                            |
-| `validate:veh-classification` / `canonical-docs` / `encoding`                              | green                                                            |
-| `build` / `docker compose config`                                                          | green                                                            |
+| Suite / gate                                                                               | Result                                                                                                         |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Unit (`npm run test`)                                                                      | **733 passed** (floor maintained)                                                                              |
+| Database (`npm run test:db`)                                                               | **1547 passed** (floor maintained; schema frozen)                                                              |
+| Backend (`npm run test:backend`)                                                           | **567 passed** (raised from the 455 floor by the new operations, then by the post-merge evidence remediations) |
+| `typecheck` / `lint` / `format:check` / `style:check`                                      | green                                                                                                          |
+| `security:all` (tracked/browser secrets, scope exclusions, no-fake-data)                   | green                                                                                                          |
+| `validate:module-boundaries` / `authorization-coverage` / `operation-coverage` / `openapi` | green                                                                                                          |
+| `validate:veh-classification` / `canonical-docs` / `encoding`                              | green                                                                                                          |
+| `build` / `docker compose config`                                                          | green                                                                                                          |
 
 ## What this phase deliberately does not deliver
 

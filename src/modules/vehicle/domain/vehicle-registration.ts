@@ -19,10 +19,13 @@ export const MAX_TRANSFER_REASON = 500;
  * Newest-first ordering for the two history reads, tie-broken by row id so the
  * order is total and two records sharing a `created_at` cannot straddle a page
  * edge. Each key is stable, so a cursor issued here can never be replayed against
- * a different ordering. It is deliberately *not* index-aligned: the only index on
- * either table is `(tenant_id, vehicle_id, valid_from)`, so PostgreSQL sorts the
- * one vehicle's rows itself — affordable because a vehicle accumulates a handful
- * of plates and owners over its life, never a page-deep list.
+ * a different ordering. It is deliberately *not* index-aligned: no index on either
+ * table leads with `created_at`. `veh.plate_history` carries a single b-tree,
+ * `(tenant_id, vehicle_id, valid_from)`; `veh.ownership_history` carries that one
+ * plus `(tenant_id, partner_id)`; and both carry the GiST indexes behind their
+ * interval exclusion constraints. None of them can supply this order, so
+ * PostgreSQL sorts the one vehicle's rows itself — affordable because a vehicle
+ * accumulates a handful of plates and owners over its life, never a page-deep list.
  */
 export const PLATE_HISTORY_ORDERING = {
   key: 'veh.plate_history:created_at_desc',

@@ -358,6 +358,59 @@ describe('plate assignment and history', () => {
     ).toBe(404);
   });
 
+  // The two refusals above would be given to any caller — an unknown id belongs to
+  // no tenant and a merged vehicle is merged for everyone — so neither one puts the
+  // tenancy predicate on trial. SUBJ_B holds the very same `veh.vehicle.manage`
+  // permission in its own tenant, so authorization passes and the only thing that can
+  // refuse this request is the tenant filter on the vehicle resolve step. That filter
+  // is load-bearing: plate assignment closes the open interval and opens a new one in
+  // an append-only ledger, so losing it would let a tenant-B caller retire tenant A's
+  // active plate outright.
+  it('refuses a tenant-B principal assigning a plate to a tenant-A vehicle, writing nothing', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    const mine = (await (
+      await assignPlate(vehicle, { countryCode: 'JO', plateRaw: 'TEN-A1' })
+    ).json()) as Body;
+    expect(mine.plateId).toBeTruthy();
+
+    authAs(SUBJ_B, TENANT_B);
+    const refused = await assignPlate(vehicle, { countryCode: 'JO', plateRaw: 'TEN-B1' });
+    // A vehicle in another tenant answers exactly as an unknown one does, so the
+    // refusal is not an existence oracle.
+    expect(refused.status).toBe(404);
+    expect(((await refused.json()) as Body).code).toBe('ERR-RES-001');
+
+    // Refusing is only half of it: tenant A's interval must still be the one and only
+    // plate row on the vehicle, still open, still holding its own value.
+    const plates = await admin.query<{
+      id: string;
+      plate_raw: string;
+      country_code: string;
+      valid_to: string | null;
+    }>(
+      `SELECT id, plate_raw, country_code, valid_to FROM veh.plate_history
+        WHERE vehicle_id=$1 ORDER BY created_at`,
+      [vehicle]
+    );
+    expect(plates.rowCount).toBe(1);
+    expect(plates.rows[0]?.id).toBe(mine.plateId);
+    expect(plates.rows[0]?.valid_to).toBeNull();
+    expect(plates.rows[0]?.plate_raw).toBe('TEN-A1');
+    expect(plates.rows[0]?.country_code).toBe('JO');
+
+    // And the attempt left no trace in the audit trail — the single `plate_assigned`
+    // record on this vehicle is the one tenant A's own assignment wrote.
+    expect(await auditCount('veh.vehicle.plate_assigned', mine.plateId ?? '')).toBe(1);
+    const audits = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM iam.audit_records
+        WHERE action='veh.vehicle.plate_assigned'
+          AND entity_id IN (SELECT id FROM veh.plate_history WHERE vehicle_id=$1)`,
+      [vehicle]
+    );
+    expect(audits.rows[0]?.n).toBe('1');
+  });
+
   it('never exposes another tenant’s plate and refuses a bad cursor / oversized page', async () => {
     authAs(SUBJ_A);
     const mine = await newVehicle();
