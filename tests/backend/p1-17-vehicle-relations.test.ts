@@ -411,7 +411,10 @@ describe('vehicle-centric relationship read (single source of truth)', () => {
     const mine = await newVehicle();
     await addParty(mine, { partnerId: PARTNER_A1, allowedActions: ['receive_reports'] });
     authAs(SUBJ_B, TENANT_B);
-    expect((((await (await listRel(mine)).json()) as Body).items ?? []).length).toBe(0);
+    const asB = await listRel(mine);
+    // A successful read that returns nothing — not an error path that also yields [].
+    expect(asB.status).toBe(200);
+    expect(((await asB.json()) as Body).items ?? []).toEqual([]);
     authAs(SUBJ_A);
     expect((await listRel(mine, '?cursor=nope')).status).toBe(400);
   });

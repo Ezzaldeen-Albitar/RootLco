@@ -349,8 +349,10 @@ describe('plate assignment and history', () => {
     const mine = await newVehicle();
     await assignPlate(mine, { countryCode: 'JO', plateRaw: 'MINE-1' });
     authAs(SUBJ_B, TENANT_B);
-    const asB = (await (await listPlates(mine)).json()) as Body;
-    expect((asB.items ?? []).length).toBe(0);
+    const asB = await listPlates(mine);
+    // A successful read that returns nothing — not an error path that also yields [].
+    expect(asB.status).toBe(200);
+    expect(((await asB.json()) as Body).items ?? []).toEqual([]);
     authAs(SUBJ_A);
     expect((await listPlates(mine, '?cursor=not-a-cursor')).status).toBe(400);
     expect((await listPlates(mine, '?limit=100000')).status).toBe(422);
@@ -434,12 +436,18 @@ describe('ownership transfer and history', () => {
     expect((await transfer(theirVehicle, { partnerId: PARTNER_A1 })).status).toBe(404);
   });
 
-  it('lists ownership history and refuses a bad cursor', async () => {
+  it('lists ownership history, never exposes another tenant’s, and refuses a bad cursor', async () => {
     authAs(SUBJ_A);
     const vehicle = await newVehicle();
     const t = (await (await transfer(vehicle, { partnerId: PARTNER_A1 })).json()) as Body;
     const list = (await (await listOwn(vehicle)).json()) as Body;
     expect((list.items ?? []).map((i) => i.id)).toContain(t.ownershipId);
     expect((await listOwn(vehicle, '?cursor=nope')).status).toBe(400);
+    // A tenant-B principal reading tenant A's vehicle sees no ownership rows — a
+    // successful empty read, not an error path that also yields [].
+    authAs(SUBJ_B, TENANT_B);
+    const asB = await listOwn(vehicle);
+    expect(asB.status).toBe(200);
+    expect(((await asB.json()) as Body).items ?? []).toEqual([]);
   });
 });
