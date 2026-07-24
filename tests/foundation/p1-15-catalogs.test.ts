@@ -243,6 +243,8 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.template.version_approved',
   'shared.template.version_created',
   'shared.template.version_retired',
+  'veh.vehicle.authorized_party_added',
+  'veh.vehicle.authorized_party_retired',
   'veh.vehicle.created',
   'veh.vehicle.duplicate_reviewed',
   'veh.vehicle.duplicates_scanned',

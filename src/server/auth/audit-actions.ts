@@ -475,6 +475,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A vehicle ownership was transferred: the prior owner was closed and a new owner opened in one transaction. Ownership history is append-only and retained.',
   },
+  {
+    code: 'veh.vehicle.authorized_party_added',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'A customer was authorized as a scoped authorized party for a vehicle. The record names the granted actions; the authorized party is never the legal owner.',
+  },
+  {
+    code: 'veh.vehicle.authorized_party_retired',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'An authorized party was retired by closing its authorization interval. The relationship is retained, not deleted.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

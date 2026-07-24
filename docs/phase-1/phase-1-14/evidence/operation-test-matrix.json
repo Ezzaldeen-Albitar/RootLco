@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 88,
-    "publicApi": 88,
+    "registered": 91,
+    "publicApi": 91,
     "internal": 0,
-    "withRequiredEvidence": 73,
+    "withRequiredEvidence": 76,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -27,9 +27,9 @@
       "metadataOnly": 0
     },
     "p1_17": {
-      "registered": 10,
-      "publicApi": 10,
-      "operationDepth": 10,
+      "registered": 13,
+      "publicApi": 13,
+      "operationDepth": 13,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -2102,6 +2102,92 @@
       "unitOnly": false
     },
     {
+      "id": "veh.vehicle-authorized-party-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/authorized-parties",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-authorized-party-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/authorized-parties/{relationshipId}/retirement",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "veh.vehicle-create",
       "surface": "public-api",
       "method": "POST",
@@ -2378,6 +2464,22 @@
       "path": "/vehicles/{vehicleId}/plates",
       "public": false,
       "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-relationship-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/relationships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": ["denial", "cross-tenant"],

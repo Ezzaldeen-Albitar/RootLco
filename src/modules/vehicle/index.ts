@@ -22,6 +22,8 @@ import { VehicleIdentityRepository } from './data/vehicle-identity-repository';
 import { VehicleIdentityService } from './application/vehicle-identity-service';
 import { VehicleRegistrationRepository } from './data/vehicle-registration-repository';
 import { VehicleRegistrationService } from './application/vehicle-registration-service';
+import { VehicleRelationsRepository } from './data/vehicle-relations-repository';
+import { VehicleRelationsService } from './application/vehicle-relations-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
@@ -30,6 +32,13 @@ export type {
   PlateAssigned,
   OwnershipTransferred,
 } from './application/vehicle-registration-service';
+export type { AuthorizedPartyResult } from './application/vehicle-relations-service';
+export {
+  AUTHORIZED_ACTIONS,
+  VEHICLE_RELATIONSHIP_ROLES,
+  type AuthorizedAction,
+  type VehicleRelationshipRole,
+} from './domain/vehicle-relations';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   DUPLICATE_DECISIONS,
@@ -70,5 +79,6 @@ export const vehicleModule = composeModule({
     vehicleWrite: new VehicleWriteService(new VehicleWriteRepository()),
     vehicleIdentity: new VehicleIdentityService(new VehicleIdentityRepository()),
     vehicleRegistration: new VehicleRegistrationService(new VehicleRegistrationRepository()),
+    vehicleRelations: new VehicleRelationsService(new VehicleRelationsRepository()),
   }),
 });

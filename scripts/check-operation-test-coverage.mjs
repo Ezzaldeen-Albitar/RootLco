@@ -193,6 +193,21 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
     note: 'closes the prior owner and opens the new one + audit + vehicle.relationship.changed event in one controlled transaction; an injected failure (a customer that fails the FK after the close) leaves the original ownership active with no new partial ownership (rollback); an unknown/cross-tenant customer is refused (denial/cross-tenant); the event carries no partner id',
   },
+  'veh.vehicle-relationship-list': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'vehicle-centric keyset read of the single source of truth veh.vehicle_relationships, including a CRM-written link and a veh-written authorized party; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial)',
+  },
+  'veh.vehicle-authorized-party-add': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'writes one authorized_person relationship with a bounded scope + granted_by + audit + vehicle.relationship.changed event; the overlap EXCLUDE refuses a second active authorization for the same customer (denial 409) and proves veh and CRM writers cannot conflict; an unknown/cross-tenant customer is refused (denial/cross-tenant); an unknown scope action is a 422',
+  },
+  'veh.vehicle-authorized-party-retire': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'closes the open authorization interval + audit (history retained, not deleted); an unknown or already-retired party and a cross-tenant vehicle answer the same 404 (denial/cross-tenant)',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the

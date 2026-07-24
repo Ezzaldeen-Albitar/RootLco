@@ -97,6 +97,9 @@ import '@/app/api/v1/vehicles/[vehicleId]/duplicate-scans/route';
 import '@/app/api/v1/vehicle-duplicates/[candidateId]/review/route';
 import '@/app/api/v1/vehicles/[vehicleId]/plates/route';
 import '@/app/api/v1/vehicles/[vehicleId]/ownerships/route';
+import '@/app/api/v1/vehicles/[vehicleId]/relationships/route';
+import '@/app/api/v1/vehicles/[vehicleId]/authorized-parties/route';
+import '@/app/api/v1/vehicles/[vehicleId]/authorized-parties/[relationshipId]/retirement/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
