@@ -217,7 +217,10 @@ describe('attribute-change history', () => {
     await update(vehicle, { color: 'blue' });
     expect((await history(vehicle, '?cursor=nope')).status).toBe(400);
     authAs(SUBJ_B, TENANT_B);
-    expect((((await (await history(vehicle)).json()) as Body).items ?? []).length).toBe(0);
+    const crossTenant = await history(vehicle);
+    // A successful read that returns nothing — not an error that also yields [].
+    expect(crossTenant.status).toBe(200);
+    expect(((await crossTenant.json()) as Body).items ?? []).toEqual([]);
   });
 });
 

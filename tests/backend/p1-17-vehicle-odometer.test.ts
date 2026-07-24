@@ -176,6 +176,8 @@ describe('authorization', () => {
         })
       ).status
     ).toBe(401);
+    // The history read is guarded too: unauthenticated and unpermitted are refused.
+    expect((await listReadings('00000000-0000-4000-8000-0000000000a0')).status).toBe(401);
     authAs(SUBJECT_UNPERMITTED);
     expect(
       (
@@ -186,6 +188,7 @@ describe('authorization', () => {
         })
       ).status
     ).toBe(403);
+    expect((await listReadings('00000000-0000-4000-8000-0000000000a0')).status).toBe(403);
   });
 });
 
@@ -235,8 +238,17 @@ describe('recording and forward-only anomaly', () => {
     expect(response.status).toBe(422);
     const body = (await response.json()) as Body;
     expect(body.code).toBe('ERR-VAL-001');
-    // The original is preserved and the below-value reading was not stored.
+    // The original 5000 row is still there and the below-value 100 row was never
+    // stored — proven by value, not just by an unchanged count (which a
+    // delete-then-insert would also satisfy).
     expect(await readingCount(vehicle)).toBe(before);
+    const values = await admin.query<{ value: string }>(
+      `SELECT value::text AS value FROM veh.odometer_readings WHERE vehicle_id=$1`,
+      [vehicle]
+    );
+    const stored = values.rows.map((r) => Number(r.value));
+    expect(stored).toContain(5000);
+    expect(stored).not.toContain(100);
   });
 
   it('records a correction that lowers the value and flags it as an anomaly', async () => {
@@ -258,12 +270,34 @@ describe('recording and forward-only anomaly', () => {
     expect(body.anomalyFlag).toBe(true);
     expect(body.captureMethod).toBe('correction');
 
-    const row = await admin.query<{ anomaly_flag: boolean; correction_reason: string | null }>(
-      `SELECT anomaly_flag, correction_reason FROM veh.odometer_readings WHERE id=$1`,
+    const row = await admin.query<{
+      value: string;
+      anomaly_flag: boolean;
+      correction_reason: string | null;
+    }>(
+      `SELECT value::text AS value, anomaly_flag, correction_reason
+         FROM veh.odometer_readings WHERE id=$1`,
       [body.readingId]
     );
+    // The lowered value actually persisted (not clamped, kept, or nulled).
+    expect(Number(row.rows[0]?.value)).toBe(12000);
     expect(row.rows[0]?.anomaly_flag).toBe(true);
     expect(row.rows[0]?.correction_reason).toBe('meter_replacement');
+  });
+
+  it('refuses a value whose km conversion overflows the store (422, not 500)', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    // 9,999,999,999 mi × 1.609344 ≈ 1.6e10 km — 11 integer digits, overflowing the
+    // generated numeric(14,4) value_km (SQLSTATE 22003). Must be a clean 422.
+    const response = await record(vehicle, {
+      value: 9_999_999_999,
+      unit: 'mi',
+      observedAt: '2026-01-01T10:00:00Z',
+    });
+    expect(response.status).toBe(422);
+    expect(((await response.json()) as Body).code).toBe('ERR-VAL-001');
+    expect(await readingCount(vehicle)).toBe(0);
   });
 });
 
@@ -310,7 +344,10 @@ describe('validation and isolation', () => {
     const mine = await newVehicle();
     await record(mine, { value: 42, unit: 'km', observedAt: '2026-01-01T10:00:00Z' });
     authAs(SUBJ_B, TENANT_B);
-    expect((((await (await listReadings(mine)).json()) as Body).items ?? []).length).toBe(0);
+    const crossTenant = await listReadings(mine);
+    // A successful read that returns nothing — not an error that also yields [].
+    expect(crossTenant.status).toBe(200);
+    expect(((await crossTenant.json()) as Body).items ?? []).toEqual([]);
     authAs(SUBJ_A);
     expect((await listReadings(mine, '?cursor=nope')).status).toBe(400);
   });

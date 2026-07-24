@@ -65,9 +65,11 @@ export class VehicleLifecycleService extends ApplicationService {
     if (!vehicle) {
       throw new AppFailure('ERR-RES-001', { message: 'Vehicle was not found' });
     }
-    if (vehicle.lifecycleStatus === 'merged') {
+    if (vehicle.lifecycleStatus === 'merged' || vehicle.lifecycleStatus === 'scrapped') {
+      // A terminal vehicle takes no new EV profile — the same rule the registration
+      // and relations writers apply to plates, owners, and authorized parties.
       throw new AppFailure('ERR-RES-002', {
-        message: 'Vehicle has been merged and is read-only',
+        message: `Vehicle is ${vehicle.lifecycleStatus} and cannot take an EV profile`,
       });
     }
     if (plan.requiredCategory !== vehicle.powertrainCategory) {

@@ -95,9 +95,10 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- projection. Restricted identifiers (chassis/engine number) remain gated by the
   -- existing iam.sensitive.view capability, not a second read code.
   ('veh.vehicle.read',         'veh', 'Search and read vehicles in the caller tenant','low',   '00000000-0000-4000-8000-000000000001'),
-  -- Create and edit the vehicle master (draft creation + descriptive edits). One
-  -- code for both: the authority is "maintain the vehicle master". Lifecycle,
-  -- merge, plate, ownership, and relationship changes are separate capabilities.
+  -- Create and edit the vehicle master (draft creation + descriptive edits),
+  -- including plate assignment and the EV profile — all "maintain the vehicle
+  -- master" registration data. Lifecycle status, merge, ownership, and
+  -- relationship changes are separate, higher capabilities.
   ('veh.vehicle.manage',       'veh', 'Create and edit vehicles in the caller tenant','medium','00000000-0000-4000-8000-000000000001'),
   -- Merge is separate and higher: it is irreversible in practice (the source is
   -- frozen and redirected to the survivor), so it carries its own high-risk code.

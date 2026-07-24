@@ -78,7 +78,9 @@ optional scoped extensions.
 Every operation is guarded, registered in the OpenAPI contract, and carries genuine
 operation-depth test evidence (the strict operation-coverage gate reports **P1-17: 20 registered,
 20 operation-depth, 0 pending / invocation-only / unit-only / unreferenced / metadata-only**). The
-machine-readable matrix is `docs/phase-1/phase-1-14/evidence/operation-test-matrix.json`.
+machine-readable matrix is `docs/phase-1/phase-1-17/evidence/operation-test-matrix.json` (the P1-17
+slice; the global aggregate at `docs/phase-1/phase-1-14/evidence/operation-test-matrix.json` is
+regenerated at the same time).
 
 | Operation                             | Method / path                                                   | Permission                        | Audit      |
 | ------------------------------------- | --------------------------------------------------------------- | --------------------------------- | ---------- |
@@ -103,18 +105,27 @@ machine-readable matrix is `docs/phase-1/phase-1-14/evidence/operation-test-matr
 | `veh.vehicle-history`                 | `GET /vehicles/{vehicleId}/history`                             | `veh.vehicle.read`                | none       |
 | `veh.vehicle-document-list`           | `GET /vehicles/{vehicleId}/documents`                           | `shared.document.manage`          | none       |
 
-**Permissions.** Seven `veh` codes plus a reuse of `shared.document.manage` — the catalog holds
-**62** permissions after this phase (adds `veh.vehicle.status.manage`; the other six `veh` codes and
-`shared.document.manage` predate it). `veh.vehicle.status.manage` is kept distinct from
-`veh.vehicle.manage` so descriptive editing does not carry the power to scrap or deactivate a vehicle
-(least privilege; mirrors the CRM `governance.manage` / `profile.write` split). **No application role
-holds physical vehicle DELETE; `app_readonly` stays read-only; `app_worker` is unchanged.**
+**Permissions.** This phase adds all **seven** `veh` permission codes (`veh.vehicle.read`, `.manage`,
+`.merge`, `.duplicate.review`, `.relationship.manage`, `.odometer.record`, `.status.manage`) and
+reuses the pre-existing `shared.document.manage`; the platform catalog holds **62** permissions after
+this phase. `veh.vehicle.status.manage` is kept distinct from `veh.vehicle.manage` so descriptive
+editing does not carry the power to scrap or deactivate a vehicle (least privilege; mirrors the CRM
+`governance.manage` / `profile.write` split). Plate assignment and the EV profile are part of
+`veh.vehicle.manage` (master-registration data), while lifecycle, merge, ownership, and relationship
+changes are separate, higher capabilities. **No application role holds physical vehicle DELETE;
+`app_readonly` stays read-only; `app_worker` is unchanged.**
 
-**Events / audit.** Two audit actions are added (`veh.vehicle.ev_profile_set`,
-`veh.vehicle.status_changed`); no new event type is invented. Ownership transfer and authorized-party
-changes reuse the reserved `vehicle.relationship.changed` event; a status change publishes no event
-(the append-only status-history ledger is the durable record). `vehicle.created` (EVT-VEH-002) is
-implemented; EVT-VEH-001 remains reserved.
+**Audit.** This phase adds **twelve** `veh` audit actions across all its operations: `veh.vehicle`
+`.created`, `.updated`, `.merged`, `.duplicates_scanned`, `.duplicate_reviewed`, `.plate_assigned`,
+`.ownership_changed`, `.authorized_party_added`, `.authorized_party_retired`, `.odometer_recorded`,
+`.ev_profile_set`, and `.status_changed`. Details name which columns changed and enum categories,
+never sensitive values (see Observability).
+
+**Events.** This phase implements the three reserved vehicle event types — `vehicle.created`
+(EVT-VEH-002), `vehicle.relationship.changed` (EVT-VEH-001, published by ownership transfer and
+authorized-party changes), and `vehicle.merged` (EVT-VEH-003). No new event type is invented by the
+odometer, EV, status, history, or document operations: odometer and EV writes emit no event, and a
+status change publishes none — the append-only status-history ledger is its durable record.
 
 ## Controlled-transaction conformance (BE-016)
 

@@ -198,9 +198,11 @@ describe('authorization', () => {
     __resetAuthenticatorForTests();
     const id = '00000000-0000-4000-8000-0000000000a0';
     expect((await setEv(id, { evKind: 'bev' })).status).toBe(401);
+    expect((await getEv(id)).status).toBe(401);
     expect((await changeStatus(id, { lifecycleStatus: 'active' })).status).toBe(401);
     authAs(SUBJECT_UNPERMITTED);
     expect((await setEv(id, { evKind: 'bev' })).status).toBe(403);
+    expect((await getEv(id)).status).toBe(403);
     expect((await changeStatus(id, { lifecycleStatus: 'active' })).status).toBe(403);
   });
 });
@@ -243,6 +245,15 @@ describe('EV profile set/replace/read', () => {
     expect((await setEv(vehicle, { evKind: 'hybrid' })).status).toBe(201);
   });
 
+  it('refuses an EV profile on a terminal (scrapped) vehicle (409)', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle({ powertrainCategory: 'ev', vin: nextVin() });
+    expect((await changeStatus(vehicle, { lifecycleStatus: 'scrapped' })).status).toBe(200);
+    const response = await setEv(vehicle, { evKind: 'bev' });
+    expect(response.status).toBe(409);
+    expect(await evProfileCount(vehicle)).toBe(0);
+  });
+
   it('refuses an EV kind that does not match the vehicle powertrain (422) and stores nothing', async () => {
     authAs(SUBJ_A);
     const vehicle = await newVehicle({ powertrainCategory: 'ice', vin: nextVin() });
@@ -282,8 +293,15 @@ describe('status transitions', () => {
     expect(activated.changedAxes).toEqual(['lifecycle']);
     expect(await auditCount('veh.vehicle.status_changed', vehicle)).toBe(1);
 
-    // Idempotent replay: no second transition, no second audit.
-    await changeStatus(vehicle, { lifecycleStatus: 'active' }, key);
+    // Idempotent replay: the SAME key returns the cached 200 result — NOT the 422
+    // no-op the handler would produce on re-execution (the vehicle is already
+    // active). Asserting the replay echoes the original 200 body is what proves the
+    // idempotency-key path ran; a broken implementation would surface the no-op 422.
+    const replay = await changeStatus(vehicle, { lifecycleStatus: 'active' }, key);
+    expect(replay.status).toBe(200);
+    const replayBody = (await replay.json()) as Body;
+    expect(replayBody.lifecycleStatus).toBe('active');
+    expect(replayBody.changedAxes).toEqual(['lifecycle']);
     expect(await auditCount('veh.vehicle.status_changed', vehicle)).toBe(1);
 
     expect((await changeStatus(vehicle, { workshopStatus: 'in_workshop' })).status).toBe(200);
@@ -305,6 +323,13 @@ describe('status transitions', () => {
     expect((await changeStatus(vehicle, { lifecycleStatus: 'draft' })).status).toBe(422);
     // empty body changes nothing.
     expect((await changeStatus(vehicle, {})).status).toBe(422);
+    // None of the refused calls mutated the master: it is still draft.
+    const row = await admin.query<{ lifecycle_status: string; workshop_status: string }>(
+      `SELECT lifecycle_status, workshop_status FROM veh.vehicles WHERE id=$1`,
+      [vehicle]
+    );
+    expect(row.rows[0]?.lifecycle_status).toBe('draft');
+    expect(row.rows[0]?.workshop_status).toBe('none');
   });
 
   it('refuses activation without a VIN or identifier (422) and changes nothing', async () => {

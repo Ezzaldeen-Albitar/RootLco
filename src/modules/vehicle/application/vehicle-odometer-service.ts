@@ -14,7 +14,7 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { appendAudit } from '@/server/audit/audit';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type {
   OdometerReadingHit,
   VehicleOdometerRepository,
@@ -75,6 +75,15 @@ export class VehicleOdometerService extends ApplicationService {
         throw new AppFailure('ERR-VAL-001', {
           message: 'The corrected reading was not found for this vehicle',
           safeDetails: { violations: [{ path: 'body.correctionOf', rule: 'unknown_reference' }] },
+        });
+      }
+      // A value so large that its km conversion overflows the stored numeric
+      // (`22003`) is out of range, not a server fault. The domain bound sizes the
+      // raw value; the generated `value_km` (miles × 1.609344) can still overflow.
+      if (sqlState(error) === '22003') {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The odometer reading is out of the supported range',
+          safeDetails: { violations: [{ path: 'body.value', rule: 'out_of_range' }] },
         });
       }
       throw error;

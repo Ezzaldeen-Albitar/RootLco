@@ -181,12 +181,20 @@ describe('row + audit, no event (status change) is one transaction', () => {
       })
     ).rejects.toThrow('injected failure after the status write');
 
-    // The rolled-back transition left neither the master nor a second audit behind.
+    // The rolled-back transition left neither the master, a second audit, nor the
+    // trigger-emitted ledger row behind.
     const master = await admin.query<{ lifecycle_status: string }>(
       `SELECT lifecycle_status FROM veh.vehicles WHERE id = $1`,
       [vehicleId]
     );
     expect(master.rows[0]?.lifecycle_status).toBe('active');
     expect(await auditCount('veh.vehicle.status_changed', vehicleId)).toBe(1);
+    const ledger = await countRows(
+      admin,
+      'veh.vehicle_status_history',
+      "vehicle_id = $1 AND status_kind = 'lifecycle' AND to_state = 'inactive'",
+      [vehicleId]
+    );
+    expect(ledger).toBe(0);
   });
 });
