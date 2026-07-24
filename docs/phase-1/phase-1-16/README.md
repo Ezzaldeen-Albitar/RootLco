@@ -16,23 +16,27 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 ## Status
 
-**The owner gate is [Pending](phase-1-16-owner-gate.md), and stays Pending until the approval owner
-records a decision against evidence on the exact merged SHA.** Nothing in this folder is a gate
-decision, and no document here claims the phase has passed.
+**The owner gate is [Go — P1-16 CRM Backend Gate Passed](phase-1-16-owner-gate.md)**, recorded from
+the protected post-merge state (`origin/develop` = `4576db2`) against evidence on the exact merged
+SHA. The decision, its protected history, and its verification evidence live in the owner-gate record;
+this decision becomes protected when its gate-record pull request is merged into `develop`.
+`origin/main` remains `8ca1da2`, untouched, and Phase 1-17 has not been started.
 
 This phase builds the **application backend for the CRM (customer) domain** on top of the CRM
 database delivered by Phase 1-6 and consumed unchanged, and on the request/authorization/audit/outbox
-foundation delivered by Phases 1-13, 1-14, and 1-15. It adds **no migration**: migrations 1–118 are
-consumed as they stand on protected `develop`. If a mandatory CRM operation cannot be performed under
-the real runtime role because of a database gap, that gap is raised as a controlled change request and
-delivered in its own remediation pull request — never as a convenience migration inside this feature.
+foundation delivered by Phases 1-13, 1-14, and 1-15. It adds **no feature migration**: the CRM schema
+is consumed as it stands on protected `develop`. The single database gap this phase found — the
+runtime role could not write `shared.notes`, which `crm.note-add` needs — was raised as a controlled
+change request and delivered in its own remediation pull request (**DBCR-P1-16-001 / PR #66**, the
+119th migration), never as a convenience migration inside the feature.
 
 | Step                                                                             | State                                                                                  |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Wave 0 reality, contract, schema, and runtime-capability inventory               | **Complete** — one blocker found (notes), delivered as DBCR-P1-16-001 / PR #66         |
 | Remaining-capability database feasibility audit                                  | **Complete — no further blockers**; every capability lands on a runtime-writable table |
 | CRM application module implemented on the P1-6 / P1-13 / P1-14 / P1-15 contracts | **Complete** — 18 operations, 18 at operation depth, all weak coverage categories zero |
-| Owner gate                                                                       | **Pending** — no decision recorded                                                     |
+| Post-merge remediation (High re-score crash + idempotency evidence)              | **Complete** — PR #68, no migration; re-proven on protected `develop`                  |
+| Owner gate                                                                       | **Go** — recorded on `4576db2` in the [gate record](phase-1-16-owner-gate.md)          |
 
 ### Delivered operations
 
@@ -119,21 +123,29 @@ Named here so no reader infers a capability from the presence of a port, an inte
 
 ## Documents in this folder
 
-The **State** column is honest about what exists today: `Present` means the file is committed;
-`Planned` means it is part of this same phase deliverable and lands during feature execution.
+**What was actually delivered.** This phase shipped a deliberately lean documentation set. Three files
+are committed in this folder: this **README**, the **[owner gate](phase-1-16-owner-gate.md)** (now the
+Go gate record), and **[`evidence/operation-test-matrix.json`](evidence/operation-test-matrix.json)**.
+The rows marked `Planned` below describe intended documents whose content was **consolidated into
+those three records plus the gate-record pull request, the hosted-CI runs, and the clean-room
+evidence** — they were not produced as separate committed files, and this index does not claim they
+exist. The tables are retained as an honest record of the originally-scoped documentation surface; a
+`Planned` state here means "consolidated elsewhere, not committed as its own file," not "arriving
+imminently." The load-bearing evidence for the gate decision lives in the owner-gate record (§2–§7)
+and the operation-test matrix.
 
 ### Phase governance and closure
 
-| Document                                                                    | Purpose                                                                                             | State   |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------- |
-| [Owner gate](phase-1-16-owner-gate.md)                                      | The gate record, opened in **Pending**, with the conditions a decision must be evidenced against    | Present |
-| [Initial audit and contract inventory](phase-1-16-initial-audit.md)         | Wave 0 read-only reality inspection: protected starting state and the contracts this phase composes | Planned |
-| [Implementation decisions](phase-1-16-implementation-decisions.md)          | Every conflict between the planning text and a frozen contract, resolved in favour of the contract  | Planned |
-| [Database / runtime capability audit](database-runtime-capability-audit.md) | Per-table runtime-role capability the CRM operations actually have, proven under the runtime role   | Planned |
-| [Change log](change-log.md)                                                 | What changed in this phase, in delivery order, with the reason for each change                      | Planned |
-| [Open decisions](open-decisions.md)                                         | Decisions this phase opens, carries, or closes                                                      | Planned |
-| [Risk register](risk-register.md)                                           | Residual risks with their owners and the compensating controls actually in place                    | Planned |
-| [Deliverable manifest](deliverable-manifest.md)                             | The complete inventory of what this phase ships, file by file                                       | Planned |
+| Document                                                                    | Purpose                                                                                                                                     | State   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [Owner gate](phase-1-16-owner-gate.md)                                      | The gate record — opened in **Pending**, now decided **Go** on `4576db2` with its evidence and the original Pending text preserved verbatim | Present |
+| [Initial audit and contract inventory](phase-1-16-initial-audit.md)         | Wave 0 read-only reality inspection: protected starting state and the contracts this phase composes                                         | Planned |
+| [Implementation decisions](phase-1-16-implementation-decisions.md)          | Every conflict between the planning text and a frozen contract, resolved in favour of the contract                                          | Planned |
+| [Database / runtime capability audit](database-runtime-capability-audit.md) | Per-table runtime-role capability the CRM operations actually have, proven under the runtime role                                           | Planned |
+| [Change log](change-log.md)                                                 | What changed in this phase, in delivery order, with the reason for each change                                                              | Planned |
+| [Open decisions](open-decisions.md)                                         | Decisions this phase opens, carries, or closes                                                                                              | Planned |
+| [Risk register](risk-register.md)                                           | Residual risks with their owners and the compensating controls actually in place                                                            | Planned |
+| [Deliverable manifest](deliverable-manifest.md)                             | The complete inventory of what this phase ships, file by file                                                                               | Planned |
 
 ### Capability contracts
 
