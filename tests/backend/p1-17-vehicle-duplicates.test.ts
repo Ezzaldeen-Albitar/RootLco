@@ -39,6 +39,12 @@ import {
 import { POST as CREATE } from '@/app/api/v1/vehicles/route';
 import { POST as SCAN } from '@/app/api/v1/vehicles/[vehicleId]/duplicate-scans/route';
 import { POST as REVIEW } from '@/app/api/v1/vehicle-duplicates/[candidateId]/review/route';
+// The pair-ordering rule is asserted directly as well as through the route, because
+// the route can only reach it with server-generated ids and those reproduce the
+// mixed-case ordering defect only by luck (see the ordering test below). Reading a
+// domain rule straight out of a module is how this suite's siblings do it — the
+// boundary checker and the ESLint rule both police `src/`, not `tests/`.
+import { orderPair } from '@/modules/vehicle/domain/vehicle-identity';
 
 const WRITER_ROLE_A = 'c1730000-0000-4000-8000-0000000000a1';
 const WRITER_USER_A = 'c1730000-0000-4000-8000-0000000000a2';
@@ -54,6 +60,12 @@ const VIN_A = '1HGCM82633A004352';
 const VIN_B = '1HGCM82633A004353'; // one substitution from A
 const VIN_E = '1HGCM82633A004350'; // one substitution from A, no corroboration
 const VIN_C = '1HGCM82633A004999'; // three substitutions from A — not near
+// F belongs to TENANT_B. Its VIN is the same length as A's and one substitution
+// from it, so it is exactly what a lost tenant predicate would pull in: the scan's
+// pre-filter takes same-length VINs, and the near-VIN signal would then fire on it.
+// Every other vehicle here lives in TENANT_A, which is what left the scan's
+// cross-tenant claim unobservable.
+const VIN_F = '1HGCM82633A004351';
 const PLATE = 'ABC123';
 
 const VEHICLES = 'http://localhost/api/v1/vehicles';
@@ -255,6 +267,14 @@ afterAll(async () => {
 });
 
 describe('authentication and authorization', () => {
+  // Both review refusals below are decided before the candidate is ever looked up
+  // (`handleOperation` authenticates and authorizes ahead of the handler body), so
+  // a syntactically valid UUID naming nothing is the right fixture here. Do not
+  // "fix" this by seeding a real candidate: a 401/403 that only held for candidates
+  // the caller could otherwise reach would be the weaker claim, and a seeded row
+  // would let a regression to 404-before-authorization pass unnoticed.
+  const UNREACHED_CANDIDATE = '00000000-0000-4000-8000-0000000000fb';
+
   it('answers 401 for a scan with no authenticator installed', async () => {
     __resetAuthenticatorForTests();
     const response = await scan(vehA);
@@ -265,6 +285,26 @@ describe('authentication and authorization', () => {
   it('answers 403 for a caller lacking veh.vehicle.duplicate.review', async () => {
     authenticateAs(SUBJECT_UNPERMITTED);
     const response = await scan(vehA);
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as ScanBody).code).toBe('ERR-IAM-001');
+  });
+
+  it('answers 401 for a review with no authenticator installed', async () => {
+    __resetAuthenticatorForTests();
+    const response = await review(UNREACHED_CANDIDATE, {
+      decision: 'dismissed',
+      reason: 'no session',
+    });
+    expect(response.status).toBe(401);
+    expect(((await response.json()) as ScanBody).code).toBe('ERR-IAM-002');
+  });
+
+  it('answers 403 for a review by a caller lacking veh.vehicle.duplicate.review', async () => {
+    authenticateAs(SUBJECT_UNPERMITTED);
+    const response = await review(UNREACHED_CANDIDATE, {
+      decision: 'dismissed',
+      reason: 'no permission',
+    });
     expect(response.status).toBe(403);
     expect(((await response.json()) as ScanBody).code).toBe('ERR-IAM-001');
   });
@@ -349,11 +389,60 @@ describe('the scan is conservative and explainable', () => {
     expect(await candidateRowCount(vehA, vehB)).toBe(1);
   });
 
+  it('orders a mixed-case pair by the lower-case ids, whichever way round it is asked', () => {
+    // The route-level proof above depends on luck. It can only use ids the server
+    // generated, and the original defect needs the raw-string ordering of the two
+    // to disagree with their lower-case ordering — true of a small minority of
+    // UUID pairs, so a green run there is not evidence the rule holds. This pins
+    // the rule itself on a pair chosen so the two orderings DO disagree: as raw
+    // text 'F' (70) sorts before 'a' (97), while lower-cased 'f' (102) sorts after
+    // it. An implementation that ordered the raw strings would therefore return
+    // this pair the other way round — the flip that produced the check violation.
+    const upper = 'FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF';
+    const lower = 'a0000000-0000-4000-8000-000000000001';
+    const pair = orderPair(upper, lower);
+    expect(pair).toEqual({ a: lower, b: upper.toLowerCase() });
+    // Stated separately from the equality above so that a future change to the
+    // expected pair cannot quietly drop the canonicalisation: what the ordered
+    // INSERT stores must be what PostgreSQL's own `uuid` comparison sees.
+    expect(pair.a).toBe(pair.a.toLowerCase());
+    expect(pair.b).toBe(pair.b.toLowerCase());
+    // The order is a property of the pair, not of the argument order.
+    expect(orderPair(lower, upper)).toEqual(pair);
+  });
+
   it('answers 404 when scanning an unknown vehicle', async () => {
     authenticateAs(WRITER_SUBJECT_A);
     const response = await scan('00000000-0000-4000-8000-0000000000fe');
     expect(response.status).toBe(404);
     expect(((await response.json()) as ScanBody).code).toBe('ERR-RES-001');
+  });
+
+  it('never compares a vehicle belonging to another tenant, however near its VIN', async () => {
+    authenticateAs(WRITER_SUBJECT_A);
+    const before = ((await (await scan(vehA)).json()) as ScanBody).compared;
+    expect(before).toBeGreaterThan(0);
+
+    // F is created in TENANT_B with a VIN one substitution from A's. Nothing about
+    // it disqualifies it from the comparison except the tenant it belongs to, so it
+    // is the vehicle a lost tenant predicate would pull in.
+    authenticateAs(WRITER_SUBJECT_B, TENANT_B);
+    const foreign = await createdId(VIN_F);
+    expect(foreign).not.toBe('');
+
+    authenticateAs(WRITER_SUBJECT_A);
+    const response = await scan(vehA);
+    const body = (await response.json()) as ScanBody;
+    // The scan must still succeed. A blanket failure leaks nothing either, and a
+    // test that only asserted absence would read it as tenant isolation.
+    expect(response.status).toBe(200);
+    // `compared` is the observation that bites: it is the size of the comparison
+    // set, so a lost tenant predicate raises it by exactly one here, whereas F's
+    // lone near-VIN (70) would stay under the recording threshold (80) and leave
+    // the candidate list unchanged. The candidate assertion is the second half of
+    // the claim — that no leak ever reaches the recorded, reviewable output.
+    expect(body.compared).toBe(before);
+    expect((body.candidates ?? []).every((c) => c.otherId !== foreign)).toBe(true);
   });
 });
 

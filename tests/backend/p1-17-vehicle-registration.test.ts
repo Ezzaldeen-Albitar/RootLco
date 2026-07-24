@@ -274,6 +274,20 @@ describe('authorization', () => {
     );
     expect((await transfer(MERGE_SURV, { partnerId: PARTNER_A1 })).status).toBe(403);
   });
+
+  // The two history reads declare a permission requirement (`veh.vehicle.read`)
+  // that nothing used to drive: every other test lists as SUBJ_A or SUBJ_B, both
+  // permitted, so dropping the permission list from either GET operation would have
+  // left the suite green while the endpoints answered anyone. These cases pin the
+  // refusal for the reads themselves, not just for the two writes above.
+  it('both history reads: 401 without an authenticator; 403 without the permission', async () => {
+    __resetAuthenticatorForTests();
+    expect((await listPlates(MERGE_SURV)).status).toBe(401);
+    expect((await listOwn(MERGE_SURV)).status).toBe(401);
+    authAs(SUBJECT_UNPERMITTED);
+    expect((await listPlates(MERGE_SURV)).status).toBe(403);
+    expect((await listOwn(MERGE_SURV)).status).toBe(403);
+  });
 });
 
 describe('plate assignment and history', () => {

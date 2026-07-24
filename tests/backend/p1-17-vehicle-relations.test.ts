@@ -283,6 +283,22 @@ describe('authorization', () => {
         .status
     ).toBe(403);
   });
+
+  it('refuses the relationship read and the retirement without a session or the permission', async () => {
+    // Driven against a vehicle that genuinely exists in tenant A, so a passing
+    // assertion can only come from the pipeline denying — never from the target
+    // being absent. The relationship id is deliberately one that resolves to
+    // nothing: authorization runs before the handler body, so it is never read,
+    // and a route that lost its permission list would answer 404 here instead of
+    // 401/403 and fail this test.
+    const relationshipId = '00000000-0000-4000-8000-0000000000fd';
+    __resetAuthenticatorForTests();
+    expect((await listRel(MERGE_SURV)).status).toBe(401);
+    expect((await retireParty(MERGE_SURV, relationshipId)).status).toBe(401);
+    authAs(SUBJECT_UNPERMITTED);
+    expect((await listRel(MERGE_SURV)).status).toBe(403);
+    expect((await retireParty(MERGE_SURV, relationshipId)).status).toBe(403);
+  });
 });
 
 describe('authorized parties', () => {
@@ -382,6 +398,35 @@ describe('authorized parties', () => {
     ).toBe(1);
 
     expect((await retireParty(vehicle, '00000000-0000-4000-8000-0000000000fe')).status).toBe(404);
+  });
+
+  it('refuses a cross-tenant retirement and leaves tenant A’s authorization open', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    const added = (await (
+      await addParty(vehicle, { partnerId: PARTNER_A1, allowedActions: ['receive_reports'] })
+    ).json()) as Body;
+
+    // Tenant B holds the same permission inside its own tenant, so what is being
+    // proved here is the tenancy predicate and not the permission check. The
+    // module answers the same 404 an unknown relationship gets, so the status
+    // cannot be used to learn that tenant A's relationship exists.
+    authAs(SUBJ_B, TENANT_B);
+    const response = await retireParty(vehicle, added.relationshipId ?? '');
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as Body).code).toBe('ERR-RES-001');
+
+    // A route that retired the row and only then failed to read it back would
+    // also answer 404, so the refusal is only meaningful alongside the interval
+    // still being open and no retirement audit having been written.
+    const row = await admin.query<{ valid_to: string | null }>(
+      `SELECT valid_to FROM veh.vehicle_relationships WHERE id=$1`,
+      [added.relationshipId]
+    );
+    expect(row.rows[0]?.valid_to).toBeNull();
+    expect(
+      await auditCount('veh.vehicle.authorized_party_retired', added.relationshipId ?? '')
+    ).toBe(0);
   });
 });
 

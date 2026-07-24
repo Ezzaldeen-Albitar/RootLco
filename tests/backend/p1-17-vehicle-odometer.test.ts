@@ -351,4 +351,52 @@ describe('validation and isolation', () => {
     authAs(SUBJ_A);
     expect((await listReadings(mine, '?cursor=nope')).status).toBe(400);
   });
+
+  it('refuses a cross-tenant reading and correction, leaving the ledger untouched', async () => {
+    // veh.vehicle-odometer-record declares cross-tenant evidence, but every record()
+    // above runs as SUBJ_A against a tenant-A vehicle; the only principal switch in this
+    // file belonged to the history read, a different operation. The write is the one that
+    // matters: a foreign append would corrupt another tenant's append-only mileage ledger
+    // and shift the effective-odometer baseline every later anomaly decision is measured
+    // against — damage no read can do and no later reading can undo.
+    authAs(SUBJ_A);
+    const mine = await newVehicle();
+    const seeded = (await (
+      await record(mine, { value: 77000, unit: 'km', observedAt: '2026-02-01T10:00:00Z' })
+    ).json()) as Body;
+    const before = await readingCount(mine);
+
+    // SUBJ_B holds veh.vehicle.odometer.record in its own tenant, so this is a scope
+    // refusal and not a permission one. The vehicle is simply invisible, and the answer is
+    // the same 404 an unknown vehicle gets above, so existence stays undisclosed.
+    authAs(SUBJ_B, TENANT_B);
+    expect(
+      (await record(mine, { value: 78000, unit: 'km', observedAt: '2026-02-02T10:00:00Z' })).status
+    ).toBe(404);
+    // A correction is the only shape allowed to lower a value, so it is the only shape
+    // that could rewrite a foreign baseline downward. It is refused identically.
+    expect(
+      (
+        await record(mine, {
+          value: 100,
+          unit: 'km',
+          observedAt: '2026-02-03T10:00:00Z',
+          correctionOf: seeded.readingId,
+          correctionReason: 'meter_replacement',
+        })
+      ).status
+    ).toBe(404);
+
+    // The status codes alone would not prove a refusal — a write that succeeded and then
+    // failed to report would look the same. The count and the newest appended row must
+    // both still be the tenant-A seed.
+    expect(await readingCount(mine)).toBe(before);
+    const latest = await admin.query<{ id: string; value: string }>(
+      `SELECT id, value::text AS value FROM veh.odometer_readings
+        WHERE vehicle_id=$1 ORDER BY seq DESC LIMIT 1`,
+      [mine]
+    );
+    expect(latest.rows[0]?.id).toBe(seeded.readingId);
+    expect(Number(latest.rows[0]?.value)).toBe(77000);
+  });
 });

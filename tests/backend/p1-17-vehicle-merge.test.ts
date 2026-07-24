@@ -282,6 +282,36 @@ describe('merge refusals', () => {
     expect(((await response.json()) as Body).code).toBe('ERR-VAL-001');
   });
 
+  it('rejects a self-merge written in two letter cases with the same 422', async () => {
+    authenticateAs(WRITER_SUBJECT_A);
+    const v = await newVehicleId();
+
+    // A uuid is case-insensitive and PostgreSQL compares it in canonical
+    // lower-case, so both of these name one vehicle twice. Comparing the raw
+    // strings would let them through to `ck_vehicle_merges_distinct`, which comes
+    // back as a 409 inviting a retry that can never succeed — the request is
+    // permanently invalid and must be refused as validation, in either orientation.
+    const upperSurvivor = await merge(v, {
+      survivorId: v.toUpperCase(),
+      approvalRef: 'TCKT-SELF-CASE',
+    });
+    expect(upperSurvivor.status).toBe(422);
+    expect(((await upperSurvivor.json()) as Body).code).toBe('ERR-VAL-001');
+
+    const upperSource = await merge(v.toUpperCase(), {
+      survivorId: v,
+      approvalRef: 'TCKT-SELF-CASE-2',
+    });
+    expect(upperSource.status).toBe(422);
+    expect(((await upperSource.json()) as Body).code).toBe('ERR-VAL-001');
+
+    const merges = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM veh.vehicle_merges WHERE source_vehicle_id = $1`,
+      [v]
+    );
+    expect(merges.rows[0]?.n).toBe('0');
+  });
+
   it('rejects merging an already-merged source with 409', async () => {
     authenticateAs(WRITER_SUBJECT_A);
     const source = await newVehicleId();
