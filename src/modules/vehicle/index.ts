@@ -20,10 +20,16 @@ import { VehicleWriteRepository } from './data/vehicle-write-repository';
 import { VehicleWriteService } from './application/vehicle-write-service';
 import { VehicleIdentityRepository } from './data/vehicle-identity-repository';
 import { VehicleIdentityService } from './application/vehicle-identity-service';
+import { VehicleRegistrationRepository } from './data/vehicle-registration-repository';
+import { VehicleRegistrationService } from './application/vehicle-registration-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
 export type { MergeResult, ScanResult, ReviewResult } from './application/vehicle-identity-service';
+export type {
+  PlateAssigned,
+  OwnershipTransferred,
+} from './application/vehicle-registration-service';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   DUPLICATE_DECISIONS,
@@ -32,6 +38,12 @@ export {
   MIN_REASON,
   type DuplicateDecision,
 } from './domain/vehicle-identity';
+export {
+  MAX_PLATE_RAW,
+  MAX_TRANSFER_REASON,
+  OWNERSHIP_KINDS,
+  type OwnershipKind,
+} from './domain/vehicle-registration';
 export {
   MAX_PLATE_FRAGMENT,
   MAX_VIN_FRAGMENT,
@@ -57,5 +69,6 @@ export const vehicleModule = composeModule({
     vehicleSearch: new VehicleSearchService(new VehicleSearchRepository()),
     vehicleWrite: new VehicleWriteService(new VehicleWriteRepository()),
     vehicleIdentity: new VehicleIdentityService(new VehicleIdentityRepository()),
+    vehicleRegistration: new VehicleRegistrationService(new VehicleRegistrationRepository()),
   }),
 });

@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 84,
-    "publicApi": 84,
+    "registered": 88,
+    "publicApi": 88,
     "internal": 0,
-    "withRequiredEvidence": 69,
+    "withRequiredEvidence": 73,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -27,9 +27,9 @@
       "metadataOnly": 0
     },
     "p1_17": {
-      "registered": 6,
-      "publicApi": 6,
-      "operationDepth": 6,
+      "registered": 10,
+      "publicApi": 10,
+      "operationDepth": 10,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -2263,6 +2263,126 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ownership-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/ownerships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ownership-transfer",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/ownerships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-plate-assign",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/plates",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-plate-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/plates",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

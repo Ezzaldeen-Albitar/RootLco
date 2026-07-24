@@ -198,11 +198,11 @@ describe('reserved-name registry', () => {
       'session.revoked',
       'user.invited',
       'user.status.changed',
-      // P1-17 publishes `vehicle.created` and `vehicle.merged` from
-      // `src/modules/vehicle`. `vehicle.relationship.changed` stays reserved until
-      // its producer.
+      // P1-17 publishes `vehicle.created`, `vehicle.merged`, and
+      // `vehicle.relationship.changed` from `src/modules/vehicle`.
       'vehicle.created',
       'vehicle.merged',
+      'vehicle.relationship.changed',
     ]);
 
     const OWNER_BY_PHASE: Readonly<Record<string, string>> = {

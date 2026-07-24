@@ -173,6 +173,26 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit'],
     note: 'records a human dismissal on an open candidate (only dismissed is settable; merged is set by the merge op); an already-reviewed candidate is 409 and an unknown or cross-tenant candidate the same 404 (denial/cross-tenant); the decision is audited with the prior status',
   },
+  'veh.vehicle-plate-history': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paginated newest-first plate history; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a malformed cursor and an oversized page are refused (denial); append-only projection, no raw plate beyond the normalized value',
+  },
+  'veh.vehicle-plate-assign': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'closes the current active plate and opens the new one in one transaction + audit; the temporal EXCLUDE refuses a plate already active on another vehicle (denial 409); a merged vehicle and a cross-tenant vehicle are refused (404); history is append-only (never deleted)',
+  },
+  'veh.vehicle-ownership-history': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paginated newest-first ownership history; a tenant-B vehicle yields no tenant-A rows (cross-tenant); malformed cursor and oversized page refused (denial)',
+  },
+  'veh.vehicle-ownership-transfer': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'closes the prior owner and opens the new one + audit + vehicle.relationship.changed event in one controlled transaction; an injected failure (a customer that fails the FK after the close) leaves the original ownership active with no new partial ownership (rollback); an unknown/cross-tenant customer is refused (denial/cross-tenant); the event carries no partner id',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the

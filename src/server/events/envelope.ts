@@ -111,7 +111,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'veh.vehicle',
     owner: 'veh',
-    implementedIn: null,
+    implementedIn: 'P1-17',
     description: 'A vehicle ownership or authorised-person relationship changed.',
   },
   {

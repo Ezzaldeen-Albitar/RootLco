@@ -461,6 +461,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'veh.duplicate_candidate',
     description: 'A human recorded a decision on a duplicate vehicle candidate pair.',
   },
+  {
+    code: 'veh.vehicle.plate_assigned',
+    class: 'privileged',
+    entityType: 'veh.plate_history',
+    description:
+      'A new active plate was assigned to a vehicle and the prior plate was closed. Plate history is append-only; the record names the country, not the operational plate value alone.',
+  },
+  {
+    code: 'veh.vehicle.ownership_changed',
+    class: 'privileged',
+    entityType: 'veh.ownership_history',
+    description:
+      'A vehicle ownership was transferred: the prior owner was closed and a new owner opened in one transaction. Ownership history is append-only and retained.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
