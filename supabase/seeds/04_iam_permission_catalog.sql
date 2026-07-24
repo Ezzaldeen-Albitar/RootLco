@@ -90,7 +90,11 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('crm.customer.duplicate.review','crm','Scan for and review duplicate customer candidates','medium','00000000-0000-4000-8000-000000000001'),
   -- Merge is separate and higher: it is irreversible in practice.
   ('crm.customer.merge',       'crm', 'Merge a duplicate customer into a survivor','high',  '00000000-0000-4000-8000-000000000001'),
-  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001')
+  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-17 (veh) — Vehicle Backend. Reading the vehicle master and its safe
+  -- projection. Restricted identifiers (chassis/engine number) remain gated by the
+  -- existing iam.sensitive.view capability, not a second read code.
+  ('veh.vehicle.read',         'veh', 'Search and read vehicles in the caller tenant','low',   '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

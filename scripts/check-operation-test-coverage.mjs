@@ -83,7 +83,13 @@ export const DERIVED_PREFIX = 'shared.';
  * derived rule below; only the per-phase count blocks are reported separately.
  */
 export const P1_16_PREFIX = 'crm.';
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX];
+/**
+ * P1-17 (`veh.`) joins the same derived-evidence model: obligations are derived
+ * from the registration, not declared, so editing the manifest cannot weaken the
+ * floor. Only the per-phase count block is reported separately.
+ */
+export const P1_17_PREFIX = 'veh.';
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -132,6 +138,16 @@ export const EVIDENCE_KINDS = Object.freeze([
 //   note:     why, for the reader.
 // ---------------------------------------------------------------------------
 export const MANIFEST = {
+  // ========================================================================
+  // Phase 1-17 (veh.) — Vehicle Backend. Same derived-evidence model as P1-15/16:
+  // the floor (route, service, success, authorization) is derived from the
+  // registration; `required` below adds the extra obligations this operation owes.
+  // ========================================================================
+  'veh.vehicle-search': {
+    files: ['tests/backend/p1-17-vehicle-search.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded allow-listed read; VIN matches the generated normalized column exactly and a plate matches the active plate via a tenant-scoped subquery; a tenant-B vehicle is unreachable (cross-tenant); an invalid cursor, an oversized query and an unknown parameter are refused (denial); safe master projection only, no restricted identifier',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
@@ -750,7 +766,7 @@ export function parseProvidedFlags(source) {
     // prefix list is explicit rather than a wildcard so a typo in a declaration
     // is a missing flag — which fails the gate — instead of a silently accepted
     // new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared|crm)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+    const m = /^\s*\*?\s*((?:iam|meta|shared|crm|veh)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
       line
     );
     if (m) {
@@ -940,6 +956,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const phaseRows = (prefix) => matrix.filter((m) => m.id.startsWith(prefix));
   const derivedRows = phaseRows(DERIVED_PREFIX);
   const crmRows = phaseRows(P1_16_PREFIX);
+  const vehRows = phaseRows(P1_17_PREFIX);
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -966,6 +983,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     invocationOnly: matrix.filter((m) => m.required.length === 0).length,
     p1_15: phaseCounts(derivedRows),
     p1_16: phaseCounts(crmRows),
+    p1_17: phaseCounts(vehRows),
   };
   return { failures, matrix, counts };
 }
@@ -1057,6 +1075,14 @@ async function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(P1_16_PREFIX)),
     }
   );
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-17', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_17,
+      operations: matrix.filter((m) => m.id.startsWith(P1_17_PREFIX)),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -1092,6 +1118,15 @@ async function runCli() {
     console.log(`P1-16 unit-only: ${q.unitOnly}`);
     console.log(`P1-16 unreferenced: ${q.unreferenced}`);
     console.log(`P1-16 metadata-only: ${q.metadataOnly}`);
+    const r = counts.p1_17;
+    console.log('');
+    console.log(`P1-17 registered public operations: ${r.registered}`);
+    console.log(`P1-17 operation-depth: ${r.operationDepth}`);
+    console.log(`P1-17 invocation-only: ${r.invocationOnly}`);
+    console.log(`P1-17 pending: ${r.pending}`);
+    console.log(`P1-17 unit-only: ${r.unitOnly}`);
+    console.log(`P1-17 unreferenced: ${r.unreferenced}`);
+    console.log(`P1-17 metadata-only: ${r.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`
