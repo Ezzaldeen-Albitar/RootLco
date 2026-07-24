@@ -164,7 +164,13 @@ export function orderPair(x: string, y: string): { a: string; b: string } {
 /** A merge target must differ from its source. Everything else the database
  * guards (live, same-tenant, not-already-merged survivor). */
 export function assertMergeable(sourceId: string, survivorId: string): void {
-  if (sourceId === survivorId) {
+  // Compared in canonical lower-case for the same reason `orderPair` is: a UUID is
+  // case-insensitive and PostgreSQL's `uuid` type compares on its canonical
+  // (lower-case) form. A caller naming one vehicle twice in two letter cases would
+  // slip past a raw string comparison and be refused far downstream by
+  // `ck_vehicle_merges_distinct` — surfacing as a 409 that invites a retry which can
+  // never succeed, when the request is permanently invalid and belongs here.
+  if (sourceId.toLowerCase() === survivorId.toLowerCase()) {
     throw new VehicleIdentityError(
       'A vehicle cannot be merged into itself',
       'body.survivorId',

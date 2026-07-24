@@ -15,7 +15,15 @@ export const COUNTRY_CODE = /^[A-Z]{2,3}$/;
 export const MAX_PLATE_RAW = 32;
 export const MAX_TRANSFER_REASON = 500;
 
-/** Deterministic, index-aligned newest-first ordering for the history reads. */
+/**
+ * Newest-first ordering for the two history reads, tie-broken by row id so the
+ * order is total and two records sharing a `created_at` cannot straddle a page
+ * edge. Each key is stable, so a cursor issued here can never be replayed against
+ * a different ordering. It is deliberately *not* index-aligned: the only index on
+ * either table is `(tenant_id, vehicle_id, valid_from)`, so PostgreSQL sorts the
+ * one vehicle's rows itself — affordable because a vehicle accumulates a handful
+ * of plates and owners over its life, never a page-deep list.
+ */
 export const PLATE_HISTORY_ORDERING = {
   key: 'veh.plate_history:created_at_desc',
   direction: 'desc',
