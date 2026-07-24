@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 18,
-    "publicApi": 18,
-    "operationDepth": 18,
+    "registered": 20,
+    "publicApi": 20,
+    "operationDepth": 20,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -131,6 +131,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-document-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/documents",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-history.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -273,6 +289,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/history",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-history.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

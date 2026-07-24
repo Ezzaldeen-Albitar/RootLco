@@ -103,6 +103,8 @@ import '@/app/api/v1/vehicles/[vehicleId]/authorized-parties/[relationshipId]/re
 import '@/app/api/v1/vehicles/[vehicleId]/odometer-readings/route';
 import '@/app/api/v1/vehicles/[vehicleId]/ev-profile/route';
 import '@/app/api/v1/vehicles/[vehicleId]/status/route';
+import '@/app/api/v1/vehicles/[vehicleId]/history/route';
+import '@/app/api/v1/vehicles/[vehicleId]/documents/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

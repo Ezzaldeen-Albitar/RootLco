@@ -28,6 +28,8 @@ import { VehicleOdometerRepository } from './data/vehicle-odometer-repository';
 import { VehicleOdometerService } from './application/vehicle-odometer-service';
 import { VehicleLifecycleRepository } from './data/vehicle-lifecycle-repository';
 import { VehicleLifecycleService } from './application/vehicle-lifecycle-service';
+import { VehicleHistoryRepository } from './data/vehicle-history-repository';
+import { VehicleHistoryService } from './application/vehicle-history-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
@@ -43,6 +45,8 @@ export type {
   EvProfileView,
   StatusChanged,
 } from './application/vehicle-lifecycle-service';
+export type { VehicleDocuments } from './application/vehicle-history-service';
+export type { VehicleHistoryHit } from './domain/vehicle-history';
 export {
   AUTHORIZED_ACTIONS,
   VEHICLE_RELATIONSHIP_ROLES,
@@ -109,5 +113,6 @@ export const vehicleModule = composeModule({
     vehicleRelations: new VehicleRelationsService(new VehicleRelationsRepository()),
     vehicleOdometer: new VehicleOdometerService(new VehicleOdometerRepository()),
     vehicleLifecycle: new VehicleLifecycleService(new VehicleLifecycleRepository()),
+    vehicleHistory: new VehicleHistoryService(new VehicleHistoryRepository()),
   }),
 });

@@ -233,6 +233,16 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit'],
     note: 'moves lifecycle/workshop along the approved transition graph + audit; the append-only status-history ledger records the transition (no event); merged is never a settable target and a merged vehicle is frozen; a no-op or disallowed transition is 422; an unknown/cross-tenant vehicle is 404',
   },
+  'veh.vehicle-history': {
+    files: ['tests/backend/p1-17-vehicle-history.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only attribute-change ledger, newest first; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial); no restricted identifier can appear (not a master column)',
+  },
+  'veh.vehicle-document-list': {
+    files: ['tests/backend/p1-17-vehicle-history.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'lists document ids reachable from the vehicle via the sanctioned shared.document_ids_for_entity resolver (no storage key, no bytes); an unknown vehicle and a cross-tenant vehicle answer the same 404 (denial/cross-tenant); linking is the shared attachments operation, not this one',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
