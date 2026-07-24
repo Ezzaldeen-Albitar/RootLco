@@ -83,7 +83,13 @@ export const DERIVED_PREFIX = 'shared.';
  * derived rule below; only the per-phase count blocks are reported separately.
  */
 export const P1_16_PREFIX = 'crm.';
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX];
+/**
+ * P1-17 (`veh.`) joins the same derived-evidence model: obligations are derived
+ * from the registration, not declared, so editing the manifest cannot weaken the
+ * floor. Only the per-phase count block is reported separately.
+ */
+export const P1_17_PREFIX = 'veh.';
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -132,6 +138,111 @@ export const EVIDENCE_KINDS = Object.freeze([
 //   note:     why, for the reader.
 // ---------------------------------------------------------------------------
 export const MANIFEST = {
+  // ========================================================================
+  // Phase 1-17 (veh.) — Vehicle Backend. Same derived-evidence model as P1-15/16:
+  // the floor (route, service, success, authorization) is derived from the
+  // registration; `required` below adds the extra obligations this operation owes.
+  // ========================================================================
+  'veh.vehicle-search': {
+    files: ['tests/backend/p1-17-vehicle-search.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded allow-listed read; VIN matches the generated normalized column exactly and a plate matches the active plate via a tenant-scoped subquery; a tenant-B vehicle is unreachable (cross-tenant); an invalid cursor, an oversized query and an unknown parameter are refused (denial); safe master projection only, no restricted identifier',
+  },
+  'veh.vehicle-create': {
+    files: ['tests/backend/p1-17-vehicle-create-update.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'draft master + audit + vehicle.created event commit in one transaction; a create that fails (duplicate active VIN) leaves no vehicle, no orphan audit, and no orphan event, and never touches the pre-existing one (rollback/atomicity); an unseen catalog reference is a 422 and an unknown field a 422 (denial); the created vehicle is invisible from tenant B (cross-tenant)',
+  },
+  'veh.vehicle-update': {
+    files: ['tests/backend/p1-17-vehicle-create-update.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'partial descriptive edit under the frozen touch-metadata/merge guards; VIN and catalog refs are settable, lifecycle is not; a merged vehicle is refused (denial), a tenant-B or unknown id answers the same 404 (cross-tenant), and the edit is audited by changed columns only',
+  },
+  'veh.vehicle-merge': {
+    files: ['tests/backend/p1-17-vehicle-merge.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
+  },
+  'veh.vehicle-duplicate-scan': {
+    files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'conservative deterministic weighted scoring (near-VIN typo/transposition + active-versus-historical plate, corroborated by exact make/model/year); records a candidate only at/above threshold with a strong signal — a lone near-VIN or a make/model/year-only match is NOT recorded (false-positive); a re-scan neither duplicates nor re-scores a frozen candidate and never reopens a dismissal; no cross-tenant vehicle is ever compared; an unknown vehicle is 404 (denial)',
+  },
+  'veh.vehicle-duplicate-review': {
+    files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'records a human dismissal on an open candidate (only dismissed is settable; merged is set by the merge op); an already-reviewed candidate is 409 and an unknown or cross-tenant candidate the same 404 (denial/cross-tenant); the decision is audited with the prior status',
+  },
+  'veh.vehicle-plate-history': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paginated newest-first plate history; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a malformed cursor and an oversized page are refused (denial); append-only projection, no raw plate beyond the normalized value',
+  },
+  'veh.vehicle-plate-assign': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'closes the current active plate and opens the new one in one transaction + audit; the temporal EXCLUDE refuses a plate already active on another vehicle (denial 409); a merged vehicle and a cross-tenant vehicle are refused (404); history is append-only (never deleted)',
+  },
+  'veh.vehicle-ownership-history': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paginated newest-first ownership history; a tenant-B vehicle yields no tenant-A rows (cross-tenant); malformed cursor and oversized page refused (denial)',
+  },
+  'veh.vehicle-ownership-transfer': {
+    files: ['tests/backend/p1-17-vehicle-registration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'closes the prior owner and opens the new one + audit + vehicle.relationship.changed event in one controlled transaction; an injected failure (a customer that fails the FK after the close) leaves the original ownership active with no new partial ownership (rollback); an unknown/cross-tenant customer is refused (denial/cross-tenant); the event carries no partner id',
+  },
+  'veh.vehicle-relationship-list': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'vehicle-centric keyset read of the single source of truth veh.vehicle_relationships, including a CRM-written link and a veh-written authorized party; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial)',
+  },
+  'veh.vehicle-authorized-party-add': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'writes one authorized_person relationship with a bounded scope + granted_by + audit + vehicle.relationship.changed event; the overlap EXCLUDE refuses a second active authorization for the same customer (denial 409) and proves veh and CRM writers cannot conflict; an unknown/cross-tenant customer is refused (denial/cross-tenant); an unknown scope action is a 422',
+  },
+  'veh.vehicle-authorized-party-retire': {
+    files: ['tests/backend/p1-17-vehicle-relations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'closes the open authorization interval + audit (history retained, not deleted); an unknown or already-retired party and a cross-tenant vehicle answer the same 404 (denial/cross-tenant)',
+  },
+  'veh.vehicle-odometer-history': {
+    files: ['tests/backend/p1-17-vehicle-odometer.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'append-only keyset history newest-observed-first; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial)',
+  },
+  'veh.vehicle-odometer-record': {
+    files: ['tests/backend/p1-17-vehicle-odometer.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
+    note: 'appends a reading + audit atomically; a normal reading below the effective odometer is refused as an anomaly and NOTHING is stored (rollback preserves the original); a correction may lower the value and is always flagged; negative value, bad unit, bad timestamp, and an unknown correction reference are 422; an unknown/cross-tenant vehicle is 404',
+  },
+  'veh.vehicle-ev-profile-read': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'reads the single active EV profile; a vehicle without a profile (or a cross-tenant vehicle hidden by RLS) answers 404 (denial/cross-tenant)',
+  },
+  'veh.vehicle-ev-profile-set': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'set-or-replace of the single EV profile + audit; an EV kind whose required powertrain category does not match the vehicle is refused (denial 422) pre-check and by the frozen guard; an unknown/cross-tenant vehicle is 404; a second call replaces, not duplicates; no battery-health value is derived',
+  },
+  'veh.vehicle-status-change': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'moves lifecycle/workshop along the approved transition graph + audit; the append-only status-history ledger records the transition (no event); merged is never a settable target and a merged vehicle is frozen; a no-op or disallowed transition is 422; an unknown/cross-tenant vehicle is 404',
+  },
+  'veh.vehicle-history': {
+    files: ['tests/backend/p1-17-vehicle-history.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only attribute-change ledger, newest first; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial); no restricted identifier can appear (not a master column)',
+  },
+  'veh.vehicle-document-list': {
+    files: ['tests/backend/p1-17-vehicle-history.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'lists document ids reachable from the vehicle via the sanctioned shared.document_ids_for_entity resolver (no storage key, no bytes); an unknown vehicle and a cross-tenant vehicle answer the same 404 (denial/cross-tenant); linking is the shared attachments operation, not this one',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
@@ -750,7 +861,7 @@ export function parseProvidedFlags(source) {
     // prefix list is explicit rather than a wildcard so a typo in a declaration
     // is a missing flag — which fails the gate — instead of a silently accepted
     // new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared|crm)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+    const m = /^\s*\*?\s*((?:iam|meta|shared|crm|veh)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
       line
     );
     if (m) {
@@ -940,6 +1051,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const phaseRows = (prefix) => matrix.filter((m) => m.id.startsWith(prefix));
   const derivedRows = phaseRows(DERIVED_PREFIX);
   const crmRows = phaseRows(P1_16_PREFIX);
+  const vehRows = phaseRows(P1_17_PREFIX);
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -966,6 +1078,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     invocationOnly: matrix.filter((m) => m.required.length === 0).length,
     p1_15: phaseCounts(derivedRows),
     p1_16: phaseCounts(crmRows),
+    p1_17: phaseCounts(vehRows),
   };
   return { failures, matrix, counts };
 }
@@ -1057,6 +1170,14 @@ async function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(P1_16_PREFIX)),
     }
   );
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-17', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_17,
+      operations: matrix.filter((m) => m.id.startsWith(P1_17_PREFIX)),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -1092,6 +1213,15 @@ async function runCli() {
     console.log(`P1-16 unit-only: ${q.unitOnly}`);
     console.log(`P1-16 unreferenced: ${q.unreferenced}`);
     console.log(`P1-16 metadata-only: ${q.metadataOnly}`);
+    const r = counts.p1_17;
+    console.log('');
+    console.log(`P1-17 registered public operations: ${r.registered}`);
+    console.log(`P1-17 operation-depth: ${r.operationDepth}`);
+    console.log(`P1-17 invocation-only: ${r.invocationOnly}`);
+    console.log(`P1-17 pending: ${r.pending}`);
+    console.log(`P1-17 unit-only: ${r.unitOnly}`);
+    console.log(`P1-17 unreferenced: ${r.unreferenced}`);
+    console.log(`P1-17 metadata-only: ${r.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

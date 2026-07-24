@@ -425,6 +425,91 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'veh.vehicle_relationship',
     description: 'A customer was linked to an existing vehicle in a relationship role.',
   },
+
+  // ---- Vehicle backend (P1-17) --------------------------------------------
+  {
+    code: 'veh.vehicle.created',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle master was created as a draft. The recorded fact is that a vehicle now exists; its VIN is internal-classified data in the row the record points at and is not copied here.',
+  },
+  {
+    code: 'veh.vehicle.updated',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'Descriptive fields of a vehicle master were edited. The record names which columns changed, never their values — a master edit can touch the internal-classified VIN.',
+  },
+  {
+    code: 'veh.vehicle.merged',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A duplicate vehicle was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
+  },
+  {
+    code: 'veh.vehicle.duplicates_scanned',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle was scored against comparable ones and duplicate candidates were recorded. The scan decides nothing; it produces candidates for a human to review.',
+  },
+  {
+    code: 'veh.vehicle.duplicate_reviewed',
+    class: 'privileged',
+    entityType: 'veh.duplicate_candidate',
+    description: 'A human recorded a decision on a duplicate vehicle candidate pair.',
+  },
+  {
+    code: 'veh.vehicle.plate_assigned',
+    class: 'privileged',
+    entityType: 'veh.plate_history',
+    description:
+      'A new active plate was assigned to a vehicle and the prior plate was closed. Plate history is append-only; the record names the country, not the operational plate value alone.',
+  },
+  {
+    code: 'veh.vehicle.ownership_changed',
+    class: 'privileged',
+    entityType: 'veh.ownership_history',
+    description:
+      'A vehicle ownership was transferred: the prior owner was closed and a new owner opened in one transaction. Ownership history is append-only and retained.',
+  },
+  {
+    code: 'veh.vehicle.authorized_party_added',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'A customer was authorized as a scoped authorized party for a vehicle. The record names the granted actions; the authorized party is never the legal owner.',
+  },
+  {
+    code: 'veh.vehicle.authorized_party_retired',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'An authorized party was retired by closing its authorization interval. The relationship is retained, not deleted.',
+  },
+  {
+    code: 'veh.vehicle.odometer_recorded',
+    class: 'privileged',
+    entityType: 'veh.odometer_reading',
+    description:
+      'An odometer reading or a correction was appended. Readings are append-only; a correction names a factual anomaly category and never edits or deletes the original.',
+  },
+  {
+    code: 'veh.vehicle.ev_profile_set',
+    class: 'privileged',
+    entityType: 'veh.vehicle_ev_profile',
+    description:
+      'A vehicle’s electric-drive profile was set or replaced. The record names the electric kind; no battery-health value is derived — state-of-health is telemetry, not a computed field.',
+  },
+  {
+    code: 'veh.vehicle.status_changed',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle’s lifecycle and/or workshop status was moved along an approved transition. The append-only status-history ledger records the transition itself; merged is never a settable target.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

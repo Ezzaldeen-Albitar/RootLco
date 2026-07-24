@@ -90,7 +90,35 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('crm.customer.duplicate.review','crm','Scan for and review duplicate customer candidates','medium','00000000-0000-4000-8000-000000000001'),
   -- Merge is separate and higher: it is irreversible in practice.
   ('crm.customer.merge',       'crm', 'Merge a duplicate customer into a survivor','high',  '00000000-0000-4000-8000-000000000001'),
-  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001')
+  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-17 (veh) — Vehicle Backend. Reading the vehicle master and its safe
+  -- projection. Restricted identifiers (chassis/engine number) remain gated by the
+  -- existing iam.sensitive.view capability, not a second read code.
+  ('veh.vehicle.read',         'veh', 'Search and read vehicles in the caller tenant','low',   '00000000-0000-4000-8000-000000000001'),
+  -- Create and edit the vehicle master (draft creation + descriptive edits),
+  -- including plate assignment and the EV profile — all "maintain the vehicle
+  -- master" registration data. Lifecycle status, merge, ownership, and
+  -- relationship changes are separate, higher capabilities.
+  ('veh.vehicle.manage',       'veh', 'Create and edit vehicles in the caller tenant','medium','00000000-0000-4000-8000-000000000001'),
+  -- Merge is separate and higher: it is irreversible in practice (the source is
+  -- frozen and redirected to the survivor), so it carries its own high-risk code.
+  ('veh.vehicle.merge',        'veh', 'Merge a duplicate vehicle into a survivor',    'high',  '00000000-0000-4000-8000-000000000001'),
+  -- Scanning for and reviewing duplicate candidates are one authority: both are
+  -- judgement about whether two records are the same vehicle, and neither combines
+  -- them (that is the separate, higher veh.vehicle.merge).
+  ('veh.vehicle.duplicate.review','veh','Scan for and review duplicate vehicle candidates','medium','00000000-0000-4000-8000-000000000001'),
+  -- Party associations that change who is bound to a vehicle: ownership transfer and
+  -- authorized parties. Grouped because both answer "who is associated with this
+  -- vehicle and in what role", and both emit vehicle.relationship.changed.
+  ('veh.vehicle.relationship.manage','veh','Transfer vehicle ownership and manage authorized parties','medium','00000000-0000-4000-8000-000000000001'),
+  -- Recording odometer readings and corrections. Its own code because a correction
+  -- can lower the effective odometer, which is more sensitive than a plain read.
+  ('veh.vehicle.odometer.record','veh','Record vehicle odometer readings and corrections','medium','00000000-0000-4000-8000-000000000001'),
+  -- Lifecycle/workshop status transitions (activate, deactivate, scrap, workshop
+  -- moves). Separate from veh.vehicle.manage so descriptive editing does not carry
+  -- the power to scrap or deactivate a vehicle (least privilege; mirrors CRM's
+  -- crm.customer.governance.manage split from profile editing).
+  ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

@@ -243,6 +243,18 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.template.version_approved',
   'shared.template.version_created',
   'shared.template.version_retired',
+  'veh.vehicle.authorized_party_added',
+  'veh.vehicle.authorized_party_retired',
+  'veh.vehicle.created',
+  'veh.vehicle.duplicate_reviewed',
+  'veh.vehicle.duplicates_scanned',
+  'veh.vehicle.ev_profile_set',
+  'veh.vehicle.merged',
+  'veh.vehicle.odometer_recorded',
+  'veh.vehicle.ownership_changed',
+  'veh.vehicle.plate_assigned',
+  'veh.vehicle.status_changed',
+  'veh.vehicle.updated',
 ];
 
 /**
@@ -470,6 +482,8 @@ const EXPECTED_EVENT_TYPES = [
   'user.invited',
   'user.status.changed',
   'vehicle.checked-in',
+  'vehicle.created',
+  'vehicle.merged',
   'vehicle.relationship.changed',
 ];
 

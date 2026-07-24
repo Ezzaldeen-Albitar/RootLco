@@ -89,6 +89,22 @@ import '@/app/api/v1/customers/[customerId]/merge/route';
 import '@/app/api/v1/customers/[customerId]/history/route';
 import '@/app/api/v1/customers/[customerId]/timeline/route';
 import '@/app/api/v1/customers/[customerId]/vehicles/route';
+// --- Phase 1-17 vehicle backend ------------------------------------------
+import '@/app/api/v1/vehicles/route';
+import '@/app/api/v1/vehicles/[vehicleId]/route';
+import '@/app/api/v1/vehicles/[vehicleId]/merge/route';
+import '@/app/api/v1/vehicles/[vehicleId]/duplicate-scans/route';
+import '@/app/api/v1/vehicle-duplicates/[candidateId]/review/route';
+import '@/app/api/v1/vehicles/[vehicleId]/plates/route';
+import '@/app/api/v1/vehicles/[vehicleId]/ownerships/route';
+import '@/app/api/v1/vehicles/[vehicleId]/relationships/route';
+import '@/app/api/v1/vehicles/[vehicleId]/authorized-parties/route';
+import '@/app/api/v1/vehicles/[vehicleId]/authorized-parties/[relationshipId]/retirement/route';
+import '@/app/api/v1/vehicles/[vehicleId]/odometer-readings/route';
+import '@/app/api/v1/vehicles/[vehicleId]/ev-profile/route';
+import '@/app/api/v1/vehicles/[vehicleId]/status/route';
+import '@/app/api/v1/vehicles/[vehicleId]/history/route';
+import '@/app/api/v1/vehicles/[vehicleId]/documents/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -146,6 +162,7 @@ describe('OpenAPI contract', () => {
       'sal',
       'shared',
       'svc',
+      'veh',
       'wty',
     ];
     const document = JSON.parse(generated) as {

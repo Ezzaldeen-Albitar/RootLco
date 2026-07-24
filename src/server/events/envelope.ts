@@ -111,8 +111,34 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'veh.vehicle',
     owner: 'veh',
-    implementedIn: null,
+    implementedIn: 'P1-17',
     description: 'A vehicle ownership or authorised-person relationship changed.',
+  },
+  {
+    // P1-17 allocation (beyond the Chapter 4 Table 4.5 reservation, as P1-15 did
+    // for its own document/template events): a consumer reacts to a vehicle
+    // existing, so apt/rec/wo can reference it. Payload carries no VIN, plate, or
+    // owner — a consumer that needs them reads the aggregate under its own
+    // authorization.
+    code: 'EVT-VEH-002',
+    eventType: 'vehicle.created',
+    schemaVersion: 1,
+    aggregateType: 'veh.vehicle',
+    owner: 'veh',
+    implementedIn: 'P1-17',
+    description: 'A vehicle master was created as a draft.',
+  },
+  {
+    // P1-17 allocation. The survivor is the aggregate — the vehicle that
+    // continues to exist and that a consumer must re-read. Payload names the
+    // source, survivor, and merge id only.
+    code: 'EVT-VEH-003',
+    eventType: 'vehicle.merged',
+    schemaVersion: 1,
+    aggregateType: 'veh.vehicle',
+    owner: 'veh',
+    implementedIn: 'P1-17',
+    description: 'A duplicate vehicle was merged into a surviving vehicle.',
   },
   {
     code: 'EVT-APT-001',

@@ -198,12 +198,18 @@ describe('reserved-name registry', () => {
       'session.revoked',
       'user.invited',
       'user.status.changed',
+      // P1-17 publishes `vehicle.created`, `vehicle.merged`, and
+      // `vehicle.relationship.changed` from `src/modules/vehicle`.
+      'vehicle.created',
+      'vehicle.merged',
+      'vehicle.relationship.changed',
     ]);
 
     const OWNER_BY_PHASE: Readonly<Record<string, string>> = {
       'P1-14': 'iam',
       'P1-15': 'shared',
       'P1-16': 'crm',
+      'P1-17': 'veh',
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;
