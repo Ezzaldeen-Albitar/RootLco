@@ -186,10 +186,10 @@ beforeAll(async () => {
   const fixture = await admin.connect();
   try {
     await fixture.query('BEGIN');
-    await fixture.query(`SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)`, [
-      USER_A,
-      TENANT_A,
-    ]);
+    await fixture.query(
+      `SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)`,
+      [USER_A, TENANT_A]
+    );
     await fixture.query(
       `INSERT INTO veh.vehicles (id, tenant_id, vin_raw, powertrain_category, lifecycle_status, created_by)
        VALUES ($1, $3, '1SURVIVOR00000001', 'ice', 'active', $4),

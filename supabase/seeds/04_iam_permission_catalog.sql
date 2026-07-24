@@ -98,7 +98,10 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Create and edit the vehicle master (draft creation + descriptive edits). One
   -- code for both: the authority is "maintain the vehicle master". Lifecycle,
   -- merge, plate, ownership, and relationship changes are separate capabilities.
-  ('veh.vehicle.manage',       'veh', 'Create and edit vehicles in the caller tenant','medium','00000000-0000-4000-8000-000000000001')
+  ('veh.vehicle.manage',       'veh', 'Create and edit vehicles in the caller tenant','medium','00000000-0000-4000-8000-000000000001'),
+  -- Merge is separate and higher: it is irreversible in practice (the source is
+  -- frozen and redirected to the survivor), so it carries its own high-risk code.
+  ('veh.vehicle.merge',        'veh', 'Merge a duplicate vehicle into a survivor',    'high',  '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

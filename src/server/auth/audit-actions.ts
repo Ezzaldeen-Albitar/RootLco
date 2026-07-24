@@ -441,6 +441,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'Descriptive fields of a vehicle master were edited. The record names which columns changed, never their values — a master edit can touch the internal-classified VIN.',
   },
+  {
+    code: 'veh.vehicle.merged',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A duplicate vehicle was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

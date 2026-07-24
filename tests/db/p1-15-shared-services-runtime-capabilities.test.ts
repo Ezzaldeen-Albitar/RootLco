@@ -371,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 57', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 58', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -386,13 +386,14 @@ describe('P1-15 / global security posture', () => {
     // P1-16 CRM backend then seeds the remaining nine codes its operations
     // declare — read, create, profile.write, consent.write, governance.manage,
     // restriction.manage, duplicate.review, merge, vehicle.manage — taking the
-    // catalog to 55. The P1-17 vehicle backend then seeds veh.vehicle.read and
-    // veh.vehicle.manage, taking the catalog to 57. Permissions live in the seed,
-    // not a migration, which is why the new codes need no schema change.
+    // catalog to 55. The P1-17 vehicle backend then seeds veh.vehicle.read,
+    // veh.vehicle.manage, and veh.vehicle.merge, taking the catalog to 58.
+    // Permissions live in the seed, not a migration, so the new codes need no
+    // schema change.
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    expect(Number(total.rows[0]?.n)).toBe(57);
+    expect(Number(total.rows[0]?.n)).toBe(58);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

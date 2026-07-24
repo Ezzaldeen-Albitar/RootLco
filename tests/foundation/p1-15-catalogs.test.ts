@@ -244,6 +244,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.template.version_created',
   'shared.template.version_retired',
   'veh.vehicle.created',
+  'veh.vehicle.merged',
   'veh.vehicle.updated',
 ];
 
@@ -473,6 +474,7 @@ const EXPECTED_EVENT_TYPES = [
   'user.status.changed',
   'vehicle.checked-in',
   'vehicle.created',
+  'vehicle.merged',
   'vehicle.relationship.changed',
 ];
 

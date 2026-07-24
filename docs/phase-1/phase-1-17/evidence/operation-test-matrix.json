@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 3,
-    "publicApi": 3,
-    "operationDepth": 3,
+    "registered": 4,
+    "publicApi": 4,
+    "operationDepth": 4,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -41,6 +41,50 @@
         "idempotency",
         "outbox",
         "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-merge",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/merge",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-merge.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
         "route",
         "service",
         "success"

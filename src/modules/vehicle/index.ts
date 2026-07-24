@@ -18,10 +18,14 @@ import { VehicleSearchRepository } from './data/vehicle-search-repository';
 import { VehicleSearchService } from './application/vehicle-search-service';
 import { VehicleWriteRepository } from './data/vehicle-write-repository';
 import { VehicleWriteService } from './application/vehicle-write-service';
+import { VehicleIdentityRepository } from './data/vehicle-identity-repository';
+import { VehicleIdentityService } from './application/vehicle-identity-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
+export type { MergeResult } from './application/vehicle-identity-service';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
+export { MAX_APPROVAL_REF } from './domain/vehicle-identity';
 export {
   MAX_PLATE_FRAGMENT,
   MAX_VIN_FRAGMENT,
@@ -46,5 +50,6 @@ export const vehicleModule = composeModule({
   create: () => ({
     vehicleSearch: new VehicleSearchService(new VehicleSearchRepository()),
     vehicleWrite: new VehicleWriteService(new VehicleWriteRepository()),
+    vehicleIdentity: new VehicleIdentityService(new VehicleIdentityRepository()),
   }),
 });

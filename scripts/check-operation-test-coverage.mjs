@@ -158,6 +158,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit'],
     note: 'partial descriptive edit under the frozen touch-metadata/merge guards; VIN and catalog refs are settable, lifecycle is not; a merged vehicle is refused (denial), a tenant-B or unknown id answers the same 404 (cross-tenant), and the edit is audited by changed columns only',
   },
+  'veh.vehicle-merge': {
+    files: ['tests/backend/p1-17-vehicle-merge.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
