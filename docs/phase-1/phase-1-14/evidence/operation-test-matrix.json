@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 79,
-    "publicApi": 79,
+    "registered": 81,
+    "publicApi": 81,
     "internal": 0,
-    "withRequiredEvidence": 64,
+    "withRequiredEvidence": 66,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -27,9 +27,9 @@
       "metadataOnly": 0
     },
     "p1_17": {
-      "registered": 1,
-      "publicApi": 1,
-      "operationDepth": 1,
+      "registered": 3,
+      "publicApi": 3,
+      "operationDepth": 3,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -2102,6 +2102,44 @@
       "unitOnly": false
     },
     {
+      "id": "veh.vehicle-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-create-update.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "veh.vehicle-search",
       "surface": "public-api",
       "method": "GET",
@@ -2113,6 +2151,48 @@
       "declared": ["denial", "cross-tenant"],
       "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
       "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/vehicles/{vehicleId}",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-create-update.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

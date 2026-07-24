@@ -17,10 +17,20 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
 import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
+import {
+  MAX_COLOR,
+  MAX_DISPLAY_NUMBER,
   MAX_PLATE_FRAGMENT,
   MAX_VIN_FRAGMENT,
+  MAX_VIN_INPUT,
+  MODEL_YEAR_MAX,
+  MODEL_YEAR_MIN,
   POWERTRAIN_CATEGORIES,
   VEHICLE_LIFECYCLE_STATUSES,
   vehicleModule,
@@ -75,4 +85,56 @@ export async function GET(request: Request): Promise<Response> {
       ),
     };
   });
+}
+
+/**
+ * Create body. Every descriptive field is optional: a vehicle can be registered
+ * as a bare draft and filled in later. VIN is the raw form only — `veh.vehicles`
+ * generates the normalised value and decides active-VIN uniqueness on it. Lifecycle
+ * is not settable here; creation always lands a `draft`.
+ */
+const CreateBody = z
+  .object({
+    vin: z.string().min(1).max(MAX_VIN_INPUT).nullable().optional(),
+    makeId: schemas.uuid.nullable().optional(),
+    modelId: schemas.uuid.nullable().optional(),
+    trimId: schemas.uuid.nullable().optional(),
+    bodyTypeId: schemas.uuid.nullable().optional(),
+    powertrainTypeId: schemas.uuid.nullable().optional(),
+    modelYear: z.number().int().min(MODEL_YEAR_MIN).max(MODEL_YEAR_MAX).nullable().optional(),
+    powertrainCategory: z.enum(POWERTRAIN_CATEGORIES).optional(),
+    color: z.string().min(1).max(MAX_COLOR).nullable().optional(),
+    displayNumber: z.string().min(1).max(MAX_DISPLAY_NUMBER).nullable().optional(),
+  })
+  .strict();
+
+export const VEHICLE_CREATE_OPERATION = defineOperation({
+  id: 'veh.vehicle-create',
+  module: 'vehicle',
+  method: 'POST',
+  path: '/vehicles',
+  summary: 'Create a draft vehicle in the caller tenant.',
+  permissions: ['veh.vehicle.manage'],
+  scope: 'tenant',
+  auditClass: 'privileged',
+  auditAction: 'veh.vehicle.created',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    VEHICLE_CREATE_OPERATION,
+    request,
+    async ({ db, request: raw }) => ({
+      status: 201,
+      body: await vehicleModule().vehicleWrite.create(db, await parseJsonBody(raw, CreateBody)),
+    }),
+    { body }
+  );
 }

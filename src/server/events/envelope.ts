@@ -115,6 +115,20 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     description: 'A vehicle ownership or authorised-person relationship changed.',
   },
   {
+    // P1-17 allocation (beyond the Chapter 4 Table 4.5 reservation, as P1-15 did
+    // for its own document/template events): a consumer reacts to a vehicle
+    // existing, so apt/rec/wo can reference it. Payload carries no VIN, plate, or
+    // owner — a consumer that needs them reads the aggregate under its own
+    // authorization.
+    code: 'EVT-VEH-002',
+    eventType: 'vehicle.created',
+    schemaVersion: 1,
+    aggregateType: 'veh.vehicle',
+    owner: 'veh',
+    implementedIn: 'P1-17',
+    description: 'A vehicle master was created as a draft.',
+  },
+  {
     code: 'EVT-APT-001',
     eventType: 'appointment.changed',
     schemaVersion: 1,

@@ -91,6 +91,7 @@ import '@/app/api/v1/customers/[customerId]/timeline/route';
 import '@/app/api/v1/customers/[customerId]/vehicles/route';
 // --- Phase 1-17 vehicle backend ------------------------------------------
 import '@/app/api/v1/vehicles/route';
+import '@/app/api/v1/vehicles/[vehicleId]/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

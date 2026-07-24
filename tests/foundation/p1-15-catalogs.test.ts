@@ -243,6 +243,8 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.template.version_approved',
   'shared.template.version_created',
   'shared.template.version_retired',
+  'veh.vehicle.created',
+  'veh.vehicle.updated',
 ];
 
 /**
@@ -470,6 +472,7 @@ const EXPECTED_EVENT_TYPES = [
   'user.invited',
   'user.status.changed',
   'vehicle.checked-in',
+  'vehicle.created',
   'vehicle.relationship.changed',
 ];
 

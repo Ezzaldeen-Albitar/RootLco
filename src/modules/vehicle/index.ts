@@ -16,8 +16,12 @@
 import { composeModule } from '@/server/layering';
 import { VehicleSearchRepository } from './data/vehicle-search-repository';
 import { VehicleSearchService } from './application/vehicle-search-service';
+import { VehicleWriteRepository } from './data/vehicle-write-repository';
+import { VehicleWriteService } from './application/vehicle-write-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
+export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
+export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   MAX_PLATE_FRAGMENT,
   MAX_VIN_FRAGMENT,
@@ -28,11 +32,19 @@ export {
   type VehicleLifecycleStatus,
   type WorkshopStatus,
 } from './domain/vehicle-search';
+export {
+  MAX_COLOR,
+  MAX_DISPLAY_NUMBER,
+  MAX_VIN_INPUT,
+  MODEL_YEAR_MAX,
+  MODEL_YEAR_MIN,
+} from './domain/vehicle-write';
 
 /** Composition root: constructs the module's services once per process. */
 export const vehicleModule = composeModule({
   module: 'vehicle',
   create: () => ({
     vehicleSearch: new VehicleSearchService(new VehicleSearchRepository()),
+    vehicleWrite: new VehicleWriteService(new VehicleWriteRepository()),
   }),
 });

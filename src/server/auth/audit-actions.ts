@@ -425,6 +425,22 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'veh.vehicle_relationship',
     description: 'A customer was linked to an existing vehicle in a relationship role.',
   },
+
+  // ---- Vehicle backend (P1-17) --------------------------------------------
+  {
+    code: 'veh.vehicle.created',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle master was created as a draft. The recorded fact is that a vehicle now exists; its VIN is internal-classified data in the row the record points at and is not copied here.',
+  },
+  {
+    code: 'veh.vehicle.updated',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'Descriptive fields of a vehicle master were edited. The record names which columns changed, never their values — a master edit can touch the internal-classified VIN.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
