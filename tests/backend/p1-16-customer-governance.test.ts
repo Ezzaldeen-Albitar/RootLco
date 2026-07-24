@@ -107,6 +107,35 @@ async function countWhere(sql: string, values: readonly unknown[]): Promise<numb
   return Number(result.rows[0]?.n ?? '0');
 }
 
+/**
+ * Blocks until `expected` backends are waiting on a lock in this database.
+ *
+ * A race between two in-flight requests cannot be asserted until both have
+ * actually reached the contended write. Waiting for that is what makes the
+ * assertion deterministic instead of a coin toss decided by the event loop.
+ */
+async function waitForBlockedBackends(expected: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = 0;
+  while (Date.now() < deadline) {
+    const result = await admin.query<{ n: string }>(
+      `SELECT count(DISTINCT a.pid)::text AS n
+         FROM pg_stat_activity a
+         JOIN pg_locks l ON l.pid = a.pid
+        WHERE NOT l.granted
+          AND a.datname = current_database()
+          AND a.pid <> pg_backend_pid()`
+    );
+    seen = Number(result.rows[0]?.n ?? '0');
+    if (seen >= expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(
+    `expected ${expected} backends blocked on a lock within ${timeoutMs}ms, saw ${seen}; ` +
+      'the race was not forced, so the outcome below would prove nothing'
+  );
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -388,22 +417,61 @@ describe('lifecycle status', () => {
 
   it('lets exactly one of two simultaneous status changes win', async () => {
     authenticateAs(GOVERNOR_SUBJECT);
-    const [a, b] = await Promise.all([
-      setStatus(CUSTOMER_3, {
-        lifecycleStatus: 'inactive',
-        reason: 'First concurrent writer moving the customer out of active service.',
-      }),
-      setStatus(CUSTOMER_3, {
-        lifecycleStatus: 'blocked',
-        reason: 'Second concurrent writer blocking the customer for non-payment.',
-      }),
-    ]);
 
-    const statuses = [a.status, b.status].sort();
+    // `Promise.all` only *starts* both requests; nothing in the pipeline makes
+    // them overlap. Each reads `record_version` with an unlocked SELECT, so if
+    // the first commits before the second reads, `inactive -> blocked` is a
+    // legal move against a *current* version and both answer 200 honestly —
+    // two winners, two history rows, and no evidence about concurrency at all.
+    // This test declares `concurrency` evidence, so it has to force the race
+    // rather than hope the event loop interleaves the two pipelines.
+    //
+    // Holding the partner row from a third connection parks both writers after
+    // each has read the same `record_version` and before either can write it:
+    // the `inactive` writer blocks on its UPDATE, and the `blocked` writer on
+    // the FOR KEY SHARE its block-history foreign key needs. Releasing the gate
+    // then lets exactly one UPDATE still match `record_version` — which is the
+    // property under test.
+    const gate = await admin.connect();
+    const outcomes = await (async () => {
+      try {
+        await gate.query('BEGIN');
+        await gate.query('SELECT id FROM crm.business_partners WHERE id = $1 FOR UPDATE', [
+          CUSTOMER_3,
+        ]);
+
+        const inFlight = Promise.all([
+          setStatus(CUSTOMER_3, {
+            lifecycleStatus: 'inactive',
+            reason: 'First concurrent writer moving the customer out of active service.',
+          }),
+          setStatus(CUSTOMER_3, {
+            lifecycleStatus: 'blocked',
+            reason: 'Second concurrent writer blocking the customer for non-payment.',
+          }),
+        ]);
+
+        try {
+          await waitForBlockedBackends(2);
+        } finally {
+          // Release the gate whether or not both arrived, so the requests can
+          // finish and a failure reports its own cause instead of a timeout.
+          await gate.query('ROLLBACK');
+        }
+        return await inFlight;
+      } finally {
+        gate.release();
+      }
+    })();
+
+    // Numeric sort: the default comparator is lexicographic, which happens to
+    // agree for these codes but would not for a three- versus four-digit pair.
+    const statuses = outcomes.map((response) => response.status).sort((x, y) => x - y);
     // One committed; the other was told its view was stale rather than
-    // silently overwriting a decision it never saw.
+    // silently overwriting a decision it never saw. The loser read a legal
+    // source state, so it can only have failed on the version check — 409.
     expect(statuses[0]).toBe(200);
-    expect([409, 422]).toContain(statuses[1]);
+    expect(statuses[1]).toBe(409);
 
     // Exactly one transition was recorded — the loser wrote nothing.
     expect(
