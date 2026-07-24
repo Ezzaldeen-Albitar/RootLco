@@ -58,6 +58,17 @@ const SOLO = 'c1640000-0000-4000-8000-0000000000c4';
 const CUSTOMER_B = 'c1640000-0000-4000-8000-0000000000d1';
 const VEHICLE = 'c1640000-0000-4000-8000-0000000000e1';
 const VEHICLE_B = 'c1640000-0000-4000-8000-0000000000e2';
+// Re-score regression: a same-name pair whose evidence strengthens between scans.
+const RESCORE_X = 'c1640000-0000-4000-8000-0000000000f1';
+const RESCORE_Y = 'c1640000-0000-4000-8000-0000000000f2';
+// Merge idempotency: a fresh source/survivor pair used only for same-key replay.
+const MERGE_SRC = 'c1640000-0000-4000-8000-000000000091';
+const MERGE_SURV = 'c1640000-0000-4000-8000-000000000092';
+// Duplicate-review idempotency: a fresh same-name pair used only for same-key replay.
+const REVIEW_X = 'c1640000-0000-4000-8000-000000000093';
+const REVIEW_Y = 'c1640000-0000-4000-8000-000000000094';
+// Duplicate-scan idempotency: a lone customer scanned twice under one key.
+const SCAN_IDEM = 'c1640000-0000-4000-8000-000000000095';
 
 const APPROVAL = 'MERGE-APPROVAL-2026-0001';
 const REVIEW_REASON = 'Confirmed with the customer by phone that these are two different people.';
@@ -174,6 +185,22 @@ beforeAll(async () => {
     [DUP_A, TENANT_A, DUP_B, DUP_C, SOLO, USER_A, CUSTOMER_B, TENANT_B]
   );
 
+  // Dedicated fixtures for the re-score regression and the merge/review
+  // idempotency replays. Given their own distinct names so a scan of one pair
+  // never collides with the "Kareem Duplicate" set above.
+  await admin.query(
+    `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+     VALUES ($1, $8, 'individual', 'Rescore Twin',   'active', $7),
+            ($2, $8, 'individual', 'Rescore Twin',   'active', $7),
+            ($3, $8, 'individual', 'Merge Idem Src',  'active', $7),
+            ($4, $8, 'individual', 'Merge Idem Surv', 'active', $7),
+            ($5, $8, 'individual', 'Review Idem',     'active', $7),
+            ($6, $8, 'individual', 'Review Idem',     'active', $7),
+            ($9, $8, 'individual', 'Scan Idem Solo',  'active', $7)
+     ON CONFLICT (id) DO NOTHING`,
+    [RESCORE_X, RESCORE_Y, MERGE_SRC, MERGE_SURV, REVIEW_X, REVIEW_Y, USER_A, TENANT_A, SCAN_IDEM]
+  );
+
   // Vehicles: one in tenant A, one in tenant B for the cross-tenant probe.
   await admin.query(
     `INSERT INTO veh.vehicles (id, tenant_id, created_by)
@@ -275,6 +302,69 @@ describe('duplicate scoring', () => {
       )
     ).toBeGreaterThan(0);
   });
+
+  it('re-scans a pair whose evidence strengthened without failing or rewriting the frozen score', async () => {
+    authenticateAs(STEWARD_SUBJECT);
+    // First scan: the pair matches on name only.
+    const first = (await (await scan(RESCORE_X)).json()) as Body;
+    const candidate = (first.candidates ?? []).find((c) => c.otherId === RESCORE_Y);
+    expect(candidate).toBeDefined();
+    const frozen = await admin.query<{ match_score: string }>(
+      `SELECT match_score FROM crm.duplicate_candidates WHERE id = $1`,
+      [candidate?.candidateId]
+    );
+    const frozenScore = frozen.rows[0]?.match_score;
+
+    // Strengthen the evidence: give both customers the same contact value, so a
+    // recompute would score higher than the value frozen on the open candidate.
+    await admin.query(
+      `INSERT INTO crm.contact_points
+         (tenant_id, partner_id, channel, normalized_value, raw_value, created_by)
+       VALUES ($1, $2, 'email', 'shared@rescore.test', 'shared@rescore.test', $4),
+              ($1, $3, 'email', 'shared@rescore.test', 'shared@rescore.test', $4)`,
+      [TENANT_A, RESCORE_X, RESCORE_Y, USER_A]
+    );
+
+    // The re-scan must not raise the immutable-column guard (which would 500 and
+    // roll back the whole scan): match_score/match_basis are frozen at detection,
+    // so an existing candidate is returned untouched rather than re-scored.
+    const response = await scan(RESCORE_X);
+    expect(response.status).toBe(200);
+
+    // Still exactly one candidate for the pair, and its score is unchanged.
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM crm.duplicate_candidates
+          WHERE tenant_id = $1
+            AND partner_id_a = LEAST($2::uuid, $3::uuid)
+            AND partner_id_b = GREATEST($2::uuid, $3::uuid)`,
+        [TENANT_A, RESCORE_X, RESCORE_Y]
+      )
+    ).toBe(1);
+    const after = await admin.query<{ match_score: string }>(
+      `SELECT match_score FROM crm.duplicate_candidates WHERE id = $1`,
+      [candidate?.candidateId]
+    );
+    expect(after.rows[0]?.match_score).toBe(frozenScore);
+  });
+
+  it('replays a repeated scan under one key without re-running it', async () => {
+    authenticateAs(STEWARD_SUBJECT);
+    const key = crypto.randomUUID();
+    const first = await scan(SCAN_IDEM, key);
+    expect(first.status).toBe(200);
+    // The same key must replay the stored 200, not run a second scan — so exactly
+    // one scan-audit row exists for this customer afterwards.
+    const replay = await scan(SCAN_IDEM, key);
+    expect(replay.status).toBe(200);
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM iam.audit_records
+          WHERE action = 'crm.customer.duplicates_scanned' AND entity_id = $1`,
+        [SCAN_IDEM]
+      )
+    ).toBe(1);
+  });
 });
 
 describe('duplicate review', () => {
@@ -336,6 +426,33 @@ describe('duplicate review', () => {
     });
     expect(response.status).toBe(422);
     expect(((await response.json()) as Body).code).toBe('ERR-VAL-001');
+  });
+
+  it('replays a repeated review under one key instead of a stale-conflict refusal', async () => {
+    authenticateAs(STEWARD_SUBJECT);
+    const scanned = (await (await scan(REVIEW_X)).json()) as Body;
+    const candidateId =
+      (scanned.candidates ?? []).find((c) => c.otherId === REVIEW_Y)?.candidateId ?? '';
+    expect(candidateId).not.toBe('');
+    const key = crypto.randomUUID();
+    const decision = { decision: 'dismissed', reason: REVIEW_REASON };
+
+    const first = await review(candidateId, decision, key);
+    expect(first.status).toBe(200);
+    // The SAME key must replay the stored 200 — not fall through to the
+    // status !== 'open' guard and return the [409,422] a fresh-key retry gets.
+    const replay = await review(candidateId, decision, key);
+    expect(replay.status).toBe(200);
+    expect(((await replay.json()) as Body).candidateId).toBe(
+      ((await first.json()) as Body).candidateId
+    );
+
+    // Reviewed exactly once; the candidate is dismissed, not double-processed.
+    const row = await admin.query<{ status: string }>(
+      `SELECT status FROM crm.duplicate_candidates WHERE id = $1`,
+      [candidateId]
+    );
+    expect(row.rows[0]?.status).toBe('dismissed');
   });
 });
 
@@ -451,6 +568,36 @@ describe('merge success', () => {
       [DUP_C]
     );
     expect(source.rows[0]?.merged_into_id).toBe(DUP_B);
+  });
+
+  it('replays a repeated merge under one key instead of merging twice or minting a new record', async () => {
+    authenticateAs(STEWARD_SUBJECT);
+    const key = crypto.randomUUID();
+    const body = { survivorId: MERGE_SURV, approvalRef: APPROVAL };
+
+    const first = (await (await merge(MERGE_SRC, body, key)).json()) as Body;
+    // A same-key retry must short-circuit in the idempotency layer and replay the
+    // stored 200 with the SAME mergeId — never re-run the destructive merge nor
+    // return a fresh record. (Distinct from the already-merged guard, which is a
+    // fresh-key business refusal.)
+    const replayResponse = await merge(MERGE_SRC, body, key);
+    const replay = (await replayResponse.json()) as Body;
+    expect(replayResponse.status).toBe(200);
+    expect(replay.mergeId).toBe(first.mergeId);
+
+    // Exactly one merge record and one redirect resulted.
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM crm.partner_merges WHERE source_partner_id = $1`,
+        [MERGE_SRC]
+      )
+    ).toBe(1);
+    const source = await admin.query<{ merged_into_id: string; lifecycle_status: string }>(
+      `SELECT merged_into_id, lifecycle_status FROM crm.business_partners WHERE id = $1`,
+      [MERGE_SRC]
+    );
+    expect(source.rows[0]?.merged_into_id).toBe(MERGE_SURV);
+    expect(source.rows[0]?.lifecycle_status).toBe('merged');
   });
 
   it('refuses merging into a survivor that is itself merged', async () => {

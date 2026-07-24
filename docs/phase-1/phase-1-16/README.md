@@ -61,20 +61,25 @@ operation-depth backend evidence executed against a real database on the least-p
 | `crm.customer-timeline`   | `GET /customers/{id}/timeline`          | `crm.customer.read`               |
 | `crm.vehicle-link`        | `POST /customers/{id}/vehicles`         | `crm.customer.vehicle.manage`     |
 
-### Route-shape deviation — owner decision recorded here
+### Route-shape decision — approved
 
 The plan text writes the duplicate review and merge routes with a colon verb
 (`{candidateId}:review`, `{customerId}:merge`). They are delivered as `/review` and `/merge`
-sub-resources instead, for two independent reasons:
+sub-resources instead. **This is the approved canonical HTTP mapping for Phase 1-16** — a technical
+decision under the standing technical authorization, made for two independent reasons:
 
 1. The phase's own route convention rules out colon-verb paths in favour of noun/sub-resource
    shapes, and every other operation in this phase follows that convention.
 2. A path segment containing `:` cannot be a directory name on Windows, where this repository is
-   developed. The colon form is therefore **unbuildable here**, not merely discouraged.
+   developed. The colon form is therefore **unbuildable here** (Next.js filesystem routing), not
+   merely discouraged, and it is equally incompatible with the OpenAPI tooling and the
+   operation-registration architecture.
 
-Operation identifiers, permissions, request and response contracts, and semantics are exactly as
-specified. Only the separator differs. If the owner requires the colon form, it needs a
-platform-level routing decision (a catch-all segment parser) rather than a route rename.
+Operation identifiers, permissions, request and response contracts, audit and event behaviour,
+requirement traceability, and semantics are exactly as specified — only the separator differs, and
+the operation IDs (`crm.duplicate-review`, `crm.customer-merge`) are stable and independent of path
+syntax. No colon-form alias or catch-all compatibility route is added: no external consumer or
+automated contract requires one. **No user decision remains open on this point.**
 
 ## What this phase delivers
 
