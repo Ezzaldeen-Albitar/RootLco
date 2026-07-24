@@ -189,6 +189,20 @@ describe('error catalog', () => {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_AUDIT_ACTIONS = [
+  'crm.customer.address_added',
+  'crm.customer.alert_raised',
+  'crm.customer.consent_changed',
+  'crm.customer.contact_added',
+  'crm.customer.created',
+  'crm.customer.duplicate_reviewed',
+  'crm.customer.duplicates_scanned',
+  'crm.customer.merged',
+  'crm.customer.note_added',
+  'crm.customer.preference_changed',
+  'crm.customer.restriction_imposed',
+  'crm.customer.status_changed',
+  'crm.customer.tag_assigned',
+  'crm.customer.vehicle_linked',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',
@@ -442,7 +456,9 @@ describe('registered operations against the audit-action catalog', () => {
 const EXPECTED_EVENT_TYPES = [
   'access.grant.changed',
   'appointment.changed',
+  'business-partner.created',
   'business-partner.merged',
+  'consent.changed',
   'document.accepted',
   'document.link.changed',
   'document.version.registered',

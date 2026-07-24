@@ -72,7 +72,25 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Phase 1-16 — CRM Backend (crm). DBCR-P1-16-001 enables runtime authorship of
   -- customer notes on shared.notes (SELECT-only before this change). One code,
   -- naming one concrete capability; the RLS write policies on shared.notes gate on it.
-  ('crm.customer.note.write',  'crm', 'Author and edit customer notes',            'medium', '00000000-0000-4000-8000-000000000001')
+  ('crm.customer.note.write',  'crm', 'Author and edit customer notes',            'medium', '00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.read',        'crm', 'Search and read customers in the tenant',   'low',    '00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.create',      'crm', 'Create individual and company customers',   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Contacts, addresses, and delivery preferences. Separated from consent below:
+  -- editing a phone number is routine data maintenance, while a consent decision
+  -- changes what the platform is permitted to do to a person.
+  ('crm.customer.profile.write','crm','Maintain customer contacts, addresses, and preferences','medium','00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.consent.write','crm','Record customer consent decisions',         'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Alerts, tags, and lifecycle status: advisory or classifying records.
+  ('crm.customer.governance.manage','crm','Manage customer alerts, tags, and lifecycle status','medium','00000000-0000-4000-8000-000000000001'),
+  -- Restrictions get their own code: raising an alert and refusing to serve
+  -- somebody are not the same authority.
+  ('crm.customer.restriction.manage','crm','Impose and lift customer restrictions','high','00000000-0000-4000-8000-000000000001'),
+  -- Duplicate scanning and reviewing are one authority: both are judgement
+  -- about whether two records are the same person, and neither combines them.
+  ('crm.customer.duplicate.review','crm','Scan for and review duplicate customer candidates','medium','00000000-0000-4000-8000-000000000001'),
+  -- Merge is separate and higher: it is irreversible in practice.
+  ('crm.customer.merge',       'crm', 'Merge a duplicate customer into a survivor','high',  '00000000-0000-4000-8000-000000000001'),
+  ('crm.customer.vehicle.manage','crm','Link customers to vehicles',                'medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

@@ -77,6 +77,18 @@ const toPosix = (p) => p.split(sep).join('/');
 export const DERIVED_PREFIX = 'shared.';
 
 /**
+ * P1-16 (`crm.`) is gated with the SAME derived evidence model as P1-15
+ * (`shared.`): the obligations are derived from the registration, not declared,
+ * so editing the manifest cannot weaken the floor. Both namespaces share every
+ * derived rule below; only the per-phase count blocks are reported separately.
+ */
+export const P1_16_PREFIX = 'crm.';
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX];
+/** True when an operation id belongs to a derived-evidence namespace. */
+export const isDerivedId = (id) =>
+  typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
+
+/**
  * Evidence-kind vocabulary. A declaration may provide a superset; the gate
  * checks the effective REQUIRED ones are present.
  *
@@ -120,6 +132,105 @@ export const EVIDENCE_KINDS = Object.freeze([
 //   note:     why, for the reader.
 // ---------------------------------------------------------------------------
 export const MANIFEST = {
+  // ========================================================================
+  // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
+  // the floor (route, service, success, authorization) is derived from the
+  // registration; `required` below adds the extra obligations this operation
+  // owes beyond that floor.
+  // ========================================================================
+  'crm.customer-search': {
+    files: ['tests/backend/p1-16-customer-search.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded allow-listed read; a tenant-B customer is unreachable (cross-tenant); an invalid cursor and an oversized query are refused (denial); safe projection only, no sensitive identifier',
+  },
+  'crm.individual-create': {
+    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'partner + individual profile + audit + outbox commit in one transaction; an injected failure leaves none of the four (rollback); the created customer is invisible from tenant B (cross-tenant)',
+  },
+  'crm.company-create': {
+    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
+    note: 'organization counterpart; proves the party-type discriminator comes from the path, so a company profile can never attach to an individual partner',
+  },
+  // --- Profile components: the re-parenting and IDOR surface. --------------
+  'crm.contact-add': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'parent comes from the path; a cross-tenant customer id answers the same 404 as an unknown one, so the route is not an existence oracle',
+  },
+  'crm.address-add': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'same nesting guarantee as contacts; country code is format-validated only while the country reference decision is open',
+  },
+  'crm.preference-set': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'upsert keyed by (customer, channel, purpose); proves a preference never writes consent history',
+  },
+  'crm.consent-record': {
+    files: ['tests/backend/p1-16-customer-profile.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
+    note: 'append-only; server-stamped actor and effective_at; a contact point owned by another customer is refused; an injected failure leaves no consent row, audit row, or event',
+  },
+  // --- Governance: the records that constrain how staff treat a customer. ---
+  'crm.note-add': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'consumes DBCR-P1-16-001; the policies pin author and entity type, so an author cannot be forged and a note cannot attach to a non-CRM entity; the body never reaches the audit trail',
+  },
+  'crm.alert-raise': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'advisory only; proves an alert changes no lifecycle state',
+  },
+  'crm.tag-assign': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'segment plus assignment; re-tagging is a no-op, not a conflict',
+  },
+  'crm.customer-status-set': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'concurrency'],
+    note: 'transition graph refuses no-ops and illegal moves; record_version makes a simultaneous change fail closed rather than overwrite; the append-only history is unwritable by UPDATE',
+  },
+  'crm.restriction-impose': {
+    files: ['tests/backend/p1-16-customer-governance.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
+    note: 'no_service blocks the customer in the same transaction with a status transition and block-history entry; a short reason is refused before anything is written',
+  },
+  // --- Identity: duplicates, merge, history, timeline, vehicle linkage. ----
+  'crm.duplicate-scan': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'deterministic weighted scoring over tenant data; a dismissed pair is not re-raised by a re-scan; no cross-tenant customer is ever compared',
+  },
+  'crm.duplicate-review': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'concurrency'],
+    note: 'only dismissed is recordable, so a reviewer cannot mark a pair merged without a merge; a second review of the same candidate is refused',
+  },
+  'crm.customer-merge': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback', 'concurrency'],
+    note: 'same-record, cross-tenant, already-merged, and merge-into-merged are all refused; merge record plus redirect plus audit plus event commit together or not at all',
+  },
+  'crm.customer-history': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'projection over four append-only sources; server-fixed ordering; bounded',
+  },
+  'crm.customer-timeline': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'keyset page with an id tie-break, so equal occurred_at values cannot skip or repeat a row across a page boundary',
+  },
+  'crm.vehicle-link': {
+    files: ['tests/backend/p1-16-customer-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'both sides resolved under the tenant first; a duplicate open role for the same pair is refused; creates no vehicle schema',
+  },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
     files: ['tests/backend/iam-access-administration.test.ts'],
@@ -600,7 +711,7 @@ export function scanRegisteredOperationIds(root) {
  */
 export function derivedRequirements(operation) {
   if (!operation || typeof operation.id !== 'string') return [];
-  if (!operation.id.startsWith(DERIVED_PREFIX)) return [];
+  if (!isDerivedId(operation.id)) return [];
 
   const required = ['route', 'service', 'success'];
   required.push(operation.public ? 'unauthenticated' : 'authorization');
@@ -635,10 +746,13 @@ export function parseProvidedFlags(source) {
       inBlock = false;
       continue;
     }
-    // `shared` joined `iam` and `meta` with P1-15. The prefix list is explicit
-    // rather than a wildcard so a typo in a declaration is a missing flag —
-    // which fails the gate — instead of a silently accepted new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(line);
+    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16. The
+    // prefix list is explicit rather than a wildcard so a typo in a declaration
+    // is a missing flag — which fails the gate — instead of a silently accepted
+    // new namespace.
+    const m = /^\s*\*?\s*((?:iam|meta|shared|crm)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      line
+    );
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
       const existing = provided.get(m[1]);
@@ -823,7 +937,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     }
   }
 
-  const derivedRows = matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX));
+  const phaseRows = (prefix) => matrix.filter((m) => m.id.startsWith(prefix));
+  const derivedRows = phaseRows(DERIVED_PREFIX);
+  const crmRows = phaseRows(P1_16_PREFIX);
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -831,22 +947,25 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     m.provided.includes('service') &&
     (m.provided.includes('authorization') || m.provided.includes('unauthenticated'));
 
+  const phaseCounts = (rows) => ({
+    registered: rows.length,
+    publicApi: rows.filter((m) => m.surface === 'public-api').length,
+    operationDepth: rows.filter(atOperationDepth).length,
+    invocationOnly: rows.filter((m) => m.required.length === 0).length,
+    pending: 0,
+    unitOnly: rows.filter((m) => m.unitOnly).length,
+    unreferenced: rows.filter((m) => !m.referenced).length,
+    metadataOnly: rows.filter((m) => m.metadataOnly).length,
+  });
+
   const counts = {
     registered: operations.size,
     publicApi: matrix.filter((m) => m.surface === 'public-api').length,
     internal: matrix.filter((m) => m.surface === 'internal').length,
     withRequiredEvidence: matrix.filter((m) => m.required.length > 0).length,
     invocationOnly: matrix.filter((m) => m.required.length === 0).length,
-    p1_15: {
-      registered: derivedRows.length,
-      publicApi: derivedRows.filter((m) => m.surface === 'public-api').length,
-      operationDepth: derivedRows.filter(atOperationDepth).length,
-      invocationOnly: derivedRows.filter((m) => m.required.length === 0).length,
-      pending: 0,
-      unitOnly: derivedRows.filter((m) => m.unitOnly).length,
-      unreferenced: derivedRows.filter((m) => !m.referenced).length,
-      metadataOnly: derivedRows.filter((m) => m.metadataOnly).length,
-    },
+    p1_15: phaseCounts(derivedRows),
+    p1_16: phaseCounts(crmRows),
   };
   return { failures, matrix, counts };
 }
@@ -854,16 +973,44 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
-function writeMatrix(path, payload) {
+/**
+ * Writes one evidence matrix in **Prettier's** JSON shape.
+ *
+ * `JSON.stringify(x, null, 2)` always expands an array over multiple lines;
+ * Prettier collapses a short one onto a single line. That difference is
+ * invisible until CI runs this gate (which rewrites the file) *before*
+ * `format:check` (which then fails on the file the gate just produced) — a
+ * failure that cannot be reproduced by formatting the committed artifact,
+ * because the committed artifact is fine. Formatting here makes the generator's
+ * output and the formatter's expectation the same thing by construction.
+ *
+ * Prettier is resolved lazily so the gate still runs (unformatted) in a
+ * checkout without dev dependencies; the surrounding try/catch keeps a missing
+ * evidence directory non-fatal, as before.
+ */
+async function writeMatrix(path, payload) {
+  const json = JSON.stringify(payload, null, 2) + '\n';
+  let formatted = json;
+  try {
+    const prettier = await import('prettier');
+    // The repo's own .prettierrc must be resolved explicitly: a programmatic
+    // `format()` does not read it, so without this the output is formatted at
+    // Prettier's default print width and `format:check` disagrees with us
+    // about where an array fits on one line.
+    const config = (await prettier.resolveConfig(path)) ?? {};
+    formatted = await prettier.format(json, { ...config, parser: 'json', filepath: path });
+  } catch {
+    /* no prettier available: fall back to the raw shape rather than failing */
+  }
   try {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(payload, null, 2) + '\n');
+    writeFileSync(path, formatted);
   } catch {
     /* evidence dir may be absent in some checkouts; not fatal to the gate */
   }
 }
 
-function runCli() {
+async function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
@@ -886,7 +1033,7 @@ function runCli() {
   });
 
   const generatedFrom = 'scripts/check-operation-test-coverage.mjs';
-  writeMatrix(
+  await writeMatrix(
     join(ROOT, 'docs', 'phase-1', 'phase-1-14', 'evidence', 'operation-test-matrix.json'),
     {
       generatedFrom,
@@ -894,12 +1041,20 @@ function runCli() {
       operations: matrix,
     }
   );
-  writeMatrix(
+  await writeMatrix(
     join(ROOT, 'docs', 'phase-1', 'phase-1-15', 'evidence', 'operation-test-matrix.json'),
     {
       generatedFrom,
       counts: counts.p1_15,
       operations: matrix.filter((m) => m.id.startsWith(DERIVED_PREFIX)),
+    }
+  );
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-16', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_16,
+      operations: matrix.filter((m) => m.id.startsWith(P1_16_PREFIX)),
     }
   );
 
@@ -928,6 +1083,15 @@ function runCli() {
     console.log(`P1-15 unit-only: ${p.unitOnly}`);
     console.log(`P1-15 unreferenced: ${p.unreferenced}`);
     console.log(`P1-15 metadata-only: ${p.metadataOnly}`);
+    const q = counts.p1_16;
+    console.log('');
+    console.log(`P1-16 registered public operations: ${q.registered}`);
+    console.log(`P1-16 operation-depth: ${q.operationDepth}`);
+    console.log(`P1-16 invocation-only: ${q.invocationOnly}`);
+    console.log(`P1-16 pending: ${q.pending}`);
+    console.log(`P1-16 unit-only: ${q.unitOnly}`);
+    console.log(`P1-16 unreferenced: ${q.unreferenced}`);
+    console.log(`P1-16 metadata-only: ${q.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`
@@ -945,5 +1109,8 @@ function runCli() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  runCli();
+  runCli().catch((error) => {
+    console.error(`Operation-coverage gate failed: ${error.message}`);
+    process.exit(2);
+  });
 }

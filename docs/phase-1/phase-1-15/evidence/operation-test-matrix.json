@@ -22,18 +22,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "audit"
-      ],
-      "declared": [
-        "denial",
-        "provider"
-      ],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "provider"],
       "required": [
         "route",
         "service",
@@ -78,10 +68,7 @@
         "idempotency",
         "audit"
       ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -119,18 +106,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "audit"
-      ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -166,17 +143,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit"
-      ],
-      "declared": [
-        "denial"
-      ],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial"],
       "required": [
         "route",
         "service",
@@ -211,18 +179,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit"
-      ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -259,17 +217,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "audit"
-      ],
-      "declared": [
-        "denial"
-      ],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial"],
       "required": [
         "route",
         "service",
@@ -313,10 +262,7 @@
         "audit",
         "isolation"
       ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -356,31 +302,10 @@
         "tests/backend/p1-15-templates-transitions-export.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "isolation"
-      ],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": [],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "isolation"
-      ],
-      "provided": [
-        "authorization",
-        "cross-tenant",
-        "isolation",
-        "route",
-        "service",
-        "success"
-      ],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -396,32 +321,10 @@
         "tests/backend/p1-15-templates-transitions-export.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "audit"
-      ],
-      "declared": [
-        "denial"
-      ],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "audit",
-        "denial"
-      ],
-      "provided": [
-        "audit",
-        "authorization",
-        "denial",
-        "route",
-        "service",
-        "success"
-      ],
+      "derived": ["route", "service", "success", "authorization", "audit"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "audit", "denial"],
+      "provided": ["audit", "authorization", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -437,25 +340,10 @@
         "tests/backend/p1-15-templates-transitions-export.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization"
-      ],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "authorization"
-      ],
-      "provided": [
-        "authorization",
-        "route",
-        "service",
-        "success"
-      ],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -471,25 +359,10 @@
         "tests/backend/p1-15-dispatch-and-health.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": [],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
-      "provided": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
+      "required": ["route", "service", "success", "unauthenticated"],
+      "provided": ["route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -505,25 +378,10 @@
         "tests/backend/p1-15-dispatch-and-health.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": [],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
-      "provided": [
-        "route",
-        "service",
-        "success",
-        "unauthenticated"
-      ],
+      "required": ["route", "service", "success", "unauthenticated"],
+      "provided": ["route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -539,19 +397,8 @@
         "tests/backend/p1-15-attachments-notifications.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit"
-      ],
-      "declared": [
-        "denial",
-        "outbox",
-        "provider"
-      ],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "outbox", "provider"],
       "required": [
         "route",
         "service",
@@ -599,9 +446,7 @@
         "stale-version",
         "audit"
       ],
-      "declared": [
-        "denial"
-      ],
+      "declared": ["denial"],
       "required": [
         "route",
         "service",
@@ -637,18 +482,8 @@
         "tests/backend/p1-15-templates-transitions-export.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit"
-      ],
-      "declared": [
-        "denial",
-        "cross-tenant"
-      ],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "cross-tenant"],
       "required": [
         "route",
         "service",
@@ -693,9 +528,7 @@
         "stale-version",
         "audit"
       ],
-      "declared": [
-        "denial"
-      ],
+      "declared": ["denial"],
       "required": [
         "route",
         "service",
@@ -740,10 +573,7 @@
         "stale-version",
         "audit"
       ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -790,10 +620,7 @@
         "idempotency",
         "audit"
       ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -831,32 +658,10 @@
         "tests/backend/p1-15-templates-transitions-export.test.ts"
       ],
       "referenced": true,
-      "derived": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant"
-      ],
-      "declared": [
-        "denial"
-      ],
-      "required": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "denial"
-      ],
-      "provided": [
-        "authorization",
-        "cross-tenant",
-        "denial",
-        "route",
-        "service",
-        "success"
-      ],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -881,10 +686,7 @@
         "stale-version",
         "audit"
       ],
-      "declared": [
-        "denial",
-        "outbox"
-      ],
+      "declared": ["denial", "outbox"],
       "required": [
         "route",
         "service",
@@ -931,9 +733,7 @@
         "stale-version",
         "audit"
       ],
-      "declared": [
-        "denial"
-      ],
+      "declared": ["denial"],
       "required": [
         "route",
         "service",

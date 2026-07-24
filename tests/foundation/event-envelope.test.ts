@@ -187,6 +187,9 @@ describe('reserved-name registry', () => {
     );
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
+      'business-partner.created',
+      'business-partner.merged',
+      'consent.changed',
       'document.link.changed',
       'document.version.registered',
       'message-template.version.changed',
@@ -197,7 +200,11 @@ describe('reserved-name registry', () => {
       'user.status.changed',
     ]);
 
-    const OWNER_BY_PHASE: Readonly<Record<string, string>> = { 'P1-14': 'iam', 'P1-15': 'shared' };
+    const OWNER_BY_PHASE: Readonly<Record<string, string>> = {
+      'P1-14': 'iam',
+      'P1-15': 'shared',
+      'P1-16': 'crm',
+    };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;
       const phase = entry.implementedIn as string;
