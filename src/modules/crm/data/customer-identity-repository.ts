@@ -129,12 +129,24 @@ export class CustomerIdentityRepository extends Repository {
   }
 
   /**
-   * Records or refreshes one candidate pair.
+   * Records one candidate pair, once.
    *
-   * Upsert on the ordered pair: re-running the scan updates the score and the
-   * basis rather than accumulating a new row per run. A candidate a human has
-   * already dismissed keeps that status — re-scanning must not silently reopen
-   * a decision somebody made.
+   * A candidate's `match_score` and `match_basis` are **immutable by schema**
+   * (`tg_duplicate_candidates_immutable` freezes them the moment the pair is
+   * first detected). So a re-scan must never rewrite them: the score is the
+   * score *at detection*, and a candidate already on a reviewer's desk is not
+   * silently re-scored underneath them. When the pair already has a candidate —
+   * in **any** status — this returns it untouched. `score`/`basis` are used only
+   * for the INSERT of a brand-new pair.
+   *
+   * This first looks the pair up across every status rather than relying on
+   * `ON CONFLICT`: `uq_duplicate_candidates_open` is partial (`WHERE status =
+   * 'open'`), so an upsert on it would see only open rows and would happily
+   * insert a *second* candidate for a pair a human already dismissed — quietly
+   * re-raising a decision somebody made. The lookup is what makes a dismissal
+   * stick across re-scans, and what keeps a re-scan from writing the illegal
+   * immutable-column UPDATE that would raise `check_violation` and 500 the whole
+   * scan whenever the recomputed score differed from the frozen one.
    */
   async upsertCandidate(
     db: DbHandle,
@@ -143,30 +155,17 @@ export class CustomerIdentityRepository extends Repository {
     basis: readonly { signal: string; weight: number }[]
   ): Promise<{ id: string; created: boolean }> {
     const context = this.assertContext(db);
-    // `uq_duplicate_candidates_open` is partial (`WHERE status = 'open'`), so an
-    // `ON CONFLICT` on those columns would only see open rows and would happily
-    // insert a *second* candidate for a pair a human already dismissed — quietly
-    // re-raising a decision somebody made. Looking at every status first is what
-    // makes a dismissal stick across re-scans.
-    const existing = await this.run<{ id: string; status: string }>(
+    const existing = await this.run<{ id: string }>(
       db,
-      `SELECT id, status FROM crm.duplicate_candidates
+      `SELECT id FROM crm.duplicate_candidates
         WHERE tenant_id = $1 AND partner_id_a = $2 AND partner_id_b = $3
         ORDER BY detected_at DESC LIMIT 1`,
       [context.principal.tenantId, pair.a, pair.b]
     );
     const found = existing.rows[0];
-    if (found && found.status !== 'open') {
-      return { id: found.id, created: false };
-    }
     if (found) {
-      await this.run(
-        db,
-        `UPDATE crm.duplicate_candidates
-            SET match_score = $3, match_basis = $4::jsonb
-          WHERE tenant_id = $1 AND id = $2`,
-        [context.principal.tenantId, found.id, score.toFixed(4), JSON.stringify(basis)]
-      );
+      // Already recorded (open or reviewed). The frozen score stands; a re-scan
+      // neither reopens a dismissal nor rewrites an immutable score column.
       return { id: found.id, created: false };
     }
 

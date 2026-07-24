@@ -51,6 +51,9 @@ const CUSTOMER = 'c1630000-0000-4000-8000-0000000000c1';
 const CUSTOMER_2 = 'c1630000-0000-4000-8000-0000000000c2';
 const CUSTOMER_3 = 'c1630000-0000-4000-8000-0000000000c3';
 const CUSTOMER_B = 'c1630000-0000-4000-8000-0000000000d1';
+// Dedicated customers for the status-set / restriction-impose idempotency replays.
+const STATUS_IDEM = 'c1630000-0000-4000-8000-0000000000e1';
+const RESTRICT_IDEM = 'c1630000-0000-4000-8000-0000000000e2';
 
 const REASON = 'Repeated non-payment across three invoices; approved by branch manager.';
 
@@ -151,9 +154,21 @@ beforeAll(async () => {
      VALUES ($1, $2, 'individual', 'Governance Fixture One',   'active', $6),
             ($3, $2, 'individual', 'Governance Fixture Two',   'active', $6),
             ($4, $2, 'individual', 'Governance Fixture Three', 'active', $6),
-            ($5, $7, 'individual', 'Governance Tenant B',      'active', $6)
+            ($5, $7, 'individual', 'Governance Tenant B',      'active', $6),
+            ($8, $2, 'individual', 'Status Idem Fixture',      'active', $6),
+            ($9, $2, 'individual', 'Restrict Idem Fixture',    'active', $6)
      ON CONFLICT (id) DO NOTHING`,
-    [CUSTOMER, TENANT_A, CUSTOMER_2, CUSTOMER_3, CUSTOMER_B, USER_A, TENANT_B]
+    [
+      CUSTOMER,
+      TENANT_A,
+      CUSTOMER_2,
+      CUSTOMER_3,
+      CUSTOMER_B,
+      USER_A,
+      TENANT_B,
+      STATUS_IDEM,
+      RESTRICT_IDEM,
+    ]
   );
 
   runtime = runtimeAppPool();
@@ -581,6 +596,48 @@ describe('idempotent replay and tenant isolation', () => {
         `SELECT count(*)::text AS n FROM crm.customer_alerts
           WHERE partner_id = $1 AND message = 'Replay-safe alert.'`,
         [CUSTOMER_2]
+      )
+    ).toBe(1);
+  });
+
+  it('replays a repeated status change under one key instead of transitioning twice', async () => {
+    authenticateAs(GOVERNOR_SUBJECT);
+    const key = crypto.randomUUID();
+    const body = {
+      lifecycleStatus: 'inactive',
+      reason: 'Customer asked to be set inactive while they travel abroad this season.',
+    };
+    const first = (await (await setStatus(STATUS_IDEM, body, key)).json()) as Body;
+    // A same-key retry replays the stored 200 with the same historyId — it does
+    // not re-apply the transition or append a second history row.
+    const replayResponse = await setStatus(STATUS_IDEM, body, key);
+    expect(replayResponse.status).toBe(200);
+    expect(((await replayResponse.json()) as Body).historyId).toBe(first.historyId);
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM crm.partner_status_history WHERE partner_id = $1`,
+        [STATUS_IDEM]
+      )
+    ).toBe(1);
+  });
+
+  it('replays a repeated restriction under one key instead of imposing twice', async () => {
+    authenticateAs(GOVERNOR_SUBJECT);
+    const key = crypto.randomUUID();
+    const body = {
+      restrictionType: 'no_credit',
+      reason: 'Two returned cheques this quarter; credit suspended pending a review.',
+    };
+    const first = (await (await imposeRestriction(RESTRICT_IDEM, body, key)).json()) as Body;
+    const replayResponse = await imposeRestriction(RESTRICT_IDEM, body, key);
+    // The idempotency layer replays the stored success (2xx) with the same id;
+    // the load-bearing proof is that no second restriction row is written.
+    expect(replayResponse.ok).toBe(true);
+    expect(((await replayResponse.json()) as Body).id).toBe(first.id);
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM crm.customer_restrictions WHERE partner_id = $1`,
+        [RESTRICT_IDEM]
       )
     ).toBe(1);
   });
