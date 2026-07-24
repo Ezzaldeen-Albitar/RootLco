@@ -24,6 +24,8 @@ import { VehicleRegistrationRepository } from './data/vehicle-registration-repos
 import { VehicleRegistrationService } from './application/vehicle-registration-service';
 import { VehicleRelationsRepository } from './data/vehicle-relations-repository';
 import { VehicleRelationsService } from './application/vehicle-relations-service';
+import { VehicleOdometerRepository } from './data/vehicle-odometer-repository';
+import { VehicleOdometerService } from './application/vehicle-odometer-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
@@ -33,12 +35,22 @@ export type {
   OwnershipTransferred,
 } from './application/vehicle-registration-service';
 export type { AuthorizedPartyResult } from './application/vehicle-relations-service';
+export type { OdometerRecorded } from './application/vehicle-odometer-service';
 export {
   AUTHORIZED_ACTIONS,
   VEHICLE_RELATIONSHIP_ROLES,
   type AuthorizedAction,
   type VehicleRelationshipRole,
 } from './domain/vehicle-relations';
+export {
+  ODOMETER_ANOMALY_REASONS,
+  ODOMETER_CAPTURE_METHODS,
+  ODOMETER_UNITS,
+  MAX_ODOMETER_VALUE,
+  type OdometerAnomalyReason,
+  type OdometerCaptureMethod,
+  type OdometerUnit,
+} from './domain/vehicle-odometer';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   DUPLICATE_DECISIONS,
@@ -80,5 +92,6 @@ export const vehicleModule = composeModule({
     vehicleIdentity: new VehicleIdentityService(new VehicleIdentityRepository()),
     vehicleRegistration: new VehicleRegistrationService(new VehicleRegistrationRepository()),
     vehicleRelations: new VehicleRelationsService(new VehicleRelationsRepository()),
+    vehicleOdometer: new VehicleOdometerService(new VehicleOdometerRepository()),
   }),
 });

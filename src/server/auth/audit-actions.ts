@@ -489,6 +489,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An authorized party was retired by closing its authorization interval. The relationship is retained, not deleted.',
   },
+  {
+    code: 'veh.vehicle.odometer_recorded',
+    class: 'privileged',
+    entityType: 'veh.odometer_reading',
+    description:
+      'An odometer reading or a correction was appended. Readings are append-only; a correction names a factual anomaly category and never edits or deletes the original.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

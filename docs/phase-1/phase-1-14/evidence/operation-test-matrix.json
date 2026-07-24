@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 91,
-    "publicApi": 91,
+    "registered": 93,
+    "publicApi": 93,
     "internal": 0,
-    "withRequiredEvidence": 76,
+    "withRequiredEvidence": 78,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -27,9 +27,9 @@
       "metadataOnly": 0
     },
     "p1_17": {
-      "registered": 13,
-      "publicApi": 13,
-      "operationDepth": 13,
+      "registered": 15,
+      "publicApi": 15,
+      "operationDepth": 15,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -2345,6 +2345,66 @@
         "denial",
         "idempotency",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-odometer-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/odometer-readings",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-odometer.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-odometer-record",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/odometer-readings",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-odometer.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "rollback",
         "route",
         "service",
         "success"

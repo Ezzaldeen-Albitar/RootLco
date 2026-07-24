@@ -208,6 +208,16 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit'],
     note: 'closes the open authorization interval + audit (history retained, not deleted); an unknown or already-retired party and a cross-tenant vehicle answer the same 404 (denial/cross-tenant)',
   },
+  'veh.vehicle-odometer-history': {
+    files: ['tests/backend/p1-17-vehicle-odometer.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'append-only keyset history newest-observed-first; a tenant-B vehicle yields no tenant-A rows (cross-tenant); a bad cursor is refused (denial)',
+  },
+  'veh.vehicle-odometer-record': {
+    files: ['tests/backend/p1-17-vehicle-odometer.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
+    note: 'appends a reading + audit atomically; a normal reading below the effective odometer is refused as an anomaly and NOTHING is stored (rollback preserves the original); a correction may lower the value and is always flagged; negative value, bad unit, bad timestamp, and an unknown correction reference are 422; an unknown/cross-tenant vehicle is 404',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the

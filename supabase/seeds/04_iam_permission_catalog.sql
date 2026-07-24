@@ -109,7 +109,10 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Party associations that change who is bound to a vehicle: ownership transfer and
   -- authorized parties. Grouped because both answer "who is associated with this
   -- vehicle and in what role", and both emit vehicle.relationship.changed.
-  ('veh.vehicle.relationship.manage','veh','Transfer vehicle ownership and manage authorized parties','medium','00000000-0000-4000-8000-000000000001')
+  ('veh.vehicle.relationship.manage','veh','Transfer vehicle ownership and manage authorized parties','medium','00000000-0000-4000-8000-000000000001'),
+  -- Recording odometer readings and corrections. Its own code because a correction
+  -- can lower the effective odometer, which is more sensitive than a plain read.
+  ('veh.vehicle.odometer.record','veh','Record vehicle odometer readings and corrections','medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
