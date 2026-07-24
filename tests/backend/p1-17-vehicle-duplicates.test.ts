@@ -321,11 +321,31 @@ describe('the scan is conservative and explainable', () => {
 
   it('replays a scan with one idempotency key without a second scan effect', async () => {
     authenticateAs(WRITER_SUBJECT_A);
+    const before = await scanAuditCount(vehA);
     const key = crypto.randomUUID();
     const first = (await (await scan(vehA, key)).json()) as ScanBody;
     const second = (await (await scan(vehA, key)).json()) as ScanBody;
-    // The replay returns the stored response.
+    // The keyed replay returns the stored response and runs no second scan — proven
+    // by the audit trail: the first scan writes exactly one duplicates_scanned
+    // record and the replay writes none. A route that ignored the key would
+    // re-execute and write a second (before + 2), which this would catch.
     expect(second.vehicleId).toBe(first.vehicleId);
+    expect(await candidateRowCount(vehA, vehB)).toBe(1);
+    expect(await scanAuditCount(vehA)).toBe(before + 1);
+  });
+
+  it('accepts an upper-case vehicle id in the scan path and stores the pair canonically', async () => {
+    authenticateAs(WRITER_SUBJECT_A);
+    // schemas.uuid accepts an upper-case UUID. The pair is lower-cased before the
+    // ordered INSERT, so a mixed-case order flip against the database's canonical
+    // uuid ordering never raises an unhandled check violation (previously a 500).
+    const response = await scan(vehA.toUpperCase());
+    expect(response.status).toBe(200);
+    expect(
+      (((await response.json()) as ScanBody).candidates ?? []).some((c) => c.otherId === vehB)
+    ).toBe(true);
+    // candidateRowCount looks the row up by the canonical lower-case ids, so a
+    // single match proves the pair was stored canonically (not mis-ordered).
     expect(await candidateRowCount(vehA, vehB)).toBe(1);
   });
 

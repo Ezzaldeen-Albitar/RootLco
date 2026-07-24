@@ -194,7 +194,20 @@ export class VehicleIdentityService extends ApplicationService {
       if (!scored.isCandidate) continue;
 
       const pair = orderPair(vehicleId, other.id);
-      const recorded = await this.identity.upsertCandidate(db, pair, scored.score, scored.basis);
+      let recorded: { id: string; created: boolean };
+      try {
+        recorded = await this.identity.upsertCandidate(db, pair, scored.score, scored.basis);
+      } catch (error) {
+        // A concurrent scan of the same pair can lose the open-candidate unique
+        // race (23505) between this scan's SELECT-then-INSERT — a retryable
+        // concurrency loss, not a server fault.
+        if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+          throw new AppFailure('ERR-CON-001', {
+            message: 'A duplicate scan for this vehicle is already in flight; retry',
+          });
+        }
+        throw error;
+      }
       candidates.push({ candidateId: recorded.id, otherId: other.id, score: scored.score });
     }
 

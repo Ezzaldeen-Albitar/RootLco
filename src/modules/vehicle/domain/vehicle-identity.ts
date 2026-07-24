@@ -148,9 +148,17 @@ export function scoreComparison(comparison: VehicleComparison): ScoredComparison
   };
 }
 
-/** Orders a pair so `a < b`, matching `veh.duplicate_candidates.ck_*_order`. */
+/**
+ * Orders a pair so `a < b`, matching `veh.duplicate_candidates.ck_*_order`. Both
+ * ids are lower-cased first: a UUID is case-insensitive and PostgreSQL's `uuid`
+ * type compares on its canonical (lower-case) form, so ordering the raw strings —
+ * one of which may arrive upper/mixed-case from the route — could disagree with the
+ * database's `vehicle_id_a < vehicle_id_b` check and raise a spurious violation.
+ */
 export function orderPair(x: string, y: string): { a: string; b: string } {
-  return x < y ? { a: x, b: y } : { a: y, b: x };
+  const lx = x.toLowerCase();
+  const ly = y.toLowerCase();
+  return lx < ly ? { a: lx, b: ly } : { a: ly, b: lx };
 }
 
 /** A merge target must differ from its source. Everything else the database
