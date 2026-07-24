@@ -12,10 +12,11 @@
  *
  * Two representative shapes are exercised through the REAL module services on the
  * deployed `app_runtime` identity:
- *   - row + audit + event  (vehicle create → vehicle.created)
- *   - row + audit, NO event (status change → append-only status ledger only)
- * Each is asserted on success (exactly the right rows, sharing the correlation id)
- * and on an injected post-write failure (zero rows everywhere).
+ *   - row + audit + event  (vehicle create → vehicle.created; the event carries the
+ *     command's correlation id)
+ *   - row + audit + ledger, NO event (status change → append-only status ledger only)
+ * Each is asserted on success (exactly the right rows) and on an injected post-write
+ * failure (zero rows everywhere).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
