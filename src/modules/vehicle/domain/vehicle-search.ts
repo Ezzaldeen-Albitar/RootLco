@@ -41,10 +41,16 @@ export const WORKSHOP_STATUSES = [
 export type WorkshopStatus = (typeof WORKSHOP_STATUSES)[number];
 
 /**
- * Deterministic, index-aligned ordering: newest first, id as the tie-breaker so
- * two vehicles created in the same instant cannot straddle a page edge. Bound to
- * a stable contract key so a cursor issued here can never be replayed against a
- * different ordering.
+ * Deterministic ordering: newest first, id as the tie-breaker so two vehicles
+ * created in the same instant cannot straddle a page edge. What this buys is a
+ * *total, stable* order over `veh.vehicles` — `(created_at, id)` is unique because
+ * `id` is — which is precisely the property a keyset cursor needs: resuming from a
+ * cursor can neither skip nor repeat a row. It is not an index alignment claim: no
+ * index on `veh.vehicles` leads with `created_at`, so a page is a sort over the
+ * tenant-filtered set, not an index walk. That is a performance characteristic, not
+ * a correctness one, and closing it would take a database change. Bound to a stable
+ * contract key so a cursor issued here can never be replayed against a different
+ * ordering.
  */
 export const VEHICLE_SEARCH_ORDERING = {
   key: 'veh.vehicles:created_at_desc',
@@ -70,12 +76,22 @@ export interface VehicleSearchFilter {
   readonly vinNormalized: string | null;
   readonly hasVin: boolean;
   /**
-   * Raw plate fragment, or null. Normalised on the SQL side with
-   * `veh.normalize_plate($x)` so the query fragment and the stored
-   * `plate_normalized` are compared under the same frozen rule.
+   * Raw plate fragment, or null when no plate filter was supplied. Normalised on
+   * the SQL side with `veh.normalize_plate($x)` so the query fragment and the
+   * stored `plate_normalized` are compared under the same frozen rule. `null` is
+   * the *only* value meaning "no filter": a supplied-but-blank fragment is carried
+   * through as the empty string, because `veh.normalize_plate('')` is SQL NULL and
+   * the repository's equality against it can never hold — the same "present but
+   * impossible" shape `hasVin` gives the VIN arm, expressed in the value the
+   * repository already acts on.
    */
   readonly plateRaw: string | null;
-  /** Exact vehicle display number, or null. */
+  /**
+   * Exact vehicle display number, or null when no filter was supplied. Blank is
+   * carried through as the empty string for the same reason as `plateRaw`:
+   * `ck_vehicles_display_number_not_blank` forbids a blank stored display number,
+   * so `display_number = ''` is an impossible predicate rather than a dropped one.
+   */
   readonly vehicleNumber: string | null;
   readonly lifecycleStatus: VehicleLifecycleStatus | null;
   readonly powertrainCategory: PowertrainCategory | null;
@@ -110,18 +126,31 @@ export interface VehicleSearchInput {
  * closed filter contract. The VIN is normalised by the application service via the
  * shared `normalizeVin` (there is no second VIN normalizer); a supplied VIN that
  * normalises to null still sets `hasVin` so the repository matches no row.
+ *
+ * "Supplied" means present, not non-blank. Whitespace is not a wildcard: a caller
+ * asking `?vin=%20`, `?plate=%20` or `?vehicleNumber=%20` asked a question with no
+ * answer, and the honest reply is an empty page — never the tenant's whole first
+ * page, which is indistinguishable from a lookup that matched everything. So a
+ * blank value is kept (trimmed to the empty string, or as `hasVin` with a null VIN)
+ * instead of being collapsed into the null that means "no filter at all".
+ *
+ * Keeping the trimmed empty string was chosen over adding a second pair of
+ * has-flags because it needs nothing new from the repository: it already appends
+ * both predicates on `!== null`, and both are unsatisfiable for the empty string
+ * by construction — `veh.normalize_plate('')` is SQL NULL, and
+ * `ck_vehicles_display_number_not_blank` guarantees no stored display number is
+ * blank. Fewer moving parts, and the closed filter contract stays honest.
  */
 export function toVehicleSearchFilter(
   input: VehicleSearchInput,
   vinNormalized: string | null
 ): VehicleSearchFilter {
-  const hasVin = input.vin !== undefined && input.vin.trim() !== '';
-  const plate = input.plate?.trim() ? input.plate.trim() : null;
+  const hasVin = input.vin !== undefined;
   return {
     vinNormalized: hasVin ? vinNormalized : null,
     hasVin,
-    plateRaw: plate,
-    vehicleNumber: input.vehicleNumber?.trim() ? input.vehicleNumber.trim() : null,
+    plateRaw: input.plate !== undefined ? input.plate.trim() : null,
+    vehicleNumber: input.vehicleNumber !== undefined ? input.vehicleNumber.trim() : null,
     lifecycleStatus: input.lifecycleStatus ?? null,
     powertrainCategory: input.powertrainCategory ?? null,
   };

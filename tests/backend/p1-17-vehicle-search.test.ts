@@ -88,6 +88,17 @@ function search(queryString = ''): Promise<Response> {
   return GET(new Request(BASE + queryString, { method: 'GET' }));
 }
 
+/**
+ * The ids a search returned, asserting the 200 on the way through. Used where the
+ * question is *which* vehicles came back rather than whether the read was allowed.
+ */
+async function searchIds(queryString = ''): Promise<readonly string[]> {
+  const response = await search(queryString);
+  const body = (await response.json()) as SearchBody;
+  expect(response.status).toBe(200);
+  return (body.items ?? []).map((h) => h.id);
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -232,6 +243,48 @@ describe('bounded, privacy-safe search', () => {
     const body = (await tooBig.json()) as SearchBody;
     expect(tooBig.status).toBe(422);
     expect(body.code).toBe('ERR-VAL-001');
+  });
+});
+
+/**
+ * A whitespace-only filter reaches the domain: the route validates with
+ * `z.string().min(1)` and neither the schema nor `searchParamsToObject` trims, so
+ * `%20` is a one-character string that passes. If the domain then collapsed it to
+ * "no filter", the caller would get the first page of every vehicle in the tenant —
+ * a wrong answer indistinguishable from a lookup that matched everything. Each test
+ * below first proves, with the same caller in the same moment, that an unfiltered
+ * search does return a vehicle; the empty page that follows is therefore the filter
+ * matching nothing, not an empty tenant.
+ */
+describe('a supplied-but-blank filter matches nothing, never everything', () => {
+  const BLANK = '%20'; // URL-encoded single space
+
+  it('returns an empty page for a whitespace-only vin', async () => {
+    authenticateAs(VEH_READER_SUBJECT);
+    expect(await searchIds()).toContain(VEHICLE_A);
+    expect(await searchIds(`?vin=${BLANK}`)).toEqual([]);
+  });
+
+  it('returns an empty page for a whitespace-only plate', async () => {
+    authenticateAs(VEH_READER_SUBJECT);
+    expect(await searchIds()).toContain(VEHICLE_A);
+    // VEHICLE_A holds an active plate, so the plate arm is reachable and would have
+    // returned it for a real fragment ('?plate=abc-123' above).
+    expect(await searchIds(`?plate=${BLANK}`)).toEqual([]);
+  });
+
+  it('returns an empty page for a whitespace-only vehicleNumber', async () => {
+    authenticateAs(VEH_READER_SUBJECT);
+    expect(await searchIds()).toContain(VEHICLE_A);
+    expect(await searchIds(`?vehicleNumber=${BLANK}`)).toEqual([]);
+  });
+
+  it('leaves a blank filter combined with a matching discriminator empty too', async () => {
+    authenticateAs(VEH_READER_SUBJECT);
+    // 'ice' alone matches VEHICLE_A, so the empty result is the blank plate closing
+    // the door — a dropped filter would have let the discriminator answer alone.
+    expect(await searchIds('?powertrainCategory=ice')).toContain(VEHICLE_A);
+    expect(await searchIds(`?powertrainCategory=ice&plate=${BLANK}`)).toEqual([]);
   });
 });
 
