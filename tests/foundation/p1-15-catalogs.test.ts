@@ -248,10 +248,12 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.created',
   'veh.vehicle.duplicate_reviewed',
   'veh.vehicle.duplicates_scanned',
+  'veh.vehicle.ev_profile_set',
   'veh.vehicle.merged',
   'veh.vehicle.odometer_recorded',
   'veh.vehicle.ownership_changed',
   'veh.vehicle.plate_assigned',
+  'veh.vehicle.status_changed',
   'veh.vehicle.updated',
 ];
 

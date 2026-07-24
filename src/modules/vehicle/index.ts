@@ -26,6 +26,8 @@ import { VehicleRelationsRepository } from './data/vehicle-relations-repository'
 import { VehicleRelationsService } from './application/vehicle-relations-service';
 import { VehicleOdometerRepository } from './data/vehicle-odometer-repository';
 import { VehicleOdometerService } from './application/vehicle-odometer-service';
+import { VehicleLifecycleRepository } from './data/vehicle-lifecycle-repository';
+import { VehicleLifecycleService } from './application/vehicle-lifecycle-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
@@ -36,6 +38,11 @@ export type {
 } from './application/vehicle-registration-service';
 export type { AuthorizedPartyResult } from './application/vehicle-relations-service';
 export type { OdometerRecorded } from './application/vehicle-odometer-service';
+export type {
+  EvProfileSet,
+  EvProfileView,
+  StatusChanged,
+} from './application/vehicle-lifecycle-service';
 export {
   AUTHORIZED_ACTIONS,
   VEHICLE_RELATIONSHIP_ROLES,
@@ -51,6 +58,14 @@ export {
   type OdometerCaptureMethod,
   type OdometerUnit,
 } from './domain/vehicle-odometer';
+export {
+  EV_KINDS,
+  LIFECYCLE_TRANSITIONS,
+  MAX_CHARGE_PORT,
+  MAX_USABLE_CAPACITY_KWH,
+  WORKSHOP_TRANSITIONS,
+  type EvKind,
+} from './domain/vehicle-lifecycle';
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   DUPLICATE_DECISIONS,
@@ -93,5 +108,6 @@ export const vehicleModule = composeModule({
     vehicleRegistration: new VehicleRegistrationService(new VehicleRegistrationRepository()),
     vehicleRelations: new VehicleRelationsService(new VehicleRelationsRepository()),
     vehicleOdometer: new VehicleOdometerService(new VehicleOdometerRepository()),
+    vehicleLifecycle: new VehicleLifecycleService(new VehicleLifecycleRepository()),
   }),
 });

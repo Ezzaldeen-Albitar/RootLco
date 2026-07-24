@@ -496,6 +496,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An odometer reading or a correction was appended. Readings are append-only; a correction names a factual anomaly category and never edits or deletes the original.',
   },
+  {
+    code: 'veh.vehicle.ev_profile_set',
+    class: 'privileged',
+    entityType: 'veh.vehicle_ev_profile',
+    description:
+      'A vehicle’s electric-drive profile was set or replaced. The record names the electric kind; no battery-health value is derived — state-of-health is telemetry, not a computed field.',
+  },
+  {
+    code: 'veh.vehicle.status_changed',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle’s lifecycle and/or workshop status was moved along an approved transition. The append-only status-history ledger records the transition itself; merged is never a settable target.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

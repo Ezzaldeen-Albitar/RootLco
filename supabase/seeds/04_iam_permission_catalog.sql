@@ -112,7 +112,12 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('veh.vehicle.relationship.manage','veh','Transfer vehicle ownership and manage authorized parties','medium','00000000-0000-4000-8000-000000000001'),
   -- Recording odometer readings and corrections. Its own code because a correction
   -- can lower the effective odometer, which is more sensitive than a plain read.
-  ('veh.vehicle.odometer.record','veh','Record vehicle odometer readings and corrections','medium','00000000-0000-4000-8000-000000000001')
+  ('veh.vehicle.odometer.record','veh','Record vehicle odometer readings and corrections','medium','00000000-0000-4000-8000-000000000001'),
+  -- Lifecycle/workshop status transitions (activate, deactivate, scrap, workshop
+  -- moves). Separate from veh.vehicle.manage so descriptive editing does not carry
+  -- the power to scrap or deactivate a vehicle (least privilege; mirrors CRM's
+  -- crm.customer.governance.manage split from profile editing).
+  ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

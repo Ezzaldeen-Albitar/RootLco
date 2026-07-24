@@ -218,6 +218,21 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'rollback'],
     note: 'appends a reading + audit atomically; a normal reading below the effective odometer is refused as an anomaly and NOTHING is stored (rollback preserves the original); a correction may lower the value and is always flagged; negative value, bad unit, bad timestamp, and an unknown correction reference are 422; an unknown/cross-tenant vehicle is 404',
   },
+  'veh.vehicle-ev-profile-read': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'reads the single active EV profile; a vehicle without a profile (or a cross-tenant vehicle hidden by RLS) answers 404 (denial/cross-tenant)',
+  },
+  'veh.vehicle-ev-profile-set': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'set-or-replace of the single EV profile + audit; an EV kind whose required powertrain category does not match the vehicle is refused (denial 422) pre-check and by the frozen guard; an unknown/cross-tenant vehicle is 404; a second call replaces, not duplicates; no battery-health value is derived',
+  },
+  'veh.vehicle-status-change': {
+    files: ['tests/backend/p1-17-vehicle-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'moves lifecycle/workshop along the approved transition graph + audit; the append-only status-history ledger records the transition (no event); merged is never a settable target and a merged vehicle is frozen; a no-op or disallowed transition is 422; an unknown/cross-tenant vehicle is 404',
+  },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
