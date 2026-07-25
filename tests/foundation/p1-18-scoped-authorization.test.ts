@@ -652,9 +652,13 @@ interface RouteOperation {
   readonly id: string;
   readonly path: string;
   readonly scope: string;
+  /** The exported constant the declaration was assigned to. */
+  readonly constant: string;
   readonly file: string;
   readonly source: string;
 }
+
+const DECLARATION = /export const (\w+)\s*=\s*defineOperation\(\{/g;
 
 function routeOperations(): readonly RouteOperation[] {
   const base = join(ROOT, 'src', 'app', 'api', 'v1');
@@ -665,18 +669,24 @@ function routeOperations(): readonly RouteOperation[] {
     const file = join(entry.parentPath, entry.name);
     const source = stripComments(readFileSync(file, 'utf8'));
 
-    for (const block of source.split('defineOperation(').slice(1)) {
+    DECLARATION.lastIndex = 0;
+    let declaration = DECLARATION.exec(source);
+    while (declaration) {
+      const block = source.slice(declaration.index, DECLARATION.lastIndex + 1200);
       const id = /id:\s*'([^']+)'/.exec(block);
       const path = /path:\s*'([^']+)'/.exec(block);
       const scope = /scope:\s*'([^']+)'/.exec(block);
-      if (!id?.[1] || !path?.[1]) continue;
-      found.push({
-        id: id[1],
-        path: path[1],
-        scope: scope?.[1] ?? 'tenant',
-        file,
-        source,
-      });
+      if (id?.[1] && path?.[1] && declaration[1]) {
+        found.push({
+          id: id[1],
+          path: path[1],
+          scope: scope?.[1] ?? 'tenant',
+          constant: declaration[1],
+          file,
+          source,
+        });
+      }
+      declaration = DECLARATION.exec(source);
     }
   }
   return found;
@@ -703,6 +713,35 @@ describe('F10 · structural completeness of the locked-row path', () => {
     const entry = affected.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain('authorizeScope');
+  });
+
+  it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s runs under its OWN declaration', (id) => {
+    // `authorizeScope` re-runs whichever operation `handleOperation` was given,
+    // so binding a route to a SIBLING's declaration would silently evaluate the
+    // sibling's permissions — a caller holding only the sibling code would pass
+    // a command it has no capability for. The two are indistinguishable at
+    // runtime whenever a principal happens to hold both, which is why this is
+    // asserted structurally rather than left to a behavioural fixture.
+    const entry = affected.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
+  });
+
+  it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares exactly one operation', (id) => {
+    // Two declarations in one file would make the assertion above ambiguous.
+    const entry = affected.find((candidate) => candidate.id === id);
+    const siblings = operations.filter((candidate) => candidate.file === entry?.file);
+    expect(siblings).toHaveLength(1);
+  });
+
+  it('never lets a handler hand-roll its own authorization call', () => {
+    // Authorization reaches a handler only through the contract. A route that
+    // called `requirePermissions` or `requireScopedPermissions` itself could
+    // name any operation's metadata it liked, including a sibling's.
+    for (const entry of operations) {
+      expect(entry.source).not.toContain('requirePermissions(');
+      expect(entry.source).not.toContain('requireScopedPermissions(');
+    }
   });
 
   it.each(CHOKE_POINTS)('%s authorizes against the LOCKED row own scope', (file) => {
