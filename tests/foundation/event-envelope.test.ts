@@ -187,6 +187,13 @@ describe('reserved-name registry', () => {
     );
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
+      // P1-18 publishes `appointment.changed`, `vehicle.checked-in` and
+      // `reception.approved` from `src/modules/reception`. The first two were
+      // reserved with `implementedIn: null` since P1-13 and now have producers;
+      // `reception.approved` is newly registered. Reception-to-work-order
+      // conversion deliberately publishes nothing — the approved catalog defines
+      // no event for that fact.
+      'appointment.changed',
       'business-partner.created',
       'business-partner.merged',
       'consent.changed',
@@ -195,9 +202,11 @@ describe('reserved-name registry', () => {
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',
+      'reception.approved',
       'session.revoked',
       'user.invited',
       'user.status.changed',
+      'vehicle.checked-in',
       // P1-17 publishes `vehicle.created`, `vehicle.merged`, and
       // `vehicle.relationship.changed` from `src/modules/vehicle`.
       'vehicle.created',
@@ -205,17 +214,21 @@ describe('reserved-name registry', () => {
       'vehicle.relationship.changed',
     ]);
 
-    const OWNER_BY_PHASE: Readonly<Record<string, string>> = {
-      'P1-14': 'iam',
-      'P1-15': 'shared',
-      'P1-16': 'crm',
-      'P1-17': 'veh',
+    // A phase may own more than one module: P1-18 delivers appointment and
+    // reception together, because the frozen Phase 1-8 database splits them into
+    // two schemas that one check-in transaction spans.
+    const OWNERS_BY_PHASE: Readonly<Record<string, readonly string[]>> = {
+      'P1-14': ['iam'],
+      'P1-15': ['shared'],
+      'P1-16': ['crm'],
+      'P1-17': ['veh'],
+      'P1-18': ['apt', 'rec'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;
       const phase = entry.implementedIn as string;
-      expect(OWNER_BY_PHASE[phase], `${entry.eventType} phase ${phase}`).toBeDefined();
-      expect(entry.owner).toBe(OWNER_BY_PHASE[phase]);
+      expect(OWNERS_BY_PHASE[phase], `${entry.eventType} phase ${phase}`).toBeDefined();
+      expect(OWNERS_BY_PHASE[phase]).toContain(entry.owner);
     }
   });
 

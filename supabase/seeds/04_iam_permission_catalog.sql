@@ -118,7 +118,43 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- moves). Separate from veh.vehicle.manage so descriptive editing does not carry
   -- the power to scrap or deactivate a vehicle (least privilege; mirrors CRM's
   -- crm.customer.governance.manage split from profile editing).
-  ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001')
+  ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-18 (apt) - Appointment Backend. Booking an appointment and moving its
+  -- confirmed window are one authority: both answer "when is this vehicle expected".
+  -- No read code is registered because P1-18 exposes no appointment read operation;
+  -- an unused permission is configuration that cannot be tested.
+  ('apt.appointment.manage',   'apt', 'Create and reschedule appointments in the caller scope','medium','00000000-0000-4000-8000-000000000001'),
+  -- Terminal lifecycle outcomes are separated from booking, mirroring the
+  -- veh.vehicle.status.manage split: scheduling a visit must not carry the power to
+  -- close one against the customer. Cancellation and no-show are distinct business
+  -- facts but one authority, because both end the appointment.
+  ('apt.appointment.lifecycle.manage','apt','Cancel an appointment or record a no-show','medium','00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-18 (rec) - Vehicle Reception Backend. Opening a reception accepts
+  -- physical custody of a customer's vehicle, so it is its own capability and never
+  -- implied by a catalog or read permission.
+  ('rec.reception.manage',     'rec', 'Open a reception visit and accept vehicle custody','medium','00000000-0000-4000-8000-000000000001'),
+  -- Who is present and in what role. Separate because party roles decide whose
+  -- instruction the workshop may act on; owner, driver, payer and authorized
+  -- receiver are never interchangeable.
+  ('rec.reception.party.manage','rec','Assign and close dated party roles on a reception','medium','00000000-0000-4000-8000-000000000001'),
+  -- Recording the authorization decision that opens work. Its own high-risk code:
+  -- this is the evidence the workshop relies on to justify touching the vehicle.
+  ('rec.reception.authorization.verify','rec','Verify and record reception authorization decisions','high','00000000-0000-4000-8000-000000000001'),
+  -- Pre-service condition evidence (complaints, inspection findings, damage marks,
+  -- contents, warning lights, leaks). One code: all are append-only observations
+  -- captured at the same moment by the same person.
+  ('rec.reception.evidence.manage','rec','Record pre-service condition evidence on a reception','medium','00000000-0000-4000-8000-000000000001'),
+  -- Signature and refusal capture. Separate from general evidence because these
+  -- record what a party personally acknowledged or personally declined, and a
+  -- fabricated one is a materially different harm from a wrong damage mark.
+  ('rec.reception.signature.manage','rec','Capture reception signatures and refusals','high','00000000-0000-4000-8000-000000000001'),
+  -- Approving a reception releases it for work. High risk and deliberately not
+  -- implied by evidence capture, so the person who records the condition is not
+  -- automatically the person who approves it.
+  ('rec.reception.approve',    'rec', 'Approve a reception visit for work',           'high',  '00000000-0000-4000-8000-000000000001'),
+  -- Conversion creates the work order that all downstream cost attaches to. Its own
+  -- high-risk code, never implied by approval.
+  ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

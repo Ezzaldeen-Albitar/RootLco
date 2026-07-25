@@ -510,6 +510,102 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A vehicle’s lifecycle and/or workshop status was moved along an approved transition. The append-only status-history ledger records the transition itself; merged is never a settable target.',
   },
+
+  // Phase 1-18 (apt) — Appointment backend. The appointment master carries an
+  // immutable requested window and a mutable confirmed window; every lifecycle
+  // move is additionally evidenced by the frozen append-only
+  // apt.appointment_status_history ledger, so these codes record the command,
+  // not the transition ledger.
+  {
+    code: 'apt.appointment.created',
+    class: 'privileged',
+    entityType: 'apt.appointment',
+    description:
+      'An appointment was created against an active branch calendar for a known vehicle and requester. The requested window is recorded as the customer asked for it and is immutable thereafter.',
+  },
+  {
+    code: 'apt.appointment.rescheduled',
+    class: 'privileged',
+    entityType: 'apt.appointment',
+    description:
+      'An appointment’s confirmed window was set or moved under optimistic concurrency. The originally requested window is never rewritten — it is an immutable record of what the customer asked for.',
+  },
+  {
+    code: 'apt.appointment.cancelled',
+    class: 'privileged',
+    entityType: 'apt.appointment',
+    description:
+      'An appointment was cancelled with a catalogued reason. Cancellation is terminal and set-once; it is a distinct fact from a no-show and never substitutes for one.',
+  },
+  {
+    code: 'apt.appointment.no_show_recorded',
+    class: 'privileged',
+    entityType: 'apt.appointment',
+    description:
+      'A confirmed appointment was recorded as a no-show by a named actor. Terminal, set-once, reachable only from confirmed, and never inferred automatically from elapsed time.',
+  },
+
+  // Phase 1-18 (rec) — Vehicle-reception backend. Custody of a customer’s
+  // vehicle begins at accepted check-in, so every code below is attributable
+  // and none of them can be reversed by an application role: the underlying
+  // evidence tables hold no DELETE grant and the append-only ones hold no
+  // UPDATE grant either.
+  {
+    code: 'rec.reception.created',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A reception visit was opened and custody of the vehicle was accepted, from exactly one origin — an appointment or a walk-in, never both and never neither.',
+  },
+  {
+    code: 'rec.reception.party_role_assigned',
+    class: 'privileged',
+    entityType: 'rec.reception_party_role',
+    description:
+      'A dated party role was assigned on a reception visit, or an existing one was closed. Roles supersede by date rather than being edited in place; driver, owner, requester and authorized receiver are never interchangeable.',
+  },
+  {
+    code: 'rec.reception.authorization_recorded',
+    class: 'approval',
+    entityType: 'rec.authorization',
+    description:
+      'An authorization decision that opens or refuses work was recorded against a reception visit, attributed to a party holding an active authorizing role. Immutable once written; it is evidence, not a re-evaluatable opinion.',
+  },
+  {
+    code: 'rec.reception.evidence_recorded',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'Pre-service condition evidence was appended to a reception visit — a reported complaint, inspection finding, damage mark, vehicle contents entry, warning light or leak. Observations are recorded as reported; no cause, fault or liability is asserted.',
+  },
+  {
+    code: 'rec.reception.signature_recorded',
+    class: 'privileged',
+    entityType: 'rec.signature',
+    description:
+      'A signature was captured against a reception visit and bound to an exact immutable document version. This records an acknowledgement by a named role — it is not a certified digital signature and proves no legal identity.',
+  },
+  {
+    code: 'rec.reception.refusal_recorded',
+    class: 'privileged',
+    entityType: 'rec.refusal',
+    description:
+      'A party refused a signature, an intake step, an inspection item, or an authorization. The refusal is preserved as its own fact; it is never recorded as consent and approval logic never reads it as a signature.',
+  },
+  {
+    code: 'rec.reception.approved',
+    class: 'approval',
+    entityType: 'rec.reception_visit',
+    description:
+      'A reception visit was advanced to authorized. The frozen activation contract is the authority: an active service requester and an approved authorization must both already exist, and the database refuses the transition otherwise.',
+  },
+  {
+    code: 'rec.reception.converted_to_work_order',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'An authorized reception visit was converted into exactly one work order, which opens in its configured initial state. The reception becomes terminal (converted), which is what makes a second conversion impossible.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

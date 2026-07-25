@@ -20,6 +20,16 @@ import { buildOpenApiDocument } from '@/server/openapi/document';
 // Importing the route module executes its `defineOperation` call, which is what
 // puts the operation in the registry. If a route is not imported anywhere the
 // authorization-coverage check catches it; here we only need the registry filled.
+//
+// THIS LIST IS HAND-MAINTAINED, AND THAT IS ITS TRAP. The committed document is
+// generated from whatever this list loaded, and the comparison below regenerates
+// it the same way — so a route missing here is missing from the published
+// contract AND the test still passes, because both sides agree on the same
+// incomplete registry. That is exactly how all twelve Phase 1-18 operations came
+// to be absent from `docs/api/openapi.v1.json` while every gate read green. The
+// arithmetic that catches it is external: `check-authorization-coverage.mjs`
+// counts registered operations, `check-openapi.mjs` counts published ones, and
+// the two numbers must be equal. Adding a route means adding a line here.
 import '@/app/api/v1/meta/ping/route';
 import '@/app/api/v1/auth/login/route';
 import '@/app/api/v1/auth/logout/route';
@@ -105,6 +115,19 @@ import '@/app/api/v1/vehicles/[vehicleId]/ev-profile/route';
 import '@/app/api/v1/vehicles/[vehicleId]/status/route';
 import '@/app/api/v1/vehicles/[vehicleId]/history/route';
 import '@/app/api/v1/vehicles/[vehicleId]/documents/route';
+// --- Phase 1-18 appointment and reception backend -------------------------
+import '@/app/api/v1/appointments/route';
+import '@/app/api/v1/appointments/[appointmentId]/reschedule/route';
+import '@/app/api/v1/appointments/[appointmentId]/cancel/route';
+import '@/app/api/v1/appointments/[appointmentId]/no-show/route';
+import '@/app/api/v1/receptions/route';
+import '@/app/api/v1/receptions/[receptionId]/party-roles/route';
+import '@/app/api/v1/receptions/[receptionId]/authorizations/route';
+import '@/app/api/v1/receptions/[receptionId]/condition-evidence/route';
+import '@/app/api/v1/receptions/[receptionId]/signatures/route';
+import '@/app/api/v1/receptions/[receptionId]/refusals/route';
+import '@/app/api/v1/receptions/[receptionId]/approve/route';
+import '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -151,13 +174,20 @@ describe('OpenAPI contract', () => {
     // asserts the seed itself, so the two cannot both drift unnoticed.
     // `shared` joined the list with DBCR-P1-15-001, which seeded
     // `shared.document.manage` and `shared.notification.send`. `crm` joins with
-    // Phase 1-16 (crm.customer.read, crm.customer.note.write, …).
+    // Phase 1-16 (crm.customer.read, crm.customer.note.write, …), and `apt` and
+    // `rec` with Phase 1-18's nine appointment and reception codes. Omitting a
+    // domain does not make this assertion stricter, it makes it vacuous: an
+    // operation whose route is missing from the import list above declares
+    // nothing, so the loop never sees the code the missing domain would have
+    // failed on.
     const SEEDED_DOMAINS = [
+      'apt',
       'crm',
       'iam',
       'inv',
       'org',
       'quo',
+      'rec',
       'rpt',
       'sal',
       'shared',
