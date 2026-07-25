@@ -41,6 +41,7 @@ import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
 import {
   requirePermissions,
+  requireScopedPermissions,
   type AuthorizationTarget,
   type ScopeAuthorizer,
 } from '../auth/authorization';
@@ -327,8 +328,12 @@ export async function handleOperation<T>(
             params: Object.freeze({ ...(options.params ?? {}) }),
             expectedVersion,
             correlationId,
+            // `requireScopedPermissions`, not `requirePermissions`: the deferred
+            // check fails closed on an empty target, because reaching it without
+            // the resource's own scope would degrade to a scope-blind evaluation
+            // and reopen P1-18-A-01 through this very API.
             authorizeScope: (target: AuthorizationTarget) =>
-              requirePermissions(db, operation, target),
+              requireScopedPermissions(db, operation, target),
           });
 
         if (!idempotencyKey || !fingerprint) return execute();

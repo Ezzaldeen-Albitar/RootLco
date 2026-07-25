@@ -138,3 +138,55 @@ export async function requirePermissions(
     safeDetails: { requiredPermissions: operation.permissions },
   });
 }
+
+/**
+ * Enforces authorization against a scope discovered INSIDE the transaction,
+ * failing closed when the caller names no scope to narrow by.
+ *
+ * This is the entry point behind `HandlerInput.authorizeScope`, and it exists
+ * as its own function because the pre-handler check and the deferred check have
+ * genuinely different contracts. The pre-handler check runs before anything is
+ * read, so an operation addressed by a resource id has no company or branch to
+ * name yet and an empty target is CORRECT there. The deferred check is the
+ * opposite: its whole reason to exist is that the scope is now known, so an
+ * empty target means the choke point failed to supply it.
+ *
+ * That distinction has to be enforced rather than documented.
+ * `requiresScopedEvaluation` returns false for an empty target WHATEVER the
+ * declared scope is, so a deferred authorizer handed `{}` would silently
+ * evaluate scope-blind `iam.has_permission` and answer yes — which is
+ * P1-18-A-01 exactly, reached a second time through the very API added to close
+ * it. A narrowing operation that arrives here with neither a company nor a
+ * branch has a defect at its choke point, and the safe answer to "I cannot tell
+ * which scope this is" is no, not yes.
+ *
+ * Deliberately NOT folded into `requirePermissions`: that would break the
+ * pre-handler call for every one of the ten operations this remediation is
+ * about, since an empty target is exactly what they legitimately pass there.
+ */
+export async function requireScopedPermissions(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  target: AuthorizationTarget
+): Promise<void> {
+  const narrowing = !operation.public && operation.scope !== 'tenant';
+  if (narrowing && target.companyId === undefined && target.branchId === undefined) {
+    const context: RequestContext = db.context;
+    metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+    log.warn('Authorization denied', {
+      ...contextLogFields(context),
+      result: 'denied',
+      errorCode: 'ERR-IAM-001',
+      context: { reason: 'deferred-scope-target-missing', declaredScope: operation.scope },
+    });
+
+    throw new AppFailure('ERR-IAM-001', {
+      message:
+        `Denied ${operation.id}: deferred scoped authorization requires the ` +
+        `resource's own company or branch, and neither was supplied`,
+      safeDetails: { requiredPermissions: operation.permissions },
+    });
+  }
+
+  return requirePermissions(db, operation, target);
+}
