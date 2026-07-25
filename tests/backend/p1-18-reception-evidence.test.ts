@@ -891,6 +891,52 @@ describe('rec.reception-condition-evidence', () => {
     expect(await damageMarks(visit)).toBe(1);
   });
 
+  // The same shape as the coordinate case above, for the two numerics that were
+  // bounded on one side only. `rec.vehicle_contents.quantity` is `integer` and
+  // `rec.vehicle_content_details.declared_value` is `numeric(14, 2)`; the frozen
+  // CHECKs give a floor (`> 0`, `>= 0`) and nothing else, so a large number used
+  // to reach PostgreSQL and come back as SQLSTATE 22003 — which nothing maps, so
+  // an authenticated caller could turn a typo into a 500 and a monitoring
+  // incident. The at-the-limit control is the half that matters: it proves the
+  // ceilings are the columns' own and not a guess tightened past them.
+  it('refuses contents numerics past their column ceilings and accepts them at the ceiling', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const bigQuantity = await recordEvidence(visit, {
+      kind: 'contents',
+      itemDescription: 'Cargo pallets',
+      quantity: 3_000_000_000,
+    });
+    expect(bigQuantity.status).toBe(422);
+    expect((await json(bigQuantity)).code).toBe('ERR-VAL-001');
+
+    const bigValue = await recordEvidence(visit, {
+      kind: 'contents',
+      itemDescription: 'Sealed case',
+      declaredValue: 1e13,
+      declaredCurrency: 'USD',
+    });
+    expect(bigValue.status).toBe(422);
+    expect((await json(bigValue)).code).toBe('ERR-VAL-001');
+
+    // Neither refusal wrote anything — not the parent row, and not the
+    // `restricted` detail row that carries the value.
+    expect(await contents(visit)).toBe(0);
+    expect(await contentDetails(visit)).toBe(0);
+
+    const atCeiling = await recordEvidence(visit, {
+      kind: 'contents',
+      itemDescription: 'Cargo pallets',
+      quantity: 2_147_483_647,
+      declaredValue: 999_999_999_999.99,
+      declaredCurrency: 'USD',
+    });
+    expect(atCeiling.status).toBe(201);
+    expect(await contents(visit)).toBe(1);
+    expect(await contentDetails(visit)).toBe(1);
+  });
+
   it('refuses a finding on an inspection that is no longer in progress', async () => {
     authAs(SUBJ_FULL);
     const visit = await newVisit();

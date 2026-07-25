@@ -37,14 +37,25 @@ export interface WorkOrderRow {
 export class ReceptionConversionRepository extends Repository {
   protected readonly module = 'reception';
 
-  /** The live work order already converted from this visit, or null. */
+  /**
+   * The live ORDINARY work order already converted from this visit, or null.
+   *
+   * The predicate list matches `uq_work_orders_ordinary_origin` exactly —
+   * `kind = 'ordinary'` and `deleted_at IS NULL` — because this read is the
+   * application half of the same exactly-once rule the index enforces, and a
+   * read that is broader than the constraint answers a question the constraint
+   * never asked. Once P1-19 creates a rework order carrying the same
+   * `reception_visit_id`, dropping `kind` here would make a still-`authorized`
+   * reception report itself as already converted and never convert at all.
+   */
   async workOrderForVisit(db: DbHandle, receptionVisitId: string): Promise<WorkOrderRow | null> {
     const context = this.assertContext(db);
     const result = await this.run<{ id: string; display_number: string | null; state: string }>(
       db,
       `SELECT id, display_number, state
          FROM wo.work_orders
-        WHERE tenant_id = $1 AND reception_visit_id = $2 AND deleted_at IS NULL
+        WHERE tenant_id = $1 AND reception_visit_id = $2
+          AND kind = 'ordinary' AND deleted_at IS NULL
         LIMIT 1`,
       [context.principal.tenantId, receptionVisitId]
     );

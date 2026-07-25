@@ -126,15 +126,17 @@ mapped to slash subresources with **no semantic change**:
 | `POST /receptions/{id}:approve`               | `POST /receptions/{receptionId}/approve`               |
 | `POST /receptions/{id}:convert-to-work-order` | `POST /receptions/{receptionId}/convert-to-work-order` |
 
-Four routes are added beyond Field 23. Each is justified by a distinct business
+Field 23 allocates seven paths and the registry holds twelve operations, so
+**five** routes are added beyond it. Each is justified by a distinct business
 fact and a distinct permission, not by convenience:
 
-| Route                                  | Why it is not folded into another operation                                                                                                                                                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts. |
-| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                              |
-| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                         |
-| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent.                                                                                                                   |
+| Route                                  | Why it is not folded into another operation                                                                                                                                                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts.                        |
+| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                                                     |
+| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                                                |
+| `POST /receptions/{id}/signatures`     | A signature records what a party personally acknowledged, bound to an exact immutable document version. It carries the high-risk `rec.reception.signature.manage`, so it must not be reachable by a caller who holds only evidence-capture authority. |
+| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent.                                                                                                                                          |
 
 ### Known contract drift, recorded openly
 

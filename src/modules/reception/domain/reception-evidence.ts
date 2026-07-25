@@ -149,6 +149,20 @@ export const MAX_COMPLAINT_TEXT = 4000;
 export const MIN_COORD = 0;
 export const MAX_COORD = 1;
 
+/**
+ * Upper bounds taken from the COLUMN, because the frozen CHECKs supply only a
+ * lower one — `ck_vehicle_contents_quantity` is `quantity > 0` and
+ * `ck_vehicle_content_details_value_nonneg` is `declared_value >= 0`. Without
+ * these the value that stops the write is `rec.vehicle_contents.quantity`'s
+ * `integer` and `rec.vehicle_content_details.declared_value`'s `numeric(14, 2)`,
+ * and PostgreSQL reports that as `22003`, which nothing maps — so a caller
+ * sending a large number gets a 500 and an exception-monitor incident instead of
+ * a named field. `evSocPercent` and the damage-mark coordinates are already
+ * bounded on both sides for the same reason; these two were the omissions.
+ */
+export const MAX_CONTENT_QUANTITY = 2_147_483_647;
+export const MAX_DECLARED_VALUE = 999_999_999_999.99;
+
 export class EvidenceRuleError extends Error {
   public override readonly name = 'EvidenceRuleError';
 }
@@ -188,9 +202,18 @@ export function optionalNonBlank(
   return requireNonBlank(value, field, max);
 }
 
-/** Mirrors `ck_vehicle_contents_quantity`. */
+/** Mirrors `ck_vehicle_contents_quantity`, plus the `integer` column's ceiling. */
 export function assertQuantity(value: number): void {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new EvidenceRuleError('quantity must be a positive whole number');
+  if (!Number.isInteger(value) || value <= 0 || value > MAX_CONTENT_QUANTITY) {
+    throw new EvidenceRuleError(
+      `quantity must be a whole number between 1 and ${MAX_CONTENT_QUANTITY}`
+    );
+  }
+}
+
+/** Mirrors `ck_vehicle_content_details_value_nonneg`, plus `numeric(14, 2)`. */
+export function assertDeclaredValue(value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > MAX_DECLARED_VALUE) {
+    throw new EvidenceRuleError(`declaredValue must be between 0 and ${MAX_DECLARED_VALUE}`);
   }
 }

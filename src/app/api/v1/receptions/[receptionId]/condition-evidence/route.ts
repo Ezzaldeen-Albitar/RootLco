@@ -33,7 +33,9 @@ import {
   FINDING_SEVERITIES,
   LEAK_SEVERITIES,
   MAX_COMPLAINT_TEXT,
+  MAX_CONTENT_QUANTITY,
   MAX_COORD,
+  MAX_DECLARED_VALUE,
   MAX_ITEM_DESCRIPTION,
   MAX_LOCATION,
   MAX_MAP_TYPE,
@@ -109,11 +111,16 @@ const Contents = z
   .object({
     kind: z.literal('contents'),
     itemDescription: z.string().min(1).max(MAX_ITEM_DESCRIPTION),
-    quantity: z.number().int().positive().optional(),
+    // Both ceilings come from the module, which takes them from the columns:
+    // `quantity` is `integer` and `declared_value` is `numeric(14, 2)`, and a
+    // value past either is `22003` from PostgreSQL — a 500 — rather than a named
+    // field. Bounded here as well as in the module for the same reason `coordX`
+    // is: the schema is what tells a caller the shape before they send it.
+    quantity: z.number().int().positive().max(MAX_CONTENT_QUANTITY).optional(),
     location: z.string().min(1).max(MAX_LOCATION).nullable().optional(),
-    // `numeric(14, 2)`, non-negative, and only meaningful with a currency —
+    // Non-negative, and only meaningful with a currency —
     // `ck_vehicle_content_details_currency` refuses a currency without a value.
-    declaredValue: z.number().nonnegative().nullable().optional(),
+    declaredValue: z.number().nonnegative().max(MAX_DECLARED_VALUE).nullable().optional(),
     declaredCurrency: z
       .string()
       .regex(/^[A-Z]{3}$/)

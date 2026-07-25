@@ -4,9 +4,17 @@
  * Moves the CONFIRMED window, never the requested one: `requested_from` and
  * `requested_to` are listed in `tg_appointments_immutable` because they record what
  * the customer asked for, so the original request survives every reschedule as
- * history. The lifecycle is deliberately untouched — moving it here would be a
- * transition wearing a reschedule's clothes, and the status ledger would show a
- * confirmation nobody requested.
+ * history.
+ *
+ * Agreeing a firm window IS confirming, so this command also moves
+ * `requested`|`pending_confirmation` -> `confirmed` and writes the status ledger
+ * row for it. That is not a second operation smuggled in: canonical UC-APT-001 is
+ * one use case, "Confirm or reschedule appointment". Leaving the lifecycle behind
+ * would be worse than moving it — `confirmed` is the state the same-vehicle overlap
+ * EXCLUDE is partial on, and the only state a no-show or an appointment-originated
+ * check-in is reachable from, so a confirmed window on a `requested` row would be a
+ * booking nothing guards. An already-`confirmed` appointment simply moves its
+ * window; a terminal one is refused.
  *
  * The plan text writes this as `{appointmentId}:reschedule`; it is a sub-resource
  * because the phase's route convention rules out colon-verb paths and `:` is not a

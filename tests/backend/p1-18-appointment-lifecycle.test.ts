@@ -96,6 +96,7 @@ interface Body {
   readonly changeKind?: string;
   readonly recordVersion?: number;
   readonly code?: string;
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
 }
 
 interface AppointmentRow {
@@ -300,11 +301,12 @@ async function sequenceNextValue(): Promise<string | null> {
 /**
  * Moves an appointment to `confirmed`, as admin, and returns its new version.
  *
- * This is FIXTURE state, not evidence: P1-18 exposes no operation that confirms
- * an appointment (nothing in `src/` ever writes `lifecycle_status = 'confirmed'`),
- * yet `confirmed` is the only state a no-show is reachable from and the only one
- * the same-vehicle overlap EXCLUDE covers. Reaching it here is what lets those
- * two frozen rules be tested at all; the gap itself is reported separately.
+ * This is FIXTURE state, not evidence — and reschedule reaches `confirmed`
+ * through the API perfectly well; the headline case below proves that exact
+ * transition. The helper exists so a test that is measuring something else sets
+ * its precondition up directly instead of driving a second operation to get
+ * there. A no-show case that confirmed via reschedule would fail whenever
+ * reschedule broke and would report it as a no-show defect.
  */
 async function forceConfirm(
   appointmentId: string,
@@ -722,6 +724,43 @@ describe('apt.appointment-create', () => {
     ).toBe(0);
   });
 
+  // V8 parses an offset hour anywhere in 00–23, so `+16:00` satisfies `Date.parse`
+  // and every application guard and is refused only by PostgreSQL, whose
+  // `timestamptz` displacement limit is ±15:59:59. That refusal is SQLSTATE 22009,
+  // which nothing maps — so before the domain capped the offset, this booking was a
+  // 500 and an exception-monitor incident that any authenticated caller could
+  // manufacture at will. The +14:00 half is the control that stops the cap being
+  // over-tightened into a real outage: Kiribati is genuinely +14:00.
+  it('refuses an offset wider than PostgreSQL allows and still accepts +14:00', async () => {
+    authAs(SUBJ_FULL_A);
+    const vehicle = await newVehicle();
+
+    const tooWide = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00+16:00',
+        requestedTo: '2026-09-01T10:00:00+16:00',
+      })
+    );
+    expect(tooWide.status).toBe(422);
+    expect(((await tooWide.json()) as Body).code).toBe('ERR-VAL-001');
+    expect(
+      await countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
+        vehicle,
+      ])
+    ).toBe(0);
+
+    const kiribati = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00+14:00',
+        requestedTo: '2026-09-01T10:00:00+14:00',
+      })
+    );
+    expect(kiribati.status).toBe(201);
+    // Stored as the instant it names, not as the wall clock it was written in.
+    const row = await readAppointment(((await kiribati.json()) as Body).appointmentId ?? '');
+    expect(row.requested_from.toISOString()).toBe('2026-08-31T19:00:00.000Z');
+  });
+
   it('refuses a tenant-B vehicle and a tenant-B requester, writing nothing', async () => {
     // Both referenced rows are REAL rows in tenant B, addressed by their real
     // ids. The composite `(tenant_id, vehicle_id)` and `(tenant_id, requester_partner_id)`
@@ -972,6 +1011,38 @@ describe('apt.appointment-reschedule', () => {
       secondVersion
     );
     expect(ok.status).toBe(200);
+  });
+
+  // The same ±15:59 bound on the other window, asserted through the violation
+  // path rather than only the status: a 422 that does not say WHICH field was
+  // wrong leaves the caller guessing, and this route is the one that knows the
+  // answer is `confirmedFrom`.
+  it('names the field when the confirmed window carries an out-of-range offset', async () => {
+    authAs(SUBJ_FULL_A);
+    const appointment = await book(bookingFor(await newVehicle()));
+
+    const tooWide = await reschedule(
+      appointment,
+      { confirmedFrom: '2026-09-19T09:00:00+16:00', confirmedTo: '2026-09-19T10:00:00+16:00' },
+      1
+    );
+    expect(tooWide.status).toBe(422);
+    const problem = (await tooWide.json()) as Body;
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations?.[0]?.path).toBe('body.confirmedFrom');
+    expect((await readAppointment(appointment)).confirmed_from).toBeNull();
+
+    // …and the same appointment still moves on a legitimate wide offset, so the
+    // refusal above is the bound and not a blanket rejection of offsets.
+    const kiribati = await reschedule(
+      appointment,
+      { confirmedFrom: '2026-09-19T09:00:00+14:00', confirmedTo: '2026-09-19T10:00:00+14:00' },
+      1
+    );
+    expect(kiribati.status).toBe(200);
+    expect((await readAppointment(appointment)).confirmed_from?.toISOString()).toBe(
+      '2026-09-18T19:00:00.000Z'
+    );
   });
 
   it('refuses a stale If-Match and a missing one, writing nothing', async () => {

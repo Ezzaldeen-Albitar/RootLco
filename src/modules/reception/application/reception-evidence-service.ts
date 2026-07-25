@@ -54,6 +54,7 @@ import {
   MAX_NOTE,
   MAX_ZONE,
   assertCoordinate,
+  assertDeclaredValue,
   assertQuantity,
   optionalNonBlank,
   requireNonBlank,
@@ -498,6 +499,10 @@ export class ReceptionEvidenceService extends ApplicationService {
         );
         const quantity = input.quantity ?? 1;
         this.ruleOrFail(() => assertQuantity(quantity), 'body.quantity');
+        const declaredValue = input.declaredValue ?? null;
+        if (declaredValue !== null) {
+          this.ruleOrFail(() => assertDeclaredValue(declaredValue), 'body.declaredValue');
+        }
         const contentId = this.requireId(
           await this.evidence.insertContents(db, {
             ...scope,
@@ -515,7 +520,7 @@ export class ReceptionEvidenceService extends ApplicationService {
             ...scope,
             contentId,
             itemDescription,
-            declaredValue: input.declaredValue ?? null,
+            declaredValue,
             declaredCurrency: input.declaredCurrency ?? null,
           }),
           'Recording the contents description'

@@ -109,14 +109,24 @@ function instant(value: string, field: string): number {
  * would be silently interpreted as the server's zone, which for a branch
  * calendar in another country is a real booking on the wrong hour. Refusing it
  * is the whole point — the alternative is a plausible wrong answer.
+ *
+ * The displacement is capped at ±15:59 because that is PostgreSQL's own limit on
+ * a `timestamptz` offset, not a guess about which zones exist. V8 parses hours up
+ * to 23 quite happily, so `…+16:00` satisfies `Date.parse` and every other guard
+ * in this module and is refused only by the database, as `22009` — an unmapped
+ * SQLSTATE, which surfaces as a 500 and an exception-monitor incident any caller
+ * could manufacture at will. Refusing it here is the same rule this module states
+ * above: decide it before PostgreSQL sees it. The real world stays inside the
+ * bound with room to spare — the widest offset in use is +14:00 (Kiribati).
  */
-const OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/;
+const OFFSET = /(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/;
 
 function requireOffset(value: string, field: string): void {
   if (!OFFSET.test(value)) {
     throw new AppointmentRuleError(
-      `${field} must carry an explicit UTC offset (…Z or …±HH:MM); a timezone-less ` +
-        'timestamp would be resolved against the server zone rather than the branch zone'
+      `${field} must carry an explicit UTC offset (…Z or …±HH:MM, no wider than ` +
+        '±15:59); a timezone-less timestamp would be resolved against the server ' +
+        'zone rather than the branch zone'
     );
   }
 }

@@ -7,10 +7,13 @@
  * contract, and answering it here would be this module deciding something nobody
  * asked it.
  *
- * There is no unique constraint on `wo.work_orders.reception_visit_id`, so
- * exactly-once is the application's job — lock the visit, return the work order a
- * previous attempt already created rather than making a second, and leave the visit
- * in the terminal `converted` state. A replay is therefore answered, not duplicated.
+ * Exactly-once is guarded twice. The application locks the visit, returns the work
+ * order a previous attempt already created rather than making a second, and leaves
+ * the visit in the terminal `converted` state — so a replay is answered, not
+ * duplicated. Underneath it, `uq_work_orders_ordinary_origin` is a partial unique
+ * INDEX on (tenant, company, branch, reception_visit_id) where `kind = 'ordinary'`
+ * and the row is live: an index and not a constraint row, which is why an audit
+ * that enumerated `pg_constraint` reported no uniqueness here at all.
  *
  * `If-Match` is mandatory. `wo.guard_work_order_refs` holds every precondition and
  * none of them is re-implemented above it.

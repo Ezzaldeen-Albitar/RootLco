@@ -92,12 +92,13 @@ claim.
 
 ## 3. Reserved event names
 
-Nine names are recorded below. Seven are the Phase 1-13 reservations, whose `EVT-` codes come from
+Ten names are recorded below. Seven are the Phase 1-13 reservations, whose `EVT-` codes come from
 the Chapter 4 Table 4.5 allocation in the canonical documents (see
 [canonical-documents.md](../governance/canonical-documents.md); those documents live outside this
-repository by owner decision); the other two are the vehicle names P1-17 allocated beyond that
-reservation. **The registry is behind the code:**
-[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds nineteen entries, and
+repository by owner decision); the other three were allocated beyond that reservation — the two
+vehicle names P1-17 added (`vehicle.created`, `vehicle.merged`) and P1-18's `reception.approved`.
+**The registry is behind the code:**
+[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds twenty entries, and
 the ten added by Phases 1-14, 1-15, and 1-16 have not been carried back into this table as §4
 requires. That gap is recorded here rather than papered over; closing it belongs to those phases'
 owners, not to a vehicle change.
