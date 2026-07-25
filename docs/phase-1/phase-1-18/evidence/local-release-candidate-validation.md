@@ -7,7 +7,7 @@ PostgreSQL consumer and no concurrent Vitest process.
 | Item          | Value                                                           |
 | ------------- | --------------------------------------------------------------- |
 | Branch        | `fix/p1-18-scoped-authorization-containment`                    |
-| Candidate SHA | see §8 — superseded by the review-response commit               |
+| Candidate SHA | `9c20fe3996d74e6e6702928bbe201fdea077b2cb` — see §9             |
 | Base          | `origin/develop` = `fb50ef408354d83cedfb21d358a647673dca91f8`   |
 | `origin/main` | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` — untouched by P1-18 |
 | Merge-base    | equals `origin/develop`, so the branch carries no divergence    |
@@ -242,7 +242,31 @@ Several further Low observations about test naming and probe breadth were
 accepted as accurate and are reflected either in the corrected tests or in the
 mutation document's narrowed scope statement.
 
-## 8. What this document does not claim
+## 8. Which SHA each result belongs to
+
+Validation ran three times, because twice the tree changed underneath it and
+re-running was the honest response rather than arguing that the change could not
+have mattered.
+
+| Run | SHA           | What changed since the previous run                                                                                                      | Status            |
+| --- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 1   | `b9b412e`     | documentation corrections                                                                                                                | superseded        |
+| 2   | `cf508c8`     | documentation only, empty executable-path diff                                                                                           | superseded        |
+| 3   | **`9c20fe3`** | **review response — real code changes** to `authorization.ts`, `reception-service.ts`, `appointment-service.ts` and the foundation suite | **authoritative** |
+
+**Every figure in §1–§7 above is from run 3, at `9c20fe3`.** The clean room in
+§5 was executed at that SHA with the worktree verified clean (`0 changes`) at
+the moment it started, so the tree under test is exactly the candidate.
+
+The one unavoidable residue: the commit that records these results is
+necessarily one commit after the run that produced them. That final commit
+changes **documentation only** — `git diff --name-only 9c20fe3 <final> -- src
+tests scripts supabase package.json package-lock.json tsconfig.json
+vitest.config*.ts Dockerfile` is empty — so no executable path differs between
+the SHA the clean room ran on and the SHA that records it. That is stated rather
+than assumed, and it is verifiable with one command.
+
+## 9. What this document does not claim
 
 No push, no pull request, no gate-record branch, and no Go decision. The owner
 gate remains `Decision: Pending`. Hosted CI has not run — every result above is
