@@ -105,15 +105,33 @@ function framed(parts: readonly string[]): string {
  * this string, so keys written under an older scheme can never be mistaken for
  * a match under a newer one.
  */
-const FINGERPRINT_SCHEME = 'rootlco.idempotency.v2.principal-bound';
+const FINGERPRINT_SCHEME = 'rootlco.idempotency.v3.principal-and-target-bound';
 
 /**
- * SHA-256 over the **principal-bound** canonical request (ADV-04).
+ * SHA-256 over the **principal- and target-bound** canonical request (ADV-04).
  *
- * The fingerprint binds tenant, principal, method, path and canonicalised body.
- * Binding the principal is what stops one user of a tenant replaying another
- * user's key: the stored fingerprint will not match, so the second caller gets
- * the ordinary `ERR-INT-001` conflict instead of the first caller's response.
+ * The fingerprint binds tenant, principal, method, path **template**, resolved
+ * **route parameters**, and canonicalised body. Binding the principal is what
+ * stops one user of a tenant replaying another user's key: the stored
+ * fingerprint will not match, so the second caller gets the ordinary
+ * `ERR-INT-001` conflict instead of the first caller's response.
+ *
+ * ## Why the resolved parameters, and not only the path template (P1-15-SR-002)
+ *
+ * `operation.path` is the registered template — `/attachments/documents/{documentId}/links`.
+ * Two requests naming **different documents** produce the same template, so
+ * until the resolved parameters were bound, this held for any tenant:
+ *
+ *     POST /attachments/documents/A/links   Idempotency-Key: K   {body}   → 201
+ *     POST /attachments/documents/B/links   Idempotency-Key: K   {body}   → 201
+ *
+ * and the second request executed nothing at all. It was served the first
+ * request's stored response, so the caller was told document **B** had been
+ * linked while only **A** ever was. A privileged command reporting success
+ * without performing it is worse than an error, because nothing surfaces it.
+ *
+ * The scheme string changed with the binding, so a key written under v2 can
+ * never be mistaken for a match under v3.
  *
  * ## Why the whole context is the parameter
  *
@@ -130,7 +148,13 @@ const FINGERPRINT_SCHEME = 'rootlco.idempotency.v2.principal-bound';
  */
 export function requestFingerprint(
   context: RequestContext,
-  input: { method: string; path: string; body: unknown }
+  input: {
+    method: string;
+    path: string;
+    body: unknown;
+    /** Resolved route parameters, already validated by the route's schema. */
+    params?: Readonly<Record<string, string>>;
+  }
 ): string {
   const tenantId = context.principal?.tenantId;
   const userId = context.principal?.userId;
@@ -148,6 +172,9 @@ export function requestFingerprint(
         userId,
         input.method.toUpperCase(),
         input.path,
+        // Canonicalised the same way as the body, so key order cannot change
+        // the fingerprint and an absent parameter set hashes as `{}`.
+        canonicalize(input.params ?? {}),
         canonicalize(input.body),
       ])
     )

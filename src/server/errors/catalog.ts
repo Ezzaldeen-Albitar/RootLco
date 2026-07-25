@@ -34,6 +34,10 @@ export const ERROR_CODES = [
   'ERR-CON-002',
   'ERR-RTE-001',
   'ERR-STB-001',
+  'ERR-DOC-001',
+  'ERR-NTF-001',
+  'ERR-EXP-001',
+  'ERR-TRN-001',
   'ERR-SYS-001',
 ] as const;
 
@@ -61,6 +65,10 @@ export interface ErrorDefinition {
     | 'concurrency'
     | 'throttling'
     | 'stub'
+    | 'attachment'
+    | 'notification'
+    | 'export'
+    | 'transition'
     | 'platform';
   /** Advisory: may the same request succeed later without modification? */
   readonly retryable: boolean;
@@ -177,7 +185,7 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     retryable: true,
     class: 'server',
     description:
-      'A required external dependency — currently only the authentication provider — was unreachable, timed out, or returned a fault. The request performed no work and may be retried. The dependency is never named to the caller.',
+      'A required external dependency — the authentication provider (P1-14), the object-storage provider, or the message-delivery provider (P1-15) — was unreachable, timed out, or returned a fault. The request performed no work and may be retried. The dependency is never named to the caller.',
   },
   'ERR-INT-001': {
     code: 'ERR-INT-001',
@@ -238,6 +246,46 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'client',
     description:
       'A contract-only foundation service (file, notification) was invoked. The interface is frozen in P1-13; behaviour lands in the phase that owns it.',
+  },
+  'ERR-DOC-001': {
+    code: 'ERR-DOC-001',
+    title: 'Document version not available',
+    status: 409,
+    owner: 'attachment',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The addressed document version exists and is visible to the caller, but its state does not permit the requested action — most often a download of a version that has not been accepted. Distinct from ERR-RES-001 on purpose: the caller already knows the version exists (they can see it), so reporting "not found" would be misleading rather than protective. No P1-15 path can move a version to accepted, because acceptance requires a clean scan record and no scanner exists (DBCR-P1-15-001 §withholdings).',
+  },
+  'ERR-NTF-001': {
+    code: 'ERR-NTF-001',
+    title: 'Recipient consent not granted',
+    status: 409,
+    owner: 'notification',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The consent evaluation supplied with the queue request reported that the recipient has not granted consent for this channel, so nothing was enqueued. Neither an authorization failure (the caller may send) nor a validation failure (the request was well-formed): the request conflicts with the recipient’s recorded consent state, which only the recipient can change.',
+  },
+  'ERR-EXP-001': {
+    code: 'ERR-EXP-001',
+    title: 'Export exceeds the permitted size',
+    status: 422,
+    owner: 'export',
+    retryable: false,
+    class: 'client',
+    description:
+      'The requested export would return more rows than EXPORT_MAX_ROWS permits. A distinct code so a client can narrow its filters rather than retrying the same request; it is not a throttle and waiting does not help.',
+  },
+  'ERR-TRN-001': {
+    code: 'ERR-TRN-001',
+    title: 'Transition not permitted from the current state',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The requested target state is registered for this aggregate, but the aggregate is not in a state the transition may start from — including the case where it is already in the target state. Distinct from ERR-CON-001, which means the caller held a stale record version: re-reading and retrying fixes a version conflict and cannot fix this one.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

@@ -82,8 +82,28 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'crm.business_partner',
     owner: 'crm',
-    implementedIn: null,
+    implementedIn: 'P1-16',
     description: 'Two business partners were merged; the survivor is the aggregate.',
+  },
+  {
+    code: 'EVT-CRM-002',
+    eventType: 'business-partner.created',
+    schemaVersion: 1,
+    aggregateType: 'crm.business_partner',
+    owner: 'crm',
+    implementedIn: 'P1-16',
+    description:
+      'A customer was created. One event covers individuals and organizations because a consumer reacts to a customer existing, not to which profile table holds its name. The payload carries no personal data: a consumer that needs the name reads the aggregate under its own authorization.',
+  },
+  {
+    code: 'EVT-CRM-003',
+    eventType: 'consent.changed',
+    schemaVersion: 1,
+    aggregateType: 'crm.business_partner',
+    owner: 'crm',
+    implementedIn: 'P1-16',
+    description:
+      'A customer consent decision was recorded. Published because consent changes what the whole platform may do to that customer, so notification and messaging consumers must react. Carries the prior status so a consumer can tell a grant from a re-affirmation.',
   },
   {
     code: 'EVT-VEH-001',
@@ -91,8 +111,34 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'veh.vehicle',
     owner: 'veh',
-    implementedIn: null,
+    implementedIn: 'P1-17',
     description: 'A vehicle ownership or authorised-person relationship changed.',
+  },
+  {
+    // P1-17 allocation (beyond the Chapter 4 Table 4.5 reservation, as P1-15 did
+    // for its own document/template events): a consumer reacts to a vehicle
+    // existing, so apt/rec/wo can reference it. Payload carries no VIN, plate, or
+    // owner — a consumer that needs them reads the aggregate under its own
+    // authorization.
+    code: 'EVT-VEH-002',
+    eventType: 'vehicle.created',
+    schemaVersion: 1,
+    aggregateType: 'veh.vehicle',
+    owner: 'veh',
+    implementedIn: 'P1-17',
+    description: 'A vehicle master was created as a draft.',
+  },
+  {
+    // P1-17 allocation. The survivor is the aggregate — the vehicle that
+    // continues to exist and that a consumer must re-read. Payload names the
+    // source, survivor, and merge id only.
+    code: 'EVT-VEH-003',
+    eventType: 'vehicle.merged',
+    schemaVersion: 1,
+    aggregateType: 'veh.vehicle',
+    owner: 'veh',
+    implementedIn: 'P1-17',
+    description: 'A duplicate vehicle was merged into a surviving vehicle.',
   },
   {
     code: 'EVT-APT-001',
@@ -126,9 +172,81 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     eventType: 'message.delivery.changed',
     schemaVersion: 1,
     aggregateType: 'shared.outbound_message',
+    // Deliberately still unimplemented after P1-15, and the reason is
+    // structural rather than an omission: delivery state changes on the
+    // **worker** archetype, which has no `RequestContext` (see
+    // `server/worker/worker-db.ts` — its policies are all-tenant precisely
+    // because a dispatcher must see every tenant's queue). `publishEvent()`
+    // takes its tenant, actor, and correlation from that context and cannot be
+    // called without one. The durable record of a delivery state change is the
+    // message row plus its append-only `shared.delivery_attempts` history;
+    // emitting an envelope as well needs a worker-side publication path that
+    // this phase did not build. Marking it implemented would have been a claim
+    // about a producer that does not exist.
     owner: 'shared',
     implementedIn: null,
     description: 'An outbound message changed delivery state.',
+  },
+
+  // ---- Shared services (P1-15) --------------------------------------------
+  //
+  // Every entry below is owned by `shared`, including the one about an `org`
+  // aggregate: the P1-15 status-transition engine is the publisher, and the
+  // catalog's `owner` names the module allowed to publish, not the schema the
+  // aggregate lives in. Giving it to `org` would mean no module could publish
+  // it, since no `org` module exists.
+  //
+  // Names carry no version suffix. The planning text used `….v1`; the schema
+  // version is a separate column (`schema_version`) and duplicating it in the
+  // wire name would produce two ways to express the same fact.
+  {
+    code: 'EVT-DOC-002',
+    eventType: 'document.version.registered',
+    schemaVersion: 1,
+    aggregateType: 'shared.document',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A pending document version was registered against a document. Carries no storage key and no checksum — a consumer that needs either reads the row under its own authorization.',
+  },
+  {
+    code: 'EVT-DOC-003',
+    eventType: 'document.link.changed',
+    schemaVersion: 1,
+    aggregateType: 'shared.document',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A document was linked to, or unlinked from, a business entity. One event covers both because consumers react to the resulting reachability.',
+  },
+  {
+    code: 'EVT-NTF-002',
+    eventType: 'message.enqueued',
+    schemaVersion: 1,
+    aggregateType: 'shared.outbound_message',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'An outbound message was enqueued. Carries no recipient, no rendered content, and no template body.',
+  },
+  {
+    code: 'EVT-TPL-001',
+    eventType: 'message-template.version.changed',
+    schemaVersion: 1,
+    aggregateType: 'shared.message_template',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description:
+      'A template version was created, approved, retired, or activated. One event because consumers cache by template and need to invalidate on any of them.',
+  },
+  {
+    code: 'EVT-ORG-001',
+    eventType: 'organization.branch.status.changed',
+    schemaVersion: 1,
+    aggregateType: 'org.branch',
+    owner: 'shared',
+    implementedIn: 'P1-15',
+    description: 'A branch was activated or deactivated through the status-transition engine.',
   },
 ]);
 

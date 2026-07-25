@@ -64,6 +64,16 @@ export function resolveLimit(requested: number | undefined): number {
   return Math.min(requested, MAX_PAGE_SIZE);
 }
 
+/** The tie-breaker column is `uuid` on every paginated relation in this schema. */
+const CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Longest sort value a cursor may carry. An ISO timestamp is 30 characters and
+ * a numeric string is far shorter; 200 leaves room for a text sort key without
+ * letting a cursor become a payload.
+ */
+const MAX_CURSOR_VALUE_CHARS = 200;
+
 export function encodeCursor(cursor: Cursor): string {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
 }
@@ -91,6 +101,30 @@ export function decodeCursor(encoded: string, contract: OrderingContract): Curso
     throw new AppFailure('ERR-PAG-001', {
       message: 'Cursor was issued for a different ordering contract',
     });
+  }
+  // ---------------------------------------------------------------------
+  // The tie-breaker must be a UUID (P1-15-SR-013).
+  //
+  // `i` is compared against the row id column, which is `uuid` for every
+  // paginated relation in this schema. A cursor whose contract key is correct
+  // but whose `i` is not a UUID used to reach PostgreSQL unchecked and raise
+  // SQLSTATE 22P02 — surfacing to the caller as an unhandled 500 rather than the
+  // `ERR-PAG-001` every other malformed cursor produces. A caller could tell a
+  // *valid* contract key from an invalid one by the status code, which turns a
+  // validation gap into an oracle for the ordering vocabulary.
+  //
+  // Bounding `v` is not possible here without per-contract type metadata: it is
+  // deliberately a string carrying an ISO timestamp, a numeric string, or text,
+  // and each paginated query casts it to the column's own type. Its length is
+  // bounded so a cursor cannot carry a payload.
+  // ---------------------------------------------------------------------
+  if (!CURSOR_ID.test(cursor.i)) {
+    throw new AppFailure('ERR-PAG-001', {
+      message: 'Cursor tie-breaker is not a valid identifier',
+    });
+  }
+  if (cursor.v.length > MAX_CURSOR_VALUE_CHARS) {
+    throw new AppFailure('ERR-PAG-001', { message: 'Cursor position value is too long' });
   }
   return cursor;
 }

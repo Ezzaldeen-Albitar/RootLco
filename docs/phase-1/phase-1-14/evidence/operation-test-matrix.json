@@ -1,530 +1,2743 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 39,
-    "withRequiredEvidence": 24,
-    "invocationOnly": 15
+    "registered": 98,
+    "publicApi": 98,
+    "internal": 0,
+    "withRequiredEvidence": 83,
+    "invocationOnly": 15,
+    "p1_15": {
+      "registered": 21,
+      "publicApi": 21,
+      "operationDepth": 21,
+      "invocationOnly": 0,
+      "pending": 0,
+      "unitOnly": 0,
+      "unreferenced": 0,
+      "metadataOnly": 0
+    },
+    "p1_16": {
+      "registered": 18,
+      "publicApi": 18,
+      "operationDepth": 18,
+      "invocationOnly": 0,
+      "pending": 0,
+      "unitOnly": 0,
+      "unreferenced": 0,
+      "metadataOnly": 0
+    },
+    "p1_17": {
+      "registered": 20,
+      "publicApi": 20,
+      "operationDepth": 20,
+      "invocationOnly": 0,
+      "pending": 0,
+      "unitOnly": 0,
+      "unreferenced": 0,
+      "metadataOnly": 0
+    }
   },
   "operations": [
     {
-      "id": "iam.approval-limit-create",
-      "file": "tests/backend/iam-access-administration.test.ts",
+      "id": "crm.address-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/addresses",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-profile.test.ts"],
       "referenced": true,
-      "required": [
+      "derived": [
+        "route",
+        "service",
         "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
         "denial"
       ],
       "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
         "denial",
+        "idempotency",
+        "route",
+        "service",
         "success"
       ],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.alert-raise",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/alerts",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.company-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/companies",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.consent-record",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/consents",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.contact-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/contacts",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/history",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-merge",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/merge",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox",
+        "rollback",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "rollback",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-search",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-search.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-status-set",
+      "surface": "public-api",
+      "method": "PUT",
+      "path": "/customers/{customerId}/status",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "concurrency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-timeline",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/timeline",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.duplicate-review",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customer-duplicates/{candidateId}/review",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "concurrency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.duplicate-scan",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/duplicate-scans",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.individual-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/individuals",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.note-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/notes",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.preference-set",
+      "surface": "public-api",
+      "method": "PUT",
+      "path": "/customers/{customerId}/preferences",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.restriction-impose",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/restrictions",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.tag-assign",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/tags",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.vehicle-link",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/customers/{customerId}/vehicles",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "iam.approval-limit-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/approval-limits",
+      "public": false,
+      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "referenced": true,
+      "derived": [],
+      "declared": ["success", "denial"],
+      "required": ["success", "denial"],
+      "provided": ["denial", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.approval-limit-end",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/iam/approval-limits/{limitId}",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "stale-version"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "stale-version",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "stale-version"],
+      "required": ["success", "denial", "audit", "stale-version"],
+      "provided": ["audit", "denial", "stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.approval-limit-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/approval-limits",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.audit-event-detail",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/audit-events/{recordId}",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.audit-event-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/audit-events",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.auth-login",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/auth/login",
+      "public": true,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit"],
+      "required": ["success", "denial", "audit"],
+      "provided": ["audit", "denial", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.auth-logout",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/auth/logout",
+      "public": true,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "audit",
-        "idempotency"
-      ],
-      "provided": [
-        "audit",
-        "idempotency",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "audit", "idempotency"],
+      "required": ["success", "audit", "idempotency"],
+      "provided": ["audit", "idempotency", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.auth-password-reset",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/auth/password-reset",
+      "public": true,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial"
-      ],
-      "provided": [
-        "denial",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial"],
+      "required": ["success", "denial"],
+      "provided": ["denial", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.auth-password-reset-completion",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/auth/password-reset/completion",
+      "public": true,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "idempotency"
-      ],
-      "provided": [
-        "denial",
-        "idempotency",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "idempotency"],
+      "required": ["success", "denial", "idempotency"],
+      "provided": ["denial", "idempotency", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.auth-session",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/auth/session",
+      "public": false,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success"
-      ],
-      "provided": [
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success"],
+      "required": ["success"],
+      "provided": ["success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.branch-settings-read",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/branches/{branchId}/settings",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.branch-settings-write",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/org/branches/{branchId}/settings",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "audit",
-        "isolation"
-      ],
-      "provided": [
-        "audit",
-        "isolation",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "audit", "isolation"],
+      "required": ["success", "audit", "isolation"],
+      "provided": ["audit", "isolation", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.company-settings-read",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/companies/{companyId}/settings",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.company-settings-write",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/org/companies/{companyId}/settings",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "audit",
-        "isolation"
-      ],
-      "provided": [
-        "audit",
-        "isolation",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "audit", "isolation"],
+      "required": ["success", "audit", "isolation"],
+      "provided": ["audit", "isolation", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.grant-issue",
-      "file": "tests/backend/iam-access-administration.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/grants",
+      "public": false,
+      "files": ["tests/backend/iam-access-administration.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "cross-tenant",
-        "audit",
-        "outbox"
-      ],
-      "provided": [
-        "audit",
-        "cross-tenant",
-        "denial",
-        "outbox",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "provided": ["audit", "cross-tenant", "denial", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.grant-revoke",
-      "file": "tests/backend/iam-access-administration.test.ts",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/iam/grants/{grantId}",
+      "public": false,
+      "files": ["tests/backend/iam-access-administration.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "stale-version"
-      ],
-      "provided": [
-        "stale-version",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "stale-version"],
+      "required": ["success", "stale-version"],
+      "provided": ["stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.grant-scope-add",
-      "file": "tests/backend/iam-access-administration.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/grants/{grantId}/scopes",
+      "public": false,
+      "files": ["tests/backend/iam-access-administration.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "isolation"
-      ],
-      "provided": [
-        "isolation",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "isolation"],
+      "required": ["success", "isolation"],
+      "provided": ["isolation", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.grant-scope-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/grants/{grantId}/scopes",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.grant-scope-remove",
-      "file": "tests/backend/iam-access-administration.test.ts",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/iam/grants/{grantId}/scopes/{scopeId}",
+      "public": false,
+      "files": ["tests/backend/iam-access-administration.test.ts"],
       "referenced": true,
-      "required": [
-        "success"
-      ],
-      "provided": [
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success"],
+      "required": ["success"],
+      "provided": ["success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.invitation-activate",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/invitations/{userId}/activation",
+      "public": false,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "outbox"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "outbox",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "outbox"],
+      "required": ["success", "denial", "audit", "outbox"],
+      "provided": ["audit", "denial", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.invitation-cancel",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/iam/invitations/{userId}",
+      "public": false,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "outbox"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "outbox",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "outbox"],
+      "required": ["success", "denial", "audit", "outbox"],
+      "provided": ["audit", "denial", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.invitation-create",
-      "file": "tests/backend/iam-auth-provider.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/invitations",
+      "public": false,
+      "files": ["tests/backend/iam-auth-provider.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "cross-tenant",
-        "audit",
-        "outbox"
-      ],
-      "provided": [
-        "audit",
-        "cross-tenant",
-        "denial",
-        "outbox",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "provided": ["audit", "cross-tenant", "denial", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.permission-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/permissions",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-create",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/roles",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/roles",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-permission-add",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/roles/{roleId}/permissions",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit"],
+      "required": ["success", "denial", "audit"],
+      "provided": ["audit", "denial", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-permission-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/roles/{roleId}/permissions",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-permission-remove",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/iam/roles/{roleId}/permissions/{mappingId}",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit"],
+      "required": ["success", "denial", "audit"],
+      "provided": ["audit", "denial", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-permission-update",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/iam/roles/{roleId}/permissions/{mappingId}",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "stale-version"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "stale-version",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "stale-version"],
+      "required": ["success", "denial", "audit", "stale-version"],
+      "provided": ["audit", "denial", "stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.role-update",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/iam/roles/{roleId}",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "cross-tenant",
-        "audit",
-        "stale-version"
-      ],
-      "provided": [
-        "audit",
-        "cross-tenant",
-        "denial",
-        "stale-version",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "cross-tenant", "audit", "stale-version"],
+      "required": ["success", "denial", "cross-tenant", "audit", "stale-version"],
+      "provided": ["audit", "cross-tenant", "denial", "stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.tenant-settings-read",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/tenant",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.tenant-settings-update",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/org/tenant",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "stale-version"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "stale-version",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "stale-version"],
+      "required": ["success", "denial", "audit", "stale-version"],
+      "provided": ["audit", "denial", "stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.user-detail",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/users/{userId}",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.user-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/users",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.user-session-list",
-      "file": "tests/backend/iam-operations.test.ts",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/iam/users/{userId}/sessions",
+      "public": false,
+      "files": ["tests/backend/iam-operations.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": [],
       "required": [],
       "provided": [],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.user-session-revoke-all",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/iam/users/{userId}/sessions",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
-      "required": [
-        "success",
-        "denial",
-        "audit",
-        "outbox",
-        "idempotency"
-      ],
-      "provided": [
-        "audit",
-        "denial",
-        "idempotency",
-        "outbox",
-        "success"
-      ],
-      "missing": []
+      "derived": [],
+      "declared": ["success", "denial", "audit", "outbox", "idempotency"],
+      "required": ["success", "denial", "audit", "outbox", "idempotency"],
+      "provided": ["audit", "denial", "idempotency", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "iam.user-status-change",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/iam/users/{userId}/status",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
       "referenced": true,
+      "derived": [],
+      "declared": ["success", "denial", "audit", "outbox"],
+      "required": ["success", "denial", "audit", "outbox"],
+      "provided": ["audit", "denial", "outbox", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "iam.user-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/iam/users/{userId}",
+      "public": false,
+      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "referenced": true,
+      "derived": [],
+      "declared": ["success", "denial", "cross-tenant", "audit", "stale-version"],
+      "required": ["success", "denial", "cross-tenant", "audit", "stale-version"],
+      "provided": ["audit", "cross-tenant", "denial", "stale-version", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "meta.ping",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/meta/ping",
+      "public": false,
+      "files": ["tests/backend/api-ping.test.ts"],
+      "referenced": true,
+      "derived": [],
+      "declared": [],
+      "required": [],
+      "provided": [],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-download-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/download-authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "provider"],
       "required": [
+        "route",
+        "service",
         "success",
-        "denial",
+        "authorization",
+        "cross-tenant",
         "audit",
+        "denial",
+        "provider"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "provider",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-link-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/links",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
         "outbox"
       ],
       "provided": [
         "audit",
+        "authorization",
+        "cross-tenant",
         "denial",
+        "idempotency",
         "outbox",
+        "route",
+        "service",
         "success"
       ],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
-      "id": "iam.user-update",
-      "file": "tests/backend/iam-admin-writes.test.ts",
+      "id": "shared.attachment-link-withdraw",
+      "surface": "public-api",
+      "method": "DELETE",
+      "path": "/attachments/links/{linkId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
       "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "outbox"],
       "required": [
+        "route",
+        "service",
         "success",
-        "denial",
+        "authorization",
         "cross-tenant",
         "audit",
-        "stale-version"
+        "denial",
+        "outbox"
       ],
       "provided": [
         "audit",
+        "authorization",
         "cross-tenant",
         "denial",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-upload-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/upload-authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-version-register",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/versions",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.attachment-version-reject",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/versions/{versionId}/rejection",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.branch-status-change",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/organization/branches/{branchId}/status",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
         "stale-version",
         "success"
       ],
-      "missing": []
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
-      "id": "meta.ping",
-      "file": "tests/backend/api-ping.test.ts",
+      "id": "shared.branch-status-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/organization/branches/{branchId}/status",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
       "referenced": true,
-      "required": [],
-      "provided": [],
-      "missing": []
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.export-authorize",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/exports/authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "audit"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "audit", "denial"],
+      "provided": ["audit", "authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.export-catalogue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/exports/resources",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.health-live",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/health/live",
+      "public": true,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-dispatch-and-health.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "unauthenticated"],
+      "declared": [],
+      "required": ["route", "service", "success", "unauthenticated"],
+      "provided": ["route", "service", "success", "unauthenticated"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.health-ready",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/health/ready",
+      "public": true,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-dispatch-and-health.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "unauthenticated"],
+      "declared": [],
+      "required": ["route", "service", "success", "unauthenticated"],
+      "provided": ["route", "service", "success", "unauthenticated"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.notification-enqueue",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/notifications",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-attachments-notifications.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "outbox", "provider"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "provider"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "provider",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-activation-set",
+      "surface": "public-api",
+      "method": "PUT",
+      "path": "/message-templates/{templateId}/active-version",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/message-templates",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/message-templates/{templateId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-approve",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/approval",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/message-templates/{templateId}/versions",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-preview",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/preview",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/template-versions/{versionId}/retirement",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["denial", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.template-version-revise",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/template-versions/{versionId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/backend/p1-15-templates-transitions-export.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-authorized-party-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/authorized-parties",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-authorized-party-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/authorized-parties/{relationshipId}/retirement",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-create-update.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-document-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/documents",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-history.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-duplicate-review",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicle-duplicates/{candidateId}/review",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-duplicates.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-duplicate-scan",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/duplicate-scans",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-duplicates.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ev-profile-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/ev-profile",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-lifecycle.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ev-profile-set",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/ev-profile",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-lifecycle.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/history",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-history.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-merge",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/merge",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-merge.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-odometer-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/odometer-readings",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-odometer.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-odometer-record",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/odometer-readings",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-odometer.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ownership-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/ownerships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-ownership-transfer",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/ownerships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-plate-assign",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/vehicles/{vehicleId}/plates",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-plate-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/plates",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-registration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-relationship-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles/{vehicleId}/relationships",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-search",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/vehicles",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-search.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-status-change",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/vehicles/{vehicleId}/status",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-lifecycle.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "veh.vehicle-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/vehicles/{vehicleId}",
+      "public": false,
+      "files": ["tests/backend/p1-17-vehicle-create-update.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     }
   ]
 }

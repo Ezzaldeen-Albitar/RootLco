@@ -223,6 +223,293 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'org.branch_setting',
     description: 'A branch setting was written as a new immutable version row.',
   },
+
+  // ---- Organization status (P1-15 transition engine) ----------------------
+  {
+    code: 'org.branch.status_changed',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      'A branch moved between active and inactive through the status-transition engine, with the reason recorded in org.branch_status_history.',
+  },
+
+  // ---- Attachments (P1-15) ------------------------------------------------
+  //
+  // Upload and download authorization are recorded as SECURITY actions rather
+  // than privileged ones. Issuing a signed URL hands out a bearer capability to
+  // bytes: the audit record is the only durable evidence that it happened, and
+  // it must be triaged alongside authentication and grant changes rather than
+  // alongside ordinary administration.
+  {
+    code: 'shared.document.upload_authorized',
+    class: 'security',
+    entityType: 'shared.document',
+    description:
+      'An upload was authorized: document metadata was created, a storage key was reserved, and a short-lived signed upload URL was issued. Creation and authorization are one command and therefore one record — a separate `shared.document.created` code was registered and then removed, because a catalog entry with no producer is a claim about a fact nobody records.',
+  },
+  {
+    code: 'shared.document.version_registered',
+    class: 'privileged',
+    entityType: 'shared.document_version',
+    description:
+      'A document version was registered as pending. Acceptance is a separate action and requires scan evidence that no application role can write.',
+  },
+  {
+    code: 'shared.document.version_rejected',
+    class: 'privileged',
+    entityType: 'shared.document_version',
+    description: 'A pending document version was rejected; the state is terminal.',
+  },
+  {
+    code: 'shared.document.download_authorized',
+    class: 'security',
+    entityType: 'shared.document_version',
+    description: 'A short-lived signed download URL was issued for an accepted version.',
+  },
+  {
+    code: 'shared.document.linked',
+    class: 'privileged',
+    entityType: 'shared.document_link',
+    description:
+      'A document was linked to a business entity, making it reachable from that entity.',
+  },
+  {
+    code: 'shared.document.unlinked',
+    class: 'privileged',
+    entityType: 'shared.document_link',
+    description: 'A document link was withdrawn; reachability through that entity ends.',
+  },
+
+  // ---- Notifications and templates (P1-15) --------------------------------
+  {
+    code: 'shared.notification.enqueued',
+    class: 'privileged',
+    entityType: 'shared.outbound_message',
+    description:
+      'An outbound message was enqueued from an approved template version. Rendered content is not persisted; only its integrity digest is.',
+  },
+  {
+    code: 'shared.template.created',
+    class: 'privileged',
+    entityType: 'shared.message_template',
+    description: 'A tenant message template was created.',
+  },
+  {
+    code: 'shared.template.updated',
+    class: 'privileged',
+    entityType: 'shared.message_template',
+    description:
+      'A tenant message template’s name, description, status, or active version changed.',
+  },
+  {
+    code: 'shared.template.version_created',
+    class: 'privileged',
+    entityType: 'shared.template_version',
+    description: 'A draft template version was created or its draft content was revised.',
+  },
+  {
+    code: 'shared.template.version_approved',
+    class: 'approval',
+    entityType: 'shared.template_version',
+    description:
+      'A draft template version was approved. Approved content is immutable and is what messages are sent from.',
+  },
+  {
+    code: 'shared.template.version_retired',
+    class: 'privileged',
+    entityType: 'shared.template_version',
+    description: 'An approved template version was retired and can no longer become active.',
+  },
+
+  // ---- Export (P1-15) -----------------------------------------------------
+  {
+    code: 'shared.export.authorized',
+    class: 'export',
+    entityType: 'shared.export_request',
+    description:
+      'An export of tenant data was authorized: resource, field set, scope, and row estimate were approved. Authorization only — P1-15 generates no file.',
+  },
+
+  // ---- CRM (P1-16) --------------------------------------------------------
+  {
+    code: 'crm.customer.created',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer was created. One code covers individuals and organizations: the recorded fact is that a customer now exists, and the party type is a detail of it rather than a different event.',
+  },
+  {
+    code: 'crm.customer.contact_added',
+    class: 'privileged',
+    entityType: 'crm.contact_point',
+    description:
+      'A contact channel was attached to a customer. The record names the channel and points at the row; the contact value itself is personal data and stays out of the audit trail.',
+  },
+  {
+    code: 'crm.customer.address_added',
+    class: 'privileged',
+    entityType: 'crm.address',
+    description: 'An address was attached to a customer.',
+  },
+  {
+    code: 'crm.customer.preference_changed',
+    class: 'privileged',
+    entityType: 'crm.communication_preference',
+    description:
+      'A customer communication preference was set for one channel and purpose. A preference is not consent and never grants it.',
+  },
+  {
+    code: 'crm.customer.consent_changed',
+    class: 'privileged',
+    entityType: 'crm.consent_history',
+    description:
+      'A customer consent decision was recorded. The record carries the prior effective status so the transition is readable without replaying the whole history.',
+  },
+  {
+    code: 'crm.customer.note_added',
+    class: 'privileged',
+    entityType: 'shared.note',
+    description:
+      'A note was authored against a customer. Classification and visibility are recorded; the note body is not, because it may itself be restricted content.',
+  },
+  {
+    code: 'crm.customer.alert_raised',
+    class: 'privileged',
+    entityType: 'crm.customer_alert',
+    description:
+      'An advisory alert was raised against a customer. Alerts inform staff; they do not restrict what the platform will do.',
+  },
+  {
+    code: 'crm.customer.tag_assigned',
+    class: 'privileged',
+    entityType: 'crm.partner_segment_assignment',
+    description: 'A segment tag was assigned to a customer.',
+  },
+  {
+    code: 'crm.customer.status_changed',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer lifecycle status moved, with the recorded reason. The append-only transition also lands in crm.partner_status_history, which no application role may rewrite.',
+  },
+  {
+    code: 'crm.customer.restriction_imposed',
+    class: 'privileged',
+    entityType: 'crm.customer_restriction',
+    description:
+      'A commercial or service restriction was imposed on a customer, with its reason and any approval reference.',
+  },
+  {
+    code: 'crm.customer.duplicates_scanned',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A customer was scored against comparable ones and duplicate candidates were recorded. The scan decides nothing; it produces candidates for a human to review.',
+  },
+  {
+    code: 'crm.customer.duplicate_reviewed',
+    class: 'privileged',
+    entityType: 'crm.duplicate_candidate',
+    description: 'A human recorded a decision on a duplicate candidate pair.',
+  },
+  {
+    code: 'crm.customer.merged',
+    class: 'privileged',
+    entityType: 'crm.business_partner',
+    description:
+      'A duplicate customer was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
+  },
+  {
+    code: 'crm.customer.vehicle_linked',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description: 'A customer was linked to an existing vehicle in a relationship role.',
+  },
+
+  // ---- Vehicle backend (P1-17) --------------------------------------------
+  {
+    code: 'veh.vehicle.created',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle master was created as a draft. The recorded fact is that a vehicle now exists; its VIN is internal-classified data in the row the record points at and is not copied here.',
+  },
+  {
+    code: 'veh.vehicle.updated',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'Descriptive fields of a vehicle master were edited. The record names which columns changed, never their values — a master edit can touch the internal-classified VIN.',
+  },
+  {
+    code: 'veh.vehicle.merged',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A duplicate vehicle was merged into a surviving record under a named approval. The source is redirected and retained, never deleted, so historical references still resolve.',
+  },
+  {
+    code: 'veh.vehicle.duplicates_scanned',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle was scored against comparable ones and duplicate candidates were recorded. The scan decides nothing; it produces candidates for a human to review.',
+  },
+  {
+    code: 'veh.vehicle.duplicate_reviewed',
+    class: 'privileged',
+    entityType: 'veh.duplicate_candidate',
+    description: 'A human recorded a decision on a duplicate vehicle candidate pair.',
+  },
+  {
+    code: 'veh.vehicle.plate_assigned',
+    class: 'privileged',
+    entityType: 'veh.plate_history',
+    description:
+      'A new active plate was assigned to a vehicle and the prior plate was closed. Plate history is append-only; the record names the country, not the operational plate value alone.',
+  },
+  {
+    code: 'veh.vehicle.ownership_changed',
+    class: 'privileged',
+    entityType: 'veh.ownership_history',
+    description:
+      'A vehicle ownership was transferred: the prior owner was closed and a new owner opened in one transaction. Ownership history is append-only and retained.',
+  },
+  {
+    code: 'veh.vehicle.authorized_party_added',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'A customer was authorized as a scoped authorized party for a vehicle. The record names the granted actions; the authorized party is never the legal owner.',
+  },
+  {
+    code: 'veh.vehicle.authorized_party_retired',
+    class: 'privileged',
+    entityType: 'veh.vehicle_relationship',
+    description:
+      'An authorized party was retired by closing its authorization interval. The relationship is retained, not deleted.',
+  },
+  {
+    code: 'veh.vehicle.odometer_recorded',
+    class: 'privileged',
+    entityType: 'veh.odometer_reading',
+    description:
+      'An odometer reading or a correction was appended. Readings are append-only; a correction names a factual anomaly category and never edits or deletes the original.',
+  },
+  {
+    code: 'veh.vehicle.ev_profile_set',
+    class: 'privileged',
+    entityType: 'veh.vehicle_ev_profile',
+    description:
+      'A vehicle’s electric-drive profile was set or replaced. The record names the electric kind; no battery-health value is derived — state-of-health is telemetry, not a computed field.',
+  },
+  {
+    code: 'veh.vehicle.status_changed',
+    class: 'privileged',
+    entityType: 'veh.vehicle',
+    description:
+      'A vehicle’s lifecycle and/or workshop status was moved along an approved transition. The append-only status-history ledger records the transition itself; merged is never a settable target.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

@@ -168,13 +168,29 @@ describe('allocation basics (as the runtime role)', () => {
   });
 
   it('resets on period change and renders {period}', async () => {
-    // Simulate "last allocation happened in an earlier period" (admin fixture
-    // manipulation — the reset itself is then exercised as the runtime role).
+    // "Last allocation happened in an earlier period", built by RE-PROVISIONING
+    // rather than by UPDATE.
+    //
+    // This used to be an UPDATE setting `current_period = '2020-01'`. Migration
+    // 118 (DBCR-P1-15-002) refuses any `current_period` that is not the clock's
+    // current key, for every writer including the admin connection — a
+    // `BEFORE UPDATE` trigger does not care who you are. That is the fix working,
+    // not a test getting in its way: a writer inventing a period is exactly how a
+    // run gets restarted and numbers get re-issued. Provisioning is an INSERT,
+    // triggers do not fire on INSERT, and the reset below is still exercised as
+    // the runtime role against a state a legitimate sequence would reach by
+    // simply not being used since January 2020.
     await admin.query(
-      `UPDATE shared.number_sequences
-       SET next_value = 42, current_period = '2020-01'
-       WHERE tenant_id = $1 AND sequence_code = 'monthly_doc'`,
+      `DELETE FROM shared.number_sequences
+        WHERE tenant_id = $1 AND sequence_code = 'monthly_doc'`,
       [TENANT_A]
+    );
+    await admin.query(
+      `INSERT INTO shared.number_sequences
+         (tenant_id, sequence_code, prefix_template, pad_width, period_reset_rule,
+          current_period, next_value, created_by)
+       VALUES ($1, 'monthly_doc', 'M{period}-', 3, 'monthly', '2020-01', 42, $2)`,
+      [TENANT_A, USER_A]
     );
     const result = await withCommittedTx(runtime, { tenantId: TENANT_A, userId: USER_A }, (tx) =>
       allocate(tx, 'monthly_doc')

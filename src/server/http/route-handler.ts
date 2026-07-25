@@ -50,7 +50,7 @@ import {
   withIdempotency,
 } from './idempotency';
 import { parseIfMatch, toETag } from '../db/concurrency';
-import { RATE_LIMIT_POLICIES, enforceRateLimit } from './rate-limit';
+import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './rate-limit';
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
@@ -108,14 +108,51 @@ function successHeaders(correlationId: string, recordVersion?: number): Record<s
   };
 }
 
-function policyFor(operation: RegisteredOperation) {
+/** A policy a request with no session can actually be keyed by. */
+function isSessionless(policy: RateLimitPolicy): boolean {
+  return !policy.keyBy.includes('tenant') && !policy.keyBy.includes('user');
+}
+
+/**
+ * Resolves the rate-limit policy a registered operation is actually throttled by.
+ *
+ * Exported for tests. It is the one place where a *declared* policy and an
+ * *enforced* policy can diverge, and a defect here is silent by construction —
+ * the route still works, it is just throttled by something other than what its
+ * own registration says. That is exactly the shape that needs a direct
+ * assertion rather than an end-to-end one.
+ */
+export function policyFor(operation: RegisteredOperation): RateLimitPolicy | undefined {
   const name = operation.rateLimitPolicy;
-  if (!name) return undefined;
-  const policy = RATE_LIMIT_POLICIES[name];
-  if (!policy) {
+  const declared = name ? RATE_LIMIT_POLICIES[name] : undefined;
+  if (name && !declared) {
     throw new Error(`Operation ${operation.id} references unknown rate-limit policy "${name}"`);
   }
-  return policy;
+
+  if (!operation.public) return declared;
+
+  // A public operation has no tenant and no user, so a policy keyed on either
+  // would put every caller in the world into one bucket. Such a policy is
+  // replaced — and so is *no policy at all*, because `defineOperation()` does
+  // not require one and an unthrottled public route is the defect this branch
+  // exists to prevent.
+  //
+  // A declared policy that is already sessionless is KEPT, and that distinction
+  // is load-bearing: the four unauthenticated `iam.auth-*` operations declare
+  // `auth-adjacent` (10/min, `securityRelevant: true`), and an earlier version of
+  // this function substituted `public-probe` (120/min, not security-relevant) for
+  // them unconditionally. That silently gave credential stuffing twelve times the
+  // budget and stopped a breach raising a security signal, while their own
+  // `publicReason` text still said they were bounded by `auth-adjacent`. Keeping a
+  // sessionless declaration means the substitution can only ever make a public
+  // route *more* throttled, never less.
+  if (declared && isSessionless(declared)) return declared;
+
+  const publicPolicy = RATE_LIMIT_POLICIES['public-probe'];
+  if (!publicPolicy) {
+    throw new Error('The "public-probe" rate-limit policy is missing from the catalogue');
+  }
+  return publicPolicy;
 }
 
 /**
@@ -137,8 +174,16 @@ export async function handleOperation<T>(
   const startedAt = performance.now();
   const config = backendConfig();
   const policy = policyFor(operation);
+  // A `public: true` operation never reaches the post-authentication throttle,
+  // because it never authenticates. Until this was fixed (P1-15-SR-004) a policy
+  // keyed by tenant or user — which is most of them — meant a public route was
+  // throttled by nothing at all, and the two health probes are the most exposed
+  // endpoints in the deployment. For a public operation the policy is therefore
+  // enforced BEFORE the handler, keyed by operation and client address, which
+  // are the only dimensions that exist without a session.
   const preAuthPolicy =
-    policy && !policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')
+    policy &&
+    (operation.public || (!policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')))
       ? policy
       : undefined;
   const postAuthPolicy = policy && preAuthPolicy === undefined ? policy : undefined;
@@ -162,7 +207,38 @@ export async function handleOperation<T>(
       headers: request.headers,
     });
 
-    if (preAuthPolicy && config.RATE_LIMIT_ENABLED) {
+    // A policy keyed on `ip` degrades to ONE GLOBAL BUCKET when no client
+    // address can be resolved, and `resolveClientAddress` returns null unless
+    // the platform supplies a peer address or a trusted proxy is configured.
+    //
+    // For a liveness probe that is worse than no limit: a hostile caller could
+    // exhaust the shared bucket and the orchestrator's own probe would start
+    // receiving 429, which the orchestrator reads as an unhealthy pod. The
+    // control would cause the outage it exists to prevent.
+    //
+    // That argument is about the probe, NOT about the route being public, and
+    // writing the condition against `operation.public` alone silently extended
+    // it to the four unauthenticated `iam.auth-*` routes — which meant login,
+    // logout and password reset were throttled by nothing in a deployment with
+    // no peer address, while their own `publicReason` text said they were
+    // bounded at ten a minute. Before P1-15 the pre-auth branch had no skip at
+    // all, so this phase *removed* a control the previous phase shipped
+    // (PMR-006 / R-14).
+    //
+    // So the exemption belongs to the property the argument is about: a policy
+    // that is not `securityRelevant`. `public-probe` keeps it; `auth-adjacent`
+    // never gets it and degrades to the coarse bucket instead. A security
+    // control is never dropped for want of a key. The coarse bucket's own
+    // availability exposure is real and is recorded as R-14 rather than
+    // papered over — see the readiness section of
+    // `docs/phase-1/phase-1-15/health-endpoints.md`.
+    const skipUnkeyedPublicThrottle =
+      operation.public &&
+      preAuthPolicy?.keyBy.includes('ip') === true &&
+      preAuthPolicy.securityRelevant === false &&
+      !client.ip;
+
+    if (preAuthPolicy && config.RATE_LIMIT_ENABLED && !skipUnkeyedPublicThrottle) {
       await enforceRateLimit(preAuthPolicy, {
         operation: operation.id,
         clientIp: client.ip,
@@ -204,7 +280,11 @@ export async function handleOperation<T>(
     const fingerprint = idempotencyKey
       ? requestFingerprint(context, {
           method: operation.method,
+          // The registered TEMPLATE plus the RESOLVED parameters. The template
+          // alone is identical for every target of a parameterised route, so
+          // binding it alone let one key replay across resources (P1-15-SR-002).
           path: operation.path,
+          params: options.params ?? {},
           body: options.body ?? null,
         })
       : null;
