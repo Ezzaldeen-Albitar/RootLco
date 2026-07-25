@@ -39,7 +39,11 @@ import { contextLogFields, elapsedMs, type RequestContext } from '../context/req
 import { resolveRequestContext } from '../context/resolve-context';
 import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
-import { requirePermissions, type AuthorizationTarget } from '../auth/authorization';
+import {
+  requirePermissions,
+  type AuthorizationTarget,
+  type ScopeAuthorizer,
+} from '../auth/authorization';
 import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
 import {
@@ -102,9 +106,6 @@ export interface HandlerInput {
    */
   readonly authorizeScope: ScopeAuthorizer;
 }
-
-/** Re-authorizes the running operation against a scope known only at run time. */
-export type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
 

@@ -607,6 +607,19 @@ export class ReceptionEvidenceService extends ApplicationService {
   }
 
   /** Locks the visit and refuses one that is closed to further evidence. */
+  /**
+   * Locks the visit, authorizes against ITS branch, then checks recordability
+   * (P1-18-A-01).
+   *
+   * Order matters. The three evidence commands are addressed by the visit id, so
+   * the route-level check had no scope to evaluate and fell back to the
+   * scope-blind `iam.has_permission`; RLS narrows on the permission-blind union
+   * of the caller's grants and so admits the row too. Authorizing here, before
+   * the terminal-state test and before any write, means a caller outside this
+   * branch is refused without learning the visit's lifecycle state, and the
+   * denial rolls back the transaction so no evidence, signature, refusal, audit
+   * row or outbox envelope survives.
+   */
   private async requireRecordableVisit(
     db: DbHandle,
     receptionVisitId: string

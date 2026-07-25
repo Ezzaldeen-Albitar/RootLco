@@ -36,6 +36,15 @@ export interface AuthorizationTarget {
   readonly departmentId?: string;
 }
 
+/**
+ * Re-authorizes the running operation against a scope discovered at run time.
+ *
+ * Lives here rather than beside the HTTP handler so a module can depend on it
+ * without importing `@/server/http`: the ten id-addressed P1-18 commands need it
+ * in their APPLICATION layer, once the row is locked (P1-18-A-01).
+ */
+export type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
+
 export interface AuthorizationDecision {
   readonly allowed: boolean;
   /** Codes that evaluated false. Safe to return: they are public API metadata. */

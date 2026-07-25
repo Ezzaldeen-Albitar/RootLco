@@ -33,6 +33,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
@@ -155,9 +156,10 @@ export class AppointmentService extends ApplicationService {
     db: DbHandle,
     appointmentId: string,
     expectedVersion: number,
-    input: RescheduleInput
+    input: RescheduleInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<AppointmentChanged> {
-    const current = await this.requireAppointment(db, appointmentId);
+    const current = await this.requireAppointment(db, appointmentId, authorizeScope);
     const window = this.planOrFail(() => toReschedulePlan(input), 'body.confirmedFrom');
     assertReschedulable(current.lifecycleStatus);
 
@@ -213,9 +215,10 @@ export class AppointmentService extends ApplicationService {
     db: DbHandle,
     appointmentId: string,
     expectedVersion: number,
-    input: CancelInput
+    input: CancelInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<AppointmentChanged> {
-    const current = await this.requireAppointment(db, appointmentId);
+    const current = await this.requireAppointment(db, appointmentId, authorizeScope);
     assertCancellable(current.lifecycleStatus);
 
     const recordVersion = await this.applyOrFail(expectedVersion, () =>
@@ -253,9 +256,10 @@ export class AppointmentService extends ApplicationService {
   async recordNoShow(
     db: DbHandle,
     appointmentId: string,
-    expectedVersion: number
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
   ): Promise<AppointmentChanged> {
-    const current = await this.requireAppointment(db, appointmentId);
+    const current = await this.requireAppointment(db, appointmentId, authorizeScope);
     assertNoShowRecordable(current.lifecycleStatus);
 
     const recordVersion = await this.applyOrFail(expectedVersion, () =>
@@ -285,15 +289,35 @@ export class AppointmentService extends ApplicationService {
     };
   }
 
-  /** Locks the appointment for the rest of the transaction, or reports a 404. */
+  /**
+   * Locks the appointment for the rest of the transaction, or reports a 404,
+   * and then authorizes against the branch the locked row actually belongs to
+   * (P1-18-A-01).
+   *
+   * The route-level check has already run, but these three commands are
+   * addressed by id: there was no company or branch to name when it ran, and an
+   * empty target makes `requiresScopedEvaluation` return false whatever
+   * `scope: 'branch'` says — so the decision came from `iam.has_permission`,
+   * which does not consult grant scope. RLS does not close the gap either,
+   * because `app.branch_ids` is the union of every active grant regardless of
+   * which permission it carries.
+   *
+   * Authorizing HERE, after the lock, is what makes the declared scope real: the
+   * target is the row's own company and branch rather than anything the caller
+   * sent, it cannot change under us because the row is locked, and a denial
+   * throws inside the transaction so no lifecycle change, history row, audit
+   * record or outbox envelope survives it.
+   */
   private async requireAppointment(
     db: DbHandle,
-    appointmentId: string
+    appointmentId: string,
+    authorizeScope: ScopeAuthorizer
   ): Promise<{ readonly lifecycleStatus: string }> {
     const row = await this.appointments.lockForUpdate(db, appointmentId);
     if (!row) {
       throw new AppFailure('ERR-RES-001', { message: 'Appointment was not found' });
     }
+    await authorizeScope({ companyId: row.companyId, branchId: row.branchId });
     return row;
   }
 

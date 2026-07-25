@@ -527,15 +527,36 @@ export class ReceptionService extends ApplicationService {
     };
   }
 
-  /** Locks the live visit for the rest of the transaction, or reports a 404. */
+  /**
+   * Locks the live visit for the rest of the transaction, or reports a 404, and
+   * then authorizes against the branch the locked visit actually belongs to
+   * (P1-18-A-01).
+   *
+   * These commands are addressed by the visit id, so the route-level check ran
+   * with no company or branch to name. An empty target makes
+   * `requiresScopedEvaluation` return false however `scope: 'branch'` is
+   * declared, and the decision falls to `iam.has_permission`, which does not
+   * consult grant scope. Forced RLS does not stand in for it: `app.branch_ids`
+   * is the union of every active grant, irrespective of which permission each
+   * one carries, so a caller holding this permission only in another branch
+   * still sees — and could write — this row.
+   *
+   * Re-authorizing after the lock is what makes `scope: 'branch'` true. The
+   * target is the visit's own company and branch, it cannot move while the row
+   * is locked, and a denial throws inside the transaction, so no party role,
+   * authorization row, status history, custody event, audit record or outbox
+   * envelope survives.
+   */
   private async requireVisit(
     db: DbHandle,
-    receptionVisitId: string
+    receptionVisitId: string,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionVisitLockRow> {
     const visit = await this.receptions.lockVisit(db, receptionVisitId);
     if (!visit) {
       throw new AppFailure('ERR-RES-001', { message: 'Reception was not found' });
     }
+    await authorizeScope({ companyId: visit.companyId, branchId: visit.branchId });
     return visit;
   }
 
