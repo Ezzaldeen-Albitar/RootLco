@@ -189,6 +189,11 @@ describe('error catalog', () => {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_AUDIT_ACTIONS = [
+  // Phase 1-18 (apt / rec) — appointment lifecycle and vehicle reception.
+  'apt.appointment.cancelled',
+  'apt.appointment.created',
+  'apt.appointment.no_show_recorded',
+  'apt.appointment.rescheduled',
   'crm.customer.address_added',
   'crm.customer.alert_raised',
   'crm.customer.consent_changed',
@@ -230,6 +235,14 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.branch.status_changed',
   'org.company.settings_updated',
   'org.tenant.settings_updated',
+  'rec.reception.approved',
+  'rec.reception.authorization_recorded',
+  'rec.reception.converted_to_work_order',
+  'rec.reception.created',
+  'rec.reception.evidence_recorded',
+  'rec.reception.party_role_assigned',
+  'rec.reception.refusal_recorded',
+  'rec.reception.signature_recorded',
   'shared.document.download_authorized',
   'shared.document.linked',
   'shared.document.unlinked',
@@ -478,6 +491,9 @@ const EXPECTED_EVENT_TYPES = [
   'message.delivery.changed',
   'message.enqueued',
   'organization.branch.status.changed',
+  // Registered by P1-18: reception approval had no reserved name, because
+  // Chapter 4 Table 4.5 allocates only the check-in fact for the `rec` domain.
+  'reception.approved',
   'session.revoked',
   'user.invited',
   'user.status.changed',

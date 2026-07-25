@@ -371,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 62', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 71', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -389,12 +389,19 @@ describe('P1-15 / global security posture', () => {
     // catalog to 55. The P1-17 vehicle backend then seeds veh.vehicle.read,
     // veh.vehicle.manage, veh.vehicle.merge, veh.vehicle.duplicate.review,
     // veh.vehicle.relationship.manage, veh.vehicle.odometer.record, and
-    // veh.vehicle.status.manage, taking the catalog to 62. Permissions live in the
-    // seed, not a migration.
+    // veh.vehicle.status.manage, taking the catalog to 62. The P1-18 appointment
+    // and reception backend then seeds nine more — apt.appointment.manage and
+    // apt.appointment.lifecycle.manage, then rec.reception.manage,
+    // rec.reception.party.manage, rec.reception.authorization.verify,
+    // rec.reception.evidence.manage, rec.reception.signature.manage,
+    // rec.reception.approve and rec.reception.convert — taking the catalog to 71.
+    // P1-18 registers no read code, because it exposes no read operation and an
+    // unused permission is configuration that cannot be tested. Permissions live
+    // in the seed, not a migration.
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    expect(Number(total.rows[0]?.n)).toBe(62);
+    expect(Number(total.rows[0]?.n)).toBe(71);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

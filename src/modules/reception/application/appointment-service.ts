@@ -12,14 +12,18 @@
  * ## What the frozen `apt` schema decides, and how each refusal surfaces
  *
  *  - `requested_from` / `requested_to` are immutable, so a reschedule moves the
- *    CONFIRMED window. It deliberately leaves `lifecycle_status` alone: changing
- *    it here would be a lifecycle transition wearing a reschedule's clothes, and
- *    the status ledger would record a confirmation nobody requested.
+ *    CONFIRMED window and the customer's original request survives untouched.
+ *    Agreeing that window is also what confirming means — canonical UC-APT-001
+ *    is one use case, "Confirm or reschedule appointment" — so the same command
+ *    carries a still-unconfirmed appointment to `confirmed`, in the same
+ *    statement, because `ck_appointments_confirmed_required` would refuse a row
+ *    that claimed the status without the window.
  *  - `ex_appointments_vehicle_confirmed` is the only authority on same-vehicle
  *    overlap. It is a PARTIAL exclusion covering `confirmed` and `checked_in`
- *    rows, so it bites when an already-confirmed appointment is moved onto a
- *    window another confirmed appointment for the same vehicle holds. It arrives
- *    as `23P01` and becomes `ERR-RES-002` (409), never a driver error.
+ *    rows, which is exactly why the transition above matters: without it no
+ *    appointment reached a state the exclusion covers, and the conflict
+ *    detection FR-APT-002 requires could never have fired. It arrives as
+ *    `23P01` and becomes `ERR-RES-002` (409), never a driver error.
  *  - the caller's `record_version` is a WHERE predicate, so a stale view writes
  *    zero rows instead of overwriting a concurrent change (`ERR-CON-001`).
  *  - a missing, deleted, or out-of-scope appointment is `ERR-RES-001` —
