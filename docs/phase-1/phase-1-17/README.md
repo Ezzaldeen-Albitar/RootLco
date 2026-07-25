@@ -16,9 +16,11 @@ and the [Solo Developer Review Policy](../../governance/solo-developer-review-po
 
 ## Status
 
-**The owner gate is [Pending](phase-1-17-owner-gate.md), and stays Pending until the approval owner
-records a decision against evidence on the exact merged SHA.** Nothing in this folder is a gate
-decision, and no document here claims the phase has passed.
+**The owner gate is [Go — P1-17 Vehicle Backend Gate Passed](phase-1-17-owner-gate.md), recorded
+against evidence on protected `develop` `f18b855`.** The decision was made only after the whole
+phase — the feature merge and three post-merge remediations — reached protected history and was
+re-verified there; it was never filled from intention. Phase 1-18 remains unauthorized until the
+gate-record pull request is merged and that protected merge is separately verified.
 
 This phase builds the **application backend for the vehicle domain** on top of the vehicle database
 delivered by Phase 1-7 and consumed unchanged, and on the request/authorization/audit/outbox
@@ -34,8 +36,9 @@ request — never as a convenience migration inside this feature.
 | Wave 1 — canonical requirements + dependency audit (P1-7/13/14/15/16 all Go) | **Complete**                                                                             |
 | Wave 2 — vehicle runtime feasibility audit                                   | **Complete — NO BLOCKERS** (no feature migration / no DBCR required)                     |
 | Waves 3–11 — vehicle module implementation (20 operations)                   | **Complete** — see the operation inventory below                                         |
-| Local validation (23-gate CI-equivalent battery)                             | **Complete** — Unit 733 / DB 1547 / Backend 567, build + all guards green                |
-| Owner gate                                                                   | **Pending** — no decision recorded                                                       |
+| Local validation (CI-equivalent battery on protected `develop` `f18b855`)    | **Complete** — Unit 733 / DB 1547 / Backend 567, build + all guards green                |
+| Post-merge remediations (PR #71, PR #72, PR #73)                             | **Complete** — see the owner gate for what each fixed and why                            |
+| Owner gate                                                                   | **Go** — recorded on `f18b855`; see [the gate record](phase-1-17-owner-gate.md)          |
 
 ## Feasibility result (Wave 2)
 
@@ -154,17 +157,23 @@ Critical, zero High, zero unaccepted Medium.**
 
 ## Observability and safe logging (DO-001 / DO-002)
 
-The vehicle operations use the shared backend logger (boundary rule B7) and emit the standard
-structured record only: `severity`, `time`, `service`, `module`, `operation`, `correlationId`,
-`tenantRef`, `actorRef`, `durationMs`, `result`, `errorCode`. **No full VIN, plate, PII, signed URL,
-storage key, odometer payload, or secret is logged** — the failing-path test output in the backend
-suites shows exactly these safe fields and nothing more. Audit records name which columns changed,
+The vehicle operations use the shared backend logger (boundary rule B7) and add nothing of their own
+to the standard structured record: `severity`, `time`, `module`, `operation`, `correlationId`,
+`tenantRef`, `actorRef`, `durationMs`, `result`, `errorCode`, plus `causationId` when the request
+carries one. The logger's own base adds `service`, `version` and `env` to every record it emits
+(`src/server/observability/logger.ts`); those are deployment identifiers, not request data. **No full
+VIN, plate, PII, signed URL, storage key, odometer payload, or secret is logged** — the failing-path
+test output in the backend suites shows exactly these safe fields and nothing more. Audit records name which columns changed,
 never their values, for internal-classified data (VIN); the EV/status/odometer audit details carry
 only enum categories and ids.
 
 ## QA evidence (QA-001…005)
 
-Local 23-gate CI-equivalent battery, all green on the exact feature SHA:
+Local CI-equivalent battery — every gate the hosted pipeline runs, plus the full database and backend
+suites — all green on **protected `develop` `f18b855`**, the merge of the last remediation. The totals
+below are that measurement, not the feature SHA's: the feature merge `aff8923a` carried fewer backend
+tests, because PR #71, PR #72 and PR #73 each added assertions. Reading them as one number for one SHA
+would misstate when the evidence came to exist.
 
 | Suite / gate                                                                               | Result                                                                                                         |
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
