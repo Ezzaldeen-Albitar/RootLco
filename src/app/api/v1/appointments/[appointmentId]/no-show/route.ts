@@ -58,7 +58,7 @@ export async function POST(
   return handleOperation(
     APPOINTMENT_NO_SHOW_OPERATION,
     request,
-    async ({ db, expectedVersion }) => {
+    async ({ db, expectedVersion, authorizeScope }) => {
       parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -66,7 +66,10 @@ export async function POST(
       const changed = await receptionModule().appointments.recordNoShow(
         db,
         params.appointmentId,
-        expectedVersion
+        expectedVersion,
+        // Re-authorized against the LOCKED appointment's branch, not this
+        // request: `scope: 'branch'` is inert without a target (P1-18-A-01).
+        authorizeScope
       );
       return { status: 200, body: changed, recordVersion: changed.recordVersion };
     },

@@ -37,6 +37,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type {
@@ -225,9 +226,10 @@ export class ReceptionEvidenceService extends ApplicationService {
   async recordConditionEvidence(
     db: DbHandle,
     receptionVisitId: string,
-    input: ConditionEvidenceInput
+    input: ConditionEvidenceInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ConditionEvidenceRecorded> {
-    const visit = await this.requireRecordableVisit(db, receptionVisitId);
+    const visit = await this.requireRecordableVisit(db, receptionVisitId, authorizeScope);
     const scope: EvidenceScope = { companyId: visit.companyId, branchId: visit.branchId };
 
     let inserted: InsertedEvidence;
@@ -264,9 +266,10 @@ export class ReceptionEvidenceService extends ApplicationService {
   async recordSignature(
     db: DbHandle,
     receptionVisitId: string,
-    input: SignatureInput
+    input: SignatureInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<SignatureRecorded> {
-    const visit = await this.requireRecordableVisit(db, receptionVisitId);
+    const visit = await this.requireRecordableVisit(db, receptionVisitId, authorizeScope);
     const signatureHash = this.decodeSignatureHash(input.signatureHash);
 
     let signatureId: string | null;
@@ -308,9 +311,10 @@ export class ReceptionEvidenceService extends ApplicationService {
   async recordRefusal(
     db: DbHandle,
     receptionVisitId: string,
-    input: RefusalInput
+    input: RefusalInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<RefusalRecorded> {
-    const visit = await this.requireRecordableVisit(db, receptionVisitId);
+    const visit = await this.requireRecordableVisit(db, receptionVisitId, authorizeScope);
 
     // An `authorization` refusal is part of the standing authorization decision,
     // so it has to name the party whose decision it is — see
@@ -622,12 +626,16 @@ export class ReceptionEvidenceService extends ApplicationService {
    */
   private async requireRecordableVisit(
     db: DbHandle,
-    receptionVisitId: string
+    receptionVisitId: string,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionVisitLockRow> {
     const visit = await this.receptions.lockVisit(db, receptionVisitId);
     if (!visit) {
       throw new AppFailure('ERR-RES-001', { message: 'Reception was not found' });
     }
+    // Authorize BEFORE the lifecycle test, so a caller outside this branch is
+    // refused without learning whether the visit is still open for evidence.
+    await authorizeScope({ companyId: visit.companyId, branchId: visit.branchId });
     assertEvidenceRecordable(visit.receptionStatus);
     return visit;
   }

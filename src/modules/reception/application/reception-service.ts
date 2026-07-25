@@ -39,6 +39,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
@@ -229,9 +230,10 @@ export class ReceptionService extends ApplicationService {
   async assignPartyRole(
     db: DbHandle,
     receptionVisitId: string,
-    input: PartyRoleInput
+    input: PartyRoleInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<PartyRoleAssigned> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertEvidenceRecordable(visit.receptionStatus);
     // `assignment_source` carries only a non-blank CHECK, so a blank value is
     // normalised to absent rather than refused: a blank string and no value at all
@@ -297,9 +299,10 @@ export class ReceptionService extends ApplicationService {
   async recordAuthorization(
     db: DbHandle,
     receptionVisitId: string,
-    input: AuthorizationInput
+    input: AuthorizationInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<AuthorizationRecorded> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertEvidenceRecordable(visit.receptionStatus);
 
     // The database proves the partner MAY decide; it never checks that the role
@@ -353,9 +356,10 @@ export class ReceptionService extends ApplicationService {
   async approve(
     db: DbHandle,
     receptionVisitId: string,
-    expectedVersion: number
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionApproved> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertApprovable(visit.receptionStatus);
 
     // `rec.guard_reception_transition` asks only whether SOME approved row has

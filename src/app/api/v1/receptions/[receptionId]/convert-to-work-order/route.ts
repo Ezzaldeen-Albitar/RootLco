@@ -65,7 +65,7 @@ export async function POST(
   return handleOperation(
     RECEPTION_CONVERT_OPERATION,
     request,
-    async ({ db, expectedVersion }) => {
+    async ({ db, expectedVersion, authorizeScope }) => {
       parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -75,7 +75,10 @@ export async function POST(
         body: await receptionModule().receptionConversion.convertToWorkOrder(
           db,
           params.receptionId,
-          expectedVersion
+          expectedVersion,
+          // Re-authorized against the LOCKED visit's branch, not this request:
+          // `scope: 'branch'` is inert without a target (P1-18-A-01).
+          authorizeScope
         ),
       };
     },
