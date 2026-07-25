@@ -51,6 +51,14 @@ export interface AuthorizationDecision {
   readonly failedPermissions: readonly string[];
 }
 
+export interface EvaluationOptions {
+  /**
+   * Evaluate against grant scope whenever the target names one, regardless of
+   * the operation's declared scope. Set by the deferred path only.
+   */
+  readonly forceScoped?: boolean;
+}
+
 function requiresScopedEvaluation(scope: ScopeRequirement, target: AuthorizationTarget): boolean {
   if (scope === 'tenant') return false;
   return target.companyId !== undefined || target.branchId !== undefined;
@@ -84,11 +92,19 @@ function requiresScopedEvaluation(scope: ScopeRequirement, target: Authorization
 export async function evaluatePermissions(
   db: DbHandle,
   operation: RegisteredOperation,
-  target: AuthorizationTarget = {}
+  target: AuthorizationTarget = {},
+  options: EvaluationOptions = {}
 ): Promise<AuthorizationDecision> {
   if (operation.public) return { allowed: true, failedPermissions: [] };
 
-  const scoped = requiresScopedEvaluation(operation.scope, target);
+  // `forceScoped` says "a caller discovered this scope and named it", which is
+  // a stronger statement than the declaration makes. It only ever ADDS scope to
+  // the decision: with no company and no branch there is still nothing to
+  // narrow by, so the expression below cannot turn a scoped evaluation into a
+  // scope-blind one.
+  const scoped = options.forceScoped
+    ? target.companyId !== undefined || target.branchId !== undefined
+    : requiresScopedEvaluation(operation.scope, target);
   const failed: string[] = [];
 
   for (const code of operation.permissions) {
@@ -116,9 +132,10 @@ export async function evaluatePermissions(
 export async function requirePermissions(
   db: DbHandle,
   operation: RegisteredOperation,
-  target: AuthorizationTarget = {}
+  target: AuthorizationTarget = {},
+  options: EvaluationOptions = {}
 ): Promise<void> {
-  const decision = await evaluatePermissions(db, operation, target);
+  const decision = await evaluatePermissions(db, operation, target, options);
   if (decision.allowed) return;
 
   const context: RequestContext = db.context;
@@ -169,8 +186,18 @@ export async function requireScopedPermissions(
   operation: RegisteredOperation,
   target: AuthorizationTarget
 ): Promise<void> {
-  const narrowing = !operation.public && operation.scope !== 'tenant';
-  if (narrowing && target.companyId === undefined && target.branchId === undefined) {
+  // Deliberately NOT `operation.scope !== 'tenant'`. Reaching this function at
+  // all means a choke point has discovered the resource's scope and is asking
+  // to be judged against it, whatever the declaration happens to say. Keying
+  // the guard on the declared scope would exempt any operation that omitted
+  // `scope` — `defineOperation` defaults it to `'tenant'` — so a future
+  // id-addressed command that forgot one line would call this with a real
+  // target, fall through `requiresScopedEvaluation`'s tenant short-circuit,
+  // and be decided by scope-blind `iam.has_permission`. That is P1-18-A-01
+  // restored by an omission, and it would look completely correct at the call
+  // site. The public exemption stays: a public operation has no principal to
+  // narrow.
+  if (!operation.public && target.companyId === undefined && target.branchId === undefined) {
     const context: RequestContext = db.context;
     metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
     log.warn('Authorization denied', {
@@ -188,5 +215,10 @@ export async function requireScopedPermissions(
     });
   }
 
-  return requirePermissions(db, operation, target);
+  // `forceScoped`, for the same reason the guard above ignores the declared
+  // scope: a target was supplied, so the decision must consult grant scope even
+  // if the declaration says `tenant`. Without this a tenant-scoped operation
+  // could hand over a real company and branch and still be answered by
+  // `iam.has_permission`, which reads no scope at all.
+  return requirePermissions(db, operation, target, { forceScoped: true });
 }

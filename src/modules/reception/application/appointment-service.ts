@@ -37,7 +37,7 @@ import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
-import type { AppointmentRepository } from '../data/appointment-repository';
+import type { AppointmentLockRow, AppointmentRepository } from '../data/appointment-repository';
 import {
   APPOINTMENT_TRANSITIONS,
   AppointmentRuleError,
@@ -200,6 +200,12 @@ export class AppointmentService extends ApplicationService {
       action: 'apt.appointment.rescheduled',
       entityType: 'apt.appointment',
       entityId: appointmentId,
+      // The locked row's own scope. `iam.audit_append` stores these verbatim,
+      // and `GET /audit-events` filters on them, so omitting them files a
+      // privileged action with NULL company and branch — invisible to every
+      // scope-filtered audit query over the branch it actually happened in.
+      companyId: current.companyId,
+      branchId: current.branchId,
       details: [
         { field: 'confirmed_from', classification: 'internal', value: window.confirmedFrom },
         { field: 'confirmed_to', classification: 'internal', value: window.confirmedTo },
@@ -229,6 +235,8 @@ export class AppointmentService extends ApplicationService {
       action: 'apt.appointment.cancelled',
       entityType: 'apt.appointment',
       entityId: appointmentId,
+      companyId: current.companyId,
+      branchId: current.branchId,
       details: [
         {
           field: 'lifecycle_status',
@@ -270,6 +278,8 @@ export class AppointmentService extends ApplicationService {
       action: 'apt.appointment.no_show_recorded',
       entityType: 'apt.appointment',
       entityId: appointmentId,
+      companyId: current.companyId,
+      branchId: current.branchId,
       details: [
         {
           field: 'lifecycle_status',
@@ -312,7 +322,7 @@ export class AppointmentService extends ApplicationService {
     db: DbHandle,
     appointmentId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<{ readonly lifecycleStatus: string }> {
+  ): Promise<AppointmentLockRow> {
     const row = await this.appointments.lockForUpdate(db, appointmentId);
     if (!row) {
       throw new AppFailure('ERR-RES-001', { message: 'Appointment was not found' });

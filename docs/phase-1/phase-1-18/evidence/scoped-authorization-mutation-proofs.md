@@ -17,14 +17,14 @@ Branch `fix/p1-18-scoped-authorization-containment`, mutations run at
 `68255af`. PostgreSQL 17.6.1 (`supabase_db_RootLco`), serial, no other DB or
 backend Vitest process running.
 
-| ID  | Property under test                             | Killed by                                                 | Restored  |
-| --- | ----------------------------------------------- | --------------------------------------------------------- | --------- |
-| M1  | reschedule re-authorizes after the lock         | containment (behavioural)                                 | MD5 match |
-| M2  | condition-evidence re-authorizes after the lock | containment (behavioural)                                 | MD5 match |
-| M3  | approval re-authorizes after the lock           | containment (behavioural)                                 | MD5 match |
-| M4  | conversion re-authorizes after the lock         | containment (behavioural)                                 | MD5 match |
-| M5  | the target is the LOCKED row, not the caller    | foundation (structural) **and** containment (behavioural) | MD5 match |
-| M6  | a route runs under its OWN declaration          | foundation (structural)                                   | MD5 match |
+| ID  | Property under test                             | Killed by                                                                                                                                              | Restored  |
+| --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| M1  | reschedule re-authorizes after the lock         | containment (behavioural)                                                                                                                              | MD5 match |
+| M2  | condition-evidence re-authorizes after the lock | containment (behavioural)                                                                                                                              | MD5 match |
+| M3  | approval re-authorizes after the lock           | containment (behavioural)                                                                                                                              | MD5 match |
+| M4  | conversion re-authorizes after the lock         | containment (behavioural)                                                                                                                              | MD5 match |
+| M5  | the target is the LOCKED row, not the caller    | foundation (structural) **and** containment (behavioural)                                                                                              | MD5 match |
+| M6  | a route runs under its OWN declaration          | foundation (structural) — and, discovered afterwards, an existing behavioural assertion in `p1-18-reception-parties.test.ts`; see the correction below | MD5 match |
 
 ---
 
@@ -142,29 +142,76 @@ backend Vitest process running.
   `git status --short` empty, `git diff --check` exit 0.
 - **Post-restoration result:** foundation 69 passed.
 
-### A gap M6 exposed, recorded rather than glossed
+### What M6 exposed — and a claim about it that was wrong
 
-The **authorization coverage gate did not catch M6**. With the substitution in
+Two facts, one of which corrects this document's own earlier text.
+
+**The authorization coverage gate did not catch M6.** With the substitution in
 place `npm run validate:authorization-coverage` still reported
 `OK: every operation is guarded and every route is registered` and exited 0.
 That gate checks that every operation declares permissions and that every route
 is registered; it does not check that a route's `handleOperation` call binds
-that route's OWN declaration. The containment suite cannot see it either,
-because every permission-bearing fixture principal holds both sibling codes, so
-both bindings produce identical allow/deny outcomes at runtime.
+that route's OWN declaration. That much is verified and stands.
 
-M6 is therefore killed by exactly one assertion in the repository, and that
-assertion was added for it: `%s runs under its OWN declaration`, together with
-`%s declares exactly one operation` and the rule that no route may hand-roll
-`requirePermissions` or `requireScopedPermissions`. Without those three, this
-mutation would have survived every gate the project had.
+**But the claim that M6 "is killed by exactly one assertion in the repository",
+and that without the new foundation assertions it "would have survived every
+gate the project had", was FALSE.** An independent review found the
+counter-example, and it reproduces on inspection:
+`tests/backend/p1-18-reception-parties.test.ts:551` —
+`refuses /party-roles to a caller holding only rec.reception.authorization.verify`
+— drives the exported party-roles handler as a principal seeded with **only**
+`rec.reception.authorization.verify` on an unrestricted grant
+(`:355-357`, `:358-372`) and asserts `403`, `ERR-IAM-001` and an unchanged row
+count. Under M6 that route runs under the sibling declaration, whose permission
+is exactly the one this principal holds; the pre-handler allows, the deferred
+check re-runs the same sibling declaration and allows, the
+`rec.reception_party_roles` INSERT policy carries no permission predicate, and
+the route answers `201`. That assertion fails. **M6 is killed by at least two
+independent assertions in two suites.**
+
+The reasoning that produced the wrong claim is worth recording, because it is a
+trap in the protocol rather than a slip. The mutation protocol runs **only the
+targeted test** — that is what keeps a kill attributable to a specific
+assertion. It also means a mutation is never exercised against the rest of the
+repository, so "nothing else catches this" is a conclusion the protocol cannot
+support and I should not have drawn. The narrower statement that IS supported:
+the _containment_ suite does not kill M6 independently, because every
+permission-bearing principal in that suite holds both sibling codes. Generalising
+that to every gate in the project was an over-claim.
+
+The new assertions — `%s runs under its OWN declaration`, `%s declares exactly
+one operation`, and the rule that no route may hand-roll `requirePermissions` or
+`requireScopedPermissions` — remain worth having: they catch the substitution
+structurally, at every one of the ten, without depending on a fixture that
+happens to split the permissions. But they are a second line, not the only one.
 
 ---
 
-## Scope of these proofs
+## Scope of these proofs, stated narrowly
 
-These six cover the deferred scoped-authorization path and nothing else. They
-do not speak to the rest of P1-18, and this document is not a substitute for the
-full validation battery, the mutation coverage of any other phase, or the clean
-room — none of which has been run at the time of writing. The owner gate remains
-`Decision: Pending`.
+These six cover the deferred scoped-authorization path and nothing else. They do
+not speak to the rest of P1-18, and this document is not a substitute for the
+mutation coverage of any other phase. The owner gate remains `Decision: Pending`.
+
+**Route-level threading is mutation-proved for five of the ten operations, not
+ten.** M1-M4 bypass the authorizer at the reschedule, condition-evidence,
+approve and convert routes, and M5 substitutes the target at the `requireVisit`
+choke point, which party-role rides. **Cancel, no-show, authorization, signature
+and refusal were never mutated.** Their containment rests on sharing a choke
+point with an operation that was — cancel and no-show with reschedule via
+`requireAppointment`, authorization with party-role via `requireVisit`,
+signature and refusal with condition-evidence via `requireRecordableVisit` — and
+on the behavioural containment matrix, which exercises all ten. That is a real
+argument, but it is weaker than a mutation, and the table above should not be
+read as claiming ten route-level proofs.
+
+A related limit worth naming: the containment suite asserts `403` with
+`ERR-IAM-001`, and the services' row-policy mappers emit that same pair when an
+INSERT is refused with no row written (`reception-service.ts:272,333,391`,
+`reception-evidence-service.ts:681`, `reception-conversion-service.ts:132`,
+`appointment-service.ts:393`). No assertion discriminates the deferred
+authorizer's denial from an RLS-policy denial by message or detail. For the five
+mutated operations the mutation proofs settle it — remove the authorizer and the
+call succeeds, so the authorizer was what refused it. For the other five the
+attribution comes from reading the policies, which are pure tenant/company/branch
+predicates with no permission clause. Correct, but inferred.

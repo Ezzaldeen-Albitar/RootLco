@@ -252,15 +252,61 @@ describe('F2 · empty target on a narrowing scope', () => {
     expect(queries).toHaveLength(0);
   });
 
-  it('still evaluates a TENANT-scoped operation on an empty target', async () => {
-    // The legitimate scope-blind case must keep working, or the guard would
-    // have been bought by breaking every tenant-wide operation.
+  it('fails closed for a TENANT-scoped operation too, on the deferred path', async () => {
+    // The guard does not consult the declared scope, and that is deliberate.
+    // Reaching the deferred path means a choke point discovered a scope and is
+    // asking to be judged against it; arriving with nothing to narrow by is a
+    // defect at the call site whatever the declaration says. Keying the guard
+    // on `scope !== 'tenant'` would exempt any operation that simply omitted
+    // the line, since `defineOperation` defaults a missing scope to 'tenant'.
     const op = operation({ permissions: ['org.tenant.read'], scope: 'tenant' });
     const { db, queries } = allowAll();
 
-    await expect(requireScopedPermissions(db, op, {})).resolves.toBeUndefined();
+    await failureFrom(requireScopedPermissions(db, op, {}));
+    expect(queries).toHaveLength(0);
+  });
+
+  it('leaves the PRE-HANDLER path free to evaluate a tenant operation scope-blind', async () => {
+    // The legitimate scope-blind case is `requirePermissions`, which the
+    // pre-handler check calls directly and which this remediation does not
+    // touch. If the guard had been folded into it, every one of the ten
+    // operations would break, because an empty target is exactly what they
+    // correctly pass before anything is read.
+    const op = operation({ permissions: ['org.tenant.read'], scope: 'tenant' });
+    const { db, queries } = allowAll();
+
+    await expect(requirePermissions(db, op, {})).resolves.toBeUndefined();
     expect(queries).toHaveLength(1);
     expect(at(queries, 0).text).toContain('iam.has_permission(');
+  });
+
+  it('forces SCOPED evaluation when a target is named, even if the scope says tenant', async () => {
+    // The other half of the same defect. An id-addressed command that forgot
+    // `scope: 'branch'` would default to 'tenant', hand a real company and
+    // branch to the deferred authorizer, and — before `forceScoped` — fall
+    // through `requiresScopedEvaluation`'s tenant short-circuit to
+    // `iam.has_permission`, which reads no grant scope at all. It would have
+    // looked entirely correct at the call site.
+    const op = operation({ permissions: ['rec.reception.approve'], scope: 'tenant' });
+    const { db, queries } = allowAll();
+
+    await requireScopedPermissions(db, op, TARGET);
+
+    expect(at(queries, 0).text).toContain('iam.has_permission_in_scope');
+    expect(at(queries, 0).values).toEqual(['rec.reception.approve', COMPANY, BRANCH, null]);
+  });
+
+  it('does not let forceScoped turn an empty target into a scoped query', async () => {
+    // `forceScoped` must only ever ADD scope. With nothing to narrow by there is
+    // no scoped question to ask, and inventing one would change the meaning of
+    // the pre-handler contract rather than harden the deferred one.
+    const op = operation({ permissions: ['org.tenant.read'], scope: 'tenant' });
+    const { db, queries } = allowAll();
+
+    await evaluatePermissions(db, op, {}, { forceScoped: true });
+
+    expect(at(queries, 0).text).toContain('iam.has_permission(');
+    expect(at(queries, 0).text).not.toContain('has_permission_in_scope');
   });
 
   it('is load-bearing: without it the same call would evaluate scope-blind and PASS', async () => {
@@ -467,17 +513,41 @@ describe('F7 · transaction binding', () => {
     expect(source).not.toContain('withTransaction');
   });
 
-  it('builds authorizeScope from the same transaction binding as the pre-handler check', () => {
-    // Both must close over the `db` that `withTransaction` supplies. If the
-    // deferred authorizer were built outside that callback it could only reach
-    // a different connection, and a denial would no longer roll the work back.
+  it('builds authorizeScope inside the withTransaction callback, on that callback own handle', () => {
+    // An earlier form of this test sliced from `source.indexOf('withTransaction')`
+    // and asserted textual order. That was worthless: the first occurrence is
+    // the IMPORT, so the slice was the whole file and the assertion reduced to
+    // "B appears after A" — which a refactor that hoisted the authorizer out of
+    // the callback would still satisfy. The property that matters is lexical
+    // containment, so it is measured against the callback's own boundaries.
     const source = stripComments(read('src/server/http/route-handler.ts'));
-    const transaction = source.slice(source.indexOf('withTransaction'));
-    const preHandler = transaction.indexOf('requirePermissions(db, operation');
-    const deferred = transaction.indexOf('requireScopedPermissions(db, operation, target)');
+    const call = source.indexOf('withTransaction(context as RequestContext, async (db)');
+    expect(call).toBeGreaterThanOrEqual(0);
 
-    expect(preHandler).toBeGreaterThanOrEqual(0);
-    expect(deferred).toBeGreaterThan(preHandler);
+    // Walk to the matching close paren of that call, so "inside" is a real span
+    // rather than a guess at a byte offset.
+    let depth = 0;
+    let end = -1;
+    for (let i = source.indexOf('(', call); i < source.length; i += 1) {
+      if (source[i] === '(') depth += 1;
+      else if (source[i] === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    expect(end).toBeGreaterThan(call);
+
+    const body = source.slice(call, end);
+    expect(body).toContain('requirePermissions(db, operation');
+    expect(body).toContain('requireScopedPermissions(db, operation, target)');
+
+    // And nowhere else: a second construction site outside the callback would
+    // be the refactor this test exists to catch.
+    const outside = source.slice(0, call) + source.slice(end);
+    expect(outside).not.toContain('requireScopedPermissions(db, operation, target)');
   });
 });
 
@@ -694,10 +764,18 @@ function routeOperations(): readonly RouteOperation[] {
 
 describe('F10 · structural completeness of the locked-row path', () => {
   const operations = routeOperations();
+
+  // Discovery deliberately does NOT filter on `scope === 'branch'`. An earlier
+  // revision did, and that made the guard blind in exactly the way it exists to
+  // prevent: `defineOperation` defaults a missing `scope` to `'tenant'`, so an
+  // eleventh id-addressed command that omitted the line would drop out of the
+  // discovered set and this file would stay green while the command was decided
+  // scope-blind. The shape that matters is "addressed by a resource id", which
+  // is the path parameter; the declared scope is then something to ASSERT about
+  // the members, not something to select them by.
   const affected = operations.filter(
     (candidate) =>
       (candidate.id.startsWith('apt.') || candidate.id.startsWith('rec.')) &&
-      candidate.scope === 'branch' &&
       candidate.path.includes('{')
   );
 
@@ -705,11 +783,26 @@ describe('F10 · structural completeness of the locked-row path', () => {
     expect(operations.length).toBeGreaterThan(50);
   });
 
-  it('discovers exactly the ten id-addressed branch-scoped P1-18 commands', () => {
+  it('discovers exactly the ten id-addressed P1-18 commands', () => {
     expect(affected.map((entry) => entry.id).sort()).toEqual([...EXPECTED_LOCKED_ROW_OPERATIONS]);
   });
 
-  it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s passes the deferred authorizer down', (id) => {
+  it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares branch scope explicitly', (id) => {
+    // Asserted rather than filtered on, so an omission fails here instead of
+    // quietly removing the operation from every other assertion in this block.
+    const entry = affected.find((candidate) => candidate.id === id);
+    expect(entry?.scope).toBe('branch');
+  });
+
+  it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s names the deferred authorizer', (id) => {
+    // Named honestly. `toContain('authorizeScope')` is satisfied by the
+    // handler's own parameter destructuring, so this proves the route ASKS for
+    // the authorizer — not that it forwards it. M1-M4 replaced the forwarded
+    // argument with `async () => {}` and left the destructured name in place;
+    // every one of them was killed by the behavioural containment suite, not
+    // here. Calling this "passes the deferred authorizer down", as an earlier
+    // revision did, claimed a structural guarantee this assertion does not
+    // provide.
     const entry = affected.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain('authorizeScope');
