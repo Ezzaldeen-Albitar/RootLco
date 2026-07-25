@@ -97,3 +97,33 @@ export const schemas = {
 } as const;
 
 export type Money = z.infer<typeof schemas.money>;
+
+const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Reads a company/branch authorization target out of a not-yet-validated body.
+ *
+ * A `scope: 'branch'` operation is evaluated with `iam.has_permission`, which is
+ * scope-blind, unless the route names the resource it is about; only then does
+ * the pipeline use `iam.has_permission_in_scope`. For a creation command the
+ * resource does not exist yet, so the target has to come from the request body —
+ * which at this point in the pipeline has not been schema-validated.
+ *
+ * That is safe in this direction and only this direction. The target can make
+ * authorization STRICTER (a grant that does not cover the named branch stops
+ * applying) and can never make it looser: omitting or malforming either field
+ * simply yields no target, leaving the pre-existing scope-blind evaluation, and
+ * the body schema then refuses the request. Both fields are required together
+ * because a company without its branch would narrow to the wrong level.
+ */
+export function scopeTargetOption(body: unknown): {
+  authorizationTarget?: { companyId: string; branchId: string };
+} {
+  if (typeof body !== 'object' || body === null) return {};
+  const { companyId, branchId } = body as Record<string, unknown>;
+  if (typeof companyId !== 'string' || !UUID.test(companyId)) return {};
+  if (typeof branchId !== 'string' || !UUID.test(branchId)) return {};
+  // Spread rather than an explicit `undefined`: `exactOptionalPropertyTypes` is
+  // on, so an absent target must be an absent KEY, not a key holding undefined.
+  return { authorizationTarget: { companyId, branchId } };
+}

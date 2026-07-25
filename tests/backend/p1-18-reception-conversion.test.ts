@@ -345,6 +345,38 @@ function seedAuthorized(): Promise<SeededReception> {
   });
 }
 
+/**
+ * Appends a LATER declining decision from the same party — a withdrawal.
+ *
+ * Written admin-side because the conversion suite imports no authorization
+ * route; what is under test is what conversion does about a standing
+ * withdrawal, not how the row came to exist. The row is a genuine append to an
+ * append-only table, exactly as the route would write it.
+ */
+async function withdrawAuthorization(seeded: SeededReception, tenantId = TENANT_A): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)`,
+      [USER_A, tenantId]
+    );
+    await client.query(
+      `INSERT INTO rec.authorizations
+         (tenant_id, company_id, branch_id, reception_visit_id, authorizing_role,
+          partner_id, decision, channel, created_by)
+       VALUES ($1,$2,$3,$4,'service_requester',$5,'declined','in_person',$6)`,
+      [tenantId, seeded.companyId, seeded.branchId, seeded.visitId, PARTNER_A, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function seedPrincipal(
   tenantId: string,
   roleId: string,
@@ -513,7 +545,7 @@ describe('authorization', () => {
   });
 });
 
-describe('conversion', () => {
+describe('rec.reception-convert-to-work-order', () => {
   it('converts an approved reception into exactly one work order and closes the visit', async () => {
     authAs(SUBJ_A);
     const reception = await seedAuthorized();
@@ -679,6 +711,33 @@ describe('conversion', () => {
         [first.workOrderId]
       )
     ).toBe(1);
+  });
+});
+
+describe('rec.reception-convert-to-work-order: standing authorization', () => {
+  /**
+   * The consequential one. `wo.guard_work_order_refs` re-tests that an approved
+   * authorization EXISTS, never that it is the standing decision, so before this
+   * check a customer could withdraw consent and a work order would still open on
+   * their vehicle. The visit stays `authorized` throughout — nothing about its
+   * status reveals the withdrawal — so conversion is the only place left to
+   * catch it.
+   *
+   * Without the application check this test fails with 200 and one work order.
+   */
+  it('refuses conversion when the standing decision is a later withdrawal', async () => {
+    authAs(SUBJ_A);
+    const seeded = await seedAuthorized();
+    await withdrawAuthorization(seeded);
+
+    const response = await convert(seeded.visitId, { version: seeded.recordVersion });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+
+    // The refusal performs no work: no work order, and the visit is still
+    // authorized rather than converted.
+    expect(await workOrderCount(seeded.visitId)).toBe(0);
+    expect((await receptionStatus(seeded.visitId)).status).toBe('authorized');
   });
 });
 

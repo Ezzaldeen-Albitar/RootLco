@@ -898,6 +898,41 @@ describe('apt.appointment-create', () => {
   });
 });
 
+describe('apt.appointment-create: no unguarded confirmed window', () => {
+  /**
+   * A confirmed window used to be accepted at creation and stored on a
+   * `requested` row. `ex_appointments_vehicle_confirmed` is PARTIAL on
+   * `lifecycle_status IN ('confirmed','checked_in')`, so that window was indexed
+   * by the branch calendar and checked against nothing: two callers could book
+   * the identical slot for the same vehicle and both get 201. The field is now
+   * refused, and the confirmed window is set only by reschedule, which moves the
+   * status in the same statement and so lands inside the constraint.
+   */
+  it('refuses confirmedFrom/confirmedTo at creation', async () => {
+    authAs(SUBJ_FULL_A);
+    const vehicleId = await newVehicle(TENANT_A);
+    const rows = (): Promise<number> =>
+      countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
+        vehicleId,
+      ]);
+    const before = await rows();
+
+    const response = await create(
+      bookingFor(vehicleId, {
+        confirmedFrom: '2026-09-01T09:00:00Z',
+        confirmedTo: '2026-09-01T10:00:00Z',
+      })
+    );
+    expect(response.status).toBe(422);
+    expect(((await response.json()) as Body).code).toBe('ERR-VAL-001');
+    expect(await rows()).toBe(before);
+
+    // The control: the same booking without the window is accepted, so the
+    // refusal is about those two fields and nothing else.
+    expect((await create(bookingFor(vehicleId))).status).toBe(201);
+  });
+});
+
 describe('apt.appointment-reschedule', () => {
   it('moves the CONFIRMED window and leaves the requested window untouched', async () => {
     authAs(SUBJ_FULL_A);

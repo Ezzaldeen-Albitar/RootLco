@@ -86,12 +86,25 @@ the baseline remains 119 migrations with no migration 120.
    duplicate. Exactly-once is proved behaviourally regardless — two concurrent
    conversions must leave exactly one work-order row.
 
-3. **One open visit per vehicle.** `uq_reception_visits_open_vehicle` is unique on
-   `(tenant_id, vehicle_id)` while the status is `opened`, `inspecting`,
-   `authorized` **or `converted`**. Custody cannot be in two places, so a second
-   reception for the same vehicle is refused until the first reaches
-   `closed_without_work` or `refused`. `converted` counts as open, which is
-   deliberate: the vehicle is still in the workshop.
+3. **One open visit per vehicle — and P1-18 provides no way to close one.**
+   `uq_reception_visits_open_vehicle` is unique on `(tenant_id, vehicle_id)` while
+   the status is `opened`, `inspecting`, `authorized` **or `converted`**. Custody
+   cannot be in two places, so a second reception for the same vehicle is refused
+   until the first reaches `closed_without_work` or `refused`. `converted` counts
+   as open, which is deliberate: the vehicle is still in the workshop.
+
+   **The consequence must be stated plainly, because it bounds what this phase
+   delivers.** Field 23 allocates no endpoint that closes a reception, and none is
+   invented here, so **no P1-18 operation can write `closed_without_work` or
+   `refused`** — those two statuses appear only in the domain's transition table.
+   A vehicle that has been received once therefore cannot be received again
+   through this backend: the second attempt is refused `409 ERR-RES-002` forever,
+   whether the first visit was completed to `converted` or stranded at `opened`.
+   Closing a visit belongs with delivery and custody release, which is the `sal`
+   schema's contract and has no backend yet. Until that exists, the
+   appointment → reception → work-order flow is **single-use per vehicle**. This
+   is a scope boundary, not a defect in the frozen schema, and it is recorded as a
+   known limitation in §7.
 
 ## 3. Architecture decision — one module, two schemas
 
@@ -103,18 +116,21 @@ origin — an appointment XOR a walk-in — and `rec.accept_check_in()` takes th
 appointment id directly, while `rec.guard_reception_visit_refs` reads
 `apt.appointments` to enforce that the appointment's vehicle equals the visit's
 vehicle. Converting an appointment and opening a reception is therefore **one
-transaction spanning both schemas**. Splitting them into two modules would put
-that transaction across a module boundary, and ADR-001 forbids a module reaching
-into another's internals. The database already treats these two schemas as one
-bounded context; the module boundary follows it.
+transaction that both reads and writes `apt.appointments` and `rec.*`**. Splitting
+them into two modules would put one module's UPDATE of the other's tables inside
+that transaction, and ADR-001 rule 3 prohibits exactly that — cross-module table
+access — not the shared transaction itself. (A transaction handed across a public
+module surface is ordinary here: `index.ts` passes `db` into the shared-services
+numbering allocator, as the CRM module does.) The database already treats these
+two schemas as one bounded context; the module boundary follows it.
 
 Operation ids keep the `apt.` and `rec.` prefixes, matching the schema and route
 domains, exactly as the `vehicle` module registers `veh.` ids.
 
 ## 4. Route mapping decision
 
-Canonical Field 23 writes three of its paths with colon-action notation
-(`:reschedule`, `:approve`, `:convert-to-work-order`). The operation registry's
+Canonical Field 23 writes four of its paths with colon-action notation
+(`:reschedule`, `:cancel`, `:approve`, `:convert-to-work-order`). The operation registry's
 `PATH_PATTERN` accepts only lower-case literal segments and `{camelCase}`
 parameters, and colon paths are not portable on Windows filesystems. They are
 mapped to slash subresources with **no semantic change**:
@@ -128,15 +144,19 @@ mapped to slash subresources with **no semantic change**:
 
 Field 23 allocates seven paths and the registry holds twelve operations, so
 **five** routes are added beyond it. Each is justified by a distinct business
-fact and a distinct permission, not by convenience:
+fact. Three of the five also carry a permission of their own; the other two share
+one with the sibling operation they are separated from, and that is deliberate
+rather than an oversight — recording a no-show is the same authority as
+cancelling, and capturing a refusal to sign is the same authority as capturing a
+signature. What separates them is the fact recorded, not the right to record it:
 
-| Route                                  | Why it is not folded into another operation                                                                                                                                                                                                           |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts.                        |
-| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                                                     |
-| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                                                |
-| `POST /receptions/{id}/signatures`     | A signature records what a party personally acknowledged, bound to an exact immutable document version. It carries the high-risk `rec.reception.signature.manage`, so it must not be reachable by a caller who holds only evidence-capture authority. |
-| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent.                                                                                                                                          |
+| Route                                  | Why it is not folded into another operation                                                                                                                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts. Shares `apt.appointment.lifecycle.manage` with cancel. |
+| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                                                                                     |
+| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                                                                                |
+| `POST /receptions/{id}/signatures`     | A signature records what a party personally acknowledged, bound to an exact immutable document version. It carries the high-risk `rec.reception.signature.manage`, so it must not be reachable by a caller who holds only evidence-capture authority.                                 |
+| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent. Shares `rec.reception.signature.manage` with signatures: the same person capturing a signature is the natural recorder of a refusal to give one.                         |
 
 ### Known contract drift, recorded openly
 
@@ -144,6 +164,12 @@ fact and a distinct permission, not by convenience:
   P1-18 Field 23 allocates `POST /api/v1/receptions`. Two canonical documents
   give the same allocated operation two different paths. The phase's own Field 23
   is followed. This is a documented conflict, not a silent choice.
+- **New reserved event.** P1-18 mints one platform-wide event name that did not
+  exist before: `EVT-REC-002 reception.approved`, registered in
+  `src/server/events/envelope.ts` and in the binding event-catalog standard. It is
+  the only name this phase adds; the other two facts it publishes reuse reserved
+  entries. Recorded here because a new reserved name is a contract other phases
+  inherit.
 - **Event name.** Chapter 4 Table 4.5 and the P1-08 boundary record allocate
   `EVT-REC-001 vehicle.checked-in.v1`; P1-18 Field 24 calls the same fact
   `reception.vehicle-checked-in.v1`. The **reserved catalog entry wins** and no
@@ -162,8 +188,9 @@ fact and a distinct permission, not by convenience:
 P1-18 duplicates nothing from P1-15, P1-16 or P1-17.
 
 - **Numbering** comes from the shared allocator using the sequence codes
-  `appointment` and `reception_visit`, both already registered in P1-15's
-  `SEQUENCE_DEFINITIONS`. No new sequence code is minted.
+  `appointment`, `reception_visit` and — for the work order conversion creates —
+  `work_order`, all three already registered in P1-15's `SEQUENCE_DEFINITIONS`. No
+  new sequence code is minted.
 - **Documents and media** go through the P1-15 attachment service.
   `LINKABLE_ENTITY_TYPES` already contains `apt.appointments` and
   `rec.reception_visits`. No second storage or media framework is built, and no
@@ -193,6 +220,23 @@ worker that marks a no-show from elapsed time.
 
 ## 7. Limitations
 
+- **A vehicle can be received only once through this backend.** No P1-18
+  operation writes `closed_without_work` or `refused`, and `converted` is inside
+  the open-vehicle unique index, so the second reception for a vehicle is refused
+  permanently. Closing a visit is delivery/custody-release work with no backend
+  yet. See §2.3 — this is the most consequential boundary of the phase.
+- **A confirmed window cannot be set at creation.** `apt.appointment-create`
+  refuses `confirmedFrom`/`confirmedTo`; the confirmed window is set by
+  `apt.appointment-reschedule`, which is the only path that also moves the status
+  into the range the same-vehicle exclusion constraint guards. Accepting the
+  window at creation would store a booking guarantee that reserves nothing.
+- **Recording a complaint or vehicle contents needs `iam.sensitive.view` in
+  addition to the operation's own permission.** Both write a `restricted`
+  narrative row whose frozen INSERT policy demands it. A caller holding only
+  `rec.reception.evidence.manage` is refused those two kinds with a denial
+  (`403 ERR-IAM-001`) and can record the other six. The composition is deliberate:
+  a damage mark carries no personal narrative and must not require a
+  sensitive-data capability.
 - **No read operations.** Canonical Field 23 allocates seven write endpoints and
   no read endpoint; none is added, so no `apt.*.read` or `rec.*.read` permission
   is registered either. An unused permission is configuration that cannot be

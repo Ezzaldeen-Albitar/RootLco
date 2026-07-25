@@ -21,7 +21,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, schemas } from '@/server/http/validation';
+import { parseJsonBody, schemas, scopeTargetOption } from '@/server/http/validation';
 import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
@@ -86,6 +86,11 @@ export async function POST(request: Request): Promise<Response> {
       const created = await receptionModule().receptions.create(db, await parseJsonBody(raw, Body));
       return { status: 201, body: created, recordVersion: created.recordVersion };
     },
-    { body }
+    // See the appointment-create route for the full reasoning: `scope: 'branch'`
+    // is inert without a target, and the RLS scope GUC is the union of every
+    // grant the caller holds, so opening a visit and taking custody would be
+    // reachable in a branch where the caller only reads. The target makes the
+    // permission evaluate against the grant that actually covers this branch.
+    { body, ...scopeTargetOption(body) }
   );
 }
