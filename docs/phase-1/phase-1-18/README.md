@@ -55,7 +55,7 @@ UPDATE grant for any application role.
 **No database change request was required.** No migration was added or modified;
 the baseline remains 119 migrations with no migration 120.
 
-### Two frozen facts that shaped the design
+### Three frozen facts that shaped the design
 
 1. **`apt.appointments.requested_from` / `requested_to` are immutable.** The
    `tg_appointments_immutable` trigger lists them, and the audit reproduced the
@@ -127,6 +127,13 @@ two schemas as one bounded context; the module boundary follows it.
 Operation ids keep the `apt.` and `rec.` prefixes, matching the schema and route
 domains, exactly as the `vehicle` module registers `veh.` ids.
 
+**A third schema, named because it will matter.** `reception-conversion-repository`
+also reads and writes `wo.work_orders`. No `wo` module exists, so ADR-001 rule 3
+is not engaged today — but it will be the moment P1-19 creates one, and at that
+point either conversion moves behind a `wo` public surface or the rule is broken.
+Recording it here so the boundary is a decision P1-19 makes deliberately rather
+than one it inherits by surprise.
+
 ## 4. Route mapping decision
 
 Canonical Field 23 writes four of its paths with colon-action notation
@@ -150,13 +157,55 @@ rather than an oversight — recording a no-show is the same authority as
 cancelling, and capturing a refusal to sign is the same authority as capturing a
 signature. What separates them is the fact recorded, not the right to record it:
 
-| Route                                  | Why it is not folded into another operation                                                                                                                                                                                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts. Shares `apt.appointment.lifecycle.manage` with cancel. |
-| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                                                                                     |
-| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                                                                                |
-| `POST /receptions/{id}/signatures`     | A signature records what a party personally acknowledged, bound to an exact immutable document version. It carries the high-risk `rec.reception.signature.manage`, so it must not be reachable by a caller who holds only evidence-capture authority.                                 |
-| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent. Shares `rec.reception.signature.manage` with signatures: the same person capturing a signature is the natural recorder of a refusal to give one.                         |
+| Route                                  | Why it is not folded into another operation                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /appointments/{id}/no-show`      | The frozen schema models no-show as a terminal state with its own set-once evidence columns and its own coherence CHECK, mutually exclusive with cancellation. Folding it into cancel would merge two distinct business facts. Shares `apt.appointment.lifecycle.manage` with cancel.                                                                     |
+| `POST /receptions/{id}/party-roles`    | Party-role selection decides whose instruction the workshop may act on, and carries `rec.reception.party.manage`.                                                                                                                                                                                                                                         |
+| `POST /receptions/{id}/authorizations` | Authorization is the gate for approval and carries the high-risk `rec.reception.authorization.verify`.                                                                                                                                                                                                                                                    |
+| `POST /receptions/{id}/signatures`     | A signature records what a party personally acknowledged, bound to an exact immutable document version. It carries the high-risk `rec.reception.signature.manage`, so it must not be reachable by a caller who holds only evidence-capture authority.                                                                                                     |
+| `POST /receptions/{id}/refusals`       | A refusal must never be reachable by the same command as a signature, and must never be readable as consent. Shares `rec.reception.signature.manage` with signatures: the same person capturing a signature is the natural recorder of a refusal to give one. See the note below — that shared permission is bounded by an authority check, not by trust. |
+
+**The shared permission is bounded, not trusted.** The remediation that made an
+`authorization` refusal part of the standing decision (below) changed what this
+route can cause: a refusal can now block approval and conversion, which is the
+effect the high-risk `rec.reception.authorization.verify` guards. Sharing
+`rec.reception.signature.manage` would then have made the cheaper permission the
+cheaper way to block a reception permanently — and, because
+`fk_refusals_partner` is tenant-wide, to record append-only that an uninvolved
+partner refused. The permission is still shared, and the reasoning above still
+holds for the other four refusal types; what closes the gap is that an
+`authorization` refusal must additionally name a party who holds an active
+authorizing role (`assertMayAuthorize`) and must name a party at all
+(`assertRefusalAttributable`). Both are asserted through the route in
+`tests/backend/p1-18-reception-evidence.test.ts` and each was mutation-proved.
+
+### A withdrawal of authorization is honoured through both channels
+
+`rec.authorizations` is append-only and superseded by later rows, so a party who
+approved and then withdrew has a STANDING decision of `declined`. The frozen
+guards cannot see that — `rec.guard_reception_transition` and
+`wo.guard_work_order_refs` both ask only whether SOME approved row exists, so a
+withdrawn approval satisfies them permanently. `assertStandingAuthorization`
+closes that: approval and conversion require at least one standing `approved` and
+no standing `declined`.
+
+The remediation extended what counts as a withdrawal. A customer can withdraw in
+two ways — a `declined` row in `rec.authorizations`, or an `authorization`-type
+refusal in `rec.refusals` — and reading only the first left the second inert,
+which is exactly the "a refusal read as consent" outcome the module exists to
+prevent. `ReceptionRepository.standingAuthorizations` therefore unions both
+tables and takes the latest row per partner
+(`occurred_at`, then `created_at`, then `id`). Two consequences worth stating:
+
+- an authorization refusal now **blocks** approval (`409 ERR-TRN-001`) and
+  conversion until a later approval supersedes it; and
+- because supersession is per party and by time, a later approval from the same
+  party lifts the block — the refusal is never erased, it is outranked by that
+  party's own later word.
+
+Same-instant ties are resolved by `created_at` then `id`, so the outcome is
+deterministic but arbitrary between an approval and a refusal recorded in the
+same instant; see `P1-18-TIE-001` in §7.1.
 
 ### Known contract drift, recorded openly
 
@@ -194,7 +243,9 @@ P1-18 duplicates nothing from P1-15, P1-16 or P1-17.
 - **Documents and media** go through the P1-15 attachment service.
   `LINKABLE_ENTITY_TYPES` already contains `apt.appointments` and
   `rec.reception_visits`. No second storage or media framework is built, and no
-  binary is stored in `rec` — evidence references `shared.documents`.
+  media payload is stored in `rec` — evidence references `shared.documents`. The
+  one `bytea` column this phase writes is `rec.signatures.signature_hash`, a
+  digest of at most 64 bytes, never the drawn image.
 - **Customer and vehicle resolution** is not re-implemented. Neither the CRM nor
   the vehicle module exposes a public by-id resolver, so P1-18 resolves through
   the frozen composite tenant-scoped foreign keys inside its own repositories
@@ -224,7 +275,7 @@ worker that marks a no-show from elapsed time.
   operation writes `closed_without_work` or `refused`, and `converted` is inside
   the open-vehicle unique index, so the second reception for a vehicle is refused
   permanently. Closing a visit is delivery/custody-release work with no backend
-  yet. See §2.3 — this is the most consequential boundary of the phase.
+  yet. See §2, frozen fact 3 — this is the most consequential boundary of the phase.
 - **A confirmed window cannot be set at creation.** `apt.appointment-create`
   refuses `confirmedFrom`/`confirmedTo`; the confirmed window is set by
   `apt.appointment-reschedule`, which is the only path that also moves the status
@@ -253,6 +304,20 @@ worker that marks a no-show from elapsed time.
 - **P1-18-BE-008 (reception validation) has no canonical definition.** It is
   implemented as deterministic validation inside reception creation and approval
   rather than as a separate endpoint, because Field 23 allocates none.
+
+## 7.1 Open follow-ups carried forward
+
+| ID                       | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-18-A-01**           | `scope: 'branch'` is inert for the ten id-addressed P1-18 operations, whose company and branch are not known until the row is read inside the transaction. The two creation commands name a target and are contained; the rest rely on forced RLS and on the union of a caller's grants. Remediation is a platform change, not a P1-18 one.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **P1-18-R-02**           | The strict comment-stripping rule in `scripts/check-operation-test-coverage.mjs` governs P1-18 only. Applying it to every phase fails 39 operations across P1-16, P1-17 and IAM whose suites genuinely drive their operations but never write the id outside a header comment. Bounded, named debt — not a claim that those phases meet the stricter rule.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **REC-LIFECYCLE-001**    | No P1-18 operation writes `closed_without_work` or `refused`, so a vehicle can be received once only. See §2, frozen fact 3 and §7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **P1-18-QA-BARRIER**     | Three of the four concurrency barriers (`p1-18-reception-create`, `-conversion`, `p1-18-appointment-lifecycle`) count any ungranted lock in the database rather than one correlated to the contended row, as `p1-18-reception-approval` does. The race itself is genuinely forced in all four — a third connection holds the row `FOR UPDATE` and the barrier throws rather than continuing — and `vitest.config.backend.ts` sets `fileParallelism: false`, so nothing else runs against the database concurrently. Accepted rather than half-corrected: naming the wrong relation would make a passing test fail intermittently, and the correlated form belongs with a shared helper rather than three hand-copies.                                         |
+| **P1-18-QA-COMPANYHALF** | The appointment-scope guard compares company AND branch. The branch half is proven by two tests; the company half is defence-in-depth behind RLS and is not independently observable with the current fixtures — a company-scoped principal cannot see an appointment in another company at all, so the request is refused 404 before the comparison runs. Reaching it needs a caller holding a company-wide grant in one company plus some grant in the other. Found by a mutation that disabled only the company comparison and passed the whole suite; recorded rather than claimed as proven.                                                                                                                                                             |
+| **P1-18-TIE-001**        | `standingAuthorizations` orders by `occurred_at`, then `created_at`, then `id`. An approval and an authorization refusal bearing the SAME `occurred_at` and the same `created_at` therefore resolve by `id`, which is arbitrary. Fail-safe would prefer `declined`. Not changed here because `occurred_at` is caller-supplied and `created_at` is `clock_timestamp()`, so a genuine tie needs two writes in the same microsecond with an identical caller-supplied instant; encoding the preference means an ORDER BY on a synthesised precedence column, and the safer form should be designed with the withdrawal contract rather than bolted onto a repository query. Deterministic today, arbitrary in that one case, recorded rather than left implicit. |
+| **P1-18-LEX-001**        | `stripComments` in `scripts/check-operation-test-coverage.mjs` is a single-pass lexer over string, template, regex and comment contexts. Two constructs are handled conservatively rather than exactly: a regex literal appearing where `canPrecedeRegex` reads the preceding token as a value (for example directly after `return` on the same line) and a `//` sequence inside a `${…}` expression within a template literal. Both would strip slightly more than a full parser, never less, so the gate can only become STRICTER — an operation cannot be credited on evidence the lexer hallucinated. Unreachable in the current suites; a real parser is the correct fix if the pattern ever appears.                                                    |
+| **P1-18-UUID-001**       | Identifier comparisons in the reception service use exact string equality, so a caller sending a differently-cased but equal UUID (`ABC…` for `abc…`) is refused where PostgreSQL's `uuid` type would treat the two as identical. Over-refusal only, never over-acceptance, and it matches the existing `vehicleId` comparison convention in the same file. Normalising would mean canonicalising every id at the validation boundary — a platform decision, not a P1-18 one.                                                                                                                                                                                                                                                                                 |
+| **P1-18-SEC-ROLEPROBE**  | `assertAuthorizingRoleHeld` refuses a role the partner does not hold with the same non-disclosing 409 as the authority guard, but the 201-versus-409 split still lets a caller holding `rec.reception.authorization.verify` learn which of the four authorizing roles a partner holds on a visit. A correct guess writes a real, attributable decision and the misses write nothing. Narrower than the alternative: accepting the claimed role would put a false role on an immutable, dispute-facing row. Closing the channel needs a read contract for party roles, which Field 23 does not allocate.                                                                                                                                                       |
 
 ## 8. P1-19
 

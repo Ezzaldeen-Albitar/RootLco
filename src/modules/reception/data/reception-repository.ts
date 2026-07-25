@@ -324,8 +324,19 @@ export class ReceptionRepository extends Repository {
    *
    * This read is what makes supersession real: it answers what each party's
    * decision IS, not what it once was. Ordering is `occurred_at` first — the
-   * business instant the table records — with `created_at` and `id` behind it so
+   * business instant both tables record — with `created_at` and `id` behind it so
    * two decisions in the same instant still order deterministically.
+   *
+   * **Two tables, because a party can withdraw through either one.**
+   * `rec.refusals.refusal_type` includes `'authorization'`
+   * (`ck_refusals_type`), so `POST /receptions/{id}/refusals` is a second, and
+   * cheaper, way to say no: it needs `rec.reception.signature.manage` rather than
+   * `rec.reception.authorization.verify`. Reading only `rec.authorizations` left
+   * that refusal inert — approve, refuse authorization, and approval and
+   * conversion both still succeeded, which is the same "a refusal read as
+   * consent" outcome by another route. An authorization refusal is therefore
+   * folded in as a `declined` decision at its own instant, so whichever table
+   * carries the party's latest word is the one that governs.
    */
   async standingAuthorizations(
     db: DbHandle,
@@ -335,8 +346,18 @@ export class ReceptionRepository extends Repository {
     const result = await this.run<{ partner_id: string; decision: AuthorizationDecision }>(
       db,
       `SELECT DISTINCT ON (partner_id) partner_id, decision
-         FROM rec.authorizations
-        WHERE tenant_id = $1 AND reception_visit_id = $2
+         FROM (
+           SELECT partner_id, decision, occurred_at, created_at, id
+             FROM rec.authorizations
+            WHERE tenant_id = $1 AND reception_visit_id = $2
+           UNION ALL
+           SELECT refusing_partner_id AS partner_id, 'declined'::text AS decision,
+                  occurred_at, created_at, id
+             FROM rec.refusals
+            WHERE tenant_id = $1 AND reception_visit_id = $2
+              AND refusal_type = 'authorization'
+              AND refusing_partner_id IS NOT NULL
+         ) AS standing
         ORDER BY partner_id, occurred_at DESC, created_at DESC, id DESC`,
       [context.principal.tenantId, receptionVisitId]
     );

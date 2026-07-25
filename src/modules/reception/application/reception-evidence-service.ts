@@ -44,7 +44,7 @@ import type {
   ReceptionEvidenceRepository,
 } from '../data/reception-evidence-repository';
 import type { ReceptionRepository, ReceptionVisitLockRow } from '../data/reception-repository';
-import { assertEvidenceRecordable } from '../domain/reception';
+import { assertEvidenceRecordable, assertMayAuthorize } from '../domain/reception';
 import {
   EvidenceRuleError,
   MAX_COMPLAINT_TEXT,
@@ -55,6 +55,7 @@ import {
   MAX_ZONE,
   assertCoordinate,
   assertDeclaredValue,
+  assertRefusalAttributable,
   assertQuantity,
   optionalNonBlank,
   requireNonBlank,
@@ -310,6 +311,38 @@ export class ReceptionEvidenceService extends ApplicationService {
     input: RefusalInput
   ): Promise<RefusalRecorded> {
     const visit = await this.requireRecordableVisit(db, receptionVisitId);
+
+    // An `authorization` refusal is part of the standing authorization decision,
+    // so it has to name the party whose decision it is — see
+    // `assertRefusalAttributable`.
+    this.ruleOrFail(
+      () => assertRefusalAttributable(input.refusalType, input.refusingPartnerId),
+      'body.refusingPartnerId'
+    );
+
+    // And that party must actually be entitled to authorize, because this row now
+    // governs the authorization gate.
+    //
+    // Recording a `declined` in `rec.authorizations` costs
+    // `rec.reception.authorization.verify` and passes two authority layers —
+    // `assertAuthorizingRoleHeld` and the frozen
+    // `rec.guard_authorization_authority`. Folding authorization refusals into the
+    // standing decision without an equivalent check would have made
+    // `rec.reception.signature.manage` the cheaper way to block a reception
+    // indefinitely, and would have written a permanent, append-only claim that an
+    // uninvolved partner refused — `fk_refusals_partner` is tenant-wide, and the
+    // only BEFORE INSERT trigger on `rec.refusals` early-returns when no reason
+    // code is supplied. The same authority the blocking decision needs is required
+    // here, with the same non-disclosing refusal.
+    if (input.refusalType === 'authorization') {
+      assertMayAuthorize(
+        await this.receptions.activePartyRoles(
+          db,
+          receptionVisitId,
+          input.refusingPartnerId as string
+        )
+      );
+    }
 
     let refusalId: string | null;
     try {

@@ -208,9 +208,11 @@ export interface StandingDecision {
  *  - at least one authorizing party's standing decision is `approved`; and
  *  - no authorizing party's standing decision is `declined`.
  *
- * Every partner in this table has already been proven by
- * `rec.guard_authorization_authority` to hold an active authorizing role, so a
- * standing `declined` is a refusal from someone entitled to refuse. Proceeding
+ * Every partner reaching this function has been proven to hold an active
+ * authorizing role — by `rec.guard_authorization_authority` for a decision in
+ * `rec.authorizations`, and by `assertMayAuthorize` for an `authorization`-type
+ * refusal — so a standing `declined` is a refusal from someone entitled to
+ * refuse. Proceeding
  * over it would be exactly the "a refusal read as consent" outcome this module
  * is built to prevent. Where a business rule should let one authority outrank
  * another, that rule has to be stated and approved before it is coded — refusing
@@ -227,6 +229,28 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
   if (!decisions.some((entry) => entry.decision === 'approved')) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has no standing approved authorization',
+    });
+  }
+}
+
+/**
+ * The party must hold SOME active authorizing role.
+ *
+ * Used where a party's word governs the authorization gate but no specific role
+ * is claimed — an `authorization`-type refusal, which `standingAuthorizations`
+ * now reads as that party's standing decision. Without this, the cheap
+ * `rec.reception.signature.manage` permission would block a reception
+ * permanently and attribute the refusal to an uninvolved partner:
+ * `fk_refusals_partner` is tenant-wide, so any partner in the tenant is a valid
+ * target.
+ *
+ * Same non-disclosing refusal as the role-specific check below, so neither
+ * becomes a channel for probing which roles a party holds.
+ */
+export function assertMayAuthorize(activeRoles: readonly string[]): void {
+  if (!activeRoles.some((role) => (AUTHORIZING_ROLES as readonly string[]).includes(role))) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: 'That party may not authorize work on this reception',
     });
   }
 }
