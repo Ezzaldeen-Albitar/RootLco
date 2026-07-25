@@ -89,7 +89,15 @@ export const P1_16_PREFIX = 'crm.';
  * floor. Only the per-phase count block is reported separately.
  */
 export const P1_17_PREFIX = 'veh.';
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX];
+/**
+ * P1-18 spans TWO id namespaces — `apt.` (appointment) and `rec.` (reception) —
+ * because the frozen Phase 1-8 database splits them into two schemas with
+ * different lifecycles. Both must appear in DERIVED_PREFIXES or the derived floor
+ * silently would not apply to half the phase, which is exactly the class of
+ * failure P1-17 had to remediate three times.
+ */
+export const P1_18_PREFIXES = ['apt.', 'rec.'];
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX, ...P1_18_PREFIXES];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -242,6 +250,136 @@ export const MANIFEST = {
     files: ['tests/backend/p1-17-vehicle-history.test.ts'],
     required: ['denial', 'cross-tenant'],
     note: 'lists document ids reachable from the vehicle via the sanctioned shared.document_ids_for_entity resolver (no storage key, no bytes); an unknown vehicle and a cross-tenant vehicle answer the same 404 (denial/cross-tenant); linking is the shared attachments operation, not this one',
+  },
+
+  // ========================================================================
+  // Phase 1-18 (apt. / rec.) — Appointment and Reception Backend. Same derived-
+  // evidence model; `required` adds what each operation owes beyond the floor.
+  // Every one of these operations takes physical or contractual custody of a
+  // customer's vehicle, so `rollback` is demanded wherever more than one row is
+  // written, and `concurrency` wherever two callers can race for one outcome.
+  // ========================================================================
+  'apt.appointment-create': {
+    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'rollback'],
+    note: 'appointment + audit + outbox commit in one transaction; an injected failure leaves none of the three (rollback); a tenant-B vehicle or requester is unreachable (cross-tenant); a branch outside the caller grant is refused (isolation); a timezone-less window and an inverted window are refused (denial)',
+  },
+  'apt.appointment-reschedule': {
+    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'moves the CONFIRMED window only — the requested window is immutable, proved by reading it back unchanged; a second confirmed appointment overlapping the same vehicle is refused by the frozen EXCLUDE as 409 (denial); a wrong If-Match is refused (stale-version); two concurrent reschedules leave exactly one committed winner (concurrency)',
+  },
+  'apt.appointment-cancel': {
+    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'terminal and set-once; cancelling an already-cancelled or no-show appointment is refused (denial); cancellation writes reason + time + actor together, so the frozen coherence CHECK can never see a half-cancelled row; distinct from no-show and never a substitute for it',
+  },
+  'apt.appointment-no-show': {
+    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'reachable ONLY from confirmed — a requested or pending appointment is refused (denial), which is the business rule that you cannot fail to show up for an appointment nobody confirmed; never inferred from elapsed time',
+  },
+  'rec.reception-create': {
+    files: ['tests/backend/p1-18-reception-create.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'rollback',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'both origin modes: a walk-in creates its own origin record (no fabricated appointment) and an appointment origin also moves the appointment to checked_in, all in one transaction; visit + service-requester role + accepted custody + status history are written atomically by rec.accept_check_in and an injected failure leaves none of them (rollback); one origin is consumed at most once and two concurrent check-ins of the same origin leave exactly one visit (concurrency)',
+  },
+  'rec.reception-party-role': {
+    files: ['tests/backend/p1-18-reception-parties.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'roles supersede by date rather than being edited in place — the frozen immutability trigger makes in-place edits impossible, proved by reading the superseded row back unchanged with only valid_to set; a role outside the frozen 7-value vocabulary is refused (denial)',
+  },
+  'rec.reception-authorization': {
+    files: ['tests/backend/p1-18-reception-parties.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'fails closed: a partner holding no ACTIVE authorizing role on the visit is refused by the frozen authority guard (denial) and the refusal message never discloses which roles that partner does hold; vehicle_user and payer are not authorizing roles; the row is append-only and cannot be updated by any application role',
+  },
+  'rec.reception-condition-evidence': {
+    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'one command, eight evidence kinds; a damage mark outside the 0..1 coordinate box and a finding on a finalised inspection are refused (denial); a damage map bound to a version that does not belong to its document is refused by the frozen guard; an out-of-scope parent inspection or map answers 404 rather than a foreign-key error (cross-tenant); prior evidence is never overwritten',
+  },
+  'rec.reception-signature': {
+    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'bound to an exact immutable document version (a version belonging to another document is refused); append-only — no application role holds UPDATE or DELETE on rec.signatures, proved by attempting both; records an acknowledgement, never a certified identity proof',
+  },
+  'rec.reception-refusal': {
+    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'a refusal is preserved as its own fact and is never readable as consent — proved by showing an approval attempt still fails after a signature refusal is recorded; an archived refusal reason cannot be newly selected (denial); append-only and unerasable',
+  },
+  'rec.reception-approve': {
+    files: ['tests/backend/p1-18-reception-approval.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'prerequisites are exactly the frozen activation contract and nothing invented: without an active service requester, or without an approved authorization, the transition is refused (denial); a wrong If-Match is refused (stale-version); two concurrent approvals leave exactly one committed winner and exactly one outbox row (concurrency)',
+  },
+  'rec.reception-convert-to-work-order': {
+    files: ['tests/backend/p1-18-reception-conversion.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'rollback',
+      'stale-version',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'exactly-once is an APPLICATION guarantee — wo.work_orders has no unique constraint on reception_visit_id — so the proof is behavioural: two concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns the existing one rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
@@ -857,13 +995,16 @@ export function parseProvidedFlags(source) {
       inBlock = false;
       continue;
     }
-    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16. The
-    // prefix list is explicit rather than a wildcard so a typo in a declaration
-    // is a missing flag — which fails the gate — instead of a silently accepted
-    // new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared|crm|veh)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
-      line
-    );
+    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
+    // with P1-17, and `apt`/`rec` with P1-18. The prefix list is explicit rather
+    // than a wildcard so a typo in a declaration is a missing flag — which fails
+    // the gate — instead of a silently accepted new namespace. Forgetting to add a
+    // namespace here makes EVERY declaration for it invisible, so a new phase must
+    // extend this alternation in the same commit that registers its operations.
+    const m =
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+        line
+      );
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
       const existing = provided.get(m[1]);
@@ -993,7 +1134,15 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       );
     }
 
-    const isDerived = id.startsWith(DERIVED_PREFIX);
+    // The four structural checks below (metadata-only, unit-only, invocation-only,
+    // internal-without-reason) originally applied to `shared.` alone. P1-18 opts
+    // `apt.`/`rec.` in as well, because the P1-17 remediations showed the derived
+    // floor is necessary but not sufficient: an operation can satisfy every
+    // required flag and still be evidenced only by metadata. The already-closed
+    // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
+    // gate over a merged phase belongs in that phase's own remediation, not in a
+    // later phase's feature branch.
+    const isDerived = id.startsWith(DERIVED_PREFIX) || P1_18_PREFIXES.some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1052,6 +1201,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const derivedRows = phaseRows(DERIVED_PREFIX);
   const crmRows = phaseRows(P1_16_PREFIX);
   const vehRows = phaseRows(P1_17_PREFIX);
+  // P1-18 spans two namespaces, so its phase row set is their union.
+  const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1079,6 +1230,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_15: phaseCounts(derivedRows),
     p1_16: phaseCounts(crmRows),
     p1_17: phaseCounts(vehRows),
+    p1_18: phaseCounts(aptRecRows),
   };
   return { failures, matrix, counts };
 }
@@ -1178,6 +1330,14 @@ async function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(P1_17_PREFIX)),
     }
   );
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-18', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_18,
+      operations: matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -1222,6 +1382,15 @@ async function runCli() {
     console.log(`P1-17 unit-only: ${r.unitOnly}`);
     console.log(`P1-17 unreferenced: ${r.unreferenced}`);
     console.log(`P1-17 metadata-only: ${r.metadataOnly}`);
+    const s = counts.p1_18;
+    console.log('');
+    console.log(`P1-18 registered public operations: ${s.registered}`);
+    console.log(`P1-18 operation-depth: ${s.operationDepth}`);
+    console.log(`P1-18 invocation-only: ${s.invocationOnly}`);
+    console.log(`P1-18 pending: ${s.pending}`);
+    console.log(`P1-18 unit-only: ${s.unitOnly}`);
+    console.log(`P1-18 unreferenced: ${s.unreferenced}`);
+    console.log(`P1-18 metadata-only: ${s.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

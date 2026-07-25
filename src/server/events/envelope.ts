@@ -141,22 +141,44 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     description: 'A duplicate vehicle was merged into a surviving vehicle.',
   },
   {
+    // P1-18 allocation. One event for every appointment lifecycle change —
+    // booked, rescheduled, cancelled, no-show — because a consumer's reaction is
+    // always the same: re-read the appointment. The payload names the resulting
+    // lifecycle status so a consumer need not diff.
     code: 'EVT-APT-001',
     eventType: 'appointment.changed',
     schemaVersion: 1,
     aggregateType: 'apt.appointment',
     owner: 'apt',
-    implementedIn: null,
-    description: 'An appointment was booked, rescheduled, or cancelled.',
+    implementedIn: 'P1-18',
+    description: 'An appointment was booked, rescheduled, cancelled, or recorded as a no-show.',
   },
   {
+    // P1-18 allocation. Chapter 4 Table 4.5 and the P1-08 boundary record both
+    // allocate this exact name for the check-in fact; P1-18's own Field 24 calls
+    // the same fact `reception.vehicle-checked-in.v1`. The reserved catalog entry
+    // wins and no duplicate is minted — one fact must not have two event names.
     code: 'EVT-REC-001',
     eventType: 'vehicle.checked-in',
     schemaVersion: 1,
     aggregateType: 'rec.reception_visit',
     owner: 'rec',
-    implementedIn: null,
+    implementedIn: 'P1-18',
     description: 'A vehicle was received and custody was accepted.',
+  },
+  {
+    // P1-18 allocation, newly registered: no reserved entry covered it. Approval
+    // is a distinct fact from check-in — it is the point at which the visit is
+    // released for work — and P1-18 Field 24 requires it. Reception-to-work-order
+    // conversion deliberately emits NO event: the approved event catalog contains
+    // none for it, and inventing one would create a contract no consumer agreed to.
+    code: 'EVT-REC-002',
+    eventType: 'reception.approved',
+    schemaVersion: 1,
+    aggregateType: 'rec.reception_visit',
+    owner: 'rec',
+    implementedIn: 'P1-18',
+    description: 'A reception visit was authorized and released for work.',
   },
   {
     code: 'EVT-DOC-001',
