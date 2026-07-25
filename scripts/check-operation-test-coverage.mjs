@@ -379,7 +379,7 @@ export const MANIFEST = {
       'idempotency',
       'concurrency',
     ],
-    note: 'exactly-once is an APPLICATION guarantee — wo.work_orders has no unique constraint on reception_visit_id — so the proof is behavioural: two concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns the existing one rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
+    note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:

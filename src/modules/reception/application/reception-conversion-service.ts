@@ -156,6 +156,14 @@ export class ReceptionConversionService extends ApplicationService {
 
   /** Maps the frozen `wo` guard SQLSTATEs; re-throws anything else. */
   private mapConversionFailure(error: unknown): AppFailure | unknown {
+    if (isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+      // A row-level policy refused the work-order insert: the caller's grant does
+      // not reach this branch. An authorization outcome leaves as one rather
+      // than as ERR-SYS-001.
+      return new AppFailure('ERR-IAM-001', {
+        message: 'This reception is outside the scope your access grants',
+      });
+    }
     if (isSqlState(error, SQLSTATE.uniqueViolation)) {
       // uq_work_orders_ordinary_origin, or the work-order display-number unique.
       // Both are resolved by retrying: the first means a concurrent transaction

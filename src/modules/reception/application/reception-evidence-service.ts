@@ -626,6 +626,26 @@ export class ReceptionEvidenceService extends ApplicationService {
 
   /** Maps the frozen evidence-guard SQLSTATEs; re-throws anything else. */
   private mapEvidenceFailure(error: unknown): AppFailure | unknown {
+    if (isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+      // Two evidence kinds write a RESTRICTED narrative row - a complaint's text
+      // (`rec.complaint_details`) and a contents description
+      // (`rec.vehicle_content_details`). The frozen INSERT policies on both end
+      // with `AND iam.has_permission('iam.sensitive.view')`, so recording those
+      // two kinds needs that capability IN ADDITION to the operation's declared
+      // `rec.reception.evidence.manage`. That composition is deliberate and is
+      // not folded into the operation's permission list: a damage mark or a
+      // warning light carries no personal narrative and must not require a
+      // sensitive-data capability to record.
+      //
+      // Without this branch the refusal escaped as ERR-SYS-001, reporting an
+      // authorization decision as a server fault and sending it to the exception
+      // monitor. It is a denial, so it leaves as one.
+      return new AppFailure('ERR-IAM-001', {
+        message:
+          'Recording this evidence requires permission to handle restricted ' +
+          'customer narrative in addition to reception evidence capture',
+      });
+    }
     if (isSqlState(error, SQLSTATE.uniqueViolation)) {
       // uq_warning_light_observations_active: the same lamp is observed once per
       // visit, so a repeat is a duplicate rather than a second observation.

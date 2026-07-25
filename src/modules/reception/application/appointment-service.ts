@@ -34,6 +34,7 @@ import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { AppointmentRepository } from '../data/appointment-repository';
 import {
+  APPOINTMENT_TRANSITIONS,
   AppointmentRuleError,
   assertCancellable,
   assertNoShowRecordable,
@@ -156,16 +157,38 @@ export class AppointmentService extends ApplicationService {
     const window = this.planOrFail(() => toReschedulePlan(input), 'body.confirmedFrom');
     assertReschedulable(current.lifecycleStatus);
 
+    // Setting a firm window IS confirming. Canonical UC-APT-001 is a single use
+    // case, "Confirm or reschedule appointment", and the frozen lifecycle has no
+    // separate confirm step - `confirmed` is simply the state in which a window
+    // has been agreed. So an appointment still at `requested` or
+    // `pending_confirmation` moves to `confirmed` here, and one already
+    // `confirmed` keeps its status while the window moves.
+    //
+    // This is load-bearing rather than cosmetic. `confirmed` is the state that
+    // reserves constrained capacity (BR-APT-001): the same-vehicle overlap
+    // EXCLUDE is PARTIAL on `lifecycle_status IN ('confirmed','checked_in')`, and
+    // both no-show and appointment-originated check-in are reachable only from
+    // `confirmed`. Without this transition the conflict detection FR-APT-002
+    // requires could never fire, and two of the phase's own operations would be
+    // unreachable through the API.
+    const status: AppointmentStatus =
+      current.lifecycleStatus === 'confirmed'
+        ? 'confirmed'
+        : (APPOINTMENT_TRANSITIONS[current.lifecycleStatus] ?? []).includes('confirmed')
+          ? 'confirmed'
+          : (current.lifecycleStatus as AppointmentStatus);
+    const nextStatus = status === current.lifecycleStatus ? null : status;
+
     const recordVersion = await this.applyOrFail(expectedVersion, () =>
       this.appointments.setConfirmedWindow(
         db,
         appointmentId,
         window.confirmedFrom,
         window.confirmedTo,
-        expectedVersion
+        expectedVersion,
+        nextStatus
       )
     );
-    const status = current.lifecycleStatus as AppointmentStatus;
 
     await appendAudit(db, {
       action: 'apt.appointment.rescheduled',
@@ -174,6 +197,7 @@ export class AppointmentService extends ApplicationService {
       details: [
         { field: 'confirmed_from', classification: 'internal', value: window.confirmedFrom },
         { field: 'confirmed_to', classification: 'internal', value: window.confirmedTo },
+        { field: 'lifecycle_status', classification: 'public', value: status },
       ],
     });
     await this.announce(db, appointmentId, 'rescheduled', status, recordVersion);
@@ -331,6 +355,17 @@ export class AppointmentService extends ApplicationService {
 
   /** Maps the frozen `apt` guard SQLSTATEs to stable problems; re-throws the rest. */
   private mapWriteFailure(error: unknown): AppFailure | unknown {
+    if (isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+      // A row-level policy refused the write - the caller's grant does not reach
+      // this company/branch. That is an authorization outcome, so it must leave
+      // as one. Letting 42501 fall through would report a denial as ERR-SYS-001,
+      // and route-handler sends every 5xx to the exception monitor, so any
+      // authenticated caller could manufacture unlimited incidents by writing
+      // outside their own branch.
+      return new AppFailure('ERR-IAM-001', {
+        message: 'This appointment is outside the scope your access grants',
+      });
+    }
     if (sqlState(error) === '23P01') {
       // ex_appointments_vehicle_confirmed. Named plainly: the caller can move the
       // window, and no other appointment's identifiers are disclosed.

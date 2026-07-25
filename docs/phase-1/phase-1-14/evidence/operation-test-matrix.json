@@ -39,12 +39,12 @@
     "p1_18": {
       "registered": 12,
       "publicApi": 12,
-      "operationDepth": 0,
+      "operationDepth": 12,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 12,
-      "metadataOnly": 12
+      "unreferenced": 0,
+      "metadataOnly": 0
     }
   },
   "operations": [
@@ -55,7 +55,7 @@
       "path": "/appointments/{appointmentId}/cancel",
       "public": false,
       "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -89,21 +89,21 @@
         "denial",
         "outbox"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
-        "idempotency",
-        "stale-version",
-        "audit",
-        "isolation",
         "denial",
-        "outbox"
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -113,7 +113,7 @@
       "path": "/appointments",
       "public": false,
       "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -137,21 +137,21 @@
         "outbox",
         "rollback"
       ],
-      "provided": [],
-      "missing": [
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "rollback",
         "route",
         "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit",
-        "isolation",
-        "denial",
-        "cross-tenant",
-        "outbox",
-        "rollback"
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -161,7 +161,7 @@
       "path": "/appointments/{appointmentId}/no-show",
       "public": false,
       "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -195,21 +195,21 @@
         "denial",
         "outbox"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
-        "idempotency",
-        "stale-version",
-        "audit",
-        "isolation",
         "denial",
-        "outbox"
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -219,7 +219,7 @@
       "path": "/appointments/{appointmentId}/reschedule",
       "public": false,
       "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -255,22 +255,22 @@
         "outbox",
         "concurrency"
       ],
-      "provided": [],
-      "missing": [
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
         "route",
         "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "idempotency",
         "stale-version",
-        "audit",
-        "isolation",
-        "denial",
-        "outbox",
-        "concurrency"
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1596,7 +1596,7 @@
       "path": "/receptions/{receptionId}/approve",
       "public": false,
       "files": ["tests/backend/p1-18-reception-approval.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1632,22 +1632,22 @@
         "outbox",
         "concurrency"
       ],
-      "provided": [],
-      "missing": [
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
         "route",
         "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "idempotency",
         "stale-version",
-        "audit",
-        "isolation",
-        "denial",
-        "outbox",
-        "concurrency"
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1657,7 +1657,7 @@
       "path": "/receptions/{receptionId}/authorizations",
       "public": false,
       "files": ["tests/backend/p1-18-reception-parties.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1680,19 +1680,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1702,7 +1702,7 @@
       "path": "/receptions/{receptionId}/condition-evidence",
       "public": false,
       "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1734,20 +1734,20 @@
         "denial",
         "rollback"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
-        "idempotency",
-        "audit",
-        "isolation",
         "denial",
-        "rollback"
+        "idempotency",
+        "isolation",
+        "rollback",
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1757,7 +1757,7 @@
       "path": "/receptions/{receptionId}/convert-to-work-order",
       "public": false,
       "files": ["tests/backend/p1-18-reception-conversion.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1794,22 +1794,22 @@
         "rollback",
         "concurrency"
       ],
-      "provided": [],
-      "missing": [
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "rollback",
         "route",
         "service",
-        "success",
-        "authorization",
-        "cross-tenant",
-        "idempotency",
         "stale-version",
-        "audit",
-        "isolation",
-        "denial",
-        "rollback",
-        "concurrency"
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1819,7 +1819,7 @@
       "path": "/receptions",
       "public": false,
       "files": ["tests/backend/p1-18-reception-create.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1854,22 +1854,22 @@
         "rollback",
         "concurrency"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
+      "provided": [
         "audit",
-        "isolation",
-        "denial",
+        "authorization",
+        "concurrency",
         "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
         "outbox",
         "rollback",
-        "concurrency"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1879,7 +1879,7 @@
       "path": "/receptions/{receptionId}/party-roles",
       "public": false,
       "files": ["tests/backend/p1-18-reception-parties.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1902,19 +1902,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1924,7 +1924,7 @@
       "path": "/receptions/{receptionId}/refusals",
       "public": false,
       "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1947,19 +1947,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -1969,7 +1969,7 @@
       "path": "/receptions/{receptionId}/signatures",
       "public": false,
       "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -1992,19 +1992,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {

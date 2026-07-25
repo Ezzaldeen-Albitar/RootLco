@@ -491,8 +491,25 @@ export class ReceptionService extends ApplicationService {
     return visit;
   }
 
+  /**
+   * A row-level policy refusal is an authorization outcome and must leave as
+   * one. Shared by every mapper below: without it a caller writing outside the
+   * branch their grant reaches would receive ERR-SYS-001, and route-handler
+   * forwards every 5xx to the exception monitor, so an authenticated caller
+   * could manufacture unlimited incidents at will.
+   */
+  private scopeDenial(error: unknown, subject: string): AppFailure | null {
+    return isSqlState(error, SQLSTATE.insufficientPrivilege)
+      ? new AppFailure('ERR-IAM-001', {
+          message: `This ${subject} is outside the scope your access grants`,
+        })
+      : null;
+  }
+
   /** Maps the frozen check-in SQLSTATEs; re-throws anything else. */
   private mapCheckInFailure(error: unknown): AppFailure | unknown {
+    const denied = this.scopeDenial(error, 'reception');
+    if (denied) return denied;
     if (isSqlState(error, SQLSTATE.uniqueViolation)) {
       // Either `uq_reception_visits_open_vehicle` (custody cannot be in two
       // places) or one of the origin uniques (an origin is consumed once). Both
@@ -522,6 +539,8 @@ export class ReceptionService extends ApplicationService {
   }
 
   private mapPartyRoleFailure(error: unknown): AppFailure | unknown {
+    const denied = this.scopeDenial(error, 'reception');
+    if (denied) return denied;
     if (isSqlState(error, SQLSTATE.uniqueViolation)) {
       // uq_reception_party_roles_active.
       return new AppFailure('ERR-RES-002', {
@@ -545,6 +564,8 @@ export class ReceptionService extends ApplicationService {
   }
 
   private mapAuthorizationFailure(error: unknown): AppFailure | unknown {
+    const denied = this.scopeDenial(error, 'reception');
+    if (denied) return denied;
     if (isSqlState(error, SQLSTATE.checkViolation)) {
       // `rec.guard_authorization_authority` refuses a party with no active
       // authorizing role on this visit, and the vocabulary CHECKs refuse an
@@ -567,6 +588,8 @@ export class ReceptionService extends ApplicationService {
   }
 
   private mapTransitionFailure(error: unknown): AppFailure | unknown {
+    const denied = this.scopeDenial(error, 'reception');
+    if (denied) return denied;
     if (isSqlState(error, SQLSTATE.checkViolation)) {
       // `rec.guard_reception_transition`. The domain already refused an illegal
       // edge, so what reaches here is the activation contract: an active service

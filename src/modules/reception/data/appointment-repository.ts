@@ -119,15 +119,29 @@ export class AppointmentRepository extends Repository {
     appointmentId: string,
     confirmedFrom: string,
     confirmedTo: string,
-    expectedVersion: number
+    expectedVersion: number,
+    nextStatus: string | null
   ): Promise<number> {
     const context = this.assertContext(db);
+    // `nextStatus` is written in the SAME statement as the window, never in a
+    // follow-up UPDATE. `ck_appointments_confirmed_required` demands that a
+    // confirmed appointment already carry a confirmed window, so splitting the
+    // two would make the intermediate row one PostgreSQL refuses to hold.
     const result = await this.run(
       db,
       `UPDATE apt.appointments
-          SET confirmed_from = $4, confirmed_to = $5
+          SET confirmed_from = $4,
+              confirmed_to = $5,
+              lifecycle_status = COALESCE($6, lifecycle_status)
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3 AND deleted_at IS NULL`,
-      [context.principal.tenantId, appointmentId, expectedVersion, confirmedFrom, confirmedTo]
+      [
+        context.principal.tenantId,
+        appointmentId,
+        expectedVersion,
+        confirmedFrom,
+        confirmedTo,
+        nextStatus,
+      ]
     );
     return result.rowCount ?? 0;
   }
