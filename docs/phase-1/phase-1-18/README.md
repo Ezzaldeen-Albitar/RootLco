@@ -8,14 +8,63 @@ Product name: `[PRODUCT NAME — Pending Final Approval]`. Benzene remains the
 configurable first tenant and pilot, and appears nowhere in product code,
 database behaviour, permissions, workflows, routes, or shared defaults.
 
-| Item          | Value                                         |
-| ------------- | --------------------------------------------- |
-| Phase         | P1-18 — Appointment and Reception Backend     |
-| Exit gate     | P1-G18                                        |
-| Base          | `origin/develop` = `9d685e3`                  |
-| Branch        | `feature/p1-18-appointment-reception-backend` |
-| Dependencies  | P1-8, P1-13, P1-14, P1-15, P1-16, P1-17       |
-| Database work | **Not applicable** — no migration is added    |
+| Item            | Value                                                  |
+| --------------- | ------------------------------------------------------ |
+| Phase           | P1-18 — Appointment and Reception Backend              |
+| Exit gate       | P1-G18                                                 |
+| Original base   | `origin/develop` = `9d685e3` (P1-17 gate, PR #74)      |
+| Original branch | `feature/p1-18-appointment-reception-backend` (PR #75) |
+| Current base    | `origin/develop` = `fb50ef4` (after PR #77)            |
+| Current branch  | `fix/p1-18-scoped-authorization-containment`           |
+| Dependencies    | P1-8, P1-13, P1-14, P1-15, P1-16, P1-17                |
+| Database work   | **Not applicable** — no migration is added             |
+
+## 0. Delivery history
+
+P1-18 reached its current state through a merged feature branch and **three**
+post-merge remediations. The intermediate mistakes are recorded because two of
+them were mine and because the last one was found only after two rounds of
+review had already declared the area closed.
+
+1. **PR #75** delivered the original P1-18 backend — all twelve operations, the
+   suites, the catalogs and this document.
+2. **PR #76** fixed the first post-merge findings, including standing
+   authorization: a withdrawn authorization was inert, so work orders could be
+   opened against withdrawn consent. Its accompanying explanation of the scope
+   model was **incomplete and in part incorrect** — it added a
+   `grantCoversBranch` check in TypeScript on the belief that a branch-scoped
+   grant necessarily carries a separate `company` scope row. It does not, and
+   the check refused legitimate company-scoped operators.
+3. **PR #77** fixed the appointment-origin scope mismatch (the authorization
+   target was not the write target), corrected the authorization-refusal
+   semantics so a refusal could be neither inert nor weaponised, removed
+   `grantCoversBranch`, and completed the coverage-gate lexer.
+4. **The final review then proved the area was still open.** Ten of the twelve
+   operations are addressed by a resource id and declare `scope: 'branch'`, but
+   passed no authorization target, so the pre-handler check fell back to
+   scope-blind `iam.has_permission` — which never consults `iam.grant_scopes`.
+   Neither #76 nor #77 closed this, and no document may claim otherwise.
+5. **The third remediation** (this branch) re-authorizes **after** the
+   authoritative resource row is locked `FOR UPDATE`, inside the same
+   transaction, before any business read or write.
+6. **The authorization target is the locked row's own scope** — the locked
+   appointment's or reception visit's `company_id` and `branch_id`. It is never
+   caller-supplied and never body-derived, and it cannot move while the row is
+   held.
+7. **Permission metadata still comes from the operation declaration.** The
+   deferred check re-runs the running operation's own `defineOperation` entry;
+   no service restates a permission code and no caller can supply one.
+8. **RLS visibility and permission-bearing-grant containment are two different
+   protections.** RLS decides which rows a caller can see; scoped permission
+   evaluation decides where a caller may act. A 404 from the first and a 403
+   from the second are not interchangeable, and the containment suite asserts
+   which of the two produced every refusal it records.
+9. **A permission-blind unioned RLS context cannot substitute for scoped
+   permission evaluation.** `app.branch_ids` is the union of every ACTIVE grant
+   the caller holds, without regard to which permission any of them carries, so
+   a caller holding the permission in branch B1 and any grant at all in B2 both
+   passed the check and saw the B2 row. That is the exact defect, and it is the
+   reason the fix cannot live in RLS.
 
 ## 1. Purpose
 
@@ -232,6 +281,56 @@ same instant; see `P1-18-TIE-001` in §7.1.
   which is the CRM/vehicle integration case; the appointment/reception
   integration case is `TC-INTG-002`. Recorded as a canonical inconsistency.
 
+## 4.1 Scoped authorization after the resource lock
+
+The ten id-addressed commands are authorized **twice**, and the two checks
+answer different questions.
+
+The **pre-handler check** runs before anything is read. For an operation
+addressed only by a resource id there is no company or branch to name yet, so it
+evaluates the caller's permission without a scope. That is correct at that point
+and is deliberately unchanged; it is not, and never was, sufficient on its own.
+
+The **deferred check** runs once the authoritative row is locked:
+
+| Element                       | Value                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `requireScopedPermissions`    | `src/server/auth/authorization.ts` — enforces the deferred decision and fails closed on an empty target |
+| `HandlerInput.authorizeScope` | the handler-contract field built from it, closed over the request transaction                           |
+| transaction-bound `DbHandle`  | the same handle `withTransaction` gave the handler; no second connection is opened and none may be      |
+| locked-row `companyId`        | the locked appointment's or reception visit's own `company_id`                                          |
+| locked-row `branchId`         | the locked appointment's or reception visit's own `branch_id`                                           |
+| evaluation                    | `iam.has_permission_in_scope(code, company, branch, department)`                                        |
+| denial                        | `ERR-IAM-001` (403), thrown inside the transaction, so nothing the command would have written survives  |
+
+**Four choke points** carry all ten operations, so the wiring is four call sites
+rather than ten:
+
+| Choke point                                         | Operations                                         |
+| --------------------------------------------------- | -------------------------------------------------- |
+| `appointment-service.requireAppointment`            | reschedule, cancel, no-show                        |
+| `reception-service.requireVisit`                    | party-role, authorization, approve                 |
+| `reception-evidence-service.requireRecordableVisit` | condition-evidence, signature, refusal             |
+| `reception-conversion-service.convertToWorkOrder`   | conversion (inline, immediately after `lockVisit`) |
+
+**Empty targets now fail closed for deferred scoped authorization.**
+`requiresScopedEvaluation` returns false for an empty target _whatever_ the
+declared scope is, so a deferred authorizer handed `{}` would have evaluated
+scope-blind `iam.has_permission` and answered yes — the original defect,
+reachable a second time through the very API added to close it. A non-public
+operation whose declared scope narrows, arriving with neither a company nor a
+branch, is now refused **before any statement is issued**.
+
+This fail-closed behaviour is isolated to `requireScopedPermissions`.
+`requirePermissions` itself is **unchanged** and still accepts an empty target,
+because the pre-handler path legitimately passes one for all ten of these
+operations; folding the guard into it would have broken every one of them.
+
+The two creation commands, `apt.appointment-create` and `rec.reception-create`,
+are untouched by this path. They resolve an authorization target from the
+request body via `scopeTargetOption(body)` and were already contained; neither
+references `authorizeScope`.
+
 ## 5. Reuse boundaries
 
 P1-18 duplicates nothing from P1-15, P1-16 or P1-17.
@@ -307,17 +406,18 @@ worker that marks a no-show from elapsed time.
 
 ## 7.1 Open follow-ups carried forward
 
-| ID                       | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **P1-18-A-01**           | `scope: 'branch'` is inert for the ten id-addressed P1-18 operations, whose company and branch are not known until the row is read inside the transaction. The two creation commands name a target and are contained; the rest rely on forced RLS and on the union of a caller's grants. Remediation is a platform change, not a P1-18 one.                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **P1-18-R-02**           | The strict comment-stripping rule in `scripts/check-operation-test-coverage.mjs` governs P1-18 only. Applying it to every phase fails 39 operations across P1-16, P1-17 and IAM whose suites genuinely drive their operations but never write the id outside a header comment. Bounded, named debt — not a claim that those phases meet the stricter rule.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **REC-LIFECYCLE-001**    | No P1-18 operation writes `closed_without_work` or `refused`, so a vehicle can be received once only. See §2, frozen fact 3 and §7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **P1-18-QA-BARRIER**     | Three of the four concurrency barriers (`p1-18-reception-create`, `-conversion`, `p1-18-appointment-lifecycle`) count any ungranted lock in the database rather than one correlated to the contended row, as `p1-18-reception-approval` does. The race itself is genuinely forced in all four — a third connection holds the row `FOR UPDATE` and the barrier throws rather than continuing — and `vitest.config.backend.ts` sets `fileParallelism: false`, so nothing else runs against the database concurrently. Accepted rather than half-corrected: naming the wrong relation would make a passing test fail intermittently, and the correlated form belongs with a shared helper rather than three hand-copies.                                         |
-| **P1-18-QA-COMPANYHALF** | The appointment-scope guard compares company AND branch. The branch half is proven by two tests; the company half is defence-in-depth behind RLS and is not independently observable with the current fixtures — a company-scoped principal cannot see an appointment in another company at all, so the request is refused 404 before the comparison runs. Reaching it needs a caller holding a company-wide grant in one company plus some grant in the other. Found by a mutation that disabled only the company comparison and passed the whole suite; recorded rather than claimed as proven.                                                                                                                                                             |
-| **P1-18-TIE-001**        | `standingAuthorizations` orders by `occurred_at`, then `created_at`, then `id`. An approval and an authorization refusal bearing the SAME `occurred_at` and the same `created_at` therefore resolve by `id`, which is arbitrary. Fail-safe would prefer `declined`. Not changed here because `occurred_at` is caller-supplied and `created_at` is `clock_timestamp()`, so a genuine tie needs two writes in the same microsecond with an identical caller-supplied instant; encoding the preference means an ORDER BY on a synthesised precedence column, and the safer form should be designed with the withdrawal contract rather than bolted onto a repository query. Deterministic today, arbitrary in that one case, recorded rather than left implicit. |
-| **P1-18-LEX-001**        | `stripComments` in `scripts/check-operation-test-coverage.mjs` is a single-pass lexer over string, template, regex and comment contexts. Two constructs are handled conservatively rather than exactly: a regex literal appearing where `canPrecedeRegex` reads the preceding token as a value (for example directly after `return` on the same line) and a `//` sequence inside a `${…}` expression within a template literal. Both would strip slightly more than a full parser, never less, so the gate can only become STRICTER — an operation cannot be credited on evidence the lexer hallucinated. Unreachable in the current suites; a real parser is the correct fix if the pattern ever appears.                                                    |
-| **P1-18-UUID-001**       | Identifier comparisons in the reception service use exact string equality, so a caller sending a differently-cased but equal UUID (`ABC…` for `abc…`) is refused where PostgreSQL's `uuid` type would treat the two as identical. Over-refusal only, never over-acceptance, and it matches the existing `vehicleId` comparison convention in the same file. Normalising would mean canonicalising every id at the validation boundary — a platform decision, not a P1-18 one.                                                                                                                                                                                                                                                                                 |
-| **P1-18-SEC-ROLEPROBE**  | `assertAuthorizingRoleHeld` refuses a role the partner does not hold with the same non-disclosing 409 as the authority guard, but the 201-versus-409 split still lets a caller holding `rec.reception.authorization.verify` learn which of the four authorizing roles a partner holds on a visit. A correct guess writes a real, attributable decision and the misses write nothing. Narrower than the alternative: accepting the claimed role would put a false role on an immutable, dispute-facing row. Closing the channel needs a read contract for party roles, which Field 23 does not allocate.                                                                                                                                                       |
+| ID                       | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-18-A-01**           | **RESOLVED by the third remediation — retained as a record, not as an open item.** The original entry said `scope: 'branch'` was inert for the ten id-addressed operations and that "remediation is a platform change, not a P1-18 one". The second half was **wrong**: `requirePermissions` was already exported, every other narrowing operation on the platform already passed a target, and all ten unguarded operations were P1-18's own — so the fix was module-local and it was this phase's to make. It is made: see §4.1. Closed by `tests/backend/p1-18-scope-containment.test.ts` (74/74) and `tests/foundation/p1-18-scoped-authorization.test.ts` (69/69), with six mutation proofs in `evidence/scoped-authorization-mutation-proofs.md`.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **P1-18-R-02**           | The strict comment-stripping rule in `scripts/check-operation-test-coverage.mjs` governs P1-18 only. Applying it to every phase fails 39 operations across P1-16, P1-17 and IAM whose suites genuinely drive their operations but never write the id outside a header comment. Bounded, named debt — not a claim that those phases meet the stricter rule.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **REC-LIFECYCLE-001**    | No P1-18 operation writes `closed_without_work` or `refused`, so a vehicle can be received once only. See §2, frozen fact 3 and §7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **P1-18-QA-BARRIER**     | Three of the four concurrency barriers (`p1-18-reception-create`, `-conversion`, `p1-18-appointment-lifecycle`) count any ungranted lock in the database rather than one correlated to the contended row, as `p1-18-reception-approval` does. The race itself is genuinely forced in all four — a third connection holds the row `FOR UPDATE` and the barrier throws rather than continuing — and `vitest.config.backend.ts` sets `fileParallelism: false`, so nothing else runs against the database concurrently. Accepted rather than half-corrected: naming the wrong relation would make a passing test fail intermittently, and the correlated form belongs with a shared helper rather than three hand-copies.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **P1-18-QA-COMPANYHALF** | **Still open, but its stated reason no longer holds and has been corrected.** The appointment-origin guard in `rec.reception-create` compares company AND branch; the branch half is proven by two tests, the company half is not. The original entry said reaching the company half needs "a caller holding a company-wide grant in one company plus some grant in the other" and treated that fixture as unavailable. **That fixture now exists and is proven to work**: `PRINCIPAL_COMPANY_C_PERMISSION` in `tests/backend/p1-18-scope-containment.test.ts` holds two COMPANY-scoped grants — permissions in `COMPANY_A1`, unrelated authority in `COMPANY_D` — which keeps `app.branch_ids` empty and makes the second company visible while the permission-bearing grant reaches only the first. So this is no longer "not observable"; it is **not yet exercised against this particular guard**, which is bounded, named debt with a known path to closure. Found originally by a mutation that disabled only the company comparison and passed the whole suite.                                                                                   |
+| **P1-18-TIE-001**        | `standingAuthorizations` orders by `occurred_at`, then `created_at`, then `id`. An approval and an authorization refusal bearing the SAME `occurred_at` and the same `created_at` therefore resolve by `id`, which is arbitrary. Fail-safe would prefer `declined`. Not changed here because `occurred_at` is caller-supplied and `created_at` is `clock_timestamp()`, so a genuine tie needs two writes in the same microsecond with an identical caller-supplied instant; encoding the preference means an ORDER BY on a synthesised precedence column, and the safer form should be designed with the withdrawal contract rather than bolted onto a repository query. Deterministic today, arbitrary in that one case, recorded rather than left implicit.                                                                                                                                                                                                                                                                                                                                                                                             |
+| **P1-18-LEX-001**        | `stripComments` in `scripts/check-operation-test-coverage.mjs` is a single-pass lexer over string, template, regex and comment contexts. Two constructs are handled conservatively rather than exactly: a regex literal appearing where `canPrecedeRegex` reads the preceding token as a value (for example directly after `return` on the same line) and a `//` sequence inside a `${…}` expression within a template literal. Both would strip slightly more than a full parser, never less, so the gate can only become STRICTER — an operation cannot be credited on evidence the lexer hallucinated. Unreachable in the current suites; a real parser is the correct fix if the pattern ever appears.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **P1-18-UUID-001**       | Identifier comparisons in the reception service use exact string equality, so a caller sending a differently-cased but equal UUID (`ABC…` for `abc…`) is refused where PostgreSQL's `uuid` type would treat the two as identical. Over-refusal only, never over-acceptance, and it matches the existing `vehicleId` comparison convention in the same file. Normalising would mean canonicalising every id at the validation boundary — a platform decision, not a P1-18 one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **P1-18-SEC-ROLEPROBE**  | `assertAuthorizingRoleHeld` refuses a role the partner does not hold with the same non-disclosing 409 as the authority guard, but the 201-versus-409 split still lets a caller holding `rec.reception.authorization.verify` learn which of the four authorizing roles a partner holds on a visit. A correct guess writes a real, attributable decision and the misses write nothing. Narrower than the alternative: accepting the claimed role would put a false role on an immutable, dispute-facing row. Closing the channel needs a read contract for party roles, which Field 23 does not allocate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **P1-18-GATE-IDENTITY**  | **The authorization coverage gate does not prove operation-identity binding, and must not be described as if it did.** Mutation M6 bound the party-roles route to the sibling `rec.reception-authorization` declaration, so `rec.reception.party.manage` was never evaluated at all — and `npm run validate:authorization-coverage` still reported `OK: every operation is guarded and every route is registered` and exited 0. It checks that operations declare permissions and that routes are registered; it does not check that a route runs under its OWN declaration. The containment suite does not kill M6 independently either, because every permission-bearing fixture principal holds both sibling codes, so both bindings produce identical runtime outcomes. The binding is now pinned by dedicated assertions in `tests/foundation/p1-18-scoped-authorization.test.ts` (`runs under its OWN declaration`, `declares exactly one operation`, and the rule that no route may hand-roll `requirePermissions` / `requireScopedPermissions`). Generalising the check to the whole platform is the correct follow-up and is not attempted here. |
 
 ## 8. P1-19
 
