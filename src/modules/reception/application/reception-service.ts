@@ -454,14 +454,46 @@ export class ReceptionService extends ApplicationService {
           safeDetails: { violations: [{ path: 'body.vehicleId', rule: 'incoherent_reference' }] },
         });
       }
+      // The body's company and branch MUST equal the appointment's.
+      //
+      // This is the security boundary of the whole operation, and the previous
+      // comment here was wrong about it. The visit is written in the
+      // APPOINTMENT's scope, but `authorizationTarget` is derived from the BODY
+      // before the transaction opens, so accepting a divergent body meant
+      // authorizing branch X and writing in branch Y. `lockForUpdate` filters on
+      // tenant and id only, and `app.branch_ids` is the union of every grant the
+      // caller holds, so any appointment the caller can see was usable: send a
+      // branch you legitimately hold plus an appointment in another branch, and
+      // the visit, its mandatory party role, the accepted custody event and the
+      // appointment's move to `checked_in` all landed where you hold nothing.
+      //
+      // Nothing downstream caught it. The composite foreign key only ties the
+      // visit to the appointment — which it did, coherently, in the wrong branch;
+      // `uq_reception_visits_open_vehicle` is per vehicle, not per branch; and
+      // `guard_immutable_columns` pins the scope after the insert, not at it.
+      //
+      // Requiring equality makes the authorized target provably the written
+      // target, with no second database read and no reliance on the order the
+      // pipeline happens to run in. The refusal is a validation failure naming
+      // only the fields the caller sent: it discloses nothing about the
+      // appointment it could not already see.
+      if (appointment.companyId !== plan.companyId || appointment.branchId !== plan.branchId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message:
+            "companyId and branchId must be the appointment's own company and branch; " +
+            'a reception cannot be opened in a different scope from its appointment',
+          safeDetails: {
+            violations: [{ path: 'body.branchId', rule: 'incoherent_reference' }],
+          },
+        });
+      }
+
       return {
         kind: 'appointment',
         appointmentId: appointment.id,
         walkInId: null,
-        // The appointment's scope, not the request body's: the composite foreign
-        // key ties the visit to the appointment within one branch, and a body
-        // that named a different one would be refused as a constraint violation
-        // rather than as the coherent reading of the request it is not.
+        // Equal to the body's by the check above, and taken from the appointment
+        // so the row that anchors the composite foreign key is the source.
         companyId: appointment.companyId,
         branchId: appointment.branchId,
       };

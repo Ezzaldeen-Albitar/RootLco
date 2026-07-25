@@ -32,6 +32,7 @@ import {
   evaluateCoverage,
   parseProvidedFlags,
   stripCoverageBlock,
+  stripComments,
   scanRegisteredOperations,
 } from '../../scripts/check-operation-test-coverage.mjs';
 
@@ -45,6 +46,80 @@ const complete = `
  */
 describe('iam.demo-op', () => { it('invokes iam.demo-op', () => {}); });
 `;
+
+/**
+ * The P1-18 ratchet, tested directly.
+ *
+ * `stripComments` is what makes "prose is not a test" true, and it shipped
+ * untested — so a silent revert, or the `//` gap it originally had, broke nothing.
+ * These cases are the contract: every comment form is removed, and no string,
+ * template, regex or URL is corrupted in the process (over-stripping would cause
+ * false FAILURES, which is its own kind of wrong).
+ */
+describe('operation coverage gate — the P1-18 comment ratchet', () => {
+  const ID = 'rec.reception-signature';
+
+  it('rejects an operation id that appears only in a line comment', () => {
+    expect(stripComments(`// ${ID}\nconst x = 1;`)).not.toContain(ID);
+  });
+
+  it('rejects an operation id that appears only in a block comment', () => {
+    expect(stripComments(`/* ${ID} */\nconst x = 1;`)).not.toContain(ID);
+  });
+
+  it('rejects an operation id that appears only in JSDoc', () => {
+    expect(stripComments(`/**\n * ${ID}\n */\nconst x = 1;`)).not.toContain(ID);
+  });
+
+  it('rejects an operation id that appears only in the prose coverage header', () => {
+    // The exact shape every P1-18 suite carries: the "Operations exercised here"
+    // line and the COVERAGE-EVIDENCE block live in the SAME JSDoc, which is how
+    // the original line-based strip let the header survive.
+    const header = `/**\n * Operations exercised here: ${ID}.\n *\n * COVERAGE-EVIDENCE:\n *   ${ID}: route service success\n */\nconst x = 1;`;
+    expect(stripComments(header)).not.toContain(ID);
+  });
+
+  it('accepts an operation id used in a describe title', () => {
+    expect(stripComments(`describe('${ID}', () => {});`)).toContain(ID);
+  });
+
+  it('accepts an operation id used in an it title', () => {
+    expect(stripComments(`it('drives ${ID} end to end', () => {});`)).toContain(ID);
+  });
+
+  it('does not corrupt a URL containing //', () => {
+    const src = "const R = 'http://localhost/api/v1/receptions';";
+    expect(stripComments(src)).toBe(src);
+  });
+
+  it('does not corrupt a regex literal containing //, and still strips after it', () => {
+    const out = stripComments(`const re = /a\\/\\/b/; // ${ID}`);
+    expect(out).toContain('/a\\/\\/b/');
+    expect(out).not.toContain(ID);
+  });
+
+  it('treats a lone slash as division rather than a regex', () => {
+    const out = stripComments(`const z = a / b; // ${ID}\nconst w = 2;`);
+    expect(out).toContain('const z = a / b;');
+    expect(out).toContain('const w = 2;');
+    expect(out).not.toContain(ID);
+  });
+
+  it('keeps an id that is genuinely inside a string literal', () => {
+    // A string is executable code: `authAs('…')`, a path, a describe title built
+    // from a constant. Only comments are prose.
+    expect(stripComments(`const s = "x // ${ID}";`)).toContain(ID);
+  });
+
+  it('reports the earlier-phase debt rather than claiming the strict rule applies', () => {
+    // The ratchet is P1-18-only on purpose, and the source says why. If this
+    // assertion ever fails, the note has been removed and the bounded debt is no
+    // longer named anywhere.
+    const gate = readFileSync(join(ROOT, 'scripts/check-operation-test-coverage.mjs'), 'utf8');
+    expect(gate).toContain('P1-18-R-02');
+    expect(gate).toMatch(/39 of them|39 operations/);
+  });
+});
 
 describe('operation coverage gate — P1-14 evidence model, unchanged', () => {
   const registered = new Set(['iam.demo-op']);

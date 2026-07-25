@@ -1064,32 +1064,104 @@ export function stripCoverageBlock(source) {
 }
 
 /**
- * The strict form: removes EVERY block comment, so only executable code remains.
- * Applied to P1-18 operations; see the ratchet note above.
+ * The strict form: removes every comment, leaving only executable code.
+ *
+ * This is a single-pass lexical scanner rather than a line filter, because the
+ * line filter it replaces was wrong in a way that mattered. It handled block
+ * comments only, so a `//` banner survived — and three P1-18 suites had exactly
+ * that
+ * (`// rec.reception-signature` and two siblings), which meant the ratchet's own
+ * promise, that prose cannot stand in for a test, was false for those operations.
+ *
+ * A naive `//`-to-end-of-line regex would be worse than the bug: these suites are
+ * full of `'http://localhost/api/v1/…'`, and truncating there would silently
+ * delete real code and produce false FAILURES. So the scanner tracks the four
+ * contexts where `/` and `*` are not comment openers — single quotes, double
+ * quotes, template literals, and regex literals — honours backslash escapes in
+ * each, and only treats `//` and `/*` as comments in code position. Strings are
+ * kept (an operation id inside a real string literal is executable code); their
+ * contents simply cannot open a comment.
+ *
+ * Regex-versus-division is decided the way a lexer does it: a `/` starts a regex
+ * only when the previous significant character cannot end an expression.
  */
 export function stripComments(source) {
-  const out = [];
-  let inBlock = false;
-  for (const line of source.split(/\r?\n/)) {
-    if (inBlock) {
-      if (line.includes(COMMENT_CLOSE)) inBlock = false;
+  let out = '';
+  let i = 0;
+  // The last non-whitespace character of emitted code, for the regex/division test.
+  let prev = '';
+  const n = source.length;
+  const canPrecedeRegex = (c) => c === '' || '([{,;:=!?&|+-*%~^<>'.includes(c) || c === '\n';
+
+  while (i < n) {
+    const c = source[i];
+    const next = source[i + 1];
+
+    if (c === '/' && next === '/') {
+      while (i < n && source[i] !== '\n') i += 1;
       continue;
     }
-    const opened = line.indexOf('/*');
-    if (opened === -1) {
-      out.push(line);
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      // A block comment is whitespace, so keep tokens on either side apart.
+      out += ' ';
       continue;
     }
-    // A comment that opens and closes on one line leaves the code around it.
-    const closed = line.indexOf(COMMENT_CLOSE, opened + 2);
-    if (closed !== -1) {
-      out.push(line.slice(0, opened) + line.slice(closed + 2));
+    if (c === "'" || c === '"' || c === '`') {
+      const quote = c;
+      out += c;
+      i += 1;
+      while (i < n) {
+        if (source[i] === '\\') {
+          out += source.slice(i, i + 2);
+          i += 2;
+          continue;
+        }
+        out += source[i];
+        if (source[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      prev = quote;
       continue;
     }
-    out.push(line.slice(0, opened));
-    inBlock = true;
+    if (c === '/' && canPrecedeRegex(prev)) {
+      out += c;
+      i += 1;
+      let inClass = false;
+      while (i < n) {
+        if (source[i] === '\\') {
+          out += source.slice(i, i + 2);
+          i += 2;
+          continue;
+        }
+        if (source[i] === '[') inClass = true;
+        else if (source[i] === ']') inClass = false;
+        out += source[i];
+        if (source[i] === '/' && !inClass) {
+          i += 1;
+          break;
+        }
+        if (source[i] === '\n') {
+          // Not a regex after all; bail rather than swallow the rest of the file.
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      prev = '/';
+      continue;
+    }
+    out += c;
+    if (!/\s/.test(c)) prev = c;
+    else if (c === '\n') prev = '\n';
+    i += 1;
   }
-  return out.join('\n');
+  return out;
 }
 
 /** A pure-unit suite. Evidence for a public operation may not live only here. */

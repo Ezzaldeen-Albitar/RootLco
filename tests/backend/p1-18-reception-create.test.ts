@@ -67,6 +67,19 @@ const SUBJ_UNION = 'fx_p1_18_rec_union';
 const GRANT_UNION_WRITE_A2 = 'c1180000-0000-4000-8000-0000000000a8';
 const GRANT_UNION_READ_A1 = 'c1180000-0000-4000-8000-0000000000a9';
 
+/**
+ * A genuinely COMPANY-WIDE principal: one `company` scope row for COMPANY_A1 and
+ * no branch row. `iam.has_permission_in_scope` treats that as covering every
+ * branch in the company, so this principal must succeed in BOTH branches. It
+ * exists because the first remediation added an application-layer check that
+ * accepted only `unrestricted` or an explicit branch row, which silently refused
+ * exactly this legitimate operator on the two creation routes.
+ */
+const ROLE_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000aa';
+const USER_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000ab';
+const SUBJ_COMPANY_WIDE = 'fx_p1_18_rec_company_wide';
+const GRANT_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000ac';
+
 const BRANCH_A2 = 'c1180000-0000-4000-8000-0000000000b2';
 const COMPANY_B1 = 'c1180000-0000-4000-8000-0000000000c1';
 const BRANCH_B1 = 'c1180000-0000-4000-8000-0000000000c2';
@@ -465,11 +478,11 @@ beforeAll(async () => {
        VALUES ($1, $2, $3, $4, 'scoped', $5, $5)`,
       [GRANT_BRANCH2, TENANT_A, USER_BRANCH2, ROLE_BRANCH2, USER_A]
     );
-    await scoped.query(
-      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
-       VALUES ($1, $2, 'company', $3, $4)`,
-      [TENANT_A, GRANT_BRANCH2, COMPANY_A1, USER_A]
-    );
+    // Branch-only, so "granted only another branch" is literally what this grant
+    // is. It previously also carried a `company` row, which under
+    // `iam.has_permission_in_scope` makes a grant company-WIDE — so the principal
+    // was authorized across COMPANY_A1 and only RLS was refusing it, which is not
+    // what the test claimed to prove.
     await scoped.query(
       `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
        VALUES ($1, $2, 'branch', $3, $4, $5)`,
@@ -511,11 +524,16 @@ beforeAll(async () => {
          VALUES ($1, $2, $3, $4, 'scoped', $5, $5)`,
         [grantId, TENANT_A, USER_UNION, roleId, USER_A]
       );
-      await union.query(
-        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
-         VALUES ($1, $2, 'company', $3, $4)`,
-        [TENANT_A, grantId, COMPANY_A1, USER_A]
-      );
+      // A BRANCH scope row only — deliberately no `company` row.
+      //
+      // `ck_grant_scopes_shape` lets a branch row carry its own `company_id`, and
+      // `iam.has_permission_in_scope` matches a company only when the row's
+      // `scope_type` IS `'company'`. So this grant is genuinely branch-scoped and
+      // does not reach a sibling branch. An earlier version of this fixture also
+      // inserted a `company` row, which by the platform's contract makes the
+      // grant company-WIDE — so the "escalation" it appeared to demonstrate was
+      // correct behaviour, and the application-layer check added to stop it was
+      // closing nothing while refusing legitimate company-scoped operators.
       await union.query(
         `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
          VALUES ($1, $2, 'branch', $3, $4, $5)`,
@@ -528,6 +546,35 @@ beforeAll(async () => {
     throw error;
   } finally {
     union.release();
+  }
+
+  // The company-wide principal: `rec.reception.manage` through a single `company`
+  // scope row, no branch row.
+  await seedPrincipal({
+    tenantId: TENANT_A,
+    roleId: ROLE_COMPANY_WIDE,
+    userId: USER_COMPANY_WIDE,
+    subject: SUBJ_COMPANY_WIDE,
+  });
+  const companyWide = await admin.connect();
+  try {
+    await companyWide.query('BEGIN');
+    await companyWide.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1, $2, $3, $4, 'scoped', $5, $5)`,
+      [GRANT_COMPANY_WIDE, TENANT_A, USER_COMPANY_WIDE, ROLE_COMPANY_WIDE, USER_A]
+    );
+    await companyWide.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
+       VALUES ($1, $2, 'company', $3, $4)`,
+      [TENANT_A, GRANT_COMPANY_WIDE, COMPANY_A1, USER_A]
+    );
+    await companyWide.query('COMMIT');
+  } catch (error) {
+    await companyWide.query('ROLLBACK');
+    throw error;
+  } finally {
+    companyWide.release();
   }
 
   await asActor(TENANT_A, async (client) => {
@@ -736,7 +783,19 @@ describe('rec.reception-create: appointment origin', () => {
     expect(await outboxCount(visitId)).toBe(1);
   });
 
-  it('takes its scope from the appointment, not from the request body', async () => {
+  /**
+   * The body's scope must EQUAL the appointment's, and this test used to assert
+   * the opposite.
+   *
+   * It expected 201 with the visit landing in the appointment's branch while the
+   * body named another — which is exactly the escalation `resolveOrigin` now
+   * refuses. `authorizationTarget` is derived from the body before the
+   * transaction opens, so a divergent body meant authorizing one branch and
+   * writing in a different one, and the appointment lock resolves by tenant and
+   * id alone. Blessing the mismatch here is what let the appointment origin walk
+   * past branch containment entirely.
+   */
+  it('refuses a body whose company or branch differs from the appointment', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();
     const appointment = await newAppointment({
@@ -748,15 +807,21 @@ describe('rec.reception-create: appointment origin', () => {
       confirm: true,
     });
 
-    // The body names BRANCH_A2; the appointment lives in BRANCH_A1. The composite
-    // foreign key binds a visit to its appointment inside ONE branch, so a body
-    // that could choose the branch would be choosing which constraint to violate.
     const response = await createReception(
       appointmentBody(vehicle, appointment, { branchId: BRANCH_A2 })
     );
-    expect(response.status).toBe(201);
-    const visit = await visitFor(vehicle);
-    expect(visit?.branch_id).toBe(BRANCH_A1);
+    expect(response.status).toBe(422);
+    expect(((await response.json()) as Body).code).toBe('ERR-VAL-001');
+
+    // The refusal performs no work: no visit, and the appointment is untouched.
+    expect(await visitFor(vehicle)).toBeUndefined();
+    expect(await appointmentStatus(appointment)).toBe('confirmed');
+
+    // The control: the same request naming the appointment's own branch is
+    // accepted, so the refusal is about the mismatch and nothing else.
+    const ok = await createReception(appointmentBody(vehicle, appointment));
+    expect(ok.status).toBe(201);
+    expect((await visitFor(vehicle))?.branch_id).toBe(BRANCH_A1);
   });
 
   it('refuses a check-in from an appointment that is not confirmed', async () => {
@@ -912,9 +977,11 @@ describe('cross-tenant and branch isolation', () => {
    * custody of a customer's vehicle in a branch where it holds nothing.
    *
    * Naming the target makes the pipeline use `iam.has_permission_in_scope`, which
-   * counts an allow only from a grant that actually covers the named branch.
-   * Removing `scopeTargetOption(body)` from the route makes this test fail with
-   * 201 — a created visit and accepted custody.
+   * counts an allow only from a grant that actually covers the named branch — and
+   * because the capable grant here carries a BRANCH scope row and no `company`
+   * row, it does not reach BRANCH_A1. That target is the whole fix; removing
+   * `scopeTargetOption(body)` from the route makes this test fail with 201, a
+   * created visit and accepted custody.
    */
   it('refuses a caller whose capable grant covers a different branch than the request', async () => {
     authAs(SUBJ_UNION);
@@ -935,6 +1002,95 @@ describe('cross-tenant and branch isolation', () => {
     expect(allowed.status).toBe(201);
   });
 
+  /**
+   * A company-scoped grant must keep working across every branch in its company.
+   *
+   * `iam.has_permission_in_scope` matches a `company` scope row against the
+   * requested company regardless of branch, and its own COMMENT says so. The
+   * first remediation added an application check that accepted only
+   * `unrestricted` or an explicit branch row, which refused this legitimate
+   * operator on the two creation routes — a false denial with no test to catch
+   * it. Restoring that check makes both halves of this test fail with 403.
+   */
+  it('allows a company-scoped caller in every branch of its company', async () => {
+    authAs(SUBJ_COMPANY_WIDE);
+
+    const inA1 = await newVehicle();
+    expect((await createReception(walkInBody(inA1))).status).toBe(201);
+    expect((await visitFor(inA1))?.branch_id).toBe(BRANCH_A1);
+
+    const inA2 = await newVehicle();
+    const a2 = await createReception({
+      ...(walkInBody(inA2) as Record<string, unknown>),
+      branchId: BRANCH_A2,
+    });
+    expect(a2.status).toBe(201);
+    expect((await visitFor(inA2))?.branch_id).toBe(BRANCH_A2);
+  });
+
+  /**
+   * The appointment origin, closed from both directions.
+   *
+   * This is the escalation the first remediation missed. `resolveOrigin` writes
+   * the visit in the APPOINTMENT's scope while `authorizationTarget` comes from
+   * the BODY, and `lockForUpdate` resolves by tenant and id alone, so a caller
+   * whose capable grant covers BRANCH_A2 could name BRANCH_A2 in the body, point
+   * at an appointment in BRANCH_A1, and have the visit, its mandatory party role,
+   * the accepted custody event and the appointment's `checked_in` move all land in
+   * BRANCH_A1 — where it holds nothing.
+   *
+   * Both routes out are now shut, which is why this test drives both:
+   *  - naming its own branch with a foreign appointment is refused as incoherent;
+   *  - naming the appointment's branch is refused by authorization.
+   *
+   * Removing the equality check in `resolveOrigin` makes the first half return
+   * 201 with a visit in BRANCH_A1.
+   */
+  it('refuses an appointment in a branch the caller is not authorized for', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    const appointment = await newAppointment({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      vehicleId: vehicle,
+      requesterPartnerId: REQUESTER_A,
+      confirm: true,
+    });
+
+    // USER_UNION is capable in BRANCH_A2 only, and its second permission-less
+    // grant makes the BRANCH_A1 appointment visible to RLS.
+    authAs(SUBJ_UNION);
+
+    const authorizedBranchForeignAppointment = await createReception(
+      appointmentBody(vehicle, appointment, { branchId: BRANCH_A2 })
+    );
+    expect(authorizedBranchForeignAppointment.status).toBe(422);
+    expect(((await authorizedBranchForeignAppointment.json()) as Body).code).toBe('ERR-VAL-001');
+
+    const appointmentBranchUnauthorized = await createReception(
+      appointmentBody(vehicle, appointment)
+    );
+    expect(appointmentBranchUnauthorized.status).toBe(403);
+    expect(((await appointmentBranchUnauthorized.json()) as Body).code).toBe('ERR-IAM-001');
+
+    // Neither attempt took custody of THIS vehicle, and the appointment is
+    // untouched. The custody count is scoped through the visit rather than taken
+    // tenant-wide, because earlier cases in this suite legitimately hold custody.
+    expect(await visitFor(vehicle)).toBeUndefined();
+    expect(await appointmentStatus(appointment)).toBe('confirmed');
+    expect(
+      await countOf(
+        `SELECT count(*)::text AS n
+           FROM rec.custody_history c
+           JOIN rec.reception_visits v
+             ON v.tenant_id = c.tenant_id AND v.id = c.reception_visit_id
+          WHERE c.tenant_id = $1 AND v.vehicle_id = $2`,
+        [TENANT_A, vehicle]
+      )
+    ).toBe(0);
+  });
+
   it('refuses a caller granted only another branch, on both origin modes', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();
@@ -947,19 +1103,21 @@ describe('cross-tenant and branch isolation', () => {
       confirm: true,
     });
 
-    // USER_BRANCH2 holds the very same `rec.reception.manage` mapping, but its
-    // grant covers BRANCH_A2 only. Both origin modes are now refused at the
-    // authorization step, before any row is read: the operation names its
-    // company/branch target, so the permission is evaluated against the grant
-    // that carries it rather than scope-blindly.
+    // USER_BRANCH2 holds the very same `rec.reception.manage` mapping through a
+    // grant whose single scope row is BRANCH_A2. The operation names its
+    // company/branch target, so `iam.has_permission_in_scope` looks for a scope
+    // row matching BRANCH_A1 on the grant that carries the permission, finds a
+    // branch row for BRANCH_A2 and no `company` row, and refuses. Both origin
+    // modes are therefore denied at the authorization step, before any row is
+    // read.
     //
     // This used to answer 404 on the appointment path (the row was invisible to
     // RLS) and 403 on the walk-in path (the origin INSERT hit SQLSTATE 42501 and
-    // `mapCheckInFailure` classified it). Both remain correct refusals and both
-    // are still proven below by the absence of any custody; the denial simply
-    // arrives earlier now, and no longer depends on which layer happened to
-    // notice. Answering identically on both paths also stops the status code
-    // revealing whether the appointment exists.
+    // `mapCheckInFailure` classified it). Both were correct refusals and both are
+    // still proven below by the absence of any custody; the denial now arrives
+    // earlier and no longer depends on which layer happened to notice. Answering
+    // identically on both paths also stops the status code revealing whether the
+    // appointment exists.
     authAs(SUBJ_BRANCH2);
     const viaAppointment = await createReception(appointmentBody(vehicle, appointment));
     expect(viaAppointment.status).toBe(403);

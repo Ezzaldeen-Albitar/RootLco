@@ -377,6 +377,31 @@ async function withdrawAuthorization(seeded: SeededReception, tenantId = TENANT_
   }
 }
 
+/** The sibling withdrawal channel: an `authorization`-type refusal for the party. */
+async function refuseAuthorization(seeded: SeededReception, tenantId = TENANT_A): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)`,
+      [USER_A, tenantId]
+    );
+    await client.query(
+      `INSERT INTO rec.refusals
+         (tenant_id, company_id, branch_id, reception_visit_id, refusal_type,
+          refusing_partner_id, created_by)
+       VALUES ($1,$2,$3,$4,'authorization',$5,$6)`,
+      [tenantId, seeded.companyId, seeded.branchId, seeded.visitId, PARTNER_A, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function seedPrincipal(
   tenantId: string,
   roleId: string,
@@ -725,6 +750,27 @@ describe('rec.reception-convert-to-work-order: standing authorization', () => {
    *
    * Without the application check this test fails with 200 and one work order.
    */
+  /**
+   * The same withdrawal, recorded through the refusals route instead.
+   *
+   * `wo.guard_work_order_refs` only re-tests that an approved authorization
+   * EXISTS, and it never looks at `rec.refusals` at all, so before the
+   * `rec.refusals` arm of `standingAuthorizations` this opened a work order on a
+   * vehicle whose owner had refused authorization. Removing that arm makes this
+   * fail with 200 and one work order.
+   */
+  it('refuses conversion when an authorization refusal supersedes the approval', async () => {
+    authAs(SUBJ_A);
+    const seeded = await seedAuthorized();
+    await refuseAuthorization(seeded);
+
+    const response = await convert(seeded.visitId, { version: seeded.recordVersion });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    expect(await workOrderCount(seeded.visitId)).toBe(0);
+    expect((await receptionStatus(seeded.visitId)).status).toBe('authorized');
+  });
+
   it('refuses conversion when the standing decision is a later withdrawal', async () => {
     authAs(SUBJ_A);
     const seeded = await seedAuthorized();

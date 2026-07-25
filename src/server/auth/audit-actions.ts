@@ -576,7 +576,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'privileged',
     entityType: 'rec.reception_visit',
     description:
-      'Pre-service condition evidence was appended to a reception visit — a reported complaint, inspection finding, damage mark, vehicle contents entry, warning light or leak. Observations are recorded as reported; no cause, fault or liability is asserted.',
+      'Pre-service condition evidence was appended to a reception visit — a reported complaint, visual inspection, condition item, damage map, damage mark, vehicle contents entry, warning light or leak. Observations are recorded as reported; no cause, fault or liability is asserted.',
   },
   {
     code: 'rec.reception.signature_recorded',

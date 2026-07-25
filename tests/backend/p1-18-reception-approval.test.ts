@@ -242,6 +242,37 @@ async function openApprovable(
   return receptionId;
 }
 
+/**
+ * Appends an `authorization`-type refusal for a party — the second, cheaper way to
+ * withdraw consent.
+ *
+ * `POST /receptions/{id}/refusals` writes this row and needs only
+ * `rec.reception.signature.manage`, where the `declined` decision that also blocks
+ * needs `rec.reception.authorization.verify`. Written admin-side because this
+ * suite imports no refusals route; the row is a genuine append with the column set
+ * the route produces, and what is under test is what approval does about it.
+ */
+async function refuseAuthorization(
+  receptionId: string,
+  partnerId = PARTNER_A,
+  tenantId = TENANT_A
+): Promise<void> {
+  await asAdminTx(tenantId, async (client) => {
+    const scope = await client.query<{ company_id: string; branch_id: string }>(
+      `SELECT company_id, branch_id FROM rec.reception_visits WHERE id = $1`,
+      [receptionId]
+    );
+    const row = scope.rows[0];
+    await client.query(
+      `INSERT INTO rec.refusals
+         (tenant_id, company_id, branch_id, reception_visit_id, refusal_type,
+          refusing_partner_id, created_by)
+       VALUES ($1,$2,$3,$4,'authorization',$5,$6)`,
+      [tenantId, row?.company_id, row?.branch_id, receptionId, partnerId, USER_A]
+    );
+  });
+}
+
 /** Forces a status the API offers no route to, so a terminal state can be tested. */
 async function forceStatus(receptionId: string, next: string, tenantId = TENANT_A): Promise<void> {
   await asAdminTx(tenantId, async (client) => {
@@ -663,6 +694,49 @@ describe('rec.reception-approve: standing authorization', () => {
     expect(response.status).toBe(409);
     expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
     await expectUntouched(receptionId);
+  });
+
+  /**
+   * A refusal recorded through the refusals route must withdraw consent too.
+   *
+   * `rec.refusals.refusal_type` includes `'authorization'`, so this is a second
+   * way for a party to say no — and a cheaper one, needing
+   * `rec.reception.signature.manage` rather than
+   * `rec.reception.authorization.verify`. Reading only `rec.authorizations` left
+   * it inert: approve, refuse, and approval still succeeded, which is the same
+   * "refusal read as consent" outcome by the sibling route. Removing the
+   * `rec.refusals` arm of `standingAuthorizations` makes this fail with 200.
+   */
+  it('refuses approval when an authorization refusal supersedes the approval', async () => {
+    authAs(SUBJ_APPROVER);
+    const receptionId = await openApprovable();
+    await refuseAuthorization(receptionId);
+
+    const response = await approve(receptionId, await versionOf(receptionId));
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    await expectUntouched(receptionId);
+  });
+
+  it('approves once a fresh approval supersedes an authorization refusal', async () => {
+    authAs(SUBJ_APPROVER);
+    const receptionId = await openApprovable();
+    await refuseAuthorization(receptionId);
+
+    expect(
+      (
+        await recordAuthorization(receptionId, {
+          authorizingRole: 'service_requester',
+          partnerId: PARTNER_A,
+          decision: 'approved',
+        })
+      ).status
+    ).toBe(201);
+
+    // Latest word wins in both directions, across both tables.
+    const response = await approve(receptionId, await versionOf(receptionId));
+    expect(response.status).toBe(200);
+    expect(await statusOf(receptionId)).toBe('authorized');
   });
 
   it('approves again once a fresh approval supersedes the withdrawal', async () => {

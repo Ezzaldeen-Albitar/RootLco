@@ -121,6 +121,31 @@ export const REFUSAL_TYPES = [
 export type RefusalType = (typeof REFUSAL_TYPES)[number];
 
 /**
+ * An `authorization` refusal must name the party who refused.
+ *
+ * `rec.refusals.refusing_partner_id` is nullable, which is right for the other
+ * four types — nobody in particular refuses an intake step. But an authorization
+ * refusal is now part of the standing authorization decision, and a standing
+ * decision has to belong to a party for two reasons: it is that party's word,
+ * and only that party can supersede it with a later approval. An unattributed
+ * authorization refusal would therefore be a decline that nothing could ever
+ * lift, leaving the reception permanently unapprovable with no route back — a
+ * worse outcome than refusing the request.
+ */
+export function assertRefusalAttributable(
+  refusalType: RefusalType,
+  refusingPartnerId: string | null | undefined
+): void {
+  if (refusalType === 'authorization' && (refusingPartnerId ?? null) === null) {
+    throw new EvidenceRuleError(
+      'refusingPartnerId is required when refusalType is "authorization", because that ' +
+        "refusal becomes the party's standing authorization decision and only that " +
+        'party can supersede it'
+    );
+  }
+}
+
+/**
  * The evidence kinds a single `condition-evidence` command accepts. Canonical
  * Field 23 allocates ONE endpoint for pre-service condition evidence, so the
  * command is a discriminated union rather than six endpoints. Signature and

@@ -55,7 +55,7 @@ UPDATE grant for any application role.
 **No database change request was required.** No migration was added or modified;
 the baseline remains 119 migrations with no migration 120.
 
-### Two frozen facts that shaped the design
+### Three frozen facts that shaped the design
 
 1. **`apt.appointments.requested_from` / `requested_to` are immutable.** The
    `tg_appointments_immutable` trigger lists them, and the audit reproduced the
@@ -127,6 +127,13 @@ two schemas as one bounded context; the module boundary follows it.
 Operation ids keep the `apt.` and `rec.` prefixes, matching the schema and route
 domains, exactly as the `vehicle` module registers `veh.` ids.
 
+**A third schema, named because it will matter.** `reception-conversion-repository`
+also reads and writes `wo.work_orders`. No `wo` module exists, so ADR-001 rule 3
+is not engaged today — but it will be the moment P1-19 creates one, and at that
+point either conversion moves behind a `wo` public surface or the rule is broken.
+Recording it here so the boundary is a decision P1-19 makes deliberately rather
+than one it inherits by surprise.
+
 ## 4. Route mapping decision
 
 Canonical Field 23 writes four of its paths with colon-action notation
@@ -194,7 +201,9 @@ P1-18 duplicates nothing from P1-15, P1-16 or P1-17.
 - **Documents and media** go through the P1-15 attachment service.
   `LINKABLE_ENTITY_TYPES` already contains `apt.appointments` and
   `rec.reception_visits`. No second storage or media framework is built, and no
-  binary is stored in `rec` — evidence references `shared.documents`.
+  media payload is stored in `rec` — evidence references `shared.documents`. The
+  one `bytea` column this phase writes is `rec.signatures.signature_hash`, a
+  digest of at most 64 bytes, never the drawn image.
 - **Customer and vehicle resolution** is not re-implemented. Neither the CRM nor
   the vehicle module exposes a public by-id resolver, so P1-18 resolves through
   the frozen composite tenant-scoped foreign keys inside its own repositories
@@ -224,7 +233,7 @@ worker that marks a no-show from elapsed time.
   operation writes `closed_without_work` or `refused`, and `converted` is inside
   the open-vehicle unique index, so the second reception for a vehicle is refused
   permanently. Closing a visit is delivery/custody-release work with no backend
-  yet. See §2.3 — this is the most consequential boundary of the phase.
+  yet. See §2, frozen fact 3 — this is the most consequential boundary of the phase.
 - **A confirmed window cannot be set at creation.** `apt.appointment-create`
   refuses `confirmedFrom`/`confirmedTo`; the confirmed window is set by
   `apt.appointment-reschedule`, which is the only path that also moves the status
@@ -253,6 +262,16 @@ worker that marks a no-show from elapsed time.
 - **P1-18-BE-008 (reception validation) has no canonical definition.** It is
   implemented as deterministic validation inside reception creation and approval
   rather than as a separate endpoint, because Field 23 allocates none.
+
+## 7.1 Open follow-ups carried forward
+
+| ID                      | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-18-A-01**          | `scope: 'branch'` is inert for the ten id-addressed P1-18 operations, whose company and branch are not known until the row is read inside the transaction. The two creation commands name a target and are contained; the rest rely on forced RLS and on the union of a caller's grants. Remediation is a platform change, not a P1-18 one.                                                                                                                                                                                                                                                                                                                                                                           |
+| **P1-18-R-02**          | The strict comment-stripping rule in `scripts/check-operation-test-coverage.mjs` governs P1-18 only. Applying it to every phase fails 39 operations across P1-16, P1-17 and IAM whose suites genuinely drive their operations but never write the id outside a header comment. Bounded, named debt — not a claim that those phases meet the stricter rule.                                                                                                                                                                                                                                                                                                                                                            |
+| **REC-LIFECYCLE-001**   | No P1-18 operation writes `closed_without_work` or `refused`, so a vehicle can be received once only. See §2, frozen fact 3 and §7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **P1-18-QA-BARRIER**    | Three of the four concurrency barriers (`p1-18-reception-create`, `-conversion`, `p1-18-appointment-lifecycle`) count any ungranted lock in the database rather than one correlated to the contended row, as `p1-18-reception-approval` does. The race itself is genuinely forced in all four — a third connection holds the row `FOR UPDATE` and the barrier throws rather than continuing — and `vitest.config.backend.ts` sets `fileParallelism: false`, so nothing else runs against the database concurrently. Accepted rather than half-corrected: naming the wrong relation would make a passing test fail intermittently, and the correlated form belongs with a shared helper rather than three hand-copies. |
+| **P1-18-SEC-ROLEPROBE** | `assertAuthorizingRoleHeld` refuses a role the partner does not hold with the same non-disclosing 409 as the authority guard, but the 201-versus-409 split still lets a caller holding `rec.reception.authorization.verify` learn which of the four authorizing roles a partner holds on a visit. A correct guess writes a real, attributable decision and the misses write nothing. Narrower than the alternative: accepting the claimed role would put a false role on an immutable, dispute-facing row. Closing the channel needs a read contract for party roles, which Field 23 does not allocate.                                                                                                               |
 
 ## 8. P1-19
 

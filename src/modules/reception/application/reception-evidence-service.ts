@@ -55,6 +55,7 @@ import {
   MAX_ZONE,
   assertCoordinate,
   assertDeclaredValue,
+  assertRefusalAttributable,
   assertQuantity,
   optionalNonBlank,
   requireNonBlank,
@@ -310,6 +311,14 @@ export class ReceptionEvidenceService extends ApplicationService {
     input: RefusalInput
   ): Promise<RefusalRecorded> {
     const visit = await this.requireRecordableVisit(db, receptionVisitId);
+
+    // An `authorization` refusal is part of the standing authorization decision,
+    // so it has to name the party whose decision it is — see
+    // `assertRefusalAttributable`.
+    this.ruleOrFail(
+      () => assertRefusalAttributable(input.refusalType, input.refusingPartnerId),
+      'body.refusingPartnerId'
+    );
 
     let refusalId: string | null;
     try {

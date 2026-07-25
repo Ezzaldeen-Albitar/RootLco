@@ -9,6 +9,19 @@ This gate is **not** a pass. It is the record that the phase is in execution and
 that no owner decision has been made. Nothing in the repository may be read as a
 P1-18 gate approval while this line says Pending.
 
+## Protected starting state
+
+Recorded so condition 20 has a baseline to be verified against, in the form both
+prior phases use.
+
+| Anchor           | Value                                                           |
+| ---------------- | --------------------------------------------------------------- |
+| `origin/develop` | `9d685e3855ff067529891a9ff4fb01b04fbb0d99` (P1-17 gate, PR #74) |
+| `origin/main`    | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` (untouched)          |
+| P1-17 gate       | **Go — P1-17 Vehicle Backend Gate Passed**                      |
+| Migrations       | 119 (consumed unchanged; P1-18 adds none)                       |
+| Feature branch   | `feature/p1-18-appointment-reception-backend`                   |
+
 ## 1. What this gate governs
 
 The backend for appointment booking and vehicle reception on the frozen Phase 1-8
