@@ -747,13 +747,26 @@ const OPERATIONS: readonly OperationCase[] = [
         CONDITION_EVIDENCE,
         `${RECEPTIONS}/${target.id}/condition-evidence`,
         { receptionId: target.id },
-        { kind: 'complaint', category: 'mechanical', complaintText: 'Reported noise on braking' },
+        // An inspection header, deliberately NOT a complaint. Of the eight
+        // evidence kinds this one command accepts, two write a RESTRICTED
+        // narrative row — `rec.complaint_details` and
+        // `rec.vehicle_content_details` — and both of those INSERT policies end
+        // with `AND iam.has_permission('iam.sensitive.view')`, a SECOND
+        // capability on top of the operation's declared
+        // `rec.reception.evidence.manage`. None of this suite's principals holds
+        // it, so a complaint is refused for every one of them, in every branch,
+        // in every company — a denial that says nothing whatsoever about scope.
+        // `rec.visual_inspections` carries the plain tenant/company/branch
+        // predicate and nothing else (`ins_visual_inspections_scope`), so a
+        // refusal here is attributable to the scoped authorization decision
+        // alone, which is the only thing this suite exists to prove.
+        { kind: 'inspection', inspectorId: USER_A },
         key
       ),
     probe: async (target) =>
       receptionProbe(target, 'rec.reception.evidence_recorded', {
-        complaints: await count(
-          `SELECT count(*)::text AS value FROM rec.complaints WHERE reception_visit_id = $1`,
+        inspections: await count(
+          `SELECT count(*)::text AS value FROM rec.visual_inspections WHERE reception_visit_id = $1`,
           [target.id]
         ),
       }),
