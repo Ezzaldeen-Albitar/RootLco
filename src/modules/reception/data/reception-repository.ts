@@ -45,6 +45,12 @@ export interface ReceptionVisitLockRow {
   readonly vehicleId: string;
 }
 
+/** A party's current decision on a visit — the latest row, not an earlier one. */
+export interface StandingAuthorization {
+  readonly partnerId: string;
+  readonly decision: AuthorizationDecision;
+}
+
 /** Arguments of the frozen `rec.accept_check_in()` primitive, in its order. */
 export interface AcceptCheckInArgs {
   readonly companyId: string;
@@ -303,5 +309,62 @@ export class ReceptionRepository extends Repository {
       ]
     );
     return result.rows[0]?.id ?? null;
+  }
+
+  /**
+   * The STANDING decision of every party who has ever decided on this visit —
+   * one row per partner, the latest.
+   *
+   * `rec.authorizations` is append-only and its own table comment states that a
+   * decision is "superseded by later rows"; the schema header says the same in
+   * more words. The frozen guards do not implement that. Both
+   * `rec.guard_reception_transition` and `wo.guard_work_order_refs` ask only
+   * whether SOME row with `decision = 'approved'` exists, so once a party has
+   * ever approved, a later withdrawal is invisible to them forever.
+   *
+   * This read is what makes supersession real: it answers what each party's
+   * decision IS, not what it once was. Ordering is `occurred_at` first — the
+   * business instant the table records — with `created_at` and `id` behind it so
+   * two decisions in the same instant still order deterministically.
+   */
+  async standingAuthorizations(
+    db: DbHandle,
+    receptionVisitId: string
+  ): Promise<readonly StandingAuthorization[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ partner_id: string; decision: AuthorizationDecision }>(
+      db,
+      `SELECT DISTINCT ON (partner_id) partner_id, decision
+         FROM rec.authorizations
+        WHERE tenant_id = $1 AND reception_visit_id = $2
+        ORDER BY partner_id, occurred_at DESC, created_at DESC, id DESC`,
+      [context.principal.tenantId, receptionVisitId]
+    );
+    return result.rows.map((row) => ({ partnerId: row.partner_id, decision: row.decision }));
+  }
+
+  /**
+   * The active party roles a partner currently holds on a visit.
+   *
+   * `rec.guard_authorization_authority` proves the partner may decide at all. It
+   * does not compare the claimed `authorizing_role` against a role the partner
+   * actually holds, so without this read the role written into an append-only,
+   * dispute-facing evidence row is whatever the caller typed.
+   */
+  async activePartyRoles(
+    db: DbHandle,
+    receptionVisitId: string,
+    partnerId: string
+  ): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ relationship_role: string }>(
+      db,
+      `SELECT relationship_role
+         FROM rec.reception_party_roles
+        WHERE tenant_id = $1 AND reception_visit_id = $2 AND partner_id = $3
+          AND valid_to IS NULL AND deleted_at IS NULL`,
+      [context.principal.tenantId, receptionVisitId, partnerId]
+    );
+    return result.rows.map((row) => row.relationship_role);
   }
 }

@@ -1019,12 +1019,32 @@ export function parseProvidedFlags(source) {
 const COMMENT_CLOSE = '*' + '/';
 
 /**
- * Removes the COVERAGE-EVIDENCE declaration block from a file's text, so the
- * "is this operation actually invoked?" check cannot be satisfied by the machine
- * -readable declaration itself. After stripping, the operation id must still
- * appear in the file — in the "Operations exercised here" listing and, for the
- * write operations, the `describe`/`it` bodies that invoke the service — for the
- * operation to count as referenced.
+ * Removes EVERY block comment from a file's text, so the "is this operation
+ * actually invoked?" check can only be satisfied by executable code.
+ *
+ * This used to strip the COVERAGE-EVIDENCE block alone, which was not enough and
+ * quietly weakened the strictest gate in the repository. A suite's header JSDoc
+ * also carries a prose line — `Operations exercised here: <id>` — and it lives in
+ * the SAME comment as the evidence block but ABOVE it, so it survived the strip
+ * and satisfied the check on its own. Five P1-18 operations were referenced
+ * nowhere else in their files: every `describe` and every `it` could have been
+ * deleted and the gate would still have reported them at operation depth. That
+ * is the same class of hole that credited eight P1-17 operations on evidence
+ * which did not exist, and the reason this gate exists at all.
+ *
+ * Stripping all block comments is the honest rule: prose about a test is not a
+ * test. An operation counts as referenced only if its id appears in real code —
+ * a `describe`/`it` title or a call site.
+ *
+ * This is applied as a RATCHET, not retroactively, and the reason is recorded
+ * rather than hidden. Turning it on for every operation fails 39 of them across
+ * P1-16, P1-17 and IAM. Those suites do genuinely drive their operations — they
+ * import the route module and call the handler — they simply never write the id
+ * as a string outside their header. Rewriting three earlier phases' suites
+ * inside a P1-18 remediation would put unvalidated breadth into protected
+ * history for a cosmetic reason. So the strict form governs P1-18, the previous
+ * form governs everything that predates it, and the gap is an open cross-phase
+ * follow-up (P1-18-R-02) rather than a silent exemption.
  */
 export function stripCoverageBlock(source) {
   const out = [];
@@ -1039,6 +1059,35 @@ export function stripCoverageBlock(source) {
       continue;
     }
     out.push(line);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The strict form: removes EVERY block comment, so only executable code remains.
+ * Applied to P1-18 operations; see the ratchet note above.
+ */
+export function stripComments(source) {
+  const out = [];
+  let inBlock = false;
+  for (const line of source.split(/\r?\n/)) {
+    if (inBlock) {
+      if (line.includes(COMMENT_CLOSE)) inBlock = false;
+      continue;
+    }
+    const opened = line.indexOf('/*');
+    if (opened === -1) {
+      out.push(line);
+      continue;
+    }
+    // A comment that opens and closes on one line leaves the code around it.
+    const closed = line.indexOf(COMMENT_CLOSE, opened + 2);
+    if (closed !== -1) {
+      out.push(line.slice(0, opened) + line.slice(closed + 2));
+      continue;
+    }
+    out.push(line.slice(0, opened));
+    inBlock = true;
   }
   return out.join('\n');
 }
@@ -1116,7 +1165,12 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       const source = readFile(file);
       // The operation must be referenced OUTSIDE its own COVERAGE-EVIDENCE
       // block — the declaration cannot vouch for the invocation it declares.
-      const inThisFile = source != null && stripCoverageBlock(source).includes(id);
+      // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
+      // the header cannot stand in for a test either.
+      const strict = P1_18_PREFIXES.some((prefix) => id.startsWith(prefix));
+      const visible =
+        source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
+      const inThisFile = visible != null && visible.includes(id);
       if (!inThisFile) {
         referenced = false;
         failures.push(

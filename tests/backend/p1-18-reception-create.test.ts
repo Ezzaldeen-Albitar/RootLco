@@ -53,6 +53,20 @@ const USER_BRANCH2 = 'c1180000-0000-4000-8000-0000000000a4';
 const SUBJ_BRANCH2 = 'fx_p1_18_rec_branch2';
 const GRANT_BRANCH2 = 'c1180000-0000-4000-8000-0000000000a5';
 
+/**
+ * The cross-grant union principal: `rec.reception.manage` scoped to BRANCH_A2 by
+ * one grant, and a second grant carrying NO reception permission scoped to
+ * BRANCH_A1. `iam.has_permission` is scope-blind, and `app.branch_ids` is the
+ * union of every grant, so before the route named its authorization target this
+ * caller could open a visit and take custody in BRANCH_A1 — a branch where it
+ * holds no reception capability at all.
+ */
+const ROLE_UNION_READ = 'c1180000-0000-4000-8000-0000000000a6';
+const USER_UNION = 'c1180000-0000-4000-8000-0000000000a7';
+const SUBJ_UNION = 'fx_p1_18_rec_union';
+const GRANT_UNION_WRITE_A2 = 'c1180000-0000-4000-8000-0000000000a8';
+const GRANT_UNION_READ_A1 = 'c1180000-0000-4000-8000-0000000000a9';
+
 const BRANCH_A2 = 'c1180000-0000-4000-8000-0000000000b2';
 const COMPANY_B1 = 'c1180000-0000-4000-8000-0000000000c1';
 const BRANCH_B1 = 'c1180000-0000-4000-8000-0000000000c2';
@@ -299,10 +313,11 @@ async function newVehicle(tenantId = TENANT_A): Promise<string> {
 /**
  * Books an appointment and, when asked, confirms it.
  *
- * Confirmation is written here rather than driven through a route because the
- * P1-18 surface has no confirm command: `apt.appointment-reschedule` moves the
- * confirmed window and deliberately leaves `lifecycle_status` alone. See the
- * suite's report for that gap; it is a property of the API, not of this fixture.
+ * Confirmation is written here rather than driven through a route to keep this
+ * suite's fixtures independent of another operation's behaviour.
+ * `apt.appointment-reschedule` does reach `confirmed` — it sets the window and
+ * the status in one statement, proven by `p1-18-appointment-lifecycle.test.ts`
+ * — so this is a fixture convenience, not a gap in the API.
  */
 async function newAppointment(input: {
   readonly tenantId: string;
@@ -468,6 +483,53 @@ beforeAll(async () => {
     scoped.release();
   }
 
+  // The cross-grant union principal. `seedPrincipal` gives ROLE_BRANCH2 the
+  // reception permission; ROLE_UNION_READ deliberately gets none. USER_UNION
+  // holds BOTH: the capable role scoped to BRANCH_A2 and the empty role scoped
+  // to BRANCH_A1.
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $4 || '@example.test', 'Union Principal', 'active', $5)
+     ON CONFLICT (id) DO NOTHING`,
+    [USER_UNION, TENANT_A, IDENTITY_PROVIDER, SUBJ_UNION, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1, $2, $3, 'P1-18 union read-only', $4) ON CONFLICT (id) DO NOTHING`,
+    [ROLE_UNION_READ, TENANT_A, SUBJ_UNION, USER_A]
+  );
+  const union = await admin.connect();
+  try {
+    await union.query('BEGIN');
+    for (const [grantId, roleId, branchId] of [
+      [GRANT_UNION_WRITE_A2, ROLE_BRANCH2, BRANCH_A2],
+      [GRANT_UNION_READ_A1, ROLE_UNION_READ, BRANCH_A1],
+    ] as const) {
+      await union.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1, $2, $3, $4, 'scoped', $5, $5)`,
+        [grantId, TENANT_A, USER_UNION, roleId, USER_A]
+      );
+      await union.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
+         VALUES ($1, $2, 'company', $3, $4)`,
+        [TENANT_A, grantId, COMPANY_A1, USER_A]
+      );
+      await union.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1, $2, 'branch', $3, $4, $5)`,
+        [TENANT_A, grantId, COMPANY_A1, branchId, USER_A]
+      );
+    }
+    await union.query('COMMIT');
+  } catch (error) {
+    await union.query('ROLLBACK');
+    throw error;
+  } finally {
+    union.release();
+  }
+
   await asActor(TENANT_A, async (client) => {
     await client.query(
       `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
@@ -527,7 +589,7 @@ describe('authentication and authorization', () => {
   });
 });
 
-describe('walk-in origin', () => {
+describe('rec.reception-create: walk-in origin', () => {
   it('writes the walk-in, the visit, the requester role, the custody acceptance and the ledger atomically', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();
@@ -626,7 +688,7 @@ describe('walk-in origin', () => {
   });
 });
 
-describe('appointment origin', () => {
+describe('rec.reception-create: appointment origin', () => {
   it('consumes a confirmed appointment and moves it to checked_in without fabricating a walk-in', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();
@@ -837,6 +899,42 @@ describe('cross-tenant and branch isolation', () => {
     ).toBe(0);
   });
 
+  /**
+   * The cross-grant union, closed at the authorization step.
+   *
+   * `USER_UNION` holds `rec.reception.manage` from a grant scoped to BRANCH_A2,
+   * and a second grant carrying no reception permission scoped to BRANCH_A1.
+   * `iam.has_permission` is scope-blind, so the code evaluates true; and
+   * `resolve-context.ts` publishes `app.branch_ids` as the UNION across all
+   * grants, so RLS sees BRANCH_A1 as in scope. Both of the defences that refuse
+   * the previous test's principal are therefore satisfied here, and before the
+   * route named its authorization target this caller could open a visit and take
+   * custody of a customer's vehicle in a branch where it holds nothing.
+   *
+   * Naming the target makes the pipeline use `iam.has_permission_in_scope`, which
+   * counts an allow only from a grant that actually covers the named branch.
+   * Removing `scopeTargetOption(body)` from the route makes this test fail with
+   * 201 — a created visit and accepted custody.
+   */
+  it('refuses a caller whose capable grant covers a different branch than the request', async () => {
+    authAs(SUBJ_UNION);
+    const vehicle = await newVehicle();
+
+    const response = await createReception(walkInBody(vehicle));
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as Body).code).toBe('ERR-IAM-001');
+    expect(await visitFor(vehicle)).toBeUndefined();
+
+    // The control: the same principal CAN open a visit in BRANCH_A2, the branch
+    // its capable grant actually covers. So the refusal is about scope, not about
+    // the principal being unable to do anything at all.
+    const allowed = await createReception({
+      ...(walkInBody(vehicle) as Record<string, unknown>),
+      branchId: BRANCH_A2,
+    });
+    expect(allowed.status).toBe(201);
+  });
+
   it('refuses a caller granted only another branch, on both origin modes', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();
@@ -849,21 +947,24 @@ describe('cross-tenant and branch isolation', () => {
       confirm: true,
     });
 
-    // USER_BRANCH2 holds the very same `rec.reception.manage` mapping, so
-    // authorization passes and the only thing left to refuse the request is the
-    // branch narrowing carried by its grant.
+    // USER_BRANCH2 holds the very same `rec.reception.manage` mapping, but its
+    // grant covers BRANCH_A2 only. Both origin modes are now refused at the
+    // authorization step, before any row is read: the operation names its
+    // company/branch target, so the permission is evaluated against the grant
+    // that carries it rather than scope-blindly.
+    //
+    // This used to answer 404 on the appointment path (the row was invisible to
+    // RLS) and 403 on the walk-in path (the origin INSERT hit SQLSTATE 42501 and
+    // `mapCheckInFailure` classified it). Both remain correct refusals and both
+    // are still proven below by the absence of any custody; the denial simply
+    // arrives earlier now, and no longer depends on which layer happened to
+    // notice. Answering identically on both paths also stops the status code
+    // revealing whether the appointment exists.
     authAs(SUBJ_BRANCH2);
     const viaAppointment = await createReception(appointmentBody(vehicle, appointment));
-    expect(viaAppointment.status).toBe(404);
-    expect(((await viaAppointment.json()) as Body).code).toBe('ERR-RES-001');
+    expect(viaAppointment.status).toBe(403);
+    expect(((await viaAppointment.json()) as Body).code).toBe('ERR-IAM-001');
 
-    // The walk-in path never reads a row first, so the narrowing has to bite on
-    // the origin INSERT itself, where the row-level security policy refuses it
-    // with SQLSTATE 42501. That used to escape unmapped and reach the caller as a
-    // 500 ERR-SYS-001 — an authorization decision reported as a server fault, and
-    // forwarded to the exception monitor as one. `mapCheckInFailure` now
-    // classifies it, so the two origin modes refuse out-of-scope callers with a
-    // denial each: 404 where a row was read first, 403 where the policy fired.
     const viaWalkIn = await createReception(walkInBody(vehicle));
     expect(viaWalkIn.status).toBe(403);
     expect(((await viaWalkIn.json()) as Body).code).toBe('ERR-IAM-001');

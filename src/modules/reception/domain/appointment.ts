@@ -68,9 +68,6 @@ export interface AppointmentCreateInput {
   readonly sourceChannelId?: string | null;
   readonly requestedFrom: string;
   readonly requestedTo: string;
-  /** Optional firm booking supplied at creation time. */
-  readonly confirmedFrom?: string | null;
-  readonly confirmedTo?: string | null;
 }
 
 export interface AppointmentCreatePlan {
@@ -142,20 +139,24 @@ function window(from: string, to: string, label: string): void {
   }
 }
 
+/**
+ * Creation books the REQUESTED window only.
+ *
+ * A confirmed window used to be accepted here and stored, which was worse than
+ * refusing it: `ex_appointments_vehicle_confirmed` — the exclusion constraint
+ * that makes two appointments for one vehicle impossible — is PARTIAL on
+ * `lifecycle_status IN ('confirmed','checked_in')`, and creation always starts
+ * at `requested`. So the window was written, was indexed by the branch calendar,
+ * and was checked against nothing: two callers could book the identical
+ * "confirmed" slot for the same vehicle and both receive 201. A field that reads
+ * as a firm booking and reserves nothing is a promise the API cannot keep.
+ *
+ * The confirmed window is therefore set only by `apt.appointment-reschedule`,
+ * which moves the appointment to `confirmed` in the same statement and so lands
+ * inside the exclusion constraint's predicate, where a clash is refused.
+ */
 export function toAppointmentCreatePlan(input: AppointmentCreateInput): AppointmentCreatePlan {
   window(input.requestedFrom, input.requestedTo, 'requested');
-
-  const hasFrom = input.confirmedFrom !== undefined && input.confirmedFrom !== null;
-  const hasTo = input.confirmedTo !== undefined && input.confirmedTo !== null;
-  // Mirrors ck_appointments_confirmed_pair: both or neither, never one.
-  if (hasFrom !== hasTo) {
-    throw new AppointmentRuleError(
-      'confirmedFrom and confirmedTo must be supplied together or omitted together'
-    );
-  }
-  if (hasFrom && hasTo) {
-    window(input.confirmedFrom as string, input.confirmedTo as string, 'confirmed');
-  }
 
   return {
     companyId: input.companyId,
@@ -166,8 +167,8 @@ export function toAppointmentCreatePlan(input: AppointmentCreateInput): Appointm
     sourceChannelId: input.sourceChannelId ?? null,
     requestedFrom: input.requestedFrom,
     requestedTo: input.requestedTo,
-    confirmedFrom: hasFrom ? (input.confirmedFrom as string) : null,
-    confirmedTo: hasTo ? (input.confirmedTo as string) : null,
+    confirmedFrom: null,
+    confirmedTo: null,
     // Creation always starts at the head of the graph. A caller cannot post an
     // appointment that is already confirmed, cancelled or checked in: that would
     // be a lifecycle transition wearing a creation's clothes, and it would

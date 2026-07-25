@@ -32,7 +32,7 @@ import type {
   WorkOrderRow,
 } from '../data/reception-conversion-repository';
 import type { ReceptionRepository } from '../data/reception-repository';
-import { assertConvertible } from '../domain/reception';
+import { assertConvertible, assertStandingAuthorization } from '../domain/reception';
 import type { DisplayNumberAllocator } from './appointment-service';
 
 /** Sequence that renders a work-order number. Registered in the shared registry. */
@@ -85,6 +85,14 @@ export class ReceptionConversionService extends ApplicationService {
     }
 
     assertConvertible(visit.receptionStatus);
+
+    // Checked after the replay read and before anything is written. `wo.
+    // guard_work_order_refs` re-tests that an approved authorization EXISTS, but
+    // an approval that was later withdrawn still satisfies it, so a work order
+    // could be opened against a customer's withdrawn consent. A replay is
+    // deliberately still answered above: the work order already exists, and
+    // refusing to describe it would not un-create it.
+    assertStandingAuthorization(await this.receptions.standingAuthorizations(db, receptionVisitId));
 
     // Allocated inside the caller's transaction, so a conversion that rolls back
     // does not burn a work-order number. An unprovisioned tenant gets a work order

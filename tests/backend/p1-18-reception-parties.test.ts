@@ -65,6 +65,18 @@ const USER_NARROWED = 'c1180000-0000-4000-8000-0000000000b2';
 const SUBJ_NARROWED = 'fx_p1_18_parties_narrowed';
 const GRANT_NARROWED = 'c1180000-0000-4000-8000-0000000000b3';
 
+// Two single-permission principals. Without them the two operations in this file
+// share a fixture that grants BOTH codes, so swapping the authorizations route's
+// high-risk `rec.reception.authorization.verify` for the medium-risk
+// `rec.reception.party.manage` -- letting a front-desk clerk record a customer's
+// approval decision -- would leave the whole suite green.
+const ROLE_PARTY_ONLY = 'c1180000-0000-4000-8000-0000000000b4';
+const USER_PARTY_ONLY = 'c1180000-0000-4000-8000-0000000000b5';
+const SUBJ_PARTY_ONLY = 'fx_p1_18_parties_party_only';
+const ROLE_AUTHZ_ONLY = 'c1180000-0000-4000-8000-0000000000b6';
+const USER_AUTHZ_ONLY = 'c1180000-0000-4000-8000-0000000000b7';
+const SUBJ_AUTHZ_ONLY = 'fx_p1_18_parties_authz_only';
+
 /** A second branch in the same company, and a whole org for tenant B. */
 const BRANCH_A2 = 'c1180000-0000-4000-8000-0000000000c1';
 const COMPANY_B1 = 'c1180000-0000-4000-8000-0000000000c2';
@@ -255,7 +267,15 @@ async function seedVisit(
   }
 }
 
-async function seedRolePermissions(tenantId: string, roleId: string, code: string): Promise<void> {
+async function seedRolePermissions(
+  tenantId: string,
+  roleId: string,
+  code: string,
+  permissionCodes: readonly string[] = [
+    'rec.reception.party.manage',
+    'rec.reception.authorization.verify',
+  ]
+): Promise<void> {
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
      VALUES ($1, $2, $3, 'P1-18 reception parties', $4) ON CONFLICT (id) DO NOTHING`,
@@ -264,9 +284,9 @@ async function seedRolePermissions(tenantId: string, roleId: string, code: strin
   await admin.query(
     `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
      SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid FROM iam.permissions p
-      WHERE p.permission_code IN ('rec.reception.party.manage', 'rec.reception.authorization.verify')
+      WHERE p.permission_code = ANY($4::text[])
      ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
-    [tenantId, roleId, USER_A]
+    [tenantId, roleId, USER_A, permissionCodes]
   );
 }
 
@@ -327,10 +347,29 @@ beforeAll(async () => {
   await seedAccount(TENANT_A, USER_NARROWED, SUBJ_NARROWED, 'Reception Desk Branch A2');
   await seedRolePermissions(TENANT_A, ROLE_RECEPTION, SUBJ_RECEPTION);
   await seedRolePermissions(TENANT_A, ROLE_NARROWED, SUBJ_NARROWED);
+  await seedAccount(TENANT_A, USER_PARTY_ONLY, SUBJ_PARTY_ONLY, 'Party Roles Only');
+  await seedAccount(TENANT_A, USER_AUTHZ_ONLY, SUBJ_AUTHZ_ONLY, 'Authorization Verify Only');
+  await seedRolePermissions(TENANT_A, ROLE_PARTY_ONLY, SUBJ_PARTY_ONLY, [
+    'rec.reception.party.manage',
+  ]);
+  await seedRolePermissions(TENANT_A, ROLE_AUTHZ_ONLY, SUBJ_AUTHZ_ONLY, [
+    'rec.reception.authorization.verify',
+  ]);
   await admin.query(
     `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
-     VALUES ($1, $2, $3, 'unrestricted', $4, $4)`,
-    [TENANT_A, USER_RECEPTION, ROLE_RECEPTION, USER_A]
+     VALUES ($1, $2, $3, 'unrestricted', $4, $4),
+            ($1, $5, $6, 'unrestricted', $4, $4),
+            ($1, $7, $8, 'unrestricted', $4, $4)`,
+    [
+      TENANT_A,
+      USER_RECEPTION,
+      ROLE_RECEPTION,
+      USER_A,
+      USER_PARTY_ONLY,
+      ROLE_PARTY_ONLY,
+      USER_AUTHZ_ONLY,
+      ROLE_AUTHZ_ONLY,
+    ]
   );
 
   // The scoped grant and its scopes must land together: the "a scoped grant needs
@@ -476,9 +515,71 @@ describe('authentication and authorization', () => {
     ).toBe(1);
     expect(await authorizationCount(visitForGuards)).toBe(0);
   });
+
+  /**
+   * The split between the two operations, pinned in both directions.
+   *
+   * These two routes carry DIFFERENT permissions on purpose:
+   * `rec.reception.party.manage` is medium risk (who is attached to a visit),
+   * `rec.reception.authorization.verify` is high risk (whose instruction the
+   * workshop may act on). Every other P1-18 suite pins its split; this one did
+   * not, because both fixture roles held both codes. A regression that gave the
+   * authorizations route the medium-risk code would then have gone unnoticed.
+   */
+  it('refuses /authorizations to a caller holding only rec.reception.party.manage', async () => {
+    authAs(SUBJ_PARTY_ONLY);
+    const before = await authorizationCount(visitForGuards);
+
+    const decision = await authorize(visitForGuards, {
+      authorizingRole: 'service_requester',
+      partnerId: PARTNER_REQUESTER,
+      decision: 'approved',
+    });
+    expect(decision.status).toBe(403);
+    expect(((await decision.json()) as Body).code).toBe('ERR-IAM-001');
+    expect(await authorizationCount(visitForGuards)).toBe(before);
+
+    // The control: the same principal CAN do the thing its own permission names,
+    // so the refusal above is about the permission and not about the fixture.
+    const role = await assignRole(visitForGuards, {
+      partnerId: PARTNER_OWNER,
+      relationshipRole: 'vehicle_owner',
+    });
+    expect(role.status).toBe(201);
+  });
+
+  it('refuses /party-roles to a caller holding only rec.reception.authorization.verify', async () => {
+    authAs(SUBJ_AUTHZ_ONLY);
+    const before = await countWhere(
+      `SELECT count(*)::text AS n FROM rec.reception_party_roles WHERE reception_visit_id = $1`,
+      [visitForGuards]
+    );
+
+    const role = await assignRole(visitForGuards, {
+      partnerId: PARTNER_DRIVER,
+      relationshipRole: 'vehicle_user',
+    });
+    expect(role.status).toBe(403);
+    expect(((await role.json()) as Body).code).toBe('ERR-IAM-001');
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM rec.reception_party_roles WHERE reception_visit_id = $1`,
+        [visitForGuards]
+      )
+    ).toBe(before);
+
+    // The control: this principal CAN record a decision, which is what its own
+    // permission names.
+    const decision = await authorize(visitForGuards, {
+      authorizingRole: 'service_requester',
+      partnerId: PARTNER_REQUESTER,
+      decision: 'approved',
+    });
+    expect(decision.status).toBe(201);
+  });
 });
 
-describe('party-role assignment', () => {
+describe('rec.reception-party-role: assignment', () => {
   it('assigns one dated role, replays a repeated key, and audits it once', async () => {
     authAs(SUBJ_RECEPTION);
     const visit = await seedVisit();
@@ -616,7 +717,7 @@ describe('party-role assignment', () => {
   });
 });
 
-describe('authorization verification', () => {
+describe('rec.reception-authorization: verification', () => {
   it('records an approval for a partner holding an active service_requester role', async () => {
     authAs(SUBJ_RECEPTION);
     const visit = await seedVisit();
@@ -783,6 +884,42 @@ describe('authorization verification', () => {
     } finally {
       client.release();
     }
+  });
+});
+
+describe('rec.reception-authorization: the claimed role must be held', () => {
+  /**
+   * `rec.guard_authorization_authority` proves the partner MAY decide; it never
+   * compares the claimed `authorizing_role` with a role they hold. The column is
+   * immutable on an append-only row, so an unchecked label is a permanent
+   * misstatement in the record a dispute would be settled from.
+   *
+   * `PARTNER_REQUESTER` holds `service_requester` — the role the check-in
+   * primitive creates — and no other. Claiming `vehicle_owner` must be refused
+   * even though the party is genuinely entitled to authorize.
+   */
+  it('refuses a role the party does not hold, even when it may authorize', async () => {
+    authAs(SUBJ_RECEPTION);
+    const before = await authorizationCount(visitForGuards);
+
+    const response = await authorize(visitForGuards, {
+      authorizingRole: 'vehicle_owner',
+      partnerId: PARTNER_REQUESTER,
+      decision: 'approved',
+    });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as Body).code).toBe('ERR-TRN-001');
+    expect(await authorizationCount(visitForGuards)).toBe(before);
+
+    // The control: the role this party actually holds is accepted, so the
+    // refusal is about the label and not about the party.
+    const held = await authorize(visitForGuards, {
+      authorizingRole: 'service_requester',
+      partnerId: PARTNER_REQUESTER,
+      decision: 'approved',
+    });
+    expect(held.status).toBe(201);
+    expect(await authorizationCount(visitForGuards)).toBe(before + 1);
   });
 });
 

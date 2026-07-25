@@ -1252,15 +1252,18 @@ describe('rec.reception-condition-evidence', () => {
    * `iam.sensitive.view`. A caller holding exactly the declared permission
    * therefore cannot record a complaint at all.
    *
-   * What is asserted here is the property that must hold whatever the fix turns
-   * out to be: the write does NOT land, in either table, and no audit record
-   * claims it did. The status code is deliberately NOT asserted as correct —
-   * today the RLS refusal escapes `mapEvidenceFailure` unmapped and the caller
-   * receives 500 / ERR-SYS-001 where a denial belongs, which is reported as a
-   * defect rather than blessed here. When the mapping is corrected this case
-   * keeps passing unchanged.
+   * Two things are asserted: the refusal is reported as a DENIAL (403,
+   * `ERR-IAM-001`, via the `insufficientPrivilege` branch of
+   * `mapEvidenceFailure`) rather than as a server fault, and the write does not
+   * land in either table with no audit record claiming it did.
+   *
+   * The status assertion is load-bearing. Before the mapping existed the RLS
+   * refusal escaped unmapped and the caller received 500 / ERR-SYS-001 — an
+   * authorization outcome reported as a server fault, which any authenticated
+   * caller could have triggered at will to manufacture exception-monitor
+   * incidents. Pinning 403 here is what stops that regressing.
    */
-  it('fails closed for a caller without iam.sensitive.view: no restricted complaint row is written', async () => {
+  it('fails closed for a caller without iam.sensitive.view: denial, and no restricted complaint row', async () => {
     authAs(SUBJ_EVID);
     const visit = await newVisit();
 
@@ -1269,7 +1272,8 @@ describe('rec.reception-condition-evidence', () => {
       category: 'noise',
       complaintText: 'The customer said the brakes squeal.',
     });
-    expect(response.status).not.toBe(201);
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe('ERR-IAM-001');
     expect(await complaints(visit)).toBe(0);
     expect(await complaintDetails(visit)).toBe(0);
     expect(await auditCount('rec.reception.evidence_recorded', visit)).toBe(0);

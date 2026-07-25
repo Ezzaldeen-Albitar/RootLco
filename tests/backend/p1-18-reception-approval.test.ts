@@ -527,7 +527,7 @@ describe('authorization', () => {
   });
 });
 
-describe('the frozen activation contract', () => {
+describe('rec.reception-approve: the frozen activation contract', () => {
   it('refuses approval with no approved authorization and rolls the first edge back', async () => {
     authAs(SUBJ_APPROVER);
     const reception = await openReception();
@@ -632,6 +632,67 @@ describe('the frozen activation contract', () => {
     expect(event.rows[0]?.aggregate_version).toBe('3');
     expect(event.rows[0]?.payload.receptionStatus).toBe('authorized');
     expect(event.rows[0]?.payload.receptionVisitId).toBe(reception);
+  });
+});
+
+describe('rec.reception-approve: standing authorization', () => {
+  /**
+   * A withdrawal must actually withdraw.
+   *
+   * `rec.authorizations` is append-only and its table comment states a decision
+   * is "superseded by later rows". The frozen guard does not implement that: it
+   * asks only whether SOME row with `decision = 'approved'` exists, so once a
+   * party has ever approved, a later `declined` is invisible to it forever. The
+   * service reads the STANDING decision and refuses.
+   *
+   * Without the application check this test fails with 200: the visit becomes
+   * `authorized` on the strength of an approval the customer has withdrawn.
+   */
+  it('refuses approval when the standing decision is a later withdrawal', async () => {
+    authAs(SUBJ_APPROVER);
+    const receptionId = await openApprovable();
+
+    const withdrawal = await recordAuthorization(receptionId, {
+      authorizingRole: 'service_requester',
+      partnerId: PARTNER_A,
+      decision: 'declined',
+    });
+    expect(withdrawal.status).toBe(201);
+
+    const response = await approve(receptionId, await versionOf(receptionId));
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    await expectUntouched(receptionId);
+  });
+
+  it('approves again once a fresh approval supersedes the withdrawal', async () => {
+    authAs(SUBJ_APPROVER);
+    const receptionId = await openApprovable();
+
+    expect(
+      (
+        await recordAuthorization(receptionId, {
+          authorizingRole: 'service_requester',
+          partnerId: PARTNER_A,
+          decision: 'declined',
+        })
+      ).status
+    ).toBe(201);
+    expect(
+      (
+        await recordAuthorization(receptionId, {
+          authorizingRole: 'service_requester',
+          partnerId: PARTNER_A,
+          decision: 'approved',
+        })
+      ).status
+    ).toBe(201);
+
+    // The control that keeps the guard from being merely "any decline ever
+    // blocks": supersession works in both directions, latest row wins.
+    const response = await approve(receptionId, await versionOf(receptionId));
+    expect(response.status).toBe(200);
+    expect(await statusOf(receptionId)).toBe('authorized');
   });
 });
 

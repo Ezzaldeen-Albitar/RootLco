@@ -47,7 +47,9 @@ import {
   ReceptionRuleError,
   approvalPath,
   assertApprovable,
+  assertAuthorizingRoleHeld,
   assertEvidenceRecordable,
+  assertStandingAuthorization,
   toReceptionCreatePlan,
   type AuthorizationChannel,
   type AuthorizationDecision,
@@ -298,6 +300,14 @@ export class ReceptionService extends ApplicationService {
     const visit = await this.requireVisit(db, receptionVisitId);
     assertEvidenceRecordable(visit.receptionStatus);
 
+    // The database proves the partner MAY decide; it never checks that the role
+    // they claim is one they hold. `authorizing_role` is immutable on an
+    // append-only row, so an unchecked label is permanent.
+    assertAuthorizingRoleHeld(
+      input.authorizingRole,
+      await this.receptions.activePartyRoles(db, receptionVisitId, input.partnerId)
+    );
+
     let authorizationId: string | null;
     try {
       authorizationId = await this.receptions.insertAuthorization(db, {
@@ -345,6 +355,10 @@ export class ReceptionService extends ApplicationService {
   ): Promise<ReceptionApproved> {
     const visit = await this.requireVisit(db, receptionVisitId);
     assertApprovable(visit.receptionStatus);
+
+    // `rec.guard_reception_transition` asks only whether SOME approved row has
+    // ever existed, so it cannot see a withdrawal. The standing decision can.
+    assertStandingAuthorization(await this.receptions.standingAuthorizations(db, receptionVisitId));
 
     // The caller's `If-Match` is asserted once, against the version the FOR UPDATE
     // read observed, rather than as a predicate on each hop. `opened -> authorized`

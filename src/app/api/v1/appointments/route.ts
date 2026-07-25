@@ -3,15 +3,23 @@
  *
  * The requested window records what the customer asked for and the frozen
  * `tg_appointments_immutable` trigger never lets it be rewritten, so this is the
- * only operation that can set it. A firm window may be supplied at booking, but the
- * lifecycle always starts at `requested`: creation is not a transition, and a caller
- * able to post an already-confirmed appointment would bypass both the transition
- * guard and the append-only status ledger.
+ * only operation that can set it. The lifecycle always starts at `requested`:
+ * creation is not a transition, and a caller able to post an already-confirmed
+ * appointment would bypass both the transition guard and the append-only status
+ * ledger.
+ *
+ * A confirmed window is deliberately NOT accepted here. It was, and it was worse
+ * than refusing it: the same-vehicle exclusion constraint is partial on
+ * `lifecycle_status IN ('confirmed','checked_in')`, so a confirmed window stored
+ * on a `requested` row was checked against nothing and two callers could book the
+ * identical slot for one vehicle. The confirmed window is set by
+ * `apt.appointment-reschedule`, which also moves the status and therefore lands
+ * inside the constraint that refuses a clash.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, schemas } from '@/server/http/validation';
+import { parseJsonBody, schemas, scopeTargetOption } from '@/server/http/validation';
 import { receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
@@ -35,8 +43,6 @@ const Body = z
     sourceChannelId: schemas.uuid.nullable().default(null),
     requestedFrom: Instant,
     requestedTo: Instant,
-    confirmedFrom: Instant.nullable().default(null),
-    confirmedTo: Instant.nullable().default(null),
   })
   .strict();
 
@@ -72,6 +78,16 @@ export async function POST(request: Request): Promise<Response> {
       // reschedule or a cancellation needs no re-read to obtain it.
       return { status: 201, body: created, recordVersion: created.recordVersion };
     },
-    { body }
+    // `scope: 'branch'` alone is inert. With no target the pipeline evaluates
+    // `iam.has_permission`, which is scope-blind, and RLS then consults
+    // `app.branch_ids` -- the UNION of every branch across ALL of the caller's
+    // grants. A user who is a service advisor in one branch and a viewer in
+    // another could therefore book into the branch where they only read. Naming
+    // the target switches evaluation to `iam.has_permission_in_scope`, which
+    // counts an allow only from a grant that is unrestricted or actually covers
+    // this company and branch. An unrestricted operator is unaffected. A caller
+    // who omits either field gets no target and no bypass: the body schema then
+    // refuses the request as 422.
+    { body, ...scopeTargetOption(body) }
   );
 }

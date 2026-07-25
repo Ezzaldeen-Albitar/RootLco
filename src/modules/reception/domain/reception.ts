@@ -185,6 +185,77 @@ export function assertConvertible(current: string): void {
   }
 }
 
+/** One party's current decision, as `standingAuthorizations` returns it. */
+export interface StandingDecision {
+  readonly partnerId: string;
+  readonly decision: AuthorizationDecision;
+}
+
+/**
+ * A reception may only be approved or converted while the STANDING decisions
+ * permit it.
+ *
+ * `rec.authorizations` is append-only and superseded by later rows, so a party
+ * who approved and then withdrew has a standing decision of `declined`. The
+ * frozen guards cannot see that: `rec.guard_reception_transition` and
+ * `wo.guard_work_order_refs` both ask only whether SOME approved row exists, so
+ * an approval that has been withdrawn still satisfies them permanently. Without
+ * this check a recorded withdrawal of consent is inert and work proceeds against
+ * a customer's last recorded word.
+ *
+ * Two conditions, and the second is the strict one on purpose:
+ *
+ *  - at least one authorizing party's standing decision is `approved`; and
+ *  - no authorizing party's standing decision is `declined`.
+ *
+ * Every partner in this table has already been proven by
+ * `rec.guard_authorization_authority` to hold an active authorizing role, so a
+ * standing `declined` is a refusal from someone entitled to refuse. Proceeding
+ * over it would be exactly the "a refusal read as consent" outcome this module
+ * is built to prevent. Where a business rule should let one authority outrank
+ * another, that rule has to be stated and approved before it is coded — refusing
+ * is the boundary that cannot silently do the wrong thing.
+ */
+export function assertStandingAuthorization(decisions: readonly StandingDecision[]): void {
+  if (decisions.some((entry) => entry.decision === 'declined')) {
+    throw new AppFailure('ERR-TRN-001', {
+      message:
+        'An authorizing party has withdrawn or refused authorization for this reception; ' +
+        'record a new approval before proceeding',
+    });
+  }
+  if (!decisions.some((entry) => entry.decision === 'approved')) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: 'This reception has no standing approved authorization',
+    });
+  }
+}
+
+/**
+ * The role an authorization claims must be one the partner actually holds.
+ *
+ * `rec.guard_authorization_authority` proves the partner may decide — it
+ * requires an active role in the authorizing set — but it never compares the
+ * claimed `authorizing_role` with that role. So a partner holding only
+ * `service_requester` could record a decision labelled `vehicle_owner`. The
+ * column is immutable and the table append-only, which makes an unchecked label
+ * a permanent, dispute-facing misstatement of who authorized the work.
+ *
+ * The refusal is deliberately the SAME 409 the authority guard raises, with the
+ * same non-disclosing wording. Answering 422 "you do not hold that role" would
+ * close the defect while opening an information channel: a caller could probe
+ * the four authorizing roles one at a time and learn which a partner holds on
+ * this visit. One uniform refusal keeps the contract the module already
+ * documents — a refusal never says which roles a party has.
+ */
+export function assertAuthorizingRoleHeld(claimed: string, activeRoles: readonly string[]): void {
+  if (!activeRoles.includes(claimed)) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: 'That party may not authorize work on this reception in the role claimed',
+    });
+  }
+}
+
 /** Evidence may only be appended while the visit is still open for evidence. */
 export function assertEvidenceRecordable(current: string): void {
   if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
