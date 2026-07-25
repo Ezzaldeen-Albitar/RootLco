@@ -111,6 +111,25 @@ describe('operation coverage gate — the P1-18 comment ratchet', () => {
     expect(stripComments(`const s = "x // ${ID}";`)).toContain(ID);
   });
 
+  it('does not corrupt a template literal containing //, and still strips after it', () => {
+    // Templates are the fourth context the lexer tracks, and every P1-18 suite
+    // builds request URLs with one: `new Request(\`${R}/${id}/refusals\`)`. Treating
+    // the backtick as ordinary text would end the string at the wrong place and
+    // strip live code.
+    const out = stripComments(`const u = \`http://h/api/${ID}\`; // ${ID}`);
+    expect(out).toContain(`\`http://h/api/${ID}\``);
+    expect(out.split('//').length).toBe(2); // only the URL's own `//` survives
+  });
+
+  it('does not end a string early at an escaped quote', () => {
+    // Escape handling is what keeps the four contexts from leaking into each
+    // other: mishandling `\\'` would close the string at the apostrophe and read
+    // the rest of the line as code, so a real trailing comment would survive.
+    const out = stripComments(`const s = 'it\\'s here'; // ${ID}`);
+    expect(out).toContain("'it\\'s here'");
+    expect(out).not.toContain(ID);
+  });
+
   it('reports the earlier-phase debt rather than claiming the strict rule applies', () => {
     // The ratchet is P1-18-only on purpose, and the source says why. If this
     // assertion ever fails, the note has been removed and the bounded debt is no

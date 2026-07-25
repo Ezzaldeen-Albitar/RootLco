@@ -75,6 +75,18 @@ const GRANT_UNION_READ_A1 = 'c1180000-0000-4000-8000-0000000000a9';
  * accepted only `unrestricted` or an explicit branch row, which silently refused
  * exactly this legitimate operator on the two creation routes.
  */
+/**
+ * A SECOND company inside tenant A, with its own branch.
+ *
+ * It exists to make the company half of the appointment-scope guard provable. A
+ * company-wide grant in COMPANY_A1 satisfies `iam.has_permission_in_scope` on the
+ * strength of its `company` scope row alone, so without the company comparison a
+ * caller could authorize against COMPANY_A1 while the appointment — and therefore
+ * the visit, custody and party role — lands in COMPANY_A2.
+ */
+const COMPANY_A2 = 'c1180000-0000-4000-8000-0000000000ad';
+const BRANCH_A2_OTHER_COMPANY = 'c1180000-0000-4000-8000-0000000000ae';
+
 const ROLE_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000aa';
 const USER_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000ab';
 const SUBJ_COMPANY_WIDE = 'fx_p1_18_rec_company_wide';
@@ -548,6 +560,21 @@ beforeAll(async () => {
     union.release();
   }
 
+  await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1, $2, 'company_a2', 'Fixture Company A2', 'USD', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches
+       (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1, $2, $3, 'branch_a2b', 'Fixture Branch A2B', 'UTC', $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A2_OTHER_COMPANY, TENANT_A, COMPANY_A2, USER_A]
+  );
+
   // The company-wide principal: `rec.reception.manage` through a single `company`
   // scope row, no branch row.
   await seedPrincipal({
@@ -822,6 +849,55 @@ describe('rec.reception-create: appointment origin', () => {
     const ok = await createReception(appointmentBody(vehicle, appointment));
     expect(ok.status).toBe(201);
     expect((await visitFor(vehicle))?.branch_id).toBe(BRANCH_A1);
+  });
+
+  /**
+   * The COMPANY half of the same guard, isolated.
+   *
+   * The branch-mismatch case above leaves the company half unproven, and a
+   * mutation that disabled only the company comparison passed the whole suite —
+   * which is how this gap was found. It is not redundant: a company-WIDE grant
+   * satisfies `iam.has_permission_in_scope` on its `company` scope row alone, so a
+   * caller holding COMPANY_A1 can name `companyId: COMPANY_A1` with a branch in
+   * COMPANY_A2 and pass authorization on that company row alone.
+   *
+   * What this test establishes, stated exactly: for a company-scoped principal
+   * the attempt is refused **by RLS first**, with 404 and no writes.
+   * `resolve-context.ts` publishes `company_ids = [COMPANY_A1]` and no branch for a
+   * `company`-only scope row, so the COMPANY_A2 appointment is never visible and
+   * never locked — `lockForUpdate` returns null before the comparison runs.
+   *
+   * So the company half of the guard is genuine defence-in-depth rather than the
+   * only thing standing between this caller and the write, and it is NOT
+   * independently observable here: reaching it needs a caller that ALSO holds some
+   * grant in COMPANY_A2, so the appointment is visible while the authorization
+   * target still resolves through COMPANY_A1. That fixture is recorded as
+   * P1-18-QA-COMPANYHALF rather than claimed as proven.
+   */
+  it('refuses an appointment in another company, and RLS refuses it first', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    const appointment = await newAppointment({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A2,
+      branchId: BRANCH_A2_OTHER_COMPANY,
+      vehicleId: vehicle,
+      requesterPartnerId: REQUESTER_A,
+      confirm: true,
+    });
+
+    authAs(SUBJ_COMPANY_WIDE);
+    const response = await createReception(
+      appointmentBody(vehicle, appointment, {
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A2_OTHER_COMPANY,
+      })
+    );
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as Body).code).toBe('ERR-RES-001');
+
+    expect(await visitFor(vehicle)).toBeUndefined();
+    expect(await appointmentStatus(appointment)).toBe('confirmed');
   });
 
   it('refuses a check-in from an appointment that is not confirmed', async () => {

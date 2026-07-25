@@ -17,13 +17,15 @@
  * apart would create a second authority over an invariant the database owns and
  * would leave a window in which a visit exists with no custody record.
  *
- * ## The origin decides scope, not the request body
+ * ## The origin and the body must agree on scope
  *
- * For an appointment origin the appointment's own company, branch, and vehicle
- * are authoritative. The composite foreign key and
- * `rec.guard_reception_visit_refs` would refuse an incoherent row anyway; failing
- * here names the offending field instead of returning a constraint violation, and
- * it means a caller cannot bind a visit into a branch it merely knows the id of.
+ * For an appointment origin the appointment's own company, branch, and vehicle are
+ * authoritative, AND the body must name the same company and branch. The equality
+ * requirement is the security boundary, not a convenience: `authorizationTarget`
+ * is derived from the body before the transaction opens, so a divergent body meant
+ * authorizing one branch and writing in another. The composite foreign key does
+ * NOT catch that — it only binds the visit to its appointment, which a wrong-branch
+ * row satisfies coherently. See `resolveOrigin` for the full account.
  *
  * ## Approval walks the frozen graph
  *

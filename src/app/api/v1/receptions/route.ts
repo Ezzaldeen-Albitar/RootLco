@@ -13,10 +13,12 @@
  * `rec.accept_check_in()` primitive in one statement, so there is no window in which
  * a vehicle is held with no custody record.
  *
- * `companyId` and `branchId` are the walk-in case's scope. For an appointment origin
- * the appointment's own scope and vehicle win, because the composite foreign key
- * binds the visit to the appointment inside one branch; that is the module's
- * decision, not this route's.
+ * `companyId` and `branchId` are the scope this operation is authorized against, so
+ * for an appointment origin the module REFUSES a body that names anything other
+ * than the appointment's own company and branch. They cannot merely be ignored in
+ * favour of the appointment's: the authorization target is read from this body
+ * before the transaction opens, so a divergent body would authorize one branch and
+ * write in another.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';

@@ -86,6 +86,13 @@ const BRANCH_B1 = 'b1100000-0000-4000-8000-000000000018';
 // --- Reference data --------------------------------------------------------
 const PARTNER_A = 'c1180000-0000-4000-8000-0000000000d1';
 const PARTNER_B = 'c1180000-0000-4000-8000-0000000000d2';
+/**
+ * A real tenant-A partner who holds NO role on any visit. Needed so the
+ * authorization-refusal authority test fails for the reason it claims — no
+ * authorizing role on this reception — and not because the partner is in another
+ * tenant or does not exist.
+ */
+const PARTNER_A_OUTSIDER = 'c1180000-0000-4000-8000-0000000000d3';
 const CATEGORY_A = 'c1180000-0000-4000-8000-0000000000e1';
 /** The damage-map template document and its one version. */
 const DOC_MAP = 'c1180000-0000-4000-8000-0000000000e2';
@@ -133,6 +140,8 @@ interface Body {
   readonly refusalType?: string;
   readonly receptionStatus?: string;
   readonly code?: string;
+  /** RFC 9457 extension member: `safeDetails.violations`, published at top level. */
+  readonly violations?: readonly { readonly path?: string; readonly rule?: string }[];
 }
 
 let admin: Pool;
@@ -578,6 +587,7 @@ beforeAll(async () => {
   for (const [partnerId, tenantId, name] of [
     [PARTNER_A, TENANT_A, 'Reception Requester A'],
     [PARTNER_B, TENANT_B, 'Reception Requester B'],
+    [PARTNER_A_OUTSIDER, TENANT_A, 'Reception Outsider A'],
   ] as const) {
     const client = await admin.connect();
     try {
@@ -1442,6 +1452,80 @@ describe('rec.reception-refusal', () => {
 
     expect(await refusals(visit)).toBe(1);
     expect(await auditCount('rec.reception.refusal_recorded', created.refusalId ?? '')).toBe(1);
+  });
+
+  /**
+   * An `authorization` refusal is no longer just evidence — `standingAuthorizations`
+   * reads it as the party's current decision, so it can block approval and
+   * conversion. That makes two guards load-bearing, and both are asserted here
+   * THROUGH THE ROUTE. Recording the same row admin-side would prove nothing about
+   * them: the SQL insert bypasses the service entirely.
+   *
+   * First guard — attribution. `rec.refusals.refusing_partner_id` is nullable and
+   * the only BEFORE INSERT trigger early-returns when no reason code is supplied,
+   * so the database accepts an unattributed authorization refusal. Standing
+   * decisions are superseded per party, so such a row would be a decline nothing
+   * could ever lift.
+   */
+  it('refuses an authorization refusal that names no party', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const refused = await recordRefusal(visit, {
+      refusalType: 'authorization',
+      refusalReasonId: REASON_ACTIVE,
+    });
+    expect(refused.status).toBe(422);
+    const problem = await json(refused);
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations?.[0]?.path).toBe('body.refusingPartnerId');
+    expect(await refusals(visit)).toBe(0);
+  });
+
+  /**
+   * Second guard — authority. `fk_refusals_partner` is tenant-wide, so any partner
+   * in the tenant is a valid FK target whether or not they are a party to this
+   * visit. Without `assertMayAuthorize`, `rec.reception.signature.manage` would be
+   * the cheapest way to block a reception permanently AND to record, append-only,
+   * that an uninvolved partner refused. `PARTNER_A_OUTSIDER` is a real tenant-A
+   * partner holding no role here, so the 409 is about authority and not about a
+   * missing row or the wrong tenant.
+   *
+   * The refusal is the same non-disclosing `ERR-TRN-001` the authorization route
+   * raises, so this never becomes a channel for probing which roles a party holds.
+   */
+  it('refuses an authorization refusal from a partner with no authorizing role', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const refused = await recordRefusal(visit, {
+      refusalType: 'authorization',
+      refusalReasonId: REASON_ACTIVE,
+      refusingPartnerId: PARTNER_A_OUTSIDER,
+    });
+    expect(refused.status).toBe(409);
+    expect((await json(refused)).code).toBe('ERR-TRN-001');
+    expect(await refusals(visit)).toBe(0);
+  });
+
+  /**
+   * And the guards are not simply refusing everything: the service requester —
+   * `service_requester` is in the frozen `ck_authorizations_role` set — records the
+   * same refusal successfully. Without this the two tests above would still pass if
+   * the route were broken outright.
+   */
+  it('accepts an authorization refusal from the active service requester', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const accepted = await recordRefusal(visit, {
+      refusalType: 'authorization',
+      refusalReasonId: REASON_ACTIVE,
+      refusingPartnerId: PARTNER_A,
+    });
+    expect(accepted.status).toBe(201);
+    expect((await json(accepted)).refusalType).toBe('authorization');
+    expect(await refusals(visit)).toBe(1);
   });
 
   /**
