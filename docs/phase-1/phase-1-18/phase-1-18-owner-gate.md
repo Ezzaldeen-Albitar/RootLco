@@ -22,6 +22,24 @@ prior phases use.
 | Migrations       | 119 (consumed unchanged; P1-18 adds none)                       |
 | Feature branch   | `feature/p1-18-appointment-reception-backend`                   |
 
+The anchors above are the state at phase start and are left as recorded. They
+are no longer the state the gate will be verified against, because the phase's
+feature branch merged and was then remediated three times. The current anchors:
+
+| Anchor           | Value                                                                      |
+| ---------------- | -------------------------------------------------------------------------- |
+| `origin/develop` | `fb50ef408354d83cedfb21d358a647673dca91f8` (after PR #77)                  |
+| `origin/main`    | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` (still untouched by this phase) |
+| Merged           | PR #75 (feature), PR #76 (first remediation), PR #77 (second remediation)  |
+| Current branch   | `fix/p1-18-scoped-authorization-containment` (third remediation, unmerged) |
+| Migrations       | 119 (still consumed unchanged; P1-18 adds none)                            |
+
+The third remediation exists because the final review of PR #77 proved that ten
+id-addressed branch-scoped operations were still authorized scope-blind. See
+README §0 and §4.1. Conditions 7, 8, 9, 10, 12, 15, 16, 17 and 18 must be
+re-verified against the third remediation's candidate SHA, not against any
+evidence produced before it.
+
 ## 1. What this gate governs
 
 The backend for appointment booking and vehicle reception on the frozen Phase 1-8
@@ -52,7 +70,7 @@ the exact candidate SHA.
 | 9   | Mutation testing on authorization, tenant isolation, company/branch scope, idempotency, concurrency, append-only evidence, approval prerequisite and conversion exactly-once | **Pending** |
 | 10  | Security review (P1-18-SEC-001…004) with zero Critical and zero High outstanding                                                                                             | **Pending** |
 | 11  | QA completion (P1-18-QA-001…005) with real tenant-B principals and runtime roles                                                                                             | **Pending** |
-| 12  | Test floors held or exceeded: Unit ≥ 733, DB ≥ 1547, Backend ≥ 567                                                                                                           | **Pending** |
+| 12  | Test floors held or exceeded: Unit ≥ 746, DB ≥ 1547, Backend ≥ 693 (raised from 733/1547/567 by the merges of PR #75, #76 and #77)                                           | **Pending** |
 | 13  | Observability and DevOps (P1-18-DO-001…002) with no sensitive value logged                                                                                                   | **Pending** |
 | 14  | Documentation (P1-18-DOC-001…002) synchronized, including recorded canonical drift                                                                                           | **Pending** |
 | 15  | Full local gate battery green in CI-equivalent order                                                                                                                         | **Pending** |
@@ -61,6 +79,8 @@ the exact candidate SHA.
 | 18  | Independent correctness, security, QA and architecture reviews resolved                                                                                                      | **Pending** |
 | 19  | Feature pull request open to `develop`, conflict-free, all hosted checks green                                                                                               | **Pending** |
 | 20  | `origin/main` untouched by this phase                                                                                                                                        | **Pending** |
+| 21  | The ten id-addressed branch-scoped operations re-authorize against the LOCKED row inside the request transaction, and an empty deferred target fails closed                  | **Pending** |
+| 22  | Each of the ten runs under its OWN operation declaration, pinned by an assertion rather than by the authorization coverage gate, which does not check this                   | **Pending** |
 
 ## 3. Exclusions
 

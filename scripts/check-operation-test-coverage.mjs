@@ -265,7 +265,10 @@ export const MANIFEST = {
     note: 'appointment + audit + outbox commit in one transaction; an injected failure leaves none of the three (rollback); a tenant-B vehicle or requester is unreachable (cross-tenant); a branch outside the caller grant is refused (isolation); a timezone-less window and an inverted window are refused (denial)',
   },
   'apt.appointment-reschedule': {
-    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -279,7 +282,10 @@ export const MANIFEST = {
     note: 'moves the CONFIRMED window only — the requested window is immutable, proved by reading it back unchanged; a second confirmed appointment overlapping the same vehicle is refused by the frozen EXCLUDE as 409 (denial); a wrong If-Match is refused (stale-version); two concurrent reschedules leave exactly one committed winner (concurrency)',
   },
   'apt.appointment-cancel': {
-    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -292,7 +298,10 @@ export const MANIFEST = {
     note: 'terminal and set-once; cancelling an already-cancelled or no-show appointment is refused (denial); cancellation writes reason + time + actor together, so the frozen coherence CHECK can never see a half-cancelled row; distinct from no-show and never a substitute for it',
   },
   'apt.appointment-no-show': {
-    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -320,17 +329,26 @@ export const MANIFEST = {
     note: 'both origin modes: a walk-in creates its own origin record (no fabricated appointment) and an appointment origin also moves the appointment to checked_in, all in one transaction; visit + service-requester role + accepted custody + status history are written atomically by rec.accept_check_in and an injected failure leaves none of them (rollback); one origin is consumed at most once and two concurrent check-ins of the same origin leave exactly one visit (concurrency)',
   },
   'rec.reception-party-role': {
-    files: ['tests/backend/p1-18-reception-parties.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-parties.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'roles supersede by date rather than being edited in place — the frozen immutability trigger makes in-place edits impossible, proved by reading the superseded row back unchanged with only valid_to set; a role outside the frozen 7-value vocabulary is refused (denial)',
   },
   'rec.reception-authorization': {
-    files: ['tests/backend/p1-18-reception-parties.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-parties.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'fails closed: a partner holding no ACTIVE authorizing role on the visit is refused by the frozen authority guard (denial) and the refusal message never discloses which roles that partner does hold; vehicle_user and payer are not authorizing roles; the row is append-only and cannot be updated by any application role',
   },
   'rec.reception-condition-evidence': {
-    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -343,17 +361,26 @@ export const MANIFEST = {
     note: 'one command, eight evidence kinds; a damage mark outside the 0..1 coordinate box and a finding on a finalised inspection are refused (denial); a damage map bound to a version that does not belong to its document is refused by the frozen guard; an out-of-scope parent inspection or map answers 404 rather than a foreign-key error (cross-tenant); prior evidence is never overwritten',
   },
   'rec.reception-signature': {
-    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'bound to an exact immutable document version (a version belonging to another document is refused); append-only — no application role holds UPDATE or DELETE on rec.signatures, proved by attempting both; records an acknowledgement, never a certified identity proof',
   },
   'rec.reception-refusal': {
-    files: ['tests/backend/p1-18-reception-evidence.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'a refusal is preserved as its own fact and is never readable as consent — proved by showing an approval attempt still fails after a signature refusal is recorded; an archived refusal reason cannot be newly selected (denial); append-only and unerasable',
   },
   'rec.reception-approve': {
-    files: ['tests/backend/p1-18-reception-approval.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-approval.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -367,7 +394,10 @@ export const MANIFEST = {
     note: 'prerequisites are exactly the frozen activation contract and nothing invented: without an active service requester, or without an approved authorization, the transition is refused (denial); a wrong If-Match is refused (stale-version); two concurrent approvals leave exactly one committed winner and exactly one outbox row (concurrency)',
   },
   'rec.reception-convert-to-work-order': {
-    files: ['tests/backend/p1-18-reception-conversion.test.ts'],
+    files: [
+      'tests/backend/p1-18-reception-conversion.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
     required: [
       'success',
       'denial',

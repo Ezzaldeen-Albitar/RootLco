@@ -58,12 +58,15 @@ export async function POST(
   return handleOperation(
     RECEPTION_REFUSAL_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
+    async ({ db, request: raw, authorizeScope }) => ({
       status: 201,
       body: await receptionModule().receptionEvidence.recordRefusal(
         db,
         params.receptionId,
-        await parseJsonBody(raw, Body)
+        await parseJsonBody(raw, Body),
+        // Re-authorized against the LOCKED visit's branch, not this request:
+        // `scope: 'branch'` is inert without a target (P1-18-A-01).
+        authorizeScope
       ),
     }),
     { params, body }

@@ -17,7 +17,10 @@
       "method": "POST",
       "path": "/appointments/{appointmentId}/cancel",
       "public": false,
-      "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -123,7 +126,10 @@
       "method": "POST",
       "path": "/appointments/{appointmentId}/no-show",
       "public": false,
-      "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -181,7 +187,10 @@
       "method": "POST",
       "path": "/appointments/{appointmentId}/reschedule",
       "public": false,
-      "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -242,7 +251,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/approve",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-approval.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-approval.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -303,7 +315,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/authorizations",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-parties.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-parties.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -348,7 +363,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/condition-evidence",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -403,7 +421,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/convert-to-work-order",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-conversion.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-conversion.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -525,7 +546,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/party-roles",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-parties.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-parties.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -570,7 +594,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/refusals",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",
@@ -615,7 +642,10 @@
       "method": "POST",
       "path": "/receptions/{receptionId}/signatures",
       "public": false,
-      "files": ["tests/backend/p1-18-reception-evidence.test.ts"],
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",

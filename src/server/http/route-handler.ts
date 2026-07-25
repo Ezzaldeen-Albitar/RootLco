@@ -39,7 +39,12 @@ import { contextLogFields, elapsedMs, type RequestContext } from '../context/req
 import { resolveRequestContext } from '../context/resolve-context';
 import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
-import { requirePermissions, type AuthorizationTarget } from '../auth/authorization';
+import {
+  requirePermissions,
+  requireScopedPermissions,
+  type AuthorizationTarget,
+  type ScopeAuthorizer,
+} from '../auth/authorization';
 import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
 import {
@@ -80,6 +85,27 @@ export interface HandlerInput {
    * `X-Correlation-Id` the caller received. Passing it removes that trap.
    */
   readonly correlationId: string;
+  /**
+   * Re-evaluates this operation's permissions against a scope discovered INSIDE
+   * the transaction (P1-18-A-01).
+   *
+   * The pre-handler check runs before anything is read, so an operation
+   * addressed by id — `POST /receptions/{receptionId}/approve` and the nine
+   * others like it — has no company or branch to name yet. With an empty target
+   * `requiresScopedEvaluation` returns false whatever the declared scope is, and
+   * the check falls back to `iam.has_permission`, which does not consult grant
+   * scope at all. RLS cannot make up the difference: `app.branch_ids` is the
+   * union of every active grant regardless of which permission it carries, so a
+   * principal holding this permission in branch B1 and any grant at all in B2
+   * both passes the check and sees the B2 row.
+   *
+   * Calling this once the row is locked closes that: the target is the row's own
+   * company and branch, the evaluation is `iam.has_permission_in_scope`, and a
+   * denial throws inside the transaction so nothing it would have written
+   * survives. The permission codes stay in `defineOperation` — this re-runs the
+   * operation's own declaration rather than restating it.
+   */
+  readonly authorizeScope: ScopeAuthorizer;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -302,6 +328,12 @@ export async function handleOperation<T>(
             params: Object.freeze({ ...(options.params ?? {}) }),
             expectedVersion,
             correlationId,
+            // `requireScopedPermissions`, not `requirePermissions`: the deferred
+            // check fails closed on an empty target, because reaching it without
+            // the resource's own scope would degrade to a scope-blind evaluation
+            // and reopen P1-18-A-01 through this very API.
+            authorizeScope: (target: AuthorizationTarget) =>
+              requireScopedPermissions(db, operation, target),
           });
 
         if (!idempotencyKey || !fingerprint) return execute();
@@ -367,6 +399,13 @@ async function handlePublic<T>(
     params: Object.freeze({ ...(options.params ?? {}) }),
     expectedVersion: null,
     correlationId,
+    // A public operation has no principal and no transaction, so there is nothing
+    // to re-authorize against. Failing loudly is right: a public handler asking
+    // for a scoped decision is a coding error, not a denial to report to the
+    // caller, and returning "allowed" would be the dangerous reading.
+    authorizeScope: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot authorize a scope`);
+    },
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });
   return new Response(JSON.stringify(result.body), {

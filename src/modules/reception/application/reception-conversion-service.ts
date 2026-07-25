@@ -25,6 +25,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type {
@@ -62,12 +63,24 @@ export class ReceptionConversionService extends ApplicationService {
   async convertToWorkOrder(
     db: DbHandle,
     receptionVisitId: string,
-    expectedVersion: number
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionConverted> {
     const visit = await this.receptions.lockVisit(db, receptionVisitId);
     if (!visit) {
       throw new AppFailure('ERR-RES-001', { message: 'Reception was not found' });
     }
+
+    // Authorize against the LOCKED visit's own branch before anything else
+    // (P1-18-A-01). This route declares `scope: 'branch'` but is addressed by id,
+    // so the pre-handler check had no target and fell back to the scope-blind
+    // `iam.has_permission`; `app.branch_ids` is the permission-blind union of the
+    // caller's grants, so RLS admits the row too. Placing the check here — before
+    // the existing-work-order read, before `assertConvertible`, before the
+    // standing-authorization evaluation, and before any allocator advance —
+    // means a denial rolls back with no work order, no linkage, no lifecycle
+    // change, no audit row and no outbox envelope.
+    await authorizeScope({ companyId: visit.companyId, branchId: visit.branchId });
 
     // Read inside the lock, and before the lifecycle check: a visit that has
     // already been converted is terminal, so `assertConvertible` would refuse it

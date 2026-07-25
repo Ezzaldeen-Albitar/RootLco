@@ -51,7 +51,7 @@ export async function POST(
   return handleOperation(
     APPOINTMENT_CANCEL_OPERATION,
     request,
-    async ({ db, request: raw, expectedVersion }) => {
+    async ({ db, request: raw, expectedVersion, authorizeScope }) => {
       const input = await parseJsonBody(raw, Body);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -60,7 +60,10 @@ export async function POST(
         db,
         params.appointmentId,
         expectedVersion,
-        input
+        input,
+        // Re-authorized against the LOCKED appointment's branch, not this
+        // request: `scope: 'branch'` is inert without a target (P1-18-A-01).
+        authorizeScope
       );
       return { status: 200, body: changed, recordVersion: changed.recordVersion };
     },

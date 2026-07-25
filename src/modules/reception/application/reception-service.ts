@@ -39,6 +39,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
@@ -229,9 +230,10 @@ export class ReceptionService extends ApplicationService {
   async assignPartyRole(
     db: DbHandle,
     receptionVisitId: string,
-    input: PartyRoleInput
+    input: PartyRoleInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<PartyRoleAssigned> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertEvidenceRecordable(visit.receptionStatus);
     // `assignment_source` carries only a non-blank CHECK, so a blank value is
     // normalised to absent rather than refused: a blank string and no value at all
@@ -297,9 +299,10 @@ export class ReceptionService extends ApplicationService {
   async recordAuthorization(
     db: DbHandle,
     receptionVisitId: string,
-    input: AuthorizationInput
+    input: AuthorizationInput,
+    authorizeScope: ScopeAuthorizer
   ): Promise<AuthorizationRecorded> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertEvidenceRecordable(visit.receptionStatus);
 
     // The database proves the partner MAY decide; it never checks that the role
@@ -353,9 +356,10 @@ export class ReceptionService extends ApplicationService {
   async approve(
     db: DbHandle,
     receptionVisitId: string,
-    expectedVersion: number
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionApproved> {
-    const visit = await this.requireVisit(db, receptionVisitId);
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
     assertApprovable(visit.receptionStatus);
 
     // `rec.guard_reception_transition` asks only whether SOME approved row has
@@ -449,13 +453,6 @@ export class ReceptionService extends ApplicationService {
       if (!appointment) {
         throw new AppFailure('ERR-RES-001', { message: 'Appointment was not found' });
       }
-      assertCheckInEligible(appointment.lifecycleStatus);
-      if (appointment.vehicleId !== plan.vehicleId) {
-        throw new AppFailure('ERR-VAL-001', {
-          message: 'The vehicle being received is not the vehicle the appointment was booked for',
-          safeDetails: { violations: [{ path: 'body.vehicleId', rule: 'incoherent_reference' }] },
-        });
-      }
       // The body's company and branch MUST equal the appointment's.
       //
       // This is the security boundary of the whole operation, and the previous
@@ -479,6 +476,20 @@ export class ReceptionService extends ApplicationService {
       // pipeline happens to run in. The refusal is a validation failure naming
       // only the fields the caller sent: it discloses nothing about the
       // appointment it could not already see.
+      //
+      // It runs FIRST, before the lifecycle and vehicle tests below, and that
+      // order is the point rather than an accident. `lockForUpdate` filters on
+      // tenant and id only, and RLS admits any row in `app.branch_ids` — the
+      // permission-blind union of every grant — so a caller holding B1 plus any
+      // grant in B2 can reach a B2 appointment here. When these tests ran first
+      // they answered for it: `assertCheckInEligible` names the appointment's
+      // exact lifecycle state in its message, and the vehicle comparison
+      // confirms or denies that a given appointment was booked for a given
+      // vehicle. Both are facts about a row in a branch the caller holds no
+      // capability in, disclosed before any scope decision had been made. This
+      // is the same doctrine `reception-evidence-service.requireRecordableVisit`
+      // states — authorize before the lifecycle test — applied to the one path
+      // that was contradicting it.
       if (appointment.companyId !== plan.companyId || appointment.branchId !== plan.branchId) {
         throw new AppFailure('ERR-VAL-001', {
           message:
@@ -487,6 +498,14 @@ export class ReceptionService extends ApplicationService {
           safeDetails: {
             violations: [{ path: 'body.branchId', rule: 'incoherent_reference' }],
           },
+        });
+      }
+
+      assertCheckInEligible(appointment.lifecycleStatus);
+      if (appointment.vehicleId !== plan.vehicleId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The vehicle being received is not the vehicle the appointment was booked for',
+          safeDetails: { violations: [{ path: 'body.vehicleId', rule: 'incoherent_reference' }] },
         });
       }
 
@@ -527,15 +546,36 @@ export class ReceptionService extends ApplicationService {
     };
   }
 
-  /** Locks the live visit for the rest of the transaction, or reports a 404. */
+  /**
+   * Locks the live visit for the rest of the transaction, or reports a 404, and
+   * then authorizes against the branch the locked visit actually belongs to
+   * (P1-18-A-01).
+   *
+   * These commands are addressed by the visit id, so the route-level check ran
+   * with no company or branch to name. An empty target makes
+   * `requiresScopedEvaluation` return false however `scope: 'branch'` is
+   * declared, and the decision falls to `iam.has_permission`, which does not
+   * consult grant scope. Forced RLS does not stand in for it: `app.branch_ids`
+   * is the union of every active grant, irrespective of which permission each
+   * one carries, so a caller holding this permission only in another branch
+   * still sees — and could write — this row.
+   *
+   * Re-authorizing after the lock is what makes `scope: 'branch'` true. The
+   * target is the visit's own company and branch, it cannot move while the row
+   * is locked, and a denial throws inside the transaction, so no party role,
+   * authorization row, status history, custody event, audit record or outbox
+   * envelope survives.
+   */
   private async requireVisit(
     db: DbHandle,
-    receptionVisitId: string
+    receptionVisitId: string,
+    authorizeScope: ScopeAuthorizer
   ): Promise<ReceptionVisitLockRow> {
     const visit = await this.receptions.lockVisit(db, receptionVisitId);
     if (!visit) {
       throw new AppFailure('ERR-RES-001', { message: 'Reception was not found' });
     }
+    await authorizeScope({ companyId: visit.companyId, branchId: visit.branchId });
     return visit;
   }
 
