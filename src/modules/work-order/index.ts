@@ -26,7 +26,11 @@
  */
 import { composeModule } from '@/server/layering';
 import { WorkOrderCatalogRepository } from './data/work-order-catalog-repository';
+export type { JobRow, StatusHistoryRow, WorkOrderRow } from './data/work-order-repository';
+export type { ClosureBlocker, ClosureEligibility } from './application/work-order-service';
+import { WorkOrderRepository } from './data/work-order-repository';
 import { WorkOrderCatalogService } from './application/work-order-catalog-service';
+import { WorkOrderService } from './application/work-order-service';
 
 export type {
   JobStateRow,
@@ -56,7 +60,11 @@ export {
 /** Composition root: constructs the module's services once per process. */
 export const workOrderModule = composeModule({
   module: 'work-order',
-  create: () => ({
-    workOrderCatalog: new WorkOrderCatalogService(new WorkOrderCatalogRepository()),
-  }),
+  create: () => {
+    const catalog = new WorkOrderCatalogService(new WorkOrderCatalogRepository());
+    return {
+      workOrderCatalog: catalog,
+      workOrders: new WorkOrderService(new WorkOrderRepository(), catalog),
+    };
+  },
 });

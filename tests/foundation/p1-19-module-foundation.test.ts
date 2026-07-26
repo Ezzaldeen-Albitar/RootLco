@@ -71,6 +71,41 @@ const OWNED_SCHEMAS: Readonly<Record<string, readonly string[]>> = {
 /** Schemas owned by a P1-19 sibling — reaching into one is the violation. */
 const SIBLING_SCHEMAS = ['wo', 'tech', 'dia', 'qms'] as const;
 
+/**
+ * Cross-schema reads that are permitted, each with the reason.
+ *
+ * An allow-list is only honest if it is short, justified and asserted — an
+ * unexplained exception is indistinguishable from a violation nobody noticed. Both
+ * entries below exist because `wo.guard_work_order_closure` itself joins across
+ * these schemas: B2 asks whether a labor session on one of this order's jobs is
+ * still open, and B4 whether a `requires_diagnostic` job has a completed report.
+ * Re-asking those two questions through `technician` and `diagnostics` would mean
+ * inventing two public methods that exist only to answer a closure predicate, and
+ * the predicate would then live in three places instead of one.
+ *
+ * These are read-only closure predicates, never that domain's behaviour. Any
+ * OTHER cross-schema reference — and any write at all — still fails.
+ */
+const PERMITTED_CROSS_SCHEMA: readonly {
+  readonly module: string;
+  readonly file: string;
+  readonly schema: string;
+  readonly why: string;
+}[] = [
+  {
+    module: 'work-order',
+    file: 'work-order-repository.ts',
+    schema: 'tech',
+    why: 'closure blocker B2 — an open labor session on one of this order’s jobs',
+  },
+  {
+    module: 'work-order',
+    file: 'work-order-repository.ts',
+    schema: 'dia',
+    why: 'closure blocker B4 — a requires_diagnostic job with no completed report',
+  },
+];
+
 describe('P1-19 module foundation', () => {
   it('gives each of the four modules the standard layout and a single public surface', () => {
     for (const moduleName of MODULES) {
@@ -100,12 +135,48 @@ describe('P1-19 module foundation', () => {
           // Wave 8 needs — and equally to `USING`, `ONLY`, `LATERAL`, quoted
           // identifiers and template interpolation. Matching `schema.` directly
           // closes all of those at once.
+          const permitted = PERMITTED_CROSS_SCHEMA.some(
+            (entry) =>
+              entry.module === moduleName &&
+              file.replace(/\\/g, '/').endsWith(`/${entry.file}`) &&
+              entry.schema === schema
+          );
+          if (permitted) continue;
           expect(
             new RegExp(String.raw`(^|[^\w."'])"?${schema}"?\s*\.\s*\w`, 'i').test(code),
             `${file} references ${schema}. — use the owning module's public surface`
           ).toBe(false);
         }
       }
+    }
+  });
+
+  it('permits only the two documented cross-schema closure reads, and only as reads', () => {
+    // The allow-list must stay small and must never cover a write. If a later wave
+    // needs a third exception, this assertion makes adding it a visible decision
+    // rather than a quiet one.
+    expect(PERMITTED_CROSS_SCHEMA).toHaveLength(2);
+    for (const entry of PERMITTED_CROSS_SCHEMA) {
+      expect(entry.why.length).toBeGreaterThan(20);
+      const file = join(ROOT, 'src', 'modules', entry.module, 'data', entry.file);
+      const code = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      // The exception must still be USED. A stale entry would silently widen the
+      // guard for a file that no longer needs it.
+      const ref = new RegExp(String.raw`(^|[^\w."'])${entry.schema}\s*\.\s*\w`, 'i');
+      expect(
+        ref.test(code),
+        `${entry.file} no longer reads ${entry.schema}. — remove the exception`
+      ).toBe(true);
+      // Read-only. No write verb may precede the foreign schema anywhere in the file.
+      const write = new RegExp(
+        String.raw`(INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+"?${entry.schema}"?\s*\.`,
+        'i'
+      );
+      expect(write.test(code), `${entry.file} WRITES to ${entry.schema}. — never permitted`).toBe(
+        false
+      );
     }
   });
 
