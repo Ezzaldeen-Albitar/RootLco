@@ -202,14 +202,14 @@ migrations, plus the platform catalogs the earlier phases own.
 Two independent read-only reviewers ran against the full Wave 3 diff: one on
 architecture and database contract, one on security and QA. Neither ran tests,
 edited a file, or ran state-changing git; both verified claims against the live
-catalog with read-only .
+catalog with read-only `psql`.
 
 **0 Critical. 1 High. 10 Medium. Every confirmed finding is fixed** — see commit
-. Each was re-verified before acting rather than taken on trust, and the
+`81c9d5c`. Each was re-verified before acting rather than taken on trust, and the
 High was reproduced with a runnable script before a line was changed.
 
 The High is worth stating plainly because it was in code, not prose:
-read a DATE with UTC accessors that the driver never
+`certificationIsValidOn` read a DATE with UTC accessors that the driver never
 produces in UTC, so a certification valid through its expiry day was refused on
 that day, east of Greenwich — the exact off-by-one its own docblock promised could
 not happen. This machine sits at UTC+3 and reproduced it on the first attempt.
@@ -223,7 +223,7 @@ class of defect the P1-18 phase kept finding, and the reason both reviewers were
 asked to check comments against code rather than only code against schema.
 
 Security posture was reviewed and found clean: all 17 statements bind tenancy from
-and none takes it from an argument; the two template
+`context.principal.tenantId` and none takes it from an argument; the two template
 interpolations are closed unions with literal-only call sites; and BR-QMS-001
 independence survives one principal holding both rework codes, because the
 constraint enforces it on identity rather than on permission.
