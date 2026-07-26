@@ -141,6 +141,10 @@ import '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
 import '@/app/api/v1/jobs/[jobId]/route';
 import '@/app/api/v1/jobs/[jobId]/transition/route';
 import '@/app/api/v1/jobs/[jobId]/history/route';
+import '@/app/api/v1/jobs/[jobId]/assignments/route';
+import '@/app/api/v1/jobs/[jobId]/reassignments/route';
+import '@/app/api/v1/assignments/[assignmentId]/end/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

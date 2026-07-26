@@ -110,13 +110,34 @@ ordering is not index-aligned and no migration is authorised to add one.
 | `wo.job.state_changed` audit action registered, sorted pin updated          | **Done, green** |
 | Job transition — graph, reason GUC, assignment precondition mapped          | **Done, green** |
 | Job status ledger — paginated, origin block                                 | **Done, green** |
-| Technician assignment / unassignment / reassignment                         | **Not started** |
+| Technician assignment / unassignment / reassignment, queue                  | **Done, green** |
 | Labour sessions — start, stop, pause/resume, correction                     | **Not started** |
-| Technician queue and available-technician query                             | **Not started** |
+| Available-technician query (ranked candidates)                              | **Not started** |
 | Work-order service lines and required-part demand                           | **Not started** |
 
-Unit **843** / Backend **835** (was 825) / P1-19 operation depth **10/10**, OpenAPI
-**104 paths / 120 operations**.
+Unit **843** / Backend **853** (was 825) / P1-19 operation depth **15/15**, 0
+pending, OpenAPI **108 paths / 125 operations**. CI **#212 Success 4/4** on the
+Wave 4 head `ff82189`, verified on the exact SHA.
+
+Assignment slice, in one paragraph so it is not re-derived: `wo.job_assignments`
+is append-then-close — ending stamps `valid_to` plus a reason
+(`ck_job_assignments_end_reason`) and the row survives, so the row set IS the
+history. `uq_job_assignments_active_primary` is a PARTIAL unique index, so a
+second live primary is `23505` mapped to `ERR-RES-002`, while `assist` is
+unconstrained. Reassignment is ONE transaction because two client calls would
+leave a window with no active assignment, during which the job cannot enter any
+`assignment_required` state — and the rollback case is sharp: the end is written
+BEFORE the incoming technician is evaluated, so an ineligible incoming profile
+must leave the outgoing assignment open. Eligibility lives in the `technician`
+module and is reached through its public surface, because it is decided entirely
+from `tech` rows. Availability is checked against the UNION of intervals: a split
+shift is two touching half-open rows and no single one spans a window crossing the
+boundary.
+
+Two false positives fixed in this phase's own guards while doing it: the
+graph-mirroring assertion's `\b<state>\s*:` matched the EVENT KEY
+`` `job.assigned:${id}` `` and flagged the one file that reads the catalog
+correctly — now `(?<![\w.-])`, which still fails a bare `assigned:` object key.
 
 A defect Wave 4 left and Wave 5 fixed: the three published events still carried
 `implementedIn: null`. The foundation test asserted null for all eleven P1-19

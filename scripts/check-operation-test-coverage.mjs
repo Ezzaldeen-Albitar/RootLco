@@ -488,6 +488,49 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
   },
+  'wo.job-assignment-create': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'eligibility is complete and pre-write: three failures come back as three reasons in one response (denial), and a window crossing a SPLIT-SHIFT boundary is accepted while the same test proves no single tech.technician_availability row spans it — so the acceptance can only have come from the union check; an inactive profile, an out-of-branch profile and an uncovered window are each refused; uq_job_assignments_active_primary is a PARTIAL unique index so a second live primary is a 409 while assist is unconstrained, and a forced race leaves exactly one primary; assignment is what unblocks planned→assigned, proved by walking the job to completed afterwards',
+  },
+  'wo.job-assignment-list': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the append-only history, ended rows included — ending stamps valid_to and the row SURVIVES, which is what makes "who worked this vehicle in March" answerable; requires tech.technician.read rather than wo.work_order.read, because an assignment names a member of staff and a caller who may read the board is not entitled to the roster (denial: the reader principal is refused)',
+  },
+  'wo.job-assignment-end': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'valid_to is SERVER-stamped and the reason is mandatory in the schema too (ck_job_assignments_end_reason), because removing a technician from work is accountable; a blank reason, a stale version, a missing If-Match and an already-ended assignment are four distinct refusals; ending frees the primary slot, proved by assigning again',
+  },
+  'wo.job-reassignment': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'ONE transaction, because two client calls would leave a window with no active assignment during which wo.guard_job_transition refuses every assignment_required state; the rollback case is the sharp one — the end is written BEFORE the incoming technician is evaluated, so an ineligible incoming profile must leave the outgoing assignment open with no reason and no audit row; a handover to the incumbent is refused rather than churning the history, and with no incumbent it degenerates to an assignment and reports ended: null',
+  },
+  'tech.technician-queue': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
+  },
   'wo.job-transition': {
     files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
     required: [

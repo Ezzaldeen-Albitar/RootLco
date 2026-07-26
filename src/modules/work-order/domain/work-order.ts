@@ -81,6 +81,16 @@ export const MAX_JOB_TITLE = 200;
 export const MAX_JOB_TYPE = 64;
 
 /**
+ * Assignment roles, verbatim from `ck_job_assignments_role`.
+ *
+ * `primary` is the constrained one: `uq_job_assignments_active_primary` — a partial
+ * unique index — allows at most one live primary per job. `assist` carries no such
+ * limit, because a job may legitimately have several helpers.
+ */
+export const ASSIGNMENT_ROLES = ['primary', 'assist'] as const;
+export type AssignmentRole = (typeof ASSIGNMENT_ROLES)[number];
+
+/**
  * The closure blockers, mirroring `wo.guard_work_order_closure()` exactly.
  *
  * The trigger is the authority and stays the authority: it runs inside the same

@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 120,
-    "publicApi": 120,
+    "registered": 125,
+    "publicApi": 125,
     "internal": 0,
-    "withRequiredEvidence": 105,
+    "withRequiredEvidence": 110,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -47,9 +47,9 @@
       "metadataOnly": 0
     },
     "p1_19": {
-      "registered": 10,
-      "publicApi": 10,
-      "operationDepth": 10,
+      "registered": 15,
+      "publicApi": 15,
+      "operationDepth": 15,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -2795,6 +2795,38 @@
       "unitOnly": false
     },
     {
+      "id": "tech.technician-queue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/technicians/{technicianProfileId}/queue",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "veh.vehicle-authorized-party-add",
       "surface": "public-api",
       "method": "POST",
@@ -3433,6 +3465,141 @@
       "unitOnly": false
     },
     {
+      "id": "wo.job-assignment-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/jobs/{jobId}/assignments",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "idempotency",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.job-assignment-end",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/assignments/{assignmentId}/end",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "stale-version"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.job-assignment-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs/{jobId}/assignments",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "wo.job-create",
       "surface": "public-api",
       "method": "POST",
@@ -3501,6 +3668,64 @@
         "cross-tenant",
         "denial",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.job-reassignment",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/jobs/{jobId}/reassignments",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "idempotency",
+        "rollback"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "rollback",
         "route",
         "service",
         "success"

@@ -199,6 +199,11 @@ describe('reserved-name registry', () => {
       'consent.changed',
       'document.link.changed',
       'document.version.registered',
+      // Wave 5 also publishes `job.assigned`. Its owner is `wo` and not `tech`
+      // because the assignment row lives in `wo.job_assignments` and is written by
+      // the work-order module; `buildEventEnvelope` refuses a producer whose leading
+      // segment differs from the owner, so `tech` would have made the write throw.
+      'job.assigned',
       // P1-19 publishes from `src/modules/work-order`: `work-order.state-changed`
       // and `work-order.closed` in Wave 4, `job.state-changed` in Wave 5. Closure
       // is a separate name from the generic state change because closure is the

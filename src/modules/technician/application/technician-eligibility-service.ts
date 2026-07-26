@@ -17,6 +17,7 @@ import type {
   SkillLevelRow,
   SkillRow,
   TechnicianCatalogRepository,
+  TechnicianProfileRow,
 } from '../data/technician-catalog-repository';
 import {
   assertEligible,
@@ -67,6 +68,17 @@ export class TechnicianEligibilityService extends ApplicationService {
   /** Active certification catalog. */
   async certifications(db: DbHandle): Promise<readonly CertificationRow[]> {
     return this.repository.certifications(db);
+  }
+
+  /**
+   * One technician profile, or null when absent or out of the caller's scope.
+   *
+   * Exposed because a `wo` caller needs the profile's OWN company and branch to
+   * authorize against — reading `tech.technician_profiles` itself would be the
+   * cross-module table access ADR-001 rule 3 prohibits.
+   */
+  async profile(db: DbHandle, technicianProfileId: string): Promise<TechnicianProfileRow | null> {
+    return this.repository.profile(db, technicianProfileId);
   }
 
   /**

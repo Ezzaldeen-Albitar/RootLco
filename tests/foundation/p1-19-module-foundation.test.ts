@@ -237,8 +237,17 @@ describe('P1-19 module foundation', () => {
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/^\s*\/\/.*$/gm, '');
         for (const state of states) {
+          // The object-key form is `(?<![\w.-])` rather than `\b`, and that
+          // distinction is load-bearing in both directions. `\b` matched
+          // `` `job.assigned:${id}` `` — an EVENT KEY, whose `job.assigned` is the
+          // catalog's own wire name and has nothing to do with the job graph — so the
+          // guard flagged the one place that reads the catalog correctly. Excluding a
+          // preceding `.`/`-`/word character keeps a bare `assigned:` object key
+          // (which IS how a mirror gets written) failing, while a dotted event or
+          // permission name passes. The quoted-literal alternative is untouched, so
+          // `'assigned'` on its own still trips.
           expect(
-            new RegExp(String.raw`(['"\`]${state}['"\`]|\b${state}\s*:)`).test(code),
+            new RegExp(String.raw`(['"\`]${state}['"\`]|(?<![\w.-])${state}\s*:)`).test(code),
             `${file} names the graph state "${state}" — read the catalog, do not mirror it`
           ).toBe(false);
         }
@@ -322,7 +331,12 @@ describe('P1-19 module foundation', () => {
       // `job.state-changed`. Everything else in this phase's allocation is still a
       // reserved name, and a name that started claiming an implementation without a
       // producer is a documentation defect this assertion exists to catch.
-      const published = ['work-order.state-changed', 'work-order.closed', 'job.state-changed'];
+      const published = [
+        'work-order.state-changed',
+        'work-order.closed',
+        'job.state-changed',
+        'job.assigned',
+      ];
       if (published.includes(entry.eventType)) {
         expect(entry.implementedIn).toBe('P1-19');
       } else {

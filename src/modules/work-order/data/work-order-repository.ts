@@ -119,6 +119,68 @@ export interface BlockerHit {
   readonly code: 'B1' | 'B2' | 'B3' | 'B4' | 'B5' | 'B6';
 }
 
+/**
+ * One temporal job assignment. `validTo === null` means it is the live one.
+ *
+ * `wo.job_assignments` is append-then-close: ending an assignment stamps `valid_to`
+ * and a mandatory reason, and the row survives. The set of rows for a job IS its
+ * assignment history, which is why nothing here deletes.
+ */
+export interface AssignmentRow {
+  readonly id: string;
+  readonly jobId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly technicianProfileId: string;
+  readonly assignmentRole: string;
+  readonly validFrom: Date;
+  readonly validTo: Date | null;
+  readonly reason: string | null;
+  readonly recordVersion: number;
+}
+
+/** One row of a technician's live queue. */
+export interface TechnicianQueueRow {
+  readonly assignmentId: string;
+  readonly jobId: string;
+  readonly workOrderId: string;
+  readonly assignmentRole: string;
+  readonly validFrom: Date;
+  readonly jobTitle: string;
+  readonly jobState: string;
+  readonly workOrderState: string;
+  readonly displayNumber: string | null;
+}
+
+interface AssignmentColumns {
+  id: string;
+  job_id: string;
+  company_id: string;
+  branch_id: string;
+  technician_profile_id: string;
+  assignment_role: string;
+  valid_from: Date;
+  valid_to: Date | null;
+  reason: string | null;
+  record_version: number;
+}
+
+const ASSIGNMENT_COLUMNS = `id, job_id, company_id, branch_id, technician_profile_id,
+          assignment_role, valid_from, valid_to, reason, record_version`;
+
+const toAssignmentRow = (row: AssignmentColumns): AssignmentRow => ({
+  id: row.id,
+  jobId: row.job_id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  technicianProfileId: row.technician_profile_id,
+  assignmentRole: row.assignment_role,
+  validFrom: row.valid_from,
+  validTo: row.valid_to,
+  reason: row.reason,
+  recordVersion: row.record_version,
+});
+
 /** The column shape every job read projects. One place, so the three cannot drift. */
 interface JobColumns {
   id: string;
@@ -666,6 +728,169 @@ export class WorkOrderRepository extends Repository {
       [context.principal.tenantId, jobId]
     );
     return result.rows[0]?.from_state ?? null;
+  }
+
+  /**
+   * Opens an assignment. The row set IS the history — nothing is ever deleted.
+   *
+   * `uq_job_assignments_active_primary` is a PARTIAL unique index over
+   * `(tenant, company, branch, job_id) WHERE assignment_role = 'primary' AND
+   * valid_to IS NULL AND deleted_at IS NULL`, so a second active primary arrives as
+   * `23505` and the service maps it rather than letting it surface as a 500. An
+   * `assist` assignment is deliberately unconstrained: a job may have several.
+   */
+  async openAssignment(
+    db: DbHandle,
+    input: {
+      readonly jobId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly technicianProfileId: string;
+      readonly assignmentRole: string;
+    }
+  ): Promise<AssignmentRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<AssignmentColumns>(
+      db,
+      `INSERT INTO wo.job_assignments
+         (tenant_id, company_id, branch_id, job_id, technician_profile_id, assignment_role, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING ${ASSIGNMENT_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.jobId,
+        input.technicianProfileId,
+        input.assignmentRole,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('assignment insert returned no row');
+    return toAssignmentRow(row);
+  }
+
+  /** Locks the active PRIMARY assignment of a job, if it has one. */
+  async lockActivePrimaryAssignment(db: DbHandle, jobId: string): Promise<AssignmentRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<AssignmentColumns>(
+      db,
+      `SELECT ${ASSIGNMENT_COLUMNS}
+         FROM wo.job_assignments
+        WHERE tenant_id = $1 AND job_id = $2 AND assignment_role = 'primary'
+          AND valid_to IS NULL AND deleted_at IS NULL
+        FOR UPDATE`,
+      [context.principal.tenantId, jobId]
+    );
+    const row = result.rows[0];
+    return row ? toAssignmentRow(row) : null;
+  }
+
+  /** Locks one assignment by id. */
+  async lockAssignment(db: DbHandle, assignmentId: string): Promise<AssignmentRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<AssignmentColumns>(
+      db,
+      `SELECT ${ASSIGNMENT_COLUMNS}
+         FROM wo.job_assignments
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        FOR UPDATE`,
+      [context.principal.tenantId, assignmentId]
+    );
+    const row = result.rows[0];
+    return row ? toAssignmentRow(row) : null;
+  }
+
+  /**
+   * Closes an assignment by stamping `valid_to` and its reason.
+   *
+   * The reason is not optional in the schema either:
+   * `ck_job_assignments_end_reason` refuses an end without one, because removing a
+   * technician from work is accountable. `valid_to` is server-stamped with `now()`
+   * rather than accepted from the caller — a caller-chosen end time could be made
+   * to precede `valid_from` or to rewrite history.
+   */
+  async closeAssignment(
+    db: DbHandle,
+    assignmentId: string,
+    reason: string,
+    expectedVersion: number
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE wo.job_assignments
+          SET valid_to = now(), reason = $3, updated_by = $4
+        WHERE tenant_id = $1 AND id = $2 AND record_version = $5
+          AND valid_to IS NULL AND deleted_at IS NULL`,
+      [context.principal.tenantId, assignmentId, reason, context.principal.userId, expectedVersion]
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /** Every assignment a job has ever had, newest interval first. */
+  async assignmentsFor(db: DbHandle, jobId: string): Promise<readonly AssignmentRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<AssignmentColumns>(
+      db,
+      `SELECT ${ASSIGNMENT_COLUMNS}
+         FROM wo.job_assignments
+        WHERE tenant_id = $1 AND job_id = $2 AND deleted_at IS NULL
+        ORDER BY valid_from DESC, id DESC`,
+      [context.principal.tenantId, jobId]
+    );
+    return result.rows.map(toAssignmentRow);
+  }
+
+  /**
+   * The active assignments of one technician — their queue.
+   *
+   * Joined to the job and its work order so the queue answers "what am I on"
+   * without a second round trip per row.
+   */
+  async queueFor(
+    db: DbHandle,
+    technicianProfileId: string
+  ): Promise<readonly TechnicianQueueRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      assignment_id: string;
+      job_id: string;
+      work_order_id: string;
+      assignment_role: string;
+      valid_from: Date;
+      job_title: string;
+      job_state: string;
+      work_order_state: string;
+      display_number: string | null;
+    }>(
+      db,
+      `SELECT a.id AS assignment_id, a.job_id, j.work_order_id, a.assignment_role, a.valid_from,
+              j.title AS job_title, j.state AS job_state,
+              w.state AS work_order_state, w.display_number
+         FROM wo.job_assignments a
+         JOIN wo.jobs j ON j.tenant_id = a.tenant_id AND j.company_id = a.company_id
+                       AND j.branch_id = a.branch_id AND j.id = a.job_id
+         JOIN wo.work_orders w ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
+                              AND w.branch_id = j.branch_id AND w.id = j.work_order_id
+        WHERE a.tenant_id = $1 AND a.technician_profile_id = $2
+          AND a.valid_to IS NULL AND a.deleted_at IS NULL
+          AND j.deleted_at IS NULL AND w.deleted_at IS NULL
+        ORDER BY a.valid_from DESC, a.id DESC`,
+      [context.principal.tenantId, technicianProfileId]
+    );
+    return result.rows.map((row) => ({
+      assignmentId: row.assignment_id,
+      jobId: row.job_id,
+      workOrderId: row.work_order_id,
+      assignmentRole: row.assignment_role,
+      validFrom: row.valid_from,
+      jobTitle: row.job_title,
+      jobState: row.job_state,
+      workOrderState: row.work_order_state,
+      displayNumber: row.display_number,
+    }));
   }
 
   /**

@@ -47,12 +47,32 @@ export const BRANCH_B1 = 'b1100000-0000-4000-8000-000000000001';
 export const PARTNER_A = 'c1900000-0000-4000-8000-0000000000d1';
 export const PARTNER_B = 'c1900000-0000-4000-8000-0000000000d2';
 
+/** Technician profiles: one per fixture branch, plus tenant B's. */
+export const TECH_A1 = 'c1900000-0000-4000-8000-00000000020a';
+export const TECH_A1_ALT = 'c1900000-0000-4000-8000-00000000020b';
+export const TECH_A1_INACTIVE = 'c1900000-0000-4000-8000-00000000020c';
+export const TECH_A2 = 'c1900000-0000-4000-8000-00000000020d';
+export const TECH_B1 = 'c1900000-0000-4000-8000-00000000020e';
+
+/** Tenant-scoped catalog codes. No `tech.` rows are seeded by the repository. */
+export const SKILL_BRAKES = 'fx_p1_19_brakes';
+export const SKILL_HYBRID = 'fx_p1_19_hybrid';
+export const LEVEL_JUNIOR = 'fx_p1_19_junior';
+export const LEVEL_SENIOR = 'fx_p1_19_senior';
+export const CERT_HV = 'fx_p1_19_high_voltage';
+
+/** Ranks the fixture skill levels carry, so a test can state a minimum. */
+export const RANK_JUNIOR = 10;
+export const RANK_SENIOR = 20;
+
 const CONVERT_PERMISSION = 'rec.reception.convert';
 const READ = 'wo.work_order.read';
 const TRANSITION_PERMISSION = 'wo.work_order.transition';
 const CLOSE = 'wo.work_order.close';
 const JOB_MANAGE = 'wo.job.manage';
 const JOB_TRANSITION = 'wo.job.transition';
+const ASSIGNMENT_MANAGE = 'tech.assignment.manage';
+const TECHNICIAN_READ = 'tech.technician.read';
 
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
@@ -72,7 +92,16 @@ export const FULL: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000a2',
   subject: 'fx_p1_19_full',
   tenantId: TENANT_A,
-  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
+  permissions: [
+    CONVERT_PERMISSION,
+    READ,
+    TRANSITION_PERMISSION,
+    CLOSE,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+  ],
 };
 
 /**
@@ -87,7 +116,14 @@ export const NO_CLOSE: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000b2',
   subject: 'fx_p1_19_no_close',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, JOB_MANAGE, JOB_TRANSITION],
+  permissions: [
+    READ,
+    TRANSITION_PERMISSION,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+  ],
 };
 
 /** Tenant A, unrestricted, read only — the 403 probe for every command. */
@@ -112,7 +148,15 @@ export const SCOPED_ELSEWHERE: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000e2',
   subject: 'fx_p1_19_scoped',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
+  permissions: [
+    READ,
+    TRANSITION_PERMISSION,
+    CLOSE,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+  ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-0000000000e3',
 };
@@ -138,7 +182,15 @@ export const PERMISSION_ELSEWHERE: Principal = {
   userId: 'c1900000-0000-4000-8000-00000000010b',
   subject: 'fx_p1_19_permission_elsewhere',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
+  permissions: [
+    READ,
+    TRANSITION_PERMISSION,
+    CLOSE,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+  ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-00000000010c',
 };
@@ -154,7 +206,16 @@ export const TENANT_B_FULL: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000f2',
   subject: 'fx_p1_19_tenant_b',
   tenantId: TENANT_B,
-  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
+  permissions: [
+    CONVERT_PERMISSION,
+    READ,
+    TRANSITION_PERMISSION,
+    CLOSE,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+  ],
 };
 
 export const PRINCIPALS: readonly Principal[] = [
@@ -450,6 +511,191 @@ export async function establishP1_19Fixtures(pool: Pool): Promise<void> {
        VALUES ($1,'work_order','WO-',1,6,'never',$2)`,
       [tenantId, USER_A]
     );
+  }
+}
+
+/**
+ * Builds the `tech` fixtures Wave 5 assignment needs.
+ *
+ * Admin SQL, and necessarily so: the technician catalogs, profiles, held skills,
+ * held certifications and availability intervals have no write route in this phase —
+ * they are operator/HR data, and P1-19 only READS them to decide eligibility. What
+ * matters is that the rows are the real shape the eligibility engine queries, not
+ * that a route created them.
+ *
+ * Every catalog row is TENANT-scoped: the repository seeds no `tech.` rows at all,
+ * so a platform-scoped fixture would be inventing platform reference data.
+ *
+ * The availability windows are deliberately a SPLIT SHIFT — two touching half-open
+ * intervals — because `ex_technician_availability_overlap` excludes on
+ * `tstzrange(from, to)` with `&&` and `[08:00,12:00)` does not overlap
+ * `[12:00,17:00)`. A technician available for every minute of 09:00–13:00 has no
+ * single row spanning it, which is exactly what `coveredByUnion` exists to handle.
+ */
+export async function establishTechnicianFixtures(): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, TENANT_A]
+    );
+
+    for (const [code, name] of [
+      [SKILL_BRAKES, 'Brake systems'],
+      [SKILL_HYBRID, 'Hybrid and EV'],
+    ] as const) {
+      await client.query(
+        `INSERT INTO tech.skills (scope, tenant_id, code, name, status, created_by)
+         VALUES ('tenant',$1,$2,$3,'active',$4)`,
+        [TENANT_A, code, name, USER_A]
+      );
+    }
+    for (const [code, name, rank] of [
+      [LEVEL_JUNIOR, 'Junior', RANK_JUNIOR],
+      [LEVEL_SENIOR, 'Senior', RANK_SENIOR],
+    ] as const) {
+      await client.query(
+        `INSERT INTO tech.skill_levels (scope, tenant_id, code, name, rank, status, created_by)
+         VALUES ('tenant',$1,$2,$3,$4,'active',$5)`,
+        [TENANT_A, code, name, rank, USER_A]
+      );
+    }
+    await client.query(
+      `INSERT INTO tech.certifications
+         (scope, tenant_id, code, name, is_safety_critical, status, created_by)
+       VALUES ('tenant',$1,$2,'High-voltage systems',true,'active',$3)`,
+      [TENANT_A, CERT_HV, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // Tenant A: a senior brake technician in A1, an alternate in A1 for reassignment,
+  // an INACTIVE profile in A1, and one in A2 so branch scope has a real other side.
+  await seedTechnician({
+    id: TECH_A1,
+    branchId: BRANCH_A1,
+    skills: [{ code: SKILL_BRAKES, level: LEVEL_SENIOR }],
+    certifications: [CERT_HV],
+  });
+  await seedTechnician({
+    id: TECH_A1_ALT,
+    branchId: BRANCH_A1,
+    skills: [{ code: SKILL_BRAKES, level: LEVEL_JUNIOR }],
+  });
+  await seedTechnician({ id: TECH_A1_INACTIVE, branchId: BRANCH_A1, isActive: false });
+  await seedTechnician({
+    id: TECH_A2,
+    branchId: BRANCH_A2,
+    skills: [{ code: SKILL_BRAKES, level: LEVEL_SENIOR }],
+  });
+  await seedTechnician({
+    id: TECH_B1,
+    tenantId: TENANT_B,
+    companyId: COMPANY_B1,
+    branchId: BRANCH_B1,
+  });
+}
+
+/** The split-shift window every fixture technician is available for. */
+export const AVAILABLE_FROM = '2026-07-26T08:00:00.000Z';
+export const AVAILABLE_MID = '2026-07-26T12:00:00.000Z';
+export const AVAILABLE_TO = '2026-07-26T17:00:00.000Z';
+/** A window inside the split shift that no SINGLE availability row spans. */
+export const SPLIT_WINDOW = Object.freeze({
+  from: '2026-07-26T09:00:00.000Z',
+  to: '2026-07-26T13:00:00.000Z',
+});
+
+async function seedTechnician(input: {
+  readonly id: string;
+  readonly branchId: string;
+  readonly tenantId?: string;
+  readonly companyId?: string;
+  readonly isActive?: boolean;
+  readonly skills?: readonly { readonly code: string; readonly level: string }[];
+  readonly certifications?: readonly string[];
+}): Promise<void> {
+  const tenantId = input.tenantId ?? TENANT_A;
+  const companyId = input.companyId ?? COMPANY_A1;
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    // `fk_technician_profiles_user` anchors the profile to an identity in the SAME
+    // tenant, and `uq_technician_profiles_active_user` allows one live profile per
+    // user — so each fixture technician needs its own account rather than sharing
+    // the harness user.
+    const account = await client.query<{ id: string }>(
+      `INSERT INTO iam.user_accounts
+         (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,$3||'@example.test','Fixture Technician','active',$4)
+       RETURNING id`,
+      [tenantId, IDENTITY_PROVIDER, `fx_p1_19_tech_${input.id.slice(-4)}`, USER_A]
+    );
+    const technicianUserId = account.rows[0]?.id ?? '';
+    await client.query(
+      `INSERT INTO tech.technician_profiles
+         (id, tenant_id, company_id, branch_id, user_id, trade, is_active, created_by)
+       VALUES ($1,$2,$3,$4,$5,'mechanic',$6,$7)`,
+      [
+        input.id,
+        tenantId,
+        companyId,
+        input.branchId,
+        technicianUserId,
+        input.isActive ?? true,
+        USER_A,
+      ]
+    );
+    for (const skill of input.skills ?? []) {
+      await client.query(
+        `INSERT INTO tech.technician_skills
+           (tenant_id, company_id, branch_id, technician_profile_id, skill_id, skill_level_id, created_by)
+         SELECT $1,$2,$3,$4,s.id,l.id,$5
+           FROM tech.skills s, tech.skill_levels l
+          WHERE s.code = $6 AND l.code = $7`,
+        [tenantId, companyId, input.branchId, input.id, USER_A, skill.code, skill.level]
+      );
+    }
+    for (const code of input.certifications ?? []) {
+      await client.query(
+        `INSERT INTO tech.technician_certifications
+           (tenant_id, company_id, branch_id, technician_profile_id, certification_id,
+            issued_on, expires_on, cert_status, created_by)
+         SELECT $1,$2,$3,$4,c.id,'2026-01-01','2027-01-01','active',$5
+           FROM tech.certifications c WHERE c.code = $6`,
+        [tenantId, companyId, input.branchId, input.id, USER_A, code]
+      );
+    }
+    // The split shift: two touching half-open intervals, neither of which spans
+    // SPLIT_WINDOW alone.
+    for (const [from, to] of [
+      [AVAILABLE_FROM, AVAILABLE_MID],
+      [AVAILABLE_MID, AVAILABLE_TO],
+    ] as const) {
+      await client.query(
+        `INSERT INTO tech.technician_availability
+           (tenant_id, company_id, branch_id, technician_profile_id, available_from,
+            available_to, availability_kind, created_by)
+         VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,'available',$7)`,
+        [tenantId, companyId, input.branchId, input.id, from, to, USER_A]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

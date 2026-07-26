@@ -49,6 +49,10 @@ export type {
 import { WorkOrderRepository } from './data/work-order-repository';
 import { WorkOrderCatalogService } from './application/work-order-catalog-service';
 import { WorkOrderService } from './application/work-order-service';
+import { JobAssignmentService } from './application/job-assignment-service';
+
+export type { AssignInput, AssignmentView, QueueEntry } from './application/job-assignment-service';
+export type { AssignmentRow, TechnicianQueueRow } from './data/work-order-repository';
 
 export type {
   JobStateRow,
@@ -58,6 +62,7 @@ export type {
 
 export {
   ADDITIONAL_WORK_STATES,
+  ASSIGNMENT_ROLES,
   CLOSURE_BLOCKERS,
   CLOSURE_BLOCKER_REGISTRY,
   DEFERRED_CLOSURE_BLOCKERS,
@@ -70,6 +75,7 @@ export {
   WorkOrderRuleError,
   assertTransitionReason,
   type AdditionalWorkState,
+  type AssignmentRole,
   type ClosureBlockerCode,
   type ClosureBlockerDefinition,
   type FulfillmentState,
@@ -82,9 +88,11 @@ export const workOrderModule = composeModule({
   module: 'work-order',
   create: () => {
     const catalog = new WorkOrderCatalogService(new WorkOrderCatalogRepository());
+    const repository = new WorkOrderRepository();
     return {
       workOrderCatalog: catalog,
-      workOrders: new WorkOrderService(new WorkOrderRepository(), catalog),
+      workOrders: new WorkOrderService(repository, catalog),
+      jobAssignments: new JobAssignmentService(repository, catalog),
     };
   },
 });

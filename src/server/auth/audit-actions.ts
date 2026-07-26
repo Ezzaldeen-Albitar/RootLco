@@ -621,6 +621,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
   },
   {
+    code: 'wo.job.assigned',
+    class: 'privileged',
+    entityType: 'wo.job_assignment',
+    description:
+      'A technician was assigned to a job. Eligibility — held skill and level, certification validity on the day, availability across the window, profile status and branch scope — is evaluated before the write and reported in full; the database still owns the invariant that at most one PRIMARY assignment is active per job (uq_job_assignments_active_primary). The row set IS the assignment history: an assignment is ended by setting valid_to, never deleted.',
+  },
+  {
+    code: 'wo.job.assignment_ended',
+    class: 'privileged',
+    entityType: 'wo.job_assignment',
+    description:
+      'An assignment was closed by setting valid_to. Always carries a reason, because ck_job_assignments_end_reason makes an end without one impossible — removing a technician from work is accountable. Reassignment writes this action AND wo.job.assigned in one transaction, so the two halves of a handover cannot be recorded separately.',
+  },
+  {
     code: 'wo.job.created',
     class: 'privileged',
     entityType: 'wo.job',

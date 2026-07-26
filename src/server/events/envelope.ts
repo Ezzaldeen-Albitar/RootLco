@@ -331,7 +331,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.job',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A technician was assigned to a job.',
   },
   {
