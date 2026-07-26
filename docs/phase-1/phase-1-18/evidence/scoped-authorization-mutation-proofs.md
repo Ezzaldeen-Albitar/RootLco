@@ -15,10 +15,44 @@ Database        PostgreSQL 17.6.1 (supabase_db_RootLco), serial, no other
                 DB/backend Vitest process running
 ```
 
-This document is committed one commit after the runs it records, at `aedfcef`,
-whose **only** change is this file — the executable-path diff against `c6a21f1`
-is empty. That is stated here rather than left to inference, because an unstated
-tree delta is exactly what invalidated the previous set.
+This document was committed one commit after the runs it records, at `aedfcef`,
+whose only change was this file — the executable-path diff against `c6a21f1` was
+empty **at that commit**.
+
+**That sentence is no longer sufficient, and saying so is the point of this
+paragraph.** The document now ships at `a13ff8b`, and the executable-path diff
+`c6a21f1..a13ff8b` is **not** empty. Three files differ:
+
+```
+src/modules/reception/application/appointment-service.ts
+tests/backend/p1-18-appointment-lifecycle.test.ts
+tests/backend/p1-18-scope-containment.test.ts
+```
+
+`appointment-service.ts` is M1's own choke point, which is precisely the shape of
+delta this paragraph exists to refuse to leave unstated. So it is stated, and
+then it is characterised rather than waved through:
+
+- The `appointment-service.ts` delta is **comment-only**. Filtering the diff to
+  lines that are not comment or block-comment continuations leaves **zero**
+  changed lines.
+- The two test deltas are comments plus a single test **title** rename —
+  `'writes no creation audit row when the booking is refused'` →
+  `'…refused at validation'`.
+- Suite sizes are unchanged across the delta: containment **76**, foundation
+  **82**, appointment-lifecycle **32**, reception-parties **16**.
+
+The mutation results therefore carry forward to `a13ff8b` on an argued basis, not
+an assumed one. Had any changed line been executable, the correct action would
+have been to re-run M1–M6, not to argue.
+
+**These proofs were re-run at this candidate, and that matters.** The previous
+set ran at `68255af`, five commits before the tree that was actually merged. The
+intervening candidate changed `src/server/auth/authorization.ts`,
+`src/modules/reception/application/appointment-service.ts` and
+`reception-service.ts` — the module every kill depends on, M1's choke point, and
+the file containing M5's mutated `requireVisit` — and the record neither stated
+the delta nor argued the results carried forward.
 
 **These proofs were re-run at this candidate, and that matters.** The previous
 set ran at `68255af`, five commits before the tree that was actually merged. The
@@ -27,9 +61,17 @@ intervening candidate changed `src/server/auth/authorization.ts`,
 `reception-service.ts` — the module every kill depends on, M1's choke point, and
 the file containing M5's mutated `requireVisit` — and the record neither stated
 the delta nor argued the results carried forward. It also still cited
-`appointment-service.ts:393` for a mapper that had moved to line 403. Stale line
-numbers are how a record stops being checkable, so this version anchors on
-function names and states its own candidate SHA.
+`appointment-service.ts:393` for a mapper that had moved. Stale line numbers are
+how a record stops being checkable, so this version anchors on function names and
+states its own candidate SHA.
+
+An earlier revision of this paragraph said the mapper "had moved to line 403".
+That was itself wrong, and is corrected here rather than quietly dropped:
+`private mapWriteFailure` has been declared at line **385** (`68255af`,
+`cf508c8`), **395** (`9c20fe3`, `b9b4ff5`, `7caafbe`), **405** (`518e4fc`,
+`c6a21f1`, `aedfcef`) and **416** (`d1ea977`, `a13ff8b`). Line 403 matches no
+commit in this history. Correcting a stale line number with a different wrong one
+is the same failure twice, which is the argument for anchoring on names.
 
 ## Protocol
 
@@ -168,10 +210,19 @@ party-role via `requireVisit`, signature and refusal with condition-evidence via
 ten. That is a real argument and weaker than a mutation; the table above should
 not be read as ten route-level proofs.
 
-**No assertion discriminates the deferred authorizer's 403 from a row-policy 403.** Both map to `ERR-IAM-001`; the services' mappers sit at
-`appointment-service.mapWriteFailure`, `reception-service.mapWriteFailure`,
-`reception-evidence-service.mapEvidenceFailure` and
-`reception-conversion-service.mapConversionFailure`. For the five mutated
+**No assertion discriminates the deferred authorizer's 403 from a row-policy 403.**
+Both map to `ERR-IAM-001`. There are **seven** such mappers across the four
+services, not four — an earlier revision listed four and named
+`reception-service.mapWriteFailure`, which does not exist:
+
+| Service                        | Mappers                                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `appointment-service`          | `mapWriteFailure` (:416)                                                                                                  |
+| `reception-service`            | `mapCheckInFailure` (:598), `mapPartyRoleFailure` (:629), `mapAuthorizationFailure` (:654), `mapTransitionFailure` (:678) |
+| `reception-evidence-service`   | `mapEvidenceFailure` (:687)                                                                                               |
+| `reception-conversion-service` | `mapConversionFailure` (:179)                                                                                             |
+
+Line numbers are at `a13ff8b`; the names are the durable anchor. For the five mutated
 operations the mutation settles it — remove the authorizer and the call succeeds.
 For the other five the attribution is inferred from those policies being pure
 tenant/company/branch predicates with no permission clause. Correct, but

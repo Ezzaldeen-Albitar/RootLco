@@ -1,48 +1,58 @@
 # P1-18 — Local release-candidate validation
 
+> **Superseded as gate evidence.** This file records the validation of the
+> **third** remediation at `7caafbe`, and it is retained unaltered as the history
+> of that run. It is **not** the evidence the P1-18 gate was decided against.
+> PR #80 has since merged, `origin/develop` is now
+> `a13ff8b8b1f4002ff60a9112ce8f21d7920f444d`, and gate conditions 15, 16, 17 and
+> 19 are satisfied by **`post-merge-gate-reproof.md`**, which re-ran the full
+> battery, the artifact-stability comparison, the exact-SHA clean room and the
+> hosted-CI check on `a13ff8b` itself. Every SHA and count below refers to
+> `7caafbe` unless stated, and must not be read forward onto the merged tree.
+
 Full local validation and exact-SHA clean room for the third P1-18 remediation.
 Everything below was produced on one candidate, serially, with no other
 PostgreSQL consumer and no concurrent Vitest process.
 
-| Item              | Value                                                                      |
-| ----------------- | -------------------------------------------------------------------------- |
-| Authoritative SHA | `7caafbee0faf17183a19ca76f85ebc16d8e85c54` — the protected merge of PR #79 |
-| Delivered by      | `fix/p1-18-scoped-authorization-containment`, reviewed head `b9b4ff5`      |
-| Protected push CI | `#202`, run id `30173469487`, event `push`, branch `develop`, Success 4/4  |
-| `origin/main`     | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` — untouched by P1-18            |
-| Migrations        | 119, no migration 120, none added, modified, renamed or deleted            |
-| Owner gate        | `Decision: Pending`                                                        |
+| Item              | Value                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SHA validated     | `7caafbee0faf17183a19ca76f85ebc16d8e85c54` — the protected merge of PR #79 (authoritative for this file only; superseded for gate purposes by `a13ff8b`) |
+| Delivered by      | `fix/p1-18-scoped-authorization-containment`, reviewed head `b9b4ff5`                                                                                    |
+| Protected push CI | `#202`, run id `30173469487`, event `push`, branch `develop`, Success 4/4                                                                                |
+| `origin/main`     | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` — untouched by P1-18                                                                                          |
+| Migrations        | 119, no migration 120, none added, modified, renamed or deleted                                                                                          |
+| Owner gate        | `Decision: Pending`                                                                                                                                      |
 
 Earlier local candidates are listed in §8 and are **superseded**. Read §8 first
 if any figure below appears to belong to a different tree.
 
 ## 1. Repository validation, CI-equivalent order
 
-| #   | Gate                                | Result                                                                                    |
-| --- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| 1   | Repo-wide Prettier                  | green                                                                                     |
-| 2   | ESLint                              | green                                                                                     |
-| 3   | TypeScript `tsc --noEmit`           | green                                                                                     |
-| 4   | Unit / foundation suite             | **828 passed**, 39 files                                                                  |
-| 5   | Production build (`next build`)     | green                                                                                     |
-| 6   | Module boundaries                   | green — 253 files, 11 rules                                                               |
-| 7   | Authorization coverage              | green — every operation guarded, every route registered                                   |
-| 8   | Operation coverage                  | green — see §2                                                                            |
-| 9   | OpenAPI structural validation       | green — 3.1.0, 94 paths, 110 operations                                                   |
-| 10  | Encoding                            | green — clean UTF-8, no BOM                                                               |
-| 11  | Canonical documents                 | green — 2 documents, hashes match                                                         |
-| 12  | Stylelint                           | green                                                                                     |
-| 13  | APT/REC classification              | green — 454 columns, 4 restricted, 0 searchable                                           |
-| 14  | Tracked secrets                     | green — 1097 files                                                                        |
-| 15  | Browser-exposed secrets             | green                                                                                     |
-| 16  | Scope exclusions (Benzene, Zoom)    | green                                                                                     |
-| 17  | No-fake-data                        | green                                                                                     |
-| 18  | Seed state                          | green — 7 files applied twice, every business table empty, idempotent                     |
-| 19  | Schema inventory                    | green — see §4                                                                            |
-| 20  | Database suite                      | **1547 passed**, 132 files                                                                |
-| 21  | Backend suite                       | **767 passed**, 38 files                                                                  |
-| 22  | Docker                              | `compose config` green; dev and runner stages build; runtime uid 1001, non-root (ADR-007) |
-| 23  | Migration immutability vs `develop` | green — zero M/D/R, zero additions                                                        |
+| #   | Gate                                | Result                                                                                                                                                                                                                         |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Repo-wide Prettier                  | green                                                                                                                                                                                                                          |
+| 2   | ESLint                              | green                                                                                                                                                                                                                          |
+| 3   | TypeScript `tsc --noEmit`           | green                                                                                                                                                                                                                          |
+| 4   | Unit / foundation suite             | **828 passed**, 39 files                                                                                                                                                                                                       |
+| 5   | Production build (`next build`)     | green                                                                                                                                                                                                                          |
+| 6   | Module boundaries                   | green — 253 files, 11 rules                                                                                                                                                                                                    |
+| 7   | Authorization coverage              | green — every operation guarded, every route registered                                                                                                                                                                        |
+| 8   | Operation coverage                  | green — see §2                                                                                                                                                                                                                 |
+| 9   | OpenAPI structural validation       | green — 3.1.0, 94 paths, 110 operations                                                                                                                                                                                        |
+| 10  | Encoding                            | green — clean UTF-8, no BOM                                                                                                                                                                                                    |
+| 11  | Canonical documents                 | green — 2 documents, hashes match                                                                                                                                                                                              |
+| 12  | Stylelint                           | green                                                                                                                                                                                                                          |
+| 13  | APT/REC classification              | green — 454 columns, 4 restricted, 0 searchable                                                                                                                                                                                |
+| 14  | Tracked secrets                     | green — **1098** files at `7caafbe` (corrected: the figure previously here, 1097, was run 1's count at the superseded tree `b9b412e`, and was the one residue §8's run-4 rule failed to catch. At `a13ff8b` the count is 1103) |
+| 15  | Browser-exposed secrets             | green                                                                                                                                                                                                                          |
+| 16  | Scope exclusions (Benzene, Zoom)    | green                                                                                                                                                                                                                          |
+| 17  | No-fake-data                        | green                                                                                                                                                                                                                          |
+| 18  | Seed state                          | green — 7 files applied twice, every business table empty, idempotent                                                                                                                                                          |
+| 19  | Schema inventory                    | green — see §4                                                                                                                                                                                                                 |
+| 20  | Database suite                      | **1547 passed**, 132 files                                                                                                                                                                                                     |
+| 21  | Backend suite                       | **767 passed**, 38 files                                                                                                                                                                                                       |
+| 22  | Docker                              | `compose config` green; dev and runner stages build; runtime uid 1001, non-root (ADR-007)                                                                                                                                      |
+| 23  | Migration immutability vs `develop` | green — zero M/D/R, zero additions                                                                                                                                                                                             |
 
 ### Floors
 
