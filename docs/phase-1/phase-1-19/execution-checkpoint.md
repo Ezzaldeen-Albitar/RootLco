@@ -42,13 +42,13 @@ checkpoint only and never authorises a merge.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
-| Current HEAD        | Waves 4–7 complete and remediated, Wave 8 next                                                                                    |
+| Current HEAD        | `ddc30b5` — Waves 4–8 complete and remediated, Wave 9 in progress                                                                 |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
-| GitHub Actions runs | Green **4/4** on the Wave 4 and Wave 5 heads; Wave 6 and Wave 7 heads verified on their exact SHAs                                |
+| GitHub Actions runs | Green **4/4** on the Wave 4 and Wave 5 heads; Wave 6, 7 and 8 heads verified on their exact SHAs                                  |
 | Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                                |
-| Totals at HEAD      | Unit **843** / Backend **1018** / DB **1610**; OpenAPI **131 paths / 155 operations**; P1-19 **45/45** operation depth, 0 pending |
+| Totals at HEAD      | Unit **843** / Backend **1060** / DB **1610**; OpenAPI **140 paths / 168 operations**; P1-19 **58/58** operation depth, 0 pending |
 
 ## Completed
 
@@ -62,8 +62,8 @@ checkpoint only and never authorises a merge.
 | 5    | Technician execution                                  | **Complete**, 24/24 operation depth |
 | 6    | Additional work and customer approvals                | **Complete**, 32/32 operation depth |
 | 7    | Diagnostics                                           | **Complete**, 45/45 operation depth |
-| 8    | Quality control, closure and rework                   | **Next**                            |
-| 9    | See README §4                                         | Not started                         |
+| 8    | Quality control, closure and rework                   | **Complete**, 58/58 operation depth |
+| 9    | Phase-wide hardening and evidence                     | **In progress**                     |
 
 ## Wave 4 progress
 
@@ -718,7 +718,60 @@ It is an internal quality KPI and explicitly NOT a billing artifact.
 `quality-control.finalized` and `EVT-QMS-002` `rework.linked` are registered with
 `implementedIn: null`. No `qms.*` audit action is registered yet.
 
+## Wave 8 progress — COMPLETE at `e18df4a`, remediated at `ddc30b5`
+
+| Slice                                        | Status       | Commit    |
+| -------------------------------------------- | ------------ | --------- |
+| A — quality control (5 operations)           | **Complete** | `e18df4a` |
+| B — reopen refusal and rework (8 operations) | **Complete** | `e18df4a` |
+| Operational journey through the real routes  | **Complete** | `980d1a8` |
+| Adversarial review remediation               | **Complete** | `ddc30b5` |
+
+Thirteen `qms.*` operations, 41 route-level tests, no migration and no seed change.
+Full detail in [`evidence/wave-8-quality-rework.md`](evidence/wave-8-quality-rework.md).
+
+### What Wave 8 established — do not re-derive
+
+- **`kind = 'rework'` now has a creation path.** `work-order`'s `openRework` is the
+  only one, reached from `quality` through the module's public surface, so the new
+  order and its `qms.rework_links` row commit in one transaction.
+- **The seeded `cancelled` state carries `is_closed = true`.** Not just
+  `is_terminal` — five comments in this branch asserted otherwise before the review.
+  Only a genuinely closed original may be reworked.
+- **Reopen's success path is a refusal.** `qms.attempt_reopen` records the attempt and
+  never mutates the order, so the endpoint returns 201 with the attempt id. An earlier
+  implementation threw, which rolled back the very ledger row the mechanism exists for.
+- **The record/finalize permission split is proven, not asserted.** `QC_CHECKER` in
+  `tests/backend/p1-19-helpers.ts` holds `qms.quality_control.record` and not
+  `.finalize`.
+
+## Wave 9 — in progress
+
+Phase-wide hardening and evidence. The remaining P1-19-BE/SEC/QA/DO/DOC tasks, the
+endpoint inventory, the authorization and sensitive-data maps, the permission, event,
+error and audit reconciliations, the transition-graph coverage, the B1–B6 matrix, the
+concurrency and rollback suites, structured logging, the security, state-machine,
+closure-gate, OpenAPI, event and error documentation, the change log, the traceability
+matrix, the open-decision register and the DevOps/CI integration — then the final
+adversarial review, the final local battery at the exact final SHA, the final clean-room
+reproof, and PR #82's final preparation.
+
+**Do not merge PR #82. Do not create a gate-record PR. Do not start P1-20.**
+
 ## Next action
+
+**Wave 9, slice A — the phase-wide reconciliations.** Build the endpoint inventory
+from the registry rather than from memory, then reconcile permissions, events, audit
+actions and error codes against the seeded catalogs, and write the authorization and
+sensitive-data maps. Then slice B: the transition-graph coverage, the B1–B6 closure
+matrix, and the concurrency and rollback suites. Then slice C: documentation, the
+change log, the traceability matrix and the open-decision register. Then the final
+adversarial review, the final battery, the clean-room reproof and PR #82's
+preparation.
+
+---
+
+_Superseded by Wave 8's completion._
 
 **Wave 8, slice A — quality control.** Then slice B: reopen refusal and the rework
 link, including the `kind = 'rework'` work-order creation the platform currently
