@@ -17,13 +17,64 @@ Updated after every major wave. This file is the recovery point if context is lo
 
 ## Completed
 
-| Wave | Content                                               | Status                    |
-| ---- | ----------------------------------------------------- | ------------------------- |
-| 0    | Protected ground truth                                | **Complete**              |
-| 1    | Repository archaeology and schema reconciliation      | **Complete**              |
-| 2    | Feature branch, protected baseline, documentation dir | **Complete**              |
-| 3    | Module skeleton, permission catalog, event CR         | **Complete** — PR pending |
-| 4–9  | See README §4                                         | Not started               |
+| Wave | Content                                               | Status                                               |
+| ---- | ----------------------------------------------------- | ---------------------------------------------------- |
+| 0    | Protected ground truth                                | **Complete**                                         |
+| 1    | Repository archaeology and schema reconciliation      | **Complete**                                         |
+| 2    | Feature branch, protected baseline, documentation dir | **Complete**                                         |
+| 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green                               |
+| 4    | Work-order core                                       | **In progress** — service layer done, routes pending |
+| 5–9  | See README §4                                         | Not started                                          |
+
+## Wave 4 progress
+
+| Slice                                                                          | Status          | Commit    |
+| ------------------------------------------------------------------------------ | --------------- | --------- |
+| Work-order repository — locked read, versioned state write, history, job reads | **Done, green** | `1313c78` |
+| Closure eligibility — all six blockers, registry order, deferred set           | **Done, green** | `1313c78` |
+| Transition service — catalog edge, reason, terminal pre-report                 | **Done, green** | `1313c78` |
+| Cross-schema allow-list guard (B2/B4 reads, asserted read-only)                | **Done, green** | `1313c78` |
+| Job create / lock / update with `record_version`                               | **Done, green** | `a0fcbeb` |
+| DB tests pinning the blocker query against the deployed guard (9)              | **Done, green** | `a0fcbeb` |
+| **Route handlers + Zod + OpenAPI**                                             | **Not started** | —         |
+| **Audit + outbox wiring**                                                      | **Not started** | —         |
+| **API / authorization / concurrency tests**                                    | **Not started** | —         |
+| List and aggregate-detail queries                                              | **Not started** | —         |
+
+Gates green at `a0fcbeb`: format, lint, typecheck, module boundaries, OpenAPI,
+authorization coverage, operation coverage, `security:all`.
+Unit **843** / DB **1604** / Backend **771**.
+
+## The Wave 4 finding that changed its scope
+
+**Work-order creation was already implemented, and re-implementing it would have
+been wrong.** P1-18's reception conversion (`P1-18-BE-019`,
+`reception-conversion-repository.ts`) inserts `wo.work_orders` — deliberately
+writing only six columns plus the display number and leaving `kind`, `state`,
+`parts_forward_state` and `opened_at` to their frozen defaults, with a comment
+stating that choosing them "would be this module deciding how work is organised —
+which is Phase 1-19's contract, not reception's".
+
+So the boundary is **reception opens the shell, P1-19 owns everything after**. A
+second insert path would not be the one the reception visit lock and
+`uq_work_orders_ordinary_origin` were designed around. Wave 4 consumes what
+conversion created. This supersedes the "Wave 4 — contract already extracted"
+section below, which was written before that code was read; the six preconditions
+and the two `23505` constraints recorded there remain accurate and still matter
+for anything that _reads_ a converted order.
+
+## Traps found in Wave 4 — do not rediscover
+
+1. **The module-boundary checker reads a call to the CommonJS loader as an import
+   specifier.** Naming a service method with that bare verb produced four false
+   `B9` violations, and a fifth from the comment explaining the rename. Avoid the
+   name, and avoid writing it literally in a comment.
+2. **`wo.jobs.state` has no value-list CHECK** — only a format regex. The
+   vocabulary is entirely `wo.job_states`, so never default a job state to a
+   literal.
+3. **`fk_jobs_work_order` is the composite scope key** `(tenant, company, branch,
+work_order_id)`, so cross-branch attachment is impossible at the database
+   level; no service check is needed for it.
 
 ## Established facts — do not re-derive
 
