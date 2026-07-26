@@ -647,6 +647,48 @@ export class WorkOrderService extends ApplicationService {
     },
     authorizeScope?: ScopeAuthorizer
   ): Promise<JobView> {
+    // PARENT FIRST, then the job.
+    //
+    // The parent check itself was missing entirely: this was the only child-write path
+    // in the phase that never consulted the work order's state. `wo.jobs` carries no
+    // trigger that reads the order, so nothing else refused — a closed work order's
+    // jobs stayed editable after the vehicle had been released.
+    //
+    // `requires_diagnostic` is what makes that serious rather than untidy. It is the
+    // direct input to closure blocker B4 — "every `requires_diagnostic` job must have a
+    // completed diagnostic report" — and B4 reads the flag with no reference to the
+    // job's state. Setting it on a job of an already-closed order writes a blocker the
+    // gate has already run past; clearing it erases the recorded fact that a diagnostic
+    // was required. Either way the order's closure stops meaning what it meant when it
+    // was granted.
+    //
+    // The order of the two locks is deliberate and not merely tidy. Every other path in
+    // this module takes `wo.work_orders` before its children — `move`, `close`,
+    // `recordLine`, `lockOpenWorkOrder`, `lockDecidableRequest` — and locking the job
+    // first here would make this the one path with the opposite order, which is how a
+    // deadlock is built. So the job's `work_order_id` is read UNLOCKED to learn which
+    // order to lock, which is safe because `tg_jobs_immutable` freezes that column, and
+    // then both locks are taken parent-first.
+    const unlockedJob = await this.repository.findJob(db, jobId);
+    if (unlockedJob === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    const parent = await this.repository.lockWorkOrder(db, unlockedJob.workOrderId);
+    if (parent === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Work order ${unlockedJob.workOrderId} is not visible`,
+      });
+    }
+    const parentStates = await this.catalog.workOrderStates(db);
+    const parentState = parentStates.find((candidate) => candidate.code === parent.state);
+    if (parentState === undefined || parentState.isTerminal) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Work order state "${parent.state}" does not accept job changes`,
+      });
+    }
+
+    // Re-read under its own lock. The unlocked read above is used ONLY for the frozen
+    // `work_order_id`; the scope check and the version compare use the locked row.
     const locked = await this.repository.lockJob(db, jobId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
@@ -663,6 +705,7 @@ export class WorkOrderService extends ApplicationService {
         message: `Job ${jobId} was modified by another request`,
       });
     }
+
     const applied = await this.repository.updateJob(db, jobId, {
       title: input.title,
       jobType: input.jobType ?? null,

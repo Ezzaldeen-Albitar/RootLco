@@ -75,12 +75,14 @@ import {
   SCOPED_ELSEWHERE,
   TENANT_B_FULL,
   auditCount,
+  advance,
   authAs,
   authAsSubject,
   count,
   createOpenWorkOrder,
   establishDiagnosticFixtures,
   establishP1_19Fixtures,
+  establishQualityFixtures,
   outboxCount,
   seedDocumentVersion,
   seedDraftTemplateVersion,
@@ -99,6 +101,10 @@ import { POST as COMPLETE_REPORT } from '@/app/api/v1/inspections/[inspectionId]
 import { PUT as WRITE_ITEM } from '@/app/api/v1/inspections/[inspectionId]/items/[templateItemId]/route';
 import { POST as RECORD_MEASUREMENT } from '@/app/api/v1/inspections/[inspectionId]/measurements/route';
 import { POST as RECORD_DTC } from '@/app/api/v1/inspections/[inspectionId]/dtcs/route';
+import { POST as TRANSITION_JOB } from '@/app/api/v1/jobs/[jobId]/transition/route';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import { POST as OPEN_QC } from '@/app/api/v1/work-orders/[workOrderId]/quality-controls/route';
+import { POST as FINALIZE_QC } from '@/app/api/v1/quality-controls/[recordId]/finalization/route';
 import { POST as RECORD_FINDING } from '@/app/api/v1/inspections/[inspectionId]/findings/route';
 import { POST as RECORD_EVIDENCE } from '@/app/api/v1/inspections/[inspectionId]/evidence/route';
 import { POST as RECORD_RECOMMENDATION } from '@/app/api/v1/inspections/[inspectionId]/recommendations/route';
@@ -322,6 +328,7 @@ beforeAll(async () => {
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
+  await establishQualityFixtures();
   const fixtures = await establishDiagnosticFixtures();
   templateVersionId = fixtures.templateVersionId;
   itemIds = fixtures.itemIds;
@@ -1710,5 +1717,176 @@ describe('dia.diagnostic-detail, dia.diagnostic-list and dia.diagnostic-history'
     const report = await seedReport();
     authAs(TENANT_B_FULL);
     expect((await readReport(report.reportId)).status).toBe(404);
+  });
+});
+
+describe('a closed work order stops accepting diagnostic work', () => {
+  /**
+   * Found by the pre-merge completeness audit. `create` refuses a terminal work order
+   * and a terminal job, but nothing re-checked it afterwards — so a report left
+   * `in_progress` when its order closed went on accepting measurements, DTCs, findings
+   * and recommendations, and could still be COMPLETED, indefinitely after the vehicle
+   * was released.
+   *
+   * It needed no race, and the fixture below is the proof of that: closure blocker B4
+   * demands a completed report only for a `requires_diagnostic` job, so a report opened
+   * on an ORDINARY job leaves the order perfectly closable through the real gate while
+   * the report stays open. That is why the job here is created with
+   * `requiresDiagnostic: false` rather than through `seedJob`, which sets it true.
+   *
+   * A diagnostic is a dated observation about a vehicle. Completion is the worse half:
+   * `completed` is the status B4 reads, so completing onto a closed order writes the
+   * fact that satisfies a gate which has already run.
+   *
+   * The residual unlocked-parent window is `P1-19-A-06`; this covers the non-racing
+   * case, which is the one that was reachable.
+   */
+  async function reportOnAClosedOrder(): Promise<{
+    readonly reportId: string;
+    readonly version: number;
+  }> {
+    const order = await createOpenWorkOrder();
+    authAs(FULL);
+    const jobResponse = await CREATE_JOB(
+      new Request(`http://localhost/api/v1/work-orders/${order.workOrderId}/jobs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
+        body: JSON.stringify({ title: 'Ordinary work', requiresDiagnostic: false }),
+      }),
+      { params: Promise.resolve({ workOrderId: order.workOrderId }) }
+    );
+    if (jobResponse.status !== 201) {
+      throw new Error(`fixture job failed with ${jobResponse.status}: ${await jobResponse.text()}`);
+    }
+    const job = (await jobResponse.json()) as { id: string; recordVersion: number };
+
+    authAs(FULL);
+    const created = await createReport(job.id, { templateVersionId });
+    if (created.status !== 201) {
+      throw new Error(`fixture report failed with ${created.status}: ${await created.text()}`);
+    }
+    const report = (await created.json()) as ReportBody;
+    authAs(FULL);
+    const started = await moveReport(
+      report.id,
+      { toStatus: 'in_progress' },
+      { version: report.recordVersion }
+    );
+    if (started.status !== 200) {
+      throw new Error(`fixture start failed with ${started.status}: ${await started.text()}`);
+    }
+    const version = ((await started.json()) as ReportBody).recordVersion;
+
+    // Terminal job clears B1; a passed QC record clears B5b.
+    authAs(FULL);
+    const cancelled = await post(
+      TRANSITION_JOB as never,
+      `/api/v1/jobs/${job.id}/transition`,
+      { jobId: job.id },
+      { toState: 'cancelled', reason: 'closing the order with the report still open' },
+      { version: job.recordVersion }
+    );
+    if (cancelled.status !== 200) {
+      throw new Error(
+        `fixture job cancel failed with ${cancelled.status}: ${await cancelled.text()}`
+      );
+    }
+
+    authAs(FULL);
+    const qc = await post(
+      OPEN_QC as never,
+      `/api/v1/work-orders/${order.workOrderId}/quality-controls`,
+      { workOrderId: order.workOrderId },
+      {}
+    );
+    const qcBody = (await qc.json()) as { id: string; recordVersion: number };
+    authAs(FULL);
+    await post(
+      FINALIZE_QC as never,
+      `/api/v1/quality-controls/${qcBody.id}/finalization`,
+      { recordId: qcBody.id },
+      { overallResult: 'passed' },
+      { version: qcBody.recordVersion }
+    );
+
+    const orderVersion = await advance(order.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    authAs(FULL);
+    const closed = await post(
+      CLOSE_WORK_ORDER as never,
+      `/api/v1/work-orders/${order.workOrderId}/closure`,
+      { workOrderId: order.workOrderId },
+      { toState: 'closed' },
+      { version: orderVersion }
+    );
+    if (closed.status !== 200) {
+      throw new Error(`fixture closure failed with ${closed.status}: ${await closed.text()}`);
+    }
+    return { reportId: report.id, version };
+  }
+
+  it('refuses every entry kind and refuses completion', async () => {
+    const report = await reportOnAClosedOrder();
+
+    const cases = [
+      [
+        'measurement',
+        () =>
+          entry(RECORD_MEASUREMENT, 'measurements', report.reportId, {
+            templateItemId: itemIds.get(ITEM_BRAKE_THICKNESS) ?? '',
+            label: 'Front left disc',
+            measuredValue: '25.0',
+            unit: 'mm',
+          }),
+      ],
+      [
+        'dtc',
+        () =>
+          entry(RECORD_DTC, 'dtcs', report.reportId, {
+            code: 'P0301',
+            description: 'Late DTC',
+          }),
+      ],
+      [
+        'finding',
+        () =>
+          entry(RECORD_FINDING, 'findings', report.reportId, {
+            severity: 'critical',
+            disposition: 'repair_required',
+            description: 'Late finding',
+          }),
+      ],
+      [
+        'recommendation',
+        () =>
+          entry(RECORD_RECOMMENDATION, 'recommendations', report.reportId, {
+            recommendation: 'Late recommendation',
+          }),
+      ],
+    ] as const;
+
+    for (const [label, send] of cases) {
+      authAs(FULL);
+      const refused = await send();
+      expect(refused.status, `${label} on a closed order`).toBe(409);
+      expect(((await refused.json()) as { code?: string }).code, label).toBe('ERR-TRN-001');
+    }
+
+    // Completion is the one that would have changed what B4 sees.
+    authAs(FULL);
+    const completion = await completeReport(report.reportId, {}, { version: report.version });
+    expect(completion.status).toBe(409);
+    expect(((await completion.json()) as { code?: string }).code).toBe('ERR-TRN-001');
+
+    // The report is untouched — still `in_progress`, still at its version.
+    const row = await admin.query<{ status: string; record_version: number }>(
+      `SELECT status, record_version FROM dia.diagnostic_reports WHERE id = $1`,
+      [report.reportId]
+    );
+    expect(row.rows[0]?.status).toBe('in_progress');
+    expect(row.rows[0]?.record_version).toBe(report.version);
   });
 });

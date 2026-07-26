@@ -42,6 +42,8 @@ policy or RLS assertion.
 
 ## Test files
 
+_Delivers **P1-19-QA-001** — unit and component test coverage — and **P1-19-QA-005** — regression and evidence packaging._
+
 | File                                                     | Tests | Subject                                                             |
 | -------------------------------------------------------- | ----- | ------------------------------------------------------------------- |
 | `tests/foundation/p1-19-module-foundation.test.ts`       | 14    | The four module boundaries, their public surfaces, catalog wiring   |
@@ -99,6 +101,8 @@ against the **deployed** object rather than against the migration file that crea
 
 ## Operation depth
 
+_Delivers **P1-19-QA-002** — API/contract and error-path coverage._
+
 `scripts/check-operation-test-coverage.mjs` reports **58/58** P1-19 operations at
 operation depth with **0** pending, **0** invocation-only, **0** unit-only, **0**
 unreferenced and **0** metadata-only. The per-operation evidence flags are restated
@@ -129,6 +133,8 @@ a diagnostic report cannot be completed before a recommendation exists.
 
 ## The closure gate is proved one blocker at a time
 
+_Delivers **P1-19-QA-003** — tenant/company/branch isolation coverage — jointly with the four-way read probe recorded in [`security-review.md`](security-review.md) §1._
+
 `p1-19-closure-gate-matrix.test.ts` arranges **exactly one** blocker on an order that is
 otherwise fully clear and asserts the eligibility endpoint names that blocker and no
 other. An eligibility check that merely reported "something is wrong" would pass every
@@ -157,6 +163,8 @@ Three findings the matrix pinned:
   rework order reports exactly `B6`.
 
 ## Concurrency, rollback and stale-version coverage
+
+_Delivers **P1-19-QA-004** — concurrency and idempotency coverage._
 
 `p1-19-concurrency.test.ts` covers the three commands whose protection is **not** a
 unique index, where a sequential test says nothing about behaviour under load. Each case

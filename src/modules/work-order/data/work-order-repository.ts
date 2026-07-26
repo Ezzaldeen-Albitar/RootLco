@@ -1585,17 +1585,24 @@ export class WorkOrderRepository extends Repository {
     assignmentId: string,
     reason: string,
     expectedVersion: number
-  ): Promise<boolean> {
+  ): Promise<AssignmentRow | null> {
     const context = this.assertContext(db);
-    const result = await this.run(
+    // RETURNING, not a row count. The caller used to rebuild the closed interval from
+    // the pre-close row plus `new Date()`, which reported the Node process clock where
+    // the column holds `now()` — the transaction timestamp — and reported the stale
+    // `record_version` that `tg_job_assignments_touch_metadata` has just bumped. Both
+    // are values only the database knows, so both come back from the database.
+    const result = await this.run<AssignmentColumns>(
       db,
       `UPDATE wo.job_assignments
           SET valid_to = now(), reason = $3, updated_by = $4
         WHERE tenant_id = $1 AND id = $2 AND record_version = $5
-          AND valid_to IS NULL AND deleted_at IS NULL`,
+          AND valid_to IS NULL AND deleted_at IS NULL
+        RETURNING ${ASSIGNMENT_COLUMNS}`,
       [context.principal.tenantId, assignmentId, reason, context.principal.userId, expectedVersion]
     );
-    return (result.rowCount ?? 0) === 1;
+    const row = result.rows[0];
+    return row ? toAssignmentRow(row) : null;
   }
 
   /** Every assignment a job has ever had, newest interval first. */

@@ -448,6 +448,12 @@ export class DiagnosticReportService extends ApplicationService {
         message: `Diagnostic report ${reportId} was modified by another request`,
       });
     }
+    // The same parent rule as the entry surface, and it belongs on this path most of
+    // all: `completed` is the status closure blocker B4 reads. Completing a report onto
+    // an already-closed order would write the fact that satisfies B4 after the gate
+    // that consults it has already run. Cancellation is refused for the same reason —
+    // both are status changes on work the vehicle has left behind.
+    await this.assertParentAcceptsWork(db, locked);
     assertReportTransition(locked.status, toStatus);
 
     let version = expectedVersion;
@@ -1006,6 +1012,28 @@ export class DiagnosticReportService extends ApplicationService {
    * and the entry insert, and the entry would land on a report that says it is
    * finished. `assertRecordable` is checked under the lock for that reason, not
    * merely before the write.
+   *
+   * ## The parent's state is checked here too, and was not
+   *
+   * `create` refuses a terminal work order and a terminal job, but nothing re-checked
+   * it afterwards — so a report left `in_progress` when its work order closed went on
+   * accepting measurements, DTCs, findings, evidence and recommendations, and could
+   * still be COMPLETED, indefinitely after the vehicle was released.
+   *
+   * That is reachable without any race. B4 requires a completed report only for a
+   * `requires_diagnostic` job, so an order carrying an `in_progress` report on an
+   * ordinary job closes cleanly through the real gate — and the report stayed open for
+   * writing. A diagnostic is a dated observation about a vehicle; recording one after
+   * the vehicle has gone makes the report say something it cannot know.
+   *
+   * The parent is resolved through the `work-order` module's public `jobScope`, because
+   * `diagnostics` may not read `wo.work_orders` (ADR-001 rule 3), and that read is
+   * NOT locked — `jobScope` does not lock, and adding a cross-module lock primitive to
+   * satisfy a refusal would leak locking semantics across a boundary the phase keeps
+   * closed. The residual window is recorded as `P1-19-A-06`: a closure committing
+   * between this check and the entry insert would still admit the entry. The window is
+   * narrow, the outcome is a late entry rather than a wrong closure decision, and
+   * closing it needs either a database guard (a migration) or a cross-module lock.
    */
   private async lockRecordableReport(
     db: DbHandle,
@@ -1022,7 +1050,29 @@ export class DiagnosticReportService extends ApplicationService {
       await authorizeScope({ companyId: report.companyId, branchId: report.branchId });
     }
     assertRecordable(report.status);
+    await this.assertParentAcceptsWork(db, report);
     return report;
+  }
+
+  /**
+   * Refuses when the report's work order has reached a terminal state.
+   *
+   * Separate from `lockRecordableReport` because completion needs the same rule and
+   * takes its own lock — a report may not be completed onto a released vehicle either,
+   * and completion is the one entry-surface act that changes what B4 sees.
+   */
+  private async assertParentAcceptsWork(db: DbHandle, report: DiagnosticReportRow): Promise<void> {
+    const job = await workOrderModule().workOrders.jobScope(db, report.jobId);
+    if (job === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Job ${report.jobId} is not visible`,
+      });
+    }
+    if (job.workOrderIsTerminal) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Work order state "${job.workOrderState}" does not accept diagnostic changes`,
+      });
+    }
   }
 
   /**

@@ -239,16 +239,17 @@ export class JobAssignmentService extends ApplicationService {
       input.reason,
       input.expectedVersion
     );
-    if (!closed) {
+    if (closed === null) {
       throw new AppFailure('ERR-CON-001', {
         message: `Assignment ${assignmentId} was modified by another request`,
       });
     }
     await this.auditEnded(db, locked, input.reason);
-    // Read back rather than reconstructed: `valid_to` was stamped by the database,
-    // so the only honest source for it is the row.
-    const after = await this.repository.lockAssignment(db, assignmentId);
-    return toView(after ?? { ...locked, validTo: new Date(), reason: input.reason });
+    // The row the UPDATE returned, with no fallback. `valid_to` is `now()` and
+    // `record_version` has just been bumped by the touch trigger; both are values only
+    // the database knows, and an earlier revision reconstructed them from the pre-close
+    // row plus the Node clock when the read-back happened to miss.
+    return toView(closed);
   }
 
   /**
@@ -283,13 +284,16 @@ export class JobAssignmentService extends ApplicationService {
         input.reason,
         current.recordVersion
       );
-      if (!closed) {
+      if (closed === null) {
         throw new AppFailure('ERR-CON-001', {
           message: `Assignment ${current.id} was modified by another request`,
         });
       }
       await this.auditEnded(db, current, input.reason);
-      ended = toView({ ...current, validTo: new Date(), reason: input.reason });
+      // The database-stamped row, not `{ ...current, validTo: new Date() }`. The
+      // reassignment response reported a `validTo` from the Node process clock and the
+      // pre-close `recordVersion`, so a client that echoed either back was refused.
+      ended = toView(closed);
     }
 
     await technicianModule().eligibility.assertOrThrow(

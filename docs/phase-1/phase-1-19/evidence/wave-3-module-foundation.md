@@ -168,8 +168,15 @@ Built from `81c9d5c` only: 119 migrations in order, then the 7 declared seeds.
 | Constraints / views        | 1845 / 0                                                           |
 | `SECURITY DEFINER`         | **0**                                                              |
 | RLS enabled but not forced | **0**                                                              |
-| `iam.permissions`          | **92** (21 in `wo`/`tech`/`dia`/`qms`)                             |
+| `iam.permissions`          | **93** (22 in `wo`/`tech`/`dia`/`qms`) — corrected, see note below |
 | `validate:seed-state`      | **exit 0** — 7 files applied twice, counts idempotent              |
+
+**A correction.** This table recorded `iam.permissions` as **92 (21 in
+`wo`/`tech`/`dia`/`qms`)`**. Both figures were wrong for the SHA the section names:
+`supabase/seeds/04_iam_permission_catalog.sql` seeds **22** codes across the four
+domains, taking the catalog from 71 to **93**. The wrong pair contradicted this
+document's own §"Permissions" list, the P1-19 clean-room reproof, and every phase-level
+document. Found by the pre-merge completeness audit.
 
 The `schema_hash` is **byte-identical to the P1-18 baseline**, which is the proof
 that Wave 3 changed no schema object.

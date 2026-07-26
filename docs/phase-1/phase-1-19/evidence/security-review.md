@@ -23,6 +23,8 @@ against that file and fails the build on a code that is not there.
 
 ## 1. Every operation is guarded, and the guard is evaluated in the database
 
+_Delivers **P1-19-SEC-001** — permission and resolved-scope enforcement._
+
 All 58 operations declare their permission codes in `defineOperation`; nothing
 restates them, and `scripts/check-authorization-coverage.mjs` fails CI if a route is
 reachable without one. Authorization is evaluated by `iam.has_permission` /
@@ -113,6 +115,8 @@ themselves rather than from the manifest.
 
 ## 2. Restricted data is a separate surface, never a field on a projection
 
+_Delivers **P1-19-SEC-002** — sensitive-data, export and file-access controls._
+
 Three columns in the P1-19 schemas are classified `restricted`
 (`docs/database/wo-tech-dia-qms-personal-data-classification.json`):
 
@@ -192,6 +196,8 @@ refusals through the real routes.
 
 ## 3. Attribution cannot be forged
 
+_Delivers **P1-19-SEC-003** — abuse-case and privilege-escalation controls, together with §5._
+
 Every server-stamped identity in this phase is stamped by the **database**, from the
 session GUC, not by the application:
 
@@ -219,6 +225,8 @@ claiming the stronger form, and the difference is recorded again in
 ---
 
 ## 4. A refusal is recorded, not merely returned
+
+_Delivers **P1-19-SEC-004** — security audit-event coverage, together with the audit-action section of [`errors-and-events.md`](errors-and-events.md)._
 
 `qms.reopen-attempt` is the clearest case. BR-WO-002 means a closed work order never
 reopens, and `wo.guard_work_order_transition` has no outbound edge from `closed`. The
@@ -266,7 +274,9 @@ identified row guarded by `If-Match`**, so a replayed request either finds the v
 it expects and applies the same change, or finds a moved version and is refused. The
 optimistic-concurrency check already answers the question idempotency would answer, and
 adding a second answer would let a stale replay be served from the idempotency record
-after the row had moved on. The remaining 22 are reads.
+after the row had moved on. The remaining **23** are reads — 31 idempotent commands + 4
+`If-Match`-only commands + 23 reads = 58. An earlier revision said 22 here, which
+contradicted the 23 `GET` operations this same document counts two sections above.
 
 ---
 

@@ -1,5 +1,7 @@
 # P1-19 — Error codes and events
 
+_Delivers **P1-19-DOC-001** — contract, catalog and traceability synchronization, together with the generated [`endpoint-inventory.md`](endpoint-inventory.md) and [`task-traceability.md`](task-traceability.md)._
+
 ## The five error codes this phase adds
 
 | Code           | Status | Owner        | Class    | Meaning                                                     |

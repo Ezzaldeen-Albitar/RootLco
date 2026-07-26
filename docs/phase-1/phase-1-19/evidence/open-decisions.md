@@ -4,16 +4,17 @@ Everything here is **open at the close of the phase**. Nothing in this file is a
 resolved item written up after the fact; each entry states what is wrong, what it costs,
 and why it was not closed in this phase.
 
-| ID           | Severity | Subject                                                   | Raised in | Status |
-| ------------ | -------- | --------------------------------------------------------- | --------- | ------ |
-| `P1-19-A-01` | Low      | The job board's ordering is not index-aligned             | Wave 4    | Open   |
-| `P1-19-A-02` | Medium   | Diagnostic revision numbering rests on an advisory lock   | Wave 7    | Open   |
-| `P1-19-A-03` | Low      | `P1-19-BE-nnn` annotations are not a reliable task map    | Wave 9    | Open   |
-| `P1-19-A-04` | Low      | `wo.work-order-detail` declares the wrong rate-limit tier | Wave 9    | Open   |
-| `P1-19-A-05` | Low      | `originating_finding_id` has no foreign key               | Wave 9    | Open   |
+| ID           | Severity | Subject                                                      | Raised in | Status |
+| ------------ | -------- | ------------------------------------------------------------ | --------- | ------ |
+| `P1-19-A-01` | Low      | The job board's ordering is not index-aligned                | Wave 4    | Open   |
+| `P1-19-A-02` | Medium   | Diagnostic revision numbering rests on an advisory lock      | Wave 7    | Open   |
+| `P1-19-A-03` | Low      | `P1-19-BE-nnn` annotations are not a reliable task map       | Wave 9    | Open   |
+| `P1-19-A-04` | Low      | `wo.work-order-detail` declares the wrong rate-limit tier    | Wave 9    | Open   |
+| `P1-19-A-05` | Low      | `originating_finding_id` has no foreign key                  | Wave 9    | Open   |
+| `P1-19-A-06` | Low      | Diagnostics parent-terminal refusal reads the order unlocked | Wave 9    | Open   |
 
 `A-01` and `A-02` were raised and numbered by the waves that found them; `A-03` through
-`A-05` are new here. The numbering is not re-sorted by severity — an identifier that
+`A-06` are new here — `A-06` from the pre-merge completeness audit. The numbering is not re-sorted by severity — an identifier that
 moves is worse than a table that is not ordered the way a reader might prefer.
 
 ---
@@ -128,6 +129,33 @@ the read path resolves the finding under RLS and returns nothing when it does no
 resolve.
 
 **Why it is not closed.** The constraint would be a migration.
+
+---
+
+## `P1-19-A-06` — the diagnostics parent-terminal refusal reads the order unlocked
+
+**What.** `lockRecordableReport` and the report status `move` path now refuse when the
+report's work order is terminal — that refusal did not exist before the pre-merge audit,
+and its absence let an `in_progress` report keep accepting entries, and be COMPLETED,
+after its order had closed. The refusal resolves the parent through the `work-order`
+module's public `jobScope`, and **that read is not locked**.
+
+**Residual window.** A closure committing between the parent check and the entry insert
+would still admit the entry. `dia` carries no trigger that reads `wo.work_orders`, so
+nothing behind the application refuses it.
+
+**Why it is not closed.** Two options, both blocked. A database guard on
+`dia.diagnostic_reports` and its entry tables is a migration, which this phase is not
+authorised to write. A cross-module lock — `diagnostics` locking `wo.work_orders` — would
+either breach ADR-001 rule 3 or require exporting a locking primitive from the work-order
+module, leaking transaction semantics across a boundary this phase deliberately keeps
+closed.
+
+**Impact.** Low and bounded. The outcome is a late diagnostic entry on a closed order,
+not a wrong closure decision: B4 is evaluated by the database trigger at closure time
+from the rows that exist then, and this window cannot change what the gate saw. The
+non-racing case — the one that was actually reachable, indefinitely, with no concurrency
+at all — is now refused.
 
 ---
 

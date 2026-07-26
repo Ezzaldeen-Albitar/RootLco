@@ -72,6 +72,8 @@ commits above and are described in the wave evidence documents.
 
 ## Wave 9 specifically
 
+_Delivers **P1-19-DOC-002** — operator/developer guidance and change-log update._
+
 | Change                                            | Kind          |
 | ------------------------------------------------- | ------------- |
 | `scripts/p1-19-endpoint-inventory.mjs`            | New gate      |
@@ -87,16 +89,32 @@ commits above and are described in the wave evidence documents.
 | `evidence/change-log.md`                          | This file     |
 | `tests/backend/p1-19-closure-gate-matrix.test.ts` | New suite     |
 | `tests/backend/p1-19-concurrency.test.ts`         | New suite     |
+| `evidence/task-register.md`                       | Evidence      |
+| `evidence/final-adversarial-review.md`            | Evidence      |
+| `evidence/clean-room-validation.md`               | Evidence      |
+| `evidence/errors-and-events.md`                   | Evidence      |
+| `evidence/pre-merge-completeness-audit.md`        | Evidence      |
 
 The new gate reconciles, on every build, that every declared permission is seeded, that
 every declared audit action matches the controlled catalog **including its class**, that
 the event catalog and the publishing modules agree in **both** directions, and that
 neither generated document has been hand-edited.
 
-Wave 9 changed **no executable application code**. That is deliberate and checkable:
-`git diff f326e24..HEAD -- src/app src/modules` is unchanged by this wave's commits. Its
-only additions to `tests/` are the two new suites above and one corrected comment in
-`p1-19-diagnostics.test.ts`.
+Wave 9's slices A, B and C changed **no executable application code** — the inventory
+gate, the two new suites and the eight evidence documents touch `scripts/`, `tests/`,
+`.github/` and `docs/` only.
+
+**Its fourth slice did**, and an earlier revision of this paragraph claimed otherwise
+without qualification. The final adversarial review's remediation (`918347a`) changed
+four executable files: the `tech.labor-session-list` scope fix in
+`labor-sessions/route.ts` and `labor-session-service.ts`, the `recordLine` and
+`closureEligibility` corrections in `work-order-service.ts`, the parent-first lock
+reorder in `additional-work-service.ts`, and the removed `reason` field in
+`assignments/route.ts`. Those are Wave 9 commits and pretending otherwise would make the
+diff contradict this document.
+
+Also added in Wave 9: [`task-register.md`](task-register.md), which exists because the
+pre-merge audit found that 13 of the 33 task identifiers were not greppable anywhere.
 
 ## Inherited tests
 

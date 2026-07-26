@@ -2,6 +2,8 @@
 
 ## What this phase added to CI
 
+_Delivers **P1-19-DO-001** — continuous-integration quality gate._
+
 One step, in the `quality` job, immediately after the operation-coverage check:
 
 ```yaml
@@ -37,6 +39,8 @@ Nothing else in CI changed. No job, no service container, no matrix entry, no ti
 no permission block.
 
 ## Structured logging
+
+_Delivers **P1-19-DO-002** — structured logging, monitoring and alert routing, together with the error-monitoring and metrics sections below._
 
 `handleOperation` is the only logging path a P1-19 operation takes, and it logs the
 operation id, the outcome, the timing, and the correlation id. No P1-19 service calls

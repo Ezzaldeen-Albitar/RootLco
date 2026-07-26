@@ -55,6 +55,7 @@ import {
   createOpenWorkOrder,
   createWorkOrder,
   establishP1_19Fixtures,
+  establishQualityFixtures,
   readJob,
   waitForBlockedBackends,
 } from './p1-19-helpers';
@@ -62,6 +63,10 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { POST as CREATE_JOB } from '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
 import { PATCH as UPDATE_JOB } from '@/app/api/v1/jobs/[jobId]/route';
+import { POST as TRANSITION_JOB } from '@/app/api/v1/jobs/[jobId]/transition/route';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import { POST as OPEN_QC } from '@/app/api/v1/work-orders/[workOrderId]/quality-controls/route';
+import { POST as FINALIZE_QC } from '@/app/api/v1/quality-controls/[recordId]/finalization/route';
 
 const CREATED_ACTION = 'wo.job.created';
 const UPDATED_ACTION = 'wo.job.updated';
@@ -106,6 +111,75 @@ function updateJob(
   );
 }
 
+/** Moves a job through the real transition route. */
+function transitionJob(
+  jobId: string,
+  body: unknown,
+  options: { readonly version: number }
+): Promise<Response> {
+  return TRANSITION_JOB(
+    new Request(`http://localhost/api/v1/jobs/${jobId}/transition`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': crypto.randomUUID(),
+        'if-match': String(options.version),
+      },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ jobId }) }
+  );
+}
+
+/** Closes a work order through the dedicated closure route. */
+function closeWorkOrder(workOrderId: string, version: number): Promise<Response> {
+  return CLOSE_WORK_ORDER(
+    new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': crypto.randomUUID(),
+        'if-match': String(version),
+      },
+      body: JSON.stringify({ toState: 'closed' }),
+    }),
+    { params: Promise.resolve({ workOrderId }) }
+  );
+}
+
+/** Clears closure blocker B5b, which a mandatory tenant-wide check makes mandatory. */
+async function passQualityControl(workOrderId: string): Promise<void> {
+  authAs(FULL);
+  const opened = await OPEN_QC(
+    new Request(`http://localhost/api/v1/work-orders/${workOrderId}/quality-controls`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
+      body: '{}',
+    }),
+    { params: Promise.resolve({ workOrderId }) }
+  );
+  if (opened.status !== 201) {
+    throw new Error(`fixture QC open failed with ${opened.status}: ${await opened.text()}`);
+  }
+  const record = (await opened.json()) as { id: string; recordVersion: number };
+  authAs(FULL);
+  const finalized = await FINALIZE_QC(
+    new Request(`http://localhost/api/v1/quality-controls/${record.id}/finalization`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': crypto.randomUUID(),
+        'if-match': String(record.recordVersion),
+      },
+      body: JSON.stringify({ overallResult: 'passed' }),
+    }),
+    { params: Promise.resolve({ recordId: record.id }) }
+  );
+  if (finalized.status !== 200) {
+    throw new Error(`fixture QC pass failed with ${finalized.status}: ${await finalized.text()}`);
+  }
+}
+
 interface JobBody {
   readonly id: string;
   readonly workOrderId: string;
@@ -147,6 +221,7 @@ beforeAll(async () => {
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
+  await establishQualityFixtures();
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);
 });
@@ -578,5 +653,112 @@ describe('the job/work-order transaction boundary', () => {
       [created.workOrderId]
     );
     expect(jobs.rows[0]?.n).toBe('0');
+  });
+});
+
+describe('wo.job-update refuses a job whose work order has already closed', () => {
+  /**
+   * The pre-merge completeness audit found `updateJob` to be the only child-write path
+   * in the phase that never consulted its parent's state. `wo.jobs` carries no trigger
+   * that reads the order, so nothing refused: a closed work order's jobs stayed
+   * editable after the vehicle had been released.
+   *
+   * `requires_diagnostic` is why that mattered. It is the direct input to closure
+   * blocker B4, and B4 reads the flag with no reference to the job's state — so setting
+   * it on a job of an already-closed order writes a blocker the gate has already run
+   * past, and clearing it erases the recorded fact that a diagnostic was required.
+   *
+   * No concurrency is needed to reach it, which is why these are plain sequential
+   * assertions rather than a forced race.
+   */
+  async function closedOrderWithJob(): Promise<{
+    readonly workOrderId: string;
+    readonly jobId: string;
+    readonly jobVersion: number;
+  }> {
+    const order = await createOpenWorkOrder();
+    authAs(FULL);
+    const created = await createJob(order.workOrderId, { title: 'Replace pads' });
+    if (created.status !== 201) {
+      throw new Error(`fixture job failed with ${created.status}: ${await created.text()}`);
+    }
+    const job = (await created.json()) as { id: string; recordVersion: number };
+
+    // The job must be terminal for B1 to clear, and a QC pass for B5b.
+    authAs(FULL);
+    const cancelled = await transitionJob(
+      job.id,
+      { toState: 'cancelled', reason: 'not required after inspection' },
+      { version: job.recordVersion }
+    );
+    expect(cancelled.status).toBe(200);
+    const cancelledVersion = ((await cancelled.json()) as { recordVersion: number }).recordVersion;
+
+    await passQualityControl(order.workOrderId);
+    const version = await advance(order.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    authAs(FULL);
+    const closed = await closeWorkOrder(order.workOrderId, version);
+    if (closed.status !== 200) {
+      throw new Error(`fixture closure failed with ${closed.status}: ${await closed.text()}`);
+    }
+    return { workOrderId: order.workOrderId, jobId: job.id, jobVersion: cancelledVersion };
+  }
+
+  it('refuses the edit, and refuses it for the requires_diagnostic flag specifically', async () => {
+    const fixture = await closedOrderWithJob();
+
+    authAs(FULL);
+    const refused = await updateJob(
+      fixture.jobId,
+      { title: 'Retitled after release' },
+      { version: fixture.jobVersion }
+    );
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-TRN-001');
+
+    // The flag that feeds B4, asserted separately because it is the one that changes
+    // what a closure the gate already granted would have meant.
+    authAs(FULL);
+    const flagged = await updateJob(
+      fixture.jobId,
+      { title: 'Replace pads', requiresDiagnostic: true },
+      { version: fixture.jobVersion }
+    );
+    expect(flagged.status).toBe(409);
+
+    // Nothing moved: not the title, not the flag, not the version.
+    const after = await readJob(fixture.jobId);
+    expect(after).toMatchObject({ version: fixture.jobVersion });
+    const row = await admin.query<{ title: string; requires_diagnostic: boolean }>(
+      `SELECT title, requires_diagnostic FROM wo.jobs WHERE id = $1`,
+      [fixture.jobId]
+    );
+    expect(row.rows[0]?.title).toBe('Replace pads');
+    expect(row.rows[0]?.requires_diagnostic).toBe(false);
+  });
+
+  it('still allows the edit while the order is open, so the guard is not simply blocking everything', async () => {
+    const order = await createOpenWorkOrder();
+    authAs(FULL);
+    const created = await createJob(order.workOrderId, { title: 'Before' });
+    const job = (await created.json()) as { id: string; recordVersion: number };
+
+    authAs(FULL);
+    const ok = await updateJob(
+      job.id,
+      { title: 'After', requiresDiagnostic: true },
+      { version: job.recordVersion }
+    );
+    expect(ok.status).toBe(200);
+    const row = await admin.query<{ title: string; requires_diagnostic: boolean }>(
+      `SELECT title, requires_diagnostic FROM wo.jobs WHERE id = $1`,
+      [job.id]
+    );
+    expect(row.rows[0]?.title).toBe('After');
+    expect(row.rows[0]?.requires_diagnostic).toBe(true);
   });
 });
