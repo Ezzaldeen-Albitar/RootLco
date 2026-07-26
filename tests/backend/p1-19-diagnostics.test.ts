@@ -371,9 +371,13 @@ describe('dia.diagnostic-create', () => {
     ).json()) as ReportBody;
     expect(first.revisionNumber).toBe(1);
     expect(second.revisionNumber).toBe(2);
-    // Sequential rather than concurrent, and that is honest: `revision_number` has NO
-    // unique index behind it (accepted item P1-19-A-02), so the advisory lock is the
-    // only protection and a race would prove nothing a constraint could back.
+    // Sequential here. An earlier revision of this comment went on to argue that a
+    // concurrent case would "prove nothing a constraint could back", and that was too
+    // strong. It is true that `revision_number` has NO unique index behind it (accepted
+    // item P1-19-A-02) and that no test can demonstrate an invariant the schema does
+    // not hold. But the limitation as recorded claims something narrower and testable —
+    // that two writers going through the REPOSITORY are serialised by the advisory lock
+    // — and `p1-19-concurrency.test.ts` now forces exactly that race.
   });
 
   it('refuses a DRAFT template version, distinguishing it from an unknown one', async () => {

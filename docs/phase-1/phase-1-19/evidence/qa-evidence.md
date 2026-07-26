@@ -6,7 +6,7 @@
 | ---------------------------- | ------------------------ | ---------- | -------- | ----------------- |
 | Unit (`npm test`)            | 829                      | 843        | **+14**  | 14                |
 | Database (`npm run test:db`) | 1547                     | 1610       | **+63**  | 63                |
-| Backend (`test:backend`)     | 771                      | 1060       | **+289** | 289               |
+| Backend (`test:backend`)     | 771                      | 1074       | **+303** | 303               |
 
 Every delta equals the phase's own new tests exactly. That is the point of listing
 both columns: it shows this phase added tests and **changed none of the inherited
@@ -61,6 +61,8 @@ policy or RLS assertion.
 | `tests/backend/p1-19-diagnostics.test.ts`                | 60    | The whole `dia` surface                                             |
 | `tests/backend/p1-19-quality-rework.test.ts`             | 41    | QC, reopen refusal, rework                                          |
 | `tests/backend/p1-19-operational-journey.test.ts`        | 1     | One vehicle, end to end, through the real routes                    |
+| `tests/backend/p1-19-closure-gate-matrix.test.ts`        | 10    | B1–B6 raised one at a time, and cancellation's bypass               |
+| `tests/backend/p1-19-concurrency.test.ts`                | 4     | Forced races on the surfaces no unique index protects               |
 
 The four DB files hold 63 tests between them; the per-file split is not listed because
 several are table-driven and a hand-written count would be a number nobody re-derives.
@@ -116,7 +118,62 @@ the property the whole rework mechanism exists to produce and which no single-su
 suite can observe. It also caught a real ordering defect the per-surface suites did not:
 a diagnostic report cannot be completed before a recommendation exists.
 
+## The closure gate is proved one blocker at a time
+
+`p1-19-closure-gate-matrix.test.ts` arranges **exactly one** blocker on an order that is
+otherwise fully clear and asserts the eligibility endpoint names that blocker and no
+other. An eligibility check that merely reported "something is wrong" would pass every
+test written against an order with one problem, and the suite that would have caught
+that did not exist before this wave.
+
+Reaching a single-blocker state means clearing the other five first, which turned out to
+matter: **B5b fires on every order in this tenant until a QC pass exists**, so a suite
+that skipped it would have been reporting B5b and calling it B1. The first two cases are
+that control — a baseline order that closes, and the same fixture without the QC pass
+reporting exactly `B5`.
+
+Three findings the matrix pinned:
+
+- **B2 is not independently reachable.** An open labour session requires a job in a
+  labour-allowed state, and `wo.guard_job_transition` will not let that job reach a
+  terminal state while the session is open — so `[B1, B2]` is the minimal real state and
+  an isolated B2 would have to be arranged by hand, proving the fixture rather than the
+  gate. The suite asserts the pair.
+- **A cancelled `requires_diagnostic` job still demands its report.** B4's predicate
+  reads `j.requires_diagnostic` with no reference to the job's state. The order claimed a
+  diagnostic was required; cancelling the job does not unclaim it.
+- **B6 blocks the REWORK order, not the original.** The predicate is
+  `rl.rework_work_order_id = NEW.id`. The suite closes an original, raises an unsigned
+  safety-critical rework against it, and asserts the original stays closed while the
+  rework order reports exactly `B6`.
+
 ## Concurrency, rollback and stale-version coverage
+
+`p1-19-concurrency.test.ts` covers the three commands whose protection is **not** a
+unique index, where a sequential test says nothing about behaviour under load. Each case
+**forces** the race: a third connection holds the row the command locks first, both
+callers park on it, `waitForBlockedBackends` confirms they arrived, and only then is the
+gate released. Two requests issued together may simply not interleave, so without that a
+pass would be evidence of luck.
+
+- **Diagnostic revision numbering** — two concurrent creations on one job receive
+  revisions 1 and 2. This is the probe that turns `P1-19-A-02` from a reading of the
+  source into a measurement: the limitation claims only that writers _going through the
+  repository_ are serialised by the advisory lock, and that is now tested. An earlier
+  comment in `p1-19-diagnostics.test.ts` argued a race would prove nothing here; that
+  was too strong and has been corrected.
+- **QC finalization** — two callers submit opposite verdicts on one record. One gets
+  200; the other gets **409 from the optimistic-concurrency check**, not a "record
+  already finalized" domain error, because the version it submitted had already moved.
+  Both are refusals; only one is a truthful account of what happened.
+- **Rework creation** — two concurrent cases against one closed original **both**
+  succeed, and that is deliberate: `uq_work_orders_ordinary_origin` is partial on
+  `kind = 'ordinary'`, so one repair may go wrong in two independent ways. A fourth case
+  makes one of the pair safety-critical and asserts the lead technician does not bleed
+  across, because `is_safety_critical` is per link and B6 must block one order and not
+  the other.
+
+Plus, from the wave suites:
 
 - **Rollback.** `qms.rework-create` writes a work order and a rework link in one
   transaction. The rollback probe removes the accepted custody event so

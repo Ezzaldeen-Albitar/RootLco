@@ -63,19 +63,21 @@ commits above and are described in the wave evidence documents.
 
 ## Wave 9 specifically
 
-| Change                                        | Kind          |
-| --------------------------------------------- | ------------- |
-| `scripts/p1-19-endpoint-inventory.mjs`        | New gate      |
-| `npm run validate:p1-19-inventory`            | New script    |
-| One CI step in the `quality` job              | CI            |
-| `evidence/endpoint-inventory.md`              | Generated doc |
-| `evidence/task-traceability.md`               | Generated doc |
-| `evidence/security-review.md`                 | Evidence      |
-| `evidence/qa-evidence.md`                     | Evidence      |
-| `evidence/devops-observability.md`            | Evidence      |
-| `evidence/state-machines-and-closure-gate.md` | Evidence      |
-| `evidence/open-decisions.md`                  | Evidence      |
-| `evidence/change-log.md`                      | This file     |
+| Change                                            | Kind          |
+| ------------------------------------------------- | ------------- |
+| `scripts/p1-19-endpoint-inventory.mjs`            | New gate      |
+| `npm run validate:p1-19-inventory`                | New script    |
+| One CI step in the `quality` job                  | CI            |
+| `evidence/endpoint-inventory.md`                  | Generated doc |
+| `evidence/task-traceability.md`                   | Generated doc |
+| `evidence/security-review.md`                     | Evidence      |
+| `evidence/qa-evidence.md`                         | Evidence      |
+| `evidence/devops-observability.md`                | Evidence      |
+| `evidence/state-machines-and-closure-gate.md`     | Evidence      |
+| `evidence/open-decisions.md`                      | Evidence      |
+| `evidence/change-log.md`                          | This file     |
+| `tests/backend/p1-19-closure-gate-matrix.test.ts` | New suite     |
+| `tests/backend/p1-19-concurrency.test.ts`         | New suite     |
 
 The new gate reconciles, on every build, that every declared permission is seeded, that
 every declared audit action matches the controlled catalog **including its class**, that
@@ -83,7 +85,9 @@ the event catalog and the publishing modules agree in **both** directions, and t
 neither generated document has been hand-edited.
 
 Wave 9 changed **no executable application code**. That is deliberate and checkable:
-`git diff f326e24..HEAD -- src/app src/modules` is unchanged by this wave's commits.
+`git diff f326e24..HEAD -- src/app src/modules` is unchanged by this wave's commits. Its
+only additions to `tests/` are the two new suites above and one corrected comment in
+`p1-19-diagnostics.test.ts`.
 
 ## Inherited tests
 

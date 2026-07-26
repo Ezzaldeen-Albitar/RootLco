@@ -48,7 +48,7 @@ checkpoint only and never authorises a merge.
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
 | GitHub Actions runs | Green **4/4** on the Wave 4 and Wave 5 heads; Wave 6, 7 and 8 heads verified on their exact SHAs                                  |
 | Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                                |
-| Totals at HEAD      | Unit **843** / Backend **1060** / DB **1610**; OpenAPI **140 paths / 168 operations**; P1-19 **58/58** operation depth, 0 pending |
+| Totals at HEAD      | Unit **843** / Backend **1074** / DB **1610**; OpenAPI **140 paths / 168 operations**; P1-19 **58/58** operation depth, 0 pending |
 
 ## Completed
 
