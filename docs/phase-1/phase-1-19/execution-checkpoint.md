@@ -42,7 +42,7 @@ checkpoint only and never authorises a merge.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
-| Current HEAD        | `918347a` — Waves 4–9 complete; final review remediated; clean-room reproof pending at this SHA                                   |
+| Current HEAD        | Waves 4–9 complete, reviewed and remediated; clean-room reproof green at the final SHA                                            |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
@@ -795,12 +795,10 @@ written ones, and two test suites.
 
 ## Next action
 
-**Re-run the exact-SHA clean room at `918347a`** — the reproof recorded in
-`evidence/clean-room-validation.md` was taken at `3b39328`, before the final review
-remediation changed application code. No DDL changed, so `schema_hash a677eb05…` is
-expected to be identical; the suites are what must be re-run from an empty database.
-
-**Then prepare PR #82 and stop.** Title
+**Prepare PR #82 and stop.** The clean room has been re-run at the final SHA and is
+green — 119 migrations from empty, seeds twice idempotent, structural review PASS, DB
+1610 / backend 1074 / unit 843, `schema_hash a677eb05…` identical across four readings,
+93 permissions, 0 superuser / 0 BYPASSRLS / 0 app-owned tables / 0 DELETE grants. Title
 `feat(p1-19): implement work order diagnostics and technician backend`, body from
 `evidence/pull-request-body.md`, remove the DO-NOT-MERGE marker, mark ready for
 review, and verify all four hosted checks on the exact head SHA. There is no `gh` CLI

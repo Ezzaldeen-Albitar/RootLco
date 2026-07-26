@@ -1,8 +1,20 @@
 # P1-19 — Exact-SHA PostgreSQL 17 clean-room reproof
 
-**Candidate SHA `3b39328d1b3f23b1fe878fc1c02d92c87be9893c`**, branch
+**Final SHA `baa270a8b1865b35d40ab0eff267228d2f8f17cc`**, branch
 `feature/p1-19-module-foundation`, base `develop` = `f326e24`. Worktree verified clean at
 that SHA immediately before the run and unchanged by it.
+
+**This is the second run, and the first one's SHA is why.** The reproof was first taken at
+`3b39328`. The final adversarial review then changed application code — the
+`tech.labor-session-list` scope fix, two lock corrections, the eligibility semantics and a
+removed request field — so the earlier run no longer described the tree being merged. A
+clean-room result that predates a code change is not evidence about the code that shipped,
+and re-running it was not optional. Both runs are recorded: the figures below are the
+second run's, and §"What the clean room found" reports what the first one caught.
+
+Everything structural is identical between the two runs, which is the expected result: the
+remediation touched no DDL. What had to be re-established is that the suites still pass
+from an empty database at the SHA being merged.
 
 ## Method
 
@@ -87,11 +99,14 @@ a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c
 **Byte-identical to the frozen P1-17/P1-18 baseline.** P1-19 adds no DDL, so an unchanged
 hash is the expected result and any change would have been a blocker.
 
-It was measured twice: once after migrations and seeds, and again **after the database,
-backend and unit suites had all run** against the same container. The second measurement
-is the one that matters — it proves the phase's 303 backend tests and 63 database tests
-leave no DDL residue behind them. A suite that quietly created a helper table or dropped
-a policy would show here and nowhere else.
+It was measured twice **in each run**: once after migrations and seeds, and again after the
+database, backend and unit suites had all run against the same container. The second
+measurement is the one that matters — it proves the phase's 303 backend tests and 63
+database tests leave no DDL residue behind them. A suite that quietly created a helper
+table or dropped a policy would show here and nowhere else.
+
+The value is identical across both runs and both measurements within each, which is four
+readings of the same hash.
 
 ## Artifact regeneration drift: zero, and what "zero" means
 
@@ -111,7 +126,10 @@ is true here.
 
 ## What the clean room found
 
-**One error, and it was in this phase's own evidence rather than in its code.**
+**One error, in the first run, and it was in this phase's own evidence rather than in its
+code.** The second run found nothing — which is what a reproof is for: it either confirms
+the tree or it does not, and a run that finds nothing after a run that found something is
+the only sequence that closes the question.
 
 Three phase-level evidence documents — `change-log.md`, `security-review.md` and
 `devops-observability.md` — stated that **no seed changed**. That is false.
