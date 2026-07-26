@@ -7,9 +7,22 @@
  * `tests/backend/p1-18-scope-containment.test.ts` proves the RUNTIME behaviour
  * of all ten id-addressed P1-18 commands against a real PostgreSQL: a caller
  * holding the permission in branch B1 plus any grant in B2 is refused on a B2
- * resource, the refusal is attributable to authorization rather than to RLS,
- * and nothing it would have written survives. That file is the behavioural
- * proof and this one does not restate it.
+ * resource, and nothing it would have written survives. That file is the
+ * behavioural proof and this one does not restate it.
+ *
+ * What that suite asserts about the KIND of refusal, stated exactly, because an
+ * earlier revision of this header overstated it: it discriminates
+ * `403 + ERR-IAM-001` from `404 + ERR-RES-001`, so a refusal that came from RLS
+ * hiding the row can never be mistaken for an authorization denial, and vice
+ * versa. It does NOT discriminate the deferred authorizer's 403 from a
+ * row-policy refusal that also maps to `ERR-IAM-001` — the services' mappers
+ * emit the same pair. For the five operations covered by mutation proofs that
+ * attribution is settled behaviourally (remove the authorizer and the call
+ * succeeds); for the other five it is inferred from the policies being pure
+ * tenant/company/branch predicates. `evidence/scoped-authorization-mutation-proofs.md`
+ * records that limit, and this file does not claim past it. A denial may also
+ * be reached before authorization at all — a lifecycle or validation refusal —
+ * so "every denial is uniquely attributable" is not a claim either suite makes.
  *
  * This file pins the CONTRACT of the layer underneath, in the unit tier, with
  * no database:

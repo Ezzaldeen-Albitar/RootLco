@@ -1067,8 +1067,11 @@ const COMMENT_CLOSE = '*' + '/';
  * a `describe`/`it` title or a call site.
  *
  * This is applied as a RATCHET, not retroactively, and the reason is recorded
- * rather than hidden. Turning it on for every operation fails 39 of them across
- * P1-16, P1-17 and IAM. Those suites do genuinely drive their operations — they
+ * rather than hidden. Turning it on for every operation fails 41 of them across
+ * FOUR namespaces — `veh` 20, `crm` 18, `iam` 2, `meta` 1. (An earlier revision
+ * of this comment said 39 across three and omitted `meta` entirely; the figure
+ * is now pinned by `tests/foundation/operation-coverage-gate.test.ts` so it
+ * cannot drift silently again.) Those suites do genuinely drive their operations — they
  * import the route module and call the handler — they simply never write the id
  * as a string outside their header. Rewriting three earlier phases' suites
  * inside a P1-18 remediation would put unvalidated breadth into protected

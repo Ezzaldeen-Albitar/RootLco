@@ -134,9 +134,19 @@ describe('operation coverage gate — the P1-18 comment ratchet', () => {
     // The ratchet is P1-18-only on purpose, and the source says why. If this
     // assertion ever fails, the note has been removed and the bounded debt is no
     // longer named anywhere.
+    //
+    // The figure itself used to be asserted as a literal here — `/39 of them/`,
+    // which pinned a number that was simply wrong (41, across four namespaces,
+    // not 39 across three) and so guaranteed the docstring stayed wrong. The
+    // count is now MEASURED in `pins the size and shape of the pre-P1-18 strict-rule
+    // debt` below; this assertion only requires the docstring to state the
+    // measured figure and to name all four namespaces.
     const gate = readFileSync(join(ROOT, 'scripts/check-operation-test-coverage.mjs'), 'utf8');
     expect(gate).toContain('P1-18-R-02');
-    expect(gate).toMatch(/39 of them|39 operations/);
+    expect(gate).toMatch(/fails 41 of them/);
+    for (const ns of ['`veh` 20', '`crm` 18', '`iam` 2', '`meta` 1']) {
+      expect(gate).toContain(ns);
+    }
   });
 });
 
@@ -505,5 +515,46 @@ describe('operation coverage gate — real registry and real files', () => {
       expect(row.method).toMatch(/^(GET|POST|PUT|PATCH|DELETE)$/);
       expect(row.path).toMatch(/^\//);
     }
+  });
+
+  it('pins the size and shape of the pre-P1-18 strict-rule debt', () => {
+    // The ratchet's own docstring quantifies what applying the strict rule to
+    // every namespace would cost, and `P1-18-R-02` repeats the figure. A number
+    // written in prose drifts: an earlier revision said "39 across P1-16, P1-17
+    // and IAM", which was wrong in both the count and the namespace list — it
+    // omitted `meta` entirely. Measuring it here means the claim is computed
+    // from the shipped MANIFEST and the shipped lexer rather than remembered.
+    //
+    // This does NOT weaken the strict rule; it only measures the debt the rule
+    // is deliberately not applied to yet. P1-18 stays strict either way.
+    const failing: string[] = [];
+    for (const [id, entry] of Object.entries(MANIFEST) as [string, { files?: string[] }][]) {
+      if (id.startsWith('apt.') || id.startsWith('rec.')) continue;
+      const files = entry.files ?? [];
+      let referenced = files.length > 0;
+      for (const file of files) {
+        const abs = join(ROOT, file);
+        if (!existsSync(abs) || !stripComments(readFileSync(abs, 'utf8')).includes(id)) {
+          referenced = false;
+          break;
+        }
+      }
+      if (!referenced) failing.push(id);
+    }
+
+    const byNamespace = new Map<string, number>();
+    for (const id of failing) {
+      const ns = id.split('.')[0] ?? '';
+      byNamespace.set(ns, (byNamespace.get(ns) ?? 0) + 1);
+    }
+
+    expect(failing).toHaveLength(41);
+    expect([...byNamespace.keys()].sort()).toEqual(['crm', 'iam', 'meta', 'veh']);
+    expect(Object.fromEntries([...byNamespace].sort())).toEqual({
+      crm: 18,
+      iam: 2,
+      meta: 1,
+      veh: 20,
+    });
   });
 });
