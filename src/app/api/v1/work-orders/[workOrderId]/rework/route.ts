@@ -24,9 +24,15 @@
  *
  * ## What the original must be
  *
- * CLOSED — `is_closed`, not `is_terminal`. `cancelled` is terminal and not closed, and
- * abandoned work is not corrected by rework; `qms.guard_rework_link_coherence` reads
- * the same flag and re-checks it on the link insert.
+ * CLOSED and NOT a cancellation. `qms.guard_rework_link_coherence` reads
+ * `wo.work_order_states.is_closed`, which is the floor — but the seeded `cancelled`
+ * row carries `is_closed = true` as well as `is_cancellation = true`, so the database
+ * on its own would accept a rework against an abandoned order. The service refuses
+ * that: rework corrects work that was DONE badly, and a cancelled order had nothing
+ * certified or released to correct.
+ *
+ * An earlier version of this file asserted the opposite — "cancelled is terminal and
+ * not closed" — in five places at once, and was simply wrong about the seed.
  *
  * ## BR-QMS-001 starts here
  *

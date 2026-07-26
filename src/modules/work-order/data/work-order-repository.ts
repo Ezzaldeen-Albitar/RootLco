@@ -584,7 +584,8 @@ export class WorkOrderRepository extends Repository {
       readonly branchId: string;
       readonly receptionVisitId: string;
       readonly vehicleId: string;
-      readonly displayNumber: string;
+      /** NULL when the tenant has no `work_order` sequence; the column is nullable. */
+      readonly displayNumber: string | null;
     }
   ): Promise<WorkOrderRow> {
     const context = this.assertContext(db);

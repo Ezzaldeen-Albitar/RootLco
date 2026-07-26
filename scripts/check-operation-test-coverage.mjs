@@ -785,7 +785,7 @@ export const MANIFEST = {
   'qms.qc-record-list': {
     files: ['tests/backend/p1-19-quality-rework.test.ts'],
     required: ['denial', 'cross-tenant', 'isolation'],
-    note: 'newest first, so a failed record and the passing re-check that cleared it are both visible in the order they happened',
+    note: 'OLDEST first, so a failure and the passing re-check that cleared it read in the order they happened — the note said newest first for one revision while both the query (ORDER BY created_at, id) and the test that pins items[0] as the failure said otherwise',
   },
   'qms.qc-record-detail': {
     files: ['tests/backend/p1-19-quality-rework.test.ts'],
@@ -833,7 +833,7 @@ export const MANIFEST = {
       'idempotency',
       'rollback',
     ],
-    note: 'the SECOND and last path that inserts wo.work_orders, and the reason it had to exist: before this wave nothing could produce kind=rework — reception’s conversion writes seven columns and leaves kind to its default — so qms.rework_links was unreachable and B6 could never fire. Not a contradiction of Wave 4’s boundary: that was the ORDINARY path, which originates from an authorized visit, and uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary precisely so a rework against a converted visit is legal. The test asserts the new order is kind=rework AND shares the original’s reception visit and vehicle. The original must be CLOSED — is_closed, not is_terminal, because cancelled is terminal and not closed and abandoned work is not corrected by rework. Rollback is proved by removing the accepted custody event so wo.guard_work_order_refs refuses the INSERT after the display number has been allocated: no order, no link, and the sequence advance rolled back too',
+    note: 'the SECOND and last path that inserts wo.work_orders, and the reason it had to exist: before this wave nothing could produce kind=rework — reception’s conversion writes seven columns and leaves kind to its default — so qms.rework_links was unreachable and B6 could never fire. Not a contradiction of Wave 4’s boundary: that was the ORDINARY path, which originates from an authorized visit, and uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary precisely so a rework against a converted visit is legal. The test asserts the new order is kind=rework AND shares the original’s reception visit and vehicle. The original must be CLOSED and NOT a cancellation: qms.guard_rework_link_coherence reads is_closed, which is the floor, but the seeded cancelled row carries is_closed=true AND is_cancellation=true — so the database alone would accept a rework against an abandoned order, and the service refuses it because rework corrects work that was DONE badly. An earlier revision asserted the opposite in five places and was wrong about the seed. Rollback is proved by removing the accepted custody event so wo.guard_work_order_refs refuses the INSERT after the display number has been allocated: no order, no link, and the sequence advance rolled back too',
   },
   'qms.rework-list': {
     files: ['tests/backend/p1-19-quality-rework.test.ts'],

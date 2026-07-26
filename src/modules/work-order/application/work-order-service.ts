@@ -329,7 +329,14 @@ export class WorkOrderService extends ApplicationService {
   async openRework(
     db: DbHandle,
     originalWorkOrderId: string,
-    displayNumber: string,
+    /**
+     * The allocated number, or NULL when the tenant has no `work_order` sequence.
+     * `wo.work_orders.display_number` is nullable and
+     * `uq_work_orders_active_display_number` is partial on `display_number IS NOT
+     * NULL`, so an unnumbered rework order is legal — the same fallback reception's
+     * conversion takes rather than refusing a tenant over operator configuration.
+     */
+    displayNumber: string | null,
     authorizeScope?: ScopeAuthorizer
   ): Promise<WorkOrderSummary> {
     const original = await this.repository.findWorkOrder(db, originalWorkOrderId);
@@ -343,12 +350,26 @@ export class WorkOrderService extends ApplicationService {
     }
     const states = await this.catalog.workOrderStates(db);
     const state = states.find((candidate) => candidate.code === original.state);
-    // `isClosed`, not `isTerminal`: `qms.guard_rework_link_coherence` reads
-    // `wo.work_order_states.is_closed`, and `cancelled` is terminal but NOT closed —
-    // abandoned work is not corrected by a rework, it is abandoned.
+    // `isClosed` is what `qms.guard_rework_link_coherence` reads, so it is the floor.
+    // `isCancellation` is this layer's ADDITIONAL refusal, and it is needed because
+    // the seeded `cancelled` row carries `is_closed = true` as well as
+    // `is_cancellation = true` — the database would therefore accept a rework against
+    // an abandoned order. An earlier version of this check asserted the opposite
+    // ("cancelled is terminal but NOT closed") in five places at once and was simply
+    // wrong about the seed.
+    //
+    // Rework corrects work that was DONE badly. A cancelled order had no work
+    // certified and released, so there is nothing to correct — and `wo.work_orders`
+    // already offers the right instrument for starting again: another ordinary
+    // conversion, which the partial unique index permits once the first is cancelled.
     if (state === undefined || !state.isClosed) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Rework corrects a CLOSED work order; state "${original.state}" is not closed`,
+      });
+    }
+    if (state.isCancellation) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Work order state "${original.state}" is a cancellation; there is no completed work to correct`,
       });
     }
 

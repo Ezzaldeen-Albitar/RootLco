@@ -251,6 +251,22 @@ export const REVIEWER: Principal = {
   ],
 };
 
+/**
+ * Tenant A, unrestricted, holding `qms.quality_control.record` and NOT `.finalize`.
+ *
+ * The finalization route's central claim is that the two are a real split — ticking
+ * checks off is medium risk, declaring a vehicle fit to release is high — and until
+ * this principal existed the test named for that claim probed only the read-only
+ * principal, which holds NEITHER. It could not have failed if the split were removed.
+ */
+export const QC_CHECKER: Principal = {
+  roleId: 'c1900000-0000-4000-8000-00000000013a',
+  userId: 'c1900000-0000-4000-8000-00000000013b',
+  subject: 'fx_p1_19_qc_checker',
+  tenantId: TENANT_A,
+  permissions: [READ, QC_RECORD, QC_READ],
+};
+
 /** Tenant A, unrestricted, read only — the 403 probe for every command. */
 export const READER: Principal = {
   roleId: 'c1900000-0000-4000-8000-0000000000c1',
@@ -382,6 +398,7 @@ export const PRINCIPALS: readonly Principal[] = [
   FULL,
   SENSITIVE,
   REVIEWER,
+  QC_CHECKER,
   NO_CLOSE,
   READER,
   SCOPED_ELSEWHERE,

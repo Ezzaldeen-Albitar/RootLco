@@ -6,10 +6,16 @@
  * BR-WO-002 admits no reopen. `qms.attempt_reopen` records the attempt in
  * `qms.reopen_attempts` — whose `outcome` is CHECK-fixed to `'rejected'`, so the
  * vocabulary has exactly one value and there is no success to record — and never
- * touches the work order. This service therefore returns a REFUSAL on its success
- * path: the request succeeded in being recorded, and the thing it asked for is
- * refused. `ERR-QMS-001` carries the recorded attempt's id, so a caller can point at
- * the ledger row rather than being told only "no".
+ * touches the work order.
+ *
+ * So `attemptReopen` RETURNS the recorded attempt together with its refusal rather
+ * than throwing. An earlier draft threw `ERR-QMS-001` carrying the attempt id, which
+ * read as more emphatic and was strictly worse: the throw aborts the request's
+ * transaction and takes the ledger row with it. This header described that abandoned
+ * design for one revision after the code stopped doing it.
+ *
+ * `ERR-TRN-001` is still thrown, for a different fact: an order that is not closed has
+ * nothing to reopen.
  *
  * ## Rework corrects the original by standing beside it, never by editing it
  *
@@ -250,19 +256,30 @@ export class ReworkService extends ApplicationService {
     }
 
     // The same sequence reception's conversion allocates from, borrowed through the
-    // shared surface exactly as reception does — never a second allocator, and never
-    // scoped, because the work-order sequence is provisioned per tenant.
-    const allocated = await sharedServicesModule().numbers.allocate(db, {
-      sequenceCode: 'work_order',
-    });
+    // shared surface exactly as reception does — never a second allocator.
+    //
+    // "Exactly as reception does" includes the PROVISIONING check, and an earlier
+    // draft omitted it while claiming otherwise. A number sequence is optional per
+    // tenant (`org.provision_organization` inserts only what the spec names, and no
+    // seed creates one), so an unguarded allocation raises `no_data_found` → a 404
+    // blaming the rework link for what is really operator configuration. Worse, it
+    // would make this whole surface — and therefore closure blocker B6 — unreachable
+    // for exactly the default tenant, which defeats the reason the wave exists.
+    // `wo.work_orders.display_number` is nullable precisely so the fallback is legal.
+    const numbers = sharedServicesModule().numbers;
+    const sequence = { sequenceCode: 'work_order' };
+    const displayNumber = (await numbers.isProvisioned(db, sequence))
+      ? (await numbers.allocate(db, sequence)).displayNumber
+      : null;
 
-    // Refuses a non-CLOSED original — `is_closed`, not `is_terminal`, because
-    // `cancelled` is terminal and not closed and abandoned work is not corrected by
-    // rework. `qms.guard_rework_link_coherence` re-checks it on the link insert below.
+    // Refuses an original that is not CLOSED, and separately one that is a
+    // CANCELLATION — see `openRework`, where the distinction and the seed fact behind
+    // it are recorded. `qms.guard_rework_link_coherence` re-checks `is_closed` on the
+    // link insert below.
     const reworkOrder = await workOrderModule().workOrders.openRework(
       db,
       originalWorkOrderId,
-      allocated.displayNumber,
+      displayNumber,
       authorizeScope
     );
 

@@ -61,6 +61,7 @@ import {
   COMPANY_B1,
   FULL,
   PERMISSION_ELSEWHERE,
+  QC_CHECKER,
   QC_CHECK_MANDATORY,
   READER,
   REVIEWER,
@@ -372,7 +373,54 @@ describe('qms.qc-record-open, qms.qc-record-list and qms.qc-record-detail', () =
       items: readonly QcBody[];
     };
     expect(listed.items).toHaveLength(2);
+    // OLDEST first: the failure came first and reads first, so the list tells the story
+    // in the order it happened. The manifest note said "newest first" for one revision.
     expect(listed.items[0]?.overallResult).toBe('failed');
+    expect(listed.items[1]?.overallResult).toBe('pending');
+  });
+
+  it('refuses every READ on this surface to an unpermitted, out-of-branch or cross-tenant caller', async () => {
+    // The four reads — the QC list, the QC detail, the rework list and the reopen
+    // ledger — each claim authorization, denial and isolation evidence in the coverage
+    // manifest, and an earlier revision of this file produced none of it: every read
+    // was made as FULL. A gate that only checks the operation id appears in executable
+    // code cannot catch that, which is how P1-17 credited eight operations falsely.
+    const closed = await closedWorkOrder();
+    // The closure fixture already passed a record — reading it back is the only way to
+    // get one here, because `open()` refuses a terminal order (a record opened after
+    // release could never gate the closure it exists to gate).
+    authAs(FULL);
+    const records = (await (await listQc(closed.workOrderId)).json()) as {
+      items: readonly QcBody[];
+    };
+    const record = records.items[0];
+    expect(record?.overallResult).toBe('passed');
+    authAs(FULL);
+    const rework = (await (
+      await createRework(closed.workOrderId, { rootCause: 'X', correctiveAction: 'Y' })
+    ).json()) as { link: { id: string } };
+    authAs(FULL);
+    await attemptReopen(closed.workOrderId, { reason: 'Recorded' });
+
+    for (const [name, send] of [
+      ['qc list', () => listQc(closed.workOrderId)],
+      ['qc detail', () => readQc(record!.id)],
+      ['rework list', () => listRework(closed.workOrderId)],
+      ['rework detail', () => readRework(rework.link.id)],
+      ['reopen list', () => listReopen(closed.workOrderId)],
+    ] as const) {
+      authAsSubject(SUBJECT_UNPERMITTED);
+      expect((await send()).status, `${name} unpermitted`).toBe(403);
+      // Granted in BRANCH_A2 and RLS-visible in A1 through an unrelated grant, so only
+      // the scoped permission check can refuse (P1-18-A-01).
+      authAs(PERMISSION_ELSEWHERE);
+      expect((await send()).status, `${name} scoped elsewhere with reach`).toBe(403);
+      // No grant in A1 at all, so RLS hides the row first: defence in depth.
+      authAs(SCOPED_ELSEWHERE);
+      expect((await send()).status, `${name} scoped elsewhere`).toBe(404);
+      authAs(TENANT_B_FULL);
+      expect((await send()).status, `${name} cross-tenant`).toBe(404);
+    }
   });
 
   it('reports which mandatory checks have no result yet', async () => {
@@ -630,9 +678,18 @@ describe('qms.qc-record-finalize', () => {
     const record = (await (await openQc(order.workOrderId)).json()) as QcBody;
     const body = { overallResult: 'passed' };
 
-    // `REVIEWER` holds neither QC permission, so the meaningful denial probe is the
-    // read-only principal — and the split itself is proved by `FULL` holding both and
-    // `READER` holding neither, plus the two narrowed principals below.
+    // THE control: `QC_CHECKER` holds `qms.quality_control.record` and NOT
+    // `.finalize`, so it can tick every check off and cannot declare the vehicle fit
+    // to release. Until this principal existed the test named for the split probed
+    // only the read-only principal, which holds neither — and could not have failed if
+    // the split were removed. (`REVIEWER` holds both through WAVE_8_COMMANDS, so it is
+    // no use here either; an earlier comment claimed it held neither, which was false.)
+    authAs(QC_CHECKER);
+    const canRecord = await writeCheck(record.id, mandatoryCheckId, { result: 'pass' });
+    expect(canRecord.status).toBe(200);
+    authAs(QC_CHECKER);
+    expect((await finalizeQc(record.id, body, { version: record.recordVersion })).status).toBe(403);
+
     authAs(READER);
     expect((await finalizeQc(record.id, body, { version: record.recordVersion })).status).toBe(403);
     authAsSubject(SUBJECT_UNPERMITTED);
@@ -894,9 +951,6 @@ describe('qms.rework-create, qms.rework-list and qms.rework-detail', () => {
   it('refuses an original that is not CLOSED', async () => {
     const order = await createOpenWorkOrder();
 
-    // `is_closed`, not `is_terminal`: `qms.guard_rework_link_coherence` reads that
-    // flag, and `cancelled` is terminal and NOT closed — abandoned work is not
-    // corrected by rework.
     authAs(FULL);
     const response = await createRework(order.workOrderId, {
       rootCause: 'Too early',
@@ -904,6 +958,40 @@ describe('qms.rework-create, qms.rework-list and qms.rework-detail', () => {
     });
     expect(response.status).toBe(409);
     expect(((await response.json()) as Problem).code).toBe('ERR-TRN-001');
+  });
+
+  it('refuses a CANCELLED original, which the database alone would accept', async () => {
+    const order = await createOpenWorkOrder();
+    await advance(order.workOrderId, [
+      { toState: 'cancelled', reason: 'Customer took the vehicle away' },
+    ]);
+
+    // The seeded `cancelled` row carries `is_closed = true` as well as
+    // `is_cancellation = true`, so `qms.guard_rework_link_coherence` — which reads only
+    // `is_closed` — would let this through. An earlier revision of the service asserted
+    // the opposite ("cancelled is terminal and NOT closed") in five places and was
+    // wrong about the seed, which means it would have created a rework case against
+    // abandoned work. Rework corrects work that was DONE badly.
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM wo.work_order_states
+          WHERE code = 'cancelled' AND scope = 'platform' AND is_closed AND is_cancellation`
+      )
+    ).toBe(1);
+
+    authAs(FULL);
+    const response = await createRework(order.workOrderId, {
+      rootCause: 'Nothing was done',
+      correctiveAction: 'Nothing to correct',
+    });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as Problem).code).toBe('ERR-TRN-001');
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM qms.rework_links WHERE original_work_order_id = $1`,
+        [order.workOrderId]
+      )
+    ).toBe(0);
   });
 
   it('refuses safety-critical rework with no lead technician, writing nothing', async () => {
@@ -1118,6 +1206,46 @@ describe('qms.rework-sign-off and closure blocker B6', () => {
       await count(
         `SELECT count(*)::text AS n FROM qms.rework_links
           WHERE id = $1 AND independent_sign_off_by IS NULL AND sign_off_at IS NULL`,
+        [created.link.id]
+      )
+    ).toBe(1);
+  });
+
+  it('reaches the CHECK itself on a NON-safety-critical link, where the pre-check declines to look', async () => {
+    const closed = await closedWorkOrder();
+    authAs(FULL);
+    const created = (await (
+      await createRework(closed.workOrderId, {
+        rootCause: 'Ordinary correction',
+        correctiveAction: 'Redo the adjustment',
+        // NOT safety-critical, and with a lead technician. `assertIndependentSignOff`
+        // returns immediately for a non-safety-critical link — deliberately, because
+        // imposing independence on routine corrections would block a single-technician
+        // branch — so this is the case where the application pre-check does NOT fire
+        // and `ck_rework_links_signoff_distinct` is the only thing left.
+        isSafetyCritical: false,
+        leadTechnicianId: TECH_A1,
+      })
+    ).json()) as { link: { id: string; recordVersion: number } };
+
+    authAs(REVIEWER);
+    const response = await signOff(
+      created.link.id,
+      { signOffBy: TECH_A1 },
+      { version: created.link.recordVersion }
+    );
+    // The CHECK constraint, mapped rather than surfaced as a bare 23514. Without this
+    // case the constraint was never exercised: every other sign-off refusal in the
+    // suite stopped at the pre-check, so removing the CHECK would have left the whole
+    // suite green.
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-QMS-001');
+    expect(problem.violations?.[0]?.rule).toBe('not_independent');
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM qms.rework_links
+          WHERE id = $1 AND independent_sign_off_by IS NULL`,
         [created.link.id]
       )
     ).toBe(1);
