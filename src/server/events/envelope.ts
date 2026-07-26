@@ -358,7 +358,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.additional_work_request',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'Additional work was raised against a work order.',
   },
   {
@@ -367,7 +367,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.customer_approval',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A customer decision on additional work was recorded.',
   },
   {

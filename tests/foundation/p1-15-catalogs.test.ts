@@ -107,6 +107,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-TRN-001',
   'ERR-VAL-001',
   'ERR-WO-001',
+  'ERR-WO-002',
 ];
 
 /**
@@ -142,6 +143,12 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-TRN-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-VAL-001', status: 422, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-WO-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
+  // Wave 6's unapproved-work execution gate. Same status/owner/class as ERR-WO-001
+  // and deliberately a separate code: ERR-WO-001 is the whole-order B1..B6 closure
+  // gate, this refuses ONE job movement while additional work it discovered awaits a
+  // customer decision. Sharing the code would make the catalog's own description of
+  // ERR-WO-001 false.
+  { code: 'ERR-WO-002', status: 409, owner: 'transition', class: 'conflict', retryable: false },
 ];
 
 /** The codes P1-15 introduced, with the status each promises a client. */
@@ -278,6 +285,14 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.plate_assigned',
   'veh.vehicle.status_changed',
   'veh.vehicle.updated',
+  // Wave 6. `wo.additional_work.*` sorts before `wo.customer_approval.*` and both
+  // before `wo.job.*`, because the pin is sorted by the FULL code.
+  'wo.additional_work.detail_read',
+  'wo.additional_work.detail_recorded',
+  'wo.additional_work.fulfillment_changed',
+  'wo.additional_work.requested',
+  'wo.additional_work.state_changed',
+  'wo.customer_approval.recorded',
   'wo.job.assigned',
   'wo.job.assignment_ended',
   'wo.job.created',

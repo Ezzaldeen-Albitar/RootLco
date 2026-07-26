@@ -501,7 +501,7 @@ export const MANIFEST = {
   'wo.required-part-record': {
     files: ['tests/backend/p1-19-work-order-lines.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
-    note: 'the NEGATIVE claim is the point and it is asserted, not described: recording demand leaves wo.work_orders.parts_forward_state at its frozen default and leaves every inv table empty, because item_ref is an opaque forward reference with no foreign key and reservation/issue are Phase 1-21; that is also why the closure-eligibility endpoint reports the two Phase 1-21 conditions as deferred rather than clear',
+    note: 'the NEGATIVE claim is the point and it is asserted, not described: recording demand leaves wo.work_orders.parts_forward_state at its frozen default and leaves every inv table empty, because item_ref is foreign-keyed to the item CATALOG (inv.item_master, via migration 20260723097000 — the Phase 1-9 table comment calling it an unconstrained forward reference is stale) and never to stock, and reservation/issue are Phase 1-21; that is also why the closure-eligibility endpoint reports the two Phase 1-21 conditions as deferred rather than clear',
   },
   'wo.required-part-list': {
     files: ['tests/backend/p1-19-work-order-lines.test.ts'],
@@ -601,8 +601,79 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
   },
+  // --- Wave 6: additional work, customer approvals, the execution gate. ----
+  'wo.additional-work-request': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'idempotency'],
+    note: 'provenance is REQUIRED and is this layer’s rule, because both origin columns are nullable and work whose provenance is unrecorded cannot be traced to what discovered it; the job-ownership case uses a job under a DIFFERENT work order in the same branch, which satisfies the composite foreign key and is caught only by the explicit check; originating_finding_id has NO foreign key at all, so an arbitrary uuid would have been stored happily and the refusal comes from a read through the diagnostics module — the only possible check and one the database cannot make; is_required defaults to true because the safe reading of silence is that a vehicle should not leave with discovered work undone, and the column is immutable after insert, which is what makes B3 non-evadable',
+  },
+  'wo.additional-work-list': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the SAFE projection, and the test asserts the negative: even read by the principal holding iam.sensitive.view, the response body does not contain the restricted description, because that has its own operation and nothing can reach it by listing',
+  },
+  'wo.additional-work-detail-record': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the sensitive-data control, tested in BOTH directions with two principals one permission apart — FULL is refused and SENSITIVE is served — because iam.sensitive.view is declared alongside the functional permission and permissions are a conjunction; RLS (ins_additional_work_request_details_gated) is defence in depth behind that and is why folding the description into the request creation would have failed at the second INSERT after the request had already been written; the audit record carries the FACT and the length and never the text, and a query for the text in iam.audit_details proves it, because iam.audit_records is NOT gated by iam.sensitive.view; replacement is legitimate (UPDATE is granted, only the description is unfrozen) and stays 1:1 through the partial unique index',
+  },
+  'wo.additional-work-detail-read': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none — the only read in this module that is — because who looked at restricted data is itself the fact worth keeping; a 404 here genuinely means "no detail" rather than "hidden from you", precisely because the operation demands iam.sensitive.view so a caller who reaches the service holds it; both narrowed principals hold the sensitive permission scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
+  'wo.additional-work-withdraw': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the exit that keeps a mistaken request from becoming permanent: a required pending request blocks BOTH closure (B3) and its originating job’s entry into any labour state, so without this the only escape would be to ask a customer to decide on work that was never needed; sits behind wo.additional_work.request and not the approve permission, because retracting a question is not deciding the answer; withdrawn is terminal so a second withdrawal is ERR-TRN-001, and the reason is mandatory here even though the row has no column for it — it lives in the audit record',
+  },
+  'wo.additional-work-fulfillment': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the ONLY way B3’s second limb can clear: nothing else in the phase writes fulfillment_state, so without this an approved required request would block its work order’s closure permanently; unfulfilled is in the CHECK vocabulary and deliberately not settable, because moving back to it would un-record a completion nobody retracted and no trigger freezes the column; only an approved request may move — fulfilling a pending one would record work the customer has not authorised; a waiver needs a reason because declining agreed work is accountable',
+  },
+  'wo.additional-work-approval': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+      'concurrency',
+    ],
+    note: 'the forgery-resistance control is proved rather than described: wo.guard_additional_work_state refuses state=approved with no approval row, and because no route can express that order the DEPLOYED guard is probed directly — a control nobody can reach through the API still has to be shown to work; the decision and the state change are ONE call because split in two there would be a window in which a decision exists and the request does not reflect it; the deciding party is refused when it belongs to another reception visit (23514 from wo.guard_customer_approval_coherence, mapped) and when it resolves to nothing (23503), and the composite party-role FK is satisfied in the first case so only the coherence guard catches it; evidence binds an exact document VERSION and the route has no storage-key field at all (a strict-schema 422 proves it); a rejected version is refused with ERR-DOC-001 while accepted is NOT required, because P1-15 documented acceptance as unreachable; the rollback case fails on the SECOND evidence entry and leaves no approval, no evidence, no state change, no audit and no outbox row; two raced decisions leave exactly one',
+  },
+  'wo.additional-work-approval-read': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the decision plus its evidence, which is the only way an append-only wo.customer_approval_evidence row is readable at all; an undecided request is a 404 rather than an empty decision, because "no decision" and "a decision with no content" are different facts',
+  },
   'wo.job-transition': {
-    files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
+    files: [
+      'tests/backend/p1-19-job-lifecycle.test.ts',
+      'tests/backend/p1-19-customer-approvals.test.ts',
+    ],
     required: [
       'success',
       'denial',
@@ -614,7 +685,7 @@ export const MANIFEST = {
       'idempotency',
       'concurrency',
     ],
-    note: 'the ONLY path a job state changes, so the graph has no bypass; the assignment precondition the assignments migration added to wo.guard_job_transition is invisible in the graph — planned→assigned is a configured, reason-free edge that still fails without an active assignment — and is refused as ERR-TECH-001 rather than a bare 23514 (denial); the reason reaches the ledger through app.status_reason, which is also what the guard reads to decide it was supplied; terminal freeze, absent edge and missing reason stay three distinct refusals; a forced race leaves exactly one winner and exactly one audit row and one event',
+    note: 'the ONLY path a job state changes, so the graph has no bypass; the assignment precondition the assignments migration added to wo.guard_job_transition is invisible in the graph — planned→assigned is a configured, reason-free edge that still fails without an active assignment — and is refused as ERR-TECH-001 rather than a bare 23514 (denial); the reason reaches the ledger through app.status_reason, which is also what the guard reads to decide it was supplied; terminal freeze, absent edge and missing reason stay three distinct refusals; a forced race leaves exactly one winner and exactly one audit row and one event. Wave 6 adds the unapproved-work execution gate INSIDE this operation rather than beside it, so it cannot be bypassed by choosing another URL: it keys on wo.job_states.labor_allowed rather than a state name, blocks entry while a REQUIRED request originating from this job is pending, and deliberately uses only B3’s FIRST limb — including approved-and-unfulfilled would have deadlocked the job, since it could then never enter a labour state, so the approved work could never be done and B3 could never clear. A pause is never gated, an optional request never gates, and a request from a sibling job or another work order never gates',
   },
   'wo.job-history': {
     files: ['tests/backend/p1-19-job-lifecycle.test.ts'],

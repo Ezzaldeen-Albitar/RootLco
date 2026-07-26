@@ -328,15 +328,19 @@ describe('P1-19 module foundation', () => {
       // Reserved is not implemented, and the reverse holds too: an entry claims a
       // phase ONLY once a wave publishes it. Wave 4 publishes
       // `work-order.state-changed` and `work-order.closed`; Wave 5 publishes
-      // `job.state-changed`. Everything else in this phase's allocation is still a
-      // reserved name, and a name that started claiming an implementation without a
-      // producer is a documentation defect this assertion exists to catch.
+      // `job.state-changed`, `job.assigned` and `labor.session-changed`; Wave 6
+      // publishes `additional-work.requested` and `customer-approval.recorded`.
+      // Everything else in this phase's allocation is still a reserved name, and a
+      // name that started claiming an implementation without a producer is a
+      // documentation defect this assertion exists to catch.
       const published = [
         'work-order.state-changed',
         'work-order.closed',
         'job.state-changed',
         'job.assigned',
         'labor.session-changed',
+        'additional-work.requested',
+        'customer-approval.recorded',
       ];
       if (published.includes(entry.eventType)) {
         expect(entry.implementedIn).toBe('P1-19');

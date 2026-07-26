@@ -59,6 +59,78 @@ export type AdditionalWorkState = (typeof ADDITIONAL_WORK_STATES)[number];
 export const FULFILLMENT_STATES = ['unfulfilled', 'fulfilled', 'waived'] as const;
 export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
 
+/**
+ * The fulfilment values a caller may SET, which is not the whole vocabulary.
+ *
+ * `unfulfilled` is the column default and the only value the workshop cannot
+ * choose: moving a request back to unfulfilled would un-do a completion nobody
+ * recorded, and `tg_additional_work_requests_immutable` does not freeze the column,
+ * so nothing in the schema would refuse it. This is the application's limit and is
+ * stated separately from the CHECK vocabulary so the two are not confused.
+ */
+export const SETTABLE_FULFILLMENT_STATES = ['fulfilled', 'waived'] as const;
+export type SettableFulfillmentState = (typeof SETTABLE_FULFILLMENT_STATES)[number];
+
+/**
+ * Frozen `ck_customer_approvals_decision` vocabulary — exactly two values.
+ *
+ * There is no `pending` decision row and no `waived` one: a `wo.customer_approvals`
+ * row IS a decision, so an undecided request simply has none. `declined` does not
+ * exist either — the request state that mirrors a refusal is `rejected`.
+ */
+export const APPROVAL_DECISIONS = ['approved', 'rejected'] as const;
+export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
+
+/**
+ * Frozen `ck_customer_approvals_channel` vocabulary, verbatim and complete.
+ *
+ * Read off `pg_constraint` rather than taken from the phase brief, which had four
+ * other vocabularies of this schema wrong. `other` is deliberately in the CHECK, so
+ * refusing it here would refuse something the database accepts.
+ */
+export const APPROVAL_CHANNELS = ['in_person', 'phone', 'email', 'sms', 'portal', 'other'] as const;
+export type ApprovalChannel = (typeof APPROVAL_CHANNELS)[number];
+
+/**
+ * The additional-work request states a caller may move a request INTO.
+ *
+ * There is no transition catalog for a request — unlike a work order or a job, its
+ * lifecycle is a CHECK vocabulary and a single trigger — so the graph is stated
+ * here, which is the honest place for it. It is intentionally tiny: a decision is
+ * recorded once and is immutable, so every terminal state is genuinely terminal.
+ *
+ *  - `pending → approved`  only with an `approved` customer approval already stored,
+ *    which `wo.guard_additional_work_state` enforces rather than trusting;
+ *  - `pending → rejected`  the mirror of a `rejected` decision;
+ *  - `pending → withdrawn` the workshop retracting its own request.
+ *
+ * `approved`, `rejected` and `withdrawn` have no outbound edge at all.
+ */
+export const ADDITIONAL_WORK_TRANSITIONS: Readonly<Record<string, readonly AdditionalWorkState[]>> =
+  Object.freeze({
+    pending: Object.freeze(['approved', 'rejected', 'withdrawn'] as const),
+    approved: Object.freeze([] as const),
+    rejected: Object.freeze([] as const),
+    withdrawn: Object.freeze([] as const),
+  });
+
+/**
+ * Application bounds on the free-text additional-work and approval columns.
+ *
+ * Every one of these columns is unbounded `text` with only a not-blank CHECK, so
+ * these are this layer's limits and not mirrors of the schema. `presentedScope` and
+ * the restricted description are generous because both are verbatim records of what
+ * a customer was shown or told, and truncating either would falsify the record the
+ * approval exists to preserve.
+ */
+export const MAX_REQUEST_SUMMARY = 500;
+export const MAX_RESTRICTED_DESCRIPTION = 4000;
+export const MAX_PRESENTED_SCOPE = 4000;
+export const MAX_EVIDENCE_TYPE = 64;
+export const MAX_EVIDENCE_NOTE = 500;
+/** How many evidence rows one approval may bind in its own transaction. */
+export const MAX_APPROVAL_EVIDENCE = 10;
+
 // No CHECK constrains a transition reason's length — `wo.work_order_status_history.reason`
 // is unconstrained `text` with only a not-blank guard — so this is a product limit
 // this layer chooses, not a schema fact. Stated so it is not mistaken for one.
@@ -198,6 +270,23 @@ export const DEFERRED_CLOSURE_BLOCKERS = Object.freeze({
 /** Raised for a rule this layer can decide without the database. */
 export class WorkOrderRuleError extends Error {
   public override readonly name = 'WorkOrderRuleError';
+}
+
+/**
+ * Refuses a move an additional-work request may not make.
+ *
+ * `ERR-TRN-001` rather than a new code: its registered meaning is "the target is
+ * registered for this aggregate but the aggregate is not in a state the transition
+ * may start from — including the case where it is already in the target state",
+ * which is exactly a second decision on a decided request.
+ */
+export function assertAdditionalWorkTransition(fromState: string, toState: AdditionalWorkState) {
+  const allowed = ADDITIONAL_WORK_TRANSITIONS[fromState] ?? [];
+  if (!allowed.includes(toState)) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: `An additional-work request in "${fromState}" may not become "${toState}"`,
+    });
+  }
 }
 
 /**

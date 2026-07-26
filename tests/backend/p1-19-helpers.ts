@@ -76,6 +76,21 @@ const TECHNICIAN_READ = 'tech.technician.read';
 const LABOR_RECORD = 'tech.labor.record';
 const LABOR_CORRECT = 'tech.labor.correct';
 const LINE_MANAGE = 'wo.work_order.line.manage';
+const ADDITIONAL_WORK_REQUEST = 'wo.additional_work.request';
+const ADDITIONAL_WORK_APPROVE = 'wo.additional_work.approve';
+/**
+ * The platform-wide restricted-data permission, NOT a P1-19 code.
+ *
+ * `wo.additional_work_request_details` is gated on it by RLS for SELECT, INSERT and
+ * UPDATE alike, and the two detail operations declare it alongside their functional
+ * permission. Deliberately withheld from `FULL`, so `FULL` IS the "has the operation
+ * permission, lacks the sensitive one" probe and no separate half-privileged principal
+ * has to be invented for it.
+ */
+const SENSITIVE_VIEW = 'iam.sensitive.view';
+
+/** Every P1-19 command permission except the closure and sensitive ones. */
+const WAVE_6_COMMANDS = [ADDITIONAL_WORK_REQUEST, ADDITIONAL_WORK_APPROVE] as const;
 
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
@@ -107,6 +122,37 @@ export const FULL: Principal = {
     LABOR_RECORD,
     LABOR_CORRECT,
     LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
+  ],
+};
+
+/**
+ * Tenant A, unrestricted, everything `FULL` has PLUS `iam.sensitive.view`.
+ *
+ * The only principal that may read or write the restricted customer-facing
+ * description. Its existence beside `FULL` is what makes the sensitive-data control
+ * testable in both directions: same tenant, same scope, same functional permissions,
+ * one permission apart.
+ */
+export const SENSITIVE: Principal = {
+  roleId: 'c1900000-0000-4000-8000-00000000011a',
+  userId: 'c1900000-0000-4000-8000-00000000011b',
+  subject: 'fx_p1_19_sensitive',
+  tenantId: TENANT_A,
+  permissions: [
+    CONVERT_PERMISSION,
+    READ,
+    TRANSITION_PERMISSION,
+    CLOSE,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ASSIGNMENT_MANAGE,
+    TECHNICIAN_READ,
+    LABOR_RECORD,
+    LABOR_CORRECT,
+    LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
+    SENSITIVE_VIEW,
   ],
 };
 
@@ -132,6 +178,7 @@ export const NO_CLOSE: Principal = {
     LABOR_RECORD,
     LABOR_CORRECT,
     LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
   ],
 };
 
@@ -168,6 +215,11 @@ export const SCOPED_ELSEWHERE: Principal = {
     LABOR_RECORD,
     LABOR_CORRECT,
     LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
+    // Held, and scoped to A2 like everything else this principal holds — so a refusal
+    // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
+    // permission. Without it the isolation case would pass for the wrong reason.
+    SENSITIVE_VIEW,
   ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-0000000000e3',
@@ -205,6 +257,11 @@ export const PERMISSION_ELSEWHERE: Principal = {
     LABOR_RECORD,
     LABOR_CORRECT,
     LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
+    // Held, and scoped to A2 like everything else this principal holds — so a refusal
+    // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
+    // permission. Without it the isolation case would pass for the wrong reason.
+    SENSITIVE_VIEW,
   ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-00000000010c',
@@ -233,11 +290,14 @@ export const TENANT_B_FULL: Principal = {
     LABOR_RECORD,
     LABOR_CORRECT,
     LINE_MANAGE,
+    ...WAVE_6_COMMANDS,
+    SENSITIVE_VIEW,
   ],
 };
 
 export const PRINCIPALS: readonly Principal[] = [
   FULL,
+  SENSITIVE,
   NO_CLOSE,
   READER,
   SCOPED_ELSEWHERE,
@@ -519,6 +579,23 @@ export async function establishP1_19Fixtures(pool: Pool): Promise<void> {
     }
   }
 
+  // Document categories for the approval-evidence versions, one per tenant, because
+  // `fk_documents_category` is not tenant-scoped but `shared.documents` is.
+  for (const [categoryId, tenantId, code] of [
+    [EVIDENCE_CATEGORY_A, TENANT_A, 'p119_approval_docs'],
+    [EVIDENCE_CATEGORY_B, TENANT_B, 'p119_approval_docs_b'],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO shared.document_categories
+         (id, scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
+          default_classification, default_retention_class, created_by)
+       VALUES ($1,'tenant',$2,$3,'P1-19 approval evidence',
+               ARRAY['application/pdf']::text[], 1048576, 'internal', 'evidence-audit', $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [categoryId, tenantId, code, USER_A]
+    );
+  }
+
   // Work-order numbering. Provisioning a sequence is an operator action —
   // `app_runtime` holds no INSERT on `shared.number_sequences` — and conversion
   // allocates from it, so both tenants need one.
@@ -715,6 +792,86 @@ async function seedTechnician(input: {
   } finally {
     client.release();
   }
+}
+
+/**
+ * The `service_requester` party role `rec.accept_check_in()` created on a visit.
+ *
+ * Read as admin because there is no route that lists party roles for a work order, and
+ * because this is arrangement: `wo.guard_customer_approval_coherence` demands a role on
+ * the SAME reception visit as the work order, so a decision fixture that invented a
+ * uuid would only ever exercise the refusal.
+ */
+export async function partyRoleFor(visitId: string): Promise<string> {
+  const result = await admin.query<{ id: string }>(
+    `SELECT id FROM rec.reception_party_roles
+      WHERE reception_visit_id = $1 AND deleted_at IS NULL
+      ORDER BY created_at, id LIMIT 1`,
+    [visitId]
+  );
+  const id = result.rows[0]?.id;
+  if (id === undefined) {
+    throw new Error(`no reception party role on visit ${visitId}; the check-in fixture changed`);
+  }
+  return id;
+}
+
+/** A document category per tenant, so approval-evidence versions have a parent. */
+const EVIDENCE_CATEGORY_A = 'c1900000-0000-4000-8000-00000000030a';
+const EVIDENCE_CATEGORY_B = 'c1900000-0000-4000-8000-00000000030b';
+/** 32 bytes as hex — `ck_document_versions_sha256_len`. */
+const SHA_HEX = 'b'.repeat(64);
+let documentSeq = 0;
+
+/**
+ * A `shared.document_versions` row, seeded as admin.
+ *
+ * Admin SQL and necessarily so: a real upload needs a signed storage URL and an object
+ * actually written to it, which no backend test can do. What matters for approval
+ * evidence is that the row is the real shape `fk_customer_approval_evidence_version`
+ * points at — `(tenant_id, id)` — and that its `status` is a value the platform can
+ * actually produce. `accepted` is deliberately NOT offered: P1-15 documented that
+ * acceptance is unreachable because no application role may write
+ * `shared.file_scan_results`, so a fixture producing it would be testing against a
+ * state the platform cannot reach.
+ *
+ * A `rejected` version is reached by inserting `pending` and UPDATING, never by
+ * inserting the terminal status directly: `shared.guard_document_version_transition`
+ * refuses an insert whose status is not `pending` with terminal timestamps unset. So
+ * even the fixture takes the transition the platform takes.
+ */
+export async function seedDocumentVersion(
+  input: { readonly tenantId?: string; readonly status?: 'pending' | 'rejected' } = {}
+): Promise<string> {
+  const tenantId = input.tenantId ?? TENANT_A;
+  const status = input.status ?? 'pending';
+  const categoryId = tenantId === TENANT_B ? EVIDENCE_CATEGORY_B : EVIDENCE_CATEGORY_A;
+  const suffix = String(++documentSeq).padStart(4, '0');
+
+  const document = await admin.query<{ id: string }>(
+    `INSERT INTO shared.documents
+       (tenant_id, category_id, title, classification, retention_class, status, created_by)
+     VALUES ($1,$2,$3,'internal','evidence-audit','pending',$4)
+     RETURNING id`,
+    [tenantId, categoryId, `P1-19 approval evidence ${suffix}`, USER_A]
+  );
+  const documentId = document.rows[0]?.id ?? '';
+  const version = await admin.query<{ id: string }>(
+    `INSERT INTO shared.document_versions
+       (tenant_id, document_id, version_number, storage_key, content_type,
+        size_bytes, sha256, uploaded_by, created_by)
+     VALUES ($1,$2,1,$3,'application/pdf',2048, decode($4,'hex'), $5, $5)
+     RETURNING id`,
+    [tenantId, documentId, `p119-approval/${documentId}`, SHA_HEX, USER_A]
+  );
+  const versionId = version.rows[0]?.id ?? '';
+  if (status === 'rejected') {
+    await admin.query(
+      `UPDATE shared.document_versions SET status = 'rejected', rejected_at = now() WHERE id = $1`,
+      [versionId]
+    );
+  }
+  return versionId;
 }
 
 export interface SeededVisit {
@@ -934,9 +1091,17 @@ export async function advance(
 
 /** A work order in `open` — the first state that accepts jobs. */
 export async function createOpenWorkOrder(
-  input: { readonly branchId?: string } = {}
+  input: {
+    readonly tenantId?: string;
+    readonly companyId?: string;
+    readonly branchId?: string;
+  } = {}
 ): Promise<SeededWorkOrder> {
   const created = await createWorkOrder(input);
-  const version = await advance(created.workOrderId, [{ toState: 'open' }]);
+  // Advanced by the tenant's OWN principal, not always tenant A's: a tenant-B order
+  // driven by `FULL` would be refused by RLS before the graph was consulted, and the
+  // fixture would look like a P1-19 defect.
+  const as = input.tenantId === TENANT_B ? TENANT_B_FULL : FULL;
+  const version = await advance(created.workOrderId, [{ toState: 'open' }], as);
   return { ...created, state: 'open', recordVersion: version };
 }

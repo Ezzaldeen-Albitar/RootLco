@@ -635,6 +635,48 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
   },
   {
+    code: 'wo.additional_work.requested',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'Extra work discovered mid-repair was raised against a work order. Records the SAFE summary and the provenance (originating job and/or diagnostic finding) and never the customer-facing description: that lives in wo.additional_work_request_details behind iam.sensitive.view, and iam.audit_records is not gated by that permission, so copying it here would publish restricted data to every auditor. is_required is captured because it is immutable after insert and is what makes closure blocker B3 non-evadable.',
+  },
+  {
+    code: 'wo.additional_work.detail_recorded',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'The RESTRICTED customer-facing description of an additional-work request was recorded or replaced. Deliberately records the FACT, the classification and the length — never the text — for the reason above. Filed under the request rather than the detail row so one audit query over a request returns its whole history; replacement is legitimate because the migration grants UPDATE and freezes every column except the description.',
+  },
+  {
+    code: 'wo.additional_work.detail_read',
+    class: 'security',
+    entityType: 'wo.additional_work_request',
+    description:
+      'The RESTRICTED customer-facing description of an additional-work request was READ. Audited as security rather than left unrecorded — every other read in the wo module is audit class none, which is right for work-order state and wrong for the one table the platform gates behind iam.sensitive.view, where who looked is itself the fact worth keeping. Records that a read happened, never the text that was returned.',
+  },
+  {
+    code: 'wo.additional_work.fulfillment_changed',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'Approved additional work was recorded as carried out, or waived. The only way closure blocker B3’s second limb can be cleared, since nothing else in the phase writes fulfillment_state. A waiver carries a reason because declining work the customer already agreed to is accountable — wo.additional_work_requests has no reason column, so the audit record is where that reason lives.',
+  },
+  {
+    code: 'wo.additional_work.state_changed',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'An additional-work request moved between pending, approved, rejected and withdrawn. One action covers every edge, as it does for work orders and jobs, because a consumer reacts to the resulting state. A move to approved is recorded ALONGSIDE wo.customer_approval.recorded and never instead of it: capturing a decision and moving the request are separate facts, and an auditor asking when the customer agreed must not have to infer it from a state change.',
+  },
+  {
+    code: 'wo.customer_approval.recorded',
+    class: 'approval',
+    entityType: 'wo.customer_approval',
+    description:
+      'A customer decision on additional work was recorded — the immutable row wo.guard_additional_work_state requires to exist BEFORE the request may be marked approved, which is the forgery-resistance control. Records the decision, the channel, the deciding reception party role and the evidence count; the presented scope is recorded as a fact rather than reproduced, because it is what a customer was told about their own vehicle. tg_customer_approvals_immutable freezes the decision and no application role holds DELETE, so the row can be neither edited nor erased.',
+  },
+  {
     code: 'tech.labor.session_corrected',
     class: 'privileged',
     entityType: 'tech.labor_session',

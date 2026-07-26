@@ -50,9 +50,25 @@ import { WorkOrderRepository } from './data/work-order-repository';
 import { WorkOrderCatalogService } from './application/work-order-catalog-service';
 import { WorkOrderService } from './application/work-order-service';
 import { JobAssignmentService } from './application/job-assignment-service';
+import { AdditionalWorkService } from './application/additional-work-service';
 
 export type { AssignInput, AssignmentView, QueueEntry } from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
+export type {
+  AdditionalWorkDetailView,
+  AdditionalWorkRequestView,
+  ApprovalEvidenceInput,
+  ApprovalEvidenceView,
+  CustomerApprovalView,
+  DecideInput,
+  RaiseRequestInput,
+} from './application/additional-work-service';
+export type {
+  AdditionalWorkDetailRow,
+  AdditionalWorkRequestRow,
+  ApprovalEvidenceRow,
+  CustomerApprovalRow,
+} from './data/work-order-repository';
 
 export type {
   JobStateRow,
@@ -62,26 +78,40 @@ export type {
 
 export {
   ADDITIONAL_WORK_STATES,
+  ADDITIONAL_WORK_TRANSITIONS,
+  APPROVAL_CHANNELS,
+  APPROVAL_DECISIONS,
   ASSIGNMENT_ROLES,
   CLOSURE_BLOCKERS,
   CLOSURE_BLOCKER_REGISTRY,
   DEFERRED_CLOSURE_BLOCKERS,
   FULFILLMENT_STATES,
+  MAX_APPROVAL_EVIDENCE,
+  MAX_EVIDENCE_NOTE,
+  MAX_EVIDENCE_TYPE,
   MAX_JOB_TITLE,
   MAX_LINE_DESCRIPTION,
   MAX_LINE_UNIT,
   MAX_JOB_TYPE,
+  MAX_PRESENTED_SCOPE,
   MAX_REASON,
+  MAX_REQUEST_SUMMARY,
+  MAX_RESTRICTED_DESCRIPTION,
   PARTS_FORWARD_STATES,
+  SETTABLE_FULFILLMENT_STATES,
   WORK_ORDER_KINDS,
   WorkOrderRuleError,
+  assertAdditionalWorkTransition,
   assertTransitionReason,
   type AdditionalWorkState,
+  type ApprovalChannel,
+  type ApprovalDecision,
   type AssignmentRole,
   type ClosureBlockerCode,
   type ClosureBlockerDefinition,
   type FulfillmentState,
   type PartsForwardState,
+  type SettableFulfillmentState,
   type WorkOrderKind,
 } from './domain/work-order';
 
@@ -95,6 +125,7 @@ export const workOrderModule = composeModule({
       workOrderCatalog: catalog,
       workOrders: new WorkOrderService(repository, catalog),
       jobAssignments: new JobAssignmentService(repository, catalog),
+      additionalWork: new AdditionalWorkService(repository, catalog),
     };
   },
 });

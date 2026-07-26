@@ -607,6 +607,8 @@ export class WorkOrderService extends ApplicationService {
 
     await this.catalog.resolveJobTransition(db, locked.state, input.toState, input.reason);
 
+    await this.assertAdditionalWorkSettled(db, locked.id, input.toState);
+
     let applied: boolean;
     try {
       applied = await this.repository.applyJobState(
@@ -678,6 +680,70 @@ export class WorkOrderService extends ApplicationService {
     });
 
     return { state: input.toState, recordVersion };
+  }
+
+  /**
+   * The unapproved-work execution gate.
+   *
+   * A job may not enter a state where LABOUR is allowed while additional work it
+   * discovered is still awaiting the customer's decision. It sits inside
+   * `transitionJob` rather than beside it deliberately: a second entry point that
+   * moved a job would be an alternate start path, and the gate would then be
+   * bypassable by choosing the other URL — the same mistake the closure split had to
+   * be built to avoid.
+   *
+   * ## `labor_allowed`, not a state name
+   *
+   * The gate keys on `wo.job_states.labor_allowed`, which is the catalog's own answer
+   * to "is work happening in this state". Naming `in_progress` would mirror the graph
+   * in TypeScript, which this module does not do because tenants may shadow the
+   * platform rows. On the seeded platform graph the flag is true for `assigned` and
+   * `in_progress` and false for `planned`, `paused`, `completed` and `cancelled` — so
+   * starting and resuming are gated, and PAUSING is not. That asymmetry is the point:
+   * the intended sequence is that a technician who finds extra work pauses the job
+   * while the customer is asked, and a gate that blocked the pause would trap the job
+   * in a state where it must not stay.
+   *
+   * ## Why the predicate is B3's first limb only
+   *
+   * `wo.guard_work_order_closure`'s B3 blocks CLOSURE while a required request is
+   * `pending`, or `approved` with `fulfillment_state = 'unfulfilled'`. This gate uses
+   * only the first. The second describes work the customer HAS authorised and the
+   * workshop has not yet carried out — exactly the state in which execution must be
+   * allowed. Including it would stop the job entering a labour state, so the approved
+   * work could never be done, the request could never become fulfilled, and B3 could
+   * never clear: a deadlock rather than a control.
+   *
+   * A `rejected` or `withdrawn` request does not gate either, and that also follows
+   * B3: the customer has settled the question, and the originally authorised work
+   * continues.
+   */
+  private async assertAdditionalWorkSettled(
+    db: DbHandle,
+    jobId: string,
+    toState: string
+  ): Promise<void> {
+    const states = await this.catalog.jobStates(db);
+    const target = states.find((candidate) => candidate.code === toState);
+    if (target?.laborAllowed !== true) return;
+
+    const pending = await this.repository.pendingRequiredRequestsForJob(db, jobId);
+    if (pending.length === 0) return;
+
+    throw new AppFailure('ERR-WO-002', {
+      message:
+        `Job ${jobId} may not enter "${toState}" while ` +
+        `${pending.length} required additional-work request(s) await a customer decision`,
+      safeDetails: {
+        // One violation per unresolved request, so a caller learns how many and which
+        // rather than being told to go and look. The summary is not included: it is
+        // free text about a customer's vehicle and belongs in the request read.
+        violations: pending.map((request) => ({
+          path: `additionalWork.${request.id}`,
+          rule: 'awaiting_customer_decision',
+        })),
+      },
+    });
   }
 
   /** A job's append-only status ledger, paginated, with its genesis block. */

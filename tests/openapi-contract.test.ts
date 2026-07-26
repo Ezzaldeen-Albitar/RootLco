@@ -151,6 +151,11 @@ import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';
 import '@/app/api/v1/work-orders/[workOrderId]/service-lines/route';
 import '@/app/api/v1/work-orders/[workOrderId]/required-parts/route';
+import '@/app/api/v1/work-orders/[workOrderId]/additional-work/route';
+import '@/app/api/v1/additional-work/[requestId]/detail/route';
+import '@/app/api/v1/additional-work/[requestId]/withdrawal/route';
+import '@/app/api/v1/additional-work/[requestId]/approval/route';
+import '@/app/api/v1/additional-work/[requestId]/fulfillment/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

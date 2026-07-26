@@ -39,6 +39,7 @@ export const ERROR_CODES = [
   'ERR-EXP-001',
   'ERR-TRN-001',
   'ERR-WO-001',
+  'ERR-WO-002',
   'ERR-TECH-001',
   'ERR-DIA-001',
   'ERR-QMS-001',
@@ -300,6 +301,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'Closure was refused by wo.guard_work_order_closure (blockers B1..B6): a non-terminal job, a running labor session, an unresolved required additional-work request, a missing completed diagnostic, failed or missing mandatory quality control, or safety-critical rework without independent sign-off. Deliberately NOT ERR-TRN-001: the ready_to_close→closed edge exists in the graph and the aggregate is in a legal starting state, so this is not a graph refusal. The caller must clear a condition, not re-read a version or pick a different target.',
+  },
+  'ERR-WO-002': {
+    code: 'ERR-WO-002',
+    title: 'Additional work awaits a customer decision',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'A job may not enter a state whose wo.job_states.labor_allowed is true while a REQUIRED additional-work request originating from it is still pending — work the customer has not yet authorised must not be started or resumed. Distinct from ERR-WO-001, which is the B1..B6 closure gate on the whole work order: this refuses one job movement, and only for requests naming that job as their origin. Deliberately NOT ERR-TRN-001, because the edge exists in the graph and the job is in a legal starting state; what blocks it is a sibling row. Pausing is never refused, so the job can wait in a state where labour is not allowed while the customer is asked. Approved-but-unfulfilled does NOT refuse execution: that is authorised work waiting to be done, and gating it would make it undoable.',
   },
   'ERR-TECH-001': {
     code: 'ERR-TECH-001',

@@ -17,7 +17,11 @@
 import { AppFailure } from '@/server/errors/app-failure';
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
-import type { DiagnosticsRepository, TemplateItemRow } from '../data/diagnostics-repository';
+import type {
+  DiagnosticsRepository,
+  FindingOrigin,
+  TemplateItemRow,
+} from '../data/diagnostics-repository';
 import {
   assertCompletable,
   assertVersionInstantiable,
@@ -35,6 +39,20 @@ export class DiagnosticsCompletionService extends ApplicationService {
   /** Every item of a pinned template version, in presentation order. */
   async templateItems(db: DbHandle, versionId: string): Promise<readonly TemplateItemRow[]> {
     return this.repository.templateItems(db, versionId);
+  }
+
+  /**
+   * Where a finding came from — the work order and job of its report.
+   *
+   * Exposed for the `work-order` module, which stores
+   * `additional_work_requests.originating_finding_id` and must refuse a finding that
+   * belongs to a different work order. That column has NO foreign key, so a read is
+   * the only possible check, and reading `dia.findings` from `work-order` would be
+   * the cross-module table access ADR-001 rule 3 prohibits. Null covers absent and
+   * out-of-scope alike.
+   */
+  async findingOrigin(db: DbHandle, findingId: string): Promise<FindingOrigin | null> {
+    return this.repository.findingOrigin(db, findingId);
   }
 
   /**

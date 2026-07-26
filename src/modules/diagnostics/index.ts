@@ -28,6 +28,7 @@ import { DiagnosticsCompletionService } from './application/diagnostics-completi
 
 export type {
   DiagnosticReportRow,
+  FindingOrigin,
   TemplateItemRow,
   TemplateVersionRow,
 } from './data/diagnostics-repository';

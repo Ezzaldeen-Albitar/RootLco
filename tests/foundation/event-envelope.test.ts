@@ -187,6 +187,10 @@ describe('reserved-name registry', () => {
     );
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
+      // Wave 6 publishes `additional-work.requested` and
+      // `customer-approval.recorded`, both owner `wo`. Both were reserved with
+      // `implementedIn: null` in Wave 3 and now have producers on the request path.
+      'additional-work.requested',
       // P1-18 publishes `appointment.changed`, `vehicle.checked-in` and
       // `reception.approved` from `src/modules/reception`. The first two were
       // reserved with `implementedIn: null` since P1-13 and now have producers;
@@ -197,6 +201,10 @@ describe('reserved-name registry', () => {
       'business-partner.created',
       'business-partner.merged',
       'consent.changed',
+      // The aggregate is the APPROVAL row, which is immutable — so its version is
+      // and stays 1, and `uq_customer_approvals_active` means the fact happens at
+      // most once per request.
+      'customer-approval.recorded',
       'document.link.changed',
       'document.version.registered',
       // Wave 5 also publishes `job.assigned`. Its owner is `wo` and not `tech`

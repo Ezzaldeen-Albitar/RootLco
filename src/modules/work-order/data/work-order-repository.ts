@@ -198,6 +198,150 @@ const toLineRow = (row: LineColumns): LineRow => ({
   recordVersion: row.record_version,
 });
 
+/**
+ * One additional-work request — extra work discovered mid-repair.
+ *
+ * `originatingFindingId` is an opaque soft link to `dia.findings` with NO foreign
+ * key, so it can be recorded here and cannot be validated until Wave 7 exists.
+ * `originatingJobId` is the opposite: `fk_additional_work_requests_job` is the
+ * composite scope key, which pins the job to the same branch and NOT to the same
+ * work order — a job under a different order in the same branch satisfies it, so the
+ * ownership check is the service's.
+ *
+ * `isRequired` is IMMUTABLE after insert (`tg_additional_work_requests_immutable`),
+ * which is what makes B3 non-evadable: a required request cannot be quietly demoted
+ * to optional to unblock a closure.
+ */
+export interface AdditionalWorkRequestRow {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly originatingJobId: string | null;
+  readonly originatingFindingId: string | null;
+  readonly summary: string;
+  readonly state: string;
+  readonly fulfillmentState: string;
+  readonly isRequired: boolean;
+  readonly createdAt: Date;
+  readonly recordVersion: number;
+}
+
+/**
+ * The RESTRICTED customer-facing description, 1:1 with a request.
+ *
+ * A separate row and a separate projection because the whole TABLE is gated:
+ * `sel/ins/upd_additional_work_request_details_gated` each additionally require
+ * `iam.has_permission('iam.sensitive.view')`, so for a caller without it the row
+ * does not exist for reading OR writing. Folding it into the request projection
+ * would make an ordinary service advisor's request read silently return nothing.
+ */
+export interface AdditionalWorkDetailRow {
+  readonly id: string;
+  readonly additionalWorkRequestId: string;
+  readonly description: string;
+  readonly classification: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One immutable customer decision.
+ *
+ * `tg_customer_approvals_immutable` freezes `decision`, `channel`, `presentedScope`,
+ * `quotationRevisionRef`, `decidedAt` and `decidingPartyRoleId`, and no application
+ * role holds DELETE — so a recorded decision can be neither edited nor erased.
+ */
+export interface CustomerApprovalRow {
+  readonly id: string;
+  readonly additionalWorkRequestId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly decidingPartyRoleId: string;
+  readonly decision: string;
+  readonly channel: string;
+  readonly presentedScope: string;
+  readonly quotationRevisionRef: string | null;
+  readonly decidedAt: Date;
+  readonly recordVersion: number;
+}
+
+/** One append-only evidence row binding an EXACT immutable document version. */
+export interface ApprovalEvidenceRow {
+  readonly id: string;
+  readonly customerApprovalId: string;
+  readonly documentVersionId: string;
+  readonly evidenceType: string;
+  readonly note: string | null;
+  readonly createdAt: Date;
+}
+
+interface RequestColumns {
+  id: string;
+  work_order_id: string;
+  company_id: string;
+  branch_id: string;
+  originating_job_id: string | null;
+  originating_finding_id: string | null;
+  summary: string;
+  state: string;
+  fulfillment_state: string;
+  is_required: boolean;
+  created_at: Date;
+  record_version: number;
+}
+
+/** Projection shared by every request read, and by the insert's RETURNING. */
+const REQUEST_COLUMNS = `id, work_order_id, company_id, branch_id, originating_job_id,
+          originating_finding_id, summary, state, fulfillment_state, is_required,
+          created_at, record_version`;
+
+const toRequestRow = (row: RequestColumns): AdditionalWorkRequestRow => ({
+  id: row.id,
+  workOrderId: row.work_order_id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  originatingJobId: row.originating_job_id,
+  originatingFindingId: row.originating_finding_id,
+  summary: row.summary,
+  state: row.state,
+  fulfillmentState: row.fulfillment_state,
+  isRequired: row.is_required,
+  createdAt: row.created_at,
+  recordVersion: row.record_version,
+});
+
+interface ApprovalColumns {
+  id: string;
+  additional_work_request_id: string;
+  company_id: string;
+  branch_id: string;
+  deciding_party_role_id: string;
+  decision: string;
+  channel: string;
+  presented_scope: string;
+  quotation_revision_ref: string | null;
+  decided_at: Date;
+  record_version: number;
+}
+
+const APPROVAL_COLUMNS = `id, additional_work_request_id, company_id, branch_id,
+          deciding_party_role_id, decision, channel, presented_scope,
+          quotation_revision_ref, decided_at, record_version`;
+
+const toApprovalRow = (row: ApprovalColumns): CustomerApprovalRow => ({
+  id: row.id,
+  additionalWorkRequestId: row.additional_work_request_id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  decidingPartyRoleId: row.deciding_party_role_id,
+  decision: row.decision,
+  channel: row.channel,
+  presentedScope: row.presented_scope,
+  quotationRevisionRef: row.quotation_revision_ref,
+  decidedAt: row.decided_at,
+  recordVersion: row.record_version,
+});
+
 interface AssignmentColumns {
   id: string;
   job_id: string;
@@ -852,6 +996,417 @@ export class WorkOrderRepository extends Repository {
       [context.principal.tenantId, workOrderId]
     );
     return result.rows.map(toLineRow);
+  }
+
+  /** Raises an additional-work request against a work order. */
+  async createRequest(
+    db: DbHandle,
+    input: {
+      readonly workOrderId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly originatingJobId: string | null;
+      readonly originatingFindingId: string | null;
+      readonly summary: string;
+      readonly isRequired: boolean;
+    }
+  ): Promise<AdditionalWorkRequestRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<RequestColumns>(
+      db,
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, originating_job_id,
+          originating_finding_id, summary, is_required, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING ${REQUEST_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.workOrderId,
+        input.originatingJobId,
+        input.originatingFindingId,
+        input.summary,
+        input.isRequired,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('additional-work request insert returned no row');
+    return toRequestRow(row);
+  }
+
+  /** Locks one request by id, so a decision serialises against a withdrawal. */
+  async lockRequest(db: DbHandle, requestId: string): Promise<AdditionalWorkRequestRow | null> {
+    return this.readRequest(db, requestId, true);
+  }
+
+  /** Reads one request without locking, for query paths. */
+  async findRequest(db: DbHandle, requestId: string): Promise<AdditionalWorkRequestRow | null> {
+    return this.readRequest(db, requestId, false);
+  }
+
+  private async readRequest(
+    db: DbHandle,
+    requestId: string,
+    lock: boolean
+  ): Promise<AdditionalWorkRequestRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<RequestColumns>(
+      db,
+      `SELECT ${REQUEST_COLUMNS}
+         FROM wo.additional_work_requests
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        ${lock ? 'FOR UPDATE' : ''}`,
+      [context.principal.tenantId, requestId]
+    );
+    const row = result.rows[0];
+    return row ? toRequestRow(row) : null;
+  }
+
+  /** Every live additional-work request on a work order, oldest first. */
+  async requestsFor(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<readonly AdditionalWorkRequestRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<RequestColumns>(
+      db,
+      `SELECT ${REQUEST_COLUMNS}
+         FROM wo.additional_work_requests
+        WHERE tenant_id = $1 AND work_order_id = $2 AND deleted_at IS NULL
+        ORDER BY created_at, id`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return result.rows.map(toRequestRow);
+  }
+
+  /**
+   * Moves a request's state under the caller's record version.
+   *
+   * `wo.guard_additional_work_state` fires BEFORE UPDATE OF state and refuses
+   * `approved` unless an `approved` `wo.customer_approvals` row already exists for
+   * this request. That is the forgery-resistance control and the reason the approval
+   * INSERT must precede this call inside one transaction: doing them in the other
+   * order raises `check_violation`, and doing them in two requests would leave a
+   * window where a decision exists and the request does not reflect it.
+   */
+  async applyRequestState(
+    db: DbHandle,
+    requestId: string,
+    toState: string,
+    expectedVersion: number
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE wo.additional_work_requests
+          SET state = $3, updated_by = $4
+        WHERE tenant_id = $1 AND id = $2 AND record_version = $5 AND deleted_at IS NULL`,
+      [context.principal.tenantId, requestId, toState, context.principal.userId, expectedVersion]
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /** Records that approved additional work was carried out, or waived. */
+  async applyRequestFulfillment(
+    db: DbHandle,
+    requestId: string,
+    fulfillmentState: string,
+    expectedVersion: number
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE wo.additional_work_requests
+          SET fulfillment_state = $3, updated_by = $4
+        WHERE tenant_id = $1 AND id = $2 AND record_version = $5 AND deleted_at IS NULL`,
+      [
+        context.principal.tenantId,
+        requestId,
+        fulfillmentState,
+        context.principal.userId,
+        expectedVersion,
+      ]
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /**
+   * Writes the RESTRICTED customer-facing description, creating or replacing it.
+   *
+   * One statement rather than a read followed by a branch, because the read would
+   * be gated by the same policy as the write and would therefore be unable to
+   * distinguish "no detail" from "no permission". `uq_additional_work_request_details_request`
+   * is a PARTIAL UNIQUE INDEX rather than a constraint, so the conflict target must
+   * be inferred by column list AND predicate — `ON CONFLICT ON CONSTRAINT` cannot
+   * name an index and would fail at parse time.
+   *
+   * A caller lacking `iam.sensitive.view` is refused by the INSERT policy as
+   * `42501`, not by anything here: the gate is the database's, and the operation's
+   * declared permission is the readable refusal in front of it.
+   */
+  async writeDetail(
+    db: DbHandle,
+    input: {
+      readonly requestId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly description: string;
+    }
+  ): Promise<AdditionalWorkDetailRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      additional_work_request_id: string;
+      description: string;
+      classification: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO wo.additional_work_request_details
+         (tenant_id, company_id, branch_id, additional_work_request_id, description, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (tenant_id, company_id, branch_id, additional_work_request_id)
+         WHERE deleted_at IS NULL
+       DO UPDATE SET description = $5, updated_by = $6
+       RETURNING id, additional_work_request_id, description, classification, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.requestId,
+        input.description,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('additional-work detail write returned no row');
+    return {
+      id: row.id,
+      additionalWorkRequestId: row.additional_work_request_id,
+      description: row.description,
+      classification: row.classification,
+      recordVersion: row.record_version,
+    };
+  }
+
+  /**
+   * The RESTRICTED description, or null.
+   *
+   * Null means "not visible to you", which covers both "no detail was written" and
+   * "you do not hold `iam.sensitive.view`" — the SELECT policy makes them the same
+   * answer at this layer, and the service does not pretend otherwise.
+   */
+  async detailFor(db: DbHandle, requestId: string): Promise<AdditionalWorkDetailRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      additional_work_request_id: string;
+      description: string;
+      classification: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, additional_work_request_id, description, classification, record_version
+         FROM wo.additional_work_request_details
+        WHERE tenant_id = $1 AND additional_work_request_id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, requestId]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          id: row.id,
+          additionalWorkRequestId: row.additional_work_request_id,
+          description: row.description,
+          classification: row.classification,
+          recordVersion: row.record_version,
+        }
+      : null;
+  }
+
+  /**
+   * Records the immutable customer decision.
+   *
+   * `decided_at` is server-stamped by the column default rather than accepted: a
+   * caller-chosen decision time could be moved before the request existed or after
+   * the work was done, and the column is frozen by the immutability trigger so it
+   * could never be corrected afterwards.
+   *
+   * Two database refusals reach the service from here and mean different things:
+   * `23505` on `uq_customer_approvals_active` is a second decision on one request,
+   * and `23514`/`23503` from `wo.guard_customer_approval_coherence` is a deciding
+   * party who does not belong to the work order's reception visit.
+   */
+  async recordApproval(
+    db: DbHandle,
+    input: {
+      readonly requestId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly decidingPartyRoleId: string;
+      readonly decision: string;
+      readonly channel: string;
+      readonly presentedScope: string;
+    }
+  ): Promise<CustomerApprovalRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<ApprovalColumns>(
+      db,
+      `INSERT INTO wo.customer_approvals
+         (tenant_id, company_id, branch_id, additional_work_request_id,
+          deciding_party_role_id, decision, channel, presented_scope, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING ${APPROVAL_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.requestId,
+        input.decidingPartyRoleId,
+        input.decision,
+        input.channel,
+        input.presentedScope,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('customer approval insert returned no row');
+    return toApprovalRow(row);
+  }
+
+  /** The live decision on one request, or null while it is undecided. */
+  async approvalFor(db: DbHandle, requestId: string): Promise<CustomerApprovalRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<ApprovalColumns>(
+      db,
+      `SELECT ${APPROVAL_COLUMNS}
+         FROM wo.customer_approvals
+        WHERE tenant_id = $1 AND additional_work_request_id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, requestId]
+    );
+    const row = result.rows[0];
+    return row ? toApprovalRow(row) : null;
+  }
+
+  /**
+   * Binds one exact document version to an approval as evidence.
+   *
+   * `wo.customer_approval_evidence` is append-only — `app_runtime` holds SELECT and
+   * INSERT and nothing else, so there is no substitution and no erasure. The FK is
+   * `(tenant_id, document_version_id)` to `shared.document_versions`, so an unknown
+   * or foreign-tenant version is `23503`; no storage key appears in the table, in
+   * this method, or in the route that reaches it.
+   */
+  async recordApprovalEvidence(
+    db: DbHandle,
+    input: {
+      readonly approvalId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly documentVersionId: string;
+      readonly evidenceType: string;
+      readonly note: string | null;
+    }
+  ): Promise<ApprovalEvidenceRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      customer_approval_id: string;
+      document_version_id: string;
+      evidence_type: string;
+      note: string | null;
+      created_at: Date;
+    }>(
+      db,
+      `INSERT INTO wo.customer_approval_evidence
+         (tenant_id, company_id, branch_id, customer_approval_id, document_version_id,
+          evidence_type, note, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, customer_approval_id, document_version_id, evidence_type, note, created_at`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.approvalId,
+        input.documentVersionId,
+        input.evidenceType,
+        input.note,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('approval evidence insert returned no row');
+    return {
+      id: row.id,
+      customerApprovalId: row.customer_approval_id,
+      documentVersionId: row.document_version_id,
+      evidenceType: row.evidence_type,
+      note: row.note,
+      createdAt: row.created_at,
+    };
+  }
+
+  /** Every evidence row bound to one approval, oldest first. */
+  async evidenceFor(db: DbHandle, approvalId: string): Promise<readonly ApprovalEvidenceRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      customer_approval_id: string;
+      document_version_id: string;
+      evidence_type: string;
+      note: string | null;
+      created_at: Date;
+    }>(
+      db,
+      `SELECT id, customer_approval_id, document_version_id, evidence_type, note, created_at
+         FROM wo.customer_approval_evidence
+        WHERE tenant_id = $1 AND customer_approval_id = $2
+        ORDER BY created_at, id`,
+      [context.principal.tenantId, approvalId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      customerApprovalId: row.customer_approval_id,
+      documentVersionId: row.document_version_id,
+      evidenceType: row.evidence_type,
+      note: row.note,
+      createdAt: row.created_at,
+    }));
+  }
+
+  /**
+   * REQUIRED additional-work requests originating from one job that are still
+   * awaiting a customer decision.
+   *
+   * The predicate is B3's FIRST limb only — `is_required AND state = 'pending'` —
+   * and the omission of the second is the load-bearing part. B3 also blocks closure
+   * on `approved` + `unfulfilled`, but that describes work the customer HAS
+   * authorised and the workshop has not yet done: blocking execution on it would
+   * make the job unable to enter a labour state, so the approved work could never be
+   * carried out and the request could never become fulfilled. The gate would
+   * deadlock the very case it exists to serve.
+   *
+   * Scoped to `originating_job_id`, so a request raised from a different job, from no
+   * job at all, or against a different work order does not gate this job. Those
+   * still block CLOSURE through B3, which is a different question asked at a
+   * different time.
+   */
+  async pendingRequiredRequestsForJob(
+    db: DbHandle,
+    jobId: string
+  ): Promise<readonly { readonly id: string; readonly summary: string }[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string; summary: string }>(
+      db,
+      `SELECT id, summary
+         FROM wo.additional_work_requests
+        WHERE tenant_id = $1 AND originating_job_id = $2
+          AND is_required AND state = 'pending' AND deleted_at IS NULL
+        ORDER BY created_at, id`,
+      [context.principal.tenantId, jobId]
+    );
+    return result.rows.map((row) => ({ id: row.id, summary: row.summary }));
   }
 
   /**

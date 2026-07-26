@@ -47,8 +47,67 @@ export interface DiagnosticReportRow {
   readonly recordVersion: number;
 }
 
+/**
+ * Where a diagnostic finding came from, resolved through its report.
+ *
+ * `dia.findings` carries no work-order column — it points at a report, and
+ * `dia.diagnostic_reports.work_order_id` and `.job_id` are both NOT NULL — so this
+ * is a join, not a projection, and it is exact rather than approximate.
+ */
+export interface FindingOrigin {
+  readonly findingId: string;
+  readonly diagnosticReportId: string;
+  readonly workOrderId: string;
+  readonly jobId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
 export class DiagnosticsRepository extends Repository {
   protected readonly module = 'diagnostics';
+
+  /**
+   * Resolves one finding to the work order and job it was discovered on.
+   *
+   * Exists because `wo.additional_work_requests.originating_finding_id` has NO
+   * foreign key — the Phase 1-9 comment calls it an opaque soft link — so the only
+   * thing that can refuse a finding belonging to another work order is a read, and
+   * that read must happen in the module that owns `dia`. Returns null for absent and
+   * out-of-scope alike; the caller decides what to disclose.
+   */
+  async findingOrigin(db: DbHandle, findingId: string): Promise<FindingOrigin | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      diagnostic_report_id: string;
+      work_order_id: string;
+      job_id: string;
+      company_id: string;
+      branch_id: string;
+    }>(
+      db,
+      `SELECT f.id, f.diagnostic_report_id, r.work_order_id, r.job_id,
+              f.company_id, f.branch_id
+         FROM dia.findings f
+         JOIN dia.diagnostic_reports r
+           ON r.tenant_id = f.tenant_id AND r.company_id = f.company_id
+          AND r.branch_id = f.branch_id AND r.id = f.diagnostic_report_id
+        WHERE f.tenant_id = $1 AND f.id = $2
+          AND f.deleted_at IS NULL AND r.deleted_at IS NULL`,
+      [context.principal.tenantId, findingId]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          findingId: row.id,
+          diagnosticReportId: row.diagnostic_report_id,
+          workOrderId: row.work_order_id,
+          jobId: row.job_id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+        }
+      : null;
+  }
 
   /** A template version by id, or null when absent or out of scope. */
   async templateVersion(db: DbHandle, versionId: string): Promise<TemplateVersionRow | null> {
