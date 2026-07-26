@@ -57,10 +57,55 @@ Updated after every major wave. This file is the recovery point if context is lo
 | --------------- | -------------------------------------- | ------------------------------------------ |
 | `ECR-P1-19-001` | Event type names and suffix convention | Acceptance 6 only; implementation proceeds |
 
+## Wave 3 progress
+
+| Slice                                                                     | Status          | Commit    |
+| ------------------------------------------------------------------------- | --------------- | --------- |
+| `work-order` module — domain, catalog repository, catalog service, index  | **Done, green** | `0445ee1` |
+| Error codes `ERR-WO-001` / `ERR-TECH-001` / `ERR-DIA-001` / `ERR-QMS-001` | **Done, green** | `0445ee1` |
+| `technician` module                                                       | Not started     | —         |
+| `diagnostics` module                                                      | Not started     | —         |
+| `quality` module                                                          | Not started     | —         |
+| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains               | Not started     | —         |
+| Event envelope registrations                                              | Not started     | —         |
+| Module-boundary tests for the new modules                                 | Not started     | —         |
+| Wave 3 PR and hosted CI                                                   | Not started     | —         |
+
+Gates green at `0445ee1`: format, lint, typecheck, module boundaries (257 files
+scanned), OpenAPI (94 paths / 110 operations), authorization coverage, Unit
+**829**, Backend **771**.
+
+## Corrections made during Wave 3 — do not re-derive
+
+1. **Four vocabularies in the phase brief were wrong**, caught only by reading
+   `pg_constraint` rather than trusting the brief: `wo.work_orders.kind` is
+   `('ordinary','rework')` with no `warranty` or `internal`; `parts_forward_state`
+   is `('none','requested','reserved_elsewhere')` with no `reserved` and no
+   `issued`; additional-work state uses `rejected` not `declined`; fulfillment uses
+   `waived` not `not_required`. **Verify every remaining vocabulary the same way
+   before writing it.**
+2. **`ERR-TRN-001` already exists** and already means "transition not permitted
+   from the current state" (409, conflict, owner `transition`). Plain graph
+   refusals reuse it; the four new codes cover only genuinely new semantics.
+3. **`SafeDetails` is a closed platform shape** — only `violations`,
+   `retryAfterSeconds`, `contract`, `requiredPermissions`. Do not widen it from a
+   module. `message` is log-only and never reaches a caller.
+4. **`src/server/events/envelope.ts` IS a formal `EVT-` registry** with 20 codes
+   allocated (IAM, CRM, VEH, APT, REC, DOC, NTF, TPL, ORG) and none for
+   `wo`/`tech`/`dia`/`qms`. This refines `ECR-P1-19-001`: the registry exists, and
+   P1-17 and P1-18 both allocated new codes in it with documented rationale, so
+   allocating `EVT-WO-*` and siblings is precedented rather than novel.
+5. **Three inventories move together** when an error code is added — the sorted
+   code list and the sorted status/owner/class inventory, both in
+   `tests/foundation/p1-15-catalogs.test.ts`, plus the error enum in
+   `docs/api/openapi.v1.json`. All three are alphabetically ordered.
+6. The transition graph is **rows, not code**. Read it through
+   `WorkOrderCatalogRepository`; never mirror it in TypeScript.
+
 ## Next action
 
-Wave 3 — implement the four module skeletons (`work-order`, `technician`,
-`diagnostics`, `quality`) with domain types, Zod schemas and repositories against
-the verified table names; extend the permission catalog seed with the `wo`, `tech`,
-`dia`, `qms` domains; register the proposed event envelopes; add module-boundary
-coverage. Then run the scoped battery and commit atomically.
+Continue Wave 3 with the three remaining module skeletons (`technician`,
+`diagnostics`, `quality`) against the verified table names, then the IAM permission
+seed additions, the event envelope registrations, and module-boundary coverage for
+the new modules. Then run the full battery, the clean room, open the Wave 3 pull
+request and take it to green hosted CI.
