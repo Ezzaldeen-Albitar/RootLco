@@ -3,7 +3,7 @@
 ```
 P1_19_BASE_SHA  = f326e24c0340e2ce97a94a768868a26d0cfbb04f
 Branch          = feature/p1-19-module-foundation
-CLEAN_ROOM_SHA  = 662b2f3a74603be6ce798cd0d03adb5c22fa1806
+CLEAN_ROOM_SHA  = 81c9d5c453bd855f103160d78bc482b6ff76ddab
 ```
 
 ## 1. What Wave 3 delivers
@@ -111,7 +111,7 @@ name is not an implementation:
 Wire names are unsuffixed, matching all twenty pre-existing entries; version is
 carried by `schemaVersion`, which is what that field is for.
 
-**Permissions** — twenty-one codes, `71 → 92`, in
+**Permissions** — twenty-two codes, `71 → 93`, in
 `supabase/seeds/04_iam_permission_catalog.sql` (a seed, not a migration).
 Deliberate separations: raising additional work from approving it; recording labor
 from correcting it; rework management from independent sign-off, because
@@ -121,8 +121,8 @@ BR-QMS-001 requires the sign-off authority to be separable from the doer.
 
 | Suite / gate                        | Result                                    |
 | ----------------------------------- | ----------------------------------------- |
-| `test` (unit)                       | **40 files / 840 tests** passed (was 829) |
-| `test:db`                           | **132 files / 1547 tests** passed         |
+| `test` (unit)                       | **40 files / 842 tests** passed (was 829) |
+| `test:db`                           | **134 files / 1595 tests** passed         |
 | `test:backend`                      | **38 files / 771 tests** passed           |
 | `format:check`, `lint`, `typecheck` | green                                     |
 | `validate:module-boundaries`        | OK — 269 files scanned (was 253)          |
@@ -156,7 +156,7 @@ outbox row. Recorded as a pre-existing full-suite flake.
 
 ## 7. Clean room — PostgreSQL 17.6, exact SHA
 
-Built from `662b2f3` only: 119 migrations in order, then the 7 declared seeds.
+Built from `81c9d5c` only: 119 migrations in order, then the 7 declared seeds.
 
 | Measure                    | Value                                                              |
 | -------------------------- | ------------------------------------------------------------------ |
@@ -174,9 +174,9 @@ Built from `662b2f3` only: 119 migrations in order, then the 7 declared seeds.
 The `schema_hash` is **byte-identical to the P1-18 baseline**, which is the proof
 that Wave 3 changed no schema object.
 
-The `baseline_fingerprint` **did** move, `0ee203f2…` → `bb14796b…`, and that is
+The `baseline_fingerprint` **did** move, `0ee203f2…` → `f7baf9b0…`, and that is
 correct rather than a regression: the fingerprint covers seed content as well as
-schema, and the permission catalog grew from 71 to 92 rows. A fingerprint that had
+schema, and the permission catalog grew from 71 to 93 rows. A fingerprint that had
 _not_ moved would mean the seed addition had not landed.
 
 Business tables are empty. The only rows are structural reference data: the four
@@ -196,6 +196,37 @@ migrations, plus the platform catalogs the earlier phases own.
 | `origin/main` pushed          | no                                                                  |
 | `origin/develop` pushed       | no                                                                  |
 | PR #78                        | untouched (already merged by the owner before this wave)            |
+
+## 8b. Adversarial review
+
+Two independent read-only reviewers ran against the full Wave 3 diff: one on
+architecture and database contract, one on security and QA. Neither ran tests,
+edited a file, or ran state-changing git; both verified claims against the live
+catalog with read-only .
+
+**0 Critical. 1 High. 10 Medium. Every confirmed finding is fixed** — see commit
+. Each was re-verified before acting rather than taken on trust, and the
+High was reproduced with a runnable script before a line was changed.
+
+The High is worth stating plainly because it was in code, not prose:
+read a DATE with UTC accessors that the driver never
+produces in UTC, so a certification valid through its expiry day was refused on
+that day, east of Greenwich — the exact off-by-one its own docblock promised could
+not happen. This machine sits at UTC+3 and reproduced it on the first attempt.
+
+Findings clustered in three places, and the pattern is worth recording: catalog
+reads that filtered before resolving the platform/tenant override rather than
+after; validations narrower than the guard they claim to pre-empt; and error
+payloads placed in a channel the caller never receives. All three are cases of the
+code doing something slightly different from what its own comment said — the same
+class of defect the P1-18 phase kept finding, and the reason both reviewers were
+asked to check comments against code rather than only code against schema.
+
+Security posture was reviewed and found clean: all 17 statements bind tenancy from
+and none takes it from an argument; the two template
+interpolations are closed unions with literal-only call sites; and BR-QMS-001
+independence survives one principal holding both rework codes, because the
+constraint enforces it on identity rather than on permission.
 
 ## 9. Remaining P1-19 waves
 
