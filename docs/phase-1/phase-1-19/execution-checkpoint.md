@@ -42,7 +42,7 @@ checkpoint only and never authorises a merge.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
-| Current HEAD        | `f6f4ae4` — Waves 4–8 complete; Wave 9 slices A and B done, slice C next                                                          |
+| Current HEAD        | `918347a` — Waves 4–9 complete; final review remediated; clean-room reproof pending at this SHA                                   |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
@@ -63,7 +63,7 @@ checkpoint only and never authorises a merge.
 | 6    | Additional work and customer approvals                | **Complete**, 32/32 operation depth |
 | 7    | Diagnostics                                           | **Complete**, 45/45 operation depth |
 | 8    | Quality control, closure and rework                   | **Complete**, 58/58 operation depth |
-| 9    | Phase-wide hardening and evidence                     | **In progress**                     |
+| 9    | Phase-wide hardening and evidence                     | **Complete**, 58/58 operation depth |
 
 ## Wave 4 progress
 
@@ -758,16 +758,55 @@ reproof, and PR #82's final preparation.
 
 **Do not merge PR #82. Do not create a gate-record PR. Do not start P1-20.**
 
+## Wave 9 progress — COMPLETE at `918347a`
+
+| Slice                                                   | Status       | Commit    |
+| ------------------------------------------------------- | ------------ | --------- |
+| A — inventory gate, reconciliations, phase evidence     | **Complete** | `cbe0177` |
+| B — closure-gate matrix (10) and forced concurrency (4) | **Complete** | `f6f4ae4` |
+| C — error, event and audit documentation                | **Complete** | `3b39328` |
+| Exact-SHA clean-room reproof                            | **Complete** | `a6c3a4d` |
+| Final adversarial review remediation                    | **Complete** | `918347a` |
+
+New in Wave 9: `scripts/p1-19-endpoint-inventory.mjs` (+ `npm run
+validate:p1-19-inventory`, wired into CI), two generated evidence documents, eight
+written ones, and two test suites.
+
+### What Wave 9 established — do not re-derive
+
+- **One seed file DID change.** `supabase/seeds/04_iam_permission_catalog.sql` gained
+  22 permission codes in Wave 3, moving `iam.permissions` from 71 to 93. Three
+  phase-level documents claimed no seed changed; the clean room disproved it.
+- **`tech.labor-session-list` left P1-18-A-01 open on timesheet data**, found only by
+  the final review. Closed, and a structural guard in the inventory script now fails
+  the build for any operation declaring `scope: 'branch'` whose handler enforces
+  nothing. The guard strips comments first, because its first version was satisfied by
+  the comment explaining the fix.
+- **The lock order in `work-order` is parent-then-child.** `wo.work_orders` is locked
+  before its children on every path. `lockDecidableRequest` had to be restructured to
+  respect that rather than locking the request first.
+- **B2 is not independently reachable.** An open labour session requires a job in a
+  labour-allowed state and `wo.guard_job_transition` will not let that job go terminal
+  while the session is open, so `[B1, B2]` is the minimal real state.
+- **B6 blocks the REWORK order, not the original** — the predicate is
+  `rl.rework_work_order_id = NEW.id`.
+- **The backend total did not move with the review fixes** (1074 before and after):
+  every fix landed as new assertions in existing tests.
+
 ## Next action
 
-**Wave 9, slice A — the phase-wide reconciliations.** Build the endpoint inventory
-from the registry rather than from memory, then reconcile permissions, events, audit
-actions and error codes against the seeded catalogs, and write the authorization and
-sensitive-data maps. Then slice B: the transition-graph coverage, the B1–B6 closure
-matrix, and the concurrency and rollback suites. Then slice C: documentation, the
-change log, the traceability matrix and the open-decision register. Then the final
-adversarial review, the final battery, the clean-room reproof and PR #82's
-preparation.
+**Re-run the exact-SHA clean room at `918347a`** — the reproof recorded in
+`evidence/clean-room-validation.md` was taken at `3b39328`, before the final review
+remediation changed application code. No DDL changed, so `schema_hash a677eb05…` is
+expected to be identical; the suites are what must be re-run from an empty database.
+
+**Then prepare PR #82 and stop.** Title
+`feat(p1-19): implement work order diagnostics and technician backend`, body from
+`evidence/pull-request-body.md`, remove the DO-NOT-MERGE marker, mark ready for
+review, and verify all four hosted checks on the exact head SHA. There is no `gh` CLI
+in this environment — the PR is edited through the authenticated browser.
+
+**Do NOT merge PR #82. Do NOT create a gate-record PR. Do NOT start P1-20.**
 
 ---
 
