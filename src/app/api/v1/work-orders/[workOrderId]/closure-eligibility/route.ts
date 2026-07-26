@@ -54,11 +54,14 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ workOrderId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  // The schema runs INSIDE the pipeline so a malformed id is rendered as the
+  // shared problem document rather than escaping the route as an unhandled 500.
+  const raw = await route.params;
   return handleOperation(
     WORK_ORDER_CLOSURE_ELIGIBILITY_OPERATION,
     request,
     async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const eligibility = await workOrderModule().workOrders.closureEligibility(
         db,
         params.workOrderId,
@@ -66,6 +69,6 @@ export async function GET(
       );
       return { status: 200, body: eligibility };
     },
-    { params }
+    { params: raw }
   );
 }

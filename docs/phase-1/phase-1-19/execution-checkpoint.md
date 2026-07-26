@@ -2,13 +2,47 @@
 
 Updated after every major wave. This file is the recovery point if context is lost.
 
+## Context Continuity Policy
+
+**Authoritative. Supersedes every earlier instruction in this file, in
+`README.md`, or in any P1-19 evidence document that told execution to stop at
+context pressure or to produce a session handoff.**
+
+- Conversational context pressure is not a project blocker.
+- Do not stop after a commit, push, test battery, review, CI run, or completed
+  wave.
+- Do not produce long narrative handoff reports during execution.
+- Persist technical details, discoveries, commands, counts, findings and next
+  actions in repository evidence files instead of repeating them in chat.
+- Keep chat responses to zero or one short line unless there is a genuine owner
+  decision.
+- When context is becoming large, use the runtime's compaction capability as
+  early as supported and continue from this checkpoint.
+- Reviewer agents must write detailed findings to files under `evidence/` and
+  return only a concise status to the coordinator.
+- Test commands must write full output to evidence/log files; read and discuss
+  only failures and final totals.
+- Do not repeatedly restate protected SHAs, completed work, or repository
+  archaeology already recorded in this checkpoint.
+- Continue automatically through Waves 4–9.
+- Owner input is required only for a genuine external blocker or the final
+  complete P1-19 merge.
+
+### Delivery model (wave-per-PR is revoked)
+
+One long-lived branch, one Pull Request (**#82**), atomic commits per slice,
+push after every locally verified wave, hosted CI verified against the exact new
+SHA, then continue immediately to the next wave. An owner merge is requested
+**once**, after Wave 9 is fully evidenced. Intermediate green CI proves that
+checkpoint only and never authorises a merge.
+
 ## Current position
 
 | Field               | Value                                                                      |
 | ------------------- | -------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                 |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)    |
-| Current HEAD        | `0386553b79616099b8eb7a6e4b85f8bbc14c7a46` (Wave 4, third slice)           |
+| Current HEAD        | see `git rev-parse HEAD` — Wave 4 complete, Wave 5 next                    |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                       |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase          |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced |
@@ -17,35 +51,56 @@ Updated after every major wave. This file is the recovery point if context is lo
 
 ## Completed
 
-| Wave | Content                                               | Status                                               |
-| ---- | ----------------------------------------------------- | ---------------------------------------------------- |
-| 0    | Protected ground truth                                | **Complete**                                         |
-| 1    | Repository archaeology and schema reconciliation      | **Complete**                                         |
-| 2    | Feature branch, protected baseline, documentation dir | **Complete**                                         |
-| 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green                               |
-| 4    | Work-order core                                       | **In progress** — service layer done, routes pending |
-| 5–9  | See README §4                                         | Not started                                          |
+| Wave | Content                                               | Status                            |
+| ---- | ----------------------------------------------------- | --------------------------------- |
+| 0    | Protected ground truth                                | **Complete**                      |
+| 1    | Repository archaeology and schema reconciliation      | **Complete**                      |
+| 2    | Feature branch, protected baseline, documentation dir | **Complete**                      |
+| 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green            |
+| 4    | Work-order core                                       | **Complete**, 8/8 operation depth |
+| 5    | Technician execution                                  | **In progress**                   |
+| 6–9  | See README §4                                         | Not started                       |
 
 ## Wave 4 progress
 
-| Slice                                                                           | Status               | Commit    |
-| ------------------------------------------------------------------------------- | -------------------- | --------- |
-| Work-order repository — locked read, versioned state write, history, job reads  | **Done, green**      | `1313c78` |
-| Closure eligibility — all six blockers, registry order, deferred set            | **Done, green**      | `1313c78` |
-| Transition service — catalog edge, reason, terminal pre-report                  | **Done, green**      | `1313c78` |
-| Cross-schema allow-list guard (B2/B4 reads, asserted read-only)                 | **Done, green**      | `1313c78` |
-| Job create / lock / update with `record_version`                                | **Done, green**      | `a0fcbeb` |
-| DB tests pinning the blocker query against the deployed guard (9)               | **Done, green**      | `a0fcbeb` |
-| Deferred scoped authorization threaded through every entry point                | **Done, green**      | `0386553` |
-| Four work-order/job audit actions registered, pin 78 → 82                       | **Done, green**      | `0386553` |
-| **Route handlers** — WRITTEN, withheld pending API tests, see `wave-4-pending/` | **Blocked on tests** | `0386553` |
-| **Audit + outbox wiring**                                                       | **Not started**      | —         |
-| **API / authorization / concurrency tests**                                     | **Not started**      | —         |
-| List and aggregate-detail queries                                               | **Not started**      | —         |
+| Slice                                                                          | Status          | Commit       |
+| ------------------------------------------------------------------------------ | --------------- | ------------ |
+| Work-order repository — locked read, versioned state write, history, job reads | **Done, green** | `1313c78`    |
+| Closure eligibility — all six blockers, registry order, deferred set           | **Done, green** | `1313c78`    |
+| Transition service — catalog edge, reason, terminal pre-report                 | **Done, green** | `1313c78`    |
+| Cross-schema allow-list guard (B2/B4 reads, asserted read-only)                | **Done, green** | `1313c78`    |
+| Job create / lock / update with `record_version`                               | **Done, green** | `a0fcbeb`    |
+| DB tests pinning the blocker query against the deployed guard (9)              | **Done, green** | `a0fcbeb`    |
+| Deferred scoped authorization threaded through every entry point               | **Done, green** | `0386553`    |
+| Four work-order/job audit actions registered, pin 78 → 82                      | **Done, green** | `0386553`    |
+| Reason carried through `app.status_reason` into the guard AND the ledger       | **Done, green** | Wave 4 close |
+| Audit + outbox wiring, exactly one of each per transition                      | **Done, green** | Wave 4 close |
+| List, aggregate-detail and paginated-history queries with DTOs                 | **Done, green** | Wave 4 close |
+| Closure split behind `wo.work_order.close`, one shared write path              | **Done, green** | Wave 4 close |
+| Eight routes restored/added, `wave-4-pending/` REMOVED                         | **Done, green** | Wave 4 close |
+| 54 backend tests across three suites, 8/8 operation depth                      | **Done, green** | Wave 4 close |
 
-Gates green at `a0fcbeb`: format, lint, typecheck, module boundaries, OpenAPI,
-authorization coverage, operation coverage, `security:all`.
-Unit **843** / DB **1604** / Backend **771**.
+Full evidence: [`evidence/wave-4-work-order-core.md`](evidence/wave-4-work-order-core.md).
+Gates green at the Wave 4 head: format, lint, typecheck, module boundaries (279
+files), authorization coverage (118), operation coverage (**P1-19 8/8, 0 pending**),
+OpenAPI (**102 paths / 118 operations**), WO/TECH/DIA/QMS classification (657
+columns), encoding, canonical docs, `security:all`, build.
+Unit **843** / DB **1604** / Backend **825** (was 771).
+
+Five defects Wave 4 found in already-reviewed code — full detail in the evidence
+document, summarised so they are not rediscovered:
+
+1. `app.status_reason` was never published, so every reason-required edge would have
+   failed as a raw `23514` and every ledger reason would have been NULL.
+2. `wo.work_order.close` was seeded and enforced nowhere; closure is now its own
+   operation and the transition endpoint refuses a closing target.
+3. `PATCH /jobs/{jobId}` had no scope target at all (P1-18-A-01 again).
+4. A job insert raced by a close raised an unmapped `check_violation` → 500.
+5. `parseOrFail` outside `handleOperation` threw out of the route instead of
+   rendering a problem document → 500 where a 422 was owed.
+
+Accepted and tracked: **P1-19-A-01**, the board's `(opened_at DESC, id DESC)`
+ordering is not index-aligned and no migration is authorised to add one.
 
 ## The Wave 4 finding that changed its scope
 
@@ -181,11 +236,10 @@ touches the outbox.
 
 ## Current blocker
 
-PR creation is externally blocked. The Claude-in-Chrome extension disconnected
-mid-wave (three retries), is not installed, and no /
-is present. The branch IS pushed — =
-— so only the PR-open step is missing. Body prepared at
-.
+**None.** The Wave 3 PR-open blocker is RESOLVED: PR
+[#82](https://github.com/Ezzaldeen-Albitar/RootLco/pull/82) is open in Draft
+against `develop` and carries the whole phase. Hosted CI ran green 4/4 on the
+Wave 3 head. Pushes to this branch update #82 automatically.
 
 ## Wave 4 — contract already extracted, do NOT re-derive
 
@@ -244,16 +298,32 @@ assume the two resolutions coincide.
 
 ## Next action
 
-Write `tests/backend/p1-19-work-order-core.test.ts`, then restore the two route
-handlers from `wave-4-pending/` following the five-step procedure in that
-directory README. Reuse the work-order fixture in
-`tests/backend/p1-18-reception-conversion.test.ts` — it already builds one through
-the authoritative conversion path. Then add both operations to the manifest in
-`scripts/check-operation-test-coverage.mjs` with the evidence kinds listed there,
-regenerate OpenAPI with `UPDATE_OPENAPI=1`, and continue with the job routes, the
-list and detail queries, outbox publication and audit wiring.
+**Wave 5 — technician execution.** Job transitions through `wo.job_transitions`,
+technician assignment/unassignment/reassignment with the eligibility rules, labour
+sessions, the technician queue, work-order service lines and required-part demand.
 
-Two traps recorded in `wave-4-pending/README.md`: `docs/api/openapi.v1.json` is
-GENERATED (a hand edit is rejected), and the import list in
-`tests/openapi-contract.test.ts` is the same mechanism that once hid all twelve
-P1-18 operations from the published contract while every gate read green.
+Start from `tests/backend/p1-19-helpers.ts`, which already builds work orders
+through the real conversion route and advances them through the real transition
+route. The first thing Wave 5 must build is an **assignment**, because
+`wo.guard_job_transition` was REPLACED by the assignments migration to require an
+active `wo.job_assignments` row before a job may enter an `assignment_required`
+state — so `planned → assigned` is currently unreachable and B1 can only be cleared
+by cancelling a job.
+
+Traps that still apply to every wave:
+
+- `docs/api/openapi.v1.json` is GENERATED. Regenerate with
+  `UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts`; a hand edit is
+  overwritten and rejected.
+- The import list in `tests/openapi-contract.test.ts` is the mechanism that once hid
+  all twelve P1-18 operations from the published contract while every gate read
+  green. Adding a route means adding a line there, and the arithmetic that catches
+  an omission is external (authorization coverage counts registered operations,
+  `check-openapi` counts published ones; the two must agree).
+- A route may not import `@/server/db/pagination` — boundary rule B4. Pass the raw
+  `{ cursor, limit }` to the module service and decode inside it.
+- Parse path and query schemas INSIDE `handleOperation`, or the failure escapes the
+  route as a 500 instead of a problem document.
+- Two narrowed principals are needed to test isolation honestly: one whose grants
+  make the row visible (403 from the scoped check) and one whose do not (404 from
+  RLS). `PERMISSION_ELSEWHERE` and `SCOPED_ELSEWHERE` in the shared fixture.

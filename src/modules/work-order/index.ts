@@ -26,8 +26,25 @@
  */
 import { composeModule } from '@/server/layering';
 import { WorkOrderCatalogRepository } from './data/work-order-catalog-repository';
-export type { JobRow, StatusHistoryRow, WorkOrderRow } from './data/work-order-repository';
-export type { ClosureBlocker, ClosureEligibility } from './application/work-order-service';
+export type {
+  JobRow,
+  StatusHistoryRow,
+  WorkOrderListFilter,
+  WorkOrderRow,
+} from './data/work-order-repository';
+export type {
+  ClosureBlocker,
+  ClosureEligibility,
+  JobView,
+  PageInput,
+  ReachableState,
+  TransitionInput,
+  TransitionResult,
+  WorkOrderDetail,
+  WorkOrderHistoryEntry,
+  WorkOrderHistoryView,
+  WorkOrderSummary,
+} from './application/work-order-service';
 import { WorkOrderRepository } from './data/work-order-repository';
 import { WorkOrderCatalogService } from './application/work-order-catalog-service';
 import { WorkOrderService } from './application/work-order-service';
@@ -44,6 +61,8 @@ export {
   CLOSURE_BLOCKER_REGISTRY,
   DEFERRED_CLOSURE_BLOCKERS,
   FULFILLMENT_STATES,
+  MAX_JOB_TITLE,
+  MAX_JOB_TYPE,
   MAX_REASON,
   PARTS_FORWARD_STATES,
   WORK_ORDER_KINDS,

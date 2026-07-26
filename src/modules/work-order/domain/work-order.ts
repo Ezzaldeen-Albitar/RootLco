@@ -68,6 +68,19 @@ export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
 export const MAX_REASON = 500;
 
 /**
+ * Application bounds on the two free-text job columns.
+ *
+ * `wo.jobs.title` and `wo.jobs.job_type` are unbounded `text` with only a
+ * not-blank CHECK, so these are the application's limit rather than a mirror of
+ * the schema — and they are stated here rather than inline in the route so the
+ * bound a caller is refused on is the same one the service documents. Chosen to
+ * fit a workshop job line, not to be generous: an unbounded title is a storage
+ * and rendering hazard on every screen that lists jobs.
+ */
+export const MAX_JOB_TITLE = 200;
+export const MAX_JOB_TYPE = 64;
+
+/**
  * The closure blockers, mirroring `wo.guard_work_order_closure()` exactly.
  *
  * The trigger is the authority and stays the authority: it runs inside the same

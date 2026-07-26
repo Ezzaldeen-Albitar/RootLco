@@ -27,6 +27,7 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
 
 export interface WorkOrderRow {
   readonly id: string;
@@ -39,12 +40,58 @@ export interface WorkOrderRow {
   readonly partsForwardState: string;
   readonly displayNumber: string | null;
   readonly openedAt: Date;
+  /**
+   * Who opened the work order — in practice the actor of reception's conversion.
+   *
+   * Read here rather than derived, because the transition ledger cannot answer it:
+   * `wo.emit_work_order_status_history` fires AFTER UPDATE only, so the row that
+   * opens a work order emits nothing. The service projects this ONLY into the
+   * history view's origin block, beside the transitions' own `actorId`, and never
+   * into the list or detail projections.
+   */
+  readonly createdBy: string | null;
   readonly recordVersion: number;
+}
+
+/** Ordering contract for the work-order list. Newest opened first, id tie-break. */
+export const WORK_ORDER_LIST_ORDER = Object.freeze({
+  key: 'wo.work_orders:opened_at_desc',
+  direction: 'desc' as const,
+});
+
+/** Ordering contract for the status ledger. Newest transition first, id tie-break. */
+export const WORK_ORDER_HISTORY_ORDER = Object.freeze({
+  key: 'wo.work_order_status_history:occurred_at_desc',
+  direction: 'desc' as const,
+});
+
+/** Server-side filter for the branch work-order board. */
+export interface WorkOrderListFilter {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly state?: string | undefined;
+  readonly kind?: string | undefined;
+  /** Inclusive lower bound on `opened_at`. */
+  readonly openedFrom?: Date | undefined;
+  /** Inclusive upper bound on `opened_at`. */
+  readonly openedTo?: Date | undefined;
 }
 
 export interface JobRow {
   readonly id: string;
   readonly workOrderId: string;
+  /**
+   * The job's own scope columns.
+   *
+   * Carried on the row rather than looked up later because `PATCH /jobs/{jobId}`
+   * is addressed by job id alone: without them the deferred scope authorization
+   * would have nothing to name, and `scope: 'branch'` degrades to a scope-blind
+   * check on an empty target (P1-18-A-01). `fk_jobs_work_order` is the composite
+   * key `(tenant, company, branch, work_order_id)`, so these always equal the
+   * parent work order's — reading them off the job is exact, not an approximation.
+   */
+  readonly companyId: string;
+  readonly branchId: string;
   readonly title: string;
   readonly jobType: string | null;
   readonly state: string;
@@ -53,6 +100,7 @@ export interface JobRow {
 }
 
 export interface StatusHistoryRow {
+  readonly id: string;
   readonly fromState: string | null;
   readonly toState: string;
   readonly reason: string | null;
@@ -64,6 +112,35 @@ export interface StatusHistoryRow {
 export interface BlockerHit {
   readonly code: 'B1' | 'B2' | 'B3' | 'B4' | 'B5' | 'B6';
 }
+
+/** The column shape every job read projects. One place, so the three cannot drift. */
+interface JobColumns {
+  id: string;
+  work_order_id: string;
+  company_id: string;
+  branch_id: string;
+  title: string;
+  job_type: string | null;
+  state: string;
+  requires_diagnostic: boolean;
+  record_version: number;
+}
+
+/** Projection list shared by every job read, and by the insert's RETURNING. */
+const JOB_COLUMNS = `id, work_order_id, company_id, branch_id, title, job_type, state,
+          requires_diagnostic, record_version`;
+
+const toJobRow = (row: JobColumns): JobRow => ({
+  id: row.id,
+  workOrderId: row.work_order_id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  title: row.title,
+  jobType: row.job_type,
+  state: row.state,
+  requiresDiagnostic: row.requires_diagnostic,
+  recordVersion: row.record_version,
+});
 
 export class WorkOrderRepository extends Repository {
   protected readonly module = 'work-order';
@@ -100,11 +177,12 @@ export class WorkOrderRepository extends Repository {
       parts_forward_state: string;
       display_number: string | null;
       opened_at: Date;
+      created_by: string | null;
       record_version: number;
     }>(
       db,
       `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
-              parts_forward_state, display_number, opened_at, record_version
+              parts_forward_state, display_number, opened_at, created_by, record_version
          FROM wo.work_orders
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
         ${lock ? 'FOR UPDATE' : ''}`,
@@ -123,9 +201,97 @@ export class WorkOrderRepository extends Repository {
           partsForwardState: row.parts_forward_state,
           displayNumber: row.display_number,
           openedAt: row.opened_at,
+          createdBy: row.created_by,
           recordVersion: row.record_version,
         }
       : null;
+  }
+
+  /**
+   * One keyset page of the branch's work orders, newest opened first.
+   *
+   * Company and branch are REQUIRED filter columns rather than optional
+   * conveniences. RLS narrows a list to `app.branch_ids`, which is the
+   * permission-blind union of every active grant — so a caller holding
+   * `wo.work_order.read` in one branch and any grant at all in another would see
+   * the second branch's board if the query did not name a scope. Naming it here
+   * is what lets the route pass the same pair as the `authorizationTarget`, so the
+   * permission is evaluated by `iam.has_permission_in_scope` against the branch
+   * actually being read (P1-18-A-01).
+   *
+   * `state` and `kind` are compared as opaque catalog codes; neither is matched
+   * against a TypeScript vocabulary, because `wo.work_order_states` is
+   * tenant-extensible and an unknown code must return an empty page rather than a
+   * validation error about a state the tenant may legitimately have defined.
+   */
+  async listWorkOrders(
+    db: DbHandle,
+    filter: WorkOrderListFilter,
+    page: PageRequest
+  ): Promise<Page<WorkOrderRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.state ?? null,
+      filter.kind ?? null,
+      filter.openedFrom ?? null,
+      filter.openedTo ?? null,
+    ];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'opened_at', id: 'id' },
+      WORK_ORDER_LIST_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      reception_visit_id: string;
+      vehicle_id: string;
+      kind: string;
+      state: string;
+      parts_forward_state: string;
+      display_number: string | null;
+      opened_at: Date;
+      created_by: string | null;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
+              parts_forward_state, display_number, opened_at, created_by, record_version
+         FROM wo.work_orders
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR state = $4)
+          AND ($5::text IS NULL OR kind = $5)
+          AND ($6::timestamptz IS NULL OR opened_at >= $6)
+          AND ($7::timestamptz IS NULL OR opened_at <= $7)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    const rows: WorkOrderRow[] = result.rows.map((row) => ({
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      receptionVisitId: row.reception_visit_id,
+      vehicleId: row.vehicle_id,
+      kind: row.kind,
+      state: row.state,
+      partsForwardState: row.parts_forward_state,
+      displayNumber: row.display_number,
+      openedAt: row.opened_at,
+      createdBy: row.created_by,
+      recordVersion: row.record_version,
+    }));
+    return buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
+      sortValue: row.openedAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   /**
@@ -137,14 +303,32 @@ export class WorkOrderRepository extends Repository {
    * bumps the version, and the AFTER trigger writes the append-only history row —
    * neither is done here, because doing it by hand would give the platform two
    * ways to advance a version that could disagree.
+   *
+   * ## The reason travels through a GUC, not a column
+   *
+   * `wo.work_orders` has no reason column. Both triggers read
+   * `NULLIF(btrim(current_setting('app.status_reason', true)), '')`:
+   * `wo.guard_work_order_transition` raises `check_violation` when the edge or the
+   * target state requires a reason and the GUC is unset, and
+   * `wo.emit_work_order_status_history` copies it into the ledger row. So a reason
+   * that is validated in TypeScript but never published here would fail the guard
+   * as a bare `23514` on every reason-required edge, and every history row would
+   * carry `reason = NULL`.
+   *
+   * It is set transaction-locally (`set_config(..., true)`) and cleared right
+   * after, so a second state change later in the same request cannot inherit the
+   * first one's reason. No clear is attempted on the failure path: a raising
+   * statement aborts the surrounding transaction, so nothing it set can survive.
    */
   async applyState(
     db: DbHandle,
     workOrderId: string,
     toState: string,
+    reason: string | null,
     expectedVersion: number
   ): Promise<boolean> {
     const context = this.assertContext(db);
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', reason ?? '']);
     const result = await this.run(
       db,
       `UPDATE wo.work_orders
@@ -152,13 +336,40 @@ export class WorkOrderRepository extends Repository {
         WHERE tenant_id = $1 AND id = $2 AND record_version = $5 AND deleted_at IS NULL`,
       [context.principal.tenantId, workOrderId, toState, context.principal.userId, expectedVersion]
     );
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', '']);
     return (result.rowCount ?? 0) === 1;
   }
 
-  /** Append-only transition history for one work order, oldest first. */
-  async history(db: DbHandle, workOrderId: string): Promise<readonly StatusHistoryRow[]> {
+  /**
+   * One keyset page of the append-only transition ledger, newest first.
+   *
+   * Paginated rather than returned whole: the ledger grows without bound for a
+   * long-running order, and an endpoint that returns all of it is the unbounded
+   * response the pagination contract exists to prevent.
+   *
+   * The tie-break is `id`, not `seq`, even though `ix_work_order_status_history_wo`
+   * is `(…, occurred_at DESC, seq DESC)`. `decodeCursor` requires a UUID
+   * tie-breaker platform-wide (P1-15-SR-013), and a bigint there would surface a
+   * malformed cursor as a raw `22P02` 500 instead of `ERR-PAG-001`. The index's
+   * `occurred_at DESC` prefix is still used for the seek; only the tie inside one
+   * timestamp is resolved outside it, and `(occurred_at, id)` is still a total
+   * order, which is what makes the page stable.
+   */
+  async historyPage(
+    db: DbHandle,
+    workOrderId: string,
+    page: PageRequest
+  ): Promise<Page<StatusHistoryRow>> {
     const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'occurred_at', id: 'id' },
+      WORK_ORDER_HISTORY_ORDER,
+      values.length + 1
+    );
     const result = await this.run<{
+      id: string;
       from_state: string | null;
       to_state: string;
       reason: string | null;
@@ -166,49 +377,94 @@ export class WorkOrderRepository extends Repository {
       actor_id: string | null;
     }>(
       db,
-      `SELECT from_state, to_state, reason, occurred_at, actor_id
+      `SELECT id, from_state, to_state, reason, occurred_at, actor_id
          FROM wo.work_order_status_history
         WHERE tenant_id = $1 AND work_order_id = $2
-        ORDER BY occurred_at, seq`,
-      [context.principal.tenantId, workOrderId]
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
     );
-    return result.rows.map((row) => ({
+    const rows: StatusHistoryRow[] = result.rows.map((row) => ({
+      id: row.id,
       fromState: row.from_state,
       toState: row.to_state,
       reason: row.reason,
       occurredAt: row.occurred_at,
       actorId: row.actor_id,
     }));
+    return buildPage(rows, page, WORK_ORDER_HISTORY_ORDER, (row) => ({
+      sortValue: row.occurredAt.toISOString(),
+      id: row.id,
+    }));
+  }
+
+  /**
+   * The earliest ledger row's `from_state`, or null when the ledger is empty.
+   *
+   * This is how the history view reports the state a work order OPENED in without
+   * fabricating a genesis row. `wo.emit_work_order_status_history` is AFTER UPDATE
+   * only, so the insert that opens an order emits nothing, and
+   * `shared.stamp_status_history` forces `occurred_at := now()` — a backfilled
+   * genesis row would therefore carry a timestamp that is not when the order
+   * opened. Deriving it from the oldest transition's origin is exact.
+   */
+  async initialState(db: DbHandle, workOrderId: string): Promise<string | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ from_state: string | null }>(
+      db,
+      `SELECT from_state
+         FROM wo.work_order_status_history
+        WHERE tenant_id = $1 AND work_order_id = $2
+        ORDER BY occurred_at, seq
+        LIMIT 1`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return result.rows[0]?.from_state ?? null;
   }
 
   /** Live jobs on one work order, in creation order. */
   async jobsFor(db: DbHandle, workOrderId: string): Promise<readonly JobRow[]> {
     const context = this.assertContext(db);
-    const result = await this.run<{
-      id: string;
-      work_order_id: string;
-      title: string;
-      job_type: string | null;
-      state: string;
-      requires_diagnostic: boolean;
-      record_version: number;
-    }>(
+    const result = await this.run<JobColumns>(
       db,
-      `SELECT id, work_order_id, title, job_type, state, requires_diagnostic, record_version
+      `SELECT ${JOB_COLUMNS}
          FROM wo.jobs
         WHERE tenant_id = $1 AND work_order_id = $2 AND deleted_at IS NULL
         ORDER BY created_at, id`,
       [context.principal.tenantId, workOrderId]
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      workOrderId: row.work_order_id,
-      title: row.title,
-      jobType: row.job_type,
-      state: row.state,
-      requiresDiagnostic: row.requires_diagnostic,
-      recordVersion: row.record_version,
-    }));
+    return result.rows.map(toJobRow);
+  }
+
+  /**
+   * Every live job on a set of work orders, in one round trip.
+   *
+   * This exists so the aggregate-detail projection over a page of work orders is
+   * one query rather than one per order. The caller groups by `workOrderId`.
+   */
+  async jobsForMany(
+    db: DbHandle,
+    workOrderIds: readonly string[]
+  ): Promise<ReadonlyMap<string, readonly JobRow[]>> {
+    const grouped = new Map<string, JobRow[]>();
+    if (workOrderIds.length === 0) return grouped;
+    const context = this.assertContext(db);
+    const result = await this.run<JobColumns>(
+      db,
+      `SELECT ${JOB_COLUMNS}
+         FROM wo.jobs
+        WHERE tenant_id = $1 AND work_order_id = ANY($2::uuid[]) AND deleted_at IS NULL
+        ORDER BY work_order_id, created_at, id`,
+      [context.principal.tenantId, [...workOrderIds]]
+    );
+    for (const row of result.rows) {
+      const job = toJobRow(row);
+      const bucket = grouped.get(job.workOrderId);
+      if (bucket) bucket.push(job);
+      else grouped.set(job.workOrderId, [job]);
+    }
+    return grouped;
   }
 
   /**
@@ -233,21 +489,13 @@ export class WorkOrderRepository extends Repository {
     }
   ): Promise<JobRow> {
     const context = this.assertContext(db);
-    const result = await this.run<{
-      id: string;
-      work_order_id: string;
-      title: string;
-      job_type: string | null;
-      state: string;
-      requires_diagnostic: boolean;
-      record_version: number;
-    }>(
+    const result = await this.run<JobColumns>(
       db,
       `INSERT INTO wo.jobs
          (tenant_id, company_id, branch_id, work_order_id, title, job_type, state,
           requires_diagnostic, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, work_order_id, title, job_type, state, requires_diagnostic, record_version`,
+       RETURNING ${JOB_COLUMNS}`,
       [
         context.principal.tenantId,
         input.companyId,
@@ -262,48 +510,22 @@ export class WorkOrderRepository extends Repository {
     );
     const row = result.rows[0];
     if (row === undefined) throw new Error('job insert returned no row');
-    return {
-      id: row.id,
-      workOrderId: row.work_order_id,
-      title: row.title,
-      jobType: row.job_type,
-      state: row.state,
-      requiresDiagnostic: row.requires_diagnostic,
-      recordVersion: row.record_version,
-    };
+    return toJobRow(row);
   }
 
   /** Locks one job and returns it, or null when absent or out of scope. */
   async lockJob(db: DbHandle, jobId: string): Promise<JobRow | null> {
     const context = this.assertContext(db);
-    const result = await this.run<{
-      id: string;
-      work_order_id: string;
-      title: string;
-      job_type: string | null;
-      state: string;
-      requires_diagnostic: boolean;
-      record_version: number;
-    }>(
+    const result = await this.run<JobColumns>(
       db,
-      `SELECT id, work_order_id, title, job_type, state, requires_diagnostic, record_version
+      `SELECT ${JOB_COLUMNS}
          FROM wo.jobs
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
         FOR UPDATE`,
       [context.principal.tenantId, jobId]
     );
     const row = result.rows[0];
-    return row
-      ? {
-          id: row.id,
-          workOrderId: row.work_order_id,
-          title: row.title,
-          jobType: row.job_type,
-          state: row.state,
-          requiresDiagnostic: row.requires_diagnostic,
-          recordVersion: row.record_version,
-        }
-      : null;
+    return row ? toJobRow(row) : null;
   }
 
   /**

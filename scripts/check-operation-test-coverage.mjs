@@ -97,7 +97,22 @@ export const P1_17_PREFIX = 'veh.';
  * failure P1-17 had to remediate three times.
  */
 export const P1_18_PREFIXES = ['apt.', 'rec.'];
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX, ...P1_18_PREFIXES];
+/**
+ * P1-19 spans FOUR id namespaces — `wo.`, `tech.`, `dia.` and `qms.` — because the
+ * frozen Phase 1-9 database splits work orders, technician execution, diagnostics
+ * and quality into four schemas. All four are listed for the same reason both
+ * P1-18 namespaces are: a namespace absent from this array gets no derived floor at
+ * all, silently, and its operations pass on whatever the manifest happens to
+ * declare.
+ */
+export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
+const DERIVED_PREFIXES = [
+  DERIVED_PREFIX,
+  P1_16_PREFIX,
+  P1_17_PREFIX,
+  ...P1_18_PREFIXES,
+  ...P1_19_PREFIXES,
+];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -411,6 +426,74 @@ export const MANIFEST = {
     ],
     note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
+  // ========================================================================
+  // Phase 1-19 (wo. / tech. / dia. / qms.) — Work Order, Diagnostics and
+  // Technician Backend. Same derived-evidence model, and the same strict
+  // comment-stripping ratchet P1-18 introduced: an operation counts as invoked
+  // only if its id appears in executable code, never in prose about a test.
+  //
+  // Wave 4 (work-order core) below. Waves 5–8 append their own entries.
+  // ========================================================================
+  'wo.work-order-list': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset board of ONE branch, newest opened first; company and branch are required query parameters BECAUSE they are the authorizationTarget — the isolation case proves a caller granted only in branch A2 is refused for A1 rather than served it through the permission-blind app.branch_ids union (P1-18-A-01); a tenant-B work order never appears (cross-tenant); a bad cursor, an oversized page, an unknown parameter and a timezone-less date bound are refused (denial); an unknown state code returns an empty page rather than a 422, because wo.work_order_states is tenant-extensible',
+  },
+  'wo.work-order-detail': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'work order + live jobs + reachable next states resolved from the live catalog, in a fixed number of round trips; a terminal order reports NO next states because the guard freezes it whatever the graph says (BR-WO-002); the ETag carries the record_version a transition must send back; an unknown id and a tenant-B id answer the same 404 (cross-tenant/denial)',
+  },
+  'wo.work-order-history': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only ledger newest-first, plus an origin block; the origin block is the honest answer to "what state did this open in" — wo.emit_work_order_status_history is AFTER UPDATE only so no genesis row exists, and shared.stamp_status_history would stamp a backfilled one with now(); a bad cursor is refused (denial) and a tenant-B work order yields nothing (cross-tenant)',
+  },
+  'wo.work-order-closure-eligibility': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'reports EVERY unmet blocker rather than the guard’s first: two unmet conditions come back as two, in CLOSURE_BLOCKER_REGISTRY order, and an already-terminal order returns alreadyTerminal with an empty list because the guard evaluates nothing; the Phase 1-21 conditions are reported as deferred rather than omitted, so a snapshot can never read them as checks that ran and passed',
+  },
+  'wo.work-order-transition': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+      'rollback',
+    ],
+    note: 'state + trigger-emitted history row + one audit record + one outbox event in ONE transaction, and an injected failure leaves none of them (rollback); the reason travels through the app.status_reason GUC, which both the guard and the ledger emitter read — without it every reason-required edge fails as a raw 23514 and every ledger reason is NULL; three refusals stay distinct (ERR-TRN-001 absent edge, ERR-VAL-001 missing reason, ERR-VAL-001 closing state asks for the closure command); a wrong If-Match is refused (stale-version) and two concurrent transitions leave exactly one winner (concurrency)',
+  },
+  'wo.work-order-closure': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'the second permission is real, not documentary: a caller holding wo.work_order.transition but not wo.work_order.close is refused (denial), and the transition endpoint refuses a closing target so the split cannot be bypassed by choosing the other URL; closure runs the SAME eligibility service as the read endpoint and reports every blocker (ERR-WO-001) before the write; emits wo.work_order.closed and work-order.closed exactly once each',
+  },
+  'wo.job-create': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
+  },
+  'wo.job-update': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'state is not accepted and cannot be written — the strict schema makes naming it a 422 and the UPDATE does not carry the column, so the graph has no bypass; addressed by job id alone, so the branch scope is re-decided against the LOCKED job’s own company and branch (P1-18-A-01) and a caller granted only in another branch is refused (isolation); a wrong If-Match is refused (stale-version) and the audit records only the columns that moved',
+  },
+
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
@@ -1032,7 +1115,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1272,7 +1355,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = P1_18_PREFIXES.some((prefix) => id.startsWith(prefix));
+      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((prefix) => id.startsWith(prefix));
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -1301,7 +1384,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
     // gate over a merged phase belongs in that phase's own remediation, not in a
     // later phase's feature branch.
-    const isDerived = id.startsWith(DERIVED_PREFIX) || P1_18_PREFIXES.some((p) => id.startsWith(p));
+    const isDerived =
+      id.startsWith(DERIVED_PREFIX) ||
+      [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1362,6 +1447,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const vehRows = phaseRows(P1_17_PREFIX);
   // P1-18 spans two namespaces, so its phase row set is their union.
   const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-19 spans four namespaces, so its phase row set is their union.
+  const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1390,6 +1477,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_16: phaseCounts(crmRows),
     p1_17: phaseCounts(vehRows),
     p1_18: phaseCounts(aptRecRows),
+    p1_19: phaseCounts(p1_19Rows),
   };
   return { failures, matrix, counts };
 }
@@ -1498,6 +1586,15 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-19', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_19,
+      operations: matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -1550,6 +1647,15 @@ async function runCli() {
     console.log(`P1-18 unit-only: ${s.unitOnly}`);
     console.log(`P1-18 unreferenced: ${s.unreferenced}`);
     console.log(`P1-18 metadata-only: ${s.metadataOnly}`);
+    const t = counts.p1_19;
+    console.log('');
+    console.log(`P1-19 registered public operations: ${t.registered}`);
+    console.log(`P1-19 operation-depth: ${t.operationDepth}`);
+    console.log(`P1-19 invocation-only: ${t.invocationOnly}`);
+    console.log(`P1-19 pending: ${t.pending}`);
+    console.log(`P1-19 unit-only: ${t.unitOnly}`);
+    console.log(`P1-19 unreferenced: ${t.unreferenced}`);
+    console.log(`P1-19 metadata-only: ${t.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

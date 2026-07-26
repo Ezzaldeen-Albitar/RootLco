@@ -16,11 +16,22 @@
  * a caller who has not seen the current version cannot know which edge they are
  * asking for.
  *
- * Closure permission is separate from transition permission by design: a service
- * advisor who may park an order awaiting parts must not thereby be able to close
- * it. The route therefore declares both and the service decides which applies —
- * `wo.work_order.close` is required only when the target is terminal and not a
- * cancellation.
+ * ## This endpoint cannot close a work order
+ *
+ * Closure authority is separate by design: a service advisor who may park an order
+ * `awaiting_parts` must not thereby be able to end the workshop's liability for the
+ * vehicle. Permissions are a conjunction, so declaring `wo.work_order.close`
+ * alongside `wo.work_order.transition` here would demand the closing authority for
+ * every ordinary move. Closure is therefore its own operation
+ * (`POST /work-orders/{workOrderId}/closure`), and asking THIS endpoint for a
+ * terminal non-cancellation state is refused with `ERR-VAL-001` rather than
+ * silently accepted — otherwise the second permission would be bypassable by
+ * choosing the other URL. Both commands funnel into one service write path, so
+ * B1–B6 and `wo.guard_work_order_closure` apply identically either way.
+ *
+ * Cancellation stays here even though `cancelled` is terminal, because
+ * `wo.guard_work_order_closure` exempts a cancellation target from B1–B6:
+ * cancelling is abandoning the work, not certifying it complete.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -67,7 +78,9 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ workOrderId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  // Both schemas run INSIDE the pipeline so a malformed id or body is rendered as
+  // the shared problem document rather than escaping the route as a 500.
+  const raw = await route.params;
   const body = await request
     .clone()
     .json()
@@ -76,6 +89,7 @@ export async function POST(
     WORK_ORDER_TRANSITION_OPERATION,
     request,
     async ({ db, expectedVersion, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -92,6 +106,6 @@ export async function POST(
       );
       return { status: 200, body: moved, recordVersion: moved.recordVersion };
     },
-    { params, body }
+    { params: raw, body }
   );
 }

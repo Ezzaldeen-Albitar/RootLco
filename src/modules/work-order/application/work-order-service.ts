@@ -12,13 +12,20 @@ import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { SQLSTATE, isSqlState } from '@/server/db/repository';
+import { appendAudit } from '@/server/audit/audit';
+import { publishEvent } from '@/server/events/publisher';
+import { pageRequest, type Page } from '@/server/db/pagination';
 import { qualityModule } from '@/modules/quality';
-import type {
-  BlockerHit,
-  JobRow,
-  StatusHistoryRow,
-  WorkOrderRepository,
-  WorkOrderRow,
+import {
+  WORK_ORDER_HISTORY_ORDER,
+  WORK_ORDER_LIST_ORDER,
+  type BlockerHit,
+  type JobRow,
+  type StatusHistoryRow,
+  type WorkOrderListFilter,
+  type WorkOrderRepository,
+  type WorkOrderRow,
 } from '../data/work-order-repository';
 import type { WorkOrderCatalogService } from './work-order-catalog-service';
 import {
@@ -51,6 +58,162 @@ export interface ClosureEligibility {
     readonly reason: string;
   };
 }
+
+/**
+ * The work-order projection every read returns.
+ *
+ * `createdBy` is deliberately absent. It answers "which member of staff opened
+ * this", which a board or a list has no need for, and the history view is where
+ * it belongs — beside the actors of the transitions it can be compared against.
+ */
+export interface WorkOrderSummary {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly receptionVisitId: string;
+  readonly vehicleId: string;
+  readonly kind: string;
+  readonly state: string;
+  readonly partsForwardState: string;
+  readonly displayNumber: string | null;
+  readonly openedAt: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * A job as projected to a caller.
+ *
+ * Company and branch are read on `JobRow` because the scope check needs them, and
+ * dropped here because the parent work order already carries them — repeating a
+ * scope on every child row invites a client to treat one of the copies as the
+ * authority.
+ */
+export interface JobView {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly title: string;
+  readonly jobType: string | null;
+  readonly state: string;
+  readonly requiresDiagnostic: boolean;
+  readonly recordVersion: number;
+}
+
+/**
+ * The page a caller asked for, before the cursor is decoded.
+ *
+ * Routes hand over the raw query values and this module decodes them, so the
+ * ordering contract a cursor is validated against stays with the query that issued
+ * it — and a handler never imports the pagination primitives directly, which the
+ * module-boundary rule forbids.
+ */
+export interface PageInput {
+  readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** What a state-change command accepts. */
+export interface TransitionInput {
+  readonly toState: string;
+  readonly reason?: string | undefined;
+  readonly expectedVersion: number;
+}
+
+/** What a state-change command returns. */
+export interface TransitionResult {
+  readonly state: string;
+  readonly recordVersion: number;
+}
+
+/** One edge the work order can currently take, resolved from the live catalog. */
+export interface ReachableState {
+  readonly code: string;
+  readonly requiresReason: boolean;
+  readonly isTerminal: boolean;
+  readonly isCancellation: boolean;
+}
+
+/**
+ * The aggregate one work order presents.
+ *
+ * Assembled in a fixed number of round trips regardless of how many jobs exist —
+ * one work-order read, one job read, one catalog read — so the detail endpoint
+ * cannot become an N+1. Assignments, approvals, diagnostics, QC and rework
+ * references join this projection in Waves 5–8, as each becomes writable through
+ * a real path; including an always-empty block for them now would publish a
+ * contract nothing can populate.
+ */
+export interface WorkOrderDetail {
+  readonly workOrder: WorkOrderSummary;
+  readonly jobs: readonly JobView[];
+  readonly nextStates: readonly ReachableState[];
+}
+
+/** One append-only ledger entry. */
+export interface WorkOrderHistoryEntry {
+  readonly id: string;
+  readonly fromState: string | null;
+  readonly toState: string;
+  readonly reason: string | null;
+  readonly occurredAt: string;
+  readonly actorId: string | null;
+}
+
+/**
+ * The status ledger plus the genesis facts the ledger cannot hold.
+ *
+ * `wo.emit_work_order_status_history` fires AFTER UPDATE only, so the insert that
+ * opens a work order emits no row and the ledger's oldest entry is the FIRST
+ * transition, not the opening. Rather than backfill a genesis row — which
+ * `shared.stamp_status_history` would stamp with `now()`, recording a time the
+ * order did not open at — the opening is reported as its own block, derived from
+ * columns that do hold it.
+ */
+export interface WorkOrderHistoryView {
+  readonly workOrderId: string;
+  readonly origin: {
+    readonly openedAt: string;
+    readonly openedBy: string | null;
+    /**
+     * The state the order opened in: the oldest ledger entry's `fromState`, or the
+     * current state when the ledger is empty (nothing has moved it yet).
+     */
+    readonly initialState: string;
+  };
+  readonly transitions: Page<WorkOrderHistoryEntry>;
+}
+
+const toSummary = (row: WorkOrderRow): WorkOrderSummary => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  receptionVisitId: row.receptionVisitId,
+  vehicleId: row.vehicleId,
+  kind: row.kind,
+  state: row.state,
+  partsForwardState: row.partsForwardState,
+  displayNumber: row.displayNumber,
+  openedAt: row.openedAt.toISOString(),
+  recordVersion: row.recordVersion,
+});
+
+const toJobView = (row: JobRow): JobView => ({
+  id: row.id,
+  workOrderId: row.workOrderId,
+  title: row.title,
+  jobType: row.jobType,
+  state: row.state,
+  requiresDiagnostic: row.requiresDiagnostic,
+  recordVersion: row.recordVersion,
+});
+
+const toHistoryEntry = (row: StatusHistoryRow): WorkOrderHistoryEntry => ({
+  id: row.id,
+  fromState: row.fromState,
+  toState: row.toState,
+  reason: row.reason,
+  occurredAt: row.occurredAt.toISOString(),
+  actorId: row.actorId,
+});
 
 export class WorkOrderService extends ApplicationService {
   protected readonly module = 'work-order';
@@ -97,19 +260,98 @@ export class WorkOrderService extends ApplicationService {
     db: DbHandle,
     workOrderId: string,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<readonly JobRow[]> {
+  ): Promise<readonly JobView[]> {
     await this.requireWorkOrder(db, workOrderId, authorizeScope);
-    return this.repository.jobsFor(db, workOrderId);
+    return (await this.repository.jobsFor(db, workOrderId)).map(toJobView);
   }
 
-  /** Append-only transition history. */
-  async history(
+  /**
+   * One keyset page of the branch work-order board.
+   *
+   * Company and branch are REQUIRED, and that is an authorization decision rather
+   * than an ergonomic one: the route passes the same pair as the operation's
+   * `authorizationTarget`, so the permission is evaluated by
+   * `iam.has_permission_in_scope` against the branch actually read. Without them
+   * the check would degrade to scope-blind `iam.has_permission` behind an
+   * `app.branch_ids` that unions every grant the caller holds (P1-18-A-01), and
+   * the board would show a branch the caller has no work-order permission in.
+   */
+  async list(
+    db: DbHandle,
+    filter: WorkOrderListFilter,
+    page: PageInput
+  ): Promise<Page<WorkOrderSummary>> {
+    // The ordering contract and the cursor decode live behind this surface, not in
+    // the route: a handler that imported `@/server/db/pagination` would be reaching
+    // into the data layer past its module (boundary rule B4).
+    const rows = await this.repository.listWorkOrders(
+      db,
+      filter,
+      pageRequest(WORK_ORDER_LIST_ORDER, page)
+    );
+    return { ...rows, items: rows.items.map(toSummary) };
+  }
+
+  /** The work order, its live jobs, and the edges it can currently take. */
+  async detail(
     db: DbHandle,
     workOrderId: string,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<readonly StatusHistoryRow[]> {
-    await this.requireWorkOrder(db, workOrderId, authorizeScope);
-    return this.repository.history(db, workOrderId);
+  ): Promise<WorkOrderDetail> {
+    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
+    const [jobs, states, edges] = await Promise.all([
+      this.repository.jobsFor(db, workOrderId),
+      this.catalog.workOrderStates(db),
+      this.catalog.workOrderTransitions(db),
+    ]);
+    const byCode = new Map(states.map((state) => [state.code, state]));
+    const current = byCode.get(workOrder.state);
+    // A terminal state has no outbound edge whatever the graph says — the guard
+    // freezes it (BR-WO-002) — so reporting one would advertise a move that is
+    // guaranteed to fail.
+    const nextStates: ReachableState[] =
+      current?.isTerminal === true
+        ? []
+        : edges
+            .filter((edge) => edge.fromState === workOrder.state)
+            .flatMap((edge) => {
+              const target = byCode.get(edge.toState);
+              if (target === undefined) return [];
+              return [
+                {
+                  code: target.code,
+                  // Either source of the requirement makes a reason mandatory,
+                  // exactly as `wo.guard_work_order_transition` computes it.
+                  requiresReason: edge.requiresReason || target.reasonRequired,
+                  isTerminal: target.isTerminal,
+                  isCancellation: target.isCancellation,
+                },
+              ];
+            });
+    return { workOrder: toSummary(workOrder), jobs: jobs.map(toJobView), nextStates };
+  }
+
+  /** Append-only transition history, paginated, with the genesis block. */
+  async history(
+    db: DbHandle,
+    workOrderId: string,
+    page: PageInput,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<WorkOrderHistoryView> {
+    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
+    const [transitions, initial] = await Promise.all([
+      this.repository.historyPage(db, workOrderId, pageRequest(WORK_ORDER_HISTORY_ORDER, page)),
+      this.repository.initialState(db, workOrderId),
+    ]);
+    return {
+      workOrderId,
+      origin: {
+        openedAt: workOrder.openedAt.toISOString(),
+        openedBy: workOrder.createdBy,
+        initialState: initial ?? workOrder.state,
+      },
+      transitions: { ...transitions, items: transitions.items.map(toHistoryEntry) },
+    };
   }
 
   /**
@@ -136,7 +378,7 @@ export class WorkOrderService extends ApplicationService {
       readonly requiresDiagnostic?: boolean | undefined;
     },
     authorizeScope?: ScopeAuthorizer
-  ): Promise<JobRow> {
+  ): Promise<JobView> {
     const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
     const workOrderStates = await this.catalog.workOrderStates(db);
     const parent = workOrderStates.find((state) => state.code === workOrder.state);
@@ -167,15 +409,55 @@ export class WorkOrderService extends ApplicationService {
       });
     }
 
-    return this.repository.createJob(db, {
-      workOrderId,
+    // The check above reads the parent WITHOUT a lock, so it is a readable refusal
+    // and not the enforcement point. `wo.guard_job_refs` locks the parent
+    // `FOR UPDATE` inside the INSERT, which is what makes a job insert serialise
+    // against a concurrent close — and it means the parent can legitimately have
+    // become terminal, or stopped allowing jobs, between that read and this write.
+    // Its refusal arrives as a bare `check_violation`; mapping it here is the
+    // difference between a 409 the caller can act on and a 500.
+    let job: JobRow;
+    try {
+      job = await this.repository.createJob(db, {
+        workOrderId,
+        companyId: workOrder.companyId,
+        branchId: workOrder.branchId,
+        title: input.title,
+        jobType: input.jobType ?? null,
+        state: initial.code,
+        requiresDiagnostic: input.requiresDiagnostic ?? false,
+      });
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.checkViolation)) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: `Work order ${workOrderId} no longer accepts jobs`,
+          cause: error,
+        });
+      }
+      throw error;
+    }
+
+    // Audited, not published: the approved catalog reserves `job.assigned` and
+    // `job.state-changed` and nothing for job creation, and inventing an
+    // unregistered event type would fail `buildEventEnvelope` anyway.
+    await appendAudit(db, {
+      action: 'wo.job.created',
+      entityType: 'wo.job',
+      entityId: job.id,
       companyId: workOrder.companyId,
       branchId: workOrder.branchId,
-      title: input.title,
-      jobType: input.jobType ?? null,
-      state: initial.code,
-      requiresDiagnostic: input.requiresDiagnostic ?? false,
+      details: [
+        { field: 'work_order_id', classification: 'internal', value: workOrderId },
+        { field: 'title', classification: 'internal', value: job.title },
+        { field: 'state', classification: 'public', value: job.state },
+        {
+          field: 'requires_diagnostic',
+          classification: 'public',
+          value: String(job.requiresDiagnostic),
+        },
+      ],
     });
+    return toJobView(job);
   }
 
   /**
@@ -193,11 +475,19 @@ export class WorkOrderService extends ApplicationService {
       readonly jobType?: string | undefined;
       readonly requiresDiagnostic?: boolean | undefined;
       readonly expectedVersion: number;
-    }
-  ): Promise<JobRow> {
+    },
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<JobView> {
     const locked = await this.repository.lockJob(db, jobId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    // `PATCH /jobs/{jobId}` is addressed by job id alone, so the pre-handler check
+    // had no company or branch to evaluate and `scope: 'branch'` was inert
+    // (P1-18-A-01). Scoped against the LOCKED row's own scope, which
+    // `fk_jobs_work_order` guarantees equals the parent work order's.
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: locked.companyId, branchId: locked.branchId });
     }
     if (locked.recordVersion !== input.expectedVersion) {
       throw new AppFailure('ERR-CON-001', {
@@ -215,13 +505,58 @@ export class WorkOrderService extends ApplicationService {
         message: `Job ${jobId} was modified by another request`,
       });
     }
-    return {
+    const updated: JobRow = {
       ...locked,
       title: input.title,
       jobType: input.jobType ?? null,
       requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
       recordVersion: input.expectedVersion + 1,
     };
+
+    // Only the columns that actually moved. An audit entry claiming a field
+    // changed when it did not is as misleading as a missing one, and the
+    // `previousValue`/`value` pair is what an auditor reads to reconstruct the row.
+    const details = [
+      ...(updated.title === locked.title
+        ? []
+        : [
+            {
+              field: 'title',
+              classification: 'internal' as const,
+              previousValue: locked.title,
+              value: updated.title,
+            },
+          ]),
+      ...(updated.jobType === locked.jobType
+        ? []
+        : [
+            {
+              field: 'job_type',
+              classification: 'internal' as const,
+              previousValue: locked.jobType,
+              value: updated.jobType,
+            },
+          ]),
+      ...(updated.requiresDiagnostic === locked.requiresDiagnostic
+        ? []
+        : [
+            {
+              field: 'requires_diagnostic',
+              classification: 'public' as const,
+              previousValue: String(locked.requiresDiagnostic),
+              value: String(updated.requiresDiagnostic),
+            },
+          ]),
+    ];
+    await appendAudit(db, {
+      action: 'wo.job.updated',
+      entityType: 'wo.job',
+      entityId: jobId,
+      companyId: locked.companyId,
+      branchId: locked.branchId,
+      details,
+    });
+    return toJobView(updated);
   }
 
   /**
@@ -314,13 +649,58 @@ export class WorkOrderService extends ApplicationService {
   async transition(
     db: DbHandle,
     workOrderId: string,
-    input: {
-      readonly toState: string;
-      readonly reason?: string | undefined;
-      readonly expectedVersion: number;
-    },
+    input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly state: string; readonly recordVersion: number }> {
+  ): Promise<TransitionResult> {
+    return this.move(db, workOrderId, input, 'transition', authorizeScope);
+  }
+
+  /**
+   * Closes a work order — the same move, behind a second permission.
+   *
+   * Closure is a separate command because it is a separate authority. A service
+   * advisor who may park an order `awaiting_parts` must not thereby be able to end
+   * the workshop's liability for the vehicle, and permissions are a conjunction:
+   * declaring both `wo.work_order.transition` and `wo.work_order.close` on ONE
+   * operation would demand the closing authority for every ordinary move, while
+   * declaring only the first would leave the seeded `wo.work_order.close` code
+   * enforced nowhere.
+   *
+   * It is NOT an alternate write path. Both commands funnel into `move()`, so the
+   * closure-eligibility service, the B1–B6 pre-report, the record-version
+   * predicate and `wo.guard_work_order_closure` itself apply identically — the
+   * only difference is which permission was required to get here and which audit
+   * action and event the move emits.
+   */
+  async close(
+    db: DbHandle,
+    workOrderId: string,
+    input: TransitionInput,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<TransitionResult> {
+    return this.move(db, workOrderId, input, 'closure', authorizeScope);
+  }
+
+  /**
+   * The one write path for a work-order state change.
+   *
+   * `via` is the command the caller came through, and it is checked against what
+   * the target state actually IS rather than trusted: a terminal
+   * non-cancellation target is reachable only through `close`, and everything else
+   * only through `transition`. Without that check the closure permission would be
+   * bypassable by asking the transition endpoint for `closed`, which is precisely
+   * the "alternate closure path" the split exists to prevent. Cancellation stays
+   * on `transition` even though it is terminal, because `wo.guard_work_order_closure`
+   * exempts a cancellation target from B1–B6 — cancelling is abandoning the work,
+   * not certifying it complete.
+   */
+  private async move(
+    db: DbHandle,
+    workOrderId: string,
+    input: TransitionInput,
+    via: 'transition' | 'closure',
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<TransitionResult> {
     const locked = await this.repository.lockWorkOrder(db, workOrderId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });
@@ -340,7 +720,27 @@ export class WorkOrderService extends ApplicationService {
 
     const states = await this.catalog.workOrderStates(db);
     const target = states.find((state) => state.code === input.toState);
-    if (target?.isTerminal === true && target.isCancellation === false) {
+    // "Closing" means terminal AND not a cancellation, which is exactly the gate
+    // `wo.guard_work_order_closure` applies to B1–B6. It also selects the audit
+    // action and the event, so the three cannot disagree about what happened.
+    const closing = target?.isTerminal === true && target.isCancellation === false;
+    if (closing && via !== 'closure') {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `"${input.toState}" is a closing state; use the closure command`,
+        safeDetails: {
+          violations: [{ path: 'body.toState', rule: 'closure_requires_closure_operation' }],
+        },
+      });
+    }
+    if (!closing && via === 'closure') {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `"${input.toState}" is not a closing state; use the transition command`,
+        safeDetails: {
+          violations: [{ path: 'body.toState', rule: 'not_a_closing_state' }],
+        },
+      });
+    }
+    if (closing) {
       const blockers = await this.blockersFor(db, workOrderId);
       if (blockers.length > 0) {
         throw new AppFailure('ERR-WO-001', {
@@ -359,6 +759,7 @@ export class WorkOrderService extends ApplicationService {
       db,
       workOrderId,
       input.toState,
+      input.reason ?? null,
       input.expectedVersion
     );
     if (!applied) {
@@ -366,6 +767,61 @@ export class WorkOrderService extends ApplicationService {
         message: `Work order ${workOrderId} was modified by another request`,
       });
     }
-    return { state: input.toState, recordVersion: input.expectedVersion + 1 };
+    const recordVersion = input.expectedVersion + 1;
+
+    // Audit and event are written INSIDE the caller's transaction, beside the
+    // state change and the trigger-emitted ledger row. Exactly one of each per
+    // transition: closure gets its own action and its own event rather than a
+    // second row alongside the generic ones, so a consumer counting state changes
+    // and a consumer waiting for closure both read an unambiguous stream.
+    await appendAudit(db, {
+      action: closing ? 'wo.work_order.closed' : 'wo.work_order.state_changed',
+      entityType: 'wo.work_order',
+      entityId: workOrderId,
+      companyId: locked.companyId,
+      branchId: locked.branchId,
+      details: [
+        {
+          field: 'state',
+          classification: 'public',
+          previousValue: locked.state,
+          value: input.toState,
+        },
+        // The reason is free text a service advisor typed about a customer's
+        // vehicle, so it is `internal` rather than `public`.
+        ...(input.reason === undefined
+          ? []
+          : [{ field: 'reason', classification: 'internal' as const, value: input.reason }]),
+      ],
+    });
+
+    await publishEvent(db, {
+      eventType: closing ? 'work-order.closed' : 'work-order.state-changed',
+      aggregateId: workOrderId,
+      aggregateVersion: recordVersion,
+      producer: 'wo.work-order-service',
+      companyId: locked.companyId,
+      branchId: locked.branchId,
+      // States and the display number only. A consumer that needs the vehicle, the
+      // customer or the jobs reads them under its own authorization — an event is
+      // a notification that something happened, not a bypass of the read model.
+      payload: {
+        workOrderId,
+        fromState: locked.state,
+        toState: input.toState,
+        kind: locked.kind,
+        displayNumber: locked.displayNumber,
+      },
+      // Closure can happen at most once — the target is terminal and the guard
+      // freezes a terminal row — so the key needs no version. A generic state
+      // change repeats, so its key carries the version it produced, which is what
+      // makes an idempotent replay of the same transition collide rather than
+      // publish twice.
+      eventKey: closing
+        ? `work-order.closed:${workOrderId}`
+        : `work-order.state-changed:${workOrderId}:${recordVersion}`,
+    });
+
+    return { state: input.toState, recordVersion };
   }
 }

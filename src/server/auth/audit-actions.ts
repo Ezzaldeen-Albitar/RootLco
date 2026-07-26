@@ -611,7 +611,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'privileged',
     entityType: 'wo.work_order',
     description:
-      'A work order moved between states in the graph held by wo.work_order_transitions. One action covers every edge because a consumer of the audit trail reacts to the resulting state, not to the verb — and because the graph is tenant-overridable, so a per-edge action code would be a vocabulary this catalog cannot close. Closure is not a separate action here: wo.work_order.closed records that fact, and both rows exist for a closing transition.',
+      'A work order moved between states in the graph held by wo.work_order_transitions. One action covers every edge because a consumer of the audit trail reacts to the resulting state, not to the verb — and because the graph is tenant-overridable, so a per-edge action code would be a vocabulary this catalog cannot close. A CLOSING transition is recorded under wo.work_order.closed instead of this code, never under both: one transition writes exactly one audit record, so a count of state changes and a count of closures cannot double-count the same event.',
   },
   {
     code: 'wo.work_order.closed',

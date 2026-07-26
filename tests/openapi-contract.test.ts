@@ -128,6 +128,17 @@ import '@/app/api/v1/receptions/[receptionId]/signatures/route';
 import '@/app/api/v1/receptions/[receptionId]/refusals/route';
 import '@/app/api/v1/receptions/[receptionId]/approve/route';
 import '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
+// --- Phase 1-19 work order, diagnostics and technician backend -------------
+// There is deliberately no `POST /work-orders`: reception's conversion above is
+// the only creation path (see the header of `work-orders/route.ts`).
+import '@/app/api/v1/work-orders/route';
+import '@/app/api/v1/work-orders/[workOrderId]/route';
+import '@/app/api/v1/work-orders/[workOrderId]/history/route';
+import '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
+import '@/app/api/v1/work-orders/[workOrderId]/transition/route';
+import '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
+import '@/app/api/v1/jobs/[jobId]/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -183,16 +194,20 @@ describe('OpenAPI contract', () => {
     const SEEDED_DOMAINS = [
       'apt',
       'crm',
+      'dia',
       'iam',
       'inv',
       'org',
+      'qms',
       'quo',
       'rec',
       'rpt',
       'sal',
       'shared',
       'svc',
+      'tech',
       'veh',
+      'wo',
       'wty',
     ];
     const document = JSON.parse(generated) as {
