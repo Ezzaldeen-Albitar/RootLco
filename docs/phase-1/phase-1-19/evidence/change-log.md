@@ -130,8 +130,16 @@ Five accepted findings — `P1-19-A-01` through `P1-19-A-05`, one Medium and fou
 are listed with their reasons in [`open-decisions.md`](open-decisions.md). Two of the
 five could only be closed by a migration this phase is not authorised to write.
 
+## Closure
+
+PR #82 was merged into protected `develop` at **`d8278c7`** (parents `f326e24` +
+`da0b8b2`, merge tree byte-identical to the reviewed head). Authoritative push CI run
+**#243** (`30224162602`) — event `push`, branch `develop`, SHA `d8278c7` — **Success 4/4**.
+The formal decision is recorded in
+[`../phase-1-19-owner-gate.md`](../phase-1-19-owner-gate.md).
+
 ## Not done, deliberately
 
-PR #82 is **not merged**, no gate-record PR exists, no owner gate has been written, and
-P1-20 has not been started. `origin/develop` is unchanged at `f326e24` and
-`origin/main` is untouched.
+`origin/main` is **untouched** at `491c4e0` and P1-19 is not on it. Promotion of
+`develop` to `main` is a founders' reserved decision under ADR-006 and no part of this
+phase performs or requests it. **P1-20 has not been started.**

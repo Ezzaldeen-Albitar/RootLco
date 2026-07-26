@@ -1,8 +1,9 @@
 # Phase 1-19 — Work Order, Diagnostics, and Technician Backend
 
-**Status: in execution. No owner gate exists yet and none may be written until the
-implementation waves are delivered, reviewed, and merged.** Nothing in this
-directory may be read as a gate decision.
+**Status: CLOSED — Go.** The gate decision is
+[`phase-1-19-owner-gate.md`](phase-1-19-owner-gate.md), decided against the protected
+merge commit `d8278c7` on `develop`. Everything else in this directory is the evidence
+that decision rests on, not the decision itself.
 
 Product name: `[PRODUCT NAME — Pending Final Approval]`. Benzene remains the
 configurable first tenant and pilot and appears nowhere in product code, database
