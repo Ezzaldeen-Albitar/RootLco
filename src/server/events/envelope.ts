@@ -305,7 +305,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.work_order',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A work order moved between states in its configured graph.',
   },
   {
@@ -318,7 +318,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.work_order',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A work order reached a terminal, non-cancellation state.',
   },
   {
@@ -340,7 +340,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'wo.job',
     owner: 'wo',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A job moved between states in its configured graph.',
   },
   {

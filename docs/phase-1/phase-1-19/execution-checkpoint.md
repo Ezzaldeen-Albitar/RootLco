@@ -102,6 +102,49 @@ document, summarised so they are not rediscovered:
 Accepted and tracked: **P1-19-A-01**, the board's `(opened_at DESC, id DESC)`
 ordering is not index-aligned and no migration is authorised to add one.
 
+## Wave 5 progress
+
+| Slice                                                                       | Status          |
+| --------------------------------------------------------------------------- | --------------- |
+| `implementedIn` corrected for the three published events, both pins updated | **Done, green** |
+| `wo.job.state_changed` audit action registered, sorted pin updated          | **Done, green** |
+| Job transition — graph, reason GUC, assignment precondition mapped          | **Done, green** |
+| Job status ledger — paginated, origin block                                 | **Done, green** |
+| Technician assignment / unassignment / reassignment                         | **Not started** |
+| Labour sessions — start, stop, pause/resume, correction                     | **Not started** |
+| Technician queue and available-technician query                             | **Not started** |
+| Work-order service lines and required-part demand                           | **Not started** |
+
+Unit **843** / Backend **835** (was 825) / P1-19 operation depth **10/10**, OpenAPI
+**104 paths / 120 operations**.
+
+A defect Wave 4 left and Wave 5 fixed: the three published events still carried
+`implementedIn: null`. The foundation test asserted null for all eleven P1-19
+entries, so the catalog claimed nothing was published while two events were being
+written on the request path. Both pins now name exactly the published set.
+
+The Wave 5 fact that shapes everything after it: the job-assignments migration
+**REPLACED** `wo.guard_job_transition` to require an active `wo.job_assignments`
+row before a job may enter a state whose `assignment_required` is true. So
+`planned → assigned` is a configured, reason-free edge that STILL fails until a
+technician is assigned. It is mapped to `ERR-TECH-001` rather than left to surface
+as a bare `23514`, and it is why B1 can currently only be cleared by cancelling a
+job. Assignment is the next slice and unblocks the rest.
+
+Two schema facts to build the remaining slices against, verified not assumed:
+
+- `tech.labor_sessions` has **only** `started_at` / `ended_at` — no pause column.
+  A pause is therefore the job transition into `paused` (whose `reason_required` is
+  true) plus the end of the open session, and the pause REASON lives in
+  `wo.job_status_history`. One active session per technician is the partial gist
+  `ex_labor_sessions_overlap` (SQLSTATE **23P01**), `ended_at` is write-once, and a
+  correction is `tech.correct_labor_session` (soft-delete the original, insert a
+  linked one).
+- There is **no per-job required-skill storage** anywhere in the protected schema.
+  Required skills, levels and certifications can only be supplied by the assigner
+  at assignment time and evaluated then; they cannot be persisted or re-checked
+  later. Record this as a reconciliation rather than inventing a table.
+
 ## The Wave 4 finding that changed its scope
 
 **Work-order creation was already implemented, and re-implementing it would have

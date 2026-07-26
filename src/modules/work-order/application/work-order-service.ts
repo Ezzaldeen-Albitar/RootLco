@@ -18,6 +18,7 @@ import { publishEvent } from '@/server/events/publisher';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { qualityModule } from '@/modules/quality';
 import {
+  JOB_HISTORY_ORDER,
   WORK_ORDER_HISTORY_ORDER,
   WORK_ORDER_LIST_ORDER,
   type BlockerHit,
@@ -179,6 +180,14 @@ export interface WorkOrderHistoryView {
      */
     readonly initialState: string;
   };
+  readonly transitions: Page<WorkOrderHistoryEntry>;
+}
+
+/** A job's ledger plus the genesis fact the ledger cannot hold. */
+export interface JobHistoryView {
+  readonly jobId: string;
+  readonly workOrderId: string;
+  readonly origin: { readonly initialState: string };
   readonly transitions: Page<WorkOrderHistoryEntry>;
 }
 
@@ -557,6 +566,145 @@ export class WorkOrderService extends ApplicationService {
       details,
     });
     return toJobView(updated);
+  }
+
+  /**
+   * Moves a job along the graph in `wo.job_transitions`.
+   *
+   * The graph is read, never mirrored, for the same reason the work-order graph is:
+   * `ck_jobs_state_format` checks only the FORMAT, so the vocabulary is entirely
+   * `wo.job_states` and a tenant may shadow it.
+   *
+   * `wo.guard_job_transition` is the authority and enforces three things this
+   * service reports readably: the terminal freeze, edge validity with the reason
+   * requirement taken from BOTH the edge and the target state, and — added when
+   * `wo.job_assignments` was introduced — that a target whose
+   * `assignment_required` is true needs an ACTIVE assignment on the job. That last
+   * one is why a bare `check_violation` from the write is mapped rather than left
+   * to surface as a 500: it is reachable with a perfectly valid edge and reason.
+   */
+  async transitionJob(
+    db: DbHandle,
+    jobId: string,
+    input: TransitionInput,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<TransitionResult> {
+    const locked = await this.repository.lockJob(db, jobId);
+    if (locked === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    // Scoped against the LOCKED row: `/jobs/{jobId}` names no branch, so the
+    // pre-handler check had nothing to narrow by (P1-18-A-01).
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: locked.companyId, branchId: locked.branchId });
+    }
+    if (locked.recordVersion !== input.expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: `Job ${jobId} was modified by another request`,
+      });
+    }
+
+    await this.catalog.resolveJobTransition(db, locked.state, input.toState, input.reason);
+
+    let applied: boolean;
+    try {
+      applied = await this.repository.applyJobState(
+        db,
+        jobId,
+        input.toState,
+        input.reason ?? null,
+        input.expectedVersion
+      );
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.checkViolation)) {
+        // Reachable with a valid edge and a valid reason: the assignment
+        // precondition, or a parent that moved under us. `ERR-TECH-001` is the
+        // registered code for "not eligible for this assignment", which is exactly
+        // what an unassigned job entering `assigned` is.
+        throw new AppFailure('ERR-TECH-001', {
+          message: `Job ${jobId} may not enter "${input.toState}" yet`,
+          cause: error,
+          safeDetails: {
+            violations: [{ path: 'body.toState', rule: 'assignment_precondition' }],
+          },
+        });
+      }
+      throw error;
+    }
+    if (!applied) {
+      throw new AppFailure('ERR-CON-001', {
+        message: `Job ${jobId} was modified by another request`,
+      });
+    }
+    const recordVersion = input.expectedVersion + 1;
+
+    await appendAudit(db, {
+      action: 'wo.job.state_changed',
+      entityType: 'wo.job',
+      entityId: jobId,
+      companyId: locked.companyId,
+      branchId: locked.branchId,
+      details: [
+        {
+          field: 'state',
+          classification: 'public',
+          previousValue: locked.state,
+          value: input.toState,
+        },
+        ...(input.reason === undefined
+          ? []
+          : [{ field: 'reason', classification: 'internal' as const, value: input.reason }]),
+      ],
+    });
+
+    await publishEvent(db, {
+      eventType: 'job.state-changed',
+      aggregateId: jobId,
+      aggregateVersion: recordVersion,
+      // Owner `wo`, not `tech`: the job row is a `wo` row written by this module,
+      // and `buildEventEnvelope` refuses a producer whose leading segment differs
+      // from the catalog owner.
+      producer: 'wo.work-order-service',
+      companyId: locked.companyId,
+      branchId: locked.branchId,
+      payload: {
+        jobId,
+        workOrderId: locked.workOrderId,
+        fromState: locked.state,
+        toState: input.toState,
+      },
+      eventKey: `job.state-changed:${jobId}:${recordVersion}`,
+    });
+
+    return { state: input.toState, recordVersion };
+  }
+
+  /** A job's append-only status ledger, paginated, with its genesis block. */
+  async jobHistory(
+    db: DbHandle,
+    jobId: string,
+    page: PageInput,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<JobHistoryView> {
+    const job = await this.repository.findJob(db, jobId);
+    if (job === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: job.companyId, branchId: job.branchId });
+    }
+    const [transitions, initial] = await Promise.all([
+      this.repository.jobHistoryPage(db, jobId, pageRequest(JOB_HISTORY_ORDER, page)),
+      this.repository.jobInitialState(db, jobId),
+    ]);
+    return {
+      jobId,
+      workOrderId: job.workOrderId,
+      // Same shape and same reason as the work-order history: the emitter is AFTER
+      // UPDATE only, so a job's creation writes no ledger row.
+      origin: { initialState: initial ?? job.state },
+      transitions: { ...transitions, items: transitions.items.map(toHistoryEntry) },
+    };
   }
 
   /**

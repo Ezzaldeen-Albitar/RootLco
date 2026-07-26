@@ -276,6 +276,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.status_changed',
   'veh.vehicle.updated',
   'wo.job.created',
+  'wo.job.state_changed',
   'wo.job.updated',
   'wo.work_order.closed',
   'wo.work_order.state_changed',

@@ -628,6 +628,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A job was added to a work order. The parent preconditions are the database’s: wo.guard_job_refs locks the work order and refuses a terminal parent or a state whose allows_jobs is false.',
   },
   {
+    code: 'wo.job.state_changed',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job moved between states in the graph held by wo.job_transitions. Separate from wo.job.updated because that action deliberately never records a state change: the update path cannot write the state column, and this is the only action a job movement is recorded under. The assignment precondition is the database’s — wo.guard_job_transition refuses an assignment_required target with no active wo.job_assignments row.',
+  },
+  {
     code: 'wo.job.updated',
     class: 'privileged',
     entityType: 'wo.job',

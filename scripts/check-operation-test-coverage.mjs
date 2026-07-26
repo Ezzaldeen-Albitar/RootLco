@@ -488,6 +488,26 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
   },
+  'wo.job-transition': {
+    files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'the ONLY path a job state changes, so the graph has no bypass; the assignment precondition the assignments migration added to wo.guard_job_transition is invisible in the graph — planned→assigned is a configured, reason-free edge that still fails without an active assignment — and is refused as ERR-TECH-001 rather than a bare 23514 (denial); the reason reaches the ledger through app.status_reason, which is also what the guard reads to decide it was supplied; terminal freeze, absent edge and missing reason stay three distinct refusals; a forced race leaves exactly one winner and exactly one audit row and one event',
+  },
+  'wo.job-history': {
+    files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only job ledger newest-first plus an origin block, because wo.emit_job_status_history is AFTER UPDATE only and a job creation emits no row; the pause REASON lives here rather than on a labour session, since tech.labor_sessions has only started_at/ended_at; a bad cursor is ERR-PAG-001 (denial) and a tenant-B job answers the same 404 as an unknown id',
+  },
   'wo.job-update': {
     files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],

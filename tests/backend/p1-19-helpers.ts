@@ -52,6 +52,7 @@ const READ = 'wo.work_order.read';
 const TRANSITION_PERMISSION = 'wo.work_order.transition';
 const CLOSE = 'wo.work_order.close';
 const JOB_MANAGE = 'wo.job.manage';
+const JOB_TRANSITION = 'wo.job.transition';
 
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
@@ -71,7 +72,7 @@ export const FULL: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000a2',
   subject: 'fx_p1_19_full',
   tenantId: TENANT_A,
-  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE],
+  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
 };
 
 /**
@@ -86,7 +87,7 @@ export const NO_CLOSE: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000b2',
   subject: 'fx_p1_19_no_close',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, JOB_MANAGE],
+  permissions: [READ, TRANSITION_PERMISSION, JOB_MANAGE, JOB_TRANSITION],
 };
 
 /** Tenant A, unrestricted, read only — the 403 probe for every command. */
@@ -111,7 +112,7 @@ export const SCOPED_ELSEWHERE: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000e2',
   subject: 'fx_p1_19_scoped',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE],
+  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-0000000000e3',
 };
@@ -137,7 +138,7 @@ export const PERMISSION_ELSEWHERE: Principal = {
   userId: 'c1900000-0000-4000-8000-00000000010b',
   subject: 'fx_p1_19_permission_elsewhere',
   tenantId: TENANT_A,
-  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE],
+  permissions: [READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-00000000010c',
 };
@@ -153,7 +154,7 @@ export const TENANT_B_FULL: Principal = {
   userId: 'c1900000-0000-4000-8000-0000000000f2',
   subject: 'fx_p1_19_tenant_b',
   tenantId: TENANT_B,
-  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE],
+  permissions: [CONVERT_PERMISSION, READ, TRANSITION_PERMISSION, CLOSE, JOB_MANAGE, JOB_TRANSITION],
 };
 
 export const PRINCIPALS: readonly Principal[] = [

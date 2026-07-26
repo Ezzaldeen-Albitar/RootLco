@@ -316,8 +316,18 @@ describe('P1-19 module foundation', () => {
       // twenty pre-existing entries is unsuffixed and these match.
       expect(entry.eventType).not.toMatch(/\.v\d+$/);
       expect(entry.schemaVersion).toBe(1);
-      // Reserved is not implemented. Each wave sets its own when it publishes.
-      expect(entry.implementedIn).toBeNull();
+      // Reserved is not implemented, and the reverse holds too: an entry claims a
+      // phase ONLY once a wave publishes it. Wave 4 publishes
+      // `work-order.state-changed` and `work-order.closed`; Wave 5 publishes
+      // `job.state-changed`. Everything else in this phase's allocation is still a
+      // reserved name, and a name that started claiming an implementation without a
+      // producer is a documentation defect this assertion exists to catch.
+      const published = ['work-order.state-changed', 'work-order.closed', 'job.state-changed'];
+      if (published.includes(entry.eventType)) {
+        expect(entry.implementedIn).toBe('P1-19');
+      } else {
+        expect(entry.implementedIn).toBeNull();
+      }
     }
   });
 

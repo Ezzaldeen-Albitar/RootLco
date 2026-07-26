@@ -65,6 +65,12 @@ export const WORK_ORDER_HISTORY_ORDER = Object.freeze({
   direction: 'desc' as const,
 });
 
+/** Ordering contract for a job's status ledger. Newest transition first. */
+export const JOB_HISTORY_ORDER = Object.freeze({
+  key: 'wo.job_status_history:occurred_at_desc',
+  direction: 'desc' as const,
+});
+
 /** Server-side filter for the branch work-order board. */
 export interface WorkOrderListFilter {
   readonly companyId: string;
@@ -515,13 +521,22 @@ export class WorkOrderRepository extends Repository {
 
   /** Locks one job and returns it, or null when absent or out of scope. */
   async lockJob(db: DbHandle, jobId: string): Promise<JobRow | null> {
+    return this.readJob(db, jobId, true);
+  }
+
+  /** Reads one job without locking, for query paths. */
+  async findJob(db: DbHandle, jobId: string): Promise<JobRow | null> {
+    return this.readJob(db, jobId, false);
+  }
+
+  private async readJob(db: DbHandle, jobId: string, lock: boolean): Promise<JobRow | null> {
     const context = this.assertContext(db);
     const result = await this.run<JobColumns>(
       db,
       `SELECT ${JOB_COLUMNS}
          FROM wo.jobs
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-        FOR UPDATE`,
+        ${lock ? 'FOR UPDATE' : ''}`,
       [context.principal.tenantId, jobId]
     );
     const row = result.rows[0];
@@ -564,6 +579,93 @@ export class WorkOrderRepository extends Repository {
       ]
     );
     return (result.rowCount ?? 0) === 1;
+  }
+
+  /**
+   * Moves a job under the caller's held lock and record version.
+   *
+   * Same GUC contract as `applyState`: `wo.guard_job_transition` reads
+   * `app.status_reason` for the reason requirement — which the assignments
+   * migration REPLACED the guard to extend, adding the precondition that an
+   * `assignment_required` target needs an active `wo.job_assignments` row — and
+   * `wo.emit_job_status_history` copies the same GUC into the ledger.
+   */
+  async applyJobState(
+    db: DbHandle,
+    jobId: string,
+    toState: string,
+    reason: string | null,
+    expectedVersion: number
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', reason ?? '']);
+    const result = await this.run(
+      db,
+      `UPDATE wo.jobs
+          SET state = $3, updated_by = $4
+        WHERE tenant_id = $1 AND id = $2 AND record_version = $5 AND deleted_at IS NULL`,
+      [context.principal.tenantId, jobId, toState, context.principal.userId, expectedVersion]
+    );
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', '']);
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /** One keyset page of a job's append-only status ledger, newest first. */
+  async jobHistoryPage(
+    db: DbHandle,
+    jobId: string,
+    page: PageRequest
+  ): Promise<Page<StatusHistoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, jobId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'occurred_at', id: 'id' },
+      JOB_HISTORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      from_state: string | null;
+      to_state: string;
+      reason: string | null;
+      occurred_at: Date;
+      actor_id: string | null;
+    }>(
+      db,
+      `SELECT id, from_state, to_state, reason, occurred_at, actor_id
+         FROM wo.job_status_history
+        WHERE tenant_id = $1 AND job_id = $2
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    const rows: StatusHistoryRow[] = result.rows.map((row) => ({
+      id: row.id,
+      fromState: row.from_state,
+      toState: row.to_state,
+      reason: row.reason,
+      occurredAt: row.occurred_at,
+      actorId: row.actor_id,
+    }));
+    return buildPage(rows, page, JOB_HISTORY_ORDER, (row) => ({
+      sortValue: row.occurredAt.toISOString(),
+      id: row.id,
+    }));
+  }
+
+  /** The oldest ledger entry's origin state for a job, or null while it is empty. */
+  async jobInitialState(db: DbHandle, jobId: string): Promise<string | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ from_state: string | null }>(
+      db,
+      `SELECT from_state FROM wo.job_status_history
+        WHERE tenant_id = $1 AND job_id = $2
+        ORDER BY occurred_at, seq LIMIT 1`,
+      [context.principal.tenantId, jobId]
+    );
+    return result.rows[0]?.from_state ?? null;
   }
 
   /**

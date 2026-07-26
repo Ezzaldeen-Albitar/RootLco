@@ -35,6 +35,7 @@ export type {
 export type {
   ClosureBlocker,
   ClosureEligibility,
+  JobHistoryView,
   JobView,
   PageInput,
   ReachableState,

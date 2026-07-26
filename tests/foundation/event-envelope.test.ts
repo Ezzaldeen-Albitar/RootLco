@@ -199,6 +199,13 @@ describe('reserved-name registry', () => {
       'consent.changed',
       'document.link.changed',
       'document.version.registered',
+      // P1-19 publishes from `src/modules/work-order`: `work-order.state-changed`
+      // and `work-order.closed` in Wave 4, `job.state-changed` in Wave 5. Closure
+      // is a separate name from the generic state change because closure is the
+      // fact billing, warranty and reporting wait for. `work-order.created` stays
+      // reserved: the only creation path is reception's conversion, which the
+      // approved catalog gives no event, and the rework path arrives in Wave 8.
+      'job.state-changed',
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',
@@ -212,6 +219,8 @@ describe('reserved-name registry', () => {
       'vehicle.created',
       'vehicle.merged',
       'vehicle.relationship.changed',
+      'work-order.closed',
+      'work-order.state-changed',
     ]);
 
     // A phase may own more than one module: P1-18 delivers appointment and
@@ -223,6 +232,12 @@ describe('reserved-name registry', () => {
       'P1-16': ['crm'],
       'P1-17': ['veh'],
       'P1-18': ['apt', 'rec'],
+      // P1-19 spans four schemas, but only `wo` publishes so far: the job
+      // assignment and job state events are `wo.` rows written by the work-order
+      // module, which is why the catalog assigns them owner `wo` and not `tech` —
+      // `buildEventEnvelope` refuses a producer whose leading segment differs from
+      // the owner, so `tech` there would have made the real write path throw.
+      'P1-19': ['wo', 'tech', 'dia', 'qms'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;
