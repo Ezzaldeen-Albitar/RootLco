@@ -4,16 +4,16 @@ Updated after every major wave. This file is the recovery point if context is lo
 
 ## Current position
 
-| Field               | Value                                                             |
-| ------------------- | ----------------------------------------------------------------- |
-| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                        |
-| Current branch      | `feature/p1-19-module-foundation`                                 |
-| Current HEAD        | see `git rev-parse HEAD` — first commit is the Wave 0–2 record    |
-| `origin/develop`    | `f326e24…` — unchanged by this phase                              |
-| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase |
-| Pull request        | not opened — see Current blocker                                  |
-| GitHub Actions runs | none yet                                                          |
-| Delivery model      | wave-per-PR (README §4)                                           |
+| Field               | Value                                                                      |
+| ------------------- | -------------------------------------------------------------------------- |
+| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                 |
+| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)    |
+| Current HEAD        | `9dcf24ce753baef9d35bd986a789130c86aab9d5` (end of Wave 3)                 |
+| `origin/develop`    | `f326e24…` — unchanged by this phase                                       |
+| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase          |
+| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced |
+| GitHub Actions runs | CI **#211** (`30199848934`) — Success 4/4 on `9dcf24c`                     |
+| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked         |
 
 ## Completed
 
@@ -134,10 +134,70 @@ is present. The branch IS pushed — =
 — so only the PR-open step is missing. Body prepared at
 .
 
+## Wave 4 — contract already extracted, do NOT re-derive
+
+Read from the live catalog before Wave 4 implementation began. Every fact below is
+verified; start from these rather than re-querying.
+
+### Creation is gated by `wo.guard_work_order_refs()` (BEFORE INSERT)
+
+An insert into `wo.work_orders` is refused unless **all** of these hold:
+
+| #   | Precondition                                                                       | Failure SQLSTATE |
+| --- | ---------------------------------------------------------------------------------- | ---------------- |
+| 1   | The `rec.reception_visits` row exists in the **same** tenant + company + branch    | `23503`          |
+| 2   | `work_orders.vehicle_id` equals the visit's `vehicle_id`                           | `23514`          |
+| 3   | Visit `reception_status` is `authorized` **or** `converted`                        | `23514`          |
+| 4   | An `approved` row exists in `rec.authorizations` for that visit                    | `23514`          |
+| 5   | A `rec.custody_history` row with `to_state = 'accepted'` exists for that visit     | `23514`          |
+| 6   | The initial `state` resolves to a defined **active** state and is **not** terminal | `23514`          |
+
+So the service must not invent its own eligibility rules — it maps these six to
+readable refusals. Note precondition 3 admits `converted`, which is what makes a
+second **rework** work order legal against an already-converted visit.
+
+### Exactly-one conversion is an index, not a trigger
+
+```
+uq_work_orders_ordinary_origin
+  UNIQUE (tenant_id, company_id, branch_id, reception_visit_id)
+  WHERE kind = 'ordinary' AND deleted_at IS NULL
+```
+
+Duplicate conversion therefore arrives as **`23505`**, not a check violation, and
+only for `kind = 'ordinary'`. A `rework` order against the same visit is
+deliberately permitted — that is how corrective work attaches. The service must
+map `23505` on this index to a deterministic conflict rather than a generic 500.
+
+`uq_work_orders_active_display_number` is `(tenant_id, display_number)` where the
+number is non-null and not deleted — a second `23505` with a different meaning, so
+the two must be told apart by constraint name.
+
+### Numbering already exists
+
+`src/modules/shared-services/domain/sequence-registry.ts:105` registers sequence
+code `work_order` targeting `wo.work_orders`. Borrow it through
+`@/modules/shared-services` exactly as the reception module does — do not mint a
+second allocator.
+
+### A nuance worth keeping
+
+`guard_work_order_refs` resolves the initial state with `status = 'active'` **in
+the WHERE**, whereas `guard_work_order_transition` resolves first and checks status
+after. The two guards genuinely differ. Wave 3's catalog reads follow the
+_transition_ guard's shape (resolve then filter), which is correct for transitions;
+creation should read the state list and check `isTerminal` itself rather than
+assume the two resolutions coincide.
+
 ## Next action
 
-Continue Wave 3 with the three remaining module skeletons (`technician`,
-`diagnostics`, `quality`) against the verified table names, then the IAM permission
-seed additions, the event envelope registrations, and module-boundary coverage for
-the new modules. Then run the full battery, the clean room, open the Wave 3 pull
-request and take it to green hosted CI.
+Wave 4 — work-order core, on THIS branch, no merge required first. Deliver as
+atomic commits: creation from reception (mapping the six preconditions and the two
+23505 constraints above), the transition service on the Wave 3 catalog reads,
+closure eligibility evaluating all six blockers independently, job create/update
+with record_version, and the list / aggregate-detail / history queries — then
+routes, OpenAPI, audit, outbox and tests. Push, let PR #82 re-run CI, fix any
+feature-caused failure, update this checkpoint, and continue straight to Wave 5.
+
+Nothing from Waves 0-3 needs repeating. The four modules, 22 permissions, 11
+reserved events and 4 error codes are already merged into this branch and green.
