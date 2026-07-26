@@ -38,17 +38,17 @@ checkpoint only and never authorises a merge.
 
 ## Current position
 
-| Field               | Value                                                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
-| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
-| Current HEAD        | Waves 4–9 complete, reviewed and remediated; clean-room reproof green at the final SHA                                            |
-| `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
-| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
-| Pull request        | **#82 OPEN and READY FOR REVIEW**, base `develop`, all 4 checks green — DO NOT MERGE                                              |
-| GitHub Actions runs | Green **4/4** on the exact final head: DB 5m, Docker 5m, Lint/types/tests/build 2m, secrets 12s                                   |
-| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                                |
-| Totals at HEAD      | Unit **843** / Backend **1074** / DB **1610**; OpenAPI **140 paths / 168 operations**; P1-19 **58/58** operation depth, 0 pending |
+| Field               | Value                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                               |
+| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                  |
+| Current HEAD        | **P1-19 CLOSED.** `origin/develop` = `d8278c7`; gate record on `gate/p1-19-…`            |
+| `origin/develop`    | **`d8278c7`** — PR #82 merged, parents `f326e24` + `da0b8b2`, tree byte-identical        |
+| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                        |
+| Pull request        | **#82 MERGED** into protected `develop`; gate-record PR next                             |
+| GitHub Actions runs | Authoritative push run **#243** (`30224162602`) on `d8278c7` — **Success 4/4**           |
+| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                       |
+| Totals at HEAD      | Unit **843** / Backend **1077** / DB **1610**; OpenAPI 140/168; 58/58 depth; 33/33 tasks |
 
 ## Completed
 
@@ -793,9 +793,32 @@ written ones, and two test suites.
 - **The backend total did not move with the review fixes** (1074 before and after):
   every fix landed as new assertions in existing tests.
 
+## P1-19 CLOSED — Go
+
+|                            |                                                                          |
+| -------------------------- | ------------------------------------------------------------------------ |
+| Decision                   | `Go — P1-19 Work Order, Diagnostics, and Technician Backend Gate Passed` |
+| Gate record                | [`phase-1-19-owner-gate.md`](phase-1-19-owner-gate.md)                   |
+| Protected feature merge    | `d8278c7`, parents `f326e24` + `da0b8b2`, tree byte-identical            |
+| Authoritative push CI      | run **#243** (`30224162602`), Success 4/4                                |
+| Conditions                 | 24 / 24 Met                                                              |
+| Unresolved Critical / High | 0 / 0                                                                    |
+| Accepted limitations       | `P1-19-A-01`…`A-06` (1 Medium, 5 Low)                                    |
+| `origin/main`              | `491c4e0` — untouched, P1-19 not on `main` (ADR-006 reserves promotion)  |
+
+Two reviews after the last implementation wave found real defects, and both are worth
+carrying forward rather than forgetting: the final adversarial review found
+`tech.labor-session-list` had left P1-18-A-01 open **on timesheet data** for nine waves,
+and the pre-merge completeness audit found `wo.job-update` was the only child-write path
+with no parent-terminality guard — which mattered because `requires_diagnostic` is B4's
+direct input. Both are closed in code, in tests, and — for the first — by a build-failing
+structural guard.
+
 ## Next action
 
 _Done. Recorded for the next session._
+
+_Done — PR #82 is merged and the phase is closed._
 
 **Prepare PR #82 and stop.** The clean room has been re-run at the final SHA and is
 green — 119 migrations from empty, seeds twice idempotent, structural review PASS, DB
