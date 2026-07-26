@@ -488,20 +488,26 @@ describe('registered operations against the audit-action catalog', () => {
 
 const EXPECTED_EVENT_TYPES = [
   'access.grant.changed',
+  'additional-work.requested',
   'appointment.changed',
   'business-partner.created',
   'business-partner.merged',
   'consent.changed',
+  'customer-approval.recorded',
+  'diagnostic-report.completed',
   'document.accepted',
   'document.link.changed',
   'document.version.registered',
+  'job.assigned',
+  'job.state-changed',
+  'labor.session-changed',
   'message-template.version.changed',
   'message.delivery.changed',
   'message.enqueued',
   'organization.branch.status.changed',
-  // Registered by P1-18: reception approval had no reserved name, because
-  // Chapter 4 Table 4.5 allocates only the check-in fact for the `rec` domain.
+  'quality-control.finalized',
   'reception.approved',
+  'rework.linked',
   'session.revoked',
   'user.invited',
   'user.status.changed',
@@ -509,6 +515,9 @@ const EXPECTED_EVENT_TYPES = [
   'vehicle.created',
   'vehicle.merged',
   'vehicle.relationship.changed',
+  'work-order.closed',
+  'work-order.created',
+  'work-order.state-changed',
 ];
 
 /**

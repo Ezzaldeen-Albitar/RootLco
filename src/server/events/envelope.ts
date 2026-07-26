@@ -270,6 +270,129 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     implementedIn: 'P1-15',
     description: 'A branch was activated or deactivated through the status-transition engine.',
   },
+  // ---------------------------------------------------------------------------
+  // P1-19 allocation (wo / tech / dia / qms). See
+  // docs/phase-1/phase-1-19/change-requests/ECR-P1-19-001-event-catalog.md.
+  //
+  // No reserved entry covered these: EVT-WO-*, EVT-TECH-*, EVT-DIA-* and EVT-QMS-*
+  // did not exist anywhere in the repository. Two conflicting name sets were
+  // proposed for them — one in the P1-19 execution brief, one in the P1-09 handoff
+  // — and both suffixed the wire name `.v1`. Neither is followed literally here:
+  //
+  //   * The type strings stay UNSUFFIXED, matching all twenty entries above.
+  //     Version is carried by `schemaVersion`, which is what that field is for;
+  //     encoding it twice would let the two disagree.
+  //   * Granularity follows the P1-09 handoff, because it was written by the phase
+  //     that owns the schema, and because `wo.work_order_status_history` already
+  //     records created / changed / closed as distinct facts.
+  //
+  // `implementedIn` stays null until the wave that actually publishes each event
+  // lands — a reserved name is not an implementation, and claiming otherwise is
+  // how a catalog stops being trustworthy.
+  // ---------------------------------------------------------------------------
+  {
+    code: 'EVT-WOR-001',
+    eventType: 'work-order.created',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'A work order was created from a reception visit.',
+  },
+  {
+    code: 'EVT-WOR-002',
+    eventType: 'work-order.state-changed',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'A work order moved between states in its configured graph.',
+  },
+  {
+    // Separate from state-changed even though closure IS a state change, because
+    // closure is the fact downstream consumers (billing, warranty, reporting) wait
+    // for, and making them filter every transition to find it would put the
+    // definition of "closed" in each consumer instead of here.
+    code: 'EVT-WOR-003',
+    eventType: 'work-order.closed',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'A work order reached a terminal, non-cancellation state.',
+  },
+  {
+    code: 'EVT-TEC-001',
+    eventType: 'job.assigned',
+    schemaVersion: 1,
+    aggregateType: 'wo.job',
+    owner: 'tech',
+    implementedIn: null,
+    description: 'A technician was assigned to a job.',
+  },
+  {
+    code: 'EVT-TEC-002',
+    eventType: 'job.state-changed',
+    schemaVersion: 1,
+    aggregateType: 'wo.job',
+    owner: 'tech',
+    implementedIn: null,
+    description: 'A job moved between states in its configured graph.',
+  },
+  {
+    code: 'EVT-TEC-003',
+    eventType: 'labor.session-changed',
+    schemaVersion: 1,
+    aggregateType: 'tech.labor_session',
+    owner: 'tech',
+    implementedIn: null,
+    description: 'A labor session was started, paused, resumed or stopped.',
+  },
+  {
+    code: 'EVT-WOR-004',
+    eventType: 'additional-work.requested',
+    schemaVersion: 1,
+    aggregateType: 'wo.additional_work_request',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'Additional work was raised against a work order.',
+  },
+  {
+    code: 'EVT-WOR-005',
+    eventType: 'customer-approval.recorded',
+    schemaVersion: 1,
+    aggregateType: 'wo.customer_approval',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'A customer decision on additional work was recorded.',
+  },
+  {
+    code: 'EVT-DIA-001',
+    eventType: 'diagnostic-report.completed',
+    schemaVersion: 1,
+    aggregateType: 'dia.diagnostic_report',
+    owner: 'dia',
+    implementedIn: null,
+    description: 'A diagnostic report was completed against its pinned template version.',
+  },
+  {
+    code: 'EVT-QMS-001',
+    eventType: 'quality-control.finalized',
+    schemaVersion: 1,
+    aggregateType: 'qms.quality_control_record',
+    owner: 'qms',
+    implementedIn: null,
+    description: 'A quality-control record was finalized as passed or failed.',
+  },
+  {
+    code: 'EVT-QMS-002',
+    eventType: 'rework.linked',
+    schemaVersion: 1,
+    aggregateType: 'qms.rework_link',
+    owner: 'qms',
+    implementedIn: null,
+    description: 'A rework case was linked to the work order it corrects, or signed off.',
+  },
 ]);
 
 export function findEvent(eventType: string): EventCatalogEntry | undefined {

@@ -44,13 +44,12 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
 export const PARTS_FORWARD_STATES = ['none', 'requested', 'reserved_elsewhere'] as const;
 export type PartsForwardState = (typeof PARTS_FORWARD_STATES)[number];
 
-/** Frozen `ck_quality_control_records_result` vocabulary. */
-export const QC_RESULTS = ['pending', 'passed', 'failed'] as const;
-export type QcResult = (typeof QC_RESULTS)[number];
-
-/** Frozen `ck_diagnostic_reports_status` vocabulary. */
-export const DIAGNOSTIC_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'] as const;
-export type DiagnosticStatus = (typeof DIAGNOSTIC_STATUSES)[number];
+// Deliberately NOT here: the quality-control result vocabulary, the diagnostic
+// report status vocabulary and the labor-session source vocabulary. Each of those
+// belongs to the module that owns its table — `quality`, `diagnostics` and
+// `technician` respectively — and an earlier draft of this file carried copies of
+// all three. Two definitions of one CHECK constraint is two things to keep in step,
+// and the pair only ever diverges silently.
 
 /** Frozen `ck_additional_work_requests_state` vocabulary — `rejected`, not `declined`. */
 export const ADDITIONAL_WORK_STATES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
@@ -59,10 +58,6 @@ export type AdditionalWorkState = (typeof ADDITIONAL_WORK_STATES)[number];
 /** Frozen `ck_additional_work_requests_fulfillment` vocabulary — `waived`, not `not_required`. */
 export const FULFILLMENT_STATES = ['unfulfilled', 'fulfilled', 'waived'] as const;
 export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
-
-/** Frozen `ck_labor_sessions_source` vocabulary. */
-export const LABOR_SOURCES = ['manual', 'timer', 'correction'] as const;
-export type LaborSource = (typeof LABOR_SOURCES)[number];
 
 export const MAX_DISPLAY_NUMBER = 64;
 export const MAX_REASON = 500;

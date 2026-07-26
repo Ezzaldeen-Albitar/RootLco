@@ -154,7 +154,60 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('rec.reception.approve',    'rec', 'Approve a reception visit for work',           'high',  '00000000-0000-4000-8000-000000000001'),
   -- Conversion creates the work order that all downstream cost attaches to. Its own
   -- high-risk code, never implied by approval.
-  ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001')
+  ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (wo) - Work Order Backend. Reading a work order is separated from
+  -- changing one because the board, the customer-facing status and the reception
+  -- desk all need to see an order without any authority to move it.
+  ('wo.work_order.read',       'wo', 'Read work orders, their jobs and their history',  'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Creating a work order commits the workshop to the job and is what all downstream
+  -- cost attaches to, so it is its own capability and never implied by reading.
+  ('wo.work_order.create',     'wo', 'Convert a reception visit into a work order',     'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Moving an order through its graph. Separate from closure: a service advisor who
+  -- may park an order awaiting parts must not thereby be able to close it.
+  ('wo.work_order.transition', 'wo', 'Move a work order through its configured states', 'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Closure is the one transition that ends the workshop's liability and freezes the
+  -- record, and B1-B6 gate it. Its own high-risk code, never implied by transition.
+  ('wo.work_order.close',      'wo', 'Close a work order once every closure condition is met', 'high', '00000000-0000-4000-8000-000000000001'),
+  -- Jobs are the unit of work assigned to a technician. Managing them is distinct
+  -- from moving the order that contains them.
+  ('wo.job.manage',            'wo', 'Create and update jobs on a work order',          'medium', '00000000-0000-4000-8000-000000000001'),
+  ('wo.job.transition',        'wo', 'Move a job through its configured states',        'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Service lines and required parts record demand. Deliberately NOT a stock
+  -- capability: Phase 1-19 records what is needed and never reserves or issues it.
+  ('wo.work_order.line.manage','wo', 'Record service lines and required-part demand',   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Raising additional work is separated from approving it, because the person who
+  -- finds more work is never automatically the person who commits the customer to it.
+  ('wo.additional_work.request','wo','Raise an additional-work request',                'medium', '00000000-0000-4000-8000-000000000001'),
+  ('wo.additional_work.approve','wo','Record a customer decision on additional work',   'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (tech) - Technician Execution. Assignment decides who may touch the
+  -- vehicle and is gated on skill, certification and availability.
+  ('tech.assignment.manage',   'tech','Assign and reassign technicians to jobs',        'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Recording one's own labor. Low risk and widely held: every technician needs it.
+  ('tech.labor.record',        'tech','Start, pause, resume and stop labor sessions',   'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Correcting a labor record rewrites the timesheet a payroll or warranty claim may
+  -- rest on. It never edits the original - it writes a linked correction - but the
+  -- authority to do it is separate from the authority to record labor.
+  ('tech.labor.correct',       'tech','Record a linked correction to a labor session',  'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Reading technician skills, certifications and availability. Employment-derived
+  -- data, so it is its own code rather than part of a general read.
+  ('tech.technician.read',     'tech','Read technician profiles, eligibility and queues','low',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (dia) - Diagnostics. Recording findings is distinct from completing a
+  -- report, and completing is distinct from reviewing it.
+  ('dia.diagnostic.record',    'dia', 'Create diagnostic reports and record their entries','medium','00000000-0000-4000-8000-000000000001'),
+  ('dia.diagnostic.complete',  'dia', 'Complete a diagnostic report',                   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Review is the independent check on a completed report. Separate code so the
+  -- reviewer-separation policy has something to enforce against.
+  ('dia.diagnostic.review',    'dia', 'Review a completed diagnostic report',           'high',   '00000000-0000-4000-8000-000000000001'),
+  ('dia.diagnostic.read',      'dia', 'Read diagnostic reports and their evidence',     'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (qms) - Quality. Performing quality control is what stands between a
+  -- vehicle and the customer, and a finalized result can never be edited.
+  ('qms.quality_control.perform','qms','Perform and finalize quality control',          'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Rework records that the workshop got something wrong. Creating the linkage and
+  -- independently signing it off are deliberately two codes: BR-QMS-001 requires the
+  -- sign-off to come from someone other than whoever did the work.
+  ('qms.rework.manage',        'qms', 'Create and resolve rework cases',                'high',   '00000000-0000-4000-8000-000000000001'),
+  ('qms.rework.sign_off',      'qms', 'Independently sign off safety-critical rework',  'high',   '00000000-0000-4000-8000-000000000001'),
+  ('qms.quality_control.read', 'qms', 'Read quality-control records and rework links',  'low',    '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
