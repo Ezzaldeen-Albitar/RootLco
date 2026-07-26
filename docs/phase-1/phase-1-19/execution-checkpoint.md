@@ -63,17 +63,38 @@ Updated after every major wave. This file is the recovery point if context is lo
 | ------------------------------------------------------------------------- | --------------- | --------- |
 | `work-order` module — domain, catalog repository, catalog service, index  | **Done, green** | `0445ee1` |
 | Error codes `ERR-WO-001` / `ERR-TECH-001` / `ERR-DIA-001` / `ERR-QMS-001` | **Done, green** | `0445ee1` |
-| `technician` module                                                       | Not started     | —         |
-| `diagnostics` module                                                      | Not started     | —         |
-| `quality` module                                                          | Not started     | —         |
-| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains               | Not started     | —         |
-| Event envelope registrations                                              | Not started     | —         |
-| Module-boundary tests for the new modules                                 | Not started     | —         |
+| `technician` module                                                       | **Done, green** | `e8d6235` |
+| `diagnostics` module                                                      | **Done, green** | `e8d6235` |
+| `quality` module                                                          | **Done, green** | `e8d6235` |
+| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains (21 codes)    | **Done, green** | `e8d6235` |
+| Event envelope registrations (11 reserved names)                          | **Done, green** | `e8d6235` |
+| Module-boundary tests for the new modules (11 tests)                      | **Done, green** | `e8d6235` |
+| Permission-total pin `71 → 92`                                            | **Done, green** | `662b2f3` |
+| Clean room at `662b2f3`                                                   | **Done, green** | —         |
+| Wave 3 evidence document                                                  | **Done**        | —         |
+| Adversarial review                                                        | In progress     | —         |
 | Wave 3 PR and hosted CI                                                   | Not started     | —         |
 
-Gates green at `0445ee1`: format, lint, typecheck, module boundaries (257 files
-scanned), OpenAPI (94 paths / 110 operations), authorization coverage, Unit
-**829**, Backend **771**.
+Gates green at `662b2f3`: format, lint, typecheck, module boundaries (**269**
+files scanned), OpenAPI (94 paths / 110 operations), authorization coverage,
+operation coverage, encoding, `security:all`, build. Unit **840** (was 829) /
+DB **1547** / Backend **771**.
+
+Clean room at `662b2f3`: 119 migrations, 7 seeds, `schema_hash a677eb05…`
+**unchanged** from the P1-18 baseline, 242 tables / 212 functions / 631 policies /
+541 triggers / 999 indexes, 0 SECURITY DEFINER, 0 unforced RLS, 92 permissions
+(21 P1-19), `validate:seed-state` exit 0, business tables empty. Full evidence in
+[`evidence/wave-3-module-foundation.md`](evidence/wave-3-module-foundation.md).
+
+The `baseline_fingerprint` moved `0ee203f2…` → `bb14796b…`. That is correct, not a
+regression: the fingerprint covers seed content, and the permission catalog grew
+by 21 rows. A fingerprint that had NOT moved would mean the seed had not landed.
+
+One flake, recorded rather than hidden: the first full `test:db` run failed
+`shared event-outbox worker lifecycle > a single claim never returns more than its
+limit`. It passed in isolation and on a clean re-run. Not attributable to this
+wave — every P1-19 event entry is `implementedIn: null` and nothing in the diff
+touches the outbox.
 
 ## Corrections made during Wave 3 — do not re-derive
 
