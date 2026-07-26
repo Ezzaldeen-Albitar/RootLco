@@ -4,7 +4,7 @@ no route handler, no write path, **no migration**.
 |                   |                                                                                                                  |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Protected base    | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                       |
-| Final feature SHA | `595bfd563d0955445ad4a6f4edd6363194eb2f75`                                                                       |
+| Final feature SHA | the branch head at open time — every commit after the clean-room SHA is documentation-only                       |     |
 | Clean-room SHA    | `81c9d5c453bd855f103160d78bc482b6ff76ddab` — delta to head is **documentation-only**, executable-path diff empty |
 | Diff              | 30 files, +3842 / −5                                                                                             |
 
