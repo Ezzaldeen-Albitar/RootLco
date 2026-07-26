@@ -606,6 +606,230 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An authorized reception visit was converted into exactly one work order, which opens in its configured initial state. The reception becomes terminal (converted), which is what makes a second conversion impossible.',
   },
+  {
+    code: 'wo.work_order.state_changed',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order moved between states in the graph held by wo.work_order_transitions. One action covers every edge because a consumer of the audit trail reacts to the resulting state, not to the verb — and because the graph is tenant-overridable, so a per-edge action code would be a vocabulary this catalog cannot close. A CLOSING transition is recorded under wo.work_order.closed instead of this code, never under both: one transition writes exactly one audit record, so a count of state changes and a count of closures cannot double-count the same event.',
+  },
+  {
+    code: 'wo.work_order.required_part_recorded',
+    class: 'privileged',
+    entityType: 'wo.required_part',
+    description:
+      'A part a work order needs was recorded as DEMAND. It reserves nothing and issues nothing: item_ref is foreign-keyed to the item CATALOG (inv.item_master) and not to stock, and no stock row is read or written anywhere in this phase. Recording demand and consuming stock are deliberately different acts owned by different phases.',
+  },
+  {
+    code: 'wo.work_order.service_line_recorded',
+    class: 'privileged',
+    entityType: 'wo.work_order_service_line',
+    description:
+      'A service or labour line was recorded against a work order, optionally against one of its jobs. service_ref is foreign-keyed to svc.services, so an unresolvable reference is refused; nothing here prices the line, because pricing is Phase 1-20.',
+  },
+  {
+    code: 'wo.work_order.closed',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
+  },
+  {
+    code: 'qms.quality_control.opened',
+    class: 'privileged',
+    entityType: 'qms.quality_control_record',
+    description:
+      'A pending quality-control record was opened on a work order. A work order carries a SET of records rather than a current one — there is no unique index on (work_order_id) — because a re-check after a failure must be a NEW record: qms.guard_qc_finalize freezes a finalized result, so a failure can never be edited into a pass and closure blocker B5 reads the set.',
+  },
+  {
+    code: 'qms.quality_control.check_recorded',
+    class: 'privileged',
+    entityType: 'qms.quality_control_record',
+    description:
+      'One configured check outcome was recorded or replaced inside a quality-control record (pass, fail or na — na is a recorded fact, not a gap). Filed under the RECORD rather than the result row so one audit query over a record returns everything that went into it. Replacement stops at finalization, which is an application rule: qms.qc_check_results references the record and never reads its overall_result, so a finalized record would otherwise accept new outcomes.',
+  },
+  {
+    code: 'qms.quality_control.finalized',
+    class: 'approval',
+    entityType: 'qms.quality_control_record',
+    description:
+      'A quality-control record was declared passed or failed. Behind its own high-risk permission, separate from recording checks: observing work and certifying a vehicle fit to release are different acts. checker_id and finalized_at are stamped by qms.guard_qc_finalize from the session and then frozen along with the result, so a pass cannot be attributed to someone who did not perform it and cannot be back-dated or revised.',
+  },
+  {
+    code: 'qms.rework.created',
+    class: 'privileged',
+    entityType: 'qms.rework_link',
+    description:
+      'A rework work order was opened against a CLOSED original and linked to it, in one transaction. Records the root cause and the corrective action in full — they are the quality record itself and what an auditor is looking for — classified internal because they describe a fault on a customer’s vehicle. The rework order is the second and last path that inserts wo.work_orders, and it exists because qms.guard_rework_link_coherence requires kind=rework and nothing else in the platform can produce one.',
+  },
+  {
+    code: 'qms.rework.signed_off',
+    class: 'approval',
+    entityType: 'qms.rework_link',
+    description:
+      'The independent sign-off required by BR-QMS-001 was recorded on a rework case. The separation is a CHECK — ck_rework_links_signoff_distinct refuses a signer equal to lead_technician_id — not a trigger and not the application, and org.guard_immutable_columns freezes the lead so it cannot be swapped afterwards to make a signature legal. The signer is a technician PROFILE, not a user: the sign-off names someone on the workshop roster. Until it exists, closure blocker B6 blocks the rework order’s own closure.',
+  },
+  {
+    code: 'qms.rework.cost_recorded',
+    class: 'privileged',
+    entityType: 'qms.rework_link',
+    description:
+      'The RESTRICTED cost of quality was recorded for a rework case. Records the classification, the currency and the fact — never the figure — because iam.audit_records is not gated by iam.sensitive.view and copying a restricted cost here would publish it to every auditor. An internal quality KPI and explicitly not a billing artifact: nothing invoices anybody and pricing is Phase 1-20.',
+  },
+  {
+    code: 'qms.rework.cost_read',
+    class: 'security',
+    entityType: 'qms.rework_link',
+    description:
+      'The RESTRICTED cost of quality was READ. Audited as security rather than left unrecorded, like the additional-work description read: who looked at restricted data is itself the fact worth keeping. Written only on a read that succeeded — a refusal is already recorded by the authorization pipeline.',
+  },
+  {
+    code: 'qms.work_order.reopen_refused',
+    class: 'security',
+    entityType: 'wo.work_order',
+    description:
+      'An attempt to reopen a closed work order was recorded and REFUSED (BR-WO-002). qms.attempt_reopen writes the attempt with outcome CHECK-fixed to rejected — the vocabulary has exactly one value, so there is no success to record — and never mutates the order. Security class because the interesting question is who tried after a vehicle was released, and the answer must be a ledger rather than silence. requested_by and requested_at are stamped from the session by qms.stamp_reopen_attempt and cannot be claimed.',
+  },
+  {
+    code: 'wo.work_order.rework_opened',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order with kind=rework was opened against a closed original, sharing its reception visit. The ONLY insert into wo.work_orders besides reception’s conversion, and not a contradiction of that boundary: the ordinary path originates from an authorized visit and this one from a closed order, which reception cannot observe. uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary and guard_work_order_refs admits a converted visit, so the schema was built for exactly this.',
+  },
+  {
+    code: 'dia.diagnostic.created',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report was opened on a job, pinning an exact PUBLISHED template version. The pinned version is recorded because it is what makes the report reproducible: dia.guard_template_item_frozen refuses every change to a published version’s items, so the questions the report was asked can never change afterwards, and an auditor reading it years later needs to know which version it answered. The revision number is server-assigned under an advisory lock; dia.diagnostic_reports.revision_number has no unique index behind it (accepted item P1-19-A-02).',
+  },
+  {
+    code: 'dia.diagnostic.entry_recorded',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'An entry was recorded on a diagnostic report: an item result, a measurement, a DTC, a finding, evidence or a recommendation. ONE action covers six tables and each record names its entry_kind, because they are all the same fact — something was added to this report — and filing them separately would make "what went into this report" six audit queries instead of one. Filed under the REPORT rather than the entry row for the same reason. A measurement records its within_range verdict as three-valued (true/false/unknown), never flattened, because unknown means no range was configured and false would claim a check that never ran.',
+  },
+  {
+    code: 'dia.diagnostic.state_changed',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report moved between draft, in_progress and cancelled. Unlike the work-order and job graphs, this lifecycle is a FIXED PL/pgSQL IF chain in dia.guard_diagnostic_report_transition with no catalog table and no tenant override, which is why the module mirrors it rather than reading it. A COMPLETION is recorded under dia.diagnostic.completed instead of this code, never under both.',
+  },
+  {
+    code: 'dia.diagnostic.completed',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report was completed, every mandatory item of its pinned version having a result or a documented not-applicable reason. Recorded separately from the generic status change because completion is what closure blocker B4 waits for and what a review is performed against, and because it freezes the report: the application refuses further entries afterwards, which the database does not — none of the entry tables consults the report’s status.',
+  },
+  {
+    code: 'dia.diagnostic.reviewed',
+    class: 'approval',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A completed diagnostic report was reviewed as approved, rejected or needs_rework. Records the reviewer as the DATABASE stamped it: dia.stamp_review() overwrites reviewer_id with iam.current_user_id() on every insert and raises without an actor, so attribution cannot be forged and the two can never differ. Reviewer SEPARATION is an application rule against dia.diagnostic_reports.created_by, because no constraint references it — and it catches the report’s creator, not everyone who recorded an entry, since the schema records no per-entry authorship a review could be checked against.',
+  },
+  {
+    code: 'wo.additional_work.requested',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'Extra work discovered mid-repair was raised against a work order. Records the SAFE summary and the provenance (originating job and/or diagnostic finding) and never the customer-facing description: that lives in wo.additional_work_request_details behind iam.sensitive.view, and iam.audit_records is not gated by that permission, so copying it here would publish restricted data to every auditor. is_required is captured because it is immutable after insert and is what makes closure blocker B3 non-evadable.',
+  },
+  {
+    code: 'wo.additional_work.detail_recorded',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'The RESTRICTED customer-facing description of an additional-work request was recorded or replaced. Deliberately records the FACT, the classification and the length — never the text — for the reason above. Filed under the request rather than the detail row so one audit query over a request returns its whole history; replacement is legitimate because the migration grants UPDATE and freezes every column except the description.',
+  },
+  {
+    code: 'wo.additional_work.detail_read',
+    class: 'security',
+    entityType: 'wo.additional_work_request',
+    description:
+      'The RESTRICTED customer-facing description of an additional-work request was READ. Audited as security rather than left unrecorded — every other read in the wo module is audit class none, which is right for work-order state and wrong for the one table the platform gates behind iam.sensitive.view, where who looked is itself the fact worth keeping. Records that a read happened, never the text that was returned.',
+  },
+  {
+    code: 'wo.additional_work.fulfillment_changed',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'Approved additional work was recorded as carried out, or waived. The only way closure blocker B3’s second limb can be cleared, since nothing else in the phase writes fulfillment_state. A waiver carries a reason because declining work the customer already agreed to is accountable — wo.additional_work_requests has no reason column, so the audit record is where that reason lives.',
+  },
+  {
+    code: 'wo.additional_work.state_changed',
+    class: 'privileged',
+    entityType: 'wo.additional_work_request',
+    description:
+      'An additional-work request moved between pending, approved, rejected and withdrawn. One action covers every edge, as it does for work orders and jobs, because a consumer reacts to the resulting state. A move to approved is recorded ALONGSIDE wo.customer_approval.recorded and never instead of it: capturing a decision and moving the request are separate facts, and an auditor asking when the customer agreed must not have to infer it from a state change.',
+  },
+  {
+    code: 'wo.customer_approval.recorded',
+    class: 'approval',
+    entityType: 'wo.customer_approval',
+    description:
+      'A customer decision on additional work was recorded — the immutable row wo.guard_additional_work_state requires to exist BEFORE the request may be marked approved, which is the forgery-resistance control. Records the decision, the channel, the deciding reception party role and the evidence count; the presented scope is recorded as a fact rather than reproduced, because it is what a customer was told about their own vehicle. tg_customer_approvals_immutable freezes the decision and no application role holds DELETE, so the row can be neither edited nor erased.',
+  },
+  {
+    code: 'tech.labor.session_corrected',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A labour session window was corrected. Never an edit: tech.correct_labor_session soft-deletes the original and inserts a linked replacement carrying correction_of_id, so the corrected hours and the hours they replaced both survive. A correction rewrites what a technician was paid for, which is why the seeded catalog gives tech.labor.correct its own high-risk permission.',
+  },
+  {
+    code: 'tech.labor.session_started',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A technician started working a job. started_at is the server clock, never a caller value, and ex_labor_sessions_overlap — a partial gist EXCLUDE over tstzrange(started_at, COALESCE(ended_at, infinity)) — makes "no overlapping sessions" and "at most one open session per technician" the same invariant.',
+  },
+  {
+    code: 'tech.labor.session_stopped',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A technician stopped working a job. ended_at is server-stamped and write-once: tech.guard_labor_session refuses any later change to it, so an amendment is a correction rather than an edit. Stopping the clock is distinct from pausing the JOB — tech.labor_sessions has no pause column, so a pause is this action plus a job transition into paused, whose reason lives in wo.job_status_history.',
+  },
+  {
+    code: 'wo.job.assigned',
+    class: 'privileged',
+    entityType: 'wo.job_assignment',
+    description:
+      'A technician was assigned to a job. Eligibility — held skill and level, certification validity on the day, availability across the window, profile status and branch scope — is evaluated before the write and reported in full; the database still owns the invariant that at most one PRIMARY assignment is active per job (uq_job_assignments_active_primary). The row set IS the assignment history: an assignment is ended by setting valid_to, never deleted.',
+  },
+  {
+    code: 'wo.job.assignment_ended',
+    class: 'privileged',
+    entityType: 'wo.job_assignment',
+    description:
+      'An assignment was closed by setting valid_to. Always carries a reason, because ck_job_assignments_end_reason makes an end without one impossible — removing a technician from work is accountable. Reassignment writes this action AND wo.job.assigned in one transaction, so the two halves of a handover cannot be recorded separately.',
+  },
+  {
+    code: 'wo.job.created',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job was added to a work order. The parent preconditions are the database’s: wo.guard_job_refs locks the work order and refuses a terminal parent or a state whose allows_jobs is false.',
+  },
+  {
+    code: 'wo.job.state_changed',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job moved between states in the graph held by wo.job_transitions. Separate from wo.job.updated because that action deliberately never records a state change: the update path cannot write the state column, and this is the only action a job movement is recorded under. The assignment precondition is the database’s — wo.guard_job_transition refuses an assignment_required target with no active wo.job_assignments row.',
+  },
+  {
+    code: 'wo.job.updated',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job’s descriptive fields were changed under optimistic concurrency. Deliberately never records a state change: a job moves only through wo.guard_job_transition, and the update path cannot write the state column at all.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

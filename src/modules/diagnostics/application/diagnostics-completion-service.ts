@@ -1,0 +1,93 @@
+/**
+ * Diagnostic completion readiness (Phase 1-19, P1-19-BE-001).
+ *
+ * Two callers, deliberately different in kind:
+ *
+ *  - Wave 7's completion command calls `assertCompletable` before moving a report
+ *    to `completed`, so the caller gets every outstanding item at once instead of
+ *    one per attempt.
+ *  - Wave 4's closure-eligibility endpoint needs to answer blocker B4 — does each
+ *    `requires_diagnostic` job have a `completed` report — and `work-order` may not
+ *    read `dia.` tables to find out. That read belongs on this surface and Wave 4
+ *    adds it; Wave 3 deliberately does not ship a method no caller exercises yet.
+ *
+ * Neither enforces. `dia.guard_diagnostic_report_transition` remains the authority
+ * for completion, and `wo.guard_work_order_closure` for closure.
+ */
+import { AppFailure } from '@/server/errors/app-failure';
+import { ApplicationService } from '@/server/layering';
+import type { DbHandle } from '@/server/db/transaction';
+import type {
+  DiagnosticsRepository,
+  FindingOrigin,
+  TemplateItemRow,
+} from '../data/diagnostics-repository';
+import {
+  assertCompletable,
+  assertVersionInstantiable,
+  type OutstandingItem,
+  type TemplateVersionStatus,
+} from '../domain/diagnostics';
+
+export class DiagnosticsCompletionService extends ApplicationService {
+  protected readonly module = 'diagnostics';
+
+  constructor(private readonly repository: DiagnosticsRepository) {
+    super();
+  }
+
+  /** Every item of a pinned template version, in presentation order. */
+  async templateItems(db: DbHandle, versionId: string): Promise<readonly TemplateItemRow[]> {
+    return this.repository.templateItems(db, versionId);
+  }
+
+  /**
+   * Where a finding came from — the work order and job of its report.
+   *
+   * Exposed for the `work-order` module, which stores
+   * `additional_work_requests.originating_finding_id` and must refuse a finding that
+   * belongs to a different work order. That column has NO foreign key, so a read is
+   * the only possible check, and reading `dia.findings` from `work-order` would be
+   * the cross-module table access ADR-001 rule 3 prohibits. Null covers absent and
+   * out-of-scope alike.
+   */
+  async findingOrigin(db: DbHandle, findingId: string): Promise<FindingOrigin | null> {
+    return this.repository.findingOrigin(db, findingId);
+  }
+
+  /**
+   * Confirms a template version may be instantiated, returning it.
+   *
+   * Refuses a `draft` version (its items can still change, which would make the
+   * report irreproducible) and a `retired` one (the workshop has withdrawn it).
+   */
+  async requireInstantiableVersion(
+    db: DbHandle,
+    versionId: string
+  ): Promise<{ readonly id: string; readonly versionNumber: number }> {
+    const version = await this.repository.templateVersion(db, versionId);
+    if (version === null) {
+      // Absent and out-of-scope are one answer, and neither is disclosed: the
+      // caller learns only that this is not a version they may instantiate. The
+      // refusal is raised directly rather than by passing a fake status into
+      // `assertVersionInstantiable`, which would have made the message claim the
+      // version is a draft when it may not exist at all.
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'No instantiable template version with that id is visible',
+        safeDetails: { violations: [{ path: 'body.templateVersionId', rule: 'not_found' }] },
+      });
+    }
+    assertVersionInstantiable(version.status as TemplateVersionStatus);
+    return { id: version.id, versionNumber: version.versionNumber };
+  }
+
+  /** Mandatory items still owing a result or a not-applicable reason. */
+  async outstanding(db: DbHandle, reportId: string): Promise<readonly OutstandingItem[]> {
+    return this.repository.outstandingMandatoryItems(db, reportId);
+  }
+
+  /** Refuses completion with `ERR-DIA-001` while any mandatory item is outstanding. */
+  async assertCompletable(db: DbHandle, reportId: string): Promise<void> {
+    assertCompletable(await this.repository.outstandingMandatoryItems(db, reportId));
+  }
+}

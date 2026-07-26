@@ -97,7 +97,22 @@ export const P1_17_PREFIX = 'veh.';
  * failure P1-17 had to remediate three times.
  */
 export const P1_18_PREFIXES = ['apt.', 'rec.'];
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX, ...P1_18_PREFIXES];
+/**
+ * P1-19 spans FOUR id namespaces — `wo.`, `tech.`, `dia.` and `qms.` — because the
+ * frozen Phase 1-9 database splits work orders, technician execution, diagnostics
+ * and quality into four schemas. All four are listed for the same reason both
+ * P1-18 namespaces are: a namespace absent from this array gets no derived floor at
+ * all, silently, and its operations pass on whatever the manifest happens to
+ * declare.
+ */
+export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
+const DERIVED_PREFIXES = [
+  DERIVED_PREFIX,
+  P1_16_PREFIX,
+  P1_17_PREFIX,
+  ...P1_18_PREFIXES,
+  ...P1_19_PREFIXES,
+];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -411,6 +426,454 @@ export const MANIFEST = {
     ],
     note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
+  // ========================================================================
+  // Phase 1-19 (wo. / tech. / dia. / qms.) — Work Order, Diagnostics and
+  // Technician Backend. Same derived-evidence model, and the same strict
+  // comment-stripping ratchet P1-18 introduced: an operation counts as invoked
+  // only if its id appears in executable code, never in prose about a test.
+  //
+  // Wave 4 (work-order core) below. Waves 5–8 append their own entries.
+  // ========================================================================
+  'wo.work-order-list': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset board of ONE branch, newest opened first; company and branch are required query parameters BECAUSE they are the authorizationTarget — the isolation case proves a caller granted only in branch A2 is refused for A1 rather than served it through the permission-blind app.branch_ids union (P1-18-A-01); a tenant-B work order never appears (cross-tenant); a bad cursor, an oversized page, an unknown parameter and a timezone-less date bound are refused (denial); an unknown state code returns an empty page rather than a 422, because wo.work_order_states is tenant-extensible',
+  },
+  'wo.work-order-detail': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'work order + live jobs + reachable next states resolved from the live catalog, in a fixed number of round trips; a terminal order reports NO next states because the guard freezes it whatever the graph says (BR-WO-002); the ETag carries the record_version a transition must send back; an unknown id and a tenant-B id answer the same 404 (cross-tenant/denial)',
+  },
+  'wo.work-order-history': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only ledger newest-first, plus an origin block; the origin block is the honest answer to "what state did this open in" — wo.emit_work_order_status_history is AFTER UPDATE only so no genesis row exists, and shared.stamp_status_history would stamp a backfilled one with now(); a bad cursor is refused (denial) and a tenant-B work order yields nothing (cross-tenant)',
+  },
+  'wo.work-order-closure-eligibility': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'reports EVERY unmet blocker rather than the guard’s first: two unmet conditions come back as two, in CLOSURE_BLOCKER_REGISTRY order, and an already-terminal order returns alreadyTerminal with an empty list because the guard evaluates nothing; the Phase 1-21 conditions are reported as deferred rather than omitted, so a snapshot can never read them as checks that ran and passed',
+  },
+  'wo.work-order-transition': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+      'rollback',
+    ],
+    note: 'state + trigger-emitted history row + one audit record + one outbox event in ONE transaction, and an injected failure leaves none of them (rollback); the reason travels through the app.status_reason GUC, which both the guard and the ledger emitter read — without it every reason-required edge fails as a raw 23514 and every ledger reason is NULL; three refusals stay distinct (ERR-TRN-001 absent edge, ERR-VAL-001 missing reason, ERR-VAL-001 closing state asks for the closure command); a wrong If-Match is refused (stale-version) and two concurrent transitions leave exactly one winner (concurrency)',
+  },
+  'wo.work-order-closure': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'the second permission is real, not documentary: a caller holding wo.work_order.transition but not wo.work_order.close is refused (denial), and the transition endpoint refuses a closing target so the split cannot be bypassed by choosing the other URL; closure runs the SAME eligibility service as the read endpoint and reports every blocker (ERR-WO-001) before the write; emits wo.work_order.closed and work-order.closed exactly once each',
+  },
+  'wo.job-create': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
+  },
+  'wo.service-line-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'quantity crosses as a decimal STRING because the column is numeric(12,3) and IEEE-754 cannot represent every value it holds — the test proves 2.500 survives unrounded; an optional jobId must belong to THIS order, and the test uses a job under a DIFFERENT order in the same branch, which satisfies the composite foreign key and is caught only by the explicit ownership check; a non-positive or over-scaled quantity, a blank description and a terminal work order are each refused with nothing written',
+  },
+  'wo.service-line-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live lines; asserted not to bleed into the required-parts list, because they are different tables and different facts and a caller reading labour must not be shown parts as labour',
+  },
+  'wo.required-part-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the NEGATIVE claim is the point and it is asserted, not described: recording demand leaves wo.work_orders.parts_forward_state at its frozen default and leaves every inv table empty, because item_ref is foreign-keyed to the item CATALOG (inv.item_master, via migration 20260723097000 — the Phase 1-9 table comment calling it an unconstrained forward reference is stale) and never to stock, and reservation/issue are Phase 1-21; that is also why the closure-eligibility endpoint reports the two Phase 1-21 conditions as deferred rather than clear',
+  },
+  'wo.required-part-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live demand rows; separate from the service-line list and proved separate',
+  },
+  'wo.job-assignment-create': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'eligibility is complete and pre-write: three failures come back as three reasons in one response (denial), and a window crossing a SPLIT-SHIFT boundary is accepted while the same test proves no single tech.technician_availability row spans it — so the acceptance can only have come from the union check; an inactive profile, an out-of-branch profile and an uncovered window are each refused; uq_job_assignments_active_primary is a PARTIAL unique index so a second live primary is a 409 while assist is unconstrained, and a forced race leaves exactly one primary; assignment is what unblocks planned→assigned, proved by walking the job to completed afterwards',
+  },
+  'wo.job-assignment-list': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the append-only history, ended rows included — ending stamps valid_to and the row SURVIVES, which is what makes "who worked this vehicle in March" answerable; requires tech.technician.read rather than wo.work_order.read, because an assignment names a member of staff and a caller who may read the board is not entitled to the roster (denial: the reader principal is refused)',
+  },
+  'wo.job-assignment-end': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'valid_to is SERVER-stamped and the reason is mandatory in the schema too (ck_job_assignments_end_reason), because removing a technician from work is accountable; a blank reason, a stale version, a missing If-Match and an already-ended assignment are four distinct refusals; ending frees the primary slot, proved by assigning again',
+  },
+  'wo.job-reassignment': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'ONE transaction, because two client calls would leave a window with no active assignment during which wo.guard_job_transition refuses every assignment_required state; the rollback case is the sharp one — the end is written BEFORE the incoming technician is evaluated, so an ineligible incoming profile must leave the outgoing assignment open with no reason and no audit row; a handover to the incumbent is refused rather than churning the history, and with no incumbent it degenerates to an assignment and reports ended: null',
+  },
+  'tech.labor-session-start': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'NO timestamp is accepted — started_at is the column default and the test asserts the recorded start falls inside the request’s own window; a startedAt in the body is a 422; one open session per technician is the partial gist EXCLUDE over tstzrange(started_at, COALESCE(ended_at, infinity)) so a second open session is 23P01 mapped to ERR-TECH-001, proved across two DIFFERENT jobs and shown not to affect another technician; a planned job (labor_allowed false) and an inactive profile are refused; a forced race leaves exactly one open session',
+  },
+  'tech.labor-session-list': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of a job’s labour log newest-first, corrections included; needs tech.technician.read because a session says who worked and for how long — timesheets are employee-derived and reading the board does not entitle a caller to them (the reader principal is refused); a tenant-B caller gets an EMPTY log rather than a 404, which discloses less than confirming the job exists',
+  },
+  'tech.labor-session-stop': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'ended_at is server-stamped and WRITE-ONCE in tech.guard_labor_session, so a second stop is refused here rather than reaching the trigger as a rewrite (denial); stopping frees the technician for another job; the pause/resume cycle is driven end to end — stop plus a job transition into paused, whose reason lands in wo.job_status_history because tech.labor_sessions has no pause column — and the resumed job carries TWO sessions, the first untouched',
+  },
+  'tech.labor-session-correct': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'never an edit: tech.correct_labor_session soft-deletes the original and inserts a linked replacement, and the test reads the ORIGINAL back to prove its window survived unchanged; the only path in this phase that accepts caller timestamps, behind tech.labor.correct (high risk) rather than tech.labor.record (low) because it rewrites what a technician was paid for; an inverted window, a blank reason and a timezone-less bound are each refused with nothing written',
+  },
+  'tech.technician-available': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'isolation'],
+    note: 'reports EVERY active candidate with its verdict, not only the eligible ones — an assigner facing an empty list learns nothing — with eligible first; the inactive profile is excluded at the QUERY rather than evaluated and discarded, and another branch’s technician is never a candidate; company and branch are required because they ARE the authorization target, so the scoped principal is refused BRANCH_A1 and served BRANCH_A2 (isolation) rather than handed an empty roster; the candidate cap is REPORTED as truncatedAt, because a silently truncated roster that looked complete would make an assigner conclude nobody is free; no cross-tenant case, because the operation names no resource id — a foreign branch simply fails the scoped permission check',
+  },
+  'tech.technician-queue': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
+  },
+  // --- Wave 6: additional work, customer approvals, the execution gate. ----
+  'wo.additional-work-request': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'idempotency'],
+    note: 'provenance is REQUIRED and is this layer’s rule, because both origin columns are nullable and work whose provenance is unrecorded cannot be traced to what discovered it; the job-ownership case uses a job under a DIFFERENT work order in the same branch, which satisfies the composite foreign key and is caught only by the explicit check; originating_finding_id has NO foreign key at all, so an arbitrary uuid would have been stored happily and the refusal comes from a read through the diagnostics module — the only possible check and one the database cannot make, and it is proved POSITIVELY against a real seeded dia.findings row as well as by refusal, because a suite of refusals alone would pass an implementation that rejected every finding; a finding-only request DERIVES its originating job from the finding’s report, so the execution gate applies uniformly — otherwise work found by a diagnostic would let the very job that found it carry on unapproved while the same work found by hand stopped it — and a caller-named job that disagrees with the finding’s own job is refused rather than reconciled; the state check reads allows_additional_work and not just terminality, so qc_pending (non-terminal, flag false) is refused; is_required defaults to true because the safe reading of silence is that a vehicle should not leave with discovered work undone, and the column is immutable after insert, which is what makes B3 non-evadable',
+  },
+  'wo.additional-work-list': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the SAFE projection, and the test asserts the negative: even read by the principal holding iam.sensitive.view, the response body does not contain the restricted description, because that has its own operation and nothing can reach it by listing',
+  },
+  'wo.additional-work-detail-record': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the sensitive-data control, tested in BOTH directions with two principals one permission apart — FULL is refused and SENSITIVE is served — because iam.sensitive.view is declared alongside the functional permission and permissions are a conjunction; RLS (ins_additional_work_request_details_gated) is defence in depth behind that and is why folding the description into the request creation would have failed at the second INSERT after the request had already been written; the audit record carries the FACT and the length and never the text, and a query for the text in iam.audit_details proves it, because iam.audit_records is NOT gated by iam.sensitive.view; replacement is legitimate (UPDATE is granted, only the description is unfrozen) and stays 1:1 through the partial unique index',
+  },
+  'wo.additional-work-detail-read': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none — the only read in this module that is — because who looked at restricted data is itself the fact worth keeping; a 404 here genuinely means "no detail" rather than "hidden from you", precisely because the operation demands iam.sensitive.view so a caller who reaches the service holds it; both narrowed principals hold the sensitive permission scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
+  'wo.additional-work-withdraw': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the exit that keeps a mistaken request from becoming permanent: a required pending request blocks BOTH closure (B3) and its originating job’s entry into any labour state, so without this the only escape would be to ask a customer to decide on work that was never needed; sits behind wo.additional_work.request and not the approve permission, because retracting a question is not deciding the answer; withdrawn is terminal so a second withdrawal is ERR-TRN-001, and the reason is mandatory here even though the row has no column for it — it lives in the audit record',
+  },
+  'wo.additional-work-fulfillment': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the ONLY way B3’s second limb can clear: nothing else in the phase writes fulfillment_state, so without this an approved required request would block its work order’s closure permanently; unfulfilled is in the CHECK vocabulary and deliberately not settable, because moving back to it would un-record a completion nobody retracted and no trigger freezes the column; only an approved request may move — fulfilling a pending one would record work the customer has not authorised; a waiver needs a reason because declining agreed work is accountable; a TERMINAL work order is refused like every other command on this aggregate, and the case is reachable only through an OPTIONAL approved-unfulfilled request, because B3 ignores is_required=false so such an order closes — an earlier draft used the non-checking lock helper and left a released vehicle’s record writable, since fulfillment_state is frozen by no trigger and the state guard fires only on UPDATE OF state',
+  },
+  'wo.additional-work-approval': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+      'concurrency',
+    ],
+    note: 'the forgery-resistance control is proved rather than described: wo.guard_additional_work_state refuses state=approved with no approval row, and because no route can express that order the DEPLOYED guard is probed directly — a control nobody can reach through the API still has to be shown to work; the decision and the state change are ONE call because split in two there would be a window in which a decision exists and the request does not reflect it; the deciding party is refused when it belongs to another reception visit (23514 from wo.guard_customer_approval_coherence, mapped) and when it resolves to nothing (23503), and the composite party-role FK is satisfied in the first case so only the coherence guard catches it; evidence binds an exact document VERSION and the route has no storage-key field at all (a strict-schema 422 proves it); a rejected version is refused with ERR-DOC-001 while accepted is NOT required, because P1-15 documented acceptance as unreachable; the rollback is proved by a GENUINE failure at the LAST statement of the transaction — a pre-taken outbox key — after the approval row, the evidence row, the state change and both audit records have all been written, and all six are gone afterwards; reaching that point is why the event is keyed by the REQUEST and not by the approval, whose id the database generates mid-transaction where no test could pre-empt it. An earlier version of this suite credited rollback on the evidence pre-check, which refuses BEFORE any write and therefore proved nothing; that case survives under its own name as the pre-check it is. Two raced decisions leave exactly one',
+  },
+  'wo.additional-work-approval-read': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the decision plus its evidence, which is the only way an append-only wo.customer_approval_evidence row is readable at all; an undecided request is a 404 rather than an empty decision, because "no decision" and "a decision with no content" are different facts',
+  },
+  'wo.job-transition': {
+    files: [
+      'tests/backend/p1-19-job-lifecycle.test.ts',
+      'tests/backend/p1-19-customer-approvals.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'the ONLY path a job state changes, so the graph has no bypass; the assignment precondition the assignments migration added to wo.guard_job_transition is invisible in the graph — planned→assigned is a configured, reason-free edge that still fails without an active assignment — and is refused as ERR-TECH-001 rather than a bare 23514 (denial); the reason reaches the ledger through app.status_reason, which is also what the guard reads to decide it was supplied; terminal freeze, absent edge and missing reason stay three distinct refusals; a forced race leaves exactly one winner and exactly one audit row and one event. Wave 6 adds the unapproved-work execution gate INSIDE this operation rather than beside it, so it cannot be bypassed by choosing another URL: it keys on wo.job_states.labor_allowed rather than a state name, blocks entry while a REQUIRED request originating from this job is pending, and deliberately uses only B3’s FIRST limb — including approved-and-unfulfilled would have deadlocked the job, since it could then never enter a labour state, so the approved work could never be done and B3 could never clear. A pause is never gated, an optional request never gates, and a request from a sibling job or another work order never gates',
+  },
+  'wo.job-history': {
+    files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only job ledger newest-first plus an origin block, because wo.emit_job_status_history is AFTER UPDATE only and a job creation emits no row; the pause REASON lives here rather than on a labour session, since tech.labor_sessions has only started_at/ended_at; a bad cursor is ERR-PAG-001 (denial) and a tenant-B job answers the same 404 as an unknown id',
+  },
+  // --- Wave 7: diagnostics. --------------------------------------------------
+  'dia.diagnostic-create': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the pin is the point: dia.guard_diagnostic_report_refs refuses anything but a PUBLISHED template version, and the pre-check tells draft from retired from missing where the guard raises one check_violation for all three; the diagnostic TYPE is joined from the template rather than accepted, so a report’s type cannot disagree with what it pins; revision numbers are monotonic per job and are asserted SEQUENTIALLY rather than under a forced race, because revision_number has NO unique index behind it (accepted item P1-19-A-02) and a race would prove nothing a constraint could back',
+  },
+  'dia.diagnostic-list': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'a job’s revisions newest first, so the current report is the first row rather than something a caller has to compute',
+  },
+  'dia.diagnostic-detail': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'report plus every entry, plus two derived blocks: the OUTSTANDING mandatory items — the same list the completion refusal returns, computed against the PINNED version so a newer template cannot change what this report owes — and the reachable statuses, taken from the mirrored graph so the reconciliation test pins this projection too; a terminal report reports no reachable status at all',
+  },
+  'dia.diagnostic-history': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the append-only ledger plus an origin block, because dia.emit_diagnostic_report_status_history is AFTER UPDATE only and creation emits nothing — and a backfilled genesis row would carry now(), since shared.stamp_status_history forces it; a bad cursor is ERR-PAG-001',
+  },
+  'dia.diagnostic-transition': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'this graph is a FIXED PL/pgSQL IF chain with no catalog table and no tenant override, so the module mirrors it — unlike the wo graphs, which are tenant-overridable rows and must be read; tests/db/p1-19-diagnostic-graph-reconciliation.test.ts pins the mirror against the deployed function. Asking THIS endpoint for `completed` is refused, so the dia.diagnostic.complete permission cannot be bypassed by choosing the other URL. Every flag here is backed by a case driving THIS operation and not the completion one: an earlier revision declared cross-tenant, isolation, stale-version and idempotency in the header while asserting them only for completion, which the gate could not catch because it checks that an operation id appears in executable code and not that an assertion backs each claimed flag. The reason reaches the ledger through app.status_reason and is read back from wo-style history, because a service that validated a reason and never published it would leave every ledger row NULL — the Wave 4 defect, one schema over',
+  },
+  'dia.diagnostic-complete': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'every outstanding mandatory item comes back at once — the guard can only say "not yet", and a technician told that without being told WHICH of forty items is missing has been told nothing; a documented not-applicable reason counts as an answer, so skipping is possible and never silent; completion FREEZES the report against further entries, which the database does not do (none of the five entry tables consults the report’s status) and which is asserted rather than described; rollback is proved by a pre-taken outbox key so publishEvent raises after the status change and the audit record are both written',
+  },
+  'dia.diagnostic-item-result': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the item must belong to the report’s PINNED version — fk_report_item_results_item is (tenant_id, template_item_id) and names no version, so an item from ANOTHER version satisfies it and the test uses exactly that, which without the read would let a report be answered with questions it was never asked; the value is checked against the item’s response_type, which the database does not do since result_value is text: a boolean item would accept "maybe" and a select item any string; an ANSWER carries no range verdict at ALL, unlike a measurement: report_item_results.result_value is text, nothing on this path reads validation_rule, and the table has no within_range column to record one in — the asserted asymmetry is the frozen schema’s, and refusing an out-of-range answer would contradict the module’s own rule that an out-of-spec observation is recorded rather than rejected',
+  },
+  'dia.diagnostic-measurement-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the range comparison happens in the DATABASE as numeric, and the test uses a value a double cannot hold exactly (25.100001) to prove both the round trip and the verdict; bounds are inclusive, asserted at the boundary; within_range is THREE-valued and the null case is asserted, because flattening it to false would claim a check that never ran; an out-of-range reading is RECORDED rather than refused, since a diagnostic exists to record what is wrong; a unit disagreeing with the item and a measurement against a non-numeric item are both refused, and neither is a schema rule',
+  },
+  'dia.diagnostic-dtc-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'ck_dtc_records_code_format is ^[PBCU][0-9][0-9A-F]{3}$ and the shape is exact rather than approximate — the SECOND character is decimal and only the last three are hex, all upper case — so six malformed codes are refused as 422s naming the field, and the valid hex boundary U0FFF is accepted; every dtc_status value is exercised and one outside the vocabulary refused',
+  },
+  'dia.diagnostic-finding-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'severity and disposition answer different questions and nothing ties them, so a critical finding with no_action is accepted deliberately — a fault outside this workshop’s remit is a legitimate record; a finding is the anchor of the phase’s real provenance chain, since wo.additional_work_requests.originating_finding_id points here and Wave 6 resolves it through this module',
+  },
+  'dia.diagnostic-evidence-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'identical contract to wo.customer_approval_evidence: append-only, an exact document VERSION rather than a document, and no storage key — which the strict schema proves by refusing one; accepted is NOT required because P1-15 documented acceptance as unreachable while no application role may write shared.file_scan_results, and a rejected version IS refused',
+  },
+  'dia.diagnostic-recommendation-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the finding link the phase brief asks for DOES NOT EXIST — dia.recommendations carries only diagnostic_report_id — so naming a finding is refused rather than silently dropped, and the test queries information_schema to prove no finding_id column exists rather than asserting the absence in prose; the chain the schema does support runs the other way and Wave 6 enforces it',
+  },
+  'dia.diagnostic-review': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
+  },
+  // --- Wave 8: quality control, reopen refusal and rework. -------------------
+  'qms.qc-record-open': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'a work order carries a SET of QC records rather than a current one — there is NO unique index on (work_order_id) — because a re-check after a failure must be a new record, and the suite opens a second one to prove it; a pending record has neither checker nor finalization time, which ck_quality_control_records_finalized pins; a terminal work order is refused, which the database does not check since qms.quality_control_records references the order and never reads its state',
+  },
+  'qms.qc-record-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'OLDEST first, so a failure and the passing re-check that cleared it read in the order they happened — the note said newest first for one revision while both the query (ORDER BY created_at, id) and the test that pins items[0] as the failure said otherwise',
+  },
+  'qms.qc-record-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'reports which MANDATORY checks have no result yet — reported and not enforced, because B5b asks only whether a passed record exists when any mandatory check is configured and never looks at per-check results, so refusing finalization on an unticked one would be inventing a rule the closure gate does not apply',
+  },
+  'qms.qc-check-result': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'na is a first-class outcome and not a gap (ck_qc_check_results_result is pass|fail|na, never not_applicable); replacement is 1:1 through the partial unique index and STOPS at finalization, which is an application rule because qms.guard_qc_finalize freezes the RECORD and qms.qc_check_results never reads its overall_result; a check belonging to ANOTHER tenant satisfies fk_qc_check_results_check, which names no tenant column, so the catalog read is the only thing that refuses it and the test uses a real tenant-B check',
+  },
+  'qms.qc-record-finalize': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'checker_id and finalized_at are stamped by qms.guard_qc_finalize from the session and are never sent, and the test asserts the STAMPED id; the freeze is proved twice — the service refuses a re-judgement readably, and the deployed guard refuses it when probed directly, because no route can express that request; pending is not a settable target; B5 is walked end to end, a failure blocking closure and a NEW passing record clearing it while the failure stays in the ledger',
+  },
+  'qms.reopen-attempt': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'returns 201 with the recorded attempt and its refusal, NOT a 409 — and that is load-bearing rather than a softening: an earlier draft threw, which aborts the request’s transaction and rolled the ledger row back with it, so the refusal was real and the record was not. The work order is asserted BYTE-FOR-BYTE unchanged afterwards, because "we refused" and "we refused and changed nothing" are different claims; outcome is CHECK-fixed to rejected so the vocabulary has one value; requested_by is stamped by qms.stamp_reopen_attempt and the test asserts the stamped id; an order that is not closed is ERR-TRN-001, a different fact from "you may not reopen it"',
+  },
+  'qms.reopen-attempt-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the ledger an auditor reads to answer "did anyone try to reopen this after the vehicle was released"; append-only, SELECT+INSERT only',
+  },
+  'qms.rework-create': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'the SECOND and last path that inserts wo.work_orders, and the reason it had to exist: before this wave nothing could produce kind=rework — reception’s conversion writes seven columns and leaves kind to its default — so qms.rework_links was unreachable and B6 could never fire. Not a contradiction of Wave 4’s boundary: that was the ORDINARY path, which originates from an authorized visit, and uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary precisely so a rework against a converted visit is legal. The test asserts the new order is kind=rework AND shares the original’s reception visit and vehicle. The original must be CLOSED and NOT a cancellation: qms.guard_rework_link_coherence reads is_closed, which is the floor, but the seeded cancelled row carries is_closed=true AND is_cancellation=true — so the database alone would accept a rework against an abandoned order, and the service refuses it because rework corrects work that was DONE badly. An earlier revision asserted the opposite in five places and was wrong about the seed. Rollback is proved by removing the accepted custody event so wo.guard_work_order_refs refuses the INSERT after the display number has been allocated: no order, no link, and the sequence advance rolled back too',
+  },
+  'qms.rework-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the rework cases raised against an ORIGINAL — the direction a service advisor asks about, since uq_rework_links_rework_wo constrains the other side',
+  },
+  'qms.rework-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the case without its restricted cost, which has its own gated surface — folding the cost in would make this read silently return an incomplete case for every caller lacking iam.sensitive.view',
+  },
+  'qms.rework-sign-off': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'BR-QMS-001 is a CHECK here — ck_rework_links_signoff_distinct — unlike diagnostic reviewer separation, which the schema cannot express at all; the test drives the refusal end to end rather than only asserting the readable pre-check, and confirms nothing was signed. B6 is walked whole: the rework order’s own closure is blocked until the sign-off exists and succeeds afterwards. The signer is a technician PROFILE and not a user, sign_off_at is stamped by qms.guard_rework_signoff, and the signature is write-once. FULL creates rework cases and does NOT hold qms.rework.sign_off, so the permission split is proved in both directions',
+  },
+  'qms.rework-cost-record': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the same gate as the additional-work description and tested the same way: FULL holds the functional permission and not iam.sensitive.view, SENSITIVE holds both, and they differ by exactly that one permission; the figure crosses as a decimal STRING because numeric(14,4) holds values IEEE-754 cannot, and 1234.5678 survives the round trip; the audit records the classification, the currency and the fact and NEVER the figure, which a query over iam.audit_record_details proves — that table is not gated by iam.sensitive.view',
+  },
+  'qms.rework-cost-read': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none, like the additional-work description read: who looked at a cost-of-quality figure is itself worth keeping; both narrowed principals hold iam.sensitive.view scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
+  'wo.job-update': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'state is not accepted and cannot be written — the strict schema makes naming it a 422 and the UPDATE does not carry the column, so the graph has no bypass; addressed by job id alone, so the branch scope is re-decided against the LOCKED job’s own company and branch (P1-18-A-01) and a caller granted only in another branch is refused (isolation); a wrong If-Match is refused (stale-version) and the audit records only the columns that moved',
+  },
+
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
@@ -1032,7 +1495,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1272,7 +1735,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = P1_18_PREFIXES.some((prefix) => id.startsWith(prefix));
+      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((prefix) => id.startsWith(prefix));
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -1301,7 +1764,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
     // gate over a merged phase belongs in that phase's own remediation, not in a
     // later phase's feature branch.
-    const isDerived = id.startsWith(DERIVED_PREFIX) || P1_18_PREFIXES.some((p) => id.startsWith(p));
+    const isDerived =
+      id.startsWith(DERIVED_PREFIX) ||
+      [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1362,6 +1827,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const vehRows = phaseRows(P1_17_PREFIX);
   // P1-18 spans two namespaces, so its phase row set is their union.
   const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-19 spans four namespaces, so its phase row set is their union.
+  const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1390,6 +1857,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_16: phaseCounts(crmRows),
     p1_17: phaseCounts(vehRows),
     p1_18: phaseCounts(aptRecRows),
+    p1_19: phaseCounts(p1_19Rows),
   };
   return { failures, matrix, counts };
 }
@@ -1498,6 +1966,15 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-19', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_19,
+      operations: matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -1550,6 +2027,15 @@ async function runCli() {
     console.log(`P1-18 unit-only: ${s.unitOnly}`);
     console.log(`P1-18 unreferenced: ${s.unreferenced}`);
     console.log(`P1-18 metadata-only: ${s.metadataOnly}`);
+    const t = counts.p1_19;
+    console.log('');
+    console.log(`P1-19 registered public operations: ${t.registered}`);
+    console.log(`P1-19 operation-depth: ${t.operationDepth}`);
+    console.log(`P1-19 invocation-only: ${t.invocationOnly}`);
+    console.log(`P1-19 pending: ${t.pending}`);
+    console.log(`P1-19 unit-only: ${t.unitOnly}`);
+    console.log(`P1-19 unreferenced: ${t.unreferenced}`);
+    console.log(`P1-19 metadata-only: ${t.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

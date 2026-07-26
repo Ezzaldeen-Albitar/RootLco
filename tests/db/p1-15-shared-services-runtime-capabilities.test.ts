@@ -371,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 71', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 93', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -401,7 +401,10 @@ describe('P1-15 / global security posture', () => {
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    expect(Number(total.rows[0]?.n)).toBe(71);
+    // 71 at P1-15; P1-19 added 22 codes across wo/tech/dia/qms (see
+    // supabase/seeds/04_iam_permission_catalog.sql). The pin moves with the seed
+    // deliberately: it is what catches an accidental catalog edit.
+    expect(Number(total.rows[0]?.n)).toBe(93);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

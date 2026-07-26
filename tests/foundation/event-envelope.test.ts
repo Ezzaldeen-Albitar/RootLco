@@ -187,6 +187,10 @@ describe('reserved-name registry', () => {
     );
     expect(implemented.sort()).toEqual([
       'access.grant.changed',
+      // Wave 6 publishes `additional-work.requested` and
+      // `customer-approval.recorded`, both owner `wo`. Both were reserved with
+      // `implementedIn: null` in Wave 3 and now have producers on the request path.
+      'additional-work.requested',
       // P1-18 publishes `appointment.changed`, `vehicle.checked-in` and
       // `reception.approved` from `src/modules/reception`. The first two were
       // reserved with `implementedIn: null` since P1-13 and now have producers;
@@ -197,12 +201,36 @@ describe('reserved-name registry', () => {
       'business-partner.created',
       'business-partner.merged',
       'consent.changed',
+      // The aggregate is the APPROVAL row, which is immutable — so its version is
+      // and stays 1, and `uq_customer_approvals_active` means the fact happens at
+      // most once per request.
+      'customer-approval.recorded',
+      // Wave 7. Owner `dia`, and the only event this phase publishes from the
+      // diagnostics module: completion is the fact closure blocker B4 waits for.
+      'diagnostic-report.completed',
       'document.link.changed',
       'document.version.registered',
+      // Wave 5 also publishes `job.assigned`. Its owner is `wo` and not `tech`
+      // because the assignment row lives in `wo.job_assignments` and is written by
+      // the work-order module; `buildEventEnvelope` refuses a producer whose leading
+      // segment differs from the owner, so `tech` would have made the write throw.
+      'job.assigned',
+      // P1-19 publishes from `src/modules/work-order`: `work-order.state-changed`
+      // and `work-order.closed` in Wave 4, `job.state-changed` in Wave 5. Closure
+      // is a separate name from the generic state change because closure is the
+      // fact billing, warranty and reporting wait for. `work-order.created` stays
+      // reserved: the only creation path is reception's conversion, which the
+      // approved catalog gives no event, and the rework path arrives in Wave 8.
+      'job.state-changed',
+      'labor.session-changed',
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',
+      // Wave 8. Owner `qms`: finalization is what closure blocker B5 reads, and a
+      // rework link is what B6 reads — the two facts the closure gate waits on.
+      'quality-control.finalized',
       'reception.approved',
+      'rework.linked',
       'session.revoked',
       'user.invited',
       'user.status.changed',
@@ -212,6 +240,8 @@ describe('reserved-name registry', () => {
       'vehicle.created',
       'vehicle.merged',
       'vehicle.relationship.changed',
+      'work-order.closed',
+      'work-order.state-changed',
     ]);
 
     // A phase may own more than one module: P1-18 delivers appointment and
@@ -223,6 +253,17 @@ describe('reserved-name registry', () => {
       'P1-16': ['crm'],
       'P1-17': ['veh'],
       'P1-18': ['apt', 'rec'],
+      // P1-19 spans four schemas and publishes from TWO of them: `wo` (Waves 4–6)
+      // and `dia` (Wave 7's `diagnostic-report.completed`). The job assignment and
+      // job state events are owner `wo` and not `tech`, because the rows live in
+      // `wo.job_assignments` and `wo.jobs` and are written by the work-order module —
+      // `buildEventEnvelope` refuses a producer whose leading segment differs from the
+      // owner, so `tech` there would have made the real write path throw.
+      //
+      // All four schemas now publish: `wo` (Waves 4–6), `dia` (Wave 7) and `qms`
+      // (Wave 8). `tech` publishes `labor.session-changed`, whose owner is `tech`
+      // because the row lives in `tech.labor_sessions`.
+      'P1-19': ['wo', 'tech', 'dia', 'qms'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;
