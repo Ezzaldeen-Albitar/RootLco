@@ -85,6 +85,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-CON-002',
   'ERR-CTX-001',
   'ERR-DEP-001',
+  'ERR-DIA-001',
   'ERR-DOC-001',
   'ERR-EXP-001',
   'ERR-IAM-001',
@@ -93,6 +94,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-INT-002',
   'ERR-NTF-001',
   'ERR-PAG-001',
+  'ERR-QMS-001',
   'ERR-REQ-001',
   'ERR-REQ-002',
   'ERR-RES-001',
@@ -100,9 +102,11 @@ const EXPECTED_ERROR_CODES = [
   'ERR-RTE-001',
   'ERR-STB-001',
   'ERR-SYS-001',
+  'ERR-TECH-001',
   'ERR-TEN-001',
   'ERR-TRN-001',
   'ERR-VAL-001',
+  'ERR-WO-001',
 ];
 
 /**
@@ -116,6 +120,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-CON-002', status: 428, owner: 'concurrency', class: 'client', retryable: false },
   { code: 'ERR-CTX-001', status: 500, owner: 'context', class: 'server', retryable: false },
   { code: 'ERR-DEP-001', status: 503, owner: 'platform', class: 'server', retryable: true },
+  { code: 'ERR-DIA-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-DOC-001', status: 409, owner: 'attachment', class: 'conflict', retryable: false },
   { code: 'ERR-EXP-001', status: 422, owner: 'export', class: 'client', retryable: false },
   { code: 'ERR-IAM-001', status: 403, owner: 'authorization', class: 'security', retryable: false },
@@ -124,6 +129,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-INT-002', status: 400, owner: 'idempotency', class: 'client', retryable: false },
   { code: 'ERR-NTF-001', status: 409, owner: 'notification', class: 'conflict', retryable: false },
   { code: 'ERR-PAG-001', status: 400, owner: 'validation', class: 'client', retryable: false },
+  { code: 'ERR-QMS-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-REQ-001', status: 400, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-REQ-002', status: 404, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-RES-001', status: 404, owner: 'resource', class: 'client', retryable: false },
@@ -131,9 +137,11 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-RTE-001', status: 429, owner: 'throttling', class: 'throttle', retryable: true },
   { code: 'ERR-STB-001', status: 501, owner: 'stub', class: 'client', retryable: false },
   { code: 'ERR-SYS-001', status: 500, owner: 'platform', class: 'server', retryable: true },
+  { code: 'ERR-TECH-001', status: 422, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-TEN-001', status: 403, owner: 'entitlement', class: 'security', retryable: false },
   { code: 'ERR-TRN-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-VAL-001', status: 422, owner: 'validation', class: 'client', retryable: false },
+  { code: 'ERR-WO-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
 ];
 
 /** The codes P1-15 introduced, with the status each promises a client. */

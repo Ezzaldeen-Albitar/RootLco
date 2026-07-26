@@ -38,6 +38,10 @@ export const ERROR_CODES = [
   'ERR-NTF-001',
   'ERR-EXP-001',
   'ERR-TRN-001',
+  'ERR-WO-001',
+  'ERR-TECH-001',
+  'ERR-DIA-001',
+  'ERR-QMS-001',
   'ERR-SYS-001',
 ] as const;
 
@@ -286,6 +290,46 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'The requested target state is registered for this aggregate, but the aggregate is not in a state the transition may start from — including the case where it is already in the target state. Distinct from ERR-CON-001, which means the caller held a stale record version: re-reading and retrying fixes a version conflict and cannot fix this one.',
+  },
+  'ERR-WO-001': {
+    code: 'ERR-WO-001',
+    title: 'Work order cannot be closed yet',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Closure was refused by wo.guard_work_order_closure (blockers B1..B6): a non-terminal job, a running labor session, an unresolved required additional-work request, a missing completed diagnostic, failed or missing mandatory quality control, or safety-critical rework without independent sign-off. Deliberately NOT ERR-TRN-001: the ready_to_close→closed edge exists in the graph and the aggregate is in a legal starting state, so this is not a graph refusal. The caller must clear a condition, not re-read a version or pick a different target.',
+  },
+  'ERR-TECH-001': {
+    code: 'ERR-TECH-001',
+    title: 'Technician is not eligible for this assignment',
+    status: 422,
+    owner: 'validation',
+    retryable: false,
+    class: 'client',
+    description:
+      'The named technician does not satisfy the job’s eligibility requirements: a missing or insufficient skill level, a missing or expired certification, no covering availability interval, an inactive profile, or an out-of-scope company/branch. A client error rather than a conflict because the request named the wrong technician; the same request will keep failing until a different technician is chosen or the underlying eligibility record changes.',
+  },
+  'ERR-DIA-001': {
+    code: 'ERR-DIA-001',
+    title: 'Diagnostic report has unresolved mandatory items',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Completion was refused because at least one mandatory item of the pinned template version has neither a recorded result nor a documented not-applicable reason. A conflict rather than a validation failure: the completion request itself is well-formed, and what blocks it is the accumulated state of the report.',
+  },
+  'ERR-QMS-001': {
+    code: 'ERR-QMS-001',
+    title: 'Quality or rework precondition not satisfied',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Covers the QMS refusals that are not closure blockers: an attempt to reopen a closed work order (BR-WO-002 — recorded as a rejected attempt in qms.reopen_attempts and never mutating the order), and a rework resolution lacking the independent sign-off BR-QMS-001 requires for safety-critical work. Distinct from ERR-WO-001, which is specifically the B1..B6 closure gate.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

@@ -6384,6 +6384,10 @@
               "ERR-NTF-001",
               "ERR-EXP-001",
               "ERR-TRN-001",
+              "ERR-WO-001",
+              "ERR-TECH-001",
+              "ERR-DIA-001",
+              "ERR-QMS-001",
               "ERR-SYS-001"
             ]
           },
