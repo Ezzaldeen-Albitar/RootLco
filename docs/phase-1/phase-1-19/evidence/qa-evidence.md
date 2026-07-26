@@ -6,7 +6,7 @@
 | ---------------------------- | ------------------------ | ---------- | -------- | ----------------- |
 | Unit (`npm test`)            | 829                      | 843        | **+14**  | 14                |
 | Database (`npm run test:db`) | 1547                     | 1610       | **+63**  | 63                |
-| Backend (`test:backend`)     | 771                      | 1074       | **+303** | 303               |
+| Backend (`test:backend`)     | 771                      | 1077       | **+306** | 306               |
 
 Every delta equals the phase's own new tests exactly. That is the point of listing
 both columns: it shows this phase added tests and **changed none of the inherited
@@ -53,26 +53,31 @@ _Delivers **P1-19-QA-001** — unit and component test coverage — and **P1-19-
 | `tests/db/p1-19-work-order-core.test.ts`                 | —     | The work-order creation preconditions as the database enforces them |
 | `tests/backend/p1-19-work-order-core.test.ts`            | 25    | Transition, closure, closure eligibility                            |
 | `tests/backend/p1-19-work-order-reads.test.ts`           | 14    | Work-order list, detail, history                                    |
-| `tests/backend/p1-19-work-order-jobs.test.ts`            | 15    | Job create, update, history                                         |
+| `tests/backend/p1-19-work-order-jobs.test.ts`            | 17    | Job create, update, history                                         |
 | `tests/backend/p1-19-work-order-lines.test.ts`           | 18    | Service lines and required parts                                    |
 | `tests/backend/p1-19-job-lifecycle.test.ts`              | 10    | Job transitions against the catalog graph                           |
 | `tests/backend/p1-19-job-assignments.test.ts`            | 21    | Assignment, reassignment, ending, eligibility                       |
 | `tests/backend/p1-19-labor-sessions.test.ts`             | 14    | Labour start/stop/correct and the overlap exclusion                 |
 | `tests/backend/p1-19-additional-work.test.ts`            | 39    | Additional-work requests, restricted detail, withdrawal             |
 | `tests/backend/p1-19-customer-approvals.test.ts`         | 31    | Approvals, evidence, the unapproved-work execution gate             |
-| `tests/backend/p1-19-diagnostics.test.ts`                | 60    | The whole `dia` surface                                             |
+| `tests/backend/p1-19-diagnostics.test.ts`                | 61    | The whole `dia` surface                                             |
 | `tests/backend/p1-19-quality-rework.test.ts`             | 41    | QC, reopen refusal, rework                                          |
 | `tests/backend/p1-19-operational-journey.test.ts`        | 1     | One vehicle, end to end, through the real routes                    |
 | `tests/backend/p1-19-closure-gate-matrix.test.ts`        | 10    | B1–B6 raised one at a time, and cancellation's bypass               |
 | `tests/backend/p1-19-concurrency.test.ts`                | 4     | Forced races on the surfaces no unique index protects               |
 
-The backend column sums to **303**, which is the delta measured against the protected
+The backend column sums to **306**, which is the delta measured against the protected
 base. An earlier revision of this table summed to 295, because
 `p1-19-work-order-lines.test.ts` was counted by grepping for `it(` — and that file is a
 `describe.each` over two tuples, so its eight `it` blocks instantiate **sixteen** tests
 plus two outside the block: 18, not 10. The final adversarial review caught the
 arithmetic. Every figure in this column is now the count Vitest reports per file, not a
 count of source lines that look like tests.
+
+The last three of the 306 are the pre-merge completeness audit's probes: two on
+`wo.job-update` (the parent-terminal refusal including the B4 flag, and an open order
+still accepting the same edit) and one on the diagnostics surface (every entry kind and
+completion refused on a closed order).
 
 The four DB files hold 63 tests between them; the per-file split is not listed because
 several are table-driven and a hand-written count there would repeat the same mistake in

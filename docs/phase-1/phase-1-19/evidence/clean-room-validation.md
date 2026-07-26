@@ -1,10 +1,19 @@
 # P1-19 — Exact-SHA PostgreSQL 17 clean-room reproof
 
-**Final SHA `baa270a8b1865b35d40ab0eff267228d2f8f17cc`**, branch
+**Final SHA `b158ea91226f318a3248ec6b55fe0b45aa1426c6`**, branch
 `feature/p1-19-module-foundation`, base `develop` = `f326e24`. Worktree verified clean at
 that SHA immediately before the run and unchanged by it.
 
-**This is the second run, and the first one's SHA is why.** The reproof was first taken at
+**This is the THIRD run, and the reason is the same each time: executable code changed
+after the previous one, so the previous result stopped describing the tree being merged.**
+Run 1 was at `3b39328`, run 2 at `baa270a` after the final adversarial review's
+remediation, and run 3 at the SHA above after the pre-merge completeness audit's
+remediation — the `wo.job-update` parent guard, the diagnostics parent-terminal refusal
+and the `closeAssignment` read-back. Each earlier run remains recorded rather than
+overwritten, because a reproof that predates a code change is not evidence about the code
+that shipped, and hiding that would make the record less useful than admitting it.
+
+**The first run's SHA is why run 2 existed.** The reproof was first taken at
 `3b39328`. The final adversarial review then changed application code — the
 `tech.labor-session-list` scope fix, two lock corrections, the eligibility semantics and a
 removed request field — so the earlier run no longer described the tree being merged. A
@@ -42,7 +51,7 @@ value or a grant that a fresh deployment would not have.
 | Schema inventory                              | **green**                                                                                                                                           |
 | Structural review                             | **PASS** — 537 FKs all validated, no runtime-reachable destructive cascade, FK index coverage complete, no duplicate indexes, zero dictionary drift |
 | Full **database** suite                       | **1610 passed**, 136 files                                                                                                                          |
-| Full **backend** suite                        | **1074 passed**, 52 files                                                                                                                           |
+| Full **backend** suite                        | **1077 passed**, 52 files                                                                                                                           |
 | Full **unit** suite                           | **843 passed**, 40 files                                                                                                                            |
 | P1-19 operation depth                         | **58/58**, 0 pending                                                                                                                                |
 | Artifact regeneration drift                   | **zero** (see below)                                                                                                                                |
