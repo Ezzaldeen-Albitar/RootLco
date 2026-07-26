@@ -11,19 +11,19 @@ Updated after every major wave. This file is the recovery point if context is lo
 | Current HEAD        | see `git rev-parse HEAD` — first commit is the Wave 0–2 record    |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase |
-| Pull request        | none yet                                                          |
+| Pull request        | not opened — see Current blocker                                  |
 | GitHub Actions runs | none yet                                                          |
 | Delivery model      | wave-per-PR (README §4)                                           |
 
 ## Completed
 
-| Wave | Content                                               | Status                  |
-| ---- | ----------------------------------------------------- | ----------------------- |
-| 0    | Protected ground truth                                | **Complete**            |
-| 1    | Repository archaeology and schema reconciliation      | **Complete**            |
-| 2    | Feature branch, protected baseline, documentation dir | **Complete**            |
-| 3    | Module skeleton, permission catalog, event CR         | In progress — CR raised |
-| 4–9  | See README §4                                         | Not started             |
+| Wave | Content                                               | Status                    |
+| ---- | ----------------------------------------------------- | ------------------------- |
+| 0    | Protected ground truth                                | **Complete**              |
+| 1    | Repository archaeology and schema reconciliation      | **Complete**              |
+| 2    | Feature branch, protected baseline, documentation dir | **Complete**              |
+| 3    | Module skeleton, permission catalog, event CR         | **Complete** — PR pending |
+| 4–9  | See README §4                                         | Not started               |
 
 ## Established facts — do not re-derive
 
@@ -66,10 +66,10 @@ Updated after every major wave. This file is the recovery point if context is lo
 | `technician` module                                                       | **Done, green**                               | `e8d6235` |
 | `diagnostics` module                                                      | **Done, green**                               | `e8d6235` |
 | `quality` module                                                          | **Done, green**                               | `e8d6235` |
-| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains (21 codes)    | **Done, green**                               | `e8d6235` |
+| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains (22 codes)    | **Done, green**                               | `e8d6235` |
 | Event envelope registrations (11 reserved names)                          | **Done, green**                               | `e8d6235` |
 | Module-boundary tests for the new modules (11 tests)                      | **Done, green**                               | `e8d6235` |
-| Permission-total pin `71 → 92`                                            | **Done, green**                               | `662b2f3` |
+| Permission-total pin `71 → 93`                                            | **Done, green**                               | `662b2f3` |
 | Clean room at `662b2f3`                                                   | **Done, green**                               | —         |
 | Wave 3 evidence document                                                  | **Done**                                      | —         |
 | Adversarial review (2 reviewers, 0 Crit / 1 High / 10 Med, all fixed)     | **Done**                                      | `81c9d5c` |
@@ -78,20 +78,20 @@ Updated after every major wave. This file is the recovery point if context is lo
 | Wave 3 PR                                                                 | **BLOCKED** — no browser, no gh CLI, no token | —         |
 | Hosted CI                                                                 | Blocked on the PR                             | —         |
 
-Gates green at `662b2f3`: format, lint, typecheck, module boundaries (**269**
+Gates green at `595bfd5`: format, lint, typecheck, module boundaries (**269**
 files scanned), OpenAPI (94 paths / 110 operations), authorization coverage,
-operation coverage, encoding, `security:all`, build. Unit **840** (was 829) /
-DB **1547** / Backend **771**.
+operation coverage, encoding, `security:all`, build. Unit **842** (was 829) /
+DB **1595** (was 1547) / Backend **771**.
 
-Clean room at `662b2f3`: 119 migrations, 7 seeds, `schema_hash a677eb05…`
+Clean room at `81c9d5c`: 119 migrations, 7 seeds, `schema_hash a677eb05…`
 **unchanged** from the P1-18 baseline, 242 tables / 212 functions / 631 policies /
-541 triggers / 999 indexes, 0 SECURITY DEFINER, 0 unforced RLS, 92 permissions
-(21 P1-19), `validate:seed-state` exit 0, business tables empty. Full evidence in
+541 triggers / 999 indexes, 0 SECURITY DEFINER, 0 unforced RLS, 93 permissions
+(22 P1-19), `validate:seed-state` exit 0, business tables empty. Full evidence in
 [`evidence/wave-3-module-foundation.md`](evidence/wave-3-module-foundation.md).
 
-The `baseline_fingerprint` moved `0ee203f2…` → `bb14796b…`. That is correct, not a
+The `baseline_fingerprint` moved `0ee203f2…` → `f7baf9b0…`. That is correct, not a
 regression: the fingerprint covers seed content, and the permission catalog grew
-by 21 rows. A fingerprint that had NOT moved would mean the seed had not landed.
+by 22 rows. A fingerprint that had NOT moved would mean the seed had not landed.
 
 One flake, recorded rather than hidden: the first full `test:db` run failed
 `shared event-outbox worker lifecycle > a single claim never returns more than its
