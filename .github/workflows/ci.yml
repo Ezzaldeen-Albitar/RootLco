@@ -86,6 +86,16 @@ jobs:
       - name: Operation-to-test coverage check
         run: npm run validate:operation-coverage
 
+      # P1-19: the phase's endpoint inventory and task traceability are GENERATED
+      # from the operation registry, so a hand-edit or a drifted declaration fails
+      # here rather than being discovered in review. It also reconciles every
+      # declared permission against the seeded catalog, every audit action against
+      # the controlled action catalog including its class, and the event catalog
+      # against the modules that actually publish — in both directions. Runs after
+      # the coverage check because it joins that check's own matrix.
+      - name: P1-19 endpoint inventory and catalog reconciliation
+        run: npm run validate:p1-19-inventory
+
       # P1-13-BE-020: the published contract must be structurally sound. The
       # code/spec DIVERGENCE gate is the unit suite below, which regenerates the
       # document from the operation registry and compares.
