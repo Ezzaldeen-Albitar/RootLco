@@ -91,6 +91,117 @@ export class WorkOrderService extends ApplicationService {
   }
 
   /**
+   * Adds a job to a work order.
+   *
+   * The initial state is resolved from the job-state catalog rather than
+   * hardcoded: `wo.jobs.state` has only a format CHECK, so the vocabulary lives
+   * entirely in `wo.job_states` and a tenant may shadow it. A caller-supplied
+   * state is validated against that catalog; when none is given, the lowest
+   * non-terminal state with no assignment requirement is used, which is the only
+   * state a job can legitimately start in.
+   *
+   * `wo.guard_job_refs` still owns the parent preconditions — it locks the work
+   * order and refuses a terminal parent or a state whose `allows_jobs` is false.
+   * The check below is the readable refusal, not the enforcement.
+   */
+  async createJob(
+    db: DbHandle,
+    workOrderId: string,
+    input: {
+      readonly title: string;
+      readonly jobType?: string | undefined;
+      readonly state?: string | undefined;
+      readonly requiresDiagnostic?: boolean | undefined;
+    }
+  ): Promise<JobRow> {
+    const workOrder = await this.requireWorkOrder(db, workOrderId);
+    const workOrderStates = await this.catalog.workOrderStates(db);
+    const parent = workOrderStates.find((state) => state.code === workOrder.state);
+    if (parent === undefined || parent.isTerminal || !parent.allowsJobs) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Work order state "${workOrder.state}" does not accept jobs`,
+      });
+    }
+
+    const jobStates = await this.catalog.jobStates(db);
+    const initial =
+      input.state === undefined
+        ? jobStates.find((state) => !state.isTerminal && !state.assignmentRequired)
+        : jobStates.find((state) => state.code === input.state);
+    if (initial === undefined) {
+      throw new AppFailure('ERR-VAL-001', {
+        message:
+          input.state === undefined
+            ? 'No job state is configured that a job may start in'
+            : `Job state "${input.state}" is not an active state`,
+        safeDetails: { violations: [{ path: 'body.state', rule: 'unknown_state' }] },
+      });
+    }
+    if (initial.isTerminal) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `A job may not be created in terminal state "${initial.code}"`,
+        safeDetails: { violations: [{ path: 'body.state', rule: 'terminal_state' }] },
+      });
+    }
+
+    return this.repository.createJob(db, {
+      workOrderId,
+      companyId: workOrder.companyId,
+      branchId: workOrder.branchId,
+      title: input.title,
+      jobType: input.jobType ?? null,
+      state: initial.code,
+      requiresDiagnostic: input.requiresDiagnostic ?? false,
+    });
+  }
+
+  /**
+   * Updates a job's descriptive fields under optimistic concurrency.
+   *
+   * `state` is not accepted. A job moves through `wo.job_transitions` and nowhere
+   * else; accepting it here would give the platform a second path that skips the
+   * graph. Wave 5 adds the transition command.
+   */
+  async updateJob(
+    db: DbHandle,
+    jobId: string,
+    input: {
+      readonly title: string;
+      readonly jobType?: string | undefined;
+      readonly requiresDiagnostic?: boolean | undefined;
+      readonly expectedVersion: number;
+    }
+  ): Promise<JobRow> {
+    const locked = await this.repository.lockJob(db, jobId);
+    if (locked === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    if (locked.recordVersion !== input.expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: `Job ${jobId} was modified by another request`,
+      });
+    }
+    const applied = await this.repository.updateJob(db, jobId, {
+      title: input.title,
+      jobType: input.jobType ?? null,
+      requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
+      expectedVersion: input.expectedVersion,
+    });
+    if (!applied) {
+      throw new AppFailure('ERR-CON-001', {
+        message: `Job ${jobId} was modified by another request`,
+      });
+    }
+    return {
+      ...locked,
+      title: input.title,
+      jobType: input.jobType ?? null,
+      requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
+      recordVersion: input.expectedVersion + 1,
+    };
+  }
+
+  /**
    * Evaluates every closure condition and reports all of them.
    *
    * This is a REPORTER. `wo.guard_work_order_closure` remains the enforcement

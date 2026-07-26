@@ -212,6 +212,139 @@ export class WorkOrderRepository extends Repository {
   }
 
   /**
+   * Creates a job on a work order.
+   *
+   * The initial state is supplied by the caller, which has already resolved the
+   * job-state catalog to validate it. `wo.guard_job_refs` locks the parent work
+   * order and refuses a terminal parent or one whose state does not allow jobs, so
+   * neither check is re-implemented here — the lock it takes is also what makes a
+   * job insert serialise against a concurrent close rather than race it.
+   */
+  async createJob(
+    db: DbHandle,
+    input: {
+      readonly workOrderId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly title: string;
+      readonly jobType: string | null;
+      readonly state: string;
+      readonly requiresDiagnostic: boolean;
+    }
+  ): Promise<JobRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      work_order_id: string;
+      title: string;
+      job_type: string | null;
+      state: string;
+      requires_diagnostic: boolean;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO wo.jobs
+         (tenant_id, company_id, branch_id, work_order_id, title, job_type, state,
+          requires_diagnostic, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, work_order_id, title, job_type, state, requires_diagnostic, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.workOrderId,
+        input.title,
+        input.jobType,
+        input.state,
+        input.requiresDiagnostic,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('job insert returned no row');
+    return {
+      id: row.id,
+      workOrderId: row.work_order_id,
+      title: row.title,
+      jobType: row.job_type,
+      state: row.state,
+      requiresDiagnostic: row.requires_diagnostic,
+      recordVersion: row.record_version,
+    };
+  }
+
+  /** Locks one job and returns it, or null when absent or out of scope. */
+  async lockJob(db: DbHandle, jobId: string): Promise<JobRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      work_order_id: string;
+      title: string;
+      job_type: string | null;
+      state: string;
+      requires_diagnostic: boolean;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, work_order_id, title, job_type, state, requires_diagnostic, record_version
+         FROM wo.jobs
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        FOR UPDATE`,
+      [context.principal.tenantId, jobId]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          id: row.id,
+          workOrderId: row.work_order_id,
+          title: row.title,
+          jobType: row.job_type,
+          state: row.state,
+          requiresDiagnostic: row.requires_diagnostic,
+          recordVersion: row.record_version,
+        }
+      : null;
+  }
+
+  /**
+   * Updates a job's mutable descriptive fields under the caller's version.
+   *
+   * `state` is deliberately NOT settable here. Moving a job is a transition and
+   * belongs to `wo.guard_job_transition`; letting an update path also write the
+   * state column would be a second way to move a job that skips the graph
+   * entirely — which is exactly the shortcut the module-foundation guard exists
+   * to prevent.
+   */
+  async updateJob(
+    db: DbHandle,
+    jobId: string,
+    input: {
+      readonly title: string;
+      readonly jobType: string | null;
+      readonly requiresDiagnostic: boolean;
+      readonly expectedVersion: number;
+    }
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE wo.jobs
+          SET title = $3, job_type = $4, requires_diagnostic = $5, updated_by = $6
+        WHERE tenant_id = $1 AND id = $2 AND record_version = $7 AND deleted_at IS NULL`,
+      [
+        context.principal.tenantId,
+        jobId,
+        input.title,
+        input.jobType,
+        input.requiresDiagnostic,
+        context.principal.userId,
+        input.expectedVersion,
+      ]
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  /**
    * The unmet closure blockers among B1, B2, B3 and B4.
    *
    * B5 and B6 are answered by the `quality` module through its public surface,
