@@ -1,30 +1,36 @@
 # Phase 1-18 — Appointment and Reception Backend
 
-**Status: in execution. The owner gate is `Decision: Pending` and stays Pending
-until the evidence below exists.** Nothing in this document may be read as a
-gate decision.
+**Status: gate recorded as Go against the protected merge `a13ff8b`, pending the
+merge of the gate-record pull request.** P1-18 is **not** formally closed until
+that pull request is merged into protected `develop` and the merge is separately
+verified. The decision and its basis live in
+[`phase-1-18-owner-gate.md`](phase-1-18-owner-gate.md); the evidence it was
+decided against lives in
+[`evidence/post-merge-gate-reproof.md`](evidence/post-merge-gate-reproof.md).
 
 Product name: `[PRODUCT NAME — Pending Final Approval]`. Benzene remains the
 configurable first tenant and pilot, and appears nowhere in product code,
 database behaviour, permissions, workflows, routes, or shared defaults.
 
-| Item            | Value                                                  |
-| --------------- | ------------------------------------------------------ |
-| Phase           | P1-18 — Appointment and Reception Backend              |
-| Exit gate       | P1-G18                                                 |
-| Original base   | `origin/develop` = `9d685e3` (P1-17 gate, PR #74)      |
-| Original branch | `feature/p1-18-appointment-reception-backend` (PR #75) |
-| Current base    | `origin/develop` = `7caafbe` (after PR #79, merged)    |
-| Current branch  | merged via PR #79; evidence remediation follows        |
-| Dependencies    | P1-8, P1-13, P1-14, P1-15, P1-16, P1-17                |
-| Database work   | **Not applicable** — no migration is added             |
+| Item             | Value                                                                |
+| ---------------- | -------------------------------------------------------------------- |
+| Phase            | P1-18 — Appointment and Reception Backend                            |
+| Exit gate        | P1-G18                                                               |
+| Original base    | `origin/develop` = `9d685e3` (P1-17 gate, PR #74)                    |
+| Original branch  | `feature/p1-18-appointment-reception-backend` (PR #75)               |
+| Current base     | `origin/develop` = `a13ff8b` (after PR #80, merged)                  |
+| Merged PRs       | #75 (feature), #76, #77, #79, #80 — **four** post-merge remediations |
+| Authoritative CI | push run **#205** on `a13ff8b`, Success 4/4                          |
+| Dependencies     | P1-8, P1-13, P1-14, P1-15, P1-16, P1-17                              |
+| Database work    | **Not applicable** — no migration is added                           |
 
 ## 0. Delivery history
 
-P1-18 reached its current state through a merged feature branch and **three**
-post-merge remediations. The intermediate mistakes are recorded because two of
-them were mine and because the last one was found only after two rounds of
-review had already declared the area closed.
+P1-18 reached its current state through a merged feature branch and **four**
+post-merge remediations — PR #76, #77, #79 and #80. The intermediate mistakes
+are recorded because most of them were mine, because the authorization defect was
+found only after two rounds of review had already declared the area closed, and
+because the final two remediations fixed the _evidence_ rather than the code.
 
 1. **PR #75** delivered the original P1-18 backend — all twelve operations, the
    suites, the catalogs and this document.
@@ -65,6 +71,28 @@ review had already declared the area closed.
    a caller holding the permission in branch B1 and any grant at all in B2 both
    passed the check and saw the B2 row. That is the exact defect, and it is the
    reason the fix cannot live in RLS.
+
+10. **PR #79 merged that third remediation** into protected `develop` at
+    `7caafbe`, push CI #202 Success 4/4. The gate was deliberately **not** written
+    then: the pre-gate review round found three Highs, all of them in the
+    _evidence_ rather than the code — gate conditions citing identifiers that
+    existed nowhere, mutation proofs pinned five commits behind the merged tree,
+    and a clean-room chronology that contradicted itself between sections.
+11. **PR #80 closed those three** and the `apt.appointment.created` NULL-scope
+    audit defect, merging at **`a13ff8b`** with push CI **#205 Success 4/4**. Two
+    review rounds of that branch found eleven further errors in the new evidence,
+    all fixed before it opened.
+12. **The post-merge review round at `a13ff8b` found one more High — again in the
+    evidence.** Two files asserted that `app_runtime` lacks `INSERT` on
+    `iam.security_events`; the grant and its policy have existed since P1-13, and
+    P1-13's own gate records the capability as _proven_. Corrected in the gate
+    record, along with a stale tracked-file count carried from a superseded run, a
+    mutation-provenance statement that had itself gone stale, a mapper name that
+    does not exist, and an overstated description of the task-annotation gap.
+
+The pattern across all four remediations is worth stating plainly, because it is
+the phase's main lesson: **the code held up under adversarial review; the prose
+describing it did not.** Every round that found a High found it in a document.
 
 ## 1. Purpose
 

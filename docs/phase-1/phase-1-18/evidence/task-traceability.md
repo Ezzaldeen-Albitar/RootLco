@@ -3,13 +3,35 @@
 Gate condition 4 requires all nineteen backend tasks to be implemented and
 mapped to operations. **This table is the authoritative map.**
 
-It exists because the repository could not previously support that condition.
-Sixteen of the nineteen task identifiers were annotated in route and service
-headers; `P1-18-BE-012`, `-013` and `-014` appeared **nowhere in the
-repository**, and no document mapped tasks to operations at all. The three
-missing ones are all evidence kinds of a single command, so the work was
-delivered and only the mapping was absent — but "delivered" was not something a
-reader could verify, and a gate condition cannot rest on that.
+It exists because the repository could not previously support that condition: no
+document mapped tasks to operations at all.
+
+**A correction to how that gap was first described.** An earlier revision of this
+file said `P1-18-BE-012`, `-013` and `-014` "appeared **nowhere in the
+repository**", that sixteen of nineteen identifiers were annotated, and that the
+condition-evidence route header "annotates only BE-011 and BE-015". All three
+statements overstate the gap. The _exact literal strings_ `P1-18-BE-012`,
+`P1-18-BE-013` and `P1-18-BE-014` are indeed absent, but **five** files annotate
+inclusive **ranges** that cover them:
+
+| File                                                                    | Annotation                    |
+| ----------------------------------------------------------------------- | ----------------------------- |
+| `src/app/api/v1/receptions/[receptionId]/condition-evidence/route.ts:3` | `P1-18-BE-011…P1-18-BE-015`   |
+| `src/modules/reception/domain/reception-evidence.ts:2`                  | `P1-18-BE-011…P1-18-BE-017`   |
+| `src/modules/reception/data/reception-evidence-repository.ts:2`         | `P1-18-BE-011…P1-18-BE-017`   |
+| `src/modules/reception/application/reception-evidence-service.ts:3`     | `P1-18-BE-011…P1-18-BE-017`   |
+| `tests/backend/p1-18-reception-evidence.test.ts:3`                      | `P1-18-BE-011 … P1-18-BE-017` |
+
+So the route header annotates a **range**, not "only BE-011 and BE-015", and three
+of those five files were not mentioned at all. The real gap was narrower than
+stated: the three identifiers were not individually greppable and nothing mapped
+tasks to operations. That is still a genuine gap — a range annotation does not
+tell a reader which operation delivers `BE-013` — and it is what this table
+closes. But the gap was one of granularity, not of absence, and the stronger
+claim was wrong.
+
+The three are all evidence kinds of a single command, so the work was delivered
+and only the mapping was absent.
 
 The route annotations are deliberately **not** edited to manufacture
 traceability. Annotating three extra identifiers into a route header would
@@ -50,12 +72,12 @@ covers the approval prerequisite contract.
 
 ## Annotation state, recorded rather than corrected
 
-|                                             |                                                                                                                                                               |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task IDs annotated in route/service headers | 16 of 19                                                                                                                                                      |
-| Not annotated anywhere                      | `P1-18-BE-012`, `P1-18-BE-013`, `P1-18-BE-014`                                                                                                                |
-| Where their work lives                      | `rec.reception-condition-evidence`, whose header annotates only BE-011 and BE-015                                                                             |
-| How that is verifiable                      | The route's own discriminated union declares `inspection`, `condition_item`, `damage_map`, `damage_mark` and `contents` — the exact kinds BE-012/013/014 name |
+|                                                              |                                                                                                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task IDs annotated **individually** in route/service headers | 16 of 19                                                                                                                                                      |
+| Not individually greppable                                   | `P1-18-BE-012`, `P1-18-BE-013`, `P1-18-BE-014` — covered by inclusive **range** annotations in five files, listed above, but never named on their own         |
+| Where their work lives                                       | `rec.reception-condition-evidence`, whose route header annotates the range `P1-18-BE-011…P1-18-BE-015`                                                        |
+| How that is verifiable                                       | The route's own discriminated union declares `inspection`, `condition_item`, `damage_map`, `damage_mark` and `contents` — the exact kinds BE-012/013/014 name |
 
 The gap is a labelling gap, not a delivery gap, and this table is the artefact
 that closes it.
