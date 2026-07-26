@@ -376,7 +376,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'dia.diagnostic_report',
     owner: 'dia',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A diagnostic report was completed against its pinned template version.',
   },
   {

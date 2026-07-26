@@ -222,6 +222,15 @@ const EXPECTED_AUDIT_ACTIONS = [
   'crm.customer.status_changed',
   'crm.customer.tag_assigned',
   'crm.customer.vehicle_linked',
+  // Wave 7. `dia.diagnostic.entry_recorded` is one action across six entry tables,
+  // each record naming its `entry_kind`: they are the same fact — something was added
+  // to this report — and splitting them would make "what went into this report" six
+  // audit queries instead of one.
+  'dia.diagnostic.completed',
+  'dia.diagnostic.created',
+  'dia.diagnostic.entry_recorded',
+  'dia.diagnostic.reviewed',
+  'dia.diagnostic.state_changed',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',

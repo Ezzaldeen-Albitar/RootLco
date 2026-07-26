@@ -205,6 +205,9 @@ describe('reserved-name registry', () => {
       // and stays 1, and `uq_customer_approvals_active` means the fact happens at
       // most once per request.
       'customer-approval.recorded',
+      // Wave 7. Owner `dia`, and the only event this phase publishes from the
+      // diagnostics module: completion is the fact closure blocker B4 waits for.
+      'diagnostic-report.completed',
       'document.link.changed',
       'document.version.registered',
       // Wave 5 also publishes `job.assigned`. Its owner is `wo` and not `tech`

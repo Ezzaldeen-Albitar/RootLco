@@ -692,6 +692,90 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'keyset page of the append-only job ledger newest-first plus an origin block, because wo.emit_job_status_history is AFTER UPDATE only and a job creation emits no row; the pause REASON lives here rather than on a labour session, since tech.labor_sessions has only started_at/ended_at; a bad cursor is ERR-PAG-001 (denial) and a tenant-B job answers the same 404 as an unknown id',
   },
+  // --- Wave 7: diagnostics. --------------------------------------------------
+  'dia.diagnostic-create': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the pin is the point: dia.guard_diagnostic_report_refs refuses anything but a PUBLISHED template version, and the pre-check tells draft from retired from missing where the guard raises one check_violation for all three; the diagnostic TYPE is joined from the template rather than accepted, so a report’s type cannot disagree with what it pins; revision numbers are monotonic per job and are asserted SEQUENTIALLY rather than under a forced race, because revision_number has NO unique index behind it (accepted item P1-19-A-02) and a race would prove nothing a constraint could back',
+  },
+  'dia.diagnostic-list': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'a job’s revisions newest first, so the current report is the first row rather than something a caller has to compute',
+  },
+  'dia.diagnostic-detail': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'report plus every entry, plus two derived blocks: the OUTSTANDING mandatory items — the same list the completion refusal returns, computed against the PINNED version so a newer template cannot change what this report owes — and the reachable statuses, taken from the mirrored graph so the reconciliation test pins this projection too; a terminal report reports no reachable status at all',
+  },
+  'dia.diagnostic-history': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the append-only ledger plus an origin block, because dia.emit_diagnostic_report_status_history is AFTER UPDATE only and creation emits nothing — and a backfilled genesis row would carry now(), since shared.stamp_status_history forces it; a bad cursor is ERR-PAG-001',
+  },
+  'dia.diagnostic-transition': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'this graph is a FIXED PL/pgSQL IF chain with no catalog table and no tenant override, so the module mirrors it — unlike the wo graphs, which are tenant-overridable rows and must be read; tests/db/p1-19-diagnostic-graph-reconciliation.test.ts pins the mirror against the deployed function. Asking THIS endpoint for `completed` is refused, so the dia.diagnostic.complete permission cannot be bypassed by choosing the other URL',
+  },
+  'dia.diagnostic-complete': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'every outstanding mandatory item comes back at once — the guard can only say "not yet", and a technician told that without being told WHICH of forty items is missing has been told nothing; a documented not-applicable reason counts as an answer, so skipping is possible and never silent; completion FREEZES the report against further entries, which the database does not do (none of the five entry tables consults the report’s status) and which is asserted rather than described; rollback is proved by a pre-taken outbox key so publishEvent raises after the status change and the audit record are both written',
+  },
+  'dia.diagnostic-item-result': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the item must belong to the report’s PINNED version — fk_report_item_results_item is (tenant_id, template_item_id) and names no version, so an item from ANOTHER version satisfies it and the test uses exactly that, which without the read would let a report be answered with questions it was never asked; the value is checked against the item’s response_type, which the database does not do since result_value is text: a boolean item would accept "maybe" and a select item any string; numeric BOUNDS are deliberately not checked here because they are compared in the database as numeric',
+  },
+  'dia.diagnostic-measurement-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the range comparison happens in the DATABASE as numeric, and the test uses a value a double cannot hold exactly (25.100001) to prove both the round trip and the verdict; bounds are inclusive, asserted at the boundary; within_range is THREE-valued and the null case is asserted, because flattening it to false would claim a check that never ran; an out-of-range reading is RECORDED rather than refused, since a diagnostic exists to record what is wrong; a unit disagreeing with the item and a measurement against a non-numeric item are both refused, and neither is a schema rule',
+  },
+  'dia.diagnostic-dtc-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'ck_dtc_records_code_format is ^[PBCU][0-9][0-9A-F]{3}$ and the shape is exact rather than approximate — the SECOND character is decimal and only the last three are hex, all upper case — so six malformed codes are refused as 422s naming the field, and the valid hex boundary U0FFF is accepted; every dtc_status value is exercised and one outside the vocabulary refused',
+  },
+  'dia.diagnostic-finding-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'severity and disposition answer different questions and nothing ties them, so a critical finding with no_action is accepted deliberately — a fault outside this workshop’s remit is a legitimate record; a finding is the anchor of the phase’s real provenance chain, since wo.additional_work_requests.originating_finding_id points here and Wave 6 resolves it through this module',
+  },
+  'dia.diagnostic-evidence-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'identical contract to wo.customer_approval_evidence: append-only, an exact document VERSION rather than a document, and no storage key — which the strict schema proves by refusing one; accepted is NOT required because P1-15 documented acceptance as unreachable while no application role may write shared.file_scan_results, and a rejected version IS refused',
+  },
+  'dia.diagnostic-recommendation-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the finding link the phase brief asks for DOES NOT EXIST — dia.recommendations carries only diagnostic_report_id — so naming a finding is refused rather than silently dropped, and the test queries information_schema to prove no finding_id column exists rather than asserting the absence in prose; the chain the schema does support runs the other way and Wave 6 enforces it',
+  },
+  'dia.diagnostic-review': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
+  },
   'wo.job-update': {
     files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],

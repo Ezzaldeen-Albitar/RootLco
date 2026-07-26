@@ -21,6 +21,8 @@ export interface TemplateVersionRow {
   readonly versionNumber: number;
   readonly status: string;
   readonly publishedAt: Date | null;
+  /** Joined from the template, so a report's type cannot disagree with what it pins. */
+  readonly diagnosticTypeId: string;
 }
 
 export interface TemplateItemRow {
@@ -247,13 +249,22 @@ export class DiagnosticsRepository extends Repository {
       id: string;
       template_id: string;
       version_number: number;
+      diagnostic_type_id: string;
       status: string;
       published_at: Date | null;
     }>(
       db,
-      `SELECT id, template_id, version_number, status, published_at
-         FROM dia.template_versions
-        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      // The diagnostic type is joined from the TEMPLATE rather than taken from the
+      // caller, so a report's type can never disagree with the template it pins.
+      // `dia.diagnostic_reports.diagnostic_type_id` is NOT NULL and foreign-keyed,
+      // but nothing makes it agree with the template's — accepting it from a request
+      // body would have made that a caller's choice.
+      `SELECT v.id, v.template_id, v.version_number, v.status, v.published_at,
+              t.diagnostic_type_id
+         FROM dia.template_versions v
+         JOIN dia.inspection_templates t
+           ON t.tenant_id = v.tenant_id AND t.id = v.template_id AND t.deleted_at IS NULL
+        WHERE v.tenant_id = $1 AND v.id = $2 AND v.deleted_at IS NULL`,
       [context.principal.tenantId, versionId]
     );
     const row = result.rows[0];
@@ -264,6 +275,7 @@ export class DiagnosticsRepository extends Repository {
           versionNumber: row.version_number,
           status: row.status,
           publishedAt: row.published_at,
+          diagnosticTypeId: row.diagnostic_type_id,
         }
       : null;
   }

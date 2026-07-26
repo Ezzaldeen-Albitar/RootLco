@@ -92,6 +92,22 @@ const SENSITIVE_VIEW = 'iam.sensitive.view';
 /** Every P1-19 command permission except the closure and sensitive ones. */
 const WAVE_6_COMMANDS = [ADDITIONAL_WORK_REQUEST, ADDITIONAL_WORK_APPROVE] as const;
 
+const DIAGNOSTIC_RECORD = 'dia.diagnostic.record';
+const DIAGNOSTIC_COMPLETE = 'dia.diagnostic.complete';
+const DIAGNOSTIC_READ = 'dia.diagnostic.read';
+/**
+ * The reviewer authority, deliberately WITHHELD from `FULL`.
+ *
+ * `dia.stamp_review()` stamps the reviewer from the session, and reviewer separation
+ * compares against the report's `created_by` — so the principal that creates reports
+ * must not be the one that reviews them, or the separation rule could never be shown
+ * to permit anything. `REVIEWER` below holds it and `FULL` does not.
+ */
+const DIAGNOSTIC_REVIEW = 'dia.diagnostic.review';
+
+/** Wave 7 commands every ordinary technician principal holds. */
+const WAVE_7_COMMANDS = [DIAGNOSTIC_RECORD, DIAGNOSTIC_COMPLETE, DIAGNOSTIC_READ] as const;
+
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
   readonly roleId: string;
@@ -123,6 +139,7 @@ export const FULL: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
   ],
 };
 
@@ -152,6 +169,7 @@ export const SENSITIVE: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
     SENSITIVE_VIEW,
   ],
 };
@@ -179,6 +197,36 @@ export const NO_CLOSE: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
+  ],
+};
+
+/**
+ * Tenant A, unrestricted, holding `dia.diagnostic.review` — and NOT held by `FULL`.
+ *
+ * The split is what makes reviewer separation testable in both directions. Separation
+ * compares the reviewer against `dia.diagnostic_reports.created_by`, and `FULL` is the
+ * principal every fixture creates reports as — so if `FULL` also held the review
+ * permission, the rule could be shown to REFUSE but never to permit, and a service
+ * that refused every review would pass.
+ *
+ * It deliberately also holds `dia.diagnostic.record`, so the self-review refusal can
+ * be driven by a principal that created its own report rather than by one that could
+ * not have created any.
+ */
+export const REVIEWER: Principal = {
+  roleId: 'c1900000-0000-4000-8000-00000000012a',
+  userId: 'c1900000-0000-4000-8000-00000000012b',
+  subject: 'fx_p1_19_reviewer',
+  tenantId: TENANT_A,
+  permissions: [
+    CONVERT_PERMISSION,
+    READ,
+    TRANSITION_PERMISSION,
+    JOB_MANAGE,
+    JOB_TRANSITION,
+    ...WAVE_7_COMMANDS,
+    DIAGNOSTIC_REVIEW,
   ],
 };
 
@@ -216,6 +264,8 @@ export const SCOPED_ELSEWHERE: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
+    DIAGNOSTIC_REVIEW,
     // Held, and scoped to A2 like everything else this principal holds — so a refusal
     // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
     // permission. Without it the isolation case would pass for the wrong reason.
@@ -258,6 +308,8 @@ export const PERMISSION_ELSEWHERE: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
+    DIAGNOSTIC_REVIEW,
     // Held, and scoped to A2 like everything else this principal holds — so a refusal
     // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
     // permission. Without it the isolation case would pass for the wrong reason.
@@ -291,6 +343,10 @@ export const TENANT_B_FULL: Principal = {
     LABOR_CORRECT,
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
+    ...WAVE_7_COMMANDS,
+    // Held IN ITS OWN TENANT, so a cross-tenant refusal is RLS rather than a missing
+    // permission — the whole point of a cross-tenant probe.
+    DIAGNOSTIC_REVIEW,
     SENSITIVE_VIEW,
   ],
 };
@@ -298,6 +354,7 @@ export const TENANT_B_FULL: Principal = {
 export const PRINCIPALS: readonly Principal[] = [
   FULL,
   SENSITIVE,
+  REVIEWER,
   NO_CLOSE,
   READER,
   SCOPED_ELSEWHERE,
@@ -879,6 +936,168 @@ const DIAGNOSTIC_TYPE_CODE = 'fx_p1_19_general';
 const TEMPLATE_CODE = 'fx_p1_19_template';
 const established = new Set<string>();
 
+/** The item codes the fixture template publishes, so a suite can name them. */
+export const ITEM_BRAKE_THICKNESS = 'fx_brake_thickness';
+export const ITEM_ROAD_TEST = 'fx_road_test';
+export const ITEM_TYRE_CONDITION = 'fx_tyre_condition';
+/** The configured range on `fx_brake_thickness`, in millimetres. */
+export const BRAKE_MIN = 22;
+export const BRAKE_MAX = 30;
+
+/**
+ * The published fixture template version, its items, and the diagnostic type.
+ *
+ * Admin SQL and necessarily so: `dia.diagnostic_types`, `dia.inspection_templates`,
+ * `dia.template_versions` and `dia.template_items` are operator configuration with no
+ * write route in this phase — the repository seeds no `dia` row at all, exactly as it
+ * seeds no `tech` catalog row — and P1-19 only READS them to instantiate a report.
+ *
+ * The version is PUBLISHED through `dia.guard_template_version_publish` rather than
+ * inserted `published` outright, so even the fixture takes the transition the platform
+ * takes. That matters here more than usual: `dia.guard_template_item_frozen` refuses
+ * every change to a published version's items, so the items must all exist first.
+ */
+export async function establishDiagnosticFixtures(
+  tenantId: string = TENANT_A
+): Promise<{ readonly templateVersionId: string; readonly itemIds: ReadonlyMap<string, string> }> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    if (!established.has(tenantId)) {
+      await seedDiagnosticCatalog(client, tenantId);
+      established.add(tenantId);
+    }
+    const version = await client.query<{ id: string }>(
+      `SELECT v.id FROM dia.template_versions v
+         JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
+        WHERE v.tenant_id = $1 AND t.code = $2`,
+      [tenantId, TEMPLATE_CODE]
+    );
+    const items = await client.query<{ id: string; item_code: string }>(
+      `SELECT ti.id, ti.item_code FROM dia.template_items ti
+         JOIN dia.template_versions v ON v.tenant_id = ti.tenant_id AND v.id = ti.template_version_id
+         JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
+        WHERE ti.tenant_id = $1 AND t.code = $2`,
+      [tenantId, TEMPLATE_CODE]
+    );
+    await client.query('COMMIT');
+    return {
+      templateVersionId: version.rows[0]?.id ?? '',
+      itemIds: new Map(items.rows.map((row) => [row.item_code, row.id])),
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** A DRAFT template version, so "only a published version may be pinned" is testable. */
+export async function seedDraftTemplateVersion(tenantId: string = TENANT_A): Promise<string> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    if (!established.has(tenantId)) {
+      await seedDiagnosticCatalog(client, tenantId);
+      established.add(tenantId);
+    }
+    const created = await client.query<{ id: string }>(
+      `INSERT INTO dia.template_versions (tenant_id, template_id, version_number, created_by)
+       SELECT $1,t.id,
+              COALESCE((SELECT MAX(version_number) FROM dia.template_versions
+                         WHERE tenant_id = $1 AND template_id = t.id), 0) + 1,
+              $2
+         FROM dia.inspection_templates t
+        WHERE t.tenant_id = $1 AND t.code = $3
+       RETURNING id`,
+      [tenantId, USER_A, TEMPLATE_CODE]
+    );
+    await client.query('COMMIT');
+    return created.rows[0]?.id ?? '';
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** The type, template, version and three items — one of each response type that matters. */
+async function seedDiagnosticCatalog(
+  client: { query: (sql: string, values?: readonly unknown[]) => Promise<unknown> },
+  tenantId: string
+): Promise<void> {
+  await client.query(
+    `INSERT INTO dia.diagnostic_types (scope, tenant_id, code, name, status, created_by)
+     VALUES ('tenant',$1,$2,'P1-19 fixture diagnostics','active',$3)`,
+    [tenantId, DIAGNOSTIC_TYPE_CODE, USER_A]
+  );
+  await client.query(
+    `INSERT INTO dia.inspection_templates (tenant_id, code, name, diagnostic_type_id, created_by)
+     SELECT $1,$2,'P1-19 fixture template',t.id,$3
+       FROM dia.diagnostic_types t
+      WHERE t.tenant_id = $1 AND t.code = $4`,
+    [tenantId, TEMPLATE_CODE, USER_A, DIAGNOSTIC_TYPE_CODE]
+  );
+  await client.query(
+    `INSERT INTO dia.template_versions (tenant_id, template_id, version_number, created_by)
+     SELECT $1,t.id,1,$2 FROM dia.inspection_templates t
+      WHERE t.tenant_id = $1 AND t.code = $3`,
+    [tenantId, USER_A, TEMPLATE_CODE]
+  );
+  // Three items covering what the entry paths actually branch on: a MANDATORY numeric
+  // item with a configured range and a unit, an OPTIONAL boolean item, and a MANDATORY
+  // select item with a closed option set.
+  for (const [code, prompt, type, unit, mandatory, rule, sequence] of [
+    [
+      ITEM_BRAKE_THICKNESS,
+      'Front brake disc thickness',
+      'numeric',
+      'mm',
+      true,
+      `{"min":${BRAKE_MIN},"max":${BRAKE_MAX}}`,
+      1,
+    ],
+    [ITEM_ROAD_TEST, 'Road test performed', 'boolean', null, false, null, 2],
+    [
+      ITEM_TYRE_CONDITION,
+      'Overall tyre condition',
+      'select',
+      null,
+      true,
+      '{"options":["good","worn","replace"]}',
+      3,
+    ],
+  ] as const) {
+    await client.query(
+      `INSERT INTO dia.template_items
+         (tenant_id, template_version_id, item_code, prompt, response_type, unit,
+          is_mandatory, validation_rule, sequence, created_by)
+       SELECT $1,v.id,$2,$3,$4,$5,$6,$7::jsonb,$8,$9
+         FROM dia.template_versions v
+         JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
+        WHERE v.tenant_id = $1 AND t.code = $10 AND v.version_number = 1`,
+      [tenantId, code, prompt, type, unit, mandatory, rule, sequence, USER_A, TEMPLATE_CODE]
+    );
+  }
+  // Publish through the real guard. Items are frozen the instant this commits.
+  await client.query(
+    `UPDATE dia.template_versions SET status = 'published'
+      WHERE tenant_id = $1 AND version_number = 1 AND template_id = (
+        SELECT id FROM dia.inspection_templates WHERE tenant_id = $1 AND code = $2)`,
+    [tenantId, TEMPLATE_CODE]
+  );
+}
+
 /**
  * A `dia.findings` row, seeded as admin, with the catalog chain it requires.
  *
@@ -911,42 +1130,7 @@ export async function seedFinding(
     );
 
     if (!established.has(tenantId)) {
-      await client.query(
-        `INSERT INTO dia.diagnostic_types (scope, tenant_id, code, name, status, created_by)
-         VALUES ('tenant',$1,$2,'P1-19 fixture diagnostics','active',$3)`,
-        [tenantId, DIAGNOSTIC_TYPE_CODE, USER_A]
-      );
-      await client.query(
-        `INSERT INTO dia.inspection_templates (tenant_id, code, name, diagnostic_type_id, created_by)
-         SELECT $1,$2,'P1-19 fixture template',t.id,$3
-           FROM dia.diagnostic_types t
-          WHERE t.tenant_id = $1 AND t.code = $4`,
-        [tenantId, TEMPLATE_CODE, USER_A, DIAGNOSTIC_TYPE_CODE]
-      );
-      await client.query(
-        `INSERT INTO dia.template_versions (tenant_id, template_id, version_number, created_by)
-         SELECT $1,t.id,1,$2 FROM dia.inspection_templates t
-          WHERE t.tenant_id = $1 AND t.code = $3`,
-        [tenantId, USER_A, TEMPLATE_CODE]
-      );
-      await client.query(
-        `INSERT INTO dia.template_items
-           (tenant_id, template_version_id, item_code, prompt, response_type, unit,
-            is_mandatory, validation_rule, sequence, created_by)
-         SELECT $1,v.id,'fx_brake_thickness','Front brake disc thickness','numeric','mm',
-                true,'{"min":22,"max":30}'::jsonb,1,$2
-           FROM dia.template_versions v
-           JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
-          WHERE v.tenant_id = $1 AND t.code = $3`,
-        [tenantId, USER_A, TEMPLATE_CODE]
-      );
-      // Publish through the real transition guard, not by inserting `published`.
-      await client.query(
-        `UPDATE dia.template_versions SET status = 'published'
-          WHERE tenant_id = $1 AND template_id = (
-            SELECT id FROM dia.inspection_templates WHERE tenant_id = $1 AND code = $2)`,
-        [tenantId, TEMPLATE_CODE]
-      );
+      await seedDiagnosticCatalog(client, tenantId);
       established.add(tenantId);
     }
 
@@ -967,7 +1151,7 @@ export async function seedFinding(
               $6
          FROM dia.template_versions v
          JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
-        WHERE v.tenant_id = $1 AND t.code = $7
+        WHERE v.tenant_id = $1 AND t.code = $7 AND v.status = 'published'
        RETURNING id`,
       [tenantId, companyId, branchId, workOrderId, jobId, USER_A, TEMPLATE_CODE]
     );

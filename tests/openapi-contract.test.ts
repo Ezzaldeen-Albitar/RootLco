@@ -156,6 +156,20 @@ import '@/app/api/v1/additional-work/[requestId]/detail/route';
 import '@/app/api/v1/additional-work/[requestId]/withdrawal/route';
 import '@/app/api/v1/additional-work/[requestId]/approval/route';
 import '@/app/api/v1/additional-work/[requestId]/fulfillment/route';
+// The path vocabulary is `inspections`; the model is `dia.diagnostic_reports`. Both
+// are kept deliberately — see the header of `jobs/[jobId]/inspections/route.ts`.
+import '@/app/api/v1/jobs/[jobId]/inspections/route';
+import '@/app/api/v1/inspections/[inspectionId]/route';
+import '@/app/api/v1/inspections/[inspectionId]/history/route';
+import '@/app/api/v1/inspections/[inspectionId]/transition/route';
+import '@/app/api/v1/inspections/[inspectionId]/completion/route';
+import '@/app/api/v1/inspections/[inspectionId]/items/[templateItemId]/route';
+import '@/app/api/v1/inspections/[inspectionId]/measurements/route';
+import '@/app/api/v1/inspections/[inspectionId]/dtcs/route';
+import '@/app/api/v1/inspections/[inspectionId]/findings/route';
+import '@/app/api/v1/inspections/[inspectionId]/evidence/route';
+import '@/app/api/v1/inspections/[inspectionId]/recommendations/route';
+import '@/app/api/v1/inspections/[inspectionId]/reviews/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

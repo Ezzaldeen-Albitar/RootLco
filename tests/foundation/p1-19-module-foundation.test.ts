@@ -341,6 +341,9 @@ describe('P1-19 module foundation', () => {
         'labor.session-changed',
         'additional-work.requested',
         'customer-approval.recorded',
+        // Wave 7. The only `dia` event this phase publishes: completion is the fact
+        // closure blocker B4 waits for, and nothing downstream reacts to a draft.
+        'diagnostic-report.completed',
       ];
       if (published.includes(entry.eventType)) {
         expect(entry.implementedIn).toBe('P1-19');

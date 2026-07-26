@@ -635,6 +635,41 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
   },
   {
+    code: 'dia.diagnostic.created',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report was opened on a job, pinning an exact PUBLISHED template version. The pinned version is recorded because it is what makes the report reproducible: dia.guard_template_item_frozen refuses every change to a published version’s items, so the questions the report was asked can never change afterwards, and an auditor reading it years later needs to know which version it answered. The revision number is server-assigned under an advisory lock; dia.diagnostic_reports.revision_number has no unique index behind it (accepted item P1-19-A-02).',
+  },
+  {
+    code: 'dia.diagnostic.entry_recorded',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'An entry was recorded on a diagnostic report: an item result, a measurement, a DTC, a finding, evidence or a recommendation. ONE action covers six tables and each record names its entry_kind, because they are all the same fact — something was added to this report — and filing them separately would make "what went into this report" six audit queries instead of one. Filed under the REPORT rather than the entry row for the same reason. A measurement records its within_range verdict as three-valued (true/false/unknown), never flattened, because unknown means no range was configured and false would claim a check that never ran.',
+  },
+  {
+    code: 'dia.diagnostic.state_changed',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report moved between draft, in_progress and cancelled. Unlike the work-order and job graphs, this lifecycle is a FIXED PL/pgSQL IF chain in dia.guard_diagnostic_report_transition with no catalog table and no tenant override, which is why the module mirrors it rather than reading it. A COMPLETION is recorded under dia.diagnostic.completed instead of this code, never under both.',
+  },
+  {
+    code: 'dia.diagnostic.completed',
+    class: 'privileged',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A diagnostic report was completed, every mandatory item of its pinned version having a result or a documented not-applicable reason. Recorded separately from the generic status change because completion is what closure blocker B4 waits for and what a review is performed against, and because it freezes the report: the application refuses further entries afterwards, which the database does not — none of the entry tables consults the report’s status.',
+  },
+  {
+    code: 'dia.diagnostic.reviewed',
+    class: 'approval',
+    entityType: 'dia.diagnostic_report',
+    description:
+      'A completed diagnostic report was reviewed as approved, rejected or needs_rework. Records the reviewer as the DATABASE stamped it: dia.stamp_review() overwrites reviewer_id with iam.current_user_id() on every insert and raises without an actor, so attribution cannot be forged and the two can never differ. Reviewer SEPARATION is an application rule against dia.diagnostic_reports.created_by, because no constraint references it — and it catches the report’s creator, not everyone who recorded an entry, since the schema records no per-entry authorship a review could be checked against.',
+  },
+  {
     code: 'wo.additional_work.requested',
     class: 'privileged',
     entityType: 'wo.additional_work_request',

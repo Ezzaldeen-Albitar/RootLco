@@ -25,28 +25,65 @@
 import { composeModule } from '@/server/layering';
 import { DiagnosticsRepository } from './data/diagnostics-repository';
 import { DiagnosticsCompletionService } from './application/diagnostics-completion-service';
+import { DiagnosticReportService } from './application/diagnostic-report-service';
 
 export type {
+  DiagnosticEvidenceRow,
   DiagnosticReportRow,
+  DiagnosticReviewRow,
+  DtcRow,
   FindingOrigin,
+  FindingRow,
+  ItemResultRow,
+  MeasurementRow,
+  RecommendationRow,
+  ReportHistoryRow,
   TemplateItemRow,
   TemplateVersionRow,
 } from './data/diagnostics-repository';
 
+export type {
+  DiagnosticReportDetail,
+  DiagnosticReportView,
+  EvidenceView,
+  PageInput,
+  ReportHistoryEntry,
+  ReportHistoryView,
+  ReviewView,
+} from './application/diagnostic-report-service';
+
 export {
+  DTC_CODE,
   DTC_STATUSES,
+  DECIMAL_VALUE,
   DiagnosticsRuleError,
   FINDING_DISPOSITIONS,
   FINDING_SEVERITIES,
+  MAX_DTC_DESCRIPTION,
+  MAX_EVIDENCE_NOTE,
+  MAX_EVIDENCE_TYPE,
+  MAX_FINDING_DESCRIPTION,
+  MAX_MEASUREMENT_LABEL,
+  MAX_MEASUREMENT_UNIT,
   MAX_NOT_APPLICABLE_REASON,
+  MAX_RECOMMENDATION,
+  MAX_RESULT_VALUE,
+  MAX_REVIEW_NOTES,
   MAX_SUMMARY,
   RECOMMENDATION_PRIORITIES,
+  RECORDABLE_REPORT_STATUSES,
   REPORT_STATUSES,
+  REPORT_TRANSITIONS,
   RESPONSE_TYPES,
   REVIEW_RESULTS,
   TEMPLATE_VERSION_STATUSES,
+  asValidationRule,
   assertCompletable,
   assertNotApplicableReason,
+  assertRecordable,
+  assertReportTransition,
+  assertResultShape,
+  assertReviewerSeparation,
   assertVersionInstantiable,
   severityAtLeast,
   type DtcStatus,
@@ -58,12 +95,17 @@ export {
   type ResponseType,
   type ReviewResult,
   type TemplateVersionStatus,
+  type ValidationRule,
 } from './domain/diagnostics';
 
 /** Composition root: constructs the module's services once per process. */
 export const diagnosticsModule = composeModule({
   module: 'diagnostics',
-  create: () => ({
-    completion: new DiagnosticsCompletionService(new DiagnosticsRepository()),
-  }),
+  create: () => {
+    const repository = new DiagnosticsRepository();
+    return {
+      completion: new DiagnosticsCompletionService(repository),
+      reports: new DiagnosticReportService(repository),
+    };
+  },
 });
