@@ -247,6 +247,10 @@ export class AdditionalWorkService extends ApplicationService {
       }
     }
 
+    // The job the work was actually discovered on. Named by the caller, or — when
+    // only a finding is named — DERIVED from that finding's report.
+    let originatingJobId = input.originatingJobId ?? null;
+
     if (input.originatingFindingId !== undefined) {
       // `originating_finding_id` has NO foreign key, so nothing in the database will
       // refuse a finding from another work order — or one that does not exist. The
@@ -261,13 +265,32 @@ export class AdditionalWorkService extends ApplicationService {
           message: `Finding ${input.originatingFindingId} does not belong to work order ${workOrderId}`,
         });
       }
+      // Derived, not defaulted, and this closes a real gap: the execution gate keys
+      // on `originating_job_id`, so a request naming ONLY a finding would have gated
+      // no job at all — extra work discovered by a diagnostic would let the very job
+      // that discovered it carry on unapproved, while the same work discovered by
+      // hand stopped it. The finding's report carries a NOT NULL `job_id`, so this is
+      // the exact job the finding was recorded against and not an approximation.
+      // A caller-supplied job wins, and disagreeing with the finding's job is
+      // refused rather than silently reconciled: two different answers to "where did
+      // this come from" mean one of them is wrong.
+      if (originatingJobId === null) {
+        originatingJobId = origin.jobId;
+      } else if (originatingJobId !== origin.jobId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The named job is not the job the named finding was recorded on',
+          safeDetails: {
+            violations: [{ path: 'body.originatingJobId', rule: 'origin_conflict' }],
+          },
+        });
+      }
     }
 
     const created = await this.repository.createRequest(db, {
       workOrderId,
       companyId: workOrder.companyId,
       branchId: workOrder.branchId,
-      originatingJobId: input.originatingJobId ?? null,
+      originatingJobId,
       originatingFindingId: input.originatingFindingId ?? null,
       summary: input.summary,
       // Defaults to the column default's meaning: extra work discovered mid-repair
@@ -608,9 +631,17 @@ export class AdditionalWorkService extends ApplicationService {
           classification: 'internal',
           value: approval.decidingPartyRoleId,
         },
-        // The presented scope is what a customer was told about their own vehicle:
-        // its LENGTH and the fact it was recorded, not the text.
+        // The presented scope is what a customer was told about their own vehicle,
+        // so its LENGTH and the fact it was recorded go here and the text does not.
+        // The length is not decoration: it is what lets an auditor see that a
+        // differently sized scope was presented from the one a dispute is about,
+        // without the audit trail itself carrying customer-facing text.
         { field: 'presented_scope_recorded', classification: 'internal', value: 'true' },
+        {
+          field: 'presented_scope_length',
+          classification: 'internal',
+          value: String(approval.presentedScope.length),
+        },
         {
           field: 'evidence_count',
           classification: 'public',
@@ -641,9 +672,20 @@ export class AdditionalWorkService extends ApplicationService {
         decision: approval.decision,
         channel: approval.channel,
       },
-      // No version in the key: `uq_customer_approvals_active` allows exactly one live
-      // decision per request, so this fact happens at most once.
-      eventKey: `customer-approval.recorded:${approval.id}`,
+      // Keyed by the REQUEST, not by the approval row, and no version.
+      // `uq_customer_approvals_active` allows exactly one live decision per request,
+      // so "the customer decided about this request" happens at most once — and the
+      // request id is what a consumer already correlates on, since it is the id in
+      // `additional-work.requested`. Keying by the approval would be keying by an id
+      // no consumer has seen before this message.
+      //
+      // It also makes atomicity PROVABLE: a test can pre-insert this exact key and
+      // watch the whole transaction — approval row, evidence rows, state change and
+      // both audit records — roll back behind the collision. Keyed by an id the
+      // database generates mid-transaction, nothing could reach that failure
+      // deterministically, and the rollback claim would rest on an argument instead
+      // of an observation.
+      eventKey: `customer-approval.recorded:${requestId}`,
     });
 
     return {
@@ -695,7 +737,18 @@ export class AdditionalWorkService extends ApplicationService {
     },
     authorizeScope?: ScopeAuthorizer
   ): Promise<AdditionalWorkRequestView> {
-    const request = await this.lockRequestInScope(db, requestId, authorizeScope);
+    // `lockDecidableRequest`, not `lockRequestInScope`: the parent's terminality
+    // matters here for the same reason it matters everywhere else on this aggregate,
+    // and nothing in the schema enforces it. `fulfillment_state` is not frozen by
+    // `tg_additional_work_requests_immutable`, `upd_additional_work_requests_scope`
+    // carries no state predicate, and `tg_additional_work_requests_state` fires only
+    // on `UPDATE OF state` — so a fulfilment-only update never reaches a guard at
+    // all. An earlier draft used the non-checking helper, leaving a closed order's
+    // record writable after the vehicle was released: an approved OPTIONAL request
+    // (which B3 ignores, so it never blocked closure) could be marked fulfilled
+    // afterwards, and a fulfilled one flipped to `waived`, rewriting the fact the
+    // closure was granted on.
+    const request = await this.lockDecidableRequest(db, requestId, authorizeScope);
     if (request.recordVersion !== input.expectedVersion) {
       throw new AppFailure('ERR-CON-001', {
         message: `Additional-work request ${requestId} was modified by another request`,
@@ -830,7 +883,15 @@ export class AdditionalWorkService extends ApplicationService {
     }
     const states = await this.catalog.workOrderStates(db);
     const state = states.find((candidate) => candidate.code === locked.state);
-    if (state === undefined || state.isTerminal) {
+    // `allows_additional_work` is the catalog's OWN answer to this question, and it
+    // is not the same as "not terminal": on the seeded platform graph `draft`,
+    // `qc_pending` and `ready_to_close` are all non-terminal and all `false`. An
+    // earlier draft of this method gated on terminality alone, which would have let
+    // a technician raise extra work on an order already presented for quality
+    // control — after the point at which its scope was supposed to be fixed. The
+    // flag is tenant-overridable, which is exactly why it is read rather than
+    // mirrored.
+    if (state === undefined || state.isTerminal || !state.allowsAdditionalWork) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${locked.state}" does not accept additional work`,
       });

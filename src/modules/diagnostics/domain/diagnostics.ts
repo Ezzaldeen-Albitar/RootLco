@@ -56,6 +56,118 @@ export const MAX_SUMMARY = 4000;
 export const MAX_NOT_APPLICABLE_REASON = 500;
 
 /**
+ * Application bounds on the free-text `dia` columns.
+ *
+ * Every one of these is unbounded `text` with only a not-blank CHECK, so these are
+ * this layer's limits and not mirrors of the schema — stated here so the bound a
+ * caller is refused on is the one the module documents.
+ */
+export const MAX_RESULT_VALUE = 1000;
+export const MAX_MEASUREMENT_LABEL = 200;
+export const MAX_MEASUREMENT_UNIT = 32;
+export const MAX_FINDING_DESCRIPTION = 2000;
+export const MAX_DTC_DESCRIPTION = 500;
+export const MAX_RECOMMENDATION = 2000;
+export const MAX_REVIEW_NOTES = 2000;
+export const MAX_EVIDENCE_TYPE = 64;
+export const MAX_EVIDENCE_NOTE = 500;
+
+/**
+ * `ck_dtc_records_code_format`, verbatim: `^[PBCU][0-9][0-9A-F]{3}$`.
+ *
+ * Upper case only, and the hex digits are the LAST THREE characters — the second
+ * character is decimal, not hex. So `P0300` is valid and `p0300`, `P0G00` and
+ * `PA300` are not. Mirrored here so a malformed code is a 422 naming the field
+ * rather than a `23514` from the insert.
+ */
+export const DTC_CODE = /^[PBCU][0-9][0-9A-F]{3}$/;
+
+/**
+ * The decimal shape `dia.measurements.measured_value` accepts across the boundary.
+ *
+ * The column is bare `numeric` — no precision, no scale, no range — so a value
+ * crosses as a STRING and is compared in the database, never in IEEE-754. The bound
+ * on digits is this layer's: an unbounded numeric literal is a storage and
+ * rendering hazard, and no workshop reading needs 1000 digits.
+ */
+export const DECIMAL_VALUE = /^-?\d{1,15}(\.\d{1,6})?$/;
+
+/**
+ * The report lifecycle, mirrored from `dia.guard_diagnostic_report_transition`.
+ *
+ * ## Why mirroring is correct HERE and wrong in `work-order`
+ *
+ * The work-order and job graphs live in `wo.work_order_transitions` and
+ * `wo.job_transitions` — tenant-overridable catalog TABLES — so the `work-order`
+ * module reads them and deliberately keeps no copy: a copy would refuse a tenant's
+ * own edge and drift the moment one was added.
+ *
+ * This graph is different. It is a fixed PL/pgSQL `IF` chain inside
+ * `dia.guard_diagnostic_report_transition`, with no catalog table and no tenant
+ * override. It is code, and code can be mirrored — which is what every module
+ * before P1-19 did with its own trigger-enforced graph.
+ * `tests/db/p1-19-diagnostic-graph-reconciliation.test.ts` pins this object
+ * against the DEPLOYED function body, so an edit to the trigger that this does not
+ * follow fails the build rather than silently making the API lie.
+ */
+export const REPORT_TRANSITIONS: Readonly<Record<string, readonly ReportStatus[]>> = Object.freeze({
+  draft: Object.freeze(['in_progress', 'cancelled'] as const),
+  in_progress: Object.freeze(['completed', 'cancelled'] as const),
+  completed: Object.freeze([] as const),
+  cancelled: Object.freeze([] as const),
+});
+
+/** Report statuses that still accept entries — results, measurements, DTCs, findings. */
+export const RECORDABLE_REPORT_STATUSES: readonly ReportStatus[] = Object.freeze([
+  'draft',
+  'in_progress',
+]);
+
+/**
+ * The `dia.template_items.validation_rule` contract, defined by THIS phase.
+ *
+ * The column is nullable `jsonb` with no CHECK and no seeded row anywhere, so its
+ * shape is not a schema fact — it is a decision, and it is written down here rather
+ * than implied by the code that reads it. Every key is optional:
+ *
+ * - `min` / `max` bound a `numeric` item's reading. Accepted as a JSON number OR a
+ *   decimal string, and always compared **in the database** as `numeric`, because
+ *   the column is unbounded `numeric` and IEEE-754 cannot represent every value it
+ *   holds.
+ * - `options` closes a `select` item's answer set.
+ *
+ * A rule with none of these keys is treated as no rule at all: `within_range` stays
+ * NULL, because `false` would assert an out-of-spec reading that nobody checked.
+ */
+export interface ValidationRule {
+  readonly min?: number | string;
+  readonly max?: number | string;
+  readonly options?: readonly string[];
+}
+
+/** Reads a `validation_rule` jsonb value as a rule, or null when it holds none. */
+export function asValidationRule(value: unknown): ValidationRule | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const rule = value as Record<string, unknown>;
+  const min = rule['min'];
+  const max = rule['max'];
+  const options = rule['options'];
+  const result: {
+    min?: number | string;
+    max?: number | string;
+    options?: readonly string[];
+  } = {};
+  if (typeof min === 'number' || typeof min === 'string') result.min = min;
+  if (typeof max === 'number' || typeof max === 'string') result.max = max;
+  if (Array.isArray(options) && options.every((entry) => typeof entry === 'string')) {
+    result.options = options as readonly string[];
+  }
+  return result.min === undefined && result.max === undefined && result.options === undefined
+    ? null
+    : result;
+}
+
+/**
  * A mandatory item that has neither a result nor a documented not-applicable
  * reason. Returned in full so completion reports every gap at once.
  */
@@ -141,4 +253,100 @@ export function assertVersionInstantiable(status: TemplateVersionStatus): void {
 /** Is this severity at least as severe as the threshold? */
 export function severityAtLeast(severity: FindingSeverity, threshold: FindingSeverity): boolean {
   return FINDING_SEVERITIES.indexOf(severity) >= FINDING_SEVERITIES.indexOf(threshold);
+}
+
+/**
+ * Refuses a report movement the fixed lifecycle does not allow.
+ *
+ * `ERR-TRN-001`, whose registered meaning is "the target is registered for this
+ * aggregate but the aggregate is not in a state the transition may start from —
+ * including the case where it is already in the target state". A second completion
+ * and a `completed → in_progress` reopening are both exactly that.
+ */
+export function assertReportTransition(fromStatus: string, toStatus: ReportStatus): void {
+  const allowed = REPORT_TRANSITIONS[fromStatus] ?? [];
+  if (!allowed.includes(toStatus)) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: `A diagnostic report in "${fromStatus}" may not become "${toStatus}"`,
+    });
+  }
+}
+
+/**
+ * Refuses an entry against a report that is no longer recordable.
+ *
+ * The database does NOT enforce this: `dia.report_item_results`, `dia.measurements`,
+ * `dia.dtc_records`, `dia.findings` and `dia.diagnostic_evidence` all reference the
+ * report by foreign key and none of them consults its status. So a completed
+ * report would silently accept new results, changing what a "completed" report says
+ * after the fact and after it was reviewed — which is the whole reason completion
+ * means anything. This is an application rule, and it is stated as one.
+ */
+export function assertRecordable(status: string): void {
+  if (RECORDABLE_REPORT_STATUSES.includes(status as ReportStatus)) return;
+  throw new AppFailure('ERR-TRN-001', {
+    message: `A diagnostic report that is "${status}" no longer accepts entries`,
+  });
+}
+
+/**
+ * Refuses a review by the person who authored the report.
+ *
+ * ## This is an application rule, and the schema cannot express it
+ *
+ * `dia.stamp_review()` makes attribution unforgeable — it overwrites `reviewer_id`
+ * with `iam.current_user_id()` on every insert and raises without an actor — but
+ * nothing in the schema stops the report's own author being that actor.
+ * `dia.diagnostic_reports.created_by` is the only comparison available, and no
+ * constraint references it.
+ *
+ * So separation is enforced here, against that column, and the honest limits are
+ * worth stating: it compares the report's CREATOR, not everyone who recorded an
+ * entry on it, because the schema records no per-entry authorship the review could
+ * be checked against beyond each row's own `created_by`. A reviewer who recorded
+ * some of the results but did not create the report is not caught.
+ */
+export function assertReviewerSeparation(reportCreatedBy: string, reviewerId: string): void {
+  if (reportCreatedBy !== reviewerId) return;
+  throw new AppFailure('ERR-QMS-001', {
+    message: 'A diagnostic report may not be reviewed by the person who created it',
+    safeDetails: { violations: [{ path: 'reviewer', rule: 'self_review' }] },
+  });
+}
+
+/**
+ * Refuses a result whose value does not fit the item it answers.
+ *
+ * The database checks only that a result row carries a value OR a not-applicable
+ * reason. It does not check the value against the item's `response_type`, so a
+ * `boolean` item would accept "maybe" and a `select` item any string at all.
+ *
+ * Numeric bounds are deliberately NOT checked here: the value is compared against
+ * `min`/`max` in the database as `numeric`, because the column is unbounded
+ * `numeric` and a JavaScript comparison would round. What this function checks is
+ * shape, and for `select` the closed option set — both of which are exact in
+ * TypeScript.
+ */
+export function assertResultShape(
+  responseType: ResponseType,
+  value: string,
+  rule: ValidationRule | null
+): void {
+  const violation = (rulename: string): never => {
+    throw new AppFailure('ERR-VAL-001', {
+      message: `Value does not fit a "${responseType}" item`,
+      safeDetails: { violations: [{ path: 'body.resultValue', rule: rulename }] },
+    });
+  };
+  if (responseType === 'numeric' && !DECIMAL_VALUE.test(value)) violation('not_a_decimal');
+  if (responseType === 'boolean' && value !== 'true' && value !== 'false') {
+    violation('not_a_boolean');
+  }
+  if (responseType === 'select') {
+    const options = rule?.options;
+    // No option set configured means the item is a free-text selection as far as
+    // this phase can tell. Refusing every value would make such an item unanswerable
+    // and would make its mandatory completion gate impossible to clear.
+    if (options !== undefined && !options.includes(value)) violation('not_an_option');
+  }
 }

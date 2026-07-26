@@ -874,6 +874,123 @@ export async function seedDocumentVersion(
   return versionId;
 }
 
+/** The diagnostic catalog rows a seeded finding needs. Built once, per tenant. */
+const DIAGNOSTIC_TYPE_CODE = 'fx_p1_19_general';
+const TEMPLATE_CODE = 'fx_p1_19_template';
+const established = new Set<string>();
+
+/**
+ * A `dia.findings` row, seeded as admin, with the catalog chain it requires.
+ *
+ * Admin SQL and necessarily so at this point in the phase: templates, versions and
+ * items are operator configuration with no write route (no `dia` catalog row is
+ * seeded by the repository at all), and the report-creation route arrives in Wave 7.
+ * What matters is that the finding is the real shape
+ * `diagnosticsModule().completion.findingOrigin` joins through —
+ * `dia.findings` → `dia.diagnostic_reports` with its NOT NULL `work_order_id` and
+ * `job_id` — so a positive provenance case exercises the real read rather than a
+ * stand-in.
+ *
+ * The template version is PUBLISHED before the report pins it, because
+ * `dia.guard_diagnostic_report_refs` refuses anything else, and the publish goes
+ * through `dia.guard_template_version_publish` rather than being inserted
+ * `published` outright — even the fixture takes the transition the platform takes.
+ */
+export async function seedFinding(
+  workOrderId: string,
+  jobId: string,
+  options: { readonly tenantId?: string; readonly severity?: string } = {}
+): Promise<string> {
+  const tenantId = options.tenantId ?? TENANT_A;
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+
+    if (!established.has(tenantId)) {
+      await client.query(
+        `INSERT INTO dia.diagnostic_types (scope, tenant_id, code, name, status, created_by)
+         VALUES ('tenant',$1,$2,'P1-19 fixture diagnostics','active',$3)`,
+        [tenantId, DIAGNOSTIC_TYPE_CODE, USER_A]
+      );
+      await client.query(
+        `INSERT INTO dia.inspection_templates (tenant_id, code, name, diagnostic_type_id, created_by)
+         SELECT $1,$2,'P1-19 fixture template',t.id,$3
+           FROM dia.diagnostic_types t
+          WHERE t.tenant_id = $1 AND t.code = $4`,
+        [tenantId, TEMPLATE_CODE, USER_A, DIAGNOSTIC_TYPE_CODE]
+      );
+      await client.query(
+        `INSERT INTO dia.template_versions (tenant_id, template_id, version_number, created_by)
+         SELECT $1,t.id,1,$2 FROM dia.inspection_templates t
+          WHERE t.tenant_id = $1 AND t.code = $3`,
+        [tenantId, USER_A, TEMPLATE_CODE]
+      );
+      await client.query(
+        `INSERT INTO dia.template_items
+           (tenant_id, template_version_id, item_code, prompt, response_type, unit,
+            is_mandatory, validation_rule, sequence, created_by)
+         SELECT $1,v.id,'fx_brake_thickness','Front brake disc thickness','numeric','mm',
+                true,'{"min":22,"max":30}'::jsonb,1,$2
+           FROM dia.template_versions v
+           JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
+          WHERE v.tenant_id = $1 AND t.code = $3`,
+        [tenantId, USER_A, TEMPLATE_CODE]
+      );
+      // Publish through the real transition guard, not by inserting `published`.
+      await client.query(
+        `UPDATE dia.template_versions SET status = 'published'
+          WHERE tenant_id = $1 AND template_id = (
+            SELECT id FROM dia.inspection_templates WHERE tenant_id = $1 AND code = $2)`,
+        [tenantId, TEMPLATE_CODE]
+      );
+      established.add(tenantId);
+    }
+
+    const scope = await client.query<{ company_id: string; branch_id: string }>(
+      `SELECT company_id, branch_id FROM wo.work_orders WHERE id = $1`,
+      [workOrderId]
+    );
+    const companyId = scope.rows[0]?.company_id ?? '';
+    const branchId = scope.rows[0]?.branch_id ?? '';
+
+    const report = await client.query<{ id: string }>(
+      `INSERT INTO dia.diagnostic_reports
+         (tenant_id, company_id, branch_id, work_order_id, job_id, template_version_id,
+          diagnostic_type_id, revision_number, created_by)
+       SELECT $1,$2,$3,$4,$5,v.id,t.diagnostic_type_id,
+              COALESCE((SELECT MAX(revision_number) FROM dia.diagnostic_reports
+                         WHERE tenant_id = $1 AND job_id = $5), 0) + 1,
+              $6
+         FROM dia.template_versions v
+         JOIN dia.inspection_templates t ON t.tenant_id = v.tenant_id AND t.id = v.template_id
+        WHERE v.tenant_id = $1 AND t.code = $7
+       RETURNING id`,
+      [tenantId, companyId, branchId, workOrderId, jobId, USER_A, TEMPLATE_CODE]
+    );
+    const reportId = report.rows[0]?.id ?? '';
+
+    const finding = await client.query<{ id: string }>(
+      `INSERT INTO dia.findings
+         (tenant_id, company_id, branch_id, diagnostic_report_id, severity, disposition,
+          description, created_by)
+       VALUES ($1,$2,$3,$4,$5,'repair_required','Front discs below minimum thickness',$6)
+       RETURNING id`,
+      [tenantId, companyId, branchId, reportId, options.severity ?? 'high', USER_A]
+    );
+    await client.query('COMMIT');
+    return finding.rows[0]?.id ?? '';
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export interface SeededVisit {
   readonly visitId: string;
   readonly vehicleId: string;

@@ -277,6 +277,76 @@ something happened, never a way around a read gate.
 63 new backend tests across `p1-19-additional-work.test.ts` (33) and
 `p1-19-customer-approvals.test.ts` (30).
 
+## Adversarial review at `4f0a347`
+
+Six independent read-only reviewers over the whole Wave 6 diff — authorization and
+sensitive data, approval integrity, database contract, transaction and rollback,
+API/OpenAPI, QA and evidence — each finding then handed to an independent verifier
+prompted to REFUTE it and to default to refuted when uncertain.
+
+**44 raised, 9 confirmed, 35 refuted. 0 Critical, 0 High. 3 Medium, 6 Low, all
+fixed.** Deduplicated across dimensions (three reviewers found the same
+`setFulfillment` defect, two the same comment defect, two the same vacuous test):
+
+| #   | Severity | What it was                                                                                        |
+| --- | -------- | -------------------------------------------------------------------------------------------------- |
+| 1   | Medium   | `wo.work_order_states.allows_additional_work` was ignored — the gate read terminality only         |
+| 2   | Medium   | The rollback test never reached a write, so `rollback` was credited on a vacuous demonstration     |
+| 3   | Low ×3   | `setFulfillment` was the only mutation not refusing a terminal parent                              |
+| 4   | Low ×2   | A comment claimed the approval audit records the presented scope's LENGTH; it recorded only a flag |
+| 5   | Low      | Finding provenance had only negative tests — an implementation refusing every finding would pass   |
+
+Each fix, and why it is the fix:
+
+1. **`allows_additional_work` is now read.** The catalog has a flag whose entire
+   purpose is this question, and it is not the same as "not terminal": on the seeded
+   platform graph `draft`, `qc_pending` and `ready_to_close` are all non-terminal and
+   all `false`. Gating on terminality alone let a technician widen the scope of an
+   order already presented for quality control. The flag is tenant-overridable, which
+   is why it is read rather than mirrored, and the new case uses `qc_pending`
+   precisely because terminality would have missed it.
+2. **The rollback is now proved by a real post-write failure.** The old case gave the
+   service a foreign-tenant evidence version, which `assertBindableVersion` refuses
+   BEFORE the approval is inserted — correct behaviour, and no rollback at all. It
+   survives under its own name as the pre-check it is. The new case pre-takes the
+   outbox key the decision is about to publish, so `publishEvent` raises at the LAST
+   statement, after the approval row, the evidence row, the state change and both
+   audit records are written; all six are then absent. Reaching that point at all is
+   why `customer-approval.recorded` is now keyed by the REQUEST rather than by the
+   approval: the approval id is generated inside the transaction, so nothing could
+   pre-empt it and the atomicity claim would have rested on an argument. The request
+   id is also what a consumer already correlates on, since it is the id in
+   `additional-work.requested`.
+3. **`setFulfillment` now uses `lockDecidableRequest`.** Nothing in the schema
+   defended this: `fulfillment_state` is not frozen by
+   `tg_additional_work_requests_immutable`, the UPDATE policy carries no state
+   predicate, and `tg_additional_work_requests_state` fires only on `UPDATE OF state`,
+   so a fulfilment-only update reached no guard whatever. The reachable case is
+   sharp — an OPTIONAL approved-unfulfilled request never blocks closure, because B3
+   reads `is_required` — so a released vehicle's record could be marked fulfilled
+   afterwards, or a fulfilled one flipped to `waived`, rewriting the fact the closure
+   was granted on. Now tested against a cancelled order.
+4. **The presented scope's length is now recorded**, which makes the comment true and
+   is worth having: it lets an auditor see that a differently sized scope was
+   presented from the one a dispute is about, without the audit trail carrying
+   customer-facing text.
+5. **A positive provenance case now exists**, against a real seeded `dia.findings`
+   row with its whole catalog chain. And fixing it exposed a second defect nobody
+   raised: the execution gate keys on `originating_job_id`, so a request naming ONLY
+   a finding gated no job — work discovered by a diagnostic would have let the very
+   job that discovered it carry on unapproved, while the same work discovered by hand
+   stopped it. The originating job is now DERIVED from the finding's report (whose
+   `job_id` is NOT NULL, so it is exact), and a caller-named job that disagrees with
+   the finding's own job is refused rather than silently reconciled.
+
+The 35 refutations are not noise worth hiding: several were plausible Highs —
+"a dated-out party role can be named as the deciding party", "the restricted
+description is persisted into `shared.idempotency_keys`", "the detail PUT ignores
+`If-Match`" — and each was checked against the schema and the platform code and
+found already prevented or misread. They are recorded in the run journal rather than
+here, because a finding that did not survive verification is not evidence about the
+code.
+
 ## Defects this wave found in already-shipped material
 
 1. **A stale coverage note.** The `wo.required-part-record` MANIFEST note still

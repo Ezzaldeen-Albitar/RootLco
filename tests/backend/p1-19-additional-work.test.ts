@@ -62,6 +62,7 @@ import {
   establishP1_19Fixtures,
   outboxCount,
   partyRoleFor,
+  seedFinding,
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
@@ -369,6 +370,90 @@ describe('wo.additional-work-request', () => {
     ).toBe(0);
   });
 
+  it('accepts a real finding, and DERIVES the originating job from it', async () => {
+    const order = await createOpenWorkOrder();
+    const jobId = await createJob(order.workOrderId);
+    const findingId = await seedFinding(order.workOrderId, jobId);
+
+    // The positive half of the provenance check. Without it an implementation that
+    // refused EVERY finding — including by never reading the diagnostics module at
+    // all — would pass every other case in this suite, because they are all
+    // refusals.
+    authAs(FULL);
+    const response = await raise(order.workOrderId, {
+      originatingFindingId: findingId,
+      summary: 'Raised from a diagnostic finding',
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as RequestBody;
+    expect(body.originatingFindingId).toBe(findingId);
+    // Derived, not left null. The execution gate keys on `originating_job_id`, so a
+    // finding-only request would otherwise have gated no job — extra work found by a
+    // diagnostic would let the very job that found it carry on unapproved, while the
+    // same work found by hand stopped it.
+    expect(body.originatingJobId).toBe(jobId);
+  });
+
+  it('refuses a caller-named job that disagrees with the finding’s own job', async () => {
+    const order = await createOpenWorkOrder();
+    const jobId = await createJob(order.workOrderId);
+    const sibling = await createJob(order.workOrderId, 'A different job');
+    const findingId = await seedFinding(order.workOrderId, jobId);
+
+    // Both references are individually valid and both belong to this work order, so
+    // nothing in the database objects. Two different answers to "where did this come
+    // from" mean one is wrong, and silently reconciling them would record a
+    // provenance nobody stated.
+    authAs(FULL);
+    const response = await raise(order.workOrderId, {
+      originatingJobId: sibling,
+      originatingFindingId: findingId,
+      summary: 'Contradictory provenance',
+    });
+    expect(response.status).toBe(422);
+    const problem = (await response.json()) as RequestBody;
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations?.[0]?.rule).toBe('origin_conflict');
+  });
+
+  it('accepts a finding whose job the caller also names, when they agree', async () => {
+    const order = await createOpenWorkOrder();
+    const jobId = await createJob(order.workOrderId);
+    const findingId = await seedFinding(order.workOrderId, jobId);
+
+    // Naming both is permitted rather than refused: a finding is discovered while
+    // working a job, so the pair is more informative than either alone and nothing in
+    // the schema treats them as alternatives.
+    authAs(FULL);
+    const response = await raise(order.workOrderId, {
+      originatingJobId: jobId,
+      originatingFindingId: findingId,
+      summary: 'Both origins, in agreement',
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as RequestBody;
+    expect(body.originatingJobId).toBe(jobId);
+    expect(body.originatingFindingId).toBe(findingId);
+  });
+
+  it('refuses a finding that belongs to ANOTHER work order', async () => {
+    const mine = await createOpenWorkOrder();
+    const other = await createOpenWorkOrder();
+    const otherJob = await createJob(other.workOrderId);
+    const foreignFinding = await seedFinding(other.workOrderId, otherJob);
+
+    // `originating_finding_id` carries no foreign key at all, so this uuid would have
+    // been stored happily and the request would claim provenance on another vehicle's
+    // diagnostic.
+    authAs(FULL);
+    const response = await raise(mine.workOrderId, {
+      originatingFindingId: foreignFinding,
+      summary: 'Provenance from someone else’s vehicle',
+    });
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as RequestBody).code).toBe('ERR-RES-001');
+  });
+
   it('refuses a finding that resolves to nothing', async () => {
     const order = await createOpenWorkOrder();
     const jobId = await createJob(order.workOrderId);
@@ -384,6 +469,29 @@ describe('wo.additional-work-request', () => {
     });
     expect(response.status).toBe(404);
     expect(((await response.json()) as RequestBody).code).toBe('ERR-RES-001');
+  });
+
+  it('refuses a state whose allows_additional_work is false, even though it is not terminal', async () => {
+    const order = await createOpenWorkOrder();
+    const jobId = await createJob(order.workOrderId);
+    // `qc_pending` is non-terminal and carries `allows_additional_work = false` on the
+    // seeded platform graph — the case terminality alone would have missed, letting a
+    // technician widen the scope of an order already presented for quality control.
+    await advance(order.workOrderId, [{ toState: 'in_progress' }, { toState: 'qc_pending' }]);
+
+    authAs(FULL);
+    const response = await raise(order.workOrderId, {
+      originatingJobId: jobId,
+      summary: 'Discovered after the work was submitted for QC',
+    });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as RequestBody).code).toBe('ERR-TRN-001');
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM wo.additional_work_requests WHERE work_order_id = $1`,
+        [order.workOrderId]
+      )
+    ).toBe(0);
   });
 
   it('refuses a terminal work order', async () => {
@@ -876,6 +984,43 @@ describe('wo.additional-work-fulfillment', () => {
       (await setFulfillment(seeded.requestId, { fulfillmentState: 'fulfilled' }, { version }))
         .status
     ).toBe(404);
+  });
+
+  it('refuses fulfilment once the work order is terminal', async () => {
+    const order = await createOpenWorkOrder();
+    const jobId = await createJob(order.workOrderId);
+    authAs(FULL);
+    const raised = await raise(order.workOrderId, {
+      originatingJobId: jobId,
+      summary: 'Optional extra, approved and not yet done',
+      // OPTIONAL, so B3 ignores it entirely and the order can close with it still
+      // `approved` + `unfulfilled` — which is exactly the state that made this
+      // reachable. B3's second limb only ever looks at REQUIRED requests.
+      isRequired: false,
+    });
+    const body = (await raised.json()) as RequestBody;
+    const version = await approve(body.id, order.visitId, body.recordVersion);
+
+    // Cancel the order, which is terminal and bypasses B1–B6 by design.
+    await advance(order.workOrderId, [
+      { toState: 'cancelled', reason: 'Customer took the vehicle away' },
+    ]);
+
+    authAs(FULL);
+    const response = await setFulfillment(body.id, { fulfillmentState: 'fulfilled' }, { version });
+    // Every other command on this aggregate refuses a terminal parent, and an earlier
+    // draft of the service left this one writable — so a closed order's record could
+    // be marked fulfilled after the vehicle was released, or a fulfilled one flipped
+    // to `waived`, rewriting the fact the closure was granted on.
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as RequestBody).code).toBe('ERR-TRN-001');
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM wo.additional_work_requests
+          WHERE id = $1 AND fulfillment_state = 'unfulfilled'`,
+        [body.id]
+      )
+    ).toBe(1);
   });
 
   it('applies once on an idempotent replay', async () => {

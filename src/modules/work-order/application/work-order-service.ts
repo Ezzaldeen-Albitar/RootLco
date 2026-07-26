@@ -265,6 +265,54 @@ export class WorkOrderService extends ApplicationService {
     return row;
   }
 
+  /**
+   * One job's identity and scope, for another module that must attach to it.
+   *
+   * Exposed because `dia.diagnostic_reports` carries `work_order_id`, `company_id`
+   * and `branch_id` and the `diagnostics` module may not read `wo.jobs` to find them
+   * (ADR-001 rule 3). It returns the parent's state too, so the caller can refuse a
+   * frozen aggregate without a second cross-module hop.
+   *
+   * Null covers absent and out-of-scope alike; the caller decides what to disclose.
+   */
+  async jobScope(
+    db: DbHandle,
+    jobId: string
+  ): Promise<{
+    readonly jobId: string;
+    readonly workOrderId: string;
+    readonly companyId: string;
+    readonly branchId: string;
+    readonly jobState: string;
+    readonly requiresDiagnostic: boolean;
+    readonly workOrderState: string;
+    readonly jobIsTerminal: boolean;
+    readonly workOrderIsTerminal: boolean;
+  } | null> {
+    const job = await this.repository.findJob(db, jobId);
+    if (job === null) return null;
+    const workOrder = await this.repository.findWorkOrder(db, job.workOrderId);
+    if (workOrder === null) return null;
+    const [jobStates, workOrderStates] = await Promise.all([
+      this.catalog.jobStates(db),
+      this.catalog.workOrderStates(db),
+    ]);
+    return {
+      jobId: job.id,
+      workOrderId: job.workOrderId,
+      companyId: job.companyId,
+      branchId: job.branchId,
+      jobState: job.state,
+      requiresDiagnostic: job.requiresDiagnostic,
+      workOrderState: workOrder.state,
+      // An unknown code counts as terminal rather than as open: a state the catalog
+      // no longer resolves is not one this module can certify as accepting work.
+      jobIsTerminal: jobStates.find((state) => state.code === job.state)?.isTerminal ?? true,
+      workOrderIsTerminal:
+        workOrderStates.find((state) => state.code === workOrder.state)?.isTerminal ?? true,
+    };
+  }
+
   /** Live jobs on a work order. */
   async jobs(
     db: DbHandle,

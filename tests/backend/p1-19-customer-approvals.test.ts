@@ -531,14 +531,15 @@ describe('wo.additional-work-approval', () => {
     expect(((await response.json()) as ApprovalBody).code).toBe('ERR-DOC-001');
   });
 
-  it('leaves nothing behind when the evidence step fails after the approval would have been written', async () => {
+  it('refuses an unusable evidence version BEFORE writing anything', async () => {
     const seeded = await seedRequest();
     const good = await seedDocumentVersion();
     const bad = await seedDocumentVersion({ tenantId: TENANT_B });
 
-    // The rollback case: the first evidence entry is usable and the second is not, so
-    // the transaction gets as far as validating one before refusing. Everything must be
-    // absent — no approval, no evidence, no state change, no audit, no outbox row.
+    // Evidence is validated before the approval is inserted, so this refusal happens
+    // with nothing yet written. That is a pre-check, NOT a rollback, and it is named
+    // that way: an earlier version of this suite called it the rollback case, which
+    // credited atomicity on a demonstration that never reached a write.
     authAs(FULL);
     const response = await decide(
       seeded.requestId,
@@ -565,20 +566,90 @@ describe('wo.additional-work-approval', () => {
         [good, bad]
       )
     ).toBe(0);
+  });
+
+  it('rollback: a failure after every write leaves no approval, no evidence, no state change, no audit and no event', async () => {
+    const seeded = await seedRequest();
+    const versionId = await seedDocumentVersion();
+
+    // A GENUINE failure on the real path, at the last statement of the transaction.
+    // The outbox key this decision is about to publish is already taken for the
+    // tenant, so `publishEvent` raises AFTER the approval row, the evidence row, the
+    // request's state change and both audit records have all been written in this
+    // transaction. A different aggregate_id keeps the pre-inserted row out of this
+    // request's own counts.
+    //
+    // Reaching this point at all is why the event is keyed by the REQUEST rather than
+    // by the approval: the approval id is generated inside the transaction, so a test
+    // could not pre-empt it, and the rollback claim would have rested on an argument
+    // rather than an observation.
+    await admin.query(
+      `INSERT INTO shared.event_outbox
+         (tenant_id, event_key, event_type, aggregate_type, aggregate_id, schema_version,
+          aggregate_version, producer, created_by)
+       VALUES ($1,$2,'customer-approval.recorded','wo.customer_approval',$3,1,1,
+               'wo.additional-work-service',$4)`,
+      [
+        await tenantOf(seeded.requestId),
+        `customer-approval.recorded:${seeded.requestId}`,
+        crypto.randomUUID(),
+        USER_A,
+      ]
+    );
+
+    authAs(FULL);
+    const response = await decide(
+      seeded.requestId,
+      decisionBody(seeded, {
+        evidence: [{ documentVersionId: versionId, evidenceType: 'signature' }],
+      }),
+      { version: seeded.version }
+    );
+    expect(response.status).toBe(409);
+
+    // Every one of the six writes is gone.
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM wo.customer_approvals WHERE additional_work_request_id = $1`,
+        [seeded.requestId]
+      )
+    ).toBe(0);
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM wo.customer_approval_evidence WHERE document_version_id = $1`,
+        [versionId]
+      )
+    ).toBe(0);
     expect(
       await count(
         `SELECT count(*)::text AS n FROM wo.additional_work_requests
-          WHERE id = $1 AND state = 'pending'`,
-        [seeded.requestId]
+          WHERE id = $1 AND state = 'pending' AND record_version = $2`,
+        [seeded.requestId, seeded.version]
       )
     ).toBe(1);
     expect(await auditCount(STATE_CHANGED, seeded.requestId)).toBe(0);
     expect(
       await count(
+        `SELECT count(*)::text AS n FROM iam.audit_records WHERE action = $1
+           AND entity_id IN (SELECT id FROM wo.customer_approvals
+                              WHERE additional_work_request_id = $2)`,
+        [APPROVAL_RECORDED, seeded.requestId]
+      )
+    ).toBe(0);
+    // Exactly ONE row carries this key — the pre-inserted sentinel — and it names a
+    // different aggregate, so nothing this request published survives. `payload` is
+    // `NOT NULL DEFAULT '{}'`, so "has a payload" cannot tell the two apart; the
+    // aggregate is what distinguishes them.
+    expect(
+      await count(`SELECT count(*)::text AS n FROM shared.event_outbox WHERE event_key = $1`, [
+        `customer-approval.recorded:${seeded.requestId}`,
+      ])
+    ).toBe(1);
+    expect(
+      await count(
         `SELECT count(*)::text AS n FROM shared.event_outbox
-          WHERE event_type = 'customer-approval.recorded'
-            AND payload->>'additionalWorkRequestId' = $1`,
-        [seeded.requestId]
+          WHERE event_key = $1 AND payload ->> 'additionalWorkRequestId' IS NOT NULL`,
+        [`customer-approval.recorded:${seeded.requestId}`]
       )
     ).toBe(0);
   });
