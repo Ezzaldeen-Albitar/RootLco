@@ -1,0 +1,688 @@
+{
+  "generatedFrom": "scripts/check-operation-test-coverage.mjs",
+  "counts": {
+    "registered": 12,
+    "publicApi": 12,
+    "operationDepth": 12,
+    "invocationOnly": 0,
+    "pending": 0,
+    "unitOnly": 0,
+    "unreferenced": 0,
+    "metadataOnly": 0
+  },
+  "operations": [
+    {
+      "id": "apt.appointment-cancel",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/appointments/{appointmentId}/cancel",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "stale-version"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "apt.appointment-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/appointments",
+      "public": false,
+      "files": ["tests/backend/p1-18-appointment-lifecycle.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "outbox", "rollback"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "apt.appointment-no-show",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/appointments/{appointmentId}/no-show",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "stale-version"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "apt.appointment-reschedule",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/appointments/{appointmentId}/reschedule",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "stale-version",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-approve",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/approve",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-approval.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "stale-version",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-authorization",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/authorizations",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-parties.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-condition-evidence",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/condition-evidence",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "idempotency",
+        "rollback"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "rollback"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-convert-to-work-order",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/convert-to-work-order",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-conversion.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "rollback",
+        "stale-version",
+        "idempotency",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial",
+        "rollback",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "rollback",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions",
+      "public": false,
+      "files": ["tests/backend/p1-18-reception-create.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "isolation",
+        "audit",
+        "outbox",
+        "rollback",
+        "idempotency",
+        "concurrency"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "outbox",
+        "rollback",
+        "concurrency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-party-role",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/party-roles",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-parties.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-refusal",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/refusals",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.reception-signature",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/receptions/{receptionId}/signatures",
+      "public": false,
+      "files": [
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts"
+      ],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    }
+  ]
+}

@@ -16,6 +16,264 @@
     }
   ],
   "paths": {
+    "/api/v1/appointments": {
+      "post": {
+        "operationId": "apt.appointment-create",
+        "summary": "Book an appointment for a vehicle on a branch calendar.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["apt.appointment.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/appointments/{appointmentId}/cancel": {
+      "post": {
+        "operationId": "apt.appointment-cancel",
+        "summary": "Cancel an appointment with a catalogued reason.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["apt.appointment.lifecycle.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/appointments/{appointmentId}/no-show": {
+      "post": {
+        "operationId": "apt.appointment-no-show",
+        "summary": "Record a confirmed appointment as a no-show.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["apt.appointment.lifecycle.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/appointments/{appointmentId}/reschedule": {
+      "post": {
+        "operationId": "apt.appointment-reschedule",
+        "summary": "Set or move the confirmed window of an appointment.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["apt.appointment.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/attachments/documents/{documentId}/download-authorizations": {
       "post": {
         "operationId": "shared.attachment-download-authorize",
@@ -4194,6 +4452,498 @@
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions": {
+      "post": {
+        "operationId": "rec.reception-create",
+        "summary": "Open a reception visit and accept custody of the vehicle.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/approve": {
+      "post": {
+        "operationId": "rec.reception-approve",
+        "summary": "Advance a reception visit to authorized.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.approve"],
+        "x-scope": "branch",
+        "x-audit-class": "approval",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/authorizations": {
+      "post": {
+        "operationId": "rec.reception-authorization",
+        "summary": "Record an authorizing party decision on a reception visit.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.authorization.verify"],
+        "x-scope": "branch",
+        "x-audit-class": "approval",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/condition-evidence": {
+      "post": {
+        "operationId": "rec.reception-condition-evidence",
+        "summary": "Append one piece of pre-service condition evidence to a reception visit.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.evidence.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/convert-to-work-order": {
+      "post": {
+        "operationId": "rec.reception-convert-to-work-order",
+        "summary": "Convert an authorized reception visit into one minimal work order.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.convert"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/party-roles": {
+      "post": {
+        "operationId": "rec.reception-party-role",
+        "summary": "Assign a dated party role on a reception visit.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.party.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/refusals": {
+      "post": {
+        "operationId": "rec.reception-refusal",
+        "summary": "Record that a party refused a reception step.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.signature.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/receptions/{receptionId}/signatures": {
+      "post": {
+        "operationId": "rec.reception-signature",
+        "summary": "Record a party signature against a reception visit.",
+        "tags": ["reception"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rec.reception.signature.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
     },

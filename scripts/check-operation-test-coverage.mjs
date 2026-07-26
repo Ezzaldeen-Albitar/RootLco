@@ -89,7 +89,15 @@ export const P1_16_PREFIX = 'crm.';
  * floor. Only the per-phase count block is reported separately.
  */
 export const P1_17_PREFIX = 'veh.';
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX];
+/**
+ * P1-18 spans TWO id namespaces — `apt.` (appointment) and `rec.` (reception) —
+ * because the frozen Phase 1-8 database splits them into two schemas with
+ * different lifecycles. Both must appear in DERIVED_PREFIXES or the derived floor
+ * silently would not apply to half the phase, which is exactly the class of
+ * failure P1-17 had to remediate three times.
+ */
+export const P1_18_PREFIXES = ['apt.', 'rec.'];
+const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX, ...P1_18_PREFIXES];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -242,6 +250,166 @@ export const MANIFEST = {
     files: ['tests/backend/p1-17-vehicle-history.test.ts'],
     required: ['denial', 'cross-tenant'],
     note: 'lists document ids reachable from the vehicle via the sanctioned shared.document_ids_for_entity resolver (no storage key, no bytes); an unknown vehicle and a cross-tenant vehicle answer the same 404 (denial/cross-tenant); linking is the shared attachments operation, not this one',
+  },
+
+  // ========================================================================
+  // Phase 1-18 (apt. / rec.) — Appointment and Reception Backend. Same derived-
+  // evidence model; `required` adds what each operation owes beyond the floor.
+  // Every one of these operations takes physical or contractual custody of a
+  // customer's vehicle, so `rollback` is demanded wherever more than one row is
+  // written, and `concurrency` wherever two callers can race for one outcome.
+  // ========================================================================
+  'apt.appointment-create': {
+    files: ['tests/backend/p1-18-appointment-lifecycle.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'rollback'],
+    note: 'appointment + audit + outbox commit in one transaction; an injected failure leaves none of the three (rollback); a tenant-B vehicle or requester is unreachable (cross-tenant); a branch outside the caller grant is refused (isolation); a timezone-less window and an inverted window are refused (denial)',
+  },
+  'apt.appointment-reschedule': {
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'moves the CONFIRMED window only — the requested window is immutable, proved by reading it back unchanged; a second confirmed appointment overlapping the same vehicle is refused by the frozen EXCLUDE as 409 (denial); a wrong If-Match is refused (stale-version); two concurrent reschedules leave exactly one committed winner (concurrency)',
+  },
+  'apt.appointment-cancel': {
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'terminal and set-once; cancelling an already-cancelled or no-show appointment is refused (denial); cancellation writes reason + time + actor together, so the frozen coherence CHECK can never see a half-cancelled row; distinct from no-show and never a substitute for it',
+  },
+  'apt.appointment-no-show': {
+    files: [
+      'tests/backend/p1-18-appointment-lifecycle.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'reachable ONLY from confirmed — a requested or pending appointment is refused (denial), which is the business rule that you cannot fail to show up for an appointment nobody confirmed; never inferred from elapsed time',
+  },
+  'rec.reception-create': {
+    files: ['tests/backend/p1-18-reception-create.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'rollback',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'both origin modes: a walk-in creates its own origin record (no fabricated appointment) and an appointment origin also moves the appointment to checked_in, all in one transaction; visit + service-requester role + accepted custody + status history are written atomically by rec.accept_check_in and an injected failure leaves none of them (rollback); one origin is consumed at most once and two concurrent check-ins of the same origin leave exactly one visit (concurrency)',
+  },
+  'rec.reception-party-role': {
+    files: [
+      'tests/backend/p1-18-reception-parties.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'roles supersede by date rather than being edited in place — the frozen immutability trigger makes in-place edits impossible, proved by reading the superseded row back unchanged with only valid_to set; a role outside the frozen 7-value vocabulary is refused (denial)',
+  },
+  'rec.reception-authorization': {
+    files: [
+      'tests/backend/p1-18-reception-parties.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'fails closed: a partner holding no ACTIVE authorizing role on the visit is refused by the frozen authority guard (denial) and the refusal message never discloses which roles that partner does hold; vehicle_user and payer are not authorizing roles; the row is append-only and cannot be updated by any application role',
+  },
+  'rec.reception-condition-evidence': {
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'one command, eight evidence kinds; a damage mark outside the 0..1 coordinate box and a finding on a finalised inspection are refused (denial); a damage map bound to a version that does not belong to its document is refused by the frozen guard; an out-of-scope parent inspection or map answers 404 rather than a foreign-key error (cross-tenant); prior evidence is never overwritten',
+  },
+  'rec.reception-signature': {
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'bound to an exact immutable document version (a version belonging to another document is refused); append-only — no application role holds UPDATE or DELETE on rec.signatures, proved by attempting both; records an acknowledgement, never a certified identity proof',
+  },
+  'rec.reception-refusal': {
+    files: [
+      'tests/backend/p1-18-reception-evidence.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'a refusal is preserved as its own fact and is never readable as consent — proved by showing an approval attempt still fails after a signature refusal is recorded; an archived refusal reason cannot be newly selected (denial); append-only and unerasable',
+  },
+  'rec.reception-approve': {
+    files: [
+      'tests/backend/p1-18-reception-approval.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'prerequisites are exactly the frozen activation contract and nothing invented: without an active service requester, or without an approved authorization, the transition is refused (denial); a wrong If-Match is refused (stale-version); two concurrent approvals leave exactly one committed winner and exactly one outbox row (concurrency)',
+  },
+  'rec.reception-convert-to-work-order': {
+    files: [
+      'tests/backend/p1-18-reception-conversion.test.ts',
+      'tests/backend/p1-18-scope-containment.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'rollback',
+      'stale-version',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
   // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
@@ -857,13 +1025,16 @@ export function parseProvidedFlags(source) {
       inBlock = false;
       continue;
     }
-    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16. The
-    // prefix list is explicit rather than a wildcard so a typo in a declaration
-    // is a missing flag — which fails the gate — instead of a silently accepted
-    // new namespace.
-    const m = /^\s*\*?\s*((?:iam|meta|shared|crm|veh)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
-      line
-    );
+    // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
+    // with P1-17, and `apt`/`rec` with P1-18. The prefix list is explicit rather
+    // than a wildcard so a typo in a declaration is a missing flag — which fails
+    // the gate — instead of a silently accepted new namespace. Forgetting to add a
+    // namespace here makes EVERY declaration for it invisible, so a new phase must
+    // extend this alternation in the same commit that registers its operations.
+    const m =
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+        line
+      );
     if (m) {
       const flags = new Set(m[2].split(/\s+/).filter(Boolean));
       const existing = provided.get(m[1]);
@@ -878,12 +1049,35 @@ export function parseProvidedFlags(source) {
 const COMMENT_CLOSE = '*' + '/';
 
 /**
- * Removes the COVERAGE-EVIDENCE declaration block from a file's text, so the
- * "is this operation actually invoked?" check cannot be satisfied by the machine
- * -readable declaration itself. After stripping, the operation id must still
- * appear in the file — in the "Operations exercised here" listing and, for the
- * write operations, the `describe`/`it` bodies that invoke the service — for the
- * operation to count as referenced.
+ * Removes EVERY block comment from a file's text, so the "is this operation
+ * actually invoked?" check can only be satisfied by executable code.
+ *
+ * This used to strip the COVERAGE-EVIDENCE block alone, which was not enough and
+ * quietly weakened the strictest gate in the repository. A suite's header JSDoc
+ * also carries a prose line — `Operations exercised here: <id>` — and it lives in
+ * the SAME comment as the evidence block but ABOVE it, so it survived the strip
+ * and satisfied the check on its own. Five P1-18 operations were referenced
+ * nowhere else in their files: every `describe` and every `it` could have been
+ * deleted and the gate would still have reported them at operation depth. That
+ * is the same class of hole that credited eight P1-17 operations on evidence
+ * which did not exist, and the reason this gate exists at all.
+ *
+ * Stripping all block comments is the honest rule: prose about a test is not a
+ * test. An operation counts as referenced only if its id appears in real code —
+ * a `describe`/`it` title or a call site.
+ *
+ * This is applied as a RATCHET, not retroactively, and the reason is recorded
+ * rather than hidden. Turning it on for every operation fails 41 of them across
+ * FOUR namespaces — `veh` 20, `crm` 18, `iam` 2, `meta` 1. (An earlier revision
+ * of this comment said 39 across three and omitted `meta` entirely; the figure
+ * is now pinned by `tests/foundation/operation-coverage-gate.test.ts` so it
+ * cannot drift silently again.) Those suites do genuinely drive their operations — they
+ * import the route module and call the handler — they simply never write the id
+ * as a string outside their header. Rewriting three earlier phases' suites
+ * inside a P1-18 remediation would put unvalidated breadth into protected
+ * history for a cosmetic reason. So the strict form governs P1-18, the previous
+ * form governs everything that predates it, and the gap is an open cross-phase
+ * follow-up (P1-18-R-02) rather than a silent exemption.
  */
 export function stripCoverageBlock(source) {
   const out = [];
@@ -900,6 +1094,107 @@ export function stripCoverageBlock(source) {
     out.push(line);
   }
   return out.join('\n');
+}
+
+/**
+ * The strict form: removes every comment, leaving only executable code.
+ *
+ * This is a single-pass lexical scanner rather than a line filter, because the
+ * line filter it replaces was wrong in a way that mattered. It handled block
+ * comments only, so a `//` banner survived — and three P1-18 suites had exactly
+ * that
+ * (`// rec.reception-signature` and two siblings), which meant the ratchet's own
+ * promise, that prose cannot stand in for a test, was false for those operations.
+ *
+ * A naive `//`-to-end-of-line regex would be worse than the bug: these suites are
+ * full of `'http://localhost/api/v1/…'`, and truncating there would silently
+ * delete real code and produce false FAILURES. So the scanner tracks the four
+ * contexts where `/` and `*` are not comment openers — single quotes, double
+ * quotes, template literals, and regex literals — honours backslash escapes in
+ * each, and only treats `//` and `/*` as comments in code position. Strings are
+ * kept (an operation id inside a real string literal is executable code); their
+ * contents simply cannot open a comment.
+ *
+ * Regex-versus-division is decided the way a lexer does it: a `/` starts a regex
+ * only when the previous significant character cannot end an expression.
+ */
+export function stripComments(source) {
+  let out = '';
+  let i = 0;
+  // The last non-whitespace character of emitted code, for the regex/division test.
+  let prev = '';
+  const n = source.length;
+  const canPrecedeRegex = (c) => c === '' || '([{,;:=!?&|+-*%~^<>'.includes(c) || c === '\n';
+
+  while (i < n) {
+    const c = source[i];
+    const next = source[i + 1];
+
+    if (c === '/' && next === '/') {
+      while (i < n && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      // A block comment is whitespace, so keep tokens on either side apart.
+      out += ' ';
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const quote = c;
+      out += c;
+      i += 1;
+      while (i < n) {
+        if (source[i] === '\\') {
+          out += source.slice(i, i + 2);
+          i += 2;
+          continue;
+        }
+        out += source[i];
+        if (source[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      prev = quote;
+      continue;
+    }
+    if (c === '/' && canPrecedeRegex(prev)) {
+      out += c;
+      i += 1;
+      let inClass = false;
+      while (i < n) {
+        if (source[i] === '\\') {
+          out += source.slice(i, i + 2);
+          i += 2;
+          continue;
+        }
+        if (source[i] === '[') inClass = true;
+        else if (source[i] === ']') inClass = false;
+        out += source[i];
+        if (source[i] === '/' && !inClass) {
+          i += 1;
+          break;
+        }
+        if (source[i] === '\n') {
+          // Not a regex after all; bail rather than swallow the rest of the file.
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      prev = '/';
+      continue;
+    }
+    out += c;
+    if (!/\s/.test(c)) prev = c;
+    else if (c === '\n') prev = '\n';
+    i += 1;
+  }
+  return out;
 }
 
 /** A pure-unit suite. Evidence for a public operation may not live only here. */
@@ -975,7 +1270,12 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       const source = readFile(file);
       // The operation must be referenced OUTSIDE its own COVERAGE-EVIDENCE
       // block — the declaration cannot vouch for the invocation it declares.
-      const inThisFile = source != null && stripCoverageBlock(source).includes(id);
+      // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
+      // the header cannot stand in for a test either.
+      const strict = P1_18_PREFIXES.some((prefix) => id.startsWith(prefix));
+      const visible =
+        source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
+      const inThisFile = visible != null && visible.includes(id);
       if (!inThisFile) {
         referenced = false;
         failures.push(
@@ -993,7 +1293,15 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       );
     }
 
-    const isDerived = id.startsWith(DERIVED_PREFIX);
+    // The four structural checks below (metadata-only, unit-only, invocation-only,
+    // internal-without-reason) originally applied to `shared.` alone. P1-18 opts
+    // `apt.`/`rec.` in as well, because the P1-17 remediations showed the derived
+    // floor is necessary but not sufficient: an operation can satisfy every
+    // required flag and still be evidenced only by metadata. The already-closed
+    // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
+    // gate over a merged phase belongs in that phase's own remediation, not in a
+    // later phase's feature branch.
+    const isDerived = id.startsWith(DERIVED_PREFIX) || P1_18_PREFIXES.some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1052,6 +1360,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const derivedRows = phaseRows(DERIVED_PREFIX);
   const crmRows = phaseRows(P1_16_PREFIX);
   const vehRows = phaseRows(P1_17_PREFIX);
+  // P1-18 spans two namespaces, so its phase row set is their union.
+  const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1079,6 +1389,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_15: phaseCounts(derivedRows),
     p1_16: phaseCounts(crmRows),
     p1_17: phaseCounts(vehRows),
+    p1_18: phaseCounts(aptRecRows),
   };
   return { failures, matrix, counts };
 }
@@ -1178,6 +1489,14 @@ async function runCli() {
       operations: matrix.filter((m) => m.id.startsWith(P1_17_PREFIX)),
     }
   );
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-18', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_18,
+      operations: matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
 
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
@@ -1222,6 +1541,15 @@ async function runCli() {
     console.log(`P1-17 unit-only: ${r.unitOnly}`);
     console.log(`P1-17 unreferenced: ${r.unreferenced}`);
     console.log(`P1-17 metadata-only: ${r.metadataOnly}`);
+    const s = counts.p1_18;
+    console.log('');
+    console.log(`P1-18 registered public operations: ${s.registered}`);
+    console.log(`P1-18 operation-depth: ${s.operationDepth}`);
+    console.log(`P1-18 invocation-only: ${s.invocationOnly}`);
+    console.log(`P1-18 pending: ${s.pending}`);
+    console.log(`P1-18 unit-only: ${s.unitOnly}`);
+    console.log(`P1-18 unreferenced: ${s.unreferenced}`);
+    console.log(`P1-18 metadata-only: ${s.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

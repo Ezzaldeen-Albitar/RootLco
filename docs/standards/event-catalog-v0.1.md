@@ -92,32 +92,42 @@ claim.
 
 ## 3. Reserved event names
 
-Nine names are recorded below. Seven are the Phase 1-13 reservations, whose `EVT-` codes come from
+Ten names are recorded below. Seven are the Phase 1-13 reservations, whose `EVT-` codes come from
 the Chapter 4 Table 4.5 allocation in the canonical documents (see
 [canonical-documents.md](../governance/canonical-documents.md); those documents live outside this
-repository by owner decision); the other two are the vehicle names P1-17 allocated beyond that
-reservation. **The registry is behind the code:**
-[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds nineteen entries, and
+repository by owner decision); the other three were allocated beyond that reservation — the two
+vehicle names P1-17 added (`vehicle.created`, `vehicle.merged`) and P1-18's `reception.approved`.
+**The registry is behind the code:**
+[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds twenty entries, and
 the ten added by Phases 1-14, 1-15, and 1-16 have not been carried back into this table as §4
 requires. That gap is recorded here rather than papered over; closing it belongs to those phases'
 owners, not to a vehicle change.
 
-| Code            | Event type                     | Schema version | Aggregate type            | Owner module | `implementedIn` | Description                                                       |
-| --------------- | ------------------------------ | -------------- | ------------------------- | ------------ | --------------- | ----------------------------------------------------------------- |
-| **EVT-IAM-001** | `access.grant.changed`         | 1              | `iam.role_grant`          | `iam`        | **`P1-14`**     | A role grant was created, modified, or revoked for a user.        |
-| **EVT-CRM-001** | `business-partner.merged`      | 1              | `crm.business_partner`    | `crm`        | **`P1-16`**     | Two business partners were merged; the survivor is the aggregate. |
-| **EVT-VEH-001** | `vehicle.relationship.changed` | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A vehicle ownership or authorised-person relationship changed.    |
-| **EVT-VEH-002** | `vehicle.created`              | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A vehicle master was created as a draft.                          |
-| **EVT-VEH-003** | `vehicle.merged`               | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A duplicate vehicle was merged into a surviving vehicle.          |
-| **EVT-APT-001** | `appointment.changed`          | 1              | `apt.appointment`         | `apt`        | **`null`**      | An appointment was booked, rescheduled, or cancelled.             |
-| **EVT-REC-001** | `vehicle.checked-in`           | 1              | `rec.reception_visit`     | `rec`        | **`null`**      | A vehicle was received and custody was accepted.                  |
-| **EVT-DOC-001** | `document.accepted`            | 1              | `shared.document`         | `shared`     | **`null`**      | A document version passed scanning and was accepted.              |
-| **EVT-NTF-001** | `message.delivery.changed`     | 1              | `shared.outbound_message` | `shared`     | **`null`**      | An outbound message changed delivery state.                       |
+| Code            | Event type                     | Schema version | Aggregate type            | Owner module | `implementedIn` | Description                                                                  |
+| --------------- | ------------------------------ | -------------- | ------------------------- | ------------ | --------------- | ---------------------------------------------------------------------------- |
+| **EVT-IAM-001** | `access.grant.changed`         | 1              | `iam.role_grant`          | `iam`        | **`P1-14`**     | A role grant was created, modified, or revoked for a user.                   |
+| **EVT-CRM-001** | `business-partner.merged`      | 1              | `crm.business_partner`    | `crm`        | **`P1-16`**     | Two business partners were merged; the survivor is the aggregate.            |
+| **EVT-VEH-001** | `vehicle.relationship.changed` | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A vehicle ownership or authorised-person relationship changed.               |
+| **EVT-VEH-002** | `vehicle.created`              | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A vehicle master was created as a draft.                                     |
+| **EVT-VEH-003** | `vehicle.merged`               | 1              | `veh.vehicle`             | `veh`        | **`P1-17`**     | A duplicate vehicle was merged into a surviving vehicle.                     |
+| **EVT-APT-001** | `appointment.changed`          | 1              | `apt.appointment`         | `apt`        | **`P1-18`**     | An appointment was booked, rescheduled, cancelled, or recorded as a no-show. |
+| **EVT-REC-001** | `vehicle.checked-in`           | 1              | `rec.reception_visit`     | `rec`        | **`P1-18`**     | A vehicle was received and custody was accepted.                             |
+| **EVT-REC-002** | `reception.approved`           | 1              | `rec.reception_visit`     | `rec`        | **`P1-18`**     | A reception visit was authorized and released for work.                      |
+| **EVT-DOC-001** | `document.accepted`            | 1              | `shared.document`         | `shared`     | **`null`**      | A document version passed scanning and was accepted.                         |
+| **EVT-NTF-001** | `message.delivery.changed`     | 1              | `shared.outbound_message` | `shared`     | **`null`**      | An outbound message changed delivery state.                                  |
 
-`implementedIn` is the whole claim this table makes about what actually runs. Four names still carry
-**`null`** — `appointment.changed`, `vehicle.checked-in`, `document.accepted`, and
-`message.delivery.changed` — and for those it means exactly what it says: **reserved only**.
-Nothing publishes them, nothing consumes them, and no payload schema for them exists yet.
+`implementedIn` is the whole claim this table makes about what actually runs. Two names still carry
+**`null`** — `document.accepted` and `message.delivery.changed` — and for those it means exactly
+what it says: **reserved only**. Nothing publishes them, nothing consumes them, and no payload
+schema for them exists yet. P1-18 moved `appointment.changed` and `vehicle.checked-in` off `null` by
+adding real producers, and registered one new name, `reception.approved`.
+
+P1-18 Field 24 calls the check-in fact `reception.vehicle-checked-in.v1`, while Chapter 4 Table 4.5
+and the P1-08 boundary record allocate `vehicle.checked-in.v1` for the same fact. The **reserved
+entry above wins**: one fact must not carry two event names, and minting the second spelling would
+have created a duplicate contract rather than a clearer one. Reception-to-work-order conversion
+publishes **no** event — the approved catalog defines none for it, and this standard does not permit
+inventing one to fill the gap.
 `message.delivery.changed` is the one whose `null` is structural rather than merely pending:
 delivery state changes on the worker archetype, which has no `RequestContext`, and `publishEvent()`
 cannot be called without one. Every other name carries the identifier of the phase whose change
