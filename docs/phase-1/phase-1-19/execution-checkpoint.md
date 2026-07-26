@@ -112,11 +112,11 @@ ordering is not index-aligned and no migration is authorised to add one.
 | Job status ledger — paginated, origin block                                 | **Done, green** |
 | Technician assignment / unassignment / reassignment, queue                  | **Done, green** |
 | Labour sessions — start, stop, pause/resume, correction, job log            | **Done, green** |
-| Available-technician query (ranked candidates)                              | **Not started** |
-| Work-order service lines and required-part demand                           | **Not started** |
+| Work-order service lines and required-part demand                           | **Done, green** |
+| Available-technician query (ranked candidates) — the ONLY Wave 5 item left  | **Not started** |
 
-Unit **843** / Backend **867** (was 825) / P1-19 operation depth **19/19**, 0
-pending, OpenAPI **111 paths / 129 operations**. CI **#212 Success 4/4** on the
+Unit **843** / Backend **885** (was 825) / P1-19 operation depth **23/23**, 0
+pending, OpenAPI **113 paths / 133 operations**. CI **#212 Success 4/4** on the
 Wave 4 head `ff82189`, verified on the exact SHA.
 
 Labour sessions, in one paragraph: `tech.labor_sessions` has ONLY `started_at` and
@@ -408,3 +408,20 @@ Traps that still apply to every wave:
 - Two narrowed principals are needed to test isolation honestly: one whose grants
   make the row visible (403 from the scoped check) and one whose do not (404 from
   RLS). `PERMISSION_ELSEWHERE` and `SCOPED_ELSEWHERE` in the shared fixture.
+
+### A protected-schema correction Wave 5 found
+
+`wo.work_order_service_lines.service_ref` and `wo.required_parts.item_ref` are
+**REAL foreign keys**, not the unconstrained forward pointers the Phase 1-9 table
+comments still describe: migration `20260723097000_wo_forward_fks.sql` added
+`fk_work_order_service_lines_service` to `svc.services (tenant_id, id)` and
+`fk_required_parts_item` to `inv.item_master (tenant_id, id)` once the Phase 1-10
+catalogs existed. The first draft of the line service documented them as
+unconstrained and would have surfaced an unknown reference as a **500**; it now maps
+`23503` to `ERR-RES-001`, and the test exercising that refusal is what caught it.
+Those catalogs are empty in this phase, so the refusal is the path under test.
+
+The "reserves nothing" claim survives intact and is asserted rather than described:
+a foreign key to the item CATALOG is not a stock movement, and the suite reads back
+both `parts_forward_state` (unchanged) and `inv.stock_movements` /
+`inv.stock_balances` (empty).

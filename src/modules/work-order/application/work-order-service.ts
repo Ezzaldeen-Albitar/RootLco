@@ -22,6 +22,7 @@ import {
   WORK_ORDER_HISTORY_ORDER,
   WORK_ORDER_LIST_ORDER,
   type BlockerHit,
+  type LineRow,
   type JobRow,
   type StatusHistoryRow,
   type WorkOrderListFilter,
@@ -705,6 +706,119 @@ export class WorkOrderService extends ApplicationService {
       origin: { initialState: initial ?? job.state },
       transitions: { ...transitions, items: transitions.items.map(toHistoryEntry) },
     };
+  }
+
+  /**
+   * Records a service line or a required part against a work order.
+   *
+   * ## Required parts are DEMAND, and that is the whole contract
+   *
+   * Nothing here reserves stock, issues stock, or touches an inventory row —
+   * `wo.required_parts.item_ref` is an opaque forward reference to the Phase 1-10
+   * item catalog with NO foreign key, and `parts_forward_state` on the work order is
+   * documented as a forward contract with no reservation enforced. Recording what a
+   * job needs and consuming what the store has are different acts owned by different
+   * phases, and conflating them here would let a work order silently deplete stock
+   * that no one had issued.
+   *
+   * The optional `jobId` must belong to THIS work order. The composite foreign key
+   * `(tenant, company, branch, job_id)` cannot express that on its own — a job in the
+   * same branch but a different work order satisfies it — so the check is explicit,
+   * and it is the difference between a line on the right job and a line that quietly
+   * attaches work to the wrong one.
+   */
+  async recordLine(
+    db: DbHandle,
+    kind: 'service' | 'part',
+    workOrderId: string,
+    input: {
+      readonly jobId?: string | undefined;
+      readonly description: string;
+      readonly quantity: string;
+      readonly unit?: string | undefined;
+      readonly reference?: string | undefined;
+    },
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<LineRow> {
+    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
+    const states = await this.catalog.workOrderStates(db);
+    const state = states.find((candidate) => candidate.code === workOrder.state);
+    if (state === undefined || state.isTerminal) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Work order state "${workOrder.state}" does not accept new lines`,
+      });
+    }
+    if (input.jobId !== undefined) {
+      const job = await this.repository.findJob(db, input.jobId);
+      if (job === null || job.workOrderId !== workOrderId) {
+        throw new AppFailure('ERR-RES-001', {
+          message: `Job ${input.jobId} does not belong to work order ${workOrderId}`,
+        });
+      }
+    }
+
+    let line: LineRow;
+    try {
+      line = await this.repository.recordLine(db, kind, {
+        workOrderId,
+        companyId: workOrder.companyId,
+        branchId: workOrder.branchId,
+        jobId: input.jobId ?? null,
+        description: input.description,
+        quantity: input.quantity,
+        unit: input.unit ?? 'each',
+        reference: input.reference ?? null,
+      });
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
+        // The catalog reference does not resolve. `fk_work_order_service_lines_service`
+        // and `fk_required_parts_item` are REAL foreign keys — added by migration
+        // 20260723097000 once the Phase 1-10 catalogs existed — to
+        // `svc.services (tenant_id, id)` and `inv.item_master (tenant_id, id)`. An
+        // earlier draft of this module described both as unconstrained forward
+        // references and would have surfaced an unknown reference as a 500.
+        throw new AppFailure('ERR-RES-001', {
+          message:
+            kind === 'service'
+              ? `Service ${input.reference} is not in the service catalog`
+              : `Item ${input.reference} is not in the item catalog`,
+          cause: error,
+        });
+      }
+      throw error;
+    }
+
+    await appendAudit(db, {
+      action:
+        kind === 'service'
+          ? 'wo.work_order.service_line_recorded'
+          : 'wo.work_order.required_part_recorded',
+      entityType: kind === 'service' ? 'wo.work_order_service_line' : 'wo.required_part',
+      entityId: line.id,
+      companyId: workOrder.companyId,
+      branchId: workOrder.branchId,
+      details: [
+        { field: 'work_order_id', classification: 'internal', value: workOrderId },
+        ...(line.jobId === null
+          ? []
+          : [{ field: 'job_id', classification: 'internal' as const, value: line.jobId }]),
+        { field: 'description', classification: 'internal', value: line.description },
+        { field: 'quantity', classification: 'public', value: line.quantity },
+        { field: 'unit', classification: 'public', value: line.unit },
+      ],
+    });
+    return line;
+  }
+
+  /** Every live service line or required part on a work order. */
+  async lines(
+    db: DbHandle,
+    kind: 'service' | 'part',
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly LineRow[]> {
+    await this.requireWorkOrder(db, workOrderId, authorizeScope);
+    return this.repository.linesFor(db, kind, workOrderId);
   }
 
   /**

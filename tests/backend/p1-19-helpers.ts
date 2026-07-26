@@ -75,6 +75,7 @@ const ASSIGNMENT_MANAGE = 'tech.assignment.manage';
 const TECHNICIAN_READ = 'tech.technician.read';
 const LABOR_RECORD = 'tech.labor.record';
 const LABOR_CORRECT = 'tech.labor.correct';
+const LINE_MANAGE = 'wo.work_order.line.manage';
 
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
@@ -105,6 +106,7 @@ export const FULL: Principal = {
     TECHNICIAN_READ,
     LABOR_RECORD,
     LABOR_CORRECT,
+    LINE_MANAGE,
   ],
 };
 
@@ -129,6 +131,7 @@ export const NO_CLOSE: Principal = {
     TECHNICIAN_READ,
     LABOR_RECORD,
     LABOR_CORRECT,
+    LINE_MANAGE,
   ],
 };
 
@@ -164,6 +167,7 @@ export const SCOPED_ELSEWHERE: Principal = {
     TECHNICIAN_READ,
     LABOR_RECORD,
     LABOR_CORRECT,
+    LINE_MANAGE,
   ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-0000000000e3',
@@ -200,6 +204,7 @@ export const PERMISSION_ELSEWHERE: Principal = {
     TECHNICIAN_READ,
     LABOR_RECORD,
     LABOR_CORRECT,
+    LINE_MANAGE,
   ],
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
   grantId: 'c1900000-0000-4000-8000-00000000010c',
@@ -227,6 +232,7 @@ export const TENANT_B_FULL: Principal = {
     TECHNICIAN_READ,
     LABOR_RECORD,
     LABOR_CORRECT,
+    LINE_MANAGE,
   ],
 };
 

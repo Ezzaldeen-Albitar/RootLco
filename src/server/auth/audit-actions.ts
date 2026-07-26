@@ -614,6 +614,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order moved between states in the graph held by wo.work_order_transitions. One action covers every edge because a consumer of the audit trail reacts to the resulting state, not to the verb — and because the graph is tenant-overridable, so a per-edge action code would be a vocabulary this catalog cannot close. A CLOSING transition is recorded under wo.work_order.closed instead of this code, never under both: one transition writes exactly one audit record, so a count of state changes and a count of closures cannot double-count the same event.',
   },
   {
+    code: 'wo.work_order.required_part_recorded',
+    class: 'privileged',
+    entityType: 'wo.required_part',
+    description:
+      'A part a work order needs was recorded as DEMAND. It reserves nothing and issues nothing: item_ref is foreign-keyed to the item CATALOG (inv.item_master) and not to stock, and no stock row is read or written anywhere in this phase. Recording demand and consuming stock are deliberately different acts owned by different phases.',
+  },
+  {
+    code: 'wo.work_order.service_line_recorded',
+    class: 'privileged',
+    entityType: 'wo.work_order_service_line',
+    description:
+      'A service or labour line was recorded against a work order, optionally against one of its jobs. service_ref is foreign-keyed to svc.services, so an unresolvable reference is refused; nothing here prices the line, because pricing is Phase 1-20.',
+  },
+  {
     code: 'wo.work_order.closed',
     class: 'privileged',
     entityType: 'wo.work_order',

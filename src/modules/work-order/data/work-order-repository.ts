@@ -152,6 +152,52 @@ export interface TechnicianQueueRow {
   readonly displayNumber: string | null;
 }
 
+/**
+ * One service line or one required part.
+ *
+ * `quantity` is a STRING, not a number: the column is `numeric(12,3)` and IEEE-754
+ * cannot represent every value it can hold, so it crosses this boundary losslessly
+ * the way `schemas.money` does.
+ *
+ * `reference` is `service_ref` or `item_ref`, and each is a REAL foreign key to its
+ * Phase 1-10 catalog — `svc.services (tenant_id, id)` and
+ * `inv.item_master (tenant_id, id)` — added by migration 20260723097000. The Phase
+ * 1-9 table comments still call them opaque forward references with no foreign key,
+ * which was true when those tables were created and is no longer.
+ */
+export interface LineRow {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly jobId: string | null;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unit: string;
+  readonly reference: string | null;
+  readonly recordVersion: number;
+}
+
+interface LineColumns {
+  id: string;
+  work_order_id: string;
+  job_id: string | null;
+  description: string;
+  quantity: string;
+  unit: string;
+  reference: string | null;
+  record_version: number;
+}
+
+const toLineRow = (row: LineColumns): LineRow => ({
+  id: row.id,
+  workOrderId: row.work_order_id,
+  jobId: row.job_id,
+  description: row.description,
+  quantity: row.quantity,
+  unit: row.unit,
+  reference: row.reference,
+  recordVersion: row.record_version,
+});
+
 interface AssignmentColumns {
   id: string;
   job_id: string;
@@ -728,6 +774,84 @@ export class WorkOrderRepository extends Repository {
       [context.principal.tenantId, jobId]
     );
     return result.rows[0]?.from_state ?? null;
+  }
+
+  /**
+   * Records one service line or one required part.
+   *
+   * Both tables have the same shape and the same catalog-reference discipline, so
+   * one method serves both rather than two that would drift. The table name and the
+   * reference column are code-controlled literals, never caller input.
+   *
+   * `service_ref` and `item_ref` are REAL foreign keys — `fk_work_order_service_lines_service`
+   * to `svc.services (tenant_id, id)` and `fk_required_parts_item` to
+   * `inv.item_master (tenant_id, id)`, both added by migration 20260723097000 once
+   * the Phase 1-10 catalogs existed. An unknown reference therefore arrives as
+   * `23503` and the service maps it; it is not the unconstrained forward pointer the
+   * original Phase 1-9 table comments describe.
+   */
+  async recordLine(
+    db: DbHandle,
+    kind: 'service' | 'part',
+    input: {
+      readonly workOrderId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly jobId: string | null;
+      readonly description: string;
+      readonly quantity: string;
+      readonly unit: string;
+      readonly reference: string | null;
+    }
+  ): Promise<LineRow> {
+    const context = this.assertContext(db);
+    const table = kind === 'service' ? 'wo.work_order_service_lines' : 'wo.required_parts';
+    const refColumn = kind === 'service' ? 'service_ref' : 'item_ref';
+    const result = await this.run<LineColumns>(
+      db,
+      `INSERT INTO ${table}
+         (tenant_id, company_id, branch_id, work_order_id, job_id, description,
+          quantity, unit, ${refColumn}, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, $9, $10)
+       RETURNING id, work_order_id, job_id, description, quantity::text AS quantity, unit,
+                 ${refColumn} AS reference, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.workOrderId,
+        input.jobId,
+        input.description,
+        input.quantity,
+        input.unit,
+        input.reference,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error(`${kind} line insert returned no row`);
+    return toLineRow(row);
+  }
+
+  /** Every live service line or required part on a work order, oldest first. */
+  async linesFor(
+    db: DbHandle,
+    kind: 'service' | 'part',
+    workOrderId: string
+  ): Promise<readonly LineRow[]> {
+    const context = this.assertContext(db);
+    const table = kind === 'service' ? 'wo.work_order_service_lines' : 'wo.required_parts';
+    const refColumn = kind === 'service' ? 'service_ref' : 'item_ref';
+    const result = await this.run<LineColumns>(
+      db,
+      `SELECT id, work_order_id, job_id, description, quantity::text AS quantity, unit,
+              ${refColumn} AS reference, record_version
+         FROM ${table}
+        WHERE tenant_id = $1 AND work_order_id = $2 AND deleted_at IS NULL
+        ORDER BY created_at, id`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return result.rows.map(toLineRow);
   }
 
   /**

@@ -148,6 +148,8 @@ import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
 import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';
+import '@/app/api/v1/work-orders/[workOrderId]/service-lines/route';
+import '@/app/api/v1/work-orders/[workOrderId]/required-parts/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

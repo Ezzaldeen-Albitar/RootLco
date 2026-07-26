@@ -81,6 +81,16 @@ export const MAX_JOB_TITLE = 200;
 export const MAX_JOB_TYPE = 64;
 
 /**
+ * Application bounds on the two free-text line columns.
+ *
+ * `description` and `unit` are unbounded `text` with only not-blank CHECKs on both
+ * `wo.work_order_service_lines` and `wo.required_parts`, so these are the
+ * application-side limits rather than a mirror of the schema.
+ */
+export const MAX_LINE_DESCRIPTION = 500;
+export const MAX_LINE_UNIT = 32;
+
+/**
  * Assignment roles, verbatim from `ck_job_assignments_role`.
  *
  * `primary` is the constrained one: `uq_job_assignments_active_primary` — a partial

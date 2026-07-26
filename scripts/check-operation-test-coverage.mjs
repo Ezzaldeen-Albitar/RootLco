@@ -488,6 +488,26 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
   },
+  'wo.service-line-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'quantity crosses as a decimal STRING because the column is numeric(12,3) and IEEE-754 cannot represent every value it holds — the test proves 2.500 survives unrounded; an optional jobId must belong to THIS order, and the test uses a job under a DIFFERENT order in the same branch, which satisfies the composite foreign key and is caught only by the explicit ownership check; a non-positive or over-scaled quantity, a blank description and a terminal work order are each refused with nothing written',
+  },
+  'wo.service-line-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live lines; asserted not to bleed into the required-parts list, because they are different tables and different facts and a caller reading labour must not be shown parts as labour',
+  },
+  'wo.required-part-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the NEGATIVE claim is the point and it is asserted, not described: recording demand leaves wo.work_orders.parts_forward_state at its frozen default and leaves every inv table empty, because item_ref is an opaque forward reference with no foreign key and reservation/issue are Phase 1-21; that is also why the closure-eligibility endpoint reports the two Phase 1-21 conditions as deferred rather than clear',
+  },
+  'wo.required-part-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live demand rows; separate from the service-line list and proved separate',
+  },
   'wo.job-assignment-create': {
     files: ['tests/backend/p1-19-job-assignments.test.ts'],
     required: [

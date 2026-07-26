@@ -284,6 +284,8 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.job.state_changed',
   'wo.job.updated',
   'wo.work_order.closed',
+  'wo.work_order.required_part_recorded',
+  'wo.work_order.service_line_recorded',
   'wo.work_order.state_changed',
 ];
 
