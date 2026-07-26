@@ -38,16 +38,16 @@ checkpoint only and never authorises a merge.
 
 ## Current position
 
-| Field               | Value                                                                      |
-| ------------------- | -------------------------------------------------------------------------- |
-| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                 |
-| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)    |
-| Current HEAD        | see `git rev-parse HEAD` — Wave 4 complete, Wave 5 next                    |
-| `origin/develop`    | `f326e24…` — unchanged by this phase                                       |
-| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase          |
-| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced |
-| GitHub Actions runs | CI **#211** (`30199848934`) — Success 4/4 on `9dcf24c`                     |
-| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked         |
+| Field               | Value                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                  |
+| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                     |
+| Current HEAD        | `2c85987` — Waves 4 and 5 complete, Wave 6 next                                             |
+| `origin/develop`    | `f326e24…` — unchanged by this phase                                                        |
+| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                           |
+| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                  |
+| GitHub Actions runs | Green **4/4** on `ff82189`, `776cb73`, `13e6df1`, `b0c04c6`, `c46483e`; `2c85987` in flight |
+| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                          |
 
 ## Completed
 
@@ -378,51 +378,119 @@ _transition_ guard's shape (resolve then filter), which is correct for transitio
 creation should read the state list and check `isTerminal` itself rather than
 assume the two resolutions coincide.
 
+## Wave 6 — contract already extracted, do NOT re-derive
+
+Read from the protected migration `20260722100000_wo_services_parts_approvals.sql`
+before Wave 6 implementation began. Every fact below is verified against it.
+
+### Approval comes BEFORE the state change, and the guard enforces that order
+
+`wo.guard_additional_work_state` (BEFORE UPDATE OF state) refuses
+`state = 'approved'` unless an `approved` row already exists in
+`wo.customer_approvals` for that request. So the only legal sequence is:
+
+1. record the customer approval (`decision = 'approved'`);
+2. then move the request to `approved`.
+
+That is the forgery-resistance control, and it means one service method must do both
+in one transaction — a client doing them as two calls would leave a window where an
+approval exists and the request does not reflect it. Attempting the state change
+first fails as a `check_violation` and must be mapped, never surfaced as a 500.
+
+### One active approval per request, and its content is immutable
+
+`uq_customer_approvals_active` is
+`(tenant, company, branch, additional_work_request_id) WHERE deleted_at IS NULL`, so
+a second decision on the same request is `23505`.
+`tg_customer_approvals_immutable` freezes `decision`, `channel`, `presented_scope`,
+`quotation_revision_ref`, `decided_at` and `deciding_party_role_id` — a recorded
+decision can never be edited, and no application role holds DELETE (INSERT + UPDATE
+grants only), so it cannot be erased either.
+
+### The deciding party must belong to the SAME reception visit
+
+`wo.guard_customer_approval_coherence` resolves request → work order →
+`reception_visit_id` and refuses a `deciding_party_role_id` whose
+`rec.reception_party_roles.reception_visit_id` differs, or whose tenant differs. The
+deciding party is therefore not free text and not any customer — it is a party
+already recorded on the visit that produced the work order. `23514` for a foreign
+visit, `23503` for an unresolvable role.
+
+### The customer-facing description is RESTRICTED at the RLS layer
+
+`wo.additional_work_request_details` is 1:1 with the request, its `classification`
+is CHECK-fixed to `'restricted'`, and all three policies (SELECT, INSERT, UPDATE)
+additionally require `iam.has_permission('iam.sensitive.view')`. A caller without
+that permission can neither read nor write it — the row does not exist for them. So
+Wave 6 must treat the detail as a separate, separately authorized surface and must
+NOT fold it into the request projection, or the request read would silently return
+nothing for an ordinary service advisor.
+
+### `originating_finding_id` has no foreign key
+
+It is an opaque soft link to `dia.findings`, which Wave 7 builds. Provenance from a
+diagnostic finding can be RECORDED in Wave 6 and cannot be validated until Wave 7
+exists. `originating_job_id` by contrast IS a composite foreign key and must belong
+to the request's own work order — the same explicit check the service lines needed,
+because the key alone admits a job under a different order in the same branch.
+
+### Vocabularies, verbatim
+
+- `state`: `pending` | `approved` | `rejected` | `withdrawn` (never `declined`).
+- `fulfillment_state`: `unfulfilled` | `fulfilled` | `waived` (never `not_required`).
+- `channel`: `in_person` | `phone` | `email` | `sms` | `portal` | `other`.
+- `decision`: `approved` | `rejected` — there is no `pending` decision row.
+- `is_required` is IMMUTABLE after insert (`tg_additional_work_requests_immutable`).
+
+### Closure blocker B3 is why this wave matters
+
+B3 fires when a REQUIRED request is `pending`, or `approved` with
+`fulfillment_state = 'unfulfilled'`. Wave 4 already reports it; Wave 6 is the first
+wave that can create the condition and clear it, so its integration case should walk
+request → blocked closure → approval → fulfilment → closure.
+
+### Permissions and events already seeded
+
+`wo.additional_work.request` (medium) and `wo.additional_work.approve` (high) are
+seeded. `EVT-WOR-004` `additional-work.requested` and `EVT-WOR-005`
+`customer-approval.recorded` are registered with owner `wo` and
+`implementedIn: null` — Wave 6 sets both, and must add them to the two
+`implementedIn` pins (`tests/foundation/p1-19-module-foundation.test.ts` and
+`tests/foundation/event-envelope.test.ts`) in the same commit.
+
+Audit actions for this wave are NOT yet registered. Add them to
+`src/server/auth/audit-actions.ts` and to the sorted pin in
+`tests/foundation/p1-15-catalogs.test.ts`; the sort is by the FULL code, so
+`wo.additional_work.*` sorts before `wo.job.*`.
+
+### Attachment evidence
+
+`wo.customer_approval_evidence` is append-only and binds an exact document version.
+The Phase 1-15 attachment service is the only way to create one, and the route must
+never accept a storage key — the same rule P1-18 reception evidence follows.
+
 ## Next action
 
-**Wave 5 — technician execution.** Job transitions through `wo.job_transitions`,
-technician assignment/unassignment/reassignment with the eligibility rules, labour
-sessions, the technician queue, work-order service lines and required-part demand.
+**Wave 6, slice A — additional-work requests.** Extend
+`src/modules/work-order/data/work-order-repository.ts` with the request rows, add an
+`AdditionalWorkService` beside `JobAssignmentService`, and register
+`wo.additional-work-request` (POST `/work-orders/{workOrderId}/additional-work`),
+`wo.additional-work-list` (GET, same path) and `wo.additional-work-withdraw`.
 
-Start from `tests/backend/p1-19-helpers.ts`, which already builds work orders
-through the real conversion route and advances them through the real transition
-route. The first thing Wave 5 must build is an **assignment**, because
-`wo.guard_job_transition` was REPLACED by the assignments migration to require an
-active `wo.job_assignments` row before a job may enter an `assignment_required`
-state — so `planned → assigned` is currently unreachable and B1 can only be cleared
-by cancelling a job.
+Then slice B: the approval command that records the decision AND flips the request to
+`approved` in one transaction; the restricted-detail surface behind
+`iam.sensitive.view`; and the evidence link through the shared attachment service.
 
-Traps that still apply to every wave:
+Run after each slice, in order:
 
-- `docs/api/openapi.v1.json` is GENERATED. Regenerate with
-  `UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts`; a hand edit is
-  overwritten and rejected.
-- The import list in `tests/openapi-contract.test.ts` is the mechanism that once hid
-  all twelve P1-18 operations from the published contract while every gate read
-  green. Adding a route means adding a line there, and the arithmetic that catches
-  an omission is external (authorization coverage counts registered operations,
-  `check-openapi` counts published ones; the two must agree).
-- A route may not import `@/server/db/pagination` — boundary rule B4. Pass the raw
-  `{ cursor, limit }` to the module service and decode inside it.
-- Parse path and query schemas INSIDE `handleOperation`, or the failure escapes the
-  route as a 500 instead of a problem document.
-- Two narrowed principals are needed to test isolation honestly: one whose grants
-  make the row visible (403 from the scoped check) and one whose do not (404 from
-  RLS). `PERMISSION_ELSEWHERE` and `SCOPED_ELSEWHERE` in the shared fixture.
+```bash
+npm run typecheck && npm run lint && npm run validate:module-boundaries
+```
 
-### A protected-schema correction Wave 5 found
+```bash
+UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts
+```
 
-`wo.work_order_service_lines.service_ref` and `wo.required_parts.item_ref` are
-**REAL foreign keys**, not the unconstrained forward pointers the Phase 1-9 table
-comments still describe: migration `20260723097000_wo_forward_fks.sql` added
-`fk_work_order_service_lines_service` to `svc.services (tenant_id, id)` and
-`fk_required_parts_item` to `inv.item_master (tenant_id, id)` once the Phase 1-10
-catalogs existed. The first draft of the line service documented them as
-unconstrained and would have surfaced an unknown reference as a **500**; it now maps
-`23503` to `ERR-RES-001`, and the test exercising that refusal is what caught it.
-Those catalogs are empty in this phase, so the refusal is the path under test.
-
-The "reserves nothing" claim survives intact and is asserted rather than described:
-a foreign key to the item CATALOG is not a stock movement, and the suite reads back
-both `parts_forward_state` (unchanged) and `inv.stock_movements` /
-`inv.stock_balances` (empty).
+```bash
+npm run format && npm test && npm run test:backend && npm run validate:operation-coverage
+```
