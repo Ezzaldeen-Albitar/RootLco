@@ -321,11 +321,25 @@ export function assertReviewerSeparation(reportCreatedBy: string, reviewerId: st
  * reason. It does not check the value against the item's `response_type`, so a
  * `boolean` item would accept "maybe" and a `select` item any string at all.
  *
- * Numeric bounds are deliberately NOT checked here: the value is compared against
- * `min`/`max` in the database as `numeric`, because the column is unbounded
- * `numeric` and a JavaScript comparison would round. What this function checks is
- * shape, and for `select` the closed option set — both of which are exact in
- * TypeScript.
+ * ## An item RESULT carries no range verdict at all, and that is a schema fact
+ *
+ * Numeric bounds are not checked here — and, unlike a MEASUREMENT, they are not
+ * checked in the database either. `dia.report_item_results.result_value` is `text`
+ * with one CHECK (`ck_report_item_results_answered`) and two triggers, neither of
+ * which reads `dia.template_items.validation_rule`; the table has no `within_range`
+ * column to record a verdict in. `dia.measurements` does, which is why the same
+ * number entered there against the same item IS flagged.
+ *
+ * That asymmetry is the frozen schema's, not a choice this module made, and it is
+ * written down rather than papered over: an earlier draft of this comment claimed
+ * the database compared item results against `min`/`max`, which was false in three
+ * places at once. Refusing an out-of-range answer instead would contradict the rule
+ * the rest of the module follows — an out-of-spec observation is RECORDED, because a
+ * diagnostic exists to record what is wrong — and storing a verdict would need a
+ * column no migration in this phase may add.
+ *
+ * What this function checks is SHAPE, and for `select` the closed option set — both
+ * of which are exact in TypeScript.
  */
 export function assertResultShape(
   responseType: ResponseType,

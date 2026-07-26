@@ -245,6 +245,15 @@ const entry = (
     key === undefined ? {} : { key }
   );
 
+/** The report's status read as admin — never RLS evidence. */
+async function readJobReportStatus(reportId: string): Promise<string> {
+  const result = await admin.query<{ status: string }>(
+    `SELECT status FROM dia.diagnostic_reports WHERE id = $1`,
+    [reportId]
+  );
+  return result.rows[0]?.status ?? '';
+}
+
 /** A job on an open work order, ready to carry a diagnostic. */
 async function seedJob(): Promise<{ readonly workOrderId: string; readonly jobId: string }> {
   const order = await createOpenWorkOrder();
@@ -517,6 +526,53 @@ describe('dia.diagnostic-item-result', () => {
       resultValue: 'thin',
     });
     expect(notDecimal.status).toBe(422);
+  });
+
+  it('records an out-of-range ANSWER unbounded, while the same value as a MEASUREMENT is flagged', async () => {
+    const report = await seedReport();
+    const itemId = itemIds.get(ITEM_BRAKE_THICKNESS) ?? '';
+    const wild = '1000000.000';
+
+    // The asymmetry is the frozen schema's and is pinned here rather than left to be
+    // discovered. `dia.report_item_results.result_value` is text, nothing on that path
+    // reads `validation_rule`, and the table has NO within_range column to record a
+    // verdict in — while `dia.measurements` has one and computes it. An earlier draft
+    // of three comments claimed the database bounded the answer too; it does not.
+    authAs(FULL);
+    const answer = await writeItem(report.reportId, itemId, { resultValue: wild });
+    expect(answer.status).toBe(200);
+    expect(((await answer.json()) as { resultValue: string }).resultValue).toBe(wild);
+    expect(
+      await count(
+        `SELECT count(*)::text AS n
+           FROM information_schema.columns
+          WHERE table_schema = 'dia' AND table_name = 'report_item_results'
+            AND column_name = 'within_range'`
+      )
+    ).toBe(0);
+
+    // Same item, same configured range, same number — and the measurement path judges
+    // it, because that table can hold the verdict.
+    authAs(FULL);
+    const measurement = await entry(RECORD_MEASUREMENT, 'measurements', report.reportId, {
+      templateItemId: itemId,
+      label: 'Front left disc',
+      measuredValue: wild,
+      unit: 'mm',
+    });
+    expect(measurement.status).toBe(201);
+    expect(((await measurement.json()) as { withinRange: boolean | null }).withinRange).toBe(false);
+
+    // And the out-of-range answer still counts as ANSWERED, so it does not block
+    // completion — refusing it would contradict the module's own rule that an
+    // out-of-spec observation is recorded rather than rejected.
+    authAs(FULL);
+    await writeItem(report.reportId, itemIds.get(ITEM_TYRE_CONDITION) ?? '', {
+      resultValue: 'replace',
+    });
+    authAs(FULL);
+    const completed = await completeReport(report.reportId, {}, { version: report.version });
+    expect(completed.status).toBe(200);
   });
 
   it('refuses an item from OUTSIDE the report’s pinned version', async () => {
@@ -1061,6 +1117,119 @@ describe('dia.diagnostic-transition and dia.diagnostic-complete', () => {
     const back = await moveReport(created.id, { toStatus: 'draft' }, { version });
     expect(back.status).toBe(409);
     expect(((await back.json()) as Problem).code).toBe('ERR-TRN-001');
+  });
+
+  it('refuses an unpermitted caller and isolates the TRANSITION by branch and tenant', async () => {
+    const report = await seedReport();
+    const body = { toStatus: 'cancelled', reason: 'Vehicle recalled by the customer' };
+
+    // These probes are the transition operation's OWN, not the completion
+    // operation's. An earlier revision of this suite declared cross-tenant,
+    // isolation, stale-version and idempotency evidence for `wo`-style transitions in
+    // its COVERAGE-EVIDENCE header while asserting them only for completion — and the
+    // coverage gate could not catch it, because it checks that an operation id appears
+    // in executable code and not that an assertion backs each claimed flag.
+    authAs(READER);
+    expect((await moveReport(report.reportId, body, { version: report.version })).status).toBe(403);
+    authAsSubject(SUBJECT_UNPERMITTED);
+    expect((await moveReport(report.reportId, body, { version: report.version })).status).toBe(403);
+
+    // Granted in BRANCH_A2 and RLS-visible in A1 through an unrelated grant, so only
+    // the scoped permission check can refuse (P1-18-A-01).
+    authAs(PERMISSION_ELSEWHERE);
+    expect((await moveReport(report.reportId, body, { version: report.version })).status).toBe(403);
+    // No grant in A1, so RLS hides the report first: defence in depth.
+    authAs(SCOPED_ELSEWHERE);
+    expect((await moveReport(report.reportId, body, { version: report.version })).status).toBe(404);
+    authAs(TENANT_B_FULL);
+    expect((await moveReport(report.reportId, body, { version: report.version })).status).toBe(404);
+
+    // And none of them moved it.
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM dia.diagnostic_reports
+          WHERE id = $1 AND status = 'in_progress' AND record_version = $2`,
+        [report.reportId, report.version]
+      )
+    ).toBe(1);
+  });
+
+  it('refuses a stale version and a missing If-Match on the TRANSITION', async () => {
+    const report = await seedReport();
+    const body = { toStatus: 'cancelled', reason: 'Wrong vehicle' };
+
+    authAs(FULL);
+    const stale = await moveReport(report.reportId, body, { version: report.version + 7 });
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as Problem).code).toBe('ERR-CON-001');
+
+    authAs(FULL);
+    expect((await moveReport(report.reportId, body, { version: null })).status).toBe(428);
+    expect((await readJobReportStatus(report.reportId)) === 'in_progress').toBe(true);
+  });
+
+  it('moves once on an idempotent replay of the TRANSITION', async () => {
+    const job = await seedJob();
+    authAs(FULL);
+    const created = (await (
+      await createReport(job.jobId, { templateVersionId })
+    ).json()) as ReportBody;
+    const key = crypto.randomUUID();
+
+    authAs(FULL);
+    expect(
+      (
+        await moveReport(
+          created.id,
+          { toStatus: 'in_progress' },
+          { version: created.recordVersion, key }
+        )
+      ).status
+    ).toBe(200);
+    expect(
+      (
+        await moveReport(
+          created.id,
+          { toStatus: 'in_progress' },
+          { version: created.recordVersion, key }
+        )
+      ).status
+    ).toBe(200);
+    // One ledger row and one audit record: a replay must not write a second
+    // transition, and the ledger is trigger-emitted so a second UPDATE would show.
+    expect(await auditCount(STATE_CHANGED, created.id)).toBe(1);
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM dia.diagnostic_report_status_history
+          WHERE diagnostic_report_id = $1`,
+        [created.id]
+      )
+    ).toBe(1);
+  });
+
+  it('carries the reason into the ledger through the app.status_reason GUC', async () => {
+    const report = await seedReport();
+
+    // The GUC is the only channel: `dia.emit_diagnostic_report_status_history` reads
+    // `current_setting('app.status_reason', true)` and there is no reason column on
+    // the report. A service that validated the reason and never published it would
+    // leave every ledger row's reason NULL — which is exactly the defect Wave 4 found
+    // on the work-order path.
+    authAs(FULL);
+    const response = await moveReport(
+      report.reportId,
+      { toStatus: 'cancelled', reason: 'Customer collected the vehicle early' },
+      { version: report.version }
+    );
+    expect(response.status).toBe(200);
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM dia.diagnostic_report_status_history
+          WHERE diagnostic_report_id = $1 AND to_state = 'cancelled'
+            AND reason = 'Customer collected the vehicle early'`,
+        [report.reportId]
+      )
+    ).toBe(1);
   });
 
   it('refuses `completed` at the transition endpoint, so the second permission holds', async () => {

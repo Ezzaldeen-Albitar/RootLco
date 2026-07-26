@@ -38,17 +38,17 @@ checkpoint only and never authorises a merge.
 
 ## Current position
 
-| Field               | Value                                                                                                                            |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                       |
-| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                          |
-| Current HEAD        | `4f0a347` — Waves 4, 5 and 6 complete, Wave 7 next                                                                               |
-| `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                             |
-| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                |
-| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                       |
-| GitHub Actions runs | Green **4/4** on `ff82189`, `776cb73`, `13e6df1`, `b0c04c6`, `c46483e`; `4f0a347` in flight (secret scan green)                  |
-| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                               |
-| Totals at HEAD      | Unit **843** / Backend **951** / DB **1604**; OpenAPI **119 paths / 142 operations**; P1-19 **32/32** operation depth, 0 pending |
+| Field               | Value                                                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
+| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
+| Current HEAD        | Waves 4–7 complete and remediated, Wave 8 next                                                                                    |
+| `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
+| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
+| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
+| GitHub Actions runs | Green **4/4** on the Wave 4 and Wave 5 heads; Wave 6 and Wave 7 heads verified on their exact SHAs                                |
+| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                                |
+| Totals at HEAD      | Unit **843** / Backend **1018** / DB **1610**; OpenAPI **131 paths / 155 operations**; P1-19 **45/45** operation depth, 0 pending |
 
 ## Completed
 
@@ -61,8 +61,9 @@ checkpoint only and never authorises a merge.
 | 4    | Work-order core                                       | **Complete**, 8/8 operation depth   |
 | 5    | Technician execution                                  | **Complete**, 24/24 operation depth |
 | 6    | Additional work and customer approvals                | **Complete**, 32/32 operation depth |
-| 7    | Diagnostics                                           | **Next**                            |
-| 8–9  | See README §4                                         | Not started                         |
+| 7    | Diagnostics                                           | **Complete**, 45/45 operation depth |
+| 8    | Quality control, closure and rework                   | **Next**                            |
+| 9    | See README §4                                         | Not started                         |
 
 ## Wave 4 progress
 
@@ -632,7 +633,100 @@ identically to `wo.customer_approval_evidence` — reuse the Wave 6 pattern
 (`attachments.scanState` for visibility, refuse `rejected`/`quarantined`, never
 accept a storage key).
 
+## Wave 8 — contract extracted, do NOT re-derive
+
+Read from `20260722104000_qms_quality_control.sql` and
+`20260722105000_qms_rework_closure_gate.sql`.
+
+### A rework work order has NO creation path anywhere in the platform
+
+This is the finding that shapes the whole wave. `qms.guard_rework_link_coherence`
+demands that the rework work order have `kind = 'rework'` and share the original's
+`reception_visit_id`. But reception's conversion —
+`reception-conversion-repository.ts:80` — inserts exactly seven columns and leaves
+`kind` to its `'ordinary'` default, and nothing else in the platform inserts
+`wo.work_orders` at all. So **no shipped code can produce a rework work order**, and
+without one `qms.rework_links` is unreachable and B6 can never fire.
+
+Wave 8 must add that path, and doing so does NOT contradict the Wave 4 boundary
+decision. That decision was about the ORDINARY path, which reception owns because it
+originates from an authorized visit. A rework order originates from a CLOSED work
+order, which is entirely inside this phase, and `kind = 'rework'` exists for exactly
+this. Two schema facts confirm it was designed for: `guard_work_order_refs`
+precondition 3 admits a `converted` visit, and `uq_work_orders_ordinary_origin` is
+PARTIAL on `kind = 'ordinary'` so a second rework order against the same visit is
+deliberately permitted.
+
+The insert belongs in `work-order` (it owns `wo.work_orders`) and is reached from the
+rework command through that module's public surface, so the new order and its
+`qms.rework_links` row land in ONE transaction. Borrow the display number from
+`sequence-registry` code `work_order`, as reception does — never a second allocator.
+
+### The sign-off separation IS enforced by the database, unlike Wave 7's
+
+`ck_rework_links_signoff_distinct` refuses `independent_sign_off_by` equal to
+`lead_technician_id`, and `ck_rework_links_safety_lead` makes a lead technician
+mandatory when `is_safety_critical`. So BR-QMS-001 is a CHECK here, where diagnostic
+reviewer separation had to be an application rule. Say so rather than claiming credit
+for it.
+
+`qms.guard_rework_signoff` makes sign-off write-once and stamps `sign_off_at`;
+`independent_sign_off_by` and `lead_technician_id` are **technician profile ids**, not
+user ids, and both are foreign-keyed with the full branch scope key.
+`org.guard_immutable_columns` freezes both work-order ids and `lead_technician_id`,
+so the lead cannot be swapped to make a signature legal after the fact.
+
+### Reopen is a recorded refusal, never a mutation
+
+`qms.attempt_reopen(work_order, reason)` is `SECURITY INVOKER`, granted to
+`app_runtime`, and is the ONLY sanctioned path. It records a `qms.reopen_attempts`
+row whose `outcome` is CHECK-fixed to `'rejected'` — the vocabulary has one value —
+and never touches the work order (BR-WO-002). It raises `no_data_found` when the order
+is not visible and `check_violation` when it is not closed; both must be mapped.
+`requested_by`/`requested_at` are server-stamped by `qms.stamp_reopen_attempt()`.
+
+### Quality control
+
+`overall_result`: `pending` | `passed` | `failed`. `qms.guard_qc_finalize()`
+server-stamps `checker_id` and `finalized_at` on `pending → passed|failed` and then
+FREEZES all three, so a finalized record can never be re-judged. There is NO unique
+index on `(work_order_id)`, so a repeat QC is a NEW record — which is what B5 reads.
+
+`qms.qc_check_results.result`: `pass` | `fail` | `na`, one live row per
+`(record, check)`. `qms.qc_status_history` is the append-only ledger.
+
+**B5 has two limbs and they are different questions.** B5a: a `failed` record with no
+`passed` record blocks. B5b: if ANY mandatory `qms.qc_checks` row is configured
+tenant-wide, a `passed` record is REQUIRED. Wave 4's `QualityGateStatus` already
+separates them as `failedWithoutPass` and `mandatoryPassMissing`; keep that split.
+
+### The restricted rework cost
+
+`qms.rework_link_details` is 1:1 with a link, `classification` is CHECK-fixed to
+`'restricted'`, and all three policies additionally require `iam.sensitive.view` —
+the same shape as `wo.additional_work_request_details`. Reuse the Wave 6 pattern
+exactly: its own operations declaring the sensitive permission alongside the
+functional one, never folded into the link projection. `rework_cost` is
+`numeric(14,4)`, so it crosses as a STRING; `cost_currency` is `^[A-Z]{3}$`.
+It is an internal quality KPI and explicitly NOT a billing artifact.
+
+### Permissions and events
+
+`qms.quality_control.record` (medium), `qms.quality_control.finalize` (high),
+`qms.rework.manage` (high), `qms.rework.sign_off` (high) and
+`qms.quality_control.read` (low) are seeded. `EVT-QMS-001`
+`quality-control.finalized` and `EVT-QMS-002` `rework.linked` are registered with
+`implementedIn: null`. No `qms.*` audit action is registered yet.
+
 ## Next action
+
+**Wave 8, slice A — quality control.** Then slice B: reopen refusal and the rework
+link, including the `kind = 'rework'` work-order creation the platform currently
+cannot perform. Then Wave 9.
+
+---
+
+_Superseded by Wave 7's completion._
 
 **Wave 7, slice A — report creation, the pinned template version, and the report
 read.** Add a `dia` repository write surface and a

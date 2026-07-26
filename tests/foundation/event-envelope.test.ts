@@ -249,11 +249,17 @@ describe('reserved-name registry', () => {
       'P1-16': ['crm'],
       'P1-17': ['veh'],
       'P1-18': ['apt', 'rec'],
-      // P1-19 spans four schemas, but only `wo` publishes so far: the job
-      // assignment and job state events are `wo.` rows written by the work-order
-      // module, which is why the catalog assigns them owner `wo` and not `tech` —
-      // `buildEventEnvelope` refuses a producer whose leading segment differs from
-      // the owner, so `tech` there would have made the real write path throw.
+      // P1-19 spans four schemas and publishes from TWO of them: `wo` (Waves 4–6)
+      // and `dia` (Wave 7's `diagnostic-report.completed`). The job assignment and
+      // job state events are owner `wo` and not `tech`, because the rows live in
+      // `wo.job_assignments` and `wo.jobs` and are written by the work-order module —
+      // `buildEventEnvelope` refuses a producer whose leading segment differs from the
+      // owner, so `tech` there would have made the real write path throw.
+      //
+      // `tech` and `qms` are listed because their reserved names carry those owners,
+      // not because they publish yet: `labor.session-changed` is owner `tech` and IS
+      // published, and the `qms` allocations are still `implementedIn: null` until
+      // Wave 8.
       'P1-19': ['wo', 'tech', 'dia', 'qms'],
     };
     for (const entry of EVENT_CATALOG) {

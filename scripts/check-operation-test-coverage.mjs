@@ -724,7 +724,7 @@ export const MANIFEST = {
       'stale-version',
       'idempotency',
     ],
-    note: 'this graph is a FIXED PL/pgSQL IF chain with no catalog table and no tenant override, so the module mirrors it — unlike the wo graphs, which are tenant-overridable rows and must be read; tests/db/p1-19-diagnostic-graph-reconciliation.test.ts pins the mirror against the deployed function. Asking THIS endpoint for `completed` is refused, so the dia.diagnostic.complete permission cannot be bypassed by choosing the other URL',
+    note: 'this graph is a FIXED PL/pgSQL IF chain with no catalog table and no tenant override, so the module mirrors it — unlike the wo graphs, which are tenant-overridable rows and must be read; tests/db/p1-19-diagnostic-graph-reconciliation.test.ts pins the mirror against the deployed function. Asking THIS endpoint for `completed` is refused, so the dia.diagnostic.complete permission cannot be bypassed by choosing the other URL. Every flag here is backed by a case driving THIS operation and not the completion one: an earlier revision declared cross-tenant, isolation, stale-version and idempotency in the header while asserting them only for completion, which the gate could not catch because it checks that an operation id appears in executable code and not that an assertion backs each claimed flag. The reason reaches the ledger through app.status_reason and is read back from wo-style history, because a service that validated a reason and never published it would leave every ledger row NULL — the Wave 4 defect, one schema over',
   },
   'dia.diagnostic-complete': {
     files: ['tests/backend/p1-19-diagnostics.test.ts'],
@@ -744,7 +744,7 @@ export const MANIFEST = {
   'dia.diagnostic-item-result': {
     files: ['tests/backend/p1-19-diagnostics.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
-    note: 'the item must belong to the report’s PINNED version — fk_report_item_results_item is (tenant_id, template_item_id) and names no version, so an item from ANOTHER version satisfies it and the test uses exactly that, which without the read would let a report be answered with questions it was never asked; the value is checked against the item’s response_type, which the database does not do since result_value is text: a boolean item would accept "maybe" and a select item any string; numeric BOUNDS are deliberately not checked here because they are compared in the database as numeric',
+    note: 'the item must belong to the report’s PINNED version — fk_report_item_results_item is (tenant_id, template_item_id) and names no version, so an item from ANOTHER version satisfies it and the test uses exactly that, which without the read would let a report be answered with questions it was never asked; the value is checked against the item’s response_type, which the database does not do since result_value is text: a boolean item would accept "maybe" and a select item any string; an ANSWER carries no range verdict at ALL, unlike a measurement: report_item_results.result_value is text, nothing on this path reads validation_rule, and the table has no within_range column to record one in — the asserted asymmetry is the frozen schema’s, and refusing an out-of-range answer would contradict the module’s own rule that an out-of-spec observation is recorded rather than rejected',
   },
   'dia.diagnostic-measurement-record': {
     files: ['tests/backend/p1-19-diagnostics.test.ts'],

@@ -26,9 +26,18 @@
  *
  * The value's shape is checked against the item's `response_type`, which the database
  * does not do: a `boolean` item would otherwise accept "maybe" and a `select` item any
- * string at all. Numeric BOUNDS are deliberately not checked here — a numeric answer
- * is bounded against `validation_rule` in the database as `numeric`, because a
- * JavaScript comparison would round values the column stores exactly.
+ * string at all.
+ *
+ * ## An answer carries no range verdict, and a measurement does
+ *
+ * A numeric ANSWER is bounded nowhere. `dia.report_item_results.result_value` is
+ * `text`, nothing reads `dia.template_items.validation_rule` on this path, and the
+ * table has no column to record a verdict in — while `dia.measurements.within_range`
+ * exists and IS computed against the same configured range. So the same number
+ * against the same item is flagged on one path and not the other, and that is the
+ * frozen schema's asymmetry rather than a choice made here. Refusing an out-of-range
+ * answer would contradict the module's own rule that an out-of-spec observation is
+ * recorded, not rejected.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
