@@ -31,6 +31,7 @@
  *   wo.job-assignment-end: route service authorization success denial cross-tenant isolation audit stale-version
  *   wo.job-reassignment: route service authorization success denial cross-tenant isolation audit outbox idempotency rollback
  *   tech.technician-queue: route service authorization success denial cross-tenant isolation
+ *   tech.technician-available: route service authorization success denial isolation
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -45,6 +46,7 @@ import {
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
+import { BRANCH_A1, COMPANY_A1 } from './helpers';
 import {
   BRANCH_A2,
   BRANCH_B1,
@@ -87,6 +89,7 @@ import {
 import { POST as REASSIGN } from '@/app/api/v1/jobs/[jobId]/reassignments/route';
 import { POST as END_ASSIGNMENT } from '@/app/api/v1/assignments/[assignmentId]/end/route';
 import { GET as QUEUE } from '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
+import { GET as AVAILABLE } from '@/app/api/v1/technicians/available/route';
 
 const ASSIGNED_ACTION = 'wo.job.assigned';
 const ENDED_ACTION = 'wo.job.assignment_ended';
@@ -171,6 +174,12 @@ function queue(technicianProfileId: string): Promise<Response> {
   return QUEUE(new Request(`http://localhost/api/v1/technicians/${technicianProfileId}/queue`), {
     params: Promise.resolve({ technicianProfileId }),
   });
+}
+
+function available(query: Record<string, string>): Promise<Response> {
+  const url = new URL('http://localhost/api/v1/technicians/available');
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+  return AVAILABLE(new Request(url));
 }
 
 /** The minimal legal assign body: a technician and the window to check. */
@@ -890,5 +899,120 @@ describe('tech.technician-queue', () => {
     // Its own branch's technician is visible to it.
     authAs(PERMISSION_ELSEWHERE);
     expect((await queue(TECH_A2)).status).toBe(200);
+  });
+});
+
+describe('tech.technician-available', () => {
+  it('ranks every active candidate with its verdict, eligible first', async () => {
+    authAs(FULL);
+    const response = await available({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      from: SPLIT_WINDOW.from,
+      to: SPLIT_WINDOW.to,
+      skills: `${SKILL_BRAKES}:${RANK_SENIOR}`,
+      certifications: CERT_HV,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: readonly {
+        technicianProfileId: string;
+        eligible: boolean;
+        findings: readonly { reason: string }[];
+      }[];
+      truncatedAt: number | null;
+    };
+
+    // TECH_A1 holds brakes at senior and the high-voltage certification; TECH_A1_ALT
+    // holds brakes at junior and no certification. Both appear — reporting only the
+    // eligible ones would leave an assigner with an empty list and no reason.
+    const ids = body.items.map((item) => item.technicianProfileId);
+    expect(ids).toContain(TECH_A1);
+    expect(ids).toContain(TECH_A1_ALT);
+    // The INACTIVE profile is excluded at the query, not evaluated and discarded: a
+    // technician who is not employed is not a candidate.
+    expect(ids).not.toContain(TECH_A1_INACTIVE);
+    // Another branch's technician is never a candidate for this branch.
+    expect(ids).not.toContain(TECH_A2);
+
+    const senior = body.items.find((item) => item.technicianProfileId === TECH_A1);
+    const junior = body.items.find((item) => item.technicianProfileId === TECH_A1_ALT);
+    expect(senior?.eligible).toBe(true);
+    expect(junior?.eligible).toBe(false);
+    expect(junior?.findings.map((finding) => finding.reason)).toContain('skill-level-insufficient');
+    expect(junior?.findings.map((finding) => finding.reason)).toContain('certification-missing');
+    // Eligible first, so the common case reads top-down.
+    expect(body.items[0]?.eligible).toBe(true);
+    // Nothing was dropped, and the field says so rather than leaving it to be assumed.
+    expect(body.truncatedAt).toBeNull();
+  });
+
+  it('requires the scope and the window, and refuses a malformed skill encoding', async () => {
+    authAs(FULL);
+    expect((await available({ companyId: COMPANY_A1, branchId: BRANCH_A1 })).status).toBe(422);
+    authAs(FULL);
+    expect(
+      (
+        await available({
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+          from: '2026-07-26T09:00:00',
+          to: SPLIT_WINDOW.to,
+        })
+      ).status
+    ).toBe(422);
+    authAs(FULL);
+    expect(
+      (
+        await available({
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+          from: SPLIT_WINDOW.from,
+          to: SPLIT_WINDOW.to,
+          skills: 'brakes',
+        })
+      ).status
+    ).toBe(422);
+    authAs(FULL);
+    expect(
+      (
+        await available({
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+          from: SPLIT_WINDOW.from,
+          to: SPLIT_WINDOW.to,
+          unexpected: 'x',
+        })
+      ).status
+    ).toBe(422);
+  });
+
+  it('401, 403 without tech.technician.read, and 403 for a branch the caller is not permitted in', async () => {
+    const scope = {
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      from: SPLIT_WINDOW.from,
+      to: SPLIT_WINDOW.to,
+    };
+
+    __resetAuthenticatorForTests();
+    expect((await available(scope)).status).toBe(401);
+    authAsSubject(SUBJECT_UNPERMITTED);
+    expect((await available(scope)).status).toBe(403);
+    // A roster is employee-derived: reading the work-order board does not entitle a
+    // caller to it.
+    authAs(READER);
+    expect((await available(scope)).status).toBe(403);
+
+    // The scoped principal is refused BRANCH_A1 and served BRANCH_A2. The pair in the
+    // query is the authorization target, so this is the scoped permission check
+    // refusing a roster rather than RLS returning an empty one.
+    authAs(SCOPED_ELSEWHERE);
+    expect((await available(scope)).status).toBe(403);
+    authAs(SCOPED_ELSEWHERE);
+    const own = await available({ ...scope, branchId: BRANCH_A2 });
+    expect(own.status).toBe(200);
+    const ids = ((await own.json()) as { items: readonly { technicianProfileId: string }[] }).items;
+    expect(ids.map((item) => item.technicianProfileId)).toEqual([TECH_A2]);
   });
 });

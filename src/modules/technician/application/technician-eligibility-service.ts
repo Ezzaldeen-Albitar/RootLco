@@ -164,6 +164,47 @@ export class TechnicianEligibilityService extends ApplicationService {
     return { eligible: findings.length === 0, findings };
   }
 
+  /**
+   * The branch's active technicians, each with a verdict for the same requirement.
+   *
+   * Returns EVERY candidate with its findings rather than only the eligible ones, and
+   * that is the useful shape: an assigner looking at an empty list learns nothing,
+   * while a list saying "these four are free, and this one lacks the certification"
+   * is what lets them act. `eligible` sorts first so the common case reads top-down.
+   *
+   * Bounded by construction. The candidate set is capped and each candidate costs a
+   * fixed number of queries, so the request cannot fan out with branch size — the
+   * cap is reported back rather than applied silently, because a truncated candidate
+   * list that looked complete would be worse than no list.
+   */
+  async candidates(
+    db: DbHandle,
+    requirement: EligibilityRequirement,
+    at: Date,
+    limit: number
+  ): Promise<{
+    readonly items: readonly (EligibilityVerdict & { readonly technicianProfileId: string })[];
+    readonly truncatedAt: number | null;
+  }> {
+    const profiles = await this.repository.activeProfilesInBranch(
+      db,
+      requirement.companyId,
+      requirement.branchId,
+      limit + 1
+    );
+    const considered = profiles.slice(0, limit);
+    const items: (EligibilityVerdict & { technicianProfileId: string })[] = [];
+    for (const profile of considered) {
+      const verdict = await this.evaluate(db, profile.id, requirement, at);
+      items.push({ technicianProfileId: profile.id, ...verdict });
+    }
+    items.sort((a, b) => {
+      if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
+      return a.technicianProfileId.localeCompare(b.technicianProfileId);
+    });
+    return { items, truncatedAt: profiles.length > limit ? limit : null };
+  }
+
   /** Write-path wrapper: evaluates, then refuses with `ERR-TECH-001` if ineligible. */
   async assertOrThrow(
     db: DbHandle,

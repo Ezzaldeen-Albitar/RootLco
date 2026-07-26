@@ -192,6 +192,50 @@ export class TechnicianCatalogRepository extends Repository {
       : null;
   }
 
+  /**
+   * The ACTIVE technician profiles of one branch, bounded.
+   *
+   * Company and branch are required rather than optional, and the limit is not a
+   * convenience: this list is the candidate set an availability search evaluates one
+   * by one, so an unbounded result would turn one request into an unbounded number of
+   * eligibility evaluations. Inactive profiles are excluded here rather than filtered
+   * later — a technician who is not employed is not a candidate, and evaluating them
+   * only to discard them would report `profile-inactive` for every one of them.
+   */
+  async activeProfilesInBranch(
+    db: DbHandle,
+    companyId: string,
+    branchId: string,
+    limit: number
+  ): Promise<readonly TechnicianProfileRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      user_id: string;
+      company_id: string;
+      branch_id: string;
+      trade: string | null;
+      is_active: boolean;
+    }>(
+      db,
+      `SELECT id, user_id, company_id, branch_id, trade, is_active
+         FROM tech.technician_profiles
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND is_active AND deleted_at IS NULL
+        ORDER BY id
+        LIMIT $4`,
+      [context.principal.tenantId, companyId, branchId, limit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      trade: row.trade,
+      isActive: row.is_active,
+    }));
+  }
+
   /** Skills held by one technician, with the rank of each held level. */
   async heldSkills(db: DbHandle, technicianProfileId: string): Promise<readonly HeldSkillRow[]> {
     const context = this.assertContext(db);

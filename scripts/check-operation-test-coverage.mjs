@@ -591,6 +591,11 @@ export const MANIFEST = {
     ],
     note: 'never an edit: tech.correct_labor_session soft-deletes the original and inserts a linked replacement, and the test reads the ORIGINAL back to prove its window survived unchanged; the only path in this phase that accepts caller timestamps, behind tech.labor.correct (high risk) rather than tech.labor.record (low) because it rewrites what a technician was paid for; an inverted window, a blank reason and a timezone-less bound are each refused with nothing written',
   },
+  'tech.technician-available': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'isolation'],
+    note: 'reports EVERY active candidate with its verdict, not only the eligible ones — an assigner facing an empty list learns nothing — with eligible first; the inactive profile is excluded at the QUERY rather than evaluated and discarded, and another branch’s technician is never a candidate; company and branch are required because they ARE the authorization target, so the scoped principal is refused BRANCH_A1 and served BRANCH_A2 (isolation) rather than handed an empty roster; the candidate cap is REPORTED as truncatedAt, because a silently truncated roster that looked complete would make an assigner conclude nobody is free; no cross-tenant case, because the operation names no resource id — a foreign branch simply fails the scoped permission check',
+  },
   'tech.technician-queue': {
     files: ['tests/backend/p1-19-job-assignments.test.ts'],
     required: ['denial', 'cross-tenant'],

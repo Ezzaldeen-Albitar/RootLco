@@ -51,15 +51,16 @@ checkpoint only and never authorises a merge.
 
 ## Completed
 
-| Wave | Content                                               | Status                            |
-| ---- | ----------------------------------------------------- | --------------------------------- |
-| 0    | Protected ground truth                                | **Complete**                      |
-| 1    | Repository archaeology and schema reconciliation      | **Complete**                      |
-| 2    | Feature branch, protected baseline, documentation dir | **Complete**                      |
-| 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green            |
-| 4    | Work-order core                                       | **Complete**, 8/8 operation depth |
-| 5    | Technician execution                                  | **In progress**                   |
-| 6–9  | See README §4                                         | Not started                       |
+| Wave | Content                                               | Status                              |
+| ---- | ----------------------------------------------------- | ----------------------------------- |
+| 0    | Protected ground truth                                | **Complete**                        |
+| 1    | Repository archaeology and schema reconciliation      | **Complete**                        |
+| 2    | Feature branch, protected baseline, documentation dir | **Complete**                        |
+| 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green              |
+| 4    | Work-order core                                       | **Complete**, 8/8 operation depth   |
+| 5    | Technician execution                                  | **Complete**, 24/24 operation depth |
+| 6    | Additional work and customer approvals                | **Next**                            |
+| 7–9  | See README §4                                         | Not started                         |
 
 ## Wave 4 progress
 
@@ -113,10 +114,10 @@ ordering is not index-aligned and no migration is authorised to add one.
 | Technician assignment / unassignment / reassignment, queue                  | **Done, green** |
 | Labour sessions — start, stop, pause/resume, correction, job log            | **Done, green** |
 | Work-order service lines and required-part demand                           | **Done, green** |
-| Available-technician query (ranked candidates) — the ONLY Wave 5 item left  | **Not started** |
+| Available-technician query (ranked candidates)                              | **Done, green** |
 
-Unit **843** / Backend **885** (was 825) / P1-19 operation depth **23/23**, 0
-pending, OpenAPI **113 paths / 133 operations**. CI **#212 Success 4/4** on the
+Unit **843** / Backend **888** (was 825) / P1-19 operation depth **24/24**, 0
+pending, OpenAPI **114 paths / 134 operations**. CI **#212 Success 4/4** on the
 Wave 4 head `ff82189`, verified on the exact SHA.
 
 Labour sessions, in one paragraph: `tech.labor_sessions` has ONLY `started_at` and

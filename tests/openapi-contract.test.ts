@@ -145,6 +145,7 @@ import '@/app/api/v1/jobs/[jobId]/assignments/route';
 import '@/app/api/v1/jobs/[jobId]/reassignments/route';
 import '@/app/api/v1/assignments/[assignmentId]/end/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
+import '@/app/api/v1/technicians/available/route';
 import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';

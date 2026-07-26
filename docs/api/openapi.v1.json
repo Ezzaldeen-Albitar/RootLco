@@ -5657,6 +5657,60 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/technicians/available": {
+      "get": {
+        "operationId": "tech.technician-available",
+        "summary": "Rank a branch’s technicians against a skill, certification and time requirement.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/template-versions/{versionId}": {
       "patch": {
         "operationId": "shared.template-version-revise",

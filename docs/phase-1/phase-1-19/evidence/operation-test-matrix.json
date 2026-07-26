@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 23,
-    "publicApi": 23,
-    "operationDepth": 23,
+    "registered": 24,
+    "publicApi": 24,
+    "operationDepth": 24,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -207,6 +207,22 @@
         "stale-version",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "tech.technician-available",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/technicians/available",
+      "public": false,
+      "files": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["denial", "isolation"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
