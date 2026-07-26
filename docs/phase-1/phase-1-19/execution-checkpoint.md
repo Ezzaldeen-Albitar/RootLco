@@ -59,21 +59,24 @@ Updated after every major wave. This file is the recovery point if context is lo
 
 ## Wave 3 progress
 
-| Slice                                                                     | Status          | Commit    |
-| ------------------------------------------------------------------------- | --------------- | --------- |
-| `work-order` module — domain, catalog repository, catalog service, index  | **Done, green** | `0445ee1` |
-| Error codes `ERR-WO-001` / `ERR-TECH-001` / `ERR-DIA-001` / `ERR-QMS-001` | **Done, green** | `0445ee1` |
-| `technician` module                                                       | **Done, green** | `e8d6235` |
-| `diagnostics` module                                                      | **Done, green** | `e8d6235` |
-| `quality` module                                                          | **Done, green** | `e8d6235` |
-| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains (21 codes)    | **Done, green** | `e8d6235` |
-| Event envelope registrations (11 reserved names)                          | **Done, green** | `e8d6235` |
-| Module-boundary tests for the new modules (11 tests)                      | **Done, green** | `e8d6235` |
-| Permission-total pin `71 → 92`                                            | **Done, green** | `662b2f3` |
-| Clean room at `662b2f3`                                                   | **Done, green** | —         |
-| Wave 3 evidence document                                                  | **Done**        | —         |
-| Adversarial review                                                        | In progress     | —         |
-| Wave 3 PR and hosted CI                                                   | Not started     | —         |
+| Slice                                                                     | Status                                        | Commit    |
+| ------------------------------------------------------------------------- | --------------------------------------------- | --------- |
+| `work-order` module — domain, catalog repository, catalog service, index  | **Done, green**                               | `0445ee1` |
+| Error codes `ERR-WO-001` / `ERR-TECH-001` / `ERR-DIA-001` / `ERR-QMS-001` | **Done, green**                               | `0445ee1` |
+| `technician` module                                                       | **Done, green**                               | `e8d6235` |
+| `diagnostics` module                                                      | **Done, green**                               | `e8d6235` |
+| `quality` module                                                          | **Done, green**                               | `e8d6235` |
+| IAM permission seed for the `wo`/`tech`/`dia`/`qms` domains (21 codes)    | **Done, green**                               | `e8d6235` |
+| Event envelope registrations (11 reserved names)                          | **Done, green**                               | `e8d6235` |
+| Module-boundary tests for the new modules (11 tests)                      | **Done, green**                               | `e8d6235` |
+| Permission-total pin `71 → 92`                                            | **Done, green**                               | `662b2f3` |
+| Clean room at `662b2f3`                                                   | **Done, green**                               | —         |
+| Wave 3 evidence document                                                  | **Done**                                      | —         |
+| Adversarial review (2 reviewers, 0 Crit / 1 High / 10 Med, all fixed)     | **Done**                                      | `81c9d5c` |
+| Clean room re-run at the remediated SHA                                   | **Done**                                      | `81c9d5c` |
+| Branch pushed                                                             | **Done**                                      | `595bfd5` |
+| Wave 3 PR                                                                 | **BLOCKED** — no browser, no gh CLI, no token | —         |
+| Hosted CI                                                                 | Blocked on the PR                             | —         |
 
 Gates green at `662b2f3`: format, lint, typecheck, module boundaries (**269**
 files scanned), OpenAPI (94 paths / 110 operations), authorization coverage,
@@ -122,6 +125,14 @@ touches the outbox.
    `docs/api/openapi.v1.json`. All three are alphabetically ordered.
 6. The transition graph is **rows, not code**. Read it through
    `WorkOrderCatalogRepository`; never mirror it in TypeScript.
+
+## Current blocker
+
+PR creation is externally blocked. The Claude-in-Chrome extension disconnected
+mid-wave (three retries), is not installed, and no /
+is present. The branch IS pushed — =
+— so only the PR-open step is missing. Body prepared at
+.
 
 ## Next action
 
