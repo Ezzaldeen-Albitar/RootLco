@@ -8,7 +8,7 @@ Updated after every major wave. This file is the recovery point if context is lo
 | ------------------- | -------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                 |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)    |
-| Current HEAD        | `9dcf24ce753baef9d35bd986a789130c86aab9d5` (end of Wave 3)                 |
+| Current HEAD        | `0386553b79616099b8eb7a6e4b85f8bbc14c7a46` (Wave 4, third slice)           |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                       |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase          |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced |
@@ -28,18 +28,20 @@ Updated after every major wave. This file is the recovery point if context is lo
 
 ## Wave 4 progress
 
-| Slice                                                                          | Status          | Commit    |
-| ------------------------------------------------------------------------------ | --------------- | --------- |
-| Work-order repository — locked read, versioned state write, history, job reads | **Done, green** | `1313c78` |
-| Closure eligibility — all six blockers, registry order, deferred set           | **Done, green** | `1313c78` |
-| Transition service — catalog edge, reason, terminal pre-report                 | **Done, green** | `1313c78` |
-| Cross-schema allow-list guard (B2/B4 reads, asserted read-only)                | **Done, green** | `1313c78` |
-| Job create / lock / update with `record_version`                               | **Done, green** | `a0fcbeb` |
-| DB tests pinning the blocker query against the deployed guard (9)              | **Done, green** | `a0fcbeb` |
-| **Route handlers + Zod + OpenAPI**                                             | **Not started** | —         |
-| **Audit + outbox wiring**                                                      | **Not started** | —         |
-| **API / authorization / concurrency tests**                                    | **Not started** | —         |
-| List and aggregate-detail queries                                              | **Not started** | —         |
+| Slice                                                                           | Status               | Commit    |
+| ------------------------------------------------------------------------------- | -------------------- | --------- |
+| Work-order repository — locked read, versioned state write, history, job reads  | **Done, green**      | `1313c78` |
+| Closure eligibility — all six blockers, registry order, deferred set            | **Done, green**      | `1313c78` |
+| Transition service — catalog edge, reason, terminal pre-report                  | **Done, green**      | `1313c78` |
+| Cross-schema allow-list guard (B2/B4 reads, asserted read-only)                 | **Done, green**      | `1313c78` |
+| Job create / lock / update with `record_version`                                | **Done, green**      | `a0fcbeb` |
+| DB tests pinning the blocker query against the deployed guard (9)               | **Done, green**      | `a0fcbeb` |
+| Deferred scoped authorization threaded through every entry point                | **Done, green**      | `0386553` |
+| Four work-order/job audit actions registered, pin 78 → 82                       | **Done, green**      | `0386553` |
+| **Route handlers** — WRITTEN, withheld pending API tests, see `wave-4-pending/` | **Blocked on tests** | `0386553` |
+| **Audit + outbox wiring**                                                       | **Not started**      | —         |
+| **API / authorization / concurrency tests**                                     | **Not started**      | —         |
+| List and aggregate-detail queries                                               | **Not started**      | —         |
 
 Gates green at `a0fcbeb`: format, lint, typecheck, module boundaries, OpenAPI,
 authorization coverage, operation coverage, `security:all`.
@@ -242,13 +244,16 @@ assume the two resolutions coincide.
 
 ## Next action
 
-Wave 4 — work-order core, on THIS branch, no merge required first. Deliver as
-atomic commits: creation from reception (mapping the six preconditions and the two
-23505 constraints above), the transition service on the Wave 3 catalog reads,
-closure eligibility evaluating all six blockers independently, job create/update
-with record_version, and the list / aggregate-detail / history queries — then
-routes, OpenAPI, audit, outbox and tests. Push, let PR #82 re-run CI, fix any
-feature-caused failure, update this checkpoint, and continue straight to Wave 5.
+Write `tests/backend/p1-19-work-order-core.test.ts`, then restore the two route
+handlers from `wave-4-pending/` following the five-step procedure in that
+directory README. Reuse the work-order fixture in
+`tests/backend/p1-18-reception-conversion.test.ts` — it already builds one through
+the authoritative conversion path. Then add both operations to the manifest in
+`scripts/check-operation-test-coverage.mjs` with the evidence kinds listed there,
+regenerate OpenAPI with `UPDATE_OPENAPI=1`, and continue with the job routes, the
+list and detail queries, outbox publication and audit wiring.
 
-Nothing from Waves 0-3 needs repeating. The four modules, 22 permissions, 11
-reserved events and 4 error codes are already merged into this branch and green.
+Two traps recorded in `wave-4-pending/README.md`: `docs/api/openapi.v1.json` is
+GENERATED (a hand edit is rejected), and the import list in
+`tests/openapi-contract.test.ts` is the same mechanism that once hid all twelve
+P1-18 operations from the published contract while every gate read green.
