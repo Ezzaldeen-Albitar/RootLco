@@ -42,7 +42,7 @@ checkpoint only and never authorises a merge.
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                        |
 | Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                           |
-| Current HEAD        | `ddc30b5` — Waves 4–8 complete and remediated, Wave 9 in progress                                                                 |
+| Current HEAD        | `f6f4ae4` — Waves 4–8 complete; Wave 9 slices A and B done, slice C next                                                          |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
 | Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
