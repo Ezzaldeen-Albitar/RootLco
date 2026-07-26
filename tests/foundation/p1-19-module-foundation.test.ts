@@ -344,6 +344,12 @@ describe('P1-19 module foundation', () => {
         // Wave 7. The only `dia` event this phase publishes: completion is the fact
         // closure blocker B4 waits for, and nothing downstream reacts to a draft.
         'diagnostic-report.completed',
+        // Wave 8. Every reserved P1-19 name is now published except
+        // `work-order.created`, which stays reserved: reception's conversion is the
+        // only ordinary creation path and the approved catalog gives it no event, and
+        // the rework path publishes `rework.linked` instead.
+        'quality-control.finalized',
+        'rework.linked',
       ];
       if (published.includes(entry.eventType)) {
         expect(entry.implementedIn).toBe('P1-19');

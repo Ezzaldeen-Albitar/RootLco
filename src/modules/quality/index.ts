@@ -22,9 +22,24 @@
 import { composeModule } from '@/server/layering';
 import { QualityRepository } from './data/quality-repository';
 import { QualityGateService } from './application/quality-gate-service';
+import { QualityControlService } from './application/quality-control-service';
+import { ReworkService } from './application/rework-service';
 
-export type { QcCheckRow, QualityControlRecordRow, ReworkLinkRow } from './data/quality-repository';
+export type {
+  QcCheckResultRow,
+  QcCheckRow,
+  QualityControlRecordRow,
+  ReopenAttemptRow,
+  ReworkCostRow,
+  ReworkLinkRow,
+} from './data/quality-repository';
 export type { QualityGateStatus } from './application/quality-gate-service';
+export type { QcRecordDetail, QcRecordView } from './application/quality-control-service';
+export type {
+  CreateReworkInput,
+  ReopenAttemptView,
+  ReworkLinkView,
+} from './application/rework-service';
 
 export {
   MAX_CORRECTIVE_ACTION,
@@ -47,7 +62,12 @@ export {
 /** Composition root: constructs the module's services once per process. */
 export const qualityModule = composeModule({
   module: 'quality',
-  create: () => ({
-    gate: new QualityGateService(new QualityRepository()),
-  }),
+  create: () => {
+    const repository = new QualityRepository();
+    return {
+      gate: new QualityGateService(repository),
+      qualityControl: new QualityControlService(repository),
+      rework: new ReworkService(repository),
+    };
+  },
 });

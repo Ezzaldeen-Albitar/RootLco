@@ -108,6 +108,22 @@ const DIAGNOSTIC_REVIEW = 'dia.diagnostic.review';
 /** Wave 7 commands every ordinary technician principal holds. */
 const WAVE_7_COMMANDS = [DIAGNOSTIC_RECORD, DIAGNOSTIC_COMPLETE, DIAGNOSTIC_READ] as const;
 
+const QC_RECORD = 'qms.quality_control.record';
+const QC_FINALIZE = 'qms.quality_control.finalize';
+const QC_READ = 'qms.quality_control.read';
+const REWORK_MANAGE = 'qms.rework.manage';
+/**
+ * The independent-sign-off authority, WITHHELD from `FULL` for the same reason
+ * `dia.diagnostic.review` is: raising a rework case and independently certifying it
+ * are the two halves BR-QMS-001 keeps apart, so the principal that creates cases must
+ * not be the one that signs them off, or the split could be shown to refuse but never
+ * to permit.
+ */
+const REWORK_SIGN_OFF = 'qms.rework.sign_off';
+
+/** Wave 8 commands every ordinary quality principal holds. */
+const WAVE_8_COMMANDS = [QC_RECORD, QC_FINALIZE, QC_READ, REWORK_MANAGE] as const;
+
 /** One fixture principal: its ids, its subject, and what it may do. */
 export interface Principal {
   readonly roleId: string;
@@ -140,6 +156,7 @@ export const FULL: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
   ],
 };
 
@@ -170,6 +187,7 @@ export const SENSITIVE: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
     SENSITIVE_VIEW,
   ],
 };
@@ -198,6 +216,7 @@ export const NO_CLOSE: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
   ],
 };
 
@@ -226,7 +245,9 @@ export const REVIEWER: Principal = {
     JOB_MANAGE,
     JOB_TRANSITION,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
     DIAGNOSTIC_REVIEW,
+    REWORK_SIGN_OFF,
   ],
 };
 
@@ -265,7 +286,9 @@ export const SCOPED_ELSEWHERE: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
     DIAGNOSTIC_REVIEW,
+    REWORK_SIGN_OFF,
     // Held, and scoped to A2 like everything else this principal holds — so a refusal
     // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
     // permission. Without it the isolation case would pass for the wrong reason.
@@ -309,7 +332,9 @@ export const PERMISSION_ELSEWHERE: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
     DIAGNOSTIC_REVIEW,
+    REWORK_SIGN_OFF,
     // Held, and scoped to A2 like everything else this principal holds — so a refusal
     // on a BRANCH_A1 detail operation is the SCOPE check refusing, not a missing
     // permission. Without it the isolation case would pass for the wrong reason.
@@ -344,9 +369,11 @@ export const TENANT_B_FULL: Principal = {
     LINE_MANAGE,
     ...WAVE_6_COMMANDS,
     ...WAVE_7_COMMANDS,
+    ...WAVE_8_COMMANDS,
     // Held IN ITS OWN TENANT, so a cross-tenant refusal is RLS rather than a missing
     // permission — the whole point of a cross-tenant probe.
     DIAGNOSTIC_REVIEW,
+    REWORK_SIGN_OFF,
     SENSITIVE_VIEW,
   ],
 };
@@ -995,6 +1022,86 @@ export async function establishDiagnosticFixtures(
   } finally {
     client.release();
   }
+}
+
+/** The fixture QC check codes, one mandatory and one not. */
+export const QC_CHECK_MANDATORY = 'fx_p1_19_road_safety';
+export const QC_CHECK_OPTIONAL = 'fx_p1_19_cosmetic';
+const qmsEstablished = new Set<string>();
+
+/**
+ * Two QC checks — one MANDATORY, one not — seeded as admin.
+ *
+ * `qms.qc_checks` is operator configuration with no write route in this phase and the
+ * repository seeds no `qms` row at all, exactly as it seeds no `tech` or `dia` catalog
+ * row. The mandatory one is what makes closure blocker B5b reachable: B5b fires only
+ * when at least one mandatory check is CONFIGURED tenant-wide, so a tenant with none
+ * never sees it and the blocker would be untestable.
+ *
+ * Both are TENANT-scoped. A platform-scoped fixture check would make B5b fire for
+ * every tenant in the database, including other suites' — a fixture that changes what
+ * an unrelated test measures.
+ */
+export async function establishQualityFixtures(
+  tenantId: string = TENANT_A
+): Promise<{ readonly mandatoryId: string; readonly optionalId: string }> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    if (!qmsEstablished.has(tenantId)) {
+      for (const [code, name, mandatory, safety] of [
+        [QC_CHECK_MANDATORY, 'Road-safety verification', true, true],
+        [QC_CHECK_OPTIONAL, 'Cosmetic finish', false, false],
+      ] as const) {
+        await client.query(
+          `INSERT INTO qms.qc_checks
+             (scope, tenant_id, code, name, is_mandatory, is_safety_critical, status, created_by)
+           VALUES ('tenant',$1,$2,$3,$4,$5,'active',$6)`,
+          [tenantId, code, name, mandatory, safety, USER_A]
+        );
+      }
+      qmsEstablished.add(tenantId);
+    }
+    const rows = await client.query<{ id: string; code: string }>(
+      `SELECT id, code FROM qms.qc_checks
+        WHERE tenant_id = $1 AND code = ANY($2::text[]) AND deleted_at IS NULL`,
+      [tenantId, [QC_CHECK_MANDATORY, QC_CHECK_OPTIONAL]]
+    );
+    await client.query('COMMIT');
+    const byCode = new Map(rows.rows.map((row) => [row.code, row.id]));
+    return {
+      mandatoryId: byCode.get(QC_CHECK_MANDATORY) ?? '',
+      optionalId: byCode.get(QC_CHECK_OPTIONAL) ?? '',
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** The live rework link on a rework work order, read as admin. */
+export async function readReworkLink(
+  reworkWorkOrderId: string
+): Promise<{ id: string; version: number; signedOffBy: string | null } | null> {
+  const result = await admin.query<{
+    id: string;
+    record_version: number;
+    independent_sign_off_by: string | null;
+  }>(
+    `SELECT id, record_version, independent_sign_off_by FROM qms.rework_links
+      WHERE rework_work_order_id = $1 AND deleted_at IS NULL`,
+    [reworkWorkOrderId]
+  );
+  const row = result.rows[0];
+  return row
+    ? { id: row.id, version: row.record_version, signedOffBy: row.independent_sign_off_by }
+    : null;
 }
 
 /** A DRAFT template version, so "only a published version may be pinned" is testable. */

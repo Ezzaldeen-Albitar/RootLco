@@ -170,6 +170,16 @@ import '@/app/api/v1/inspections/[inspectionId]/findings/route';
 import '@/app/api/v1/inspections/[inspectionId]/evidence/route';
 import '@/app/api/v1/inspections/[inspectionId]/recommendations/route';
 import '@/app/api/v1/inspections/[inspectionId]/reviews/route';
+// --- Wave 8: quality control, reopen refusal and rework ---------------------
+import '@/app/api/v1/work-orders/[workOrderId]/quality-controls/route';
+import '@/app/api/v1/quality-controls/[recordId]/route';
+import '@/app/api/v1/quality-controls/[recordId]/checks/[qcCheckId]/route';
+import '@/app/api/v1/quality-controls/[recordId]/finalization/route';
+import '@/app/api/v1/work-orders/[workOrderId]/reopen-attempts/route';
+import '@/app/api/v1/work-orders/[workOrderId]/rework/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/sign-off/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/cost/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

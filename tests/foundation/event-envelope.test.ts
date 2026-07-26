@@ -226,7 +226,11 @@ describe('reserved-name registry', () => {
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',
+      // Wave 8. Owner `qms`: finalization is what closure blocker B5 reads, and a
+      // rework link is what B6 reads — the two facts the closure gate waits on.
+      'quality-control.finalized',
       'reception.approved',
+      'rework.linked',
       'session.revoked',
       'user.invited',
       'user.status.changed',
@@ -256,10 +260,9 @@ describe('reserved-name registry', () => {
       // `buildEventEnvelope` refuses a producer whose leading segment differs from the
       // owner, so `tech` there would have made the real write path throw.
       //
-      // `tech` and `qms` are listed because their reserved names carry those owners,
-      // not because they publish yet: `labor.session-changed` is owner `tech` and IS
-      // published, and the `qms` allocations are still `implementedIn: null` until
-      // Wave 8.
+      // All four schemas now publish: `wo` (Waves 4–6), `dia` (Wave 7) and `qms`
+      // (Wave 8). `tech` publishes `labor.session-changed`, whose owner is `tech`
+      // because the row lives in `tech.labor_sessions`.
       'P1-19': ['wo', 'tech', 'dia', 'qms'],
     };
     for (const entry of EVENT_CATALOG) {

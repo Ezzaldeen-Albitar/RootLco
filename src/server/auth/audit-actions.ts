@@ -635,6 +635,69 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
   },
   {
+    code: 'qms.quality_control.opened',
+    class: 'privileged',
+    entityType: 'qms.quality_control_record',
+    description:
+      'A pending quality-control record was opened on a work order. A work order carries a SET of records rather than a current one — there is no unique index on (work_order_id) — because a re-check after a failure must be a NEW record: qms.guard_qc_finalize freezes a finalized result, so a failure can never be edited into a pass and closure blocker B5 reads the set.',
+  },
+  {
+    code: 'qms.quality_control.check_recorded',
+    class: 'privileged',
+    entityType: 'qms.quality_control_record',
+    description:
+      'One configured check outcome was recorded or replaced inside a quality-control record (pass, fail or na — na is a recorded fact, not a gap). Filed under the RECORD rather than the result row so one audit query over a record returns everything that went into it. Replacement stops at finalization, which is an application rule: qms.qc_check_results references the record and never reads its overall_result, so a finalized record would otherwise accept new outcomes.',
+  },
+  {
+    code: 'qms.quality_control.finalized',
+    class: 'approval',
+    entityType: 'qms.quality_control_record',
+    description:
+      'A quality-control record was declared passed or failed. Behind its own high-risk permission, separate from recording checks: observing work and certifying a vehicle fit to release are different acts. checker_id and finalized_at are stamped by qms.guard_qc_finalize from the session and then frozen along with the result, so a pass cannot be attributed to someone who did not perform it and cannot be back-dated or revised.',
+  },
+  {
+    code: 'qms.rework.created',
+    class: 'privileged',
+    entityType: 'qms.rework_link',
+    description:
+      'A rework work order was opened against a CLOSED original and linked to it, in one transaction. Records the root cause and the corrective action in full — they are the quality record itself and what an auditor is looking for — classified internal because they describe a fault on a customer’s vehicle. The rework order is the second and last path that inserts wo.work_orders, and it exists because qms.guard_rework_link_coherence requires kind=rework and nothing else in the platform can produce one.',
+  },
+  {
+    code: 'qms.rework.signed_off',
+    class: 'approval',
+    entityType: 'qms.rework_link',
+    description:
+      'The independent sign-off required by BR-QMS-001 was recorded on a rework case. The separation is a CHECK — ck_rework_links_signoff_distinct refuses a signer equal to lead_technician_id — not a trigger and not the application, and org.guard_immutable_columns freezes the lead so it cannot be swapped afterwards to make a signature legal. The signer is a technician PROFILE, not a user: the sign-off names someone on the workshop roster. Until it exists, closure blocker B6 blocks the rework order’s own closure.',
+  },
+  {
+    code: 'qms.rework.cost_recorded',
+    class: 'privileged',
+    entityType: 'qms.rework_link',
+    description:
+      'The RESTRICTED cost of quality was recorded for a rework case. Records the classification, the currency and the fact — never the figure — because iam.audit_records is not gated by iam.sensitive.view and copying a restricted cost here would publish it to every auditor. An internal quality KPI and explicitly not a billing artifact: nothing invoices anybody and pricing is Phase 1-20.',
+  },
+  {
+    code: 'qms.rework.cost_read',
+    class: 'security',
+    entityType: 'qms.rework_link',
+    description:
+      'The RESTRICTED cost of quality was READ. Audited as security rather than left unrecorded, like the additional-work description read: who looked at restricted data is itself the fact worth keeping. Written only on a read that succeeded — a refusal is already recorded by the authorization pipeline.',
+  },
+  {
+    code: 'qms.work_order.reopen_refused',
+    class: 'security',
+    entityType: 'wo.work_order',
+    description:
+      'An attempt to reopen a closed work order was recorded and REFUSED (BR-WO-002). qms.attempt_reopen writes the attempt with outcome CHECK-fixed to rejected — the vocabulary has exactly one value, so there is no success to record — and never mutates the order. Security class because the interesting question is who tried after a vehicle was released, and the answer must be a ledger rather than silence. requested_by and requested_at are stamped from the session by qms.stamp_reopen_attempt and cannot be claimed.',
+  },
+  {
+    code: 'wo.work_order.rework_opened',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order with kind=rework was opened against a closed original, sharing its reception visit. The ONLY insert into wo.work_orders besides reception’s conversion, and not a contradiction of that boundary: the ordinary path originates from an authorized visit and this one from a closed order, which reception cannot observe. uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary and guard_work_order_refs admits a converted visit, so the schema was built for exactly this.',
+  },
+  {
     code: 'dia.diagnostic.created',
     class: 'privileged',
     entityType: 'dia.diagnostic_report',

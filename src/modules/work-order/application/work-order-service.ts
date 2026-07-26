@@ -313,6 +313,96 @@ export class WorkOrderService extends ApplicationService {
     };
   }
 
+  /**
+   * Opens a REWORK work order against a CLOSED original, for the `quality` module.
+   *
+   * Exposed on this module's public surface because `wo.work_orders` belongs here and
+   * `quality` may not insert into it (ADR-001 rule 3) — and because the rework order
+   * and its `qms.rework_links` row must land in ONE transaction, so the two writes
+   * cannot be two requests. See `openRework` in the repository for why an insert
+   * exists here at all when Wave 4 concluded there is only one creation path.
+   *
+   * The caller has already established the ORIGINAL is closed; this re-reads it
+   * anyway, because the visit and vehicle it copies must come from the row rather
+   * than from the caller.
+   */
+  async openRework(
+    db: DbHandle,
+    originalWorkOrderId: string,
+    displayNumber: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<WorkOrderSummary> {
+    const original = await this.repository.findWorkOrder(db, originalWorkOrderId);
+    if (original === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Work order ${originalWorkOrderId} is not visible`,
+      });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: original.companyId, branchId: original.branchId });
+    }
+    const states = await this.catalog.workOrderStates(db);
+    const state = states.find((candidate) => candidate.code === original.state);
+    // `isClosed`, not `isTerminal`: `qms.guard_rework_link_coherence` reads
+    // `wo.work_order_states.is_closed`, and `cancelled` is terminal but NOT closed —
+    // abandoned work is not corrected by a rework, it is abandoned.
+    if (state === undefined || !state.isClosed) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Rework corrects a CLOSED work order; state "${original.state}" is not closed`,
+      });
+    }
+
+    let created: WorkOrderRow;
+    try {
+      created = await this.repository.openRework(db, {
+        originalWorkOrderId,
+        companyId: original.companyId,
+        branchId: original.branchId,
+        receptionVisitId: original.receptionVisitId,
+        vehicleId: original.vehicleId,
+        displayNumber,
+      });
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.checkViolation)) {
+        // `wo.guard_work_order_refs` refused it — the visit no longer satisfies one of
+        // its six preconditions. Mapped rather than surfaced as a 500.
+        throw new AppFailure('ERR-TRN-001', {
+          message: 'The reception visit no longer permits opening a work order',
+          cause: error,
+        });
+      }
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        // The display number collided. `uq_work_orders_ordinary_origin` cannot fire
+        // here — it is partial on `kind = 'ordinary'` — so this is
+        // `uq_work_orders_active_display_number`, told apart by that reasoning rather
+        // than by guessing.
+        throw new AppFailure('ERR-RES-002', {
+          message: 'That work-order number is already in use',
+          cause: error,
+        });
+      }
+      throw error;
+    }
+
+    await appendAudit(db, {
+      action: 'wo.work_order.rework_opened',
+      entityType: 'wo.work_order',
+      entityId: created.id,
+      companyId: created.companyId,
+      branchId: created.branchId,
+      details: [
+        {
+          field: 'original_work_order_id',
+          classification: 'internal',
+          value: originalWorkOrderId,
+        },
+        { field: 'kind', classification: 'public', value: created.kind },
+        { field: 'display_number', classification: 'public', value: created.displayNumber ?? '' },
+      ],
+    });
+    return toSummary(created);
+  }
+
   /** Live jobs on a work order. */
   async jobs(
     db: DbHandle,

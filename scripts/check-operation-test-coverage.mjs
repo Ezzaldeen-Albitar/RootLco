@@ -776,6 +776,98 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
   },
+  // --- Wave 8: quality control, reopen refusal and rework. -------------------
+  'qms.qc-record-open': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'a work order carries a SET of QC records rather than a current one — there is NO unique index on (work_order_id) — because a re-check after a failure must be a new record, and the suite opens a second one to prove it; a pending record has neither checker nor finalization time, which ck_quality_control_records_finalized pins; a terminal work order is refused, which the database does not check since qms.quality_control_records references the order and never reads its state',
+  },
+  'qms.qc-record-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'newest first, so a failed record and the passing re-check that cleared it are both visible in the order they happened',
+  },
+  'qms.qc-record-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'reports which MANDATORY checks have no result yet — reported and not enforced, because B5b asks only whether a passed record exists when any mandatory check is configured and never looks at per-check results, so refusing finalization on an unticked one would be inventing a rule the closure gate does not apply',
+  },
+  'qms.qc-check-result': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'na is a first-class outcome and not a gap (ck_qc_check_results_result is pass|fail|na, never not_applicable); replacement is 1:1 through the partial unique index and STOPS at finalization, which is an application rule because qms.guard_qc_finalize freezes the RECORD and qms.qc_check_results never reads its overall_result; a check belonging to ANOTHER tenant satisfies fk_qc_check_results_check, which names no tenant column, so the catalog read is the only thing that refuses it and the test uses a real tenant-B check',
+  },
+  'qms.qc-record-finalize': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'checker_id and finalized_at are stamped by qms.guard_qc_finalize from the session and are never sent, and the test asserts the STAMPED id; the freeze is proved twice — the service refuses a re-judgement readably, and the deployed guard refuses it when probed directly, because no route can express that request; pending is not a settable target; B5 is walked end to end, a failure blocking closure and a NEW passing record clearing it while the failure stays in the ledger',
+  },
+  'qms.reopen-attempt': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'returns 201 with the recorded attempt and its refusal, NOT a 409 — and that is load-bearing rather than a softening: an earlier draft threw, which aborts the request’s transaction and rolled the ledger row back with it, so the refusal was real and the record was not. The work order is asserted BYTE-FOR-BYTE unchanged afterwards, because "we refused" and "we refused and changed nothing" are different claims; outcome is CHECK-fixed to rejected so the vocabulary has one value; requested_by is stamped by qms.stamp_reopen_attempt and the test asserts the stamped id; an order that is not closed is ERR-TRN-001, a different fact from "you may not reopen it"',
+  },
+  'qms.reopen-attempt-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the ledger an auditor reads to answer "did anyone try to reopen this after the vehicle was released"; append-only, SELECT+INSERT only',
+  },
+  'qms.rework-create': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'the SECOND and last path that inserts wo.work_orders, and the reason it had to exist: before this wave nothing could produce kind=rework — reception’s conversion writes seven columns and leaves kind to its default — so qms.rework_links was unreachable and B6 could never fire. Not a contradiction of Wave 4’s boundary: that was the ORDINARY path, which originates from an authorized visit, and uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary precisely so a rework against a converted visit is legal. The test asserts the new order is kind=rework AND shares the original’s reception visit and vehicle. The original must be CLOSED — is_closed, not is_terminal, because cancelled is terminal and not closed and abandoned work is not corrected by rework. Rollback is proved by removing the accepted custody event so wo.guard_work_order_refs refuses the INSERT after the display number has been allocated: no order, no link, and the sequence advance rolled back too',
+  },
+  'qms.rework-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the rework cases raised against an ORIGINAL — the direction a service advisor asks about, since uq_rework_links_rework_wo constrains the other side',
+  },
+  'qms.rework-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the case without its restricted cost, which has its own gated surface — folding the cost in would make this read silently return an incomplete case for every caller lacking iam.sensitive.view',
+  },
+  'qms.rework-sign-off': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'BR-QMS-001 is a CHECK here — ck_rework_links_signoff_distinct — unlike diagnostic reviewer separation, which the schema cannot express at all; the test drives the refusal end to end rather than only asserting the readable pre-check, and confirms nothing was signed. B6 is walked whole: the rework order’s own closure is blocked until the sign-off exists and succeeds afterwards. The signer is a technician PROFILE and not a user, sign_off_at is stamped by qms.guard_rework_signoff, and the signature is write-once. FULL creates rework cases and does NOT hold qms.rework.sign_off, so the permission split is proved in both directions',
+  },
+  'qms.rework-cost-record': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the same gate as the additional-work description and tested the same way: FULL holds the functional permission and not iam.sensitive.view, SENSITIVE holds both, and they differ by exactly that one permission; the figure crosses as a decimal STRING because numeric(14,4) holds values IEEE-754 cannot, and 1234.5678 survives the round trip; the audit records the classification, the currency and the fact and NEVER the figure, which a query over iam.audit_record_details proves — that table is not gated by iam.sensitive.view',
+  },
+  'qms.rework-cost-read': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none, like the additional-work description read: who looked at a cost-of-quality figure is itself worth keeping; both narrowed principals hold iam.sensitive.view scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
   'wo.job-update': {
     files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],

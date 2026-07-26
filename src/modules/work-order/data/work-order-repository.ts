@@ -553,6 +553,95 @@ export class WorkOrderRepository extends Repository {
   }
 
   /**
+   * Opens a REWORK work order against the same reception visit as a closed original.
+   *
+   * ## Why an insert exists here at all, when Wave 4 said there is only one
+   *
+   * Wave 4's boundary decision was about the ORDINARY path: reception's conversion
+   * opens the shell because that order originates from an authorized visit, and a
+   * second ordinary insert would not be the one the reception lock and
+   * `uq_work_orders_ordinary_origin` were designed around. A REWORK order originates
+   * from a CLOSED work order, which reception cannot observe and has no reason to,
+   * and `wo.work_orders.kind = 'rework'` exists for exactly this.
+   *
+   * Two schema facts show it was designed for rather than tolerated:
+   * `wo.guard_work_order_refs` precondition 3 admits a `converted` visit, and
+   * `uq_work_orders_ordinary_origin` is PARTIAL on `kind = 'ordinary'` — so a second
+   * order against an already-converted visit is legal precisely when it is a rework.
+   * Without this method `qms.rework_links` is unreachable and closure blocker B6 can
+   * never fire, because nothing in the platform can produce its subject.
+   *
+   * The vehicle and the reception visit are COPIED from the original rather than
+   * accepted: `guard_work_order_refs` requires the vehicle to match the visit's, and
+   * `qms.guard_rework_link_coherence` requires the two orders to share the visit, so
+   * a caller-supplied pair could only ever agree or be refused.
+   */
+  async openRework(
+    db: DbHandle,
+    input: {
+      readonly originalWorkOrderId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly receptionVisitId: string;
+      readonly vehicleId: string;
+      readonly displayNumber: string;
+    }
+  ): Promise<WorkOrderRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      reception_visit_id: string;
+      vehicle_id: string;
+      kind: string;
+      state: string;
+      parts_forward_state: string;
+      display_number: string | null;
+      opened_at: Date;
+      created_by: string | null;
+      record_version: number;
+    }>(
+      db,
+      // `state`, `parts_forward_state` and `opened_at` are left to their frozen
+      // defaults, exactly as reception's conversion leaves them — choosing them here
+      // would be this method deciding how the rework is organised, which is the
+      // transition graph's business and not the opening's.
+      `INSERT INTO wo.work_orders
+         (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, kind,
+          display_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'rework', $6, $7)
+       RETURNING id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
+                 parts_forward_state, display_number, opened_at, created_by, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.receptionVisitId,
+        input.vehicleId,
+        input.displayNumber,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('rework work order insert returned no row');
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      receptionVisitId: row.reception_visit_id,
+      vehicleId: row.vehicle_id,
+      kind: row.kind,
+      state: row.state,
+      partsForwardState: row.parts_forward_state,
+      displayNumber: row.display_number,
+      openedAt: row.opened_at,
+      createdBy: row.created_by,
+      recordVersion: row.record_version,
+    };
+  }
+
+  /**
    * Applies a state change under the caller's held lock and record version.
    *
    * The `record_version` predicate is the optimistic-concurrency check: zero rows

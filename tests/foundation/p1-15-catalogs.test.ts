@@ -258,6 +258,15 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.branch.status_changed',
   'org.company.settings_updated',
   'org.tenant.settings_updated',
+  // Wave 8. `qms.*` sorts after `org.*` and before `rec.*`.
+  'qms.quality_control.check_recorded',
+  'qms.quality_control.finalized',
+  'qms.quality_control.opened',
+  'qms.rework.cost_read',
+  'qms.rework.cost_recorded',
+  'qms.rework.created',
+  'qms.rework.signed_off',
+  'qms.work_order.reopen_refused',
   'rec.reception.approved',
   'rec.reception.authorization_recorded',
   'rec.reception.converted_to_work_order',
@@ -309,6 +318,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.job.updated',
   'wo.work_order.closed',
   'wo.work_order.required_part_recorded',
+  'wo.work_order.rework_opened',
   'wo.work_order.service_line_recorded',
   'wo.work_order.state_changed',
 ];

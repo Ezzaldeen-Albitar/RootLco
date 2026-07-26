@@ -385,7 +385,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'qms.quality_control_record',
     owner: 'qms',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A quality-control record was finalized as passed or failed.',
   },
   {
@@ -394,7 +394,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'qms.rework_link',
     owner: 'qms',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A rework case was linked to the work order it corrects, or signed off.',
   },
 ]);
