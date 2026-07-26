@@ -38,16 +38,17 @@ checkpoint only and never authorises a merge.
 
 ## Current position
 
-| Field               | Value                                                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                  |
-| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                     |
-| Current HEAD        | `2c85987` — Waves 4 and 5 complete, Wave 6 next                                             |
-| `origin/develop`    | `f326e24…` — unchanged by this phase                                                        |
-| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                           |
-| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                  |
-| GitHub Actions runs | Green **4/4** on `ff82189`, `776cb73`, `13e6df1`, `b0c04c6`, `c46483e`; `2c85987` in flight |
-| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                          |
+| Field               | Value                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Protected base SHA  | `f326e24c0340e2ce97a94a768868a26d0cfbb04f`                                                                                       |
+| Current branch      | `feature/p1-19-module-foundation` (long-lived; carries the whole phase)                                                          |
+| Current HEAD        | `4f0a347` — Waves 4, 5 and 6 complete, Wave 7 next                                                                               |
+| `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                             |
+| `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                |
+| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                       |
+| GitHub Actions runs | Green **4/4** on `ff82189`, `776cb73`, `13e6df1`, `b0c04c6`, `c46483e`; `4f0a347` in flight (secret scan green)                  |
+| Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                               |
+| Totals at HEAD      | Unit **843** / Backend **951** / DB **1604**; OpenAPI **119 paths / 142 operations**; P1-19 **32/32** operation depth, 0 pending |
 
 ## Completed
 
@@ -59,8 +60,9 @@ checkpoint only and never authorises a merge.
 | 3    | Module skeleton, permission catalog, event CR         | **Complete**, CI green              |
 | 4    | Work-order core                                       | **Complete**, 8/8 operation depth   |
 | 5    | Technician execution                                  | **Complete**, 24/24 operation depth |
-| 6    | Additional work and customer approvals                | **Next**                            |
-| 7–9  | See README §4                                         | Not started                         |
+| 6    | Additional work and customer approvals                | **Complete**, 32/32 operation depth |
+| 7    | Diagnostics                                           | **Next**                            |
+| 8–9  | See README §4                                         | Not started                         |
 
 ## Wave 4 progress
 
@@ -100,8 +102,15 @@ document, summarised so they are not rediscovered:
 5. `parseOrFail` outside `handleOperation` threw out of the route instead of
    rendering a problem document → 500 where a 422 was owed.
 
-Accepted and tracked: **P1-19-A-01**, the board's `(opened_at DESC, id DESC)`
-ordering is not index-aligned and no migration is authorised to add one.
+Accepted and tracked:
+
+- **P1-19-A-01** — the board's `(opened_at DESC, id DESC)` ordering is not
+  index-aligned and no migration is authorised to add one.
+- **P1-19-A-02** — `dia.diagnostic_reports.revision_number` has no unique index
+  behind it, so monotonic revision numbering rests on an advisory lock alone. A
+  partial unique index on `(tenant, company, branch, job_id, revision_number)
+WHERE deleted_at IS NULL` would close it; no migration is authorised. Raised in
+  Wave 7 archaeology, before any code depended on the claim.
 
 ## Wave 5 progress
 
@@ -469,7 +478,176 @@ Audit actions for this wave are NOT yet registered. Add them to
 The Phase 1-15 attachment service is the only way to create one, and the route must
 never accept a storage key — the same rule P1-18 reception evidence follows.
 
+## Wave 6 progress — COMPLETE at `4f0a347`
+
+| Slice                                                                              | Status          |
+| ---------------------------------------------------------------------------------- | --------------- |
+| Request rows, detail row, approval row, evidence row in the repository             | **Done, green** |
+| `AdditionalWorkService` — raise, list, detail write/read, withdraw, decide, fulfil | **Done, green** |
+| `diagnostics` module gains `findingOrigin`, so finding provenance is checkable     | **Done, green** |
+| Eight routes; `ERR-WO-002` registered; six audit actions; two events published     | **Done, green** |
+| The unapproved-work execution gate, inside `wo.job-transition`                     | **Done, green** |
+| 63 backend tests across two new suites                                             | **Done, green** |
+
+Full evidence:
+[`evidence/wave-6-additional-work-approvals.md`](evidence/wave-6-additional-work-approvals.md).
+
+Three facts from this wave that shape the ones after it:
+
+1. **The execution gate uses B3's FIRST limb only, and the reason is a deadlock.**
+   B3 blocks closure on a required request that is `pending` OR `approved` +
+   `unfulfilled`. The gate uses only `pending`. Including the second limb would
+   stop the job entering any `labor_allowed` state, so the approved work could
+   never be done, the request could never become fulfilled, and B3 could never
+   clear. Wave 8's closure work must not "fix" this by aligning them.
+2. **`iam.sensitive.view` is now a real second permission on two operations.** The
+   `SENSITIVE` fixture principal exists beside `FULL` for exactly that reason —
+   they differ by one permission. Any later wave touching a restricted table must
+   use the same pattern rather than granting `FULL` the permission.
+3. **`quotation_revision_ref` is a REAL foreign key** to `quo.quotation_revisions`
+   (migration 20260723097000), whatever the Phase 1-9 comment says. Nothing writes
+   it in this phase.
+
+## Wave 7 — contract extracted, do NOT re-derive
+
+Read from `20260722093000_dia_qms_catalogs.sql`,
+`20260722101000_dia_templates_versions_items.sql`, `20260722102000_dia_reports.sql`
+and `20260722103000_dia_findings_measurements_evidence.sql` before implementation.
+
+### The report graph IS code, unlike the work-order and job graphs
+
+`dia.guard_diagnostic_report_transition` holds a FIXED lifecycle in a PL/pgSQL
+`IF` chain, not in a catalog table:
+
+```
+draft        → in_progress | cancelled
+in_progress  → completed   | cancelled
+completed, cancelled: terminal
+```
+
+So this graph MAY be mirrored in TypeScript — the reason the work-order and job
+graphs may not is that theirs are tenant-overridable ROWS. Mirroring this one is
+the same decision every pre-P1-19 module made, and the reconciliation test pins it
+against the deployed function body.
+
+`dia.emit_diagnostic_report_status_history` is AFTER UPDATE only and reads
+`app.status_reason` — the same GUC contract as `wo`, so the reason must be
+published or every ledger reason is NULL. Creation emits NO row, so the report
+history needs the same derived `origin` block the work-order and job histories use.
+`dia.guard_diagnostic_report_status_coherence` refuses a ledger row whose
+`to_state` differs from the report's current status, so the ledger cannot be
+written independently.
+
+### Creation preconditions, from `dia.guard_diagnostic_report_refs`
+
+| #   | Precondition                                                     | SQLSTATE |
+| --- | ---------------------------------------------------------------- | -------- |
+| 1   | `job_id` belongs to `work_order_id` (same tenant/company/branch) | `23514`  |
+| 2   | The pinned `template_version_id` is **`published`**              | `23514`  |
+
+Both arrive as `check_violation` and must be told apart by message or by
+pre-checking, or the caller gets one opaque 409 for two different mistakes.
+
+### Revision numbering has NO constraint behind it — this is a real limitation
+
+`dia.diagnostic_reports.revision_number` carries only `CHECK (> 0)`. There is **no
+unique index** on `(job_id, revision_number)` anywhere. So monotonic numbering is
+entirely the application's, and two concurrent creations on one job would both
+compute `max + 1` and both be accepted.
+
+The mitigation is the platform's own established pattern:
+`pg_advisory_xact_lock(hashtextextended(...))` then `COALESCE(MAX(...), 0) + 1`,
+exactly as `shared-services/data/document-repository.ts:208` does for document
+versions. But note the honest difference, which that file states explicitly: there,
+"the advisory lock makes a collision rare, and the constraint makes one
+impossible." **Here there is no constraint.** Record this as an accepted limitation
+(`P1-19-A-02`) and a change request; do NOT claim guaranteed monotonicity.
+
+### Template versions freeze, and their items freeze with them
+
+`dia.guard_template_version_publish`: `draft → published → retired` only, never
+back; publish stamps `published_at`. `dia.guard_template_item_frozen` refuses ANY
+insert or update on `dia.template_items` — including a soft-delete — once the
+parent version is not `draft`. A report may pin only a `published` version, so a
+pinned report is reproducible for ever.
+
+**No `dia` catalog rows are seeded at all** — types, templates, versions and items
+are operator configuration with no write route in this phase, exactly like the
+`tech` catalogs in Wave 5. Fixtures seed them as admin and say so.
+
+### Vocabularies, verbatim
+
+- report `status`: `draft` | `in_progress` | `completed` | `cancelled`
+- template version `status`: `draft` | `published` | `retired`
+- template item `response_type`: `numeric` | `text` | `boolean` | `select`;
+  `ck_template_items_unit` makes `unit` **required** when `numeric`
+- finding `severity`: `info` | `low` | `medium` | `high` | `critical`
+- finding `disposition`: `monitor` | `repair_recommended` | `repair_required` | `no_action`
+- DTC `dtc_status`: `active` | `pending` | `stored` | `cleared`;
+  `ck_dtc_records_code_format` is `^[PBCU][0-9][0-9A-F]{3}$` (upper-case hex only)
+- recommendation `priority`: `low` | `medium` | `high`
+- review `review_result`: `approved` | `rejected` | `needs_rework`
+
+### Range validation is the application's, and the rule lives in jsonb
+
+`dia.measurements.measured_value` is bare `numeric` with **no** precision, scale or
+range constraint; `unit` is NOT NULL; `within_range` is a nullable boolean the
+application computes. The configured range is
+`dia.template_items.validation_rule` (`jsonb`, nullable) — so its shape is this
+phase's decision and must be documented, not invented silently. `within_range`
+must be NULL when no rule exists, because `false` would assert an out-of-spec
+reading nobody checked.
+
+### Reviewer attribution cannot be forged, but reviewer SEPARATION is not enforced
+
+`dia.stamp_review()` overwrites `reviewer_id` with `iam.current_user_id()` and
+`reviewed_at` with `now()` on every insert, and raises when the session has no
+actor. `dia.diagnostic_reviews` is append-only (SELECT + INSERT only).
+
+There is **no separation constraint**: nothing stops the report's own author
+reviewing it. `dia.diagnostic_reports.created_by` is the only comparison available,
+so separation is an APPLICATION rule against that column and must be stated as
+such.
+
+### Two provenance links the brief asks for do NOT exist
+
+- `dia.recommendations` has **only** `diagnostic_report_id`. There is no
+  `finding_id`, so **finding → recommendation provenance is not storable.** Report
+  it as a reconciliation; do not invent a column.
+- `wo.additional_work_requests.originating_finding_id` links to a **finding**, not
+  to a recommendation. So the real chain is
+  finding → additional work, not recommendation → additional work. Wave 6 already
+  validates that link through `diagnosticsModule().completion.findingOrigin`.
+
+### Permissions and events
+
+`dia.diagnostic.record` (medium), `dia.diagnostic.complete` (medium),
+`dia.diagnostic.review` (high) and `dia.diagnostic.read` (low) are seeded.
+`EVT-DIA-001` `diagnostic-report.completed` is registered with owner `dia` and
+`implementedIn: null` — Wave 7 sets it and updates both pins. No audit action for
+`dia.*` is registered yet.
+
+`dia.diagnostic_evidence` is append-only and binds an exact document version,
+identically to `wo.customer_approval_evidence` — reuse the Wave 6 pattern
+(`attachments.scanState` for visibility, refuse `rejected`/`quarantined`, never
+accept a storage key).
+
 ## Next action
+
+**Wave 7, slice A — report creation, the pinned template version, and the report
+read.** Add a `dia` repository write surface and a
+`DiagnosticReportService` beside `DiagnosticsCompletionService`; register
+`dia.diagnostic-create` (POST `/jobs/{jobId}/inspections`, preserving the approved
+API vocabulary while the internal model uses the real `dia` names),
+`dia.diagnostic-detail` and `dia.diagnostic-history`. Then slice B: item results,
+measurements with range validation, DTCs, findings, evidence. Slice C: completion,
+recommendations, review with separation. Run the same command sequence after each
+slice.
+
+---
+
+_Superseded — kept because its facts remain accurate for anything that reads a
+converted order._
 
 **Wave 6, slice A — additional-work requests.** Extend
 `src/modules/work-order/data/work-order-repository.ts` with the request rows, add an
