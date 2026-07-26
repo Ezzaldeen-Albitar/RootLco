@@ -2,6 +2,17 @@ Implements Phase 1-19 — Work Order, Diagnostics, and Technician Backend. **58
 operations** across four new modules, delivered over Waves 3–9 on one branch with one
 pull request.
 
+|                   |                                            |
+| ----------------- | ------------------------------------------ |
+| Protected base    | `f326e24c0340e2ce97a94a768868a26d0cfbb04f` |
+| Evidence-verified | `8a76c7e1e82534c34d70fd014b433f3386d3e3cf` |
+| Diff at that SHA  | 129 files, +47,609 / −1,935                |
+
+Every figure below was measured at the evidence-verified SHA, which is where the clean
+room ran and where all four checks passed. One later commit records this PR's own final
+state in the execution checkpoint; it is **documentation-only** and its executable diff
+against that SHA is empty.
+
 **No migration. No grant, role, policy, function or trigger changed.** The
 `wo`/`tech`/`dia`/`qms` schema has been frozen since Phase 1-12 and this phase is not
 authorised to change it. **One seed file did change**:
@@ -82,10 +93,12 @@ and never touches the order, so the endpoint returns 201 with the attempt. The f
 implementation threw — which rolled back the very ledger row the mechanism exists to
 write.
 
-**P1-18-A-01 is closed on this surface.** `scope: 'branch'` is inert without a concrete
-target, so every id-addressed command re-checks scope via `authorizeScope` against the row
-**after** it is locked `FOR UPDATE`. Each read is probed four ways: unpermitted → 403,
-permitted-elsewhere-but-RLS-visible → 403, no-grant-here → 404, cross-tenant → 404.
+**P1-18-A-01 is closed on this surface — and was not until the final review.**
+`scope: 'branch'` is inert without a concrete target, so every id-addressed command
+re-checks scope via `authorizeScope` against the row **after** it is locked `FOR UPDATE`,
+and each read is probed four ways: unpermitted → 403, permitted-elsewhere-but-RLS-visible →
+403, no-grant-here → 404, cross-tenant → 404. One operation was missing all of it and the
+final review found it — see below.
 
 Reasoning per surface: [`evidence/state-machines-and-closure-gate.md`](docs/phase-1/phase-1-19/evidence/state-machines-and-closure-gate.md),
 [`evidence/security-review.md`](docs/phase-1/phase-1-19/evidence/security-review.md),

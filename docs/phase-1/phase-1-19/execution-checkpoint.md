@@ -45,8 +45,8 @@ checkpoint only and never authorises a merge.
 | Current HEAD        | Waves 4–9 complete, reviewed and remediated; clean-room reproof green at the final SHA                                            |
 | `origin/develop`    | `f326e24…` — unchanged by this phase                                                                                              |
 | `origin/main`       | `491c4e0…` — moved by the owner's PR #78 merge, not by this phase                                                                 |
-| Pull request        | **#82**, base `develop`, **Draft**, do not merge until Wave 9 is evidenced                                                        |
-| GitHub Actions runs | Green **4/4** on the Wave 4 and Wave 5 heads; Wave 6, 7 and 8 heads verified on their exact SHAs                                  |
+| Pull request        | **#82 OPEN and READY FOR REVIEW**, base `develop`, all 4 checks green — DO NOT MERGE                                              |
+| GitHub Actions runs | Green **4/4** on the exact final head: DB 5m, Docker 5m, Lint/types/tests/build 2m, secrets 12s                                   |
 | Delivery model      | **one branch, one PR, continuous waves** — wave-per-PR was revoked                                                                |
 | Totals at HEAD      | Unit **843** / Backend **1074** / DB **1610**; OpenAPI **140 paths / 168 operations**; P1-19 **58/58** operation depth, 0 pending |
 
@@ -795,6 +795,8 @@ written ones, and two test suites.
 
 ## Next action
 
+_Done. Recorded for the next session._
+
 **Prepare PR #82 and stop.** The clean room has been re-run at the final SHA and is
 green — 119 migrations from empty, seeds twice idempotent, structural review PASS, DB
 1610 / backend 1074 / unit 843, `schema_hash a677eb05…` identical across four readings,
@@ -805,6 +807,28 @@ review, and verify all four hosted checks on the exact head SHA. There is no `gh
 in this environment — the PR is edited through the authenticated browser.
 
 **Do NOT merge PR #82. Do NOT create a gate-record PR. Do NOT start P1-20.**
+
+### PR #82 final state — verified in the browser
+
+- Title `feat(p1-19): implement work order diagnostics and technician backend`.
+- **Draft removed; the PR is OPEN and ready for review.** The DRAFT / DO-NOT-MERGE
+  banner is gone from the body, replaced by the full-phase evidence from
+  [`evidence/pull-request-body.md`](evidence/pull-request-body.md).
+- **All four required checks PASSED on the exact head** — Database migrations and RLS
+  tests (5m), Docker build validation (5m), Lint/types/tests/build (2m), Secret and
+  sensitive-file scan (12s). "No conflicts with base branch."
+- 42 commits, 129 files, +47,609 / −1,935.
+- `origin/develop` still `f326e24`; `origin/main` untouched; PR #78 untouched.
+
+**The merge button is available and was deliberately not pressed.** The owner merge is
+the one action this phase does not perform.
+
+There is no `gh` CLI in this environment; the PR was edited through the authenticated
+browser. A trap worth recording: the first `form_input` landed in the empty
+"Add a comment" box rather than the description's edit textarea, which would have posted
+the whole body as a comment. It was caught by checking that the edit box still held the
+old text and that the conversation count stayed at 0 — verify the previous value, not
+just that the write succeeded.
 
 ---
 
