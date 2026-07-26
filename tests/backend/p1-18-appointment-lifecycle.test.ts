@@ -657,6 +657,112 @@ describe('apt.appointment-create', () => {
     expect(await outboxCount(body.appointmentId ?? '')).toBe(1);
   });
 
+  it('stamps the creation audit with the appointment own company and branch', async () => {
+    // Regression guard. `apt.appointment.created` was filed with NULL company
+    // and branch while its three sibling lifecycle commands passed the locked
+    // row's pair, so the booking was invisible to every scope-filtered audit
+    // query over the branch it actually happened in — retrievable only by an
+    // unfiltered tenant-wide read. This asserts the stamped values rather than
+    // the row's existence, so a regression to NULL fails here instead of
+    // silently degrading the audit trail.
+    authAs(SUBJ_FULL_A);
+    const vehicle = await newVehicle();
+    const body = (await (await create(bookingFor(vehicle))).json()) as Body;
+    const appointmentId = body.appointmentId ?? '';
+
+    const stamped = await admin.query<{
+      company_id: string | null;
+      branch_id: string | null;
+      tenant_id: string;
+      actor_id: string | null;
+    }>(
+      `SELECT company_id, branch_id, tenant_id, actor_id
+         FROM iam.audit_records
+        WHERE action = 'apt.appointment.created' AND entity_id = $1`,
+      [appointmentId]
+    );
+
+    expect(stamped.rows).toHaveLength(1);
+    const record = stamped.rows[0];
+    expect(record?.company_id).not.toBeNull();
+    expect(record?.branch_id).not.toBeNull();
+
+    // The exact pair the appointment row carries — not merely "some scope".
+    const owning = await admin.query<{ company_id: string; branch_id: string }>(
+      `SELECT company_id, branch_id FROM apt.appointments WHERE id = $1`,
+      [appointmentId]
+    );
+    expect(record?.company_id).toBe(owning.rows[0]?.company_id);
+    expect(record?.branch_id).toBe(owning.rows[0]?.branch_id);
+    expect(record?.company_id).toBe(COMPANY_A1);
+    expect(record?.branch_id).toBe(BRANCH_A1);
+
+    // Tenant and actor are preserved alongside the new scope stamping.
+    expect(record?.tenant_id).toBe(TENANT_A);
+    expect(record?.actor_id).not.toBeNull();
+
+    // A branch-scoped audit reader for THIS branch retrieves it; a reader
+    // scoped to another branch, and any cross-tenant reader, do not.
+    const visibleHere = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM iam.audit_records
+        WHERE action = 'apt.appointment.created' AND entity_id = $1
+          AND tenant_id = $2 AND company_id = $3 AND branch_id = $4`,
+      [appointmentId, TENANT_A, COMPANY_A1, BRANCH_A1]
+    );
+    expect(Number(visibleHere.rows[0]?.n)).toBe(1);
+
+    const visibleElsewhere = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM iam.audit_records
+        WHERE action = 'apt.appointment.created' AND entity_id = $1 AND branch_id = $2`,
+      [appointmentId, BRANCH_A2]
+    );
+    expect(Number(visibleElsewhere.rows[0]?.n)).toBe(0);
+
+    const visibleCrossTenant = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM iam.audit_records
+        WHERE action = 'apt.appointment.created' AND entity_id = $1 AND tenant_id = $2`,
+      [appointmentId, TENANT_B]
+    );
+    expect(Number(visibleCrossTenant.rows[0]?.n)).toBe(0);
+  });
+
+  it('writes no creation audit row when the booking is refused at validation', async () => {
+    // Scoped honestly. An earlier revision of this comment claimed this proved
+    // the audit row cannot survive a ROLLBACK — it cannot prove that, because
+    // an inverted window is refused by `planOrFail` at the first statement of
+    // `create`, before the allocator, before the INSERT and before `appendAudit`
+    // is reached at all. This test would stay green even if the audit call were
+    // moved onto a separate connection outside the transaction, which is the
+    // very defect that wording named.
+    //
+    // What it does prove, and all it claims: a validation refusal leaves no
+    // creation audit record. The genuine rollback property — an injected
+    // failure AFTER the audit path is reachable leaving no orphan record — is
+    // proved by `rolls a failed booking back completely, burning no appointment
+    // number` further down this file.
+    authAs(SUBJ_FULL_A);
+    const vehicle = await newVehicle();
+    const before = await countWhere(
+      `SELECT count(*)::text AS n FROM iam.audit_records WHERE action = 'apt.appointment.created'`,
+      []
+    );
+
+    const refused = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T10:00:00Z',
+        requestedTo: '2026-09-01T09:00:00Z',
+      })
+    );
+    expect(refused.status).toBe(422);
+
+    expect(
+      await countWhere(
+        `SELECT count(*)::text AS n FROM iam.audit_records WHERE action = 'apt.appointment.created'`,
+        []
+      )
+    ).toBe(before);
+  });
+
   it('replays a repeated booking under one key instead of booking twice', async () => {
     authAs(SUBJ_FULL_A);
     const vehicle = await newVehicle();

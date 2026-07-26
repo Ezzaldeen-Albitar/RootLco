@@ -4,15 +4,17 @@ Full local validation and exact-SHA clean room for the third P1-18 remediation.
 Everything below was produced on one candidate, serially, with no other
 PostgreSQL consumer and no concurrent Vitest process.
 
-| Item          | Value                                                           |
-| ------------- | --------------------------------------------------------------- |
-| Branch        | `fix/p1-18-scoped-authorization-containment`                    |
-| Candidate SHA | `9c20fe3996d74e6e6702928bbe201fdea077b2cb` — see §9             |
-| Base          | `origin/develop` = `fb50ef408354d83cedfb21d358a647673dca91f8`   |
-| `origin/main` | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` — untouched by P1-18 |
-| Merge-base    | equals `origin/develop`, so the branch carries no divergence    |
-| Migrations    | 119, no migration 120, none added, modified, renamed or deleted |
-| Owner gate    | `Decision: Pending`                                             |
+| Item              | Value                                                                      |
+| ----------------- | -------------------------------------------------------------------------- |
+| Authoritative SHA | `7caafbee0faf17183a19ca76f85ebc16d8e85c54` — the protected merge of PR #79 |
+| Delivered by      | `fix/p1-18-scoped-authorization-containment`, reviewed head `b9b4ff5`      |
+| Protected push CI | `#202`, run id `30173469487`, event `push`, branch `develop`, Success 4/4  |
+| `origin/main`     | `3e2c44d9e32e609186f4a6b9f9bfd246cdccda1a` — untouched by P1-18            |
+| Migrations        | 119, no migration 120, none added, modified, renamed or deleted            |
+| Owner gate        | `Decision: Pending`                                                        |
+
+Earlier local candidates are listed in §8 and are **superseded**. Read §8 first
+if any figure below appears to belong to a different tree.
 
 ## 1. Repository validation, CI-equivalent order
 
@@ -44,18 +46,19 @@ PostgreSQL consumer and no concurrent Vitest process.
 
 ### Floors
 
-| Tier     | Floor | Actual   | Margin |
-| -------- | ----- | -------- | ------ |
-| Unit     | 746   | **828**  | +82    |
-| Database | 1547  | **1547** | 0      |
-| Backend  | 693   | **767**  | +74    |
+| Tier     | Floor entering the phase | Actual at `7caafbe` | Margin |
+| -------- | ------------------------ | ------------------- | ------ |
+| Unit     | 746                      | **828**             | +82    |
+| Database | 1547                     | **1547**            | 0      |
+| Backend  | 693                      | **767**             | +74    |
 
-The margins are exactly the two suites this remediation adds, which confirms
-they are counted in the aggregates rather than run separately: unit 828 − 82
-foundation = 746, and backend 767 − 74 containment = 693.
+The margins are exactly the two suites this remediation added, which is how they
+are confirmed to be counted in the aggregates rather than run separately: unit
+828 − 82 foundation = 746, and backend 767 − 74 containment = 693. Those become
+the new floors for anything that follows.
 
-Targeted re-proof: authorization foundation **82/82**, scoped containment
-**74/74**.
+Targeted re-proof at `7caafbe`: authorization foundation **82/82**, scoped
+containment **74/74**.
 
 The database suite prints five `✖ APT/REC classification guard FAILED` and three
 `✖ SVC/QUO/INV classification guard FAILED` lines. These are **deliberate
@@ -123,8 +126,8 @@ started on an isolated port with an empty database — verified empty: zero tabl
 outside `pg_catalog`/`information_schema` before anything ran. The repository's
 own commands were driven against it through `DB_HOST`/`DB_PORT`/`DB_NAME`/
 `DB_USER`/`DB_PASSWORD`, which is the same convention CI uses. The worktree was
-verified clean and at the candidate SHA immediately before and after, so the
-tree under test is exactly `b9b412e`. Repository gates are the authority
+verified clean and at the candidate SHA immediately before and after. See §8
+for which SHA each run belongs to; the authoritative run is §8 run 4. Repository gates are the authority
 throughout; no scratchpad probe substitutes for one.
 
 | Proof                                         | Result                                                                                                                                              |
@@ -140,7 +143,7 @@ throughout; no scratchpad probe substitutes for one.
 | Structural review                             | **PASS** — 537 FKs all validated, no runtime-reachable destructive cascade, FK index coverage complete, no duplicate indexes, zero dictionary drift |
 | Full database suite                           | **1547 passed**, 132 files                                                                                                                          |
 | Full backend suite                            | **767 passed**, 38 files                                                                                                                            |
-| Authorization foundation                      | **69 passed**                                                                                                                                       |
+| Authorization foundation                      | **82 passed**                                                                                                                                       |
 | Scoped containment                            | **74 passed**                                                                                                                                       |
 | All 12 P1-18 operation evidences              | **green** — 12/12 operation-depth                                                                                                                   |
 | Artifact regeneration drift                   | **zero**                                                                                                                                            |
@@ -218,7 +221,10 @@ architecture/documentation — each instructed to run no tests, touch no databas
 and edit nothing. Every finding was adjudicated by direct inspection before
 being accepted or rejected; nothing below was taken on the reviewer's word.
 
-**Zero Critical. One High, fixed. Two Medium fixed, one Medium recorded.**
+**Zero Critical. One High, fixed. Four Medium fixed, one Medium (doc) corrected,
+one Medium recorded.** (An earlier revision of this line said "two Medium fixed"
+and did not match the table immediately below it; the count is now taken from the
+table.)
 
 | Finding                                                                                                                                                                   | Verdict                                                                                                                                                                                                                                                                                                                                                             | Disposition                                                                                                                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -244,27 +250,52 @@ mutation document's narrowed scope statement.
 
 ## 8. Which SHA each result belongs to
 
-Validation ran three times, because twice the tree changed underneath it and
+Validation ran more than once, because the tree changed underneath it and
 re-running was the honest response rather than arguing that the change could not
-have mattered.
+have mattered. An earlier revision of this section left §5 naming run 1's tree
+and run 1's foundation count while asserting run 3 was authoritative — two
+mutually exclusive readings of the same evidence, in the section that is the sole
+support for gate condition 17. That contradiction is what this table exists to
+prevent, and it was found by independent review rather than by me.
 
-| Run | SHA           | What changed since the previous run                                                                                                      | Status            |
-| --- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| 1   | `b9b412e`     | documentation corrections                                                                                                                | superseded        |
-| 2   | `cf508c8`     | documentation only, empty executable-path diff                                                                                           | superseded        |
-| 3   | **`9c20fe3`** | **review response — real code changes** to `authorization.ts`, `reception-service.ts`, `appointment-service.ts` and the foundation suite | **authoritative** |
+| Run | SHA           | What changed since the previous run                                                                                                  | Status                      |
+| --- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| 1   | `b9b412e`     | documentation corrections                                                                                                            | **superseded**              |
+| 2   | `cf508c8`     | documentation only, empty executable-path diff                                                                                       | **superseded**              |
+| 3   | `9c20fe3`     | review response — real code changes to `authorization.ts`, `reception-service.ts`, `appointment-service.ts` and the foundation suite | **superseded**              |
+| 4   | **`7caafbe`** | **the protected merge of PR #79 into `develop`** — merge tree byte-identical to the reviewed head `b9b4ff5`                          | **authoritative for §1–§7** |
 
-**Every figure in §1–§7 above is from run 3, at `9c20fe3`.** The clean room in
-§5 was executed at that SHA with the worktree verified clean (`0 changes`) at
-the moment it started, so the tree under test is exactly the candidate.
+**Why runs 1–3 are not gate-authoritative.** Each was a local candidate on an
+unmerged branch, and each was superseded by a later tree. Run 4 is the protected
+merge itself: the tree the gate would actually be recorded against, reached
+through a reviewed pull request with a byte-identical merge tree and a green
+protected push CI (`#202`, run id `30173469487`, event `push`, branch `develop`,
+SHA `7caafbe`, Success 4/4).
 
-The one unavoidable residue: the commit that records these results is
-necessarily one commit after the run that produced them. That final commit
-changes **documentation only** — `git diff --name-only 9c20fe3 <final> -- src
-tests scripts supabase package.json package-lock.json tsconfig.json
-vitest.config*.ts Dockerfile` is empty — so no executable path differs between
-the SHA the clean room ran on and the SHA that records it. That is stated rather
-than assumed, and it is verifiable with one command.
+**The authoritative run, stated once so it cannot be read two ways:**
+
+```
+SHA          7caafbee0faf17183a19ca76f85ebc16d8e85c54
+Unit         828        Database   1547       Backend  767
+Foundation    82        Containment  74
+Schema hash  a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c
+```
+
+Every figure in §1–§7 above is from run 4 unless a row says otherwise. Figures
+from runs 1–3 have been removed from those sections rather than annotated,
+because a superseded number sitting beside a current one is exactly how the
+contradiction arose.
+
+Counts move again in the remediation that carries this correction: containment
+goes 74 → **76** and the appointment lifecycle suite 30 → **32**, both from added
+assertions, and those are recorded against that remediation's own candidate
+rather than back-dated into run 4.
+
+The one unavoidable residue: the commit that records a run is necessarily one
+commit after the run itself. Where that final commit changes documentation only,
+the executable-path diff is stated and is verifiable with one command —
+`git diff --name-only <run-sha> <final> -- src tests scripts supabase
+package.json package-lock.json tsconfig.json vitest.config*.ts Dockerfile`.
 
 ## 9. What this document does not claim
 

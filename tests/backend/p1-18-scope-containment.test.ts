@@ -107,6 +107,8 @@ import {
   runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { resolveScopeFor } from '@/server/context/resolve-context';
+import type { DbHandle } from '@/server/db/transaction';
 import {
   StaticClaimsAuthenticator,
   __resetAuthenticatorForTests,
@@ -396,6 +398,31 @@ async function scalar(sql: string, values: readonly unknown[]): Promise<string |
 
 const count = async (sql: string, values: readonly unknown[]): Promise<number> =>
   Number((await scalar(sql, values)) ?? '0');
+
+/**
+ * The narrowest `DbHandle` `resolveScopeFor` actually needs.
+ *
+ * It reads two rows and touches nothing else on the handle, so wrapping the
+ * admin pool is enough to exercise the SHIPPED resolver rather than a copy of
+ * its query. `context` and `depth` are never referenced on this path.
+ *
+ * One limit, stated because it bounds what the assertions below mean: the admin
+ * pool binds the `postgres` superuser, which is BYPASSRLS, and this helper sets
+ * no session GUCs. `resolveScopeFor`'s account lookup carries no tenant
+ * predicate in SQL — the claimed tenant is enforced by `sel_user_accounts_tenant`
+ * — so under this handle that policy is NOT in force. The `userId`/`tenantId`
+ * assertions therefore rest on the unique provider-identity index rather than on
+ * tenant RLS, and must not be read as tenant-binding proofs.
+ *
+ * What these tests DO measure soundly is the thing they exist for: the branch
+ * and company sets are produced by the resolver's own SQL aggregate over active
+ * grants, not by RLS, so the permission-blind union is measured exactly — and
+ * strictly better than the hand-written query this replaced.
+ */
+const handleFor = (pool: Pool): DbHandle =>
+  ({
+    query: (text: string, values?: readonly unknown[]) => pool.query(text, values as unknown[]),
+  }) as unknown as DbHandle;
 
 const auditCount = (action: string): Promise<number> =>
   count(`SELECT count(*)::text AS value FROM iam.audit_records WHERE action = $1`, [action]);
@@ -1257,20 +1284,58 @@ describe('the fixtures themselves', () => {
     expect(overlap).toBe(0);
   });
 
-  it('publishes both branches in the union principal resolved scope, so RLS admits B2', async () => {
-    // This is the other half of the defect and it is asserted directly: the
-    // resolved branch set is the union of every grant, regardless of which
-    // permission any of them carries. If this ever narrows, the escalation
-    // tests below would pass for the wrong reason.
-    const branches = await admin.query<{ branch_id: string }>(
-      `SELECT DISTINCT s.branch_id
-         FROM iam.role_grants g
-         JOIN iam.grant_scopes s ON s.grant_id = g.id
-        WHERE g.user_id = $1 AND g.status = 'active' AND s.branch_id IS NOT NULL
-        ORDER BY s.branch_id`,
-      [USER_UNION]
-    );
-    expect(branches.rows.map((row) => row.branch_id).sort()).toEqual([BRANCH_A1, BRANCH_B2].sort());
+  it('publishes both branches through the REAL resolver, so RLS admits B2', async () => {
+    // This is the other half of the defect: the resolved branch set is the
+    // union of every active grant, regardless of which permission any of them
+    // carries.
+    //
+    // An earlier revision asserted that by running its own hand-written query
+    // over `iam.role_grants`/`iam.grant_scopes`. That was worthless as a guard
+    // — it re-implemented `resolveScopeFor` instead of calling it, omitted the
+    // `valid_from`/`valid_to` predicates the real resolver applies, and would
+    // therefore have stayed green through exactly the narrowing its own comment
+    // claimed to catch. It now calls the shipped resolver.
+    const scope = await resolveScopeFor(handleFor(admin), {
+      identityProvider: IDENTITY_PROVIDER,
+      providerSubject: PRINCIPAL_UNION,
+      tenantId: TENANT_A,
+    });
+
+    expect(scope).not.toBeNull();
+    expect(scope?.userId).toBe(USER_UNION);
+    expect(scope?.tenantId).toBe(TENANT_A);
+    expect(scope?.unrestricted).toBe(false);
+    expect([...(scope?.branchIds ?? [])].sort()).toEqual([BRANCH_A1, BRANCH_B2].sort());
+  });
+
+  it('leaves the company principal with NO branch narrowing, through the REAL resolver', async () => {
+    // The company fixture's whole point: two company-scoped grants and no
+    // branch row anywhere, so `app.branch_ids` is empty and RLS narrows by
+    // company only. If a branch row ever appears, the company cases stop
+    // testing authorization and start testing RLS.
+    const scope = await resolveScopeFor(handleFor(admin), {
+      identityProvider: IDENTITY_PROVIDER,
+      providerSubject: PRINCIPAL_COMPANY_C_PERMISSION,
+      tenantId: TENANT_A,
+    });
+
+    expect(scope?.unrestricted).toBe(false);
+    expect(scope?.branchIds).toEqual([]);
+    expect([...(scope?.companyIds ?? [])].sort()).toEqual([COMPANY_A1, COMPANY_D].sort());
+  });
+
+  it('leaves the tenant-wide principal unrestricted, through the REAL resolver', async () => {
+    // An unrestricted grant must publish NO narrowing at all — passing scoped
+    // companies alongside it would silently narrow a tenant-wide operator.
+    const scope = await resolveScopeFor(handleFor(admin), {
+      identityProvider: IDENTITY_PROVIDER,
+      providerSubject: PRINCIPAL_TENANT_WIDE_PERMISSION,
+      tenantId: TENANT_A,
+    });
+
+    expect(scope?.unrestricted).toBe(true);
+    expect(scope?.companyIds).toEqual([]);
+    expect(scope?.branchIds).toEqual([]);
   });
 
   it('gives the company principal two company rows and no branch narrowing at all', async () => {
