@@ -621,6 +621,27 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
   },
   {
+    code: 'tech.labor.session_corrected',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A labour session window was corrected. Never an edit: tech.correct_labor_session soft-deletes the original and inserts a linked replacement carrying correction_of_id, so the corrected hours and the hours they replaced both survive. A correction rewrites what a technician was paid for, which is why the seeded catalog gives tech.labor.correct its own high-risk permission.',
+  },
+  {
+    code: 'tech.labor.session_started',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A technician started working a job. started_at is the server clock, never a caller value, and ex_labor_sessions_overlap — a partial gist EXCLUDE over tstzrange(started_at, COALESCE(ended_at, infinity)) — makes "no overlapping sessions" and "at most one open session per technician" the same invariant.',
+  },
+  {
+    code: 'tech.labor.session_stopped',
+    class: 'privileged',
+    entityType: 'tech.labor_session',
+    description:
+      'A technician stopped working a job. ended_at is server-stamped and write-once: tech.guard_labor_session refuses any later change to it, so an amendment is a correction rather than an edit. Stopping the clock is distinct from pausing the JOB — tech.labor_sessions has no pause column, so a pause is this action plus a job transition into paused, whose reason lives in wo.job_status_history.',
+  },
+  {
     code: 'wo.job.assigned',
     class: 'privileged',
     entityType: 'wo.job_assignment',

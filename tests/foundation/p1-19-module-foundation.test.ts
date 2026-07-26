@@ -336,6 +336,7 @@ describe('P1-19 module foundation', () => {
         'work-order.closed',
         'job.state-changed',
         'job.assigned',
+        'labor.session-changed',
       ];
       if (published.includes(entry.eventType)) {
         expect(entry.implementedIn).toBe('P1-19');

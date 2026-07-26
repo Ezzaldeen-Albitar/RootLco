@@ -72,6 +72,15 @@ export const SQLSTATE = {
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   checkViolation: '23514',
+  /**
+   * An `EXCLUDE` constraint refused the row.
+   *
+   * Distinct from `uniqueViolation` and worth its own name: the schema uses gist
+   * EXCLUDE for temporal invariants an ordinary unique index cannot express — one
+   * active labour session per technician (`ex_labor_sessions_overlap`), one active
+   * plate per vehicle, non-overlapping availability — and those all arrive here.
+   */
+  exclusionViolation: '23P01',
   insufficientPrivilege: '42501',
   serializationFailure: '40001',
   deadlockDetected: '40P01',

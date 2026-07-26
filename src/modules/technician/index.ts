@@ -27,6 +27,8 @@
 import { composeModule } from '@/server/layering';
 import { TechnicianCatalogRepository } from './data/technician-catalog-repository';
 import { TechnicianEligibilityService } from './application/technician-eligibility-service';
+import { LaborSessionRepository } from './data/labor-session-repository';
+import { LaborSessionService } from './application/labor-session-service';
 
 export type {
   AvailabilityRow,
@@ -41,6 +43,8 @@ export type {
   EligibilityRequirement,
   EligibilityVerdict,
 } from './application/technician-eligibility-service';
+export type { LaborSessionView, SessionPageInput } from './application/labor-session-service';
+export type { LaborSessionRow } from './data/labor-session-repository';
 
 export {
   AVAILABILITY_KINDS,
@@ -70,7 +74,11 @@ export {
 /** Composition root: constructs the module's services once per process. */
 export const technicianModule = composeModule({
   module: 'technician',
-  create: () => ({
-    eligibility: new TechnicianEligibilityService(new TechnicianCatalogRepository()),
-  }),
+  create: () => {
+    const profiles = new TechnicianCatalogRepository();
+    return {
+      eligibility: new TechnicianEligibilityService(profiles),
+      laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles),
+    };
+  },
 });

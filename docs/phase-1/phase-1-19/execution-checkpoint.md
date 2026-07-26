@@ -111,13 +111,30 @@ ordering is not index-aligned and no migration is authorised to add one.
 | Job transition — graph, reason GUC, assignment precondition mapped          | **Done, green** |
 | Job status ledger — paginated, origin block                                 | **Done, green** |
 | Technician assignment / unassignment / reassignment, queue                  | **Done, green** |
-| Labour sessions — start, stop, pause/resume, correction                     | **Not started** |
+| Labour sessions — start, stop, pause/resume, correction, job log            | **Done, green** |
 | Available-technician query (ranked candidates)                              | **Not started** |
 | Work-order service lines and required-part demand                           | **Not started** |
 
-Unit **843** / Backend **853** (was 825) / P1-19 operation depth **15/15**, 0
-pending, OpenAPI **108 paths / 125 operations**. CI **#212 Success 4/4** on the
+Unit **843** / Backend **867** (was 825) / P1-19 operation depth **19/19**, 0
+pending, OpenAPI **111 paths / 129 operations**. CI **#212 Success 4/4** on the
 Wave 4 head `ff82189`, verified on the exact SHA.
+
+Labour sessions, in one paragraph: `tech.labor_sessions` has ONLY `started_at` and
+`ended_at`, so a PAUSE is stopping the session plus a job transition into `paused`
+(whose `reason_required` is true) — the pause reason therefore lives in
+`wo.job_status_history`, not on the session, and the two halves stay separate
+requests because they are separate facts with different permissions. No timestamp
+is accepted on the recording path; the one place a caller may state a window is a
+correction, behind `tech.labor.correct` (high risk) rather than
+`tech.labor.record` (low). One open session per technician is
+`ex_labor_sessions_overlap`, a partial gist EXCLUDE over
+`tstzrange(started_at, COALESCE(ended_at, infinity))` — two open sessions overlap
+by construction — and it arrives as **23P01**, now named `exclusionViolation` in
+the platform SQLSTATE map. `ended_at` is write-once, so an amendment is
+`tech.correct_labor_session`: soft-delete the original, insert a linked
+replacement. The suite resets open sessions in `afterEach`, because the EXCLUDE is
+per technician and tenant-wide — a leaked open session would make the suite pass
+or fail on execution order.
 
 Assignment slice, in one paragraph so it is not re-derived: `wo.job_assignments`
 is append-then-close — ending stamps `valid_to` plus a reason

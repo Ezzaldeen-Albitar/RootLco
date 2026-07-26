@@ -211,6 +211,7 @@ describe('reserved-name registry', () => {
       // reserved: the only creation path is reception's conversion, which the
       // approved catalog gives no event, and the rework path arrives in Wave 8.
       'job.state-changed',
+      'labor.session-changed',
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',

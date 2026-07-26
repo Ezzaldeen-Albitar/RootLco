@@ -349,7 +349,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'tech.labor_session',
     owner: 'tech',
-    implementedIn: null,
+    implementedIn: 'P1-19',
     description: 'A labor session was started, paused, resumed or stopped.',
   },
   {
