@@ -6,8 +6,18 @@ this document is the argument about it, and every claim below names the assertio
 the code path that carries it.
 
 Runtime role is `app_runtime` throughout — never a superuser, never `BYPASSRLS`, and
-never the owner of an application table. No migration, no seed and no grant changed in
-this phase, so nothing here widens what the database will do for anyone.
+never the owner of an application table.
+
+**No migration, no grant, no role, no policy and no function changed.** One seed file
+did: `supabase/seeds/04_iam_permission_catalog.sql` gained 22 permission codes in Wave 3.
+An earlier revision of this section claimed no seed changed at all, which was false and
+is corrected here — the clean-room reproof found it, not a reviewer.
+
+That change cannot widen anyone's access. A row in `iam.permissions` is a **name**; it
+authorises nothing until a tenant role maps it to a principal, and this phase seeds no
+role and no mapping. What it does do is make the 58 operations' declarations resolvable,
+which is why `scripts/p1-19-endpoint-inventory.mjs` reconciles every declared code
+against that file and fails the build on a code that is not there.
 
 ---
 

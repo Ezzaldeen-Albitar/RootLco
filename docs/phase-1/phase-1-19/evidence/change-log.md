@@ -3,10 +3,19 @@
 Branch `feature/p1-19-module-foundation`, PR **#82**, base `develop` =
 `f326e24c0340e2ce97a94a768868a26d0cfbb04f`.
 
-**No migration, no seed, no grant and no role changed.** The `wo`/`tech`/`dia`/`qms`
-schema has been frozen since Phase 1-12 and this phase is not authorised to change it.
-Every enforcement described in the evidence is either a pre-existing protected database
-object or an application rule that is identified as one.
+**No migration, no grant and no role changed.** The `wo`/`tech`/`dia`/`qms` schema has
+been frozen since Phase 1-12 and this phase is not authorised to change it. Every
+enforcement described in the evidence is either a pre-existing protected database object
+or an application rule that is identified as one.
+
+**One seed file DID change**, and an earlier revision of this document said no seed
+changed at all — which was simply false, and was caught by the clean-room reproof rather
+than by review. `supabase/seeds/04_iam_permission_catalog.sql` gained **22 permission
+codes** in Wave 3 (+61 / −1; the single deletion is the preceding row's missing trailing
+comma). That is additive structural reference data — a permission code with no grant
+attached authorises nothing until a tenant role maps it — and it is why the
+`iam.permissions` census tests move from 71 to 93. No policy, function, trigger,
+constraint or grant changed with it.
 
 ## What the phase delivers
 

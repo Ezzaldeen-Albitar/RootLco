@@ -87,7 +87,16 @@ this phase does not invent one.
 
 ## Deployment posture
 
-No migration, no seed, no grant, no role, no environment variable and no
-`docker-compose` service changed. The phase is application code, tests and
-documentation. A deployment of this branch is a code deployment: it requires no
-database step and is reversible by redeploying the previous build.
+No migration, no grant, no role, no environment variable and no `docker-compose` service
+changed.
+
+**One seed file changed**, and this section previously said none did.
+`supabase/seeds/04_iam_permission_catalog.sql` gained 22 permission codes in Wave 3, so a
+deployment of this branch is a code deployment **plus a seed re-run** — not a migration.
+The seed is idempotent and additive (`INSERT … ON CONFLICT DO NOTHING` on a stable
+`permission_code`), which the clean room proves by applying all seven declared seed files
+twice and asserting the counts do not move.
+
+Rollback is still a redeploy of the previous build. The extra permission rows are inert
+without a role mapping, so leaving them in place after a rollback grants nobody anything
+— removing them is optional cleanup, not a rollback step.
