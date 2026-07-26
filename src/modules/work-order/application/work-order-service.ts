@@ -11,6 +11,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { qualityModule } from '@/modules/quality';
 import type {
   BlockerHit,
@@ -70,23 +71,44 @@ export class WorkOrderService extends ApplicationService {
    * method with that name produced four false B9 violations. Even naming it in a
    * comment trips the same rule, which is why this sentence talks around it.
    */
-  async requireWorkOrder(db: DbHandle, workOrderId: string): Promise<WorkOrderRow> {
+  async requireWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<WorkOrderRow> {
     const row = await this.repository.findWorkOrder(db, workOrderId);
     if (row === null) {
       throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });
+    }
+    // Deferred scoped authorization against the ROW's own company and branch.
+    // P1-18-A-01: `scope: 'branch'` is inert without a target, because
+    // `requiresScopedEvaluation` returns false on an empty one regardless of the
+    // declared scope — the check would fall through to scope-blind
+    // `iam.has_permission`, and RLS cannot contain that because `app.branch_ids`
+    // is the permission-blind union of every active grant.
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: row.companyId, branchId: row.branchId });
     }
     return row;
   }
 
   /** Live jobs on a work order. */
-  async jobs(db: DbHandle, workOrderId: string): Promise<readonly JobRow[]> {
-    await this.requireWorkOrder(db, workOrderId);
+  async jobs(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly JobRow[]> {
+    await this.requireWorkOrder(db, workOrderId, authorizeScope);
     return this.repository.jobsFor(db, workOrderId);
   }
 
   /** Append-only transition history. */
-  async history(db: DbHandle, workOrderId: string): Promise<readonly StatusHistoryRow[]> {
-    await this.requireWorkOrder(db, workOrderId);
+  async history(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly StatusHistoryRow[]> {
+    await this.requireWorkOrder(db, workOrderId, authorizeScope);
     return this.repository.history(db, workOrderId);
   }
 
@@ -112,9 +134,10 @@ export class WorkOrderService extends ApplicationService {
       readonly jobType?: string | undefined;
       readonly state?: string | undefined;
       readonly requiresDiagnostic?: boolean | undefined;
-    }
+    },
+    authorizeScope?: ScopeAuthorizer
   ): Promise<JobRow> {
-    const workOrder = await this.requireWorkOrder(db, workOrderId);
+    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
     const workOrderStates = await this.catalog.workOrderStates(db);
     const parent = workOrderStates.find((state) => state.code === workOrder.state);
     if (parent === undefined || parent.isTerminal || !parent.allowsJobs) {
@@ -217,8 +240,12 @@ export class WorkOrderService extends ApplicationService {
    *  - a cancellation target bypasses B1–B6 entirely. That is why `blockersFor`
    *    below is never consulted for a cancellation transition.
    */
-  async closureEligibility(db: DbHandle, workOrderId: string): Promise<ClosureEligibility> {
-    const workOrder = await this.requireWorkOrder(db, workOrderId);
+  async closureEligibility(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<ClosureEligibility> {
+    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
     const states = await this.catalog.workOrderStates(db);
     const current = states.find((state) => state.code === workOrder.state);
     const alreadyTerminal = current?.isTerminal ?? false;
@@ -291,11 +318,17 @@ export class WorkOrderService extends ApplicationService {
       readonly toState: string;
       readonly reason?: string | undefined;
       readonly expectedVersion: number;
-    }
+    },
+    authorizeScope?: ScopeAuthorizer
   ): Promise<{ readonly state: string; readonly recordVersion: number }> {
     const locked = await this.repository.lockWorkOrder(db, workOrderId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });
+    }
+    // Scoped against the LOCKED row, after the lock and before any decision, so
+    // the branch authorized is the branch actually written.
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: locked.companyId, branchId: locked.branchId });
     }
     if (locked.recordVersion !== input.expectedVersion) {
       throw new AppFailure('ERR-CON-001', {

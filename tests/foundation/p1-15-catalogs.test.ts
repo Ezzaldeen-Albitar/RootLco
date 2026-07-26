@@ -197,7 +197,6 @@ describe('error catalog', () => {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_AUDIT_ACTIONS = [
-  // Phase 1-18 (apt / rec) — appointment lifecycle and vehicle reception.
   'apt.appointment.cancelled',
   'apt.appointment.created',
   'apt.appointment.no_show_recorded',
@@ -276,6 +275,10 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.plate_assigned',
   'veh.vehicle.status_changed',
   'veh.vehicle.updated',
+  'wo.job.created',
+  'wo.job.updated',
+  'wo.work_order.closed',
+  'wo.work_order.state_changed',
 ];
 
 /**

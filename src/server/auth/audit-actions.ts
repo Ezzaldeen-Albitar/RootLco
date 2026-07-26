@@ -606,6 +606,34 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An authorized reception visit was converted into exactly one work order, which opens in its configured initial state. The reception becomes terminal (converted), which is what makes a second conversion impossible.',
   },
+  {
+    code: 'wo.work_order.state_changed',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order moved between states in the graph held by wo.work_order_transitions. One action covers every edge because a consumer of the audit trail reacts to the resulting state, not to the verb — and because the graph is tenant-overridable, so a per-edge action code would be a vocabulary this catalog cannot close. Closure is not a separate action here: wo.work_order.closed records that fact, and both rows exist for a closing transition.',
+  },
+  {
+    code: 'wo.work_order.closed',
+    class: 'privileged',
+    entityType: 'wo.work_order',
+    description:
+      'A work order reached a terminal, non-cancellation state, having cleared closure blockers B1-B6 in wo.guard_work_order_closure. Recorded separately from the generic state change because closure ends the workshop’s liability and freezes the record, and an auditor asking when a vehicle was released should not have to filter every transition to find it.',
+  },
+  {
+    code: 'wo.job.created',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job was added to a work order. The parent preconditions are the database’s: wo.guard_job_refs locks the work order and refuses a terminal parent or a state whose allows_jobs is false.',
+  },
+  {
+    code: 'wo.job.updated',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A job’s descriptive fields were changed under optimistic concurrency. Deliberately never records a state change: a job moves only through wo.guard_job_transition, and the update path cannot write the state column at all.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
