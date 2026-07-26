@@ -95,9 +95,10 @@ convert a policy refusal into `ERR-IAM-001` rather than letting it escape as
 unlimited incidents at will.
 
 **Transactional outbox.** Events are written on the request transaction, so a
-rolled-back command publishes nothing. `appointment.changed` and
-`reception.approved` are the two envelopes this phase emits; conversion emits
-none, because the approved catalog defines none for that fact.
+rolled-back command publishes nothing. `appointment.changed`,
+`vehicle.checked-in` (EVT-REC-001) and `reception.approved` are the **three**
+envelopes this phase emits; conversion emits none, because the approved catalog
+defines none for that fact.
 
 **Known limits.** Persisting denials to `iam.security_events` requires a write
 privilege `app_runtime` does not hold (DBCR-P1-13-001, platform-wide,

@@ -24,12 +24,12 @@ and route the result to the named approval owner._
 
 ### Catalogs
 
-| Catalog      | State                                                                                                           |
-| ------------ | --------------------------------------------------------------------------------------------------------------- |
-| Permission   | 71 permissions; the nine P1-18 codes registered and seeded                                                      |
-| Audit action | one action per operation, entity type pinned per action                                                         |
-| Event        | `appointment.changed`, `reception.vehicle-checked-in.v1`, `reception.approved`; conversion emits none by design |
-| Error        | no domain-specific codes minted; platform codes reused                                                          |
+| Catalog      | State                                                                                                                                                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Permission   | 71 permissions; the nine P1-18 codes registered and seeded                                                                                                                                                                |
+| Audit action | one action per operation, entity type pinned per action                                                                                                                                                                   |
+| Event        | `appointment.changed`, `vehicle.checked-in` (EVT-REC-001), `reception.approved`; conversion emits none by design. The Field-24 spelling `reception.vehicle-checked-in.v1` is NOT minted — the reserved catalog entry wins |
+| Error        | no domain-specific codes minted; platform codes reused                                                                                                                                                                    |
 
 ### Traceability
 

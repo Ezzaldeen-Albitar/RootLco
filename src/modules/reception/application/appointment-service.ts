@@ -134,13 +134,24 @@ export class AppointmentService extends ApplicationService {
       entityType: 'apt.appointment',
       entityId: appointmentId,
       // The plan's own company and branch — the same pair the row was just
-      // inserted with, and server-resolved rather than caller-asserted: the
-      // pre-handler check authorized against exactly this target via
-      // `scopeTargetOption(body)`, and `toAppointmentCreatePlan` is the only
-      // thing that produces it. Omitting them filed a privileged action with
-      // NULL company and branch, invisible to every scope-filtered audit query
-      // over the branch the booking actually happened in. The three lifecycle
-      // commands below already pass the locked row's pair; this is the fourth.
+      // inserted with.
+      //
+      // These are caller-SUPPLIED, not server-resolved, and the distinction is
+      // worth keeping straight: they arrive in the body and
+      // `toAppointmentCreatePlan` copies them through. What makes them safe to
+      // stamp is that three independent things have already pinned them by the
+      // time this runs — the pre-handler check authorized against exactly this
+      // pair via `scopeTargetOption(body)`, the INSERT above wrote the same
+      // pair under `ins_appointments_scope`, and `fk_appointments_branch` is a
+      // composite key over (tenant, company, branch) so an incoherent pair
+      // cannot reach this line at all. The audit row therefore cannot name a
+      // scope the appointment does not carry, nor one the caller was not
+      // authorized against.
+      //
+      // Omitting them filed a privileged action with NULL company and branch,
+      // invisible to every scope-filtered audit query over the branch the
+      // booking actually happened in. The three lifecycle commands below
+      // already pass the locked row's pair; this is the fourth.
       companyId: plan.companyId,
       branchId: plan.branchId,
       details: [

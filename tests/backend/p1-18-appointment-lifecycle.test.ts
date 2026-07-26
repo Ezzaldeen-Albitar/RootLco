@@ -726,8 +726,20 @@ describe('apt.appointment-create', () => {
     expect(Number(visibleCrossTenant.rows[0]?.n)).toBe(0);
   });
 
-  it('writes no creation audit row when the booking is refused', async () => {
-    // The audit stamping must not have made the audit row survive a rollback.
+  it('writes no creation audit row when the booking is refused at validation', async () => {
+    // Scoped honestly. An earlier revision of this comment claimed this proved
+    // the audit row cannot survive a ROLLBACK — it cannot prove that, because
+    // an inverted window is refused by `planOrFail` at the first statement of
+    // `create`, before the allocator, before the INSERT and before `appendAudit`
+    // is reached at all. This test would stay green even if the audit call were
+    // moved onto a separate connection outside the transaction, which is the
+    // very defect that wording named.
+    //
+    // What it does prove, and all it claims: a validation refusal leaves no
+    // creation audit record. The genuine rollback property — an injected
+    // failure AFTER the audit path is reachable leaving no orphan record — is
+    // proved by `rolls a failed booking back completely, burning no appointment
+    // number` further down this file.
     authAs(SUBJ_FULL_A);
     const vehicle = await newVehicle();
     const before = await countWhere(

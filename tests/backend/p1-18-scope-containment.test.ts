@@ -405,6 +405,19 @@ const count = async (sql: string, values: readonly unknown[]): Promise<number> =
  * It reads two rows and touches nothing else on the handle, so wrapping the
  * admin pool is enough to exercise the SHIPPED resolver rather than a copy of
  * its query. `context` and `depth` are never referenced on this path.
+ *
+ * One limit, stated because it bounds what the assertions below mean: the admin
+ * pool binds the `postgres` superuser, which is BYPASSRLS, and this helper sets
+ * no session GUCs. `resolveScopeFor`'s account lookup carries no tenant
+ * predicate in SQL — the claimed tenant is enforced by `sel_user_accounts_tenant`
+ * — so under this handle that policy is NOT in force. The `userId`/`tenantId`
+ * assertions therefore rest on the unique provider-identity index rather than on
+ * tenant RLS, and must not be read as tenant-binding proofs.
+ *
+ * What these tests DO measure soundly is the thing they exist for: the branch
+ * and company sets are produced by the resolver's own SQL aggregate over active
+ * grants, not by RLS, so the permission-blind union is measured exactly — and
+ * strictly better than the hand-written query this replaced.
  */
 const handleFor = (pool: Pool): DbHandle =>
   ({

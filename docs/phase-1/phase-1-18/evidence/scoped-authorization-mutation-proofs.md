@@ -15,8 +15,13 @@ Database        PostgreSQL 17.6.1 (supabase_db_RootLco), serial, no other
                 DB/backend Vitest process running
 ```
 
+This document is committed one commit after the runs it records, at `aedfcef`,
+whose **only** change is this file — the executable-path diff against `c6a21f1`
+is empty. That is stated here rather than left to inference, because an unstated
+tree delta is exactly what invalidated the previous set.
+
 **These proofs were re-run at this candidate, and that matters.** The previous
-set ran at `68255af`, four commits before the tree that was actually merged. The
+set ran at `68255af`, five commits before the tree that was actually merged. The
 intervening candidate changed `src/server/auth/authorization.ts`,
 `src/modules/reception/application/appointment-service.ts` and
 `reception-service.ts` — the module every kill depends on, M1's choke point, and

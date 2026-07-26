@@ -18,7 +18,7 @@ isolation, failure, and recovery coverage appropriate to the affected workflow._
 
 |                          |                                                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Unit / foundation suite  | **828+** across 39 files (`npm test`)                                                                    |
+| Unit / foundation suite  | **829** across 39 files (`npm test`)                                                                     |
 | Authorization foundation | **82** — `tests/foundation/p1-18-scoped-authorization.test.ts`                                           |
 | Coverage-gate foundation | 54 — `tests/foundation/operation-coverage-gate.test.ts`, including the new measured strict-rule debt pin |
 
@@ -42,7 +42,7 @@ _…API/contract and error-path coverage…_
 
 |                          |                                                                                                             |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Backend suite            | **767+** across 38 files (`npm run test:backend`)                                                           |
+| Backend suite            | **771** across 38 files (`npm run test:backend`)                                                            |
 | OpenAPI                  | 110 declared / 110 published / 110 guarded; P1-18 **12/12**                                                 |
 | Independent inventory    | 94 route files walked, sharing no import list with the repo gate — 0 missing, 0 orphan, 0 path/method drift |
 | Contract divergence gate | `tests/openapi-contract.test.ts` regenerates from the registry and compares                                 |

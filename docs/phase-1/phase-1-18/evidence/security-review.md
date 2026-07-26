@@ -9,7 +9,7 @@ Control statements are quoted from the canonical Phase 1 Development Plan.
 Every claim below is backed by a named assertion or a named code path; where a
 control is only partly closed, the residue is stated rather than rounded up.
 
-Scope: the twelve P1-18 operations on protected `develop`. Runtime role is
+Scope: the twelve P1-18 operations at the final gate-evidence remediation candidate (based on protected `develop` = `7caafbe`). Figures that differ from `7caafbe` itself — containment 76 rather than 74, and the appointment-creation audit scope — belong to this candidate and are identified as such. Runtime role is
 `app_runtime` throughout — never a superuser, never `BYPASSRLS`, and never an
 owner of an application table (proved in the clean room, see
 `local-release-candidate-validation.md`).
@@ -80,12 +80,12 @@ refused by the frozen guard. **No production object storage, no malware
 scanning, and no export surface is claimed by this phase**; P1-18 ships no read
 endpoint at all.
 
-| Evidence                                            | Where                                                                              |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Sensitive-view composition                          | `p1-18-reception-evidence.test.ts`; README §7                                      |
-| Version-belongs-to-document guard                   | `p1-18-reception-evidence.test.ts`                                                 |
-| Classification registry reconciles with live schema | `npm run validate:aptrec-classification` — 454 columns, 4 restricted, 0 searchable |
-| No secrets or fabricated data                       | `npm run security:all` — 5/5 green                                                 |
+| Evidence                                            | Where                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Sensitive-view composition                          | `p1-18-reception-evidence.test.ts`; README §7                                                                 |
+| Version-belongs-to-document guard                   | `p1-18-reception-evidence.test.ts`                                                                            |
+| Classification registry reconciles with live schema | `npm run validate:aptrec-classification` — 454 columns, 4 restricted, 0 searchable                            |
+| No secrets or fabricated data                       | `npm run security:all` — 4/4 green (tracked secrets, browser-exposed secrets, scope exclusions, no-fake-data) |
 
 **Disposition.** Closed for what the phase builds. Explicitly not claimed:
 production storage, export, retention enforcement.
@@ -135,8 +135,9 @@ union) and `P1-18-SEC-ROLEPROBE` (an authorizing-role membership oracle on
 
 **Control statement.** _Complete and evidence security audit-event coverage._
 
-**Mechanism.** Every one of the twelve operations declares
-`auditClass: 'privileged'` and an `auditAction`; the registry rejects an audited
+**Mechanism.** Every one of the twelve operations declares an audited class — **ten
+`privileged`, two `approval`** (`rec.reception-approve` and
+`rec.reception-authorization`) — and an `auditAction`; the registry rejects an audited
 class with no action. Audit rows are written on the request transaction, so a
 denial or a rollback leaves none. Denials are logged at `warn` with the
 correlation id and counted in `METRICS.errorCount`.
