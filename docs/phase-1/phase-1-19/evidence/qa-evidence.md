@@ -52,7 +52,7 @@ policy or RLS assertion.
 | `tests/backend/p1-19-work-order-core.test.ts`            | 25    | Transition, closure, closure eligibility                            |
 | `tests/backend/p1-19-work-order-reads.test.ts`           | 14    | Work-order list, detail, history                                    |
 | `tests/backend/p1-19-work-order-jobs.test.ts`            | 15    | Job create, update, history                                         |
-| `tests/backend/p1-19-work-order-lines.test.ts`           | 10    | Service lines and required parts                                    |
+| `tests/backend/p1-19-work-order-lines.test.ts`           | 18    | Service lines and required parts                                    |
 | `tests/backend/p1-19-job-lifecycle.test.ts`              | 10    | Job transitions against the catalog graph                           |
 | `tests/backend/p1-19-job-assignments.test.ts`            | 21    | Assignment, reassignment, ending, eligibility                       |
 | `tests/backend/p1-19-labor-sessions.test.ts`             | 14    | Labour start/stop/correct and the overlap exclusion                 |
@@ -64,8 +64,17 @@ policy or RLS assertion.
 | `tests/backend/p1-19-closure-gate-matrix.test.ts`        | 10    | B1–B6 raised one at a time, and cancellation's bypass               |
 | `tests/backend/p1-19-concurrency.test.ts`                | 4     | Forced races on the surfaces no unique index protects               |
 
+The backend column sums to **303**, which is the delta measured against the protected
+base. An earlier revision of this table summed to 295, because
+`p1-19-work-order-lines.test.ts` was counted by grepping for `it(` — and that file is a
+`describe.each` over two tuples, so its eight `it` blocks instantiate **sixteen** tests
+plus two outside the block: 18, not 10. The final adversarial review caught the
+arithmetic. Every figure in this column is now the count Vitest reports per file, not a
+count of source lines that look like tests.
+
 The four DB files hold 63 tests between them; the per-file split is not listed because
-several are table-driven and a hand-written count would be a number nobody re-derives.
+several are table-driven and a hand-written count there would repeat the same mistake in
+a place nobody re-derives.
 
 ## Reconciliation tests exist because mirrored knowledge rots
 
@@ -185,9 +194,30 @@ Plus, from the wave suites:
   idempotency (`wo.job-update`, `wo.job-assignment-end`, `tech.labor-session-stop`,
   `tech.labor-session-correct`) rely on this check alone and each refuses a missing
   `If-Match` outright with `ERR-CON-002`.
-- **Locking.** Every id-addressed command locks its authoritative row `FOR UPDATE`
-  before reading the state it will branch on, so a concurrent transition cannot commit
-  between the read and the write. The deferred scope check runs against that locked row.
+- **Locking.** Every id-addressed command locks **its own** authoritative row
+  `FOR UPDATE` before reading the state it will branch on, and the deferred scope check
+  runs against that locked row.
+
+  **A stronger claim was made here and it was false.** An earlier revision said "every
+  id-addressed command locks its authoritative row before reading the state it will
+  branch on" without distinguishing the command's own row from its **parent's**. The
+  final adversarial review found two commands that branched on a parent's terminal
+  state read WITHOUT a lock: `recordLine` (`wo.service-line-record`,
+  `wo.required-part-record`) resolved the work order through the non-locking
+  `requireWorkOrder`, and `wo.job_assignments`' line tables carry no trigger that
+  reads the order — so a closure could commit between the check and the insert and a
+  line could be appended to a released order. `lockDecidableRequest` had the same shape
+  for the approval path.
+
+  Both are fixed rather than documented as limits. `recordLine` now takes
+  `lockWorkOrder`. `lockDecidableRequest` locks the **parent first and the request
+  second**, which is the part that needed care: every other path in the module locks
+  `wo.work_orders` before its children, so locking the request first would have
+  inverted that and opened a deadlock against a concurrent closure. It reads the
+  request's `work_order_id` unlocked to learn which order to lock — safe because
+  `tg_additional_work_requests_immutable` freezes that column — then takes the two
+  locks in the platform's own order.
+
 - **Labour overlap** is an `EXCLUDE` constraint in the database, not application code;
   the suite drives the overlap through the route and asserts the database's refusal.
 

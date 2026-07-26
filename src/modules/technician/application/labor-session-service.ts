@@ -41,6 +41,7 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
+import { workOrderModule } from '@/modules/work-order';
 import {
   LABOR_SESSION_ORDER,
   type LaborSessionRepository,
@@ -296,11 +297,39 @@ export class LaborSessionService extends ApplicationService {
   }
 
   /** One keyset page of a job's labour log. */
+  /**
+   * The labour log of one job, newest start first.
+   *
+   * Takes a `ScopeAuthorizer` and uses it, which the first shipped version of this
+   * method did not — it was the ONE P1-19 operation where `scope: 'branch'` was left
+   * inert (P1-18-A-01). That mattered here more than almost anywhere else on the
+   * surface: a session says who worked and for how long, so the only narrowing was
+   * `sel_labor_sessions_scope` matching `iam.allowed_branch_ids()`, which is the
+   * permission-BLIND union of every grant the caller holds anywhere. A caller
+   * permitted to read technicians in one branch, and RLS-visible in another through
+   * an unrelated grant, could read that other branch's timesheets.
+   *
+   * The target is the JOB's own company and branch, resolved through the
+   * `work-order` module's public `jobScope` — `technician` may not read `wo.jobs`
+   * (ADR-001 rule 3) — and not the session rows', because a caller must be refused
+   * before any row is read rather than after.
+   *
+   * `null` covers absent and out-of-scope alike, so the refusal does not disclose
+   * whether a job the caller cannot reach exists.
+   */
   async forJob(
     db: DbHandle,
     jobId: string,
-    page: SessionPageInput
+    page: SessionPageInput,
+    authorizeScope?: ScopeAuthorizer
   ): Promise<Page<LaborSessionView>> {
+    const job = await workOrderModule().workOrders.jobScope(db, jobId);
+    if (job === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: job.companyId, branchId: job.branchId });
+    }
     const rows = await this.sessions.pageForJob(db, jobId, pageRequest(LABOR_SESSION_ORDER, page));
     return { ...rows, items: rows.items.map(toView) };
   }

@@ -29,7 +29,6 @@ import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { ASSIGNMENT_ROLES, workOrderModule } from '@/modules/work-order';
-import { MAX_UNAVAILABILITY_REASON } from '@/modules/technician';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,7 +59,21 @@ const Body = z
         to: z.string().datetime({ offset: true }),
       })
       .strict(),
-    reason: z.string().min(1).max(MAX_UNAVAILABILITY_REASON).optional(),
+    // No `reason` here, deliberately. An earlier version of this schema accepted one and
+    // the service never read it: the body is `.strict()`, so a caller sending `reason`
+    // got a 201 and reasonably concluded it had been stored, when it had been discarded.
+    //
+    // `wo.job_assignments.reason` is about ENDING an assignment.
+    // `ck_job_assignments_end_reason` is `valid_to IS NULL OR (reason IS NOT NULL AND
+    // btrim(reason) <> '')` — it makes a reason MANDATORY once `valid_to` is stamped and
+    // says nothing about a live row, so the column would in fact accept one here. That is
+    // the argument for removing the field rather than wiring it: the write path that has
+    // a use for a reason is `POST /assignments/{id}/end`, and a reason recorded at
+    // assignment time would sit in the column that a later ending is required to fill,
+    // making the ending's own reason ambiguous.
+    //
+    // Accepting a field and ignoring it is worse than rejecting it: the rejection is
+    // information, the silence is a lie.
   })
   .strict();
 

@@ -666,7 +666,12 @@ describe('wo.work-order-closure-eligibility', () => {
     };
     expect(body.alreadyTerminal).toBe(true);
     expect(body.blockers).toEqual([]);
-    expect(body.eligible).toBe(true);
+    // `false`, and an earlier revision of this test asserted `true` — on the reasoning
+    // that a terminal order has no blockers, which is correct and is not what the field
+    // means. "Eligible" is what a client acts on, and a cancelled order may not be
+    // closed. The three states are now distinguishable without reading `state` against a
+    // catalog: eligible / blocked / finished.
+    expect(body.eligible).toBe(false);
   });
 
   it('cross-tenant and isolation: the same 404 for another tenant, 403 for a visible-but-unpermitted branch', async () => {

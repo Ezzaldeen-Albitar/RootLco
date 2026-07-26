@@ -101,14 +101,24 @@ export async function GET(
   return handleOperation(
     LABOR_SESSION_LIST_OPERATION,
     request,
-    async ({ db }) => {
+    // `authorizeScope` is destructured and FORWARDED, which the first version of this
+    // handler did not do — it took `{ db }` only, and the path names no branch, so the
+    // pre-handler check fell back to scope-blind `iam.has_permission` and
+    // `scope: 'branch'` above was inert (P1-18-A-01). The service now re-checks against
+    // the job's own company and branch.
+    async ({ db, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
       const query = parseOrFail(Query, rawQuery, 'query');
       return {
-        body: await technicianModule().laborSessions.forJob(db, params.jobId, {
-          cursor: query.cursor,
-          limit: query.limit,
-        }),
+        body: await technicianModule().laborSessions.forJob(
+          db,
+          params.jobId,
+          {
+            cursor: query.cursor,
+            limit: query.limit,
+          },
+          authorizeScope
+        ),
       };
     },
     { params: raw }

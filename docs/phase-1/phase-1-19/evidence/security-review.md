@@ -38,7 +38,40 @@ conjunction holds.
 
 Every one of the 58 declares `scope: 'branch'`.
 
-### P1-18-A-01 is closed on this surface, not inherited
+### P1-18-A-01 is closed on this surface — but it was not, until the final review
+
+**It was open on one operation and the final adversarial review found it.**
+`tech.labor-session-list` (`GET /jobs/{jobId}/labor-sessions`) declared
+`scope: 'branch'` while its handler destructured `{ db }` alone and its service method
+took no `ScopeAuthorizer` at all — so the pre-handler check fell through to scope-blind
+`iam.has_permission('tech.technician.read')` and the only narrowing left was
+`sel_labor_sessions_scope` matching `iam.allowed_branch_ids()`.
+
+It was the worst operation on the surface for that to happen to. A labour session says
+**who worked and for how long**, so a caller permitted to read technicians in one branch
+and RLS-visible in another through an unrelated grant could read that other branch's
+timesheets. The suite for that operation made every read as a fully-permitted principal
+and asserted a cross-tenant caller received `200` with an empty list — a comment in the
+test justified it as "the job id is not resolved first here", which was describing the
+defect as though it were a decision.
+
+Fixed three ways, because one would not have been enough:
+
+1. `forJob` resolves the job's scope through the `work-order` module's public `jobScope`
+   and re-checks against it **before any session row is read**; the route forwards
+   `authorizeScope`.
+2. The suite now runs the same four-way probe as every other read, and the cross-tenant
+   assertion is `404` rather than an empty `200`.
+3. **A structural guard**, so no future operation can repeat it:
+   `scripts/p1-19-endpoint-inventory.mjs` fails the build when an operation declares
+   `scope: 'branch'` and its handler neither forwards `authorizeScope`, nor supplies an
+   `authorizationTarget`, nor derives one with `scopeTargetOption`. Its first version was
+   satisfied by the very comment explaining the fix — prose naming `authorizeScope` made
+   the check pass — so it now strips comments first. It was mutation-tested: reverting the
+   route fix makes it fail with exactly this operation named.
+
+What follows is therefore true of the shipped tree, and was **not** true of the tree that
+went through Waves 5 through 9.
 
 `scope: 'branch'` is **inert** without a concrete `authorizationTarget`: the
 pre-handler check falls back to scope-blind `iam.has_permission`, while RLS narrows on
@@ -119,16 +152,31 @@ silently changes in transit is a defect whether or not anyone notices.
 4. **Error messages** — refusals name the rule and the entity id, never the value.
    A caller lacking `iam.sensitive.view` gets the ordinary authorization refusal; the
    message does not vary by whether the restricted row exists.
-5. **Event payloads** — `rework.linked` carries the link id, aggregate version and
-   scope. `rework-service.ts` comments the omission explicitly at the publication site,
-   because a payload is copied to consumers that were never subject to the RLS policy
-   that protected the source row.
+5. **Event payloads** — `rework.linked` carries the link id, the two work-order ids,
+   `isSafetyCritical`, the aggregate version and the scope
+   (`rework-service.ts:347-359`); the restricted cost is written by a **different
+   operation** and never enters this payload. The comment naming that reasoning is at
+   the **audit** site of `writeCost` (`rework-service.ts:533-535`), not at the
+   publication site. An earlier revision of this section said the omission was
+   commented "at the publication site", which was wrong about where the comment is —
+   the omission itself is real, and now has an assertion behind it rather than a
+   misplaced citation.
 
 The Wave 6 suite asserts leakage negatively with a unique token: the restricted
-description contains a string that appears nowhere else, and the test asserts that
-token is absent from every audit detail, every event payload and every non-detail
-response for the same request. Asserting "the response has no `description` key" would
-pass against a response that leaked the same text under a different name.
+description contains a string that appears nowhere else, and the suite asserts that
+token is absent from **every audit detail, every outbox payload and every non-detail
+response** for the same request, while separately asserting the detail row itself does
+hold it — so the claim is about where the text lives, not about it having been dropped.
+
+**A correction, because this section previously overstated it.** Until the final
+adversarial review, the leak test queried `iam.audit_record_details` **only**. This
+document and `devops-observability.md` both claimed it covered event payloads and
+responses as well, and neither was true. The test now covers all three; the claim was
+made accurate by extending the test, not by narrowing the sentence.
+
+Asserting "the response has no `description` key" would pass against a response that
+leaked the same text under a different name, which is why the probe is a token search
+across the whole serialised body rather than a key check.
 
 ### Evidence attachments carry no storage keys
 

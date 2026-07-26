@@ -711,6 +711,33 @@ describe('wo.additional-work-detail-record and wo.additional-work-detail-read', 
         [seeded.requestId, RESTRICTED]
       )
     ).toBe(1);
+
+    // The OUTBOX. Two evidence documents claimed this suite covered event payloads and
+    // it did not — it queried `iam.audit_record_details` alone. A payload is copied to
+    // consumers that were never subject to the RLS policy protecting the source row, so
+    // it is the one destination where a leak escapes the tenant boundary entirely.
+    // Searched over the whole serialised payload, not a named key, because a leak under
+    // a different key name is still a leak.
+    expect(
+      await count(
+        `SELECT count(*)::text AS n FROM shared.event_outbox
+          WHERE payload::text LIKE '%' || $1 || '%'`,
+        [RESTRICTED_TOKEN]
+      )
+    ).toBe(0);
+
+    // Every NON-DETAIL response for the same request. The list and the request itself
+    // are the two projections a caller without `iam.sensitive.view` can reach, and
+    // neither may carry the text under any key.
+    authAs(FULL);
+    const listed = await (await listRequests(seeded.workOrderId)).text();
+    expect(listed).not.toContain(RESTRICTED_TOKEN);
+    // Read back through the authorized surface to prove the token is findable at all —
+    // otherwise the three assertions above would pass against a write that silently
+    // stored nothing.
+    authAs(SENSITIVE);
+    const detail = await (await readDetail(seeded.requestId)).text();
+    expect(detail).toContain(RESTRICTED_TOKEN);
   });
 
   it('replaces the description rather than refusing a second write', async () => {

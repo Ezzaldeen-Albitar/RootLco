@@ -965,7 +965,23 @@ export class WorkOrderService extends ApplicationService {
     },
     authorizeScope?: ScopeAuthorizer
   ): Promise<LineRow> {
-    const workOrder = await this.requireWorkOrder(db, workOrderId, authorizeScope);
+    // LOCKED, not merely read. The refusal below branches on the parent's terminal
+    // state, and `wo.work_order_service_lines` / `wo.required_parts` carry no trigger
+    // that reads the order — so an unlocked read let a closure commit between the check
+    // and the insert, appending a line to an order that had already been released. The
+    // first version of this method used the non-locking `requireWorkOrder`, and the
+    // final adversarial review found it.
+    //
+    // Locking the ORDER rather than the line is what makes it work: it is the same row
+    // the transition and closure paths take `FOR UPDATE`, so a line write and a closure
+    // serialise against each other instead of interleaving.
+    const workOrder = await this.repository.lockWorkOrder(db, workOrderId);
+    if (workOrder === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: workOrder.companyId, branchId: workOrder.branchId });
+    }
     const states = await this.catalog.workOrderStates(db);
     const state = states.find((candidate) => candidate.code === workOrder.state);
     if (state === undefined || state.isTerminal) {
@@ -1076,7 +1092,24 @@ export class WorkOrderService extends ApplicationService {
     return {
       workOrderId,
       state: workOrder.state,
-      eligible: blockers.length === 0,
+      /**
+       * `false` once the order is terminal, and this is the one place the field's name
+       * needed a decision rather than a default.
+       *
+       * A terminal order has no blockers — the gate does not run on it — so
+       * `blockers.length === 0` alone reported `eligible: true` for an order that can
+       * never transition again. Two callers would read that differently: "nothing
+       * stands in the way" is what the word says, and "you may close this" is what a
+       * client acts on. For a closed order the second is false.
+       *
+       * `alreadyTerminal` carries the distinction, so no information is lost: an
+       * eligible order is `{eligible: true, alreadyTerminal: false, blockers: []}`, a
+       * blocked one is `{eligible: false, alreadyTerminal: false, blockers: [...]}`,
+       * and a finished one is `{eligible: false, alreadyTerminal: true, blockers: []}`
+       * — three states that a client can tell apart without inspecting `state` against
+       * a catalog it may not have read.
+       */
+      eligible: !alreadyTerminal && blockers.length === 0,
       blockers,
       alreadyTerminal,
       deferred: {

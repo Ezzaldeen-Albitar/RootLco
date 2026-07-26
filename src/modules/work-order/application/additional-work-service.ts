@@ -970,8 +970,25 @@ export class AdditionalWorkService extends ApplicationService {
     requestId: string,
     authorizeScope?: ScopeAuthorizer
   ): Promise<AdditionalWorkRequestRow> {
-    const request = await this.lockRequestInScope(db, requestId, authorizeScope);
-    const workOrder = await this.repository.findWorkOrder(db, request.workOrderId);
+    // PARENT FIRST, then the child. An earlier version locked the request and then read
+    // the order UNLOCKED, so a closure could commit between the parent check and the
+    // child write and a decision would land on an order that had already been released.
+    //
+    // The order of the two locks is the part that needed thinking about, and it is why
+    // the parent is not simply locked where it was read. Every other path in this module
+    // — transition, closure, line writes — takes `wo.work_orders` first and its children
+    // after. Locking the request first and the order second would have inverted that and
+    // opened a deadlock against a concurrent closure. So the request's `work_order_id` is
+    // read unlocked to learn WHICH order to lock, which is safe because
+    // `tg_additional_work_requests_immutable` freezes that column, and then the two locks
+    // are taken in the platform's own order.
+    const unlocked = await this.repository.findRequest(db, requestId);
+    if (unlocked === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Additional-work request ${requestId} is not visible`,
+      });
+    }
+    const workOrder = await this.repository.lockWorkOrder(db, unlocked.workOrderId);
     const states = await this.catalog.workOrderStates(db);
     const parent = states.find((candidate) => candidate.code === workOrder?.state);
     if (parent === undefined || parent.isTerminal) {
@@ -979,7 +996,9 @@ export class AdditionalWorkService extends ApplicationService {
         message: `Work order state "${workOrder?.state ?? 'unknown'}" is closed to additional-work changes`,
       });
     }
-    return request;
+    // Re-read under its own lock. The unlocked read above is used ONLY for the frozen
+    // `work_order_id`; every field the caller acts on comes from the locked row.
+    return this.lockRequestInScope(db, requestId, authorizeScope);
   }
 
   /**

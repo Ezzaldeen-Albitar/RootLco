@@ -52,10 +52,26 @@ function walk(dir) {
  */
 function parseOperations(source, file) {
   const found = [];
-  const re = /defineOperation\(\{([\s\S]*?)\n\}\)/g;
-  let match;
-  while ((match = re.exec(source)) !== null) {
-    const block = match[1];
+  // Each declaration plus the handler text that follows it, up to the next
+  // declaration. The handler is what shows whether a `scope: 'branch'` claim is
+  // actually enforced, and it cannot be read from the declaration alone.
+  const chunks = source
+    .split(/export const [A-Z0-9_]+_OPERATION = defineOperation\(\{/)
+    .slice(1)
+    .map((part) => {
+      const end = part.indexOf('\n})');
+      return {
+        block: end === -1 ? part : part.slice(0, end),
+        // Comments STRIPPED. The first version of the scope check below was satisfied
+        // by the very comment explaining the fix — prose naming `authorizeScope` made
+        // the guard pass while the handler did nothing. That is the same defect class
+        // as the operation-coverage gate crediting a manifest flag no assertion backs,
+        // and it is not repeated here.
+        handler: part.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''),
+      };
+    });
+  for (const chunk of chunks) {
+    const block = chunk.block;
     const scalar = (name) => {
       const hit = new RegExp(`\\b${name}:\\s*'([^']*)'`).exec(block);
       return hit === null ? null : hit[1];
@@ -85,6 +101,22 @@ function parseOperations(source, file) {
       publicRoute: bool('public') ?? false,
       rateLimitPolicy: scalar('rateLimitPolicy'),
       cacheCategory: scalar('cacheCategory'),
+      /**
+       * Whether the handler does anything with the scope it declares.
+       *
+       * Three shapes count, and they are the only three the platform offers: the
+       * handler destructures `authorizeScope` from the pipeline context (so a service
+       * can re-check against a locked row), it passes an explicit
+       * `authorizationTarget`, or it derives one with `scopeTargetOption` from a
+       * caller-named company/branch pair. A handler doing none of them takes
+       * `{ db }` alone, and its `scope: 'branch'` is a comment — which is how
+       * `tech.labor-session-list` shipped able to return another branch's
+       * timesheets.
+       */
+      scopeEnforced:
+        /authorizeScope/.test(chunk.handler) ||
+        /authorizationTarget/.test(chunk.handler) ||
+        /scopeTargetOption/.test(chunk.handler),
       file: relative(ROOT, file).replaceAll('\\', '/'),
     });
   }
@@ -227,6 +259,12 @@ for (const op of phase) {
   }
   if (op.tasks.length === 0) {
     problems.push(`${op.id}: its route file carries no P1-19-BE annotation`);
+  }
+  if (op.scope === 'branch' && !op.scopeEnforced) {
+    problems.push(
+      `${op.id}: declares scope 'branch' but its handler neither forwards authorizeScope ` +
+        `nor supplies a scope target — the declaration is inert (P1-18-A-01)`
+    );
   }
 }
 

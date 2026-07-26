@@ -809,17 +809,31 @@ describe('tech.labor-session-list', () => {
     authAs(FULL);
     expect((await listSessions('not-a-uuid')).status).toBe(422);
 
-    // A tenant-B caller sees an EMPTY log rather than a 404: the job id is not
-    // resolved first here, and RLS narrows the rows — which discloses less than
-    // confirming the job exists.
     authAs(FULL);
     const opened = (await (
       await start(job.id, { technicianProfileId: TECH_A1 })
     ).json()) as SessionBody;
     expect(opened.id).not.toBe('');
+
+    // A cross-tenant caller gets 404, and an earlier revision of this test asserted
+    // 200-with-an-empty-log instead — reasoning that "the job id is not resolved
+    // first here, and RLS narrows the rows". That was describing the defect, not a
+    // decision: this read resolved no scope at all, so `scope: 'branch'` on the
+    // operation was inert and RLS was the ONLY narrowing (P1-18-A-01). The job's
+    // scope is now resolved and re-checked before any session row is read.
     authAs(TENANT_B_FULL);
-    const foreign = await listSessions(job.id);
-    expect(foreign.status).toBe(200);
-    expect(((await foreign.json()) as { items: readonly unknown[] }).items).toEqual([]);
+    expect((await listSessions(job.id)).status).toBe(404);
+
+    // The probe that would have caught it, and did not exist: PERMISSION_ELSEWHERE
+    // holds `tech.technician.read` in BRANCH_A2 and is RLS-visible in A1 through an
+    // unrelated grant. Under the old handler it received A1's timesheets — who worked
+    // and for how long, in a branch where it holds no technician-read permission.
+    authAs(PERMISSION_ELSEWHERE);
+    expect((await listSessions(job.id)).status).toBe(403);
+
+    // No grant in A1 at all, so RLS hides the job first: defence in depth, and told
+    // apart from the case above so a regression in either is visible.
+    authAs(SCOPED_ELSEWHERE);
+    expect((await listSessions(job.id)).status).toBe(404);
   });
 });

@@ -60,7 +60,14 @@ licence to log rows. P1-19's two restricted columns —
 `qms.rework_link_details.rework_cost` — are protected by never being passed to a
 logger, not by trusting the key list to catch them. The Wave 6 suite asserts the
 stronger property directly, with a token unique to the restricted description that must
-appear in no audit detail, no event payload and no non-detail response.
+appear in no audit detail, no outbox payload and no non-detail response — while
+separately asserting the detail row and the authorized read DO carry it, so the negative
+assertions cannot pass against a write that stored nothing.
+
+That sentence was **not true when it was first written**: the test queried
+`iam.audit_record_details` alone, and the final adversarial review caught the
+overstatement. The test was extended to cover the outbox and the responses rather than
+the sentence narrowed to match it.
 
 ## Error monitoring
 
