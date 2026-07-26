@@ -9,6 +9,7 @@
  * because "quality control failed" and "a mandatory check never ran" are different
  * facts with different remedies.
  */
+import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import type { QcCheckRow, QualityRepository, ReworkLinkRow } from '../data/quality-repository';
 
@@ -21,8 +22,12 @@ export interface QualityGateStatus {
   readonly unsignedSafetyCriticalRework: boolean;
 }
 
-export class QualityGateService {
-  constructor(private readonly repository: QualityRepository) {}
+export class QualityGateService extends ApplicationService {
+  protected readonly module = 'quality';
+
+  constructor(private readonly repository: QualityRepository) {
+    super();
+  }
 
   /** Active QC checks for the caller's tenant. */
   async checks(db: DbHandle): Promise<readonly QcCheckRow[]> {

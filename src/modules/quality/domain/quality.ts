@@ -11,7 +11,10 @@
  *    records the attempt in `qms.reopen_attempts` and never mutates the order.
  *    There is no code path here that sets a state backwards.
  * 2. **Safety-critical rework needs a second pair of eyes** (BR-QMS-001).
- *    `qms.guard_rework_signoff` refuses a sign-off by the person who did the work;
+ *    the CHECK constraint `ck_rework_links_signoff_distinct`
+ *    (`independent_sign_off_by IS DISTINCT FROM lead_technician_id`) refuses a
+ *    sign-off by the person who did the work — NOT `qms.guard_rework_signoff`,
+ *    which only freezes an already-recorded sign-off;
  *    `assertIndependentSignOff` refuses it earlier, with a readable reason.
  */
 import { AppFailure } from '@/server/errors/app-failure';
@@ -53,8 +56,14 @@ export function assertNotFinalized(overallResult: QcOverallResult): void {
  * Independent sign-off for safety-critical rework (BR-QMS-001).
  *
  * The person signing off must not be the lead technician who performed the work.
- * `qms.guard_rework_signoff` enforces this; refusing here first means the caller
- * gets `ERR-QMS-001` with a reason rather than a bare `23514`.
+ * `ck_rework_links_signoff_distinct` enforces this — a CHECK, not the trigger.
+ * Refusing here first means the caller gets `ERR-QMS-001` with a reason rather
+ * than a bare `23514`.
+ *
+ * The `leadTechnicianId === null` path below fails OPEN, and that is safe only
+ * because `ck_rework_links_safety_lead` makes it unreachable for safety-critical
+ * rows: that constraint requires a lead technician whenever `is_safety_critical`.
+ * If it were ever relaxed, this pre-check would silently stop pre-checking.
  *
  * Non-safety-critical rework has no independence requirement, and imposing one
  * would block routine corrections in a single-technician branch.

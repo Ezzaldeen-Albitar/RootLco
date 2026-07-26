@@ -59,7 +59,12 @@ export type AdditionalWorkState = (typeof ADDITIONAL_WORK_STATES)[number];
 export const FULFILLMENT_STATES = ['unfulfilled', 'fulfilled', 'waived'] as const;
 export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
 
-export const MAX_DISPLAY_NUMBER = 64;
+// No CHECK constrains a transition reason's length — `wo.work_order_status_history.reason`
+// is unconstrained `text` with only a not-blank guard — so this is a product limit
+// this layer chooses, not a schema fact. Stated so it is not mistaken for one.
+// (An earlier draft also exported MAX_DISPLAY_NUMBER here. It was unused, had no
+// CHECK behind it either, and collided by name with the vehicle module's export of
+// the same identifier at a different value.)
 export const MAX_REASON = 500;
 
 /**
@@ -76,9 +81,18 @@ export const MAX_REASON = 500;
  * enforcer: closure itself is still refused by the trigger, and no code path may
  * close a work order by asserting this registry passed.
  *
- * A test reconciles these codes against the live function body, so an edit to the
- * trigger that this list does not follow fails the build rather than silently
- * making the endpoint lie.
+ * `tests/db/p1-19-closure-blocker-reconciliation.test.ts` reconciles these codes
+ * against the DEPLOYED function body, so an edit to the trigger that this list does
+ * not follow fails the build rather than silently making the endpoint lie.
+ *
+ * ## Two preconditions this registry does NOT carry
+ *
+ * The guard runs B1-B6 only when the target state is terminal, and skips them
+ * entirely when it is a cancellation (`IF v_cancel THEN RETURN NEW`). A reporter
+ * built from this list alone would therefore claim blockers against a
+ * `→ cancelled` transition the database would allow. Wave 4 must check the target
+ * state's `is_terminal` / `is_cancellation` flags — which `workOrderStates()`
+ * returns — before evaluating anything here. The reconciliation test pins both.
  */
 export const CLOSURE_BLOCKERS = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6'] as const;
 export type ClosureBlockerCode = (typeof CLOSURE_BLOCKERS)[number];

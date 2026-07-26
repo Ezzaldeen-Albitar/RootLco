@@ -4,10 +4,12 @@
  * The only place `qms` SQL is written. Wave 8 adds the QC, rework and reopen
  * writes on top of these reads.
  *
- * `mandatoryChecksExist` and `passedRecordExists` are the two questions the
- * closure guard's B5 asks. They are read separately here because B5 is really two
- * conditions — a failed record with no pass, and a configured mandatory check with
- * no pass — and the eligibility endpoint has to be able to say which one bites.
+ * `mandatoryChecksExist` and `recordsFor` between them answer the closure guard's
+ * B5, which is really two conditions — a failed record with no pass, and a
+ * configured mandatory check with no pass. They are read separately because the
+ * eligibility endpoint has to be able to say which of the two bites; the pass/fail
+ * folding itself happens in `QualityGateService.evaluate`, not here, because a
+ * repository should return rows rather than verdicts.
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
@@ -57,11 +59,15 @@ export class QualityRepository extends Repository {
       is_safety_critical: boolean;
     }>(
       db,
-      `SELECT DISTINCT ON (code) id, code, name, is_mandatory, is_safety_critical
-         FROM qms.qc_checks
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, code, name, is_mandatory, is_safety_critical, status
+                  FROM qms.qc_checks
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -78,6 +84,14 @@ export class QualityRepository extends Repository {
    *
    * Mirrors the B5b predicate exactly, including that it is tenant-wide rather
    * than per work order: a check configured mandatory applies to every order.
+   *
+   * Note the deliberate asymmetry with `qcChecks()` above, which resolves tenant
+   * shadowing. This one does NOT, because the guard does not: B5b is a flat
+   * `EXISTS` over the union of platform and tenant rows. So a tenant that shadows
+   * an active mandatory platform check with an inactive tenant row will see the
+   * check listed as non-mandatory by `qcChecks()` while closure is still blocked.
+   * That is the database's behaviour, faithfully reported rather than smoothed
+   * over — smoothing it would make this method disagree with what actually runs.
    */
   async mandatoryChecksExist(db: DbHandle): Promise<boolean> {
     const context = this.assertContext(db);

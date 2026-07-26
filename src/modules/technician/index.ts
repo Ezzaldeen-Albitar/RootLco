@@ -53,14 +53,17 @@ export {
   assertEligible,
   assertLaborWindow,
   certificationIsValidOn,
+  coveredByUnion,
   intervalCovers,
   intervalsOverlap,
   skillLevelSatisfies,
+  utcCalendarDay,
   type AvailabilityKind,
   type CatalogStatus,
   type CertificationStatus,
   type EligibilityFinding,
   type IneligibilityReason,
+  type Interval,
   type LaborSource,
 } from './domain/technician';
 

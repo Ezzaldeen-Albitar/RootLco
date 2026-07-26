@@ -199,9 +199,16 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- reviewer-separation policy has something to enforce against.
   ('dia.diagnostic.review',    'dia', 'Review a completed diagnostic report',           'high',   '00000000-0000-4000-8000-000000000001'),
   ('dia.diagnostic.read',      'dia', 'Read diagnostic reports and their evidence',     'low',    '00000000-0000-4000-8000-000000000001'),
-  -- Phase 1-19 (qms) - Quality. Performing quality control is what stands between a
-  -- vehicle and the customer, and a finalized result can never be edited.
-  ('qms.quality_control.perform','qms','Perform and finalize quality control',          'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (qms) - Quality. Recording individual check results is separated from
+  -- finalizing the record, for the same reason transition is separated from close and
+  -- request from approve above: finalizing as passed is the act that clears closure
+  -- blocker B5 and releases the vehicle to the customer, and a clerk who may record
+  -- what they observed must not thereby be able to sign the vehicle out. The schema
+  -- already treats them as two acts - ck_quality_control_records_finalized couples a
+  -- passed/failed result to finalized_at and checker_id, and qms.guard_qc_finalize
+  -- freezes the record afterwards.
+  ('qms.quality_control.record', 'qms', 'Record individual quality-control check results','medium','00000000-0000-4000-8000-000000000001'),
+  ('qms.quality_control.finalize','qms','Finalize a quality-control record as passed or failed','high','00000000-0000-4000-8000-000000000001'),
   -- Rework records that the workshop got something wrong. Creating the linkage and
   -- independently signing it off are deliberately two codes: BR-QMS-001 requires the
   -- sign-off to come from someone other than whoever did the work.

@@ -6,14 +6,16 @@
  *  - Wave 7's completion command calls `assertCompletable` before moving a report
  *    to `completed`, so the caller gets every outstanding item at once instead of
  *    one per attempt.
- *  - Wave 4's closure-eligibility endpoint calls `isCompletedFor` through this
- *    module's public surface to answer blocker B4, because `work-order` may not
- *    read `dia.` tables.
+ *  - Wave 4's closure-eligibility endpoint needs to answer blocker B4 — does each
+ *    `requires_diagnostic` job have a `completed` report — and `work-order` may not
+ *    read `dia.` tables to find out. That read belongs on this surface and Wave 4
+ *    adds it; Wave 3 deliberately does not ship a method no caller exercises yet.
  *
  * Neither enforces. `dia.guard_diagnostic_report_transition` remains the authority
  * for completion, and `wo.guard_work_order_closure` for closure.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import type { DiagnosticsRepository, TemplateItemRow } from '../data/diagnostics-repository';
 import {
@@ -23,8 +25,12 @@ import {
   type TemplateVersionStatus,
 } from '../domain/diagnostics';
 
-export class DiagnosticsCompletionService {
-  constructor(private readonly repository: DiagnosticsRepository) {}
+export class DiagnosticsCompletionService extends ApplicationService {
+  protected readonly module = 'diagnostics';
+
+  constructor(private readonly repository: DiagnosticsRepository) {
+    super();
+  }
 
   /** Every item of a pinned template version, in presentation order. */
   async templateItems(db: DbHandle, versionId: string): Promise<readonly TemplateItemRow[]> {

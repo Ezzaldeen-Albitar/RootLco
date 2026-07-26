@@ -23,17 +23,24 @@ import {
   PARTS_FORWARD_STATES,
   ADDITIONAL_WORK_STATES,
   FULFILLMENT_STATES,
+  workOrderModule,
 } from '@/modules/work-order';
 import {
   CERTIFICATION_STATUSES,
   LABOR_SOURCES,
   certificationIsValidOn,
-  intervalCovers,
+  coveredByUnion,
   intervalsOverlap,
   skillLevelSatisfies,
+  technicianModule,
 } from '@/modules/technician';
-import { FINDING_SEVERITIES, RESPONSE_TYPES, severityAtLeast } from '@/modules/diagnostics';
-import { QC_CHECK_RESULTS, QC_OVERALL_RESULTS } from '@/modules/quality';
+import {
+  FINDING_SEVERITIES,
+  RESPONSE_TYPES,
+  diagnosticsModule,
+  severityAtLeast,
+} from '@/modules/diagnostics';
+import { QC_CHECK_RESULTS, QC_OVERALL_RESULTS, qualityModule } from '@/modules/quality';
 
 const ROOT = process.cwd();
 const MODULES = ['work-order', 'technician', 'diagnostics', 'quality'] as const;
@@ -86,9 +93,16 @@ describe('P1-19 module foundation', () => {
         // trip the guard. Only real SQL identifiers count.
         const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
         for (const schema of foreign) {
+          // Match the qualified NAME itself, not a keyword that happens to precede
+          // it. An earlier version matched `(FROM|JOIN|INTO|UPDATE)\s+<schema>\.`
+          // and was blind to a schema-qualified FUNCTION call —
+          // `SELECT qms.attempt_reopen($1, $2)`, which is exactly the reopen path
+          // Wave 8 needs — and equally to `USING`, `ONLY`, `LATERAL`, quoted
+          // identifiers and template interpolation. Matching `schema.` directly
+          // closes all of those at once.
           expect(
-            new RegExp(`(FROM|JOIN|INTO|UPDATE)\\s+${schema}\\.`, 'i').test(code),
-            `${file} reaches into ${schema}. — use the owning module's public surface`
+            new RegExp(String.raw`(^|[^\w."'])"?${schema}"?\s*\.\s*\w`, 'i').test(code),
+            `${file} references ${schema}. — use the owning module's public surface`
           ).toBe(false);
         }
       }
@@ -99,9 +113,22 @@ describe('P1-19 module foundation', () => {
     for (const moduleName of MODULES) {
       for (const file of moduleFiles(moduleName)) {
         if (!file.replace(/\\/g, '/').includes('/domain/')) continue;
-        const source = readFileSync(file, 'utf8');
-        expect(source).not.toContain('@/server/db/');
-        expect(source).not.toMatch(/\bSELECT\b|\bINSERT\b|\bUPDATE\b/);
+        // Comments are stripped, as in the guard above. An earlier version did not,
+        // so a domain doc comment containing the word "SELECT" would have failed the
+        // build — the inverse of its sibling twenty lines up, and the sort of
+        // inconsistency that gets a guard weakened rather than fixed.
+        const code = readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '');
+        // Any db import shape, not only the trailing-slash form: `@/server/db` with
+        // no slash and relative paths both evaded the earlier `toContain` check.
+        expect(code, `${file} imports database access into the domain layer`).not.toMatch(
+          /from\s+['"](@\/server\/db|[./]+\/(server\/)?db)/
+        );
+        // Case-insensitive, and covering the statements the earlier version missed.
+        expect(code, `${file} contains SQL`).not.toMatch(
+          /\b(SELECT|INSERT|UPDATE|DELETE|MERGE|CALL)\s/i
+        );
       }
     }
   });
@@ -110,14 +137,52 @@ describe('P1-19 module foundation', () => {
     // The graph is rows in wo.work_order_transitions / wo.job_transitions and a
     // tenant may shadow the platform edges. A literal here would refuse legitimate
     // tenant edges and drift the moment an edge is added or deactivated.
-    for (const file of moduleFiles('work-order')) {
-      if (!file.replace(/\\/g, '/').includes('/domain/')) continue;
-      const source = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-      for (const state of ['in_progress', 'qc_pending', 'ready_to_close', 'awaiting_parts']) {
-        expect(source, `${file} appears to mirror the transition graph`).not.toContain(
-          `'${state}'`
-        );
+    //
+    // Scans EVERY layer of EVERY P1-19 module, not just work-order/domain: a mirror
+    // is at least as likely in a service, and `job.state-changed` makes technician a
+    // natural home for a job-graph copy. Covers the full seeded vocabulary rather
+    // than four sampled states, and both quoting styles plus the bare object-key
+    // form — `{ in_progress: { qc_pending: true } }` is the most idiomatic way a
+    // mirror would actually be written, and quote-only matching missed it.
+    // Only states that are UNAMBIGUOUS markers of the wo/job graph. `draft`,
+    // `in_progress`, `completed` and `cancelled` are deliberately excluded: they are
+    // equally members of `REPORT_STATUSES` and `TEMPLATE_VERSION_STATUSES`, which
+    // `diagnostics` legitimately owns because they ARE CHECK constraints there. A
+    // guard that flagged those would be telling a module not to declare its own
+    // vocabulary, and the only way to keep it green would be to weaken it.
+    const states = [
+      'open',
+      'awaiting_parts',
+      'awaiting_customer',
+      'qc_pending',
+      'ready_to_close',
+      'planned',
+      'assigned',
+      'paused',
+    ];
+    for (const moduleName of MODULES) {
+      for (const file of moduleFiles(moduleName)) {
+        const code = readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '');
+        for (const state of states) {
+          expect(
+            new RegExp(String.raw`(['"\`]${state}['"\`]|\b${state}\s*:)`).test(code),
+            `${file} names the graph state "${state}" — read the catalog, do not mirror it`
+          ).toBe(false);
+        }
       }
+    }
+  });
+
+  it('constructs every module composition root without throwing', () => {
+    // The four factories are otherwise never invoked anywhere in src/ or tests/, so
+    // a mis-wired `composeModule` would ship undetected until Wave 4 imported one.
+    for (const factory of [workOrderModule, technicianModule, diagnosticsModule, qualityModule]) {
+      const services = factory();
+      expect(Object.keys(services).length).toBeGreaterThan(0);
+      // composeModule memoises; the same instance must come back.
+      expect(factory()).toBe(services);
     }
   });
 
@@ -185,27 +250,71 @@ describe('P1-19 module foundation', () => {
     }
   });
 
-  it('decides certification expiry inclusively on the boundary day', () => {
-    const expires = new Date('2026-07-26T00:00:00Z');
-    const dayOf = new Date('2026-07-26T18:00:00Z');
-    const dayAfter = new Date('2026-07-27T00:30:00Z');
-    const dayBefore = new Date('2026-07-25T23:00:00Z');
-    // Valid ON the expiry day: a technician certified until the 26th is certified
-    // on the 26th. Exclusive comparison here would refuse real, valid work.
-    expect(certificationIsValidOn(expires, 'active', dayOf)).toBe(true);
-    expect(certificationIsValidOn(expires, 'active', dayBefore)).toBe(true);
-    expect(certificationIsValidOn(expires, 'active', dayAfter)).toBe(false);
-    // No expiry means it does not expire, but revocation always wins.
-    expect(certificationIsValidOn(null, 'active', dayAfter)).toBe(true);
-    expect(certificationIsValidOn(null, 'revoked', dayBefore)).toBe(false);
-    expect(certificationIsValidOn(expires, 'revoked', dayBefore)).toBe(false);
+  it('decides certification expiry inclusively, from a calendar date not an instant', () => {
+    // A DATE column arrives as 'YYYY-MM-DD'. The earlier signature took the
+    // driver's Date and read it with getUTC*, which is wrong east of Greenwich:
+    // postgres-date builds LOCAL midnight, so at UTC+3 '2026-07-26' became
+    // 2026-07-25T21:00Z and getUTCDate() returned 25. This fixture is the string
+    // the repository now selects with to_char, so the test exercises the real shape.
+    const expires = '2026-07-26';
+    expect(certificationIsValidOn(expires, 'active', new Date('2026-07-26T18:00:00Z'))).toBe(true);
+    expect(certificationIsValidOn(expires, 'active', new Date('2026-07-26T00:00:00Z'))).toBe(true);
+    expect(certificationIsValidOn(expires, 'active', new Date('2026-07-25T23:00:00Z'))).toBe(true);
+    expect(certificationIsValidOn(expires, 'active', new Date('2026-07-27T00:30:00Z'))).toBe(false);
+    // No expiry means it does not expire.
+    expect(certificationIsValidOn(null, 'active', new Date('2027-01-01T00:00:00Z'))).toBe(true);
+    // A non-active status disqualifies in BOTH branches. An earlier version checked
+    // it only when expiresOn was null, so a row marked 'expired' with a future date
+    // passed as valid.
+    expect(certificationIsValidOn(null, 'revoked', new Date('2026-01-01T00:00:00Z'))).toBe(false);
+    expect(certificationIsValidOn(null, 'expired', new Date('2026-01-01T00:00:00Z'))).toBe(false);
+    expect(certificationIsValidOn('2027-01-01', 'revoked', new Date('2026-01-01T00:00:00Z'))).toBe(
+      false
+    );
+    expect(certificationIsValidOn('2027-01-01', 'expired', new Date('2026-01-01T00:00:00Z'))).toBe(
+      false
+    );
   });
 
-  it('treats availability as half-open and skill level as inclusive', () => {
+  it('covers a job window with the UNION of availability rows, not a single row', () => {
+    // ex_technician_availability_overlap excludes on tstzrange with &&, and
+    // half-open [08,12) and [12,17) do not overlap — a split shift is two legal
+    // rows. Asking whether any ONE spans 09:00-13:00 answers no for a technician
+    // available for every minute of it.
+    const shift = [
+      { from: new Date('2026-07-26T08:00:00Z'), to: new Date('2026-07-26T12:00:00Z') },
+      { from: new Date('2026-07-26T12:00:00Z'), to: new Date('2026-07-26T17:00:00Z') },
+    ];
+    expect(
+      coveredByUnion(shift, new Date('2026-07-26T09:00:00Z'), new Date('2026-07-26T13:00:00Z'))
+    ).toBe(true);
+    expect(
+      coveredByUnion(shift, new Date('2026-07-26T08:00:00Z'), new Date('2026-07-26T17:00:00Z'))
+    ).toBe(true);
+    // A real gap is not covered.
+    const gapped = [
+      { from: new Date('2026-07-26T08:00:00Z'), to: new Date('2026-07-26T11:00:00Z') },
+      { from: new Date('2026-07-26T12:00:00Z'), to: new Date('2026-07-26T17:00:00Z') },
+    ];
+    expect(
+      coveredByUnion(gapped, new Date('2026-07-26T09:00:00Z'), new Date('2026-07-26T13:00:00Z'))
+    ).toBe(false);
+    expect(
+      coveredByUnion([], new Date('2026-07-26T09:00:00Z'), new Date('2026-07-26T13:00:00Z'))
+    ).toBe(false);
+    // Unsorted input must not change the verdict.
+    expect(
+      coveredByUnion(
+        [shift[1]!, shift[0]!],
+        new Date('2026-07-26T09:00:00Z'),
+        new Date('2026-07-26T13:00:00Z')
+      )
+    ).toBe(true);
+  });
+
+  it('treats overlap as half-open and skill level as inclusive', () => {
     const from = new Date('2026-07-26T08:00:00Z');
     const to = new Date('2026-07-26T12:00:00Z');
-    expect(intervalCovers(from, to, from, to)).toBe(true);
-    expect(intervalCovers(from, to, from, new Date('2026-07-26T12:00:01Z'))).toBe(false);
     // Touching intervals do not overlap: [08,12) and [12,16) are disjoint.
     expect(intervalsOverlap(from, to, to, new Date('2026-07-26T16:00:00Z'))).toBe(false);
     expect(intervalsOverlap(from, to, new Date('2026-07-26T11:59:59Z'), to)).toBe(true);

@@ -68,13 +68,16 @@ export class WorkOrderCatalogRepository extends Repository {
       is_reopenable: boolean;
     }>(
       db,
-      `SELECT DISTINCT ON (code)
-              code, name, is_terminal, is_closed, is_cancellation, reason_required,
-              allows_jobs, allows_labor, allows_additional_work, requires_qc, is_reopenable
-         FROM wo.work_order_states
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) code, name, is_terminal, is_closed, is_cancellation, reason_required,
+                       allows_jobs, allows_labor, allows_additional_work, requires_qc, is_reopenable, status
+                  FROM wo.work_order_states
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -105,13 +108,16 @@ export class WorkOrderCatalogRepository extends Repository {
       closure_eligible: boolean;
     }>(
       db,
-      `SELECT DISTINCT ON (code)
-              code, name, is_terminal, reason_required, assignment_required,
-              labor_allowed, closure_eligible
-         FROM wo.job_states
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) code, name, is_terminal, reason_required, assignment_required,
+                       labor_allowed, closure_eligible, status
+                  FROM wo.job_states
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -129,7 +135,7 @@ export class WorkOrderCatalogRepository extends Repository {
    * The single work-order edge `from → to`, or null when the graph has none.
    *
    * Null is the answer for "this transition does not exist", which the service
-   * turns into `ERR-WO-001`. It is never an error here — the catalog is being
+   * turns into `ERR-TRN-001`. It is never an error here — the catalog is being
    * asked a question, not asserting a rule.
    */
   async workOrderTransition(

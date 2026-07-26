@@ -322,11 +322,15 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     description: 'A work order reached a terminal, non-cancellation state.',
   },
   {
+    // Owner is 'wo', not 'tech', and the aggregate is why: the assignment row
+    // lives in wo.job_assignments and is written by the work-order module.
+    // buildEventEnvelope refuses a producer whose leading segment differs from the
+    // owner, so 'tech' here would have made Wave 5's own write path throw.
     code: 'EVT-TEC-001',
     eventType: 'job.assigned',
     schemaVersion: 1,
     aggregateType: 'wo.job',
-    owner: 'tech',
+    owner: 'wo',
     implementedIn: null,
     description: 'A technician was assigned to a job.',
   },
@@ -335,7 +339,7 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     eventType: 'job.state-changed',
     schemaVersion: 1,
     aggregateType: 'wo.job',
-    owner: 'tech',
+    owner: 'wo',
     implementedIn: null,
     description: 'A job moved between states in its configured graph.',
   },

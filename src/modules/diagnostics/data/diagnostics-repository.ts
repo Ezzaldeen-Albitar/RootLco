@@ -29,7 +29,8 @@ export interface TemplateItemRow {
   readonly responseType: ResponseType;
   readonly unit: string | null;
   readonly isMandatory: boolean;
-  readonly validationRule: string | null;
+  /** `jsonb`. pg-types parses OID 3802 with JSON.parse, so this is never a string. */
+  readonly validationRule: unknown;
   readonly sequence: number;
 }
 
@@ -87,7 +88,7 @@ export class DiagnosticsRepository extends Repository {
       response_type: string;
       unit: string | null;
       is_mandatory: boolean;
-      validation_rule: string | null;
+      validation_rule: unknown;
       sequence: number;
     }>(
       db,

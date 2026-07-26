@@ -47,7 +47,8 @@ export interface HeldCertificationRow {
   readonly certificationId: string;
   readonly certificationCode: string;
   readonly issuedOn: Date;
-  readonly expiresOn: Date | null;
+  /** Calendar date as `YYYY-MM-DD`, never an instant. See certificationIsValidOn. */
+  readonly expiresOn: string | null;
   readonly certStatus: string;
   readonly isSafetyCritical: boolean;
 }
@@ -81,11 +82,15 @@ export class TechnicianCatalogRepository extends Repository {
       discipline: string | null;
     }>(
       db,
-      `SELECT DISTINCT ON (code) id, code, name, discipline
-         FROM tech.skills
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, code, name, discipline, status
+                  FROM tech.skills
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -101,11 +106,15 @@ export class TechnicianCatalogRepository extends Repository {
     const context = this.assertContext(db);
     const result = await this.run<{ id: string; code: string; name: string; rank: number }>(
       db,
-      `SELECT DISTINCT ON (code) id, code, name, rank
-         FROM tech.skill_levels
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, code, name, rank, status
+                  FROM tech.skill_levels
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -128,11 +137,15 @@ export class TechnicianCatalogRepository extends Repository {
       is_safety_critical: boolean;
     }>(
       db,
-      `SELECT DISTINCT ON (code) id, code, name, authority, validity_months, is_safety_critical
-         FROM tech.certifications
-        WHERE (scope = 'platform' OR tenant_id = $1)
-          AND status = 'active' AND deleted_at IS NULL
-        ORDER BY code, (scope = 'tenant') DESC`,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, code, name, authority, validity_months, is_safety_critical, status
+                  FROM tech.certifications
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        WHERE status = 'active'
+        ORDER BY code`,
       [context.principal.tenantId]
     );
     return result.rows.map((row) => ({
@@ -221,13 +234,14 @@ export class TechnicianCatalogRepository extends Repository {
       certification_id: string;
       certification_code: string;
       issued_on: Date;
-      expires_on: Date | null;
+      expires_on: string | null;
       cert_status: string;
       is_safety_critical: boolean;
     }>(
       db,
       `SELECT tc.certification_id, c.code AS certification_code, tc.issued_on,
-              tc.expires_on, tc.cert_status, c.is_safety_critical
+              to_char(tc.expires_on, 'YYYY-MM-DD') AS expires_on,
+              tc.cert_status, c.is_safety_critical
          FROM tech.technician_certifications tc
          JOIN tech.certifications c ON c.id = tc.certification_id AND c.deleted_at IS NULL
         WHERE tc.tenant_id = $1 AND tc.technician_profile_id = $2 AND tc.deleted_at IS NULL`,

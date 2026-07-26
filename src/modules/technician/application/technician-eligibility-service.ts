@@ -10,6 +10,7 @@
  * Nothing here enforces. The database still owns the assignment constraints; this
  * turns a would-be `23514`/`23503` into a precise 422 with the reasons named.
  */
+import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import type {
   CertificationRow,
@@ -20,7 +21,7 @@ import type {
 import {
   assertEligible,
   certificationIsValidOn,
-  intervalCovers,
+  coveredByUnion,
   intervalsOverlap,
   skillLevelSatisfies,
   type CertificationStatus,
@@ -46,8 +47,12 @@ export interface EligibilityVerdict {
   readonly findings: readonly EligibilityFinding[];
 }
 
-export class TechnicianEligibilityService {
-  constructor(private readonly repository: TechnicianCatalogRepository) {}
+export class TechnicianEligibilityService extends ApplicationService {
+  protected readonly module = 'technician';
+
+  constructor(private readonly repository: TechnicianCatalogRepository) {
+    super();
+  }
 
   /** Active skill catalog for the caller's tenant. */
   async skills(db: DbHandle): Promise<readonly SkillRow[]> {
@@ -132,10 +137,14 @@ export class TechnicianEligibilityService {
     } else {
       // An `unavailable` row that overlaps beats any `available` row, which is why
       // the block check runs first. Coverage is only asked once nothing blocks.
-      const covered = windows.some(
-        (row) =>
-          row.availabilityKind === 'available' &&
-          intervalCovers(row.availableFrom, row.availableTo, requirement.from, requirement.to)
+      // The UNION of the available rows must cover the window, not any single row:
+      // a split shift is two legal non-overlapping rows and neither spans it alone.
+      const covered = coveredByUnion(
+        windows
+          .filter((row) => row.availabilityKind === 'available')
+          .map((row) => ({ from: row.availableFrom, to: row.availableTo })),
+        requirement.from,
+        requirement.to
       );
       if (!covered) findings.push({ reason: 'availability-missing' });
     }

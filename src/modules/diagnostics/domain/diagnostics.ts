@@ -83,6 +83,17 @@ export function assertCompletable(outstanding: readonly OutstandingItem[]): void
     message:
       `${outstanding.length} mandatory item(s) unresolved: ` +
       outstanding.map((item) => item.itemCode).join(', '),
+    // Item codes go in `violations` because `message` never reaches the caller.
+    // The header above argues that a technician told 'not yet' without knowing
+    // which of forty items is missing has been told nothing; an earlier version of
+    // this function then built exactly that error. The item code is the template's
+    // own identifier, which the caller is already reading to fill the report in.
+    safeDetails: {
+      violations: outstanding.map((item) => ({
+        path: `items.${item.itemCode}`,
+        rule: 'mandatory_item_unresolved',
+      })),
+    },
   });
 }
 

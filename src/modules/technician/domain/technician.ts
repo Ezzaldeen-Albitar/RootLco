@@ -52,6 +52,11 @@ export interface EligibilityFinding {
   readonly subject?: string;
 }
 
+/** The UTC calendar day of an instant, as `YYYY-MM-DD`. */
+export function utcCalendarDay(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
 /**
  * Certification expiry, decided on the boundary rather than around it.
  *
@@ -61,23 +66,40 @@ export interface EligibilityFinding {
  * and the off-by-one would only ever surface on the one day it matters.
  *
  * `expires_on IS NULL` means the certification does not expire.
+ *
+ * ## Why this takes a string and not a Date
+ *
+ * An earlier version took the driver's `Date` and read it with `getUTCDate()`.
+ * That was wrong everywhere east of Greenwich, and this repository's own machine
+ * proves it: `pg-types` routes OID 1082 through `postgres-date`, which builds
+ * `new Date(year, month - 1, day)` — **local** midnight, deliberately. At UTC+3,
+ * `DATE '2026-07-26'` becomes `2026-07-25T21:00:00Z`, `getUTCDate()` returns 25,
+ * and a certification valid through the 26th was refused on the 26th. Exactly the
+ * failure the docblock above promised could not happen.
+ *
+ * The repository now selects `to_char(expires_on, 'YYYY-MM-DD')`, so a calendar
+ * date crosses the boundary as the calendar date it is, with no instant to
+ * misread. ISO-8601 dates compare correctly as strings, so no arithmetic is
+ * needed either.
+ *
+ * The work instant's day is taken in **UTC**, which is a stated assumption rather
+ * than a silent one: no tenant timezone is plumbed to this layer yet. For a
+ * workshop east of UTC this is at worst generous by the offset, late in the local
+ * evening of the expiry day — the same direction as the inclusive contract.
  */
 export function certificationIsValidOn(
-  expiresOn: Date | null,
+  expiresOn: string | null,
   status: CertificationStatus,
   at: Date
 ): boolean {
-  if (status === 'revoked') return false;
-  if (expiresOn === null) return status === 'active';
-  // Compare calendar days, not instants: a DATE has no time-of-day, and comparing
-  // it against a timestamp would make validity depend on the hour of the request.
-  const expiryDay = Date.UTC(
-    expiresOn.getUTCFullYear(),
-    expiresOn.getUTCMonth(),
-    expiresOn.getUTCDate()
-  );
-  const workDay = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
-  return workDay <= expiryDay;
+  // A withdrawn or lapsed credential never qualifies, whatever the date says. The
+  // status column records an administrative decision that can precede the printed
+  // expiry — a body may revoke or lapse a credential early — so it is checked
+  // first and for BOTH branches. An earlier version consulted it only when
+  // `expiresOn` was null, which let a row marked `expired` with a future date pass.
+  if (status !== 'active') return false;
+  if (expiresOn === null) return true;
+  return utcCalendarDay(at) <= expiresOn;
 }
 
 /**
@@ -115,6 +137,43 @@ export function intervalsOverlap(aFrom: Date, aTo: Date, bFrom: Date, bTo: Date)
   return aFrom.getTime() < bTo.getTime() && bFrom.getTime() < aTo.getTime();
 }
 
+export interface Interval {
+  readonly from: Date;
+  readonly to: Date;
+}
+
+/**
+ * Is the window covered by the UNION of the given intervals?
+ *
+ * A single-row check is not enough, and the schema is what makes that so:
+ * `ex_technician_availability_overlap` excludes on `tstzrange(from, to)` with
+ * `&&`, and half-open ranges `[08:00,12:00)` and `[12:00,17:00)` do not overlap.
+ * A split shift is therefore two perfectly legal rows, and asking whether any
+ * ONE of them spans 09:00–13:00 answers no for a technician who is available for
+ * every minute of it.
+ *
+ * So the intervals are sorted and walked, extending a running cursor across
+ * touching or overlapping rows and stopping at the first real gap. Touching
+ * counts as contiguous — `to === from` leaves no uncovered instant between them.
+ */
+export function coveredByUnion(
+  intervals: readonly Interval[],
+  windowFrom: Date,
+  windowTo: Date
+): boolean {
+  if (windowTo.getTime() <= windowFrom.getTime()) return false;
+  const sorted = [...intervals].sort((a, b) => a.from.getTime() - b.from.getTime());
+  let cursor = windowFrom.getTime();
+  for (const interval of sorted) {
+    if (cursor >= windowTo.getTime()) return true;
+    // A row starting after the cursor leaves a gap; because the list is sorted,
+    // no later row can fill it either.
+    if (interval.from.getTime() > cursor) return false;
+    cursor = Math.max(cursor, interval.to.getTime());
+  }
+  return cursor >= windowTo.getTime();
+}
+
 /** Raised for a rule this layer can decide without the database. */
 export class TechnicianRuleError extends Error {
   public override readonly name = 'TechnicianRuleError';
@@ -133,6 +192,22 @@ export function assertEligible(findings: readonly EligibilityFinding[]): void {
   if (findings.length === 0) return;
   throw new AppFailure('ERR-TECH-001', {
     message: `Technician is ineligible: ${findings.map((f) => f.reason).join(', ')}`,
+    // The reasons go in `violations`, not only in `message`. `message` is log-only —
+    // `problemFor` never reads it — so an earlier version of this function promised
+    // 'a precise 422 with the reasons named' and delivered a bare title. `violations`
+    // is the caller-visible half of the closed SafeDetails shape and its `rule` is
+    // documented as a stable machine code, which is exactly what an ineligibility
+    // reason is. Without this the complete-rather-than-short-circuit design bought
+    // nothing: the caller still learned one fact per request.
+    safeDetails: {
+      violations: findings.map((finding) => ({
+        path:
+          finding.subject === undefined
+            ? 'body.technicianProfileId'
+            : `requirement.${finding.subject}`,
+        rule: finding.reason,
+      })),
+    },
   });
 }
 
