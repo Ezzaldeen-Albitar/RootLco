@@ -345,6 +345,16 @@ hosted run on the current head predates it.
   but the cause. Run the battery serially, with nothing else touching the database.
 - A test that plants a row via the admin pool must remove it in a `finally`; a trailing
   delete leaks on assertion failure and the leak aborts the next run's cascade.
+- A gate that regex-scans a TypeScript source must strip comments FIRST. The P1-20
+  inventory gate matched `implementedIn:` inside a 400-character window after
+  `eventType:` on the raw file, so an entry’s own explanatory comment was
+  indistinguishable from its field. Fixed and mutation-verified; the same shape is worth
+  checking wherever a gate reads source as text.
+- An idempotent REPLAY answers **200**, never the 201 the first attempt answered:
+  `route-handler.ts` stores `value.body` alone, so the replay is rebuilt with no status.
+  Platform-wide since P1-15 (`P1-20-A-10`).
+- `svc.services` and `svc.service_versions` carry NO company and NO branch. Any write to
+  them needs `callerHoldsPermissionTenantWide`; `scope: 'tenant'` alone is scope-blind.
 - A new coverage flag is worthless unless a principal holds the operation's own
   permission: otherwise the 403 is a missing permission and a scope-blind
   implementation passes.
