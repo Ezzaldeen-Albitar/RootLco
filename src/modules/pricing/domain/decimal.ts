@@ -162,7 +162,7 @@ export class Decimal {
   public static fromDatabase(input: string, spec: DecimalSpec): Decimal {
     try {
       return Decimal.parse(input, spec);
-    } catch (cause) {
+    } catch {
       throw new DecimalError(
         `${spec.label}: stored value "${input}" does not fit its own column — schema drift`
       );
@@ -172,6 +172,23 @@ export class Decimal {
   /** The additive identity at this spec's scale. */
   public static zero(spec: DecimalSpec): Decimal {
     return new Decimal(ZERO, spec);
+  }
+
+  /** Digits after the point, i.e. the `s` in the column's `numeric(p, s)`. */
+  public get scale(): number {
+    return this.spec.scale;
+  }
+
+  /**
+   * The exact value as an integer of `10 ** scale` units.
+   *
+   * Exposed so an exact comparison can be built without division — see
+   * `DiscountAuthorizationService`, which compares a ratio against a percentage
+   * by cross-multiplying. Returning `bigint` keeps that arithmetic exact; there
+   * is deliberately no `toNumber()`.
+   */
+  public get scaledUnits(): bigint {
+    return this.units;
   }
 
   public get isZero(): boolean {
