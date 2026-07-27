@@ -263,8 +263,24 @@ const TASKS = Object.freeze([
     'P1-20-BE-012',
     'Approval evidence',
     [
-      ['test', 'tests/backend/p1-20-quotation.test.ts', 'refuses an unlinked document as evidence'],
+      [
+        'test',
+        'tests/backend/p1-20-quotation.test.ts',
+        'refuses a version linked to ANOTHER quotation and accepts the one linked to this',
+      ],
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'rejects a direct storage key'],
+      // The link check itself and the write it gates. Anchored because both were the
+      // gap: the refusal test used to die on a 404 before the link check ran, and
+      // `insertEvidence` had no execution anywhere in the phase.
+      [
+        'symbol',
+        'src/modules/shared-services/application/attachment-service.ts',
+        'verifyEvidenceVersion',
+      ],
+      ['symbol', 'src/modules/quotation/data/quotation-repository.ts', 'insertEvidence'],
+      // The fixture that makes the refusal falsifiable: two REAL versions differing
+      // only in the entity their live link names.
+      ['symbol', 'tests/backend/p1-20-helpers.ts', 'seedLinkedDocumentVersion'],
     ],
   ],
   [
@@ -366,6 +382,16 @@ const TASKS = Object.freeze([
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'forced RACE'],
       ['test', 'tests/backend/p1-20-pricing.test.ts', 'forced race'],
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'refuses no key'],
+      // A missing-key refusal proves only that the header is mandatory. These three
+      // are the replay half — the same key twice, one execution — one per suite that
+      // carries an idempotent write.
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'an Idempotency-Key replay executes once'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'an Idempotency-Key replay executes once'],
+      [
+        'test',
+        'tests/backend/p1-20-service-catalog.test.ts',
+        'an Idempotency-Key replay executes once',
+      ],
     ],
   ],
   [

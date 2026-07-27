@@ -19,6 +19,7 @@
  *    the only way to prove that a *scoped permission check*, and not RLS, is what
  *    refuses the read (P1-18-A-01).
  */
+import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { BRANCH_A1, COMPANY_A1, IDENTITY_PROVIDER, TENANT_A, TENANT_B, USER_A } from './helpers';
 import { BRANCH_A2, BRANCH_B1, COMPANY_B1 } from './p1-19-helpers';
@@ -52,6 +53,14 @@ export const SERVICE_A_ALT = 'd2000000-0000-4000-8000-00000000000b';
 export const SERVICE_A_ARCHIVED = 'd2000000-0000-4000-8000-00000000000c';
 export const SERVICE_VERSION_A = 'd2000000-0000-4000-8000-0000000000a1';
 export const SERVICE_VERSION_A_ALT = 'd2000000-0000-4000-8000-0000000000a2';
+
+/**
+ * The document category every approval-evidence fixture hangs off.
+ *
+ * Tenant-scoped rather than platform-scoped so `deleteTenantCascade` removes it with
+ * the tenant; a platform row would have to be swept by code prefix instead.
+ */
+export const EVIDENCE_DOCUMENT_CATEGORY = 'd2000000-0000-4000-8000-000000000301';
 
 export const CATEGORY_B = 'd2000000-0000-4000-8000-000000000101';
 export const SERVICE_B = 'd2000000-0000-4000-8000-00000000010a';
@@ -661,6 +670,20 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
     availability: [{ companyId: COMPANY_B1, branchId: BRANCH_B1, serviceId: SERVICE_B }],
   });
 
+  // The category the approval-evidence documents hang off. Seeded unconditionally
+  // rather than lazily: `shared.guard_document_category_scope` refuses a document
+  // whose category belongs to another tenant, and a lazily-created category would
+  // make that refusal depend on test order.
+  await admin.query(
+    `INSERT INTO shared.document_categories
+       (id, scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
+        default_classification, default_retention_class, created_by)
+     VALUES ($1,'tenant',$2,'fx_p120_evidence','P1-20 approval evidence',
+             ARRAY['application/pdf']::text[], 1048576, 'internal', 'evidence-audit', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [EVIDENCE_DOCUMENT_CATEGORY, TENANT_A, USER_A]
+  );
+
   await seedTax(TENANT_A, COMPANY_A1, TAX_CLASS_A, TAX_CLASS_A_UNRATED);
   await seedTax(TENANT_B, COMPANY_B1, TAX_CLASS_B, TAX_CLASS_B_UNRATED);
   await seedQuotationSequence(TENANT_A, COMPANY_A1, BRANCH_A1);
@@ -941,6 +964,86 @@ export async function auditCountFor(action: string, entityId: string): Promise<n
     [action, entityId]
   );
   return Number.parseInt(result.rows[0]?.n ?? '0', 10);
+}
+
+/** 32 bytes of hex — `ck_document_versions_sha256_len`. */
+const EVIDENCE_SHA_HEX = 'b'.repeat(64);
+
+/**
+ * Seeds a real `shared.document_versions` row and links it to ONE entity.
+ *
+ * The point is the `linkedTo` parameter, not the document. `verifyEvidenceVersion`
+ * answers three separate questions — does the version exist in the caller's scope,
+ * whose company/branch is it, and is it linked to THIS entity — and a fixture that
+ * cannot vary the third one independently cannot tell the three refusals apart. A
+ * test that passes an id nothing ever inserted dies on the FIRST question, so the
+ * link check could be hard-coded true and it would still refuse.
+ *
+ * So both halves of the evidence proof use this helper against the SAME company and
+ * branch and the same tenant, and differ only in `linkedTo`: one names the quotation
+ * under test, the other names a different quotation that genuinely exists. That makes
+ * the link the only remaining variable, which is what "the negative is falsifiable"
+ * means here.
+ *
+ * `company_id`/`branch_id` live on `shared.documents`, not on the version — that is
+ * where `findVersion` reads them from — so they are set on the document row.
+ *
+ * No `finally` cleanup: `shared.document_links`, `shared.document_versions` and
+ * `shared.documents` are all in `deleteTenantCascade`, so the suite's `afterAll`
+ * removes them whether or not an assertion failed.
+ */
+export async function seedLinkedDocumentVersion(input: {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly linkedTo: { readonly entityType: string; readonly entityId: string };
+  readonly title?: string;
+}): Promise<{ documentId: string; versionId: string }> {
+  const documentId = randomUUID();
+  const versionId = randomUUID();
+  await admin.query(
+    `INSERT INTO shared.documents
+       (id, tenant_id, company_id, branch_id, category_id, title, classification,
+        retention_class, status, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,'internal','evidence-audit','pending',$7)`,
+    [
+      documentId,
+      TENANT_A,
+      input.companyId,
+      input.branchId,
+      EVIDENCE_DOCUMENT_CATEGORY,
+      input.title ?? 'P1-20 approval evidence',
+      USER_A,
+    ]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_versions
+       (id, tenant_id, document_id, version_number, storage_key, content_type,
+        size_bytes, sha256, uploaded_by, created_by)
+     VALUES ($1,$2,$3,1,$4,'application/pdf',1024, decode($5,'hex'), $6, $6)`,
+    [versionId, TENANT_A, documentId, `p120-ev/${documentId}`, EVIDENCE_SHA_HEX, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,$3,$4,'approval_evidence',$5,$5)`,
+    [TENANT_A, documentId, input.linkedTo.entityType, input.linkedTo.entityId, USER_A]
+  );
+  return { documentId, versionId };
+}
+
+/** Counts the evidence rows written for one decision, with the version they bind. */
+export async function evidenceRowsFor(
+  approvalDecisionId: string
+): Promise<readonly { evidenceKind: string; documentVersionId: string | null }[]> {
+  const result = await admin.query<{ evidence_kind: string; document_version_id: string | null }>(
+    `SELECT evidence_kind, document_version_id FROM quo.approval_evidence
+      WHERE approval_decision_id = $1 ORDER BY seq`,
+    [approvalDecisionId]
+  );
+  return result.rows.map((row) => ({
+    evidenceKind: row.evidence_kind,
+    documentVersionId: row.document_version_id,
+  }));
 }
 
 /** Counts outbox rows for an event key, to prove exactly one was published. */

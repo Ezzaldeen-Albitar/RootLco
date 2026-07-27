@@ -201,8 +201,25 @@ Evidence content never appears in an event payload, an audit detail or a problem
 document. Audit records the evidence **row id** and its kind, never the note text.
 
 Tests: `tests/backend/p1-20-quotation.test.ts` — direct-storage-key rejection,
-document/verbal shape coupling (`ck_approval_evidence_document`), and the unlinked
-document case.
+document/verbal shape coupling (`ck_approval_evidence_document`), and the LINK case,
+which is the one that carries this control.
+
+That case seeds TWO real `shared.document_versions` rows on the quotation's own company
+and branch, differing only in which entity their live `shared.document_links` row names:
+one the quotation under test, the other a second quotation that genuinely exists. The
+foreign one is refused **422/ERR-VAL-001** — distinguishable from the missing-version
+404 and the wrong-branch 403 — and the own one is ACCEPTED, writing exactly one
+`quo.approval_evidence` row counted in SQL, with `approval_decisions.evidence_ref`
+holding the same version id. That acceptance is the only execution `insertEvidence` has
+anywhere in the phase.
+
+Both halves are load-bearing, and an earlier version of this case had neither. It passed
+a version id nothing had inserted, so it died on `findVersion` with a 404 and never
+reached the link check at all: `linkedToEntity` could have been hard-coded and the only
+assertion (`status >= 400`) would still have held. Mutation-verified in both directions —
+forcing the link check to `true` makes the foreign document succeed where 422 is
+expected, forcing it to `false` makes the own document fail — so neither constant
+survives.
 
 ### No export surface
 
@@ -211,31 +228,31 @@ Recorded here so its absence is a decision rather than an oversight.
 
 ## P1-20-SEC-003 — abuse cases and privilege escalation
 
-| Abuse case                           | Refused by                                                                                     | Test                                                                                  |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Price tampering                      | the client cannot send a price; `.strict()` rejects `unitPrice`                                | quotation: "REJECTS a client-supplied price, tax or total"                            |
-| Tax tampering                        | `taxRate`/`taxAmount` likewise rejected; the rate comes from `org.tax_rates`                   | same                                                                                  |
-| Total tampering                      | `lineTotal` rejected; totals are `quo.issue_revision`'s SUM                                    | same                                                                                  |
-| Discount escalation past the policy  | threshold from `svc.pricing_approval_policies`; over it, the configured permission is required | pricing unit: "refuses when the actor lacks the required permission"                  |
-| Discount escalation past the ceiling | `iam.approval_limits`, read through the foundation                                             | pricing unit: "refuses when the discount exceeds the actor ceiling"                   |
-| Discount with NO ceiling configured  | fail-closed — no ceiling is no authority                                                       | quotation: "refuses a discount when the actor has NO approval ceiling"                |
-| Self-approved discount               | `maker_approver_distinct`                                                                      | pricing unit: "refuses when the requester and the approver are the same actor"        |
-| Currency mismatch / silent FX        | `Money` exposes no conversion; a mismatch is a hard failure                                    | decimal unit: "exposes no conversion path at all"; pricing: ceiling currency mismatch |
-| Negative price or discount           | refused at the boundary and by CHECK                                                           | pricing: "refuses over-scale, negative and exponential amounts"                       |
-| Decimal overflow                     | precision checked against the column                                                           | decimal unit: "rejects one digit more than the precision allows"                      |
-| Scientific notation                  | rejected, not normalised                                                                       | decimal unit: "rejects exponential notation outright"                                 |
-| Duplicate issue                      | `quo.issue_revision` requires `draft`; one event key                                           | quotation: "refuses a second issue … and publishes no second event"                   |
-| Concurrent publication               | one winner, one event                                                                          | pricing: "leaves exactly one published version and one event under a forced race"     |
-| Duplicate decision                   | `uq_approval_decisions_item`; same decision settles, opposite conflicts                        | quotation: "is idempotent for the same decision and a conflict for the opposite"      |
-| Approval after expiry                | `hasExpired` against the database clock                                                        | link: "refuses an EXPIRED revision"                                                   |
-| Approving a superseded revision      | `presentedRevisionId` + `current_revision_id`                                                  | quotation: "refuses a decision on a SUPERSEDED revision"                              |
-| Forged deciding party                | validated against `payer_partner_ref`                                                          | quotation: "refuses a forged deciding party"                                          |
-| Forged attachment                    | must be linked to this quotation                                                               | quotation: "refuses an unlinked document as evidence"                                 |
-| Direct storage key                   | unexpressible (uuid field)                                                                     | quotation: "rejects a direct storage key"                                             |
-| Idempotency omission                 | `idempotent: true` on every command                                                            | quotation: "requires an Idempotency-Key"                                              |
-| Ambiguous price selection            | structurally impossible; guard retained                                                        | pricing: "cannot construct a rule-level tie"                                          |
-| Enumeration via a branch filter      | the filter is authorized before use                                                            | service catalog isolation cases                                                       |
-| Search wildcard abuse                | `%` and `_` escaped with `ESCAPE`                                                              | service catalog: "treats LIKE metacharacters … as literals"                           |
+| Abuse case                           | Refused by                                                                                     | Test                                                                                          |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Price tampering                      | the client cannot send a price; `.strict()` rejects `unitPrice`                                | quotation: "REJECTS a client-supplied price, tax or total"                                    |
+| Tax tampering                        | `taxRate`/`taxAmount` likewise rejected; the rate comes from `org.tax_rates`                   | same                                                                                          |
+| Total tampering                      | `lineTotal` rejected; totals are `quo.issue_revision`'s SUM                                    | same                                                                                          |
+| Discount escalation past the policy  | threshold from `svc.pricing_approval_policies`; over it, the configured permission is required | pricing unit: "refuses when the actor lacks the required permission"                          |
+| Discount escalation past the ceiling | `iam.approval_limits`, read through the foundation                                             | pricing unit: "refuses when the discount exceeds the actor ceiling"                           |
+| Discount with NO ceiling configured  | fail-closed — no ceiling is no authority                                                       | quotation: "refuses a discount when the actor has NO approval ceiling"                        |
+| Self-approved discount               | `maker_approver_distinct`                                                                      | pricing unit: "refuses when the requester and the approver are the same actor"                |
+| Currency mismatch / silent FX        | `Money` exposes no conversion; a mismatch is a hard failure                                    | decimal unit: "exposes no conversion path at all"; pricing: ceiling currency mismatch         |
+| Negative price or discount           | refused at the boundary and by CHECK                                                           | pricing: "refuses over-scale, negative and exponential amounts"                               |
+| Decimal overflow                     | precision checked against the column                                                           | decimal unit: "rejects one digit more than the precision allows"                              |
+| Scientific notation                  | rejected, not normalised                                                                       | decimal unit: "rejects exponential notation outright"                                         |
+| Duplicate issue                      | `quo.issue_revision` requires `draft`; one event key                                           | quotation: "refuses a second issue … and publishes no second event"                           |
+| Concurrent publication               | one winner, one event                                                                          | pricing: "leaves exactly one published version and one event under a forced race"             |
+| Duplicate decision                   | `uq_approval_decisions_item`; same decision settles, opposite conflicts                        | quotation: "is idempotent for the same decision and a conflict for the opposite"              |
+| Approval after expiry                | `hasExpired` against the database clock                                                        | link: "refuses an EXPIRED revision"                                                           |
+| Approving a superseded revision      | `presentedRevisionId` + `current_revision_id`                                                  | quotation: "refuses a decision on a SUPERSEDED revision"                                      |
+| Forged deciding party                | validated against `payer_partner_ref`                                                          | quotation: "refuses a forged deciding party"                                                  |
+| Forged attachment                    | must be linked to THIS quotation, not merely visible                                           | quotation: "refuses a version linked to ANOTHER quotation and accepts the one linked to this" |
+| Direct storage key                   | unexpressible (uuid field)                                                                     | quotation: "rejects a direct storage key"                                                     |
+| Idempotency omission                 | `idempotent: true` on every command                                                            | quotation: "requires an Idempotency-Key"                                                      |
+| Ambiguous price selection            | structurally impossible; guard retained                                                        | pricing: "cannot construct a rule-level tie"                                                  |
+| Enumeration via a branch filter      | the filter is authorized before use                                                            | service catalog isolation cases                                                               |
+| Search wildcard abuse                | `%` and `_` escaped with `ESCAPE`                                                              | service catalog: "treats LIKE metacharacters … as literals"                                   |
 
 Rate limiting uses the existing registered policies (`expensive-read`,
 `standard-command`, `low-risk-metadata`); no new policy was invented.

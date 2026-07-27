@@ -67,8 +67,10 @@ import {
   assignPriceList,
   auditCountFor,
   clearDiscountPolicy,
+  evidenceRowsFor,
   seedDiscountCeiling,
   seedDiscountPolicy,
+  seedLinkedDocumentVersion,
   authAs,
   establishP1_20Fixtures,
   outboxCountFor,
@@ -99,45 +101,79 @@ const nextCode = (): string => {
   return `FX-QL-${String(Date.now() % 100000)}-${codeSeq}`;
 };
 
-const jsonPost = (url: string, body: unknown, ifMatch?: number): Request =>
+/**
+ * `key` is explicit only where a REPLAY is the thing under test; otherwise fresh.
+ *
+ * A fresh key per call is the right default — it keeps every other case exercising
+ * the real handler rather than a stored response — but it also means a suite that
+ * ONLY ever mints fresh keys proves nothing about what the key is for. The replay
+ * cases below pass one deliberately.
+ */
+const jsonPost = (
+  url: string,
+  body: unknown,
+  ifMatch?: number,
+  key: string = crypto.randomUUID()
+): Request =>
   new Request(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'idempotency-key': crypto.randomUUID(),
+      'idempotency-key': key,
       ...(ifMatch === undefined ? {} : { 'if-match': String(ifMatch) }),
     },
     body: JSON.stringify(body),
   });
 
-function createQuotation(body: unknown): Promise<Response> {
-  return CREATE_QUOTATION(jsonPost('http://localhost/api/v1/quotations', body));
+function createQuotation(body: unknown, key?: string): Promise<Response> {
+  return CREATE_QUOTATION(jsonPost('http://localhost/api/v1/quotations', body, undefined, key));
 }
 function detail(quotationId: string): Promise<Response> {
   return QUOTATION_DETAIL(new Request(`http://localhost/api/v1/quotations/${quotationId}`), {
     params: Promise.resolve({ quotationId }),
   });
 }
-function revise(quotationId: string, body: unknown, ifMatch: number): Promise<Response> {
+function revise(
+  quotationId: string,
+  body: unknown,
+  ifMatch: number,
+  key?: string
+): Promise<Response> {
   return CREATE_REVISION(
-    jsonPost(`http://localhost/api/v1/quotations/${quotationId}/revisions`, body, ifMatch),
+    jsonPost(`http://localhost/api/v1/quotations/${quotationId}/revisions`, body, ifMatch, key),
     { params: Promise.resolve({ quotationId }) }
   );
 }
-function issue(quotationId: string, body: unknown, ifMatch: number): Promise<Response> {
-  return ISSUE(jsonPost(`http://localhost/api/v1/quotations/${quotationId}/issue`, body, ifMatch), {
-    params: Promise.resolve({ quotationId }),
-  });
+function issue(
+  quotationId: string,
+  body: unknown,
+  ifMatch: number,
+  key?: string
+): Promise<Response> {
+  return ISSUE(
+    jsonPost(`http://localhost/api/v1/quotations/${quotationId}/issue`, body, ifMatch, key),
+    { params: Promise.resolve({ quotationId }) }
+  );
 }
-function decideItem(quotationItemId: string, body: unknown): Promise<Response> {
+function decideItem(quotationItemId: string, body: unknown, key?: string): Promise<Response> {
   return DECIDE_ITEM(
-    jsonPost(`http://localhost/api/v1/quotation-items/${quotationItemId}/decisions`, body),
+    jsonPost(
+      `http://localhost/api/v1/quotation-items/${quotationItemId}/decisions`,
+      body,
+      undefined,
+      key
+    ),
     { params: Promise.resolve({ quotationItemId }) }
   );
 }
-function decideRevision(revisionId: string, body: unknown): Promise<Response> {
+function decideRevision(revisionId: string, body: unknown, key?: string): Promise<Response> {
   return DECIDE_REVISION(
-    jsonPost(`http://localhost/api/v1/quotation-revisions/${revisionId}/decisions`, body),
+    jsonPost(
+      `http://localhost/api/v1/quotation-revisions/${revisionId}/decisions`,
+      body,
+      undefined,
+      key
+    ),
     { params: Promise.resolve({ revisionId }) }
   );
 }
@@ -1204,22 +1240,91 @@ describe('quo.quotation-item-decide', () => {
     ).toBe(422);
   });
 
-  it('refuses an unlinked document as evidence', async () => {
+  it('refuses a version linked to ANOTHER quotation and accepts the one linked to this', async () => {
+    /**
+     * The forged-attachment control, and the only shape that can prove it.
+     *
+     * An earlier version of this case sent a version id nothing had inserted. That
+     * died on `findVersion` — ERR-RES-001, a 404 — and never reached the link check
+     * at all, so `linkedToEntity` could have been hard-coded `true` and the test
+     * would still have passed on a `status >= 400` assertion. It also meant
+     * `insertEvidence` had no execution anywhere in the phase.
+     *
+     * Both versions here are REAL, in the caller's tenant, on the quotation's own
+     * company and branch, and equally visible. The single variable is which entity
+     * the live `shared.document_links` row names. So the refusal can only be the
+     * link check, and the acceptance proves the same check passes when it should —
+     * a mutation making `linkedToEntity` constant fails one half or the other
+     * whichever constant it picks.
+     */
     const quotation = await seedQuotation({ quantity: '1.000' });
     const issued = await issueCurrent(quotation);
+    const itemId = issued.lines[0]?.id as string;
+
+    // A second, genuinely existing quotation, so the rejected document is attached
+    // to something real rather than dangling.
+    const otherQuotation = await seedQuotation({ quantity: '1.000' });
+
+    const foreign = await seedLinkedDocumentVersion({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      linkedTo: { entityType: 'quo.quotations', entityId: otherQuotation.id },
+      title: 'Approval evidence for a different quotation',
+    });
+    const own = await seedLinkedDocumentVersion({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      linkedTo: { entityType: 'quo.quotations', entityId: quotation.id },
+      title: 'Approval evidence for this quotation',
+    });
+
     authAs(SVC_FULL);
-    // A well-formed but unknown version id: not in the caller's scope, and not
-    // linked to this quotation.
-    const response = await decideItem(issued.lines[0]?.id as string, {
+    const refused = await decideItem(itemId, {
+      decision: 'approved',
+      channel: 'email',
+      presentedRevisionId: issued.id,
+      evidence: { evidenceKind: 'document', documentVersionId: foreign.versionId },
+    });
+    // 422/ERR-VAL-001 is the LINK refusal specifically: a missing version answers
+    // ERR-RES-001/404 and a foreign company or branch answers ERR-IAM-001/403, so
+    // the code discriminates the branch under test from its two neighbours.
+    expect(refused.status).toBe(422);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-VAL-001');
+    // The refusal happens before any write, so the line is still undecided.
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_item_id = $1', [itemId])
+    ).toBe(0);
+
+    authAs(SVC_FULL);
+    const accepted = await decideItem(itemId, {
       decision: 'approved',
       channel: 'email',
       presentedRevisionId: issued.id,
       evidence: {
         evidenceKind: 'document',
-        documentVersionId: '00000000-0000-4000-8000-0000000000ac',
+        documentVersionId: own.versionId,
+        referenceNote: 'Signed acceptance',
       },
     });
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(accepted.status).toBe(201);
+    const view = (await accepted.json()) as { decisionId: string; evidenceId: string | null };
+    expect(view.evidenceId).not.toBeNull();
+
+    // Counted in SQL, not inferred from the response: `quo.approval_evidence` is
+    // append-only under forced RLS and nothing else in the phase writes to it.
+    expect(
+      await countRows(admin, 'quo.approval_evidence', 'approval_decision_id = $1', [
+        view.decisionId,
+      ])
+    ).toBe(1);
+    const stored = await evidenceRowsFor(view.decisionId);
+    expect(stored).toEqual([{ evidenceKind: 'document', documentVersionId: own.versionId }]);
+    // And the decision itself cites the same version, so the two records agree.
+    const decision = await admin.query<{ evidence_ref: string | null }>(
+      `SELECT evidence_ref FROM quo.approval_decisions WHERE id = $1`,
+      [view.decisionId]
+    );
+    expect(decision.rows[0]?.evidence_ref).toBe(own.versionId);
   });
 });
 
@@ -1566,6 +1671,171 @@ describe('quo writes — tenant, scope and idempotency floors', () => {
     ).toBe(0);
     // And the quotation was not rolled up by an unauthorized decision.
     expect((await reread(quotation.id)).status).toBe('active');
+  });
+});
+
+/**
+ * An `Idempotency-Key` REPLAY executes once — every idempotent quotation write.
+ *
+ * The floors above prove the header is MANDATORY. That is only half the contract, and
+ * on its own it is the weaker half: a route could demand the key, ignore it entirely
+ * and still pass every one of those cases. These prove what the key is mandatory FOR
+ * — the same key with the same request executes the command exactly once and serves
+ * the stored response the second time.
+ *
+ * Two constants across all five, both platform behaviour rather than anything these
+ * routes chose:
+ *
+ *  - **The replay answers 200, never the 201 the first attempt answered.**
+ *    `route-handler.ts` stores `value.body` alone, so the replay is rebuilt as
+ *    `{ body }` with no status and falls back to the handler default. Asserted rather
+ *    than papered over; recorded as `P1-20-A-10`.
+ *  - **The `If-Match` header is NOT part of the fingerprint**, and the replay short
+ *    circuits before the handler reads `expectedVersion`. So a retry of a
+ *    version-guarded command replays even though the record it guards has moved on —
+ *    which is the point: the retry of a command that already succeeded must not be
+ *    refused as stale.
+ *
+ * Every count below is taken in SQL through the admin pool, because the response is
+ * exactly the artifact under suspicion.
+ */
+describe('quo writes — an Idempotency-Key replay executes once', () => {
+  it('quo.quotation-create replays to one quotation, not two', async () => {
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+    const body = {
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '2.000' }],
+    };
+
+    const first = await createQuotation(body, key);
+    expect(first.status).toBe(201);
+    const second = await createQuotation(body, key);
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as Quotation;
+    expect(await second.json()).toEqual(firstBody);
+
+    // One quotation, and one quotation NUMBER: the sequence allocation sits inside
+    // the same transaction as the reservation, so a second execution would have
+    // consumed a number the caller never learns about.
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(1);
+    expect(await auditCountFor('quo.quotation.created', firstBody.id)).toBe(1);
+    expect(await outboxCountFor(`quotation.created:${firstBody.id}`)).toBe(1);
+  });
+
+  it('quo.quotation-revision-create replays to one revision, not two', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+    const body = { lines: [{ serviceId: SERVICE_A, quantity: '3.000' }] };
+
+    const first = await revise(quotation.id, body, quotation.recordVersion, key);
+    expect(first.status).toBe(201);
+    // The SAME stale `If-Match` on purpose: the quotation's record_version moved when
+    // the first attempt succeeded, and a retry must not be told its own success is a
+    // conflict.
+    const second = await revise(quotation.id, body, quotation.recordVersion, key);
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as Revision;
+    expect(await second.json()).toEqual(firstBody);
+
+    // Two revisions in total — the one creation made, plus exactly one from the
+    // replayed pair. `revision_number` is monotonic, so a second execution would be
+    // visible as a third row.
+    expect(
+      await countRows(admin, 'quo.quotation_revisions', 'quotation_id = $1', [quotation.id])
+    ).toBe(2);
+    expect(await auditCountFor('quo.quotation_revision.created', firstBody.id)).toBe(1);
+  });
+
+  it('quo.quotation-issue replays to one issued revision and one event', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+
+    const first = await issue(quotation.id, { revisionId }, quotation.recordVersion, key);
+    expect(first.status).toBe(200);
+    const second = await issue(quotation.id, { revisionId }, quotation.recordVersion, key);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    // Issue is not row-creating, so the evidence is the outbox and the trail: a second
+    // execution would be refused as non-draft, which is a DIFFERENT protection and
+    // would leave the caller's retry looking like a failure.
+    expect(await outboxCountFor(`quotation.revision-issued:${revisionId}`)).toBe(1);
+    expect(await auditCountFor('quo.quotation_revision.issued', revisionId)).toBe(1);
+  });
+
+  it('quo.quotation-item-decide replays to one decision row', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    const itemId = issued.lines[0]?.id as string;
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+    const body = { decision: 'approved', channel: 'in_person', presentedRevisionId: issued.id };
+
+    const first = await decideItem(itemId, body, key);
+    expect(first.status).toBe(201);
+    const second = await decideItem(itemId, body, key);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    // The domain protects this one twice over — `uq_approval_decisions_item` and
+    // `settleExisting` — so the row count alone cannot distinguish a replay from a
+    // second execution that was absorbed. The AUDIT count can: `settleExisting`
+    // returns before `auditDecision`, but a second execution reaching it would not.
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_item_id = $1', [itemId])
+    ).toBe(1);
+    expect(await auditCountFor('quo.quotation_item.decided', itemId)).toBe(1);
+    expect(await outboxCountFor(`quotation.accepted:${issued.id}`)).toBe(1);
+  });
+
+  it('quo.quotation-revision-decide replays to one decision per line and one audit record', async () => {
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const created = (await (
+      await createQuotation({
+        workOrderId: order.workOrderId,
+        payerPartnerRef: PARTNER_A,
+        lines: [
+          { serviceId: SERVICE_A, quantity: '1.000' },
+          { serviceId: SERVICE_A, quantity: '2.000', description: 'Second line' },
+        ],
+      })
+    ).json()) as Quotation;
+    const issued = await issueCurrent(created);
+
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+    const body = {
+      decision: 'approved',
+      channel: 'in_person',
+      decidingPartyRef: PARTNER_A,
+      presentedRevisionId: issued.id,
+    };
+
+    const first = await decideRevision(issued.id, body, key);
+    expect(first.status).toBe(201);
+    const second = await decideRevision(issued.id, body, key);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_revision_id = $1', [issued.id])
+    ).toBe(2);
+    // The aggregate audit record is the sharp one: `appendAudit` runs unconditionally
+    // after the loop, so a second EXECUTION would append a second record claiming two
+    // lines were decided when none were. Only the replay keeps it at one.
+    expect(await auditCountFor('quo.quotation_revision.decided', issued.id)).toBe(1);
+    expect(await outboxCountFor(`quotation.accepted:${issued.id}`)).toBe(1);
   });
 });
 

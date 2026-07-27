@@ -41,16 +41,16 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 
 ### Baseline measurements (recalculated, not inherited)
 
-| Metric        | Value                                                              | How                                                                                                                                                                                                                                                                               |
-| ------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit          | **903**                                                            | `npm run test` — 42 files, exit 0. 901 before the Wave 10 mutation surface; the audit measured 901 too, against the 899 three documents still carried from the parent commit.                                                                                                     |
-| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                                                                                                                 |
-| Backend       | **1249**                                                           | `npm run test:backend` — 56 files, exit 0, serial, dev database with nothing else touching it. 1219 before Wave 10 added 30 service-catalog mutation tests; 1217 was the audited head `7a58272`, before the two create-atomicity tests. The clean room must re-prove this figure. |
-| OpenAPI       | **155 paths / 185 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                                                                                                           |
-| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                                                                                                             |
-| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                                                                                                            |
-| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                                                                                                                |
-| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                                                                                                     |
+| Metric        | Value                                                              | How                                                                                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit          | **903**                                                            | `npm run test` — 42 files, exit 0. 901 before the Wave 10 mutation surface; the audit measured 901 too, against the 899 three documents still carried from the parent commit.                                                                                           |
+| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                                                                                                       |
+| Backend       | **1261**                                                           | `npm run test:backend` — 56 files, exit 0, serial, dev database with nothing else touching it. 1249 before Wave 11 added 12 (3 catalog, 4 pricing, 5 quotation); 1219 before Wave 10 added 30 service-catalog mutation tests. The clean room must re-prove this figure. |
+| OpenAPI       | **155 paths / 185 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                                                                                                 |
+| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                                                                                                   |
+| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                                                                                                  |
+| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                                                                                                      |
+| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                                                                                           |
 
 ## Wave status
 
@@ -68,6 +68,7 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | 8    | SEC/QA/DO/DOC                                                       | **Done** — inventory gate + 6 evidence documents, 27/27 anchored |
 | 9    | Adversarial review + remediation                                    | **Done** — 5 Highs, 9 Mediums, 7 Lows closed; see below          |
 | 10   | `P1-20-G-01` — the missing service-catalog mutation surface         | **Done** — see below                                             |
+| 11   | The two test-honesty Highs from the completeness audit              | **Done** — see below                                             |
 
 ## Wave 10 — the service-catalog mutation surface (`P1-20-G-01`)
 
@@ -114,6 +115,66 @@ Four things worth not rediscovering:
 narrower, honestly-scoped gaps: `P1-20-G-02` (no category write path) and `P1-20-G-03`
 (no draft-version create path). Neither was invented around — each names the protected
 column whose policy nothing decides.
+
+## Wave 11 — the two test-honesty Highs
+
+Both came from `evidence/completeness-audit.md`. Neither was a defect in the code: in
+both cases the shipped behaviour was correct and the TEST could not have detected it
+being wrong, which is the more expensive kind of gap because it reads as covered.
+
+### H2 — `P1-20-BE-012` approval evidence had no positive path and an inert negative
+
+`insertEvidence` had **zero executions phase-wide** and `document_versions` appeared
+**0 times** in any P1-20 test. "Refuses an unlinked document as evidence" sent a version
+id nothing had inserted, so it died on `findVersion` with a 404 and never evaluated
+`linkedToEntity` at all — the field could have been hard-coded and the only assertion
+(`status >= 400`) would still have passed.
+
+Replaced by one case seeding **two real `shared.document_versions`** on the quotation's
+own company and branch, differing only in which entity their live `shared.document_links`
+row names: one this quotation, one a second quotation that genuinely exists. The foreign
+one is refused **422/`ERR-VAL-001`** — which discriminates the link branch from the
+missing-version 404 and the wrong-branch 403 — and the own one is **accepted**, writing
+exactly one `quo.approval_evidence` row counted in SQL with `approval_decisions.evidence_ref`
+set to the same version. That acceptance is `insertEvidence`'s only execution in the phase.
+
+**Mutation-verified in both directions**, which is the point of the two-document fixture:
+forcing `linkedToEntity` to `true` makes the foreign document succeed (201 where 422 is
+expected); forcing it to `false` makes the own document fail (422 where 201 is expected).
+No constant survives. `src/` restored byte-identically afterwards (md5 `d85b0d65…`).
+
+### L3/H — no test replayed an `Idempotency-Key`
+
+Every P1-20 write minted a fresh `crypto.randomUUID()` per call, so the `idempotency`
+coverage flag on **13** operations rested entirely on a missing-header `ERR-INT-002`.
+That proves the header is mandatory and nothing else; the gate defines the category as
+"a replay produces one row, not two". Each of the 13 now sends the byte-identical request
+twice under one key and asserts the second response equals the first **and** that the
+write happened once, counted in SQL. The witness table is in `evidence/qa-evidence.md`
+§QA-004.
+
+Three things worth not rediscovering:
+
+1. **`svc.service-create` and `svc.service-update` share the audit action
+   `svc.service.updated`.** A replay test on the update therefore expects **2** records
+   (create + one update), not 1 — the first attempt at this assertion failed for exactly
+   that reason. A second execution would make it 3.
+2. **`If-Match` is deliberately NOT part of the request fingerprint**, and the replay
+   short-circuits before the handler reads `expectedVersion`. So the four version-guarded
+   commands are retried with the SAME header the first attempt already made stale and
+   answer the stored response rather than `ERR-CON-001`. Asserted, because a client
+   retrying a command whose response it never saw must not be told its own success was a
+   conflict.
+3. **Three of the four pricing writes are also protected by a unique index or a state
+   gate** (`uq_price_lists_code`, `uq_price_rules_signature`, `requireDraftVersion`), so
+   a second execution FAILS rather than duplicating. Those cases assert the replay status
+   is 200 and not the 409 a second execution would earn — the row count alone would not
+   have distinguished them.
+
+Per-suite counts in `evidence/qa-evidence.md`, `task-register.md`, `change-log.md` and
+`open-decisions.md` were re-measured by running each file on its own and corrected:
+34 / 26 / 54 / 51 / 67 / 12 = **244** (60 unit, 184 backend). The table had carried
+32/24/21/45/56/12 = 190, drifted by 54 tests across two waves.
 
 ## Decisions fixed by the catalog (do not re-litigate)
 
@@ -358,6 +419,19 @@ hosted run on the current head predates it.
 - A new coverage flag is worthless unless a principal holds the operation's own
   permission: otherwise the 403 is a missing permission and a scope-blind
   implementation passes.
+- `svc.service-create` and `svc.service-update` share ONE audit action,
+  `svc.service.updated`. Any count assertion on a service entity must add the create's
+  own record to the baseline.
+- A refusal test that passes an id nothing inserted proves the FIRST guard in the chain
+  and nothing after it. `verifyEvidenceVersion` asks three questions in order — exists,
+  whose scope, actually linked — so testing the third needs a row that satisfies the
+  first two, differing only in the third.
+- `If-Match` is NOT part of the idempotency fingerprint, and `withIdempotency` runs
+  before the handler reads `expectedVersion`. A same-key replay of a version-guarded
+  command therefore replays rather than answering `ERR-CON-001`.
+- The P1-20 inventory gate's `TASKS` table anchors task proofs to literal **test title
+  substrings**. Renaming a test breaks `validate:p1-20-inventory`, not the test run —
+  update `scripts/p1-20-endpoint-inventory.mjs` in the same commit.
 
 ## Appendix — operation-coverage gate output (all phases)
 

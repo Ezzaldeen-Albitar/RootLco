@@ -421,14 +421,15 @@ function createService(body: unknown, key: string = crypto.randomUUID()): Promis
 function updateService(
   serviceId: string,
   body: unknown,
-  ifMatch: number | null
+  ifMatch: number | null,
+  key: string = crypto.randomUUID()
 ): Promise<Response> {
   return UPDATE(
     new Request(`http://localhost/api/v1/services/${serviceId}`, {
       method: 'PATCH',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
         ...(ifMatch === null ? {} : { 'if-match': String(ifMatch) }),
       },
       body: JSON.stringify(body),
@@ -441,14 +442,15 @@ function publishVersion(
   serviceId: string,
   versionId: string,
   body: unknown,
-  ifMatch: number | null
+  ifMatch: number | null,
+  key: string = crypto.randomUUID()
 ): Promise<Response> {
   return PUBLISH(
     new Request(`http://localhost/api/v1/services/${serviceId}/versions/${versionId}/publication`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
         ...(ifMatch === null ? {} : { 'if-match': String(ifMatch) }),
       },
       body: JSON.stringify(body),
@@ -457,13 +459,17 @@ function publishVersion(
   );
 }
 
-function setAvailability(serviceId: string, body: unknown): Promise<Response> {
+function setAvailability(
+  serviceId: string,
+  body: unknown,
+  key: string = crypto.randomUUID()
+): Promise<Response> {
   return SET_AVAILABILITY(
     new Request(`http://localhost/api/v1/services/${serviceId}/branch-availability`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
       },
       body: JSON.stringify(body),
     }),
@@ -1499,5 +1505,101 @@ describe('svc.branch-availability-set', () => {
       isAvailable: true,
       status: 'active',
     });
+  });
+});
+
+/**
+ * An `Idempotency-Key` REPLAY executes once — the remaining catalog writes.
+ *
+ * `svc.service-create` has its own replay case above, beside the uniqueness constraint
+ * it protects. These three complete the set, and each one needs a different witness
+ * because none of them creates a row whose absence would be obvious:
+ *
+ *  - **update** and **publish** are version-guarded, so a second EXECUTION of the same
+ *    request would be refused 409/ERR-CON-001 against the `record_version` the first
+ *    attempt consumed. `If-Match` is deliberately not part of the request fingerprint
+ *    and the replay short-circuits before the handler reads it, so a client retrying a
+ *    command whose response it never saw is told the truth rather than "stale".
+ *  - **availability** is an upsert with no version guard at all, so the row count
+ *    cannot distinguish a replay from a second execution. The AUDIT count can: two
+ *    executions append two `svc.branch_availability.changed` records, as the
+ *    create-then-change case above shows.
+ *
+ * The replay answers the handler's own status here rather than a downgraded one —
+ * all three answer 200 on the first attempt too — so the counts, not the code, are
+ * what carry these cases.
+ */
+describe('svc catalog writes — an Idempotency-Key replay executes once', () => {
+  it('svc.service-update replays to one update, not a stale-version conflict', async () => {
+    const service = await managedService();
+    authAs(SVC_CATALOG_MANAGER);
+    const key = crypto.randomUUID();
+    const body = { name: 'Renamed exactly once' };
+
+    const first = await updateService(service.id, body, service.recordVersion, key);
+    expect(first.status).toBe(200);
+    // The SAME `If-Match`, which the first attempt has already made stale. A second
+    // execution would answer 409/ERR-CON-001; the replay answers the stored response.
+    const second = await updateService(service.id, body, service.recordVersion, key);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    expect((await serviceRowOf(service.id))?.name).toBe('Renamed exactly once');
+    // Exactly ONE version bump: the command ran once.
+    expect(await serviceRecordVersionOf(service.id)).toBe(service.recordVersion + 1);
+    /**
+     * TWO audit records, not one — and the baseline matters.
+     *
+     * `svc.service-create` and `svc.service-update` share the action
+     * `svc.service.updated`, so `managedService()` has already written one against this
+     * entity before the update runs. The count that proves the point is therefore
+     * create + one update = 2; a second EXECUTION would make it 3.
+     */
+    expect(await auditCountFor('svc.service.updated', service.id)).toBe(2);
+  });
+
+  it('svc.service-version-publish replays to one publication and one event', async () => {
+    const service = await managedService();
+    const versionId = await seedDraftServiceVersion({
+      tenantId: TENANT_A,
+      serviceId: service.id,
+      versionNo: 1,
+      effectiveFrom: '2024-01-01',
+    });
+    authAs(SVC_CATALOG_MANAGER);
+    const key = crypto.randomUUID();
+    const body = { effectiveFrom: '2024-07-01' };
+
+    const first = await publishVersion(service.id, versionId, body, service.recordVersion, key);
+    expect(first.status).toBe(200);
+    const second = await publishVersion(service.id, versionId, body, service.recordVersion, key);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    expect((await serviceVersionRowOf(versionId))?.status).toBe('published');
+    expect(await outboxCountFor(`service.published:${versionId}`)).toBe(1);
+    expect(await auditCountFor('svc.service_version.published', versionId)).toBe(1);
+  });
+
+  it('svc.branch-availability-set replays to one row and one audit record', async () => {
+    const service = await managedService();
+    authAs(SVC_CATALOG_MANAGER);
+    const key = crypto.randomUUID();
+    const body = { companyId: COMPANY_A1, branchId: BRANCH_A1, isAvailable: true };
+
+    const first = await setAvailability(service.id, body, key);
+    expect(first.status).toBe(200);
+    const second = await setAvailability(service.id, body, key);
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as AvailabilityBody;
+    expect(await second.json()).toEqual(firstBody);
+
+    expect(
+      await countRows(admin, 'svc.branch_service_availability', 'service_id = $1', [service.id])
+    ).toBe(1);
+    // The decisive one: the upsert would happily run twice and leave a single row, so
+    // only the audit count separates a replay from a second execution.
+    expect(await auditCountFor('svc.branch_availability.changed', firstBody.id)).toBe(1);
   });
 });

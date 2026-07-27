@@ -7,16 +7,21 @@ evidence packaging).
 
 ## Suites added by this phase
 
-| File                                               | Tests | Covers                                                              |
-| -------------------------------------------------- | ----- | ------------------------------------------------------------------- |
-| `tests/unit/p1-20-decimal.test.ts`                 | 32    | exact decimal and money boundaries (QA-001)                         |
-| `tests/unit/p1-20-discount-authorization.test.ts`  | 24    | discount thresholds, ceilings, maker≠approver (QA-001)              |
-| `tests/backend/p1-20-service-catalog.test.ts`      | 21    | catalog read, isolation, filters, paging (QA-002, QA-003)           |
-| `tests/backend/p1-20-pricing.test.ts`              | 45    | price-list lifecycle, publication race, resolution (QA-002, QA-004) |
-| `tests/backend/p1-20-quotation.test.ts`            | 56    | quotation lifecycle, decisions, evidence, expiry (QA-002, QA-004)   |
-| `tests/backend/p1-20-additional-work-link.test.ts` | 12    | BE-013 integration and port installation (QA-002, QA-005)           |
+| File                                               | Tests | Covers                                                                         |
+| -------------------------------------------------- | ----- | ------------------------------------------------------------------------------ |
+| `tests/unit/p1-20-decimal.test.ts`                 | 34    | exact decimal and money boundaries (QA-001)                                    |
+| `tests/unit/p1-20-discount-authorization.test.ts`  | 26    | discount thresholds, ceilings, maker≠approver (QA-001)                         |
+| `tests/backend/p1-20-service-catalog.test.ts`      | 54    | catalog read and MUTATION, isolation, filters, paging, replay (QA-002, QA-003) |
+| `tests/backend/p1-20-pricing.test.ts`              | 51    | price-list lifecycle, publication race, resolution, replay (QA-002, QA-004)    |
+| `tests/backend/p1-20-quotation.test.ts`            | 67    | quotation lifecycle, decisions, evidence, expiry, replay (QA-002, QA-004)      |
+| `tests/backend/p1-20-additional-work-link.test.ts` | 12    | BE-013 integration and port installation (QA-002, QA-005)                      |
 
-**190 tests** across the phase: 56 unit, 134 backend.
+**244 tests** across the phase: 60 unit, 184 backend.
+
+Every figure above was MEASURED by running that one file, not estimated. The previous
+table carried 32/24/21/45/56 and a 190 total, which had drifted by 54 tests across two
+waves — the phase has already shipped one wrong estimated count, and a suite table that
+is not re-measured is the same failure in a different row.
 
 The backend count rose by 29 during Wave 9. That was not padding: the
 operation-coverage gate's derived floor did not apply to `svc.`/`quo.` at all until
@@ -133,13 +138,54 @@ half.
 | **Raced opposite item decisions**             | exactly one 201 and one 4xx; exactly one row in `quo.approval_decisions`                                           |
 | Stale `If-Match`                              | `ERR-CON-001` on price-list version create, **publication**, revision create and **issue**                         |
 | Missing `If-Match`                            | `ERR-CON-002`                                                                                                      |
-| Missing `Idempotency-Key`                     | `ERR-INT-002` on all four quotation writes and all four pricing writes                                             |
+| Missing `Idempotency-Key`                     | `ERR-INT-002` on every idempotent P1-20 write                                                                      |
+| **Same-key REPLAY**                           | one execution, on all **13** idempotent P1-20 writes — see below                                                   |
 
 The two raced cases were added in Wave 9, driven with `Promise.all` against one row.
 The suite previously credited `concurrency` to sequential "a second attempt is refused"
 cases, which prove idempotency and say nothing about a race; and it credited
 `stale-version` to tests that only proved the `If-Match` header was **required**, never
 that a wrong value is refused.
+
+### The `idempotency` flag now means a replay, not a missing header
+
+Until this wave every P1-20 write minted a fresh `crypto.randomUUID()` key on every
+call, so the `idempotency` evidence flag on thirteen operations rested entirely on a
+missing-header `ERR-INT-002`. That proves the header is **mandatory** and nothing more:
+a route could demand the key, ignore it completely, and pass every one of those cases.
+The gate's own definition of the category is "a replay produces one row, not two".
+
+Each of the thirteen now has a same-key replay case sending the byte-identical request
+twice and asserting both halves — the second response equals the first, and the write
+happened once, counted in SQL through the admin pool rather than read back from the
+response that is itself under suspicion:
+
+| Operation                        | The witness that a second EXECUTION would have moved                               |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `svc.service-create`             | `svc.services` rows for the code = 1 (`uq_services_code` would 409)                |
+| `svc.service-update`             | one `record_version` bump; `svc.service.updated` = 2 (create + one update)         |
+| `svc.service-version-publish`    | `service.published:<versionId>` = 1; version no longer draft                       |
+| `svc.branch-availability-set`    | `svc.branch_availability.changed` = 1 — the upsert leaves one row either way       |
+| `svc.price-list-create`          | `svc.price_lists` rows for the code = 1 (`uq_price_lists_code` would 409)          |
+| `svc.price-list-version-create`  | `svc.price_list_versions` for the list = 1, on a now-stale `If-Match`              |
+| `svc.price-rule-record`          | `svc.price_rules` for the version = 1 (`uq_price_rules_signature` would 409)       |
+| `svc.price-list-version-publish` | `price-list.published:<versionId>` = 1 (`requireDraftVersion` would refuse)        |
+| `quo.quotation-create`           | `quo.quotations` for the work order = 1, and one consumed quotation number         |
+| `quo.quotation-revision-create`  | revisions for the quotation = 2, on a now-stale `If-Match`                         |
+| `quo.quotation-issue`            | `quotation.revision-issued:<revisionId>` = 1                                       |
+| `quo.quotation-item-decide`      | `quo.quotation_item.decided` audit = 1 — `settleExisting` returns before the audit |
+| `quo.quotation-revision-decide`  | `quo.quotation_revision.decided` = 1 — `appendAudit` after the loop is unguarded   |
+
+Two facts hold across all thirteen and are asserted rather than worked around:
+
+- **A replay answers 200, never the 201 the first attempt answered.**
+  `route-handler.ts` stores `value.body` alone, so the replay is rebuilt as `{ body }`
+  with no status. Platform behaviour since P1-15, recorded as `P1-20-A-10`.
+- **`If-Match` is not part of the request fingerprint**, and the replay short-circuits
+  before the handler reads `expectedVersion`. So the four version-guarded commands are
+  retried with the SAME header the first attempt already made stale, and answer the
+  stored response instead of `ERR-CON-001` — which is the point: a client retrying a
+  command whose response it never saw must not be told its own success was a conflict.
 
 ### Transaction completeness and rollback
 

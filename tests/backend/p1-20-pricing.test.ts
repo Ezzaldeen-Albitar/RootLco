@@ -97,13 +97,20 @@ function listLists(query: Record<string, string> = {}): Promise<Response> {
   return LIST_LISTS(new Request(url));
 }
 
-function createList(body: unknown): Promise<Response> {
+/**
+ * `key` is explicit only where a REPLAY is the thing under test; otherwise fresh.
+ *
+ * A fresh key per call is the right default — it keeps every other case exercising the
+ * real handler rather than a stored response — but a suite that ONLY ever mints fresh
+ * keys proves nothing about what the key is for. The replay cases pass one deliberately.
+ */
+function createList(body: unknown, key: string = crypto.randomUUID()): Promise<Response> {
   return CREATE_LIST(
     new Request('http://localhost/api/v1/price-lists', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
       },
       body: JSON.stringify(body),
     })
@@ -113,14 +120,15 @@ function createList(body: unknown): Promise<Response> {
 function createVersion(
   priceListId: string,
   body: unknown,
-  ifMatch: number | null
+  ifMatch: number | null,
+  key: string = crypto.randomUUID()
 ): Promise<Response> {
   return CREATE_VERSION(
     new Request(`http://localhost/api/v1/price-lists/${priceListId}/versions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
         ...(ifMatch === null ? {} : { 'if-match': String(ifMatch) }),
       },
       body: JSON.stringify(body),
@@ -129,13 +137,18 @@ function createVersion(
   );
 }
 
-function recordRule(priceListId: string, versionId: string, body: unknown): Promise<Response> {
+function recordRule(
+  priceListId: string,
+  versionId: string,
+  body: unknown,
+  key: string = crypto.randomUUID()
+): Promise<Response> {
   return RECORD_RULE(
     new Request(`http://localhost/api/v1/price-lists/${priceListId}/versions/${versionId}/rules`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'idempotency-key': crypto.randomUUID(),
+        'idempotency-key': key,
       },
       body: JSON.stringify(body),
     }),
@@ -147,7 +160,8 @@ function publish(
   priceListId: string,
   versionId: string,
   body: unknown,
-  ifMatch: number | null
+  ifMatch: number | null,
+  key: string = crypto.randomUUID()
 ): Promise<Response> {
   return PUBLISH(
     new Request(
@@ -156,7 +170,7 @@ function publish(
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'idempotency-key': crypto.randomUUID(),
+          'idempotency-key': key,
           ...(ifMatch === null ? {} : { 'if-match': String(ifMatch) }),
         },
         body: JSON.stringify(body),
@@ -1188,6 +1202,117 @@ describe('svc pricing writes — tenant, scope and idempotency floors', () => {
       [draft.versionId]
     );
     expect(after.rows[0]?.status).toBe('draft');
+  });
+});
+
+/**
+ * An `Idempotency-Key` REPLAY executes once — every idempotent pricing write.
+ *
+ * The floors above prove the header is MANDATORY, which is only half the contract and
+ * on its own the weaker half: a route could demand the key, ignore it entirely, and
+ * still pass every one of those cases. These prove what it is mandatory FOR.
+ *
+ * The distinction matters most here because three of the four commands are ALSO
+ * protected by a unique index or a state gate — `uq_price_lists_code`,
+ * `uq_price_rules_signature`, `requireDraftVersion`. Those make a second execution
+ * fail, not duplicate, so a client that retried a request whose response it never saw
+ * would be told its own successful command was a conflict. The replay path is what
+ * turns that into the honest answer, and only a same-key retry exercises it.
+ *
+ * The replay answers **200**, never the 201 the first attempt answered:
+ * `route-handler.ts` stores `value.body` alone, so the replay is rebuilt as `{ body }`
+ * with no status. Platform behaviour since P1-15, recorded as `P1-20-A-10`.
+ */
+describe('svc pricing writes — an Idempotency-Key replay executes once', () => {
+  it('svc.price-list-create replays to one price list, not two', async () => {
+    authAs(SVC_FULL);
+    const key = crypto.randomUUID();
+    const body = { priceListCode: nextCode(), name: 'Replayed once', currency: 'JOD' };
+
+    const first = await createList(body, key);
+    expect(first.status).toBe(201);
+    const second = await createList(body, key);
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as ListBody;
+    expect(await second.json()).toEqual(firstBody);
+    expect(
+      await countRows(admin, 'svc.price_lists', 'price_list_code = $1', [body.priceListCode])
+    ).toBe(1);
+    expect(await auditCountFor('svc.price_list.created', firstBody.id)).toBe(1);
+  });
+
+  it('svc.price-list-version-create replays to one version, not two', async () => {
+    authAs(SVC_FULL);
+    const list = (await (
+      await createList({ priceListCode: nextCode(), name: 'Replay fixture', currency: 'JOD' })
+    ).json()) as ListBody;
+
+    const key = crypto.randomUUID();
+    const body = { effectiveFrom: '2021-03-01' };
+    const first = await createVersion(list.id, body, list.recordVersion, key);
+    expect(first.status).toBe(201);
+    // The SAME `If-Match` deliberately: the list's record_version moved when the first
+    // attempt succeeded, and a retry must not be refused as stale for its own success.
+    const second = await createVersion(list.id, body, list.recordVersion, key);
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as VersionBody;
+    expect(await second.json()).toEqual(firstBody);
+    expect(await countRows(admin, 'svc.price_list_versions', 'price_list_id = $1', [list.id])).toBe(
+      1
+    );
+    expect(await auditCountFor('svc.price_list_version.created', firstBody.id)).toBe(1);
+  });
+
+  it('svc.price-rule-record replays to one rule, not a signature conflict', async () => {
+    authAs(SVC_FULL);
+    const list = (await (
+      await createList({ priceListCode: nextCode(), name: 'Replay fixture', currency: 'JOD' })
+    ).json()) as ListBody;
+    const version = (await (
+      await createVersion(list.id, { effectiveFrom: '2021-04-01' }, list.recordVersion)
+    ).json()) as VersionBody;
+
+    const key = crypto.randomUUID();
+    const body = { serviceId: SERVICE_A, amount: '77.5000' };
+    const first = await recordRule(list.id, version.id, body, key);
+    expect(first.status).toBe(201);
+    const second = await recordRule(list.id, version.id, body, key);
+    // Not the 409 a second EXECUTION would earn from `uq_price_rules_signature`.
+    expect(second.status).toBe(200);
+
+    const firstBody = (await first.json()) as RuleBody;
+    expect(await second.json()).toEqual(firstBody);
+    expect(
+      await countRows(admin, 'svc.price_rules', 'price_list_version_id = $1', [version.id])
+    ).toBe(1);
+    expect(await auditCountFor('svc.price_rule.recorded', firstBody.id)).toBe(1);
+  });
+
+  it('svc.price-list-version-publish replays to one publication and one event', async () => {
+    authAs(SVC_FULL);
+    const list = (await (
+      await createList({ priceListCode: nextCode(), name: 'Replay fixture', currency: 'JOD' })
+    ).json()) as ListBody;
+    const version = (await (
+      await createVersion(list.id, { effectiveFrom: '2021-05-01' }, list.recordVersion)
+    ).json()) as VersionBody;
+    await recordRule(list.id, version.id, { serviceId: SERVICE_A, amount: '12.0000' });
+
+    const key = crypto.randomUUID();
+    const body = { effectiveFrom: '2021-05-01' };
+    const ifMatch = await priceListVersionOf(list.id);
+    const first = await publish(list.id, version.id, body, ifMatch, key);
+    expect(first.status).toBe(200);
+    const second = await publish(list.id, version.id, body, ifMatch, key);
+    // Not the refusal `requireDraftVersion` would raise on a second execution.
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+
+    // Publication creates no row, so the outbox and the trail are the evidence.
+    expect(await outboxCountFor(`price-list.published:${version.id}`)).toBe(1);
+    expect(await auditCountFor('svc.price_list_version.published', version.id)).toBe(1);
   });
 });
 

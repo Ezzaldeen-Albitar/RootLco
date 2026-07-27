@@ -97,7 +97,9 @@ was altered.
 
 ## Tests
 
-161 added: 56 unit, 105 backend. `tests/backend/p1-20-helpers.ts` provides the fixtures
+244 added: 60 unit, 184 backend — each figure MEASURED by running that one suite. The
+line previously read "161 added: 56 unit, 105 backend", a count taken before Wave 9 and
+never re-measured; it disagreed with qa-evidence.md in the same commit. `tests/backend/p1-20-helpers.ts` provides the fixtures
 (principals, catalog, tax classes with and without a rate, quotation number sequences,
 discount ceilings, price-list assignments).
 
