@@ -363,24 +363,42 @@ carries a test that fails without it.
   scheduling infrastructure is provisioned; the method is the repository-supported
   contract a scheduler will call, and it is now exercised directly by three tests.
 
-## Current PR / CI
+## Current PR / CI — CLOSED
 
-PR #84 to `develop`, **Draft**. The remediation above is not yet pushed, so the
-hosted run on the current head predates it.
+PR #84 merged into protected `develop`. The phase is closed; see
+`phase-1-20-owner-gate.md` for the formal record.
+
+| Item                     | Value                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| Reviewed feature SHA     | `e7462536d183e410ff2db9792c7a6090df7f4698`                                             |
+| Protected merge SHA      | `db7ef97a4c1e090911e22ddac5936f725470f084`                                             |
+| Merge parents            | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698` |
+| Merge tree               | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — byte-identical to `e746253^{tree}`        |
+| Protected push CI        | Run #267 (`30296722364`) — **Success 4/4**, 6m 50s                                     |
+| Protected-develop reproof | Unit **903** · Backend **1264** · Database **1610**, all green on `db7ef97`           |
+| Clean room on `db7ef97`  | 119 migrations, no 120, seeds twice, `schema_hash a677eb05…` unchanged, structural PASS |
+| Decision                 | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**             |
+| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched                                 |
+
+## What the closeout itself cost
+
+Recorded because two of these were mine and neither was caught by any gate:
+
+1. **The committed PR body and clean-room record were both pre-final drafts.** The PR body
+   still said 13 operations, OpenAPI 152/181, unit 901 and a `PENDING` backend total; the
+   clean-room record was taken at `17e59ae5`, 37 files before the merged tree. Both are
+   corrected in the gate branch, and the corrected PR text was pushed into the GitHub
+   description **before** merging, because the merge commit message derives from it.
+2. **A clean-room harness that could not fail.** The first rewrite read `$?` after piping
+   into `tail`, so it reported the exit status of `tail` — a failing migration step would
+   have been recorded as `exit=0`. It also ran outside the repository and against a port
+   the previous container still held. Fixed by pinning the working directory, capturing
+   each step's real exit code, and isolating the container.
 
 ## Exact next action
 
-1. Push the remediation commit; confirm the hosted run targets the exact pushed head.
-2. Full local reproof at the final SHA: unit, DB, backend, build, every gate.
-3. Exact-SHA clean-room reproof from an empty PostgreSQL 17 (container `p120cr`,
-   port 15432): 119 migrations, no 120, `schema_hash a677eb05…` unchanged, seeds
-   idempotent, business tables empty.
-4. Finalise the PR body, remove Draft, verify CI on the exact head, merge to
-   protected `develop`, verify the merge parents/tree and its push CI.
-5. Protected-develop reproof, then the documentation-only gate-record branch
-   `gate/p1-20-service-catalog-pricing-quotation-backend` and its PR.
-6. Record the Go decision. Do **not** promote `develop` to `main` (ADR-006 reserves
-   that for the founders). Do **not** start P1-21.
+None for P1-20. Do **not** promote `develop` to `main` — ADR-006 reserves that for the
+founders. Do **not** start P1-21 from this record.
 
 ### Traps already identified — do not rediscover
 

@@ -169,3 +169,40 @@ after the branch was pushed and CI was green. Four are worth separating out:
 - **One was a genuine behaviour change to a closed phase**, and it is recorded rather
   than smuggled: citing a quotation revision on a P1-19 additional-work approval now
   requires `quo.quotation.read`. Approvals that cite no quotation are unaffected.
+
+## Gate record — P1-20 closed on protected `develop`
+
+Added by the documentation-only gate branch
+`gate/p1-20-service-catalog-pricing-quotation-backend`. No executable file changes.
+
+| Item                     | Value                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| Feature PR               | #84 — merged into protected `develop`                                                  |
+| Reviewed feature SHA     | `e7462536d183e410ff2db9792c7a6090df7f4698`                                             |
+| Protected merge SHA      | `db7ef97a4c1e090911e22ddac5936f725470f084`                                             |
+| Merge parents            | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698` |
+| Merge tree               | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — byte-identical to `e746253^{tree}`        |
+| Protected push CI        | Run #267 (`30296722364`) — push / `develop` / `db7ef97` — **Success 4/4**, 6m 50s      |
+| Decision                 | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**             |
+| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched                                 |
+
+### Two evidence documents were corrected in this gate branch
+
+Both were pre-final drafts that the feature branch shipped without updating, and both are
+corrected here rather than left to be read as current:
+
+- **`evidence/pull-request-body.md`** stated 13 operations, OpenAPI 152/181, unit 901 and
+  a `PENDING` backend total. Those were the true figures **before** the service-catalog
+  mutation surface was built. Correcting the file on the feature branch would have moved
+  the head off `e746253` and invalidated the exact-SHA hosted-CI and clean-room evidence,
+  so the corrected text was placed in the GitHub pull-request description — which is what
+  the merge commit message derives from — and the committed copy is brought into line
+  here.
+- **`evidence/clean-room-validation.md`** recorded a run against
+  `17e59ae51395bff064677abbfe9e15eebf716383`, whose delta to the merged tree is 37 files
+  including the four new service-catalog routes and their suite. That run therefore did
+  not cover the tree being gated. A clean room was re-run against the protected merge SHA
+  and the document now records both.
+
+Recording this rather than silently overwriting: a stale evidence document that reads as
+current is the same failure mode this phase's largest finding turned on.
