@@ -133,24 +133,32 @@ None yet — branch is local only, not pushed.
 
 ## Exact next action
 
-Wave 3 remainder, then Waves 4-8. Concretely, in order:
+Wave 3 remainder, then Waves 4–8. Concretely, in order:
 
-1. **Pricing write services + routes** — ,
-   , publication via
-   , and a resolved-price read gated on
-   . The repository already has the reads; the writes are new.
-2. **Quotation routes** — , ,
-   ,
-   ,
-   ,
-   . Services already exist.
+1. **Pricing write services + routes** — `POST /price-lists`,
+   `POST /price-lists/{priceListId}/versions`, publication through
+   `svc.publish_price_list_version`, and a resolved-price read gated on
+   `svc.price.read`. The repository already has every read; the writes are new.
+2. **Quotation routes** — `POST /quotations`, `GET /quotations/{quotationId}`,
+   `POST /quotations/{quotationId}/revisions`,
+   `POST /quotations/{quotationId}/issue`,
+   `POST /quotation-items/{quotationItemId}/decisions`,
+   `POST /quotation-revisions/{revisionId}/decisions`.
+   The application services for all six already exist and are typechecked.
 3. **BE-013 additional-work link** — fill
-   through a new work-order module
-   method; the 14 proofs listed in the instruction.
-4. **Per route, all four in the same commit**: manifest entry in
-   Operation-to-test coverage (STRICT): 169 registered operation(s)
-   public API surface: 169 · internal: 0
-   with required evidence: 154 · invocation-only (read/catalogue): 15
+   `wo.customer_approvals.quotation_revision_ref` through a new method on the
+   `work-order` module surface (that table is its own), then the 14 proofs the
+   instruction lists.
+4. **Every route needs four things in the SAME commit**, or a gate goes red:
+   a manifest entry in `scripts/check-operation-test-coverage.mjs`; a
+   `COVERAGE-EVIDENCE` block in a backend test that also _invokes_ the operation;
+   an import line in `tests/openapi-contract.test.ts`; then
+   `UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts` to regenerate
+   the document.
+5. **P1-20 inventory script** modelled on `scripts/p1-19-endpoint-inventory.mjs`,
+   wired into `package.json` and `.github/workflows/ci.yml`.
+6. Waves 5–8, the hostile audit, independent reviews, full local reproof,
+   exact-SHA clean room, then the two protected merges.
    [OK ] apt.appointment-cancel tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
    [OK ] apt.appointment-create tests/backend/p1-18-appointment-lifecycle.test.ts
    [OK ] apt.appointment-no-show tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
