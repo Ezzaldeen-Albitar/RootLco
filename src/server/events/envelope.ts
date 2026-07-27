@@ -413,7 +413,12 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'svc.service_version',
     owner: 'service-catalog',
-    implementedIn: 'P1-20',
+    // RESERVED, not implemented. P1-20 delivers the catalog READ surface and the
+    // protected requirements mandate no public service-version publication, so
+    // nothing emits this yet. Marking it P1-20 would be a false claim, and the
+    // envelope suite catches exactly that by requiring a real producer for every
+    // implemented name.
+    implementedIn: null,
     description:
       'A service version was published and became the effective definition of that service for a date range.',
   },
