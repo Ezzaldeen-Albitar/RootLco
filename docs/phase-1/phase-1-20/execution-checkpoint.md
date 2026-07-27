@@ -43,28 +43,28 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 
 | Metric        | Value                                                              | How                                                                                                                                                                                          |
 | ------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit          | **843**                                                            | `npm run test` — 841 passed + 2 cold-cache timeouts, both green on re-run (`592ms`/`717ms`) with a raised timeout. Environmental, not a baseline defect; hosted CI #245 was 4/4 on this SHA. |
+| Unit          | **866** (was 843)                                                  | `npm run test` — 841 passed + 2 cold-cache timeouts, both green on re-run (`592ms`/`717ms`) with a raised timeout. Environmental, not a baseline defect; hosted CI #245 was 4/4 on this SHA. |
 | Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                            |
-| Backend       | **1077**                                                           | `npm run test:backend` — 52 files, all passed, exit 0                                                                                                                                        |
+| Backend       | **1182** (was 1077)                                                | `npm run test:backend` — 52 files, all passed, exit 0                                                                                                                                        |
 | OpenAPI       | **152 paths / 181 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                      |
 | Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                        |
-| Permissions   | **96** (was 93; +3 read codes)                                     | `SELECT count(*) FROM iam.permissions`                                                                                                                                                       |
+| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                       |
 | Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                           |
 | Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                |
 
 ## Wave status
 
-| Wave | Scope                                                               | Status                                                  |
-| ---- | ------------------------------------------------------------------- | ------------------------------------------------------- |
-| 0    | Protected baseline + recovery                                       | **Done**                                                |
-| 1    | Contract archaeology                                                | **Done** — `evidence/wave-1-contract-archaeology.md`    |
-| 2    | Module foundation                                                   | **Done** — 3 modules, catalogs, audit actions, services |
-| 3    | Service catalog, availability, labour time (BE-001…003)             | **Done** — GET /services, 21 tests                      |
-| 4    | Price lists, selection, tax, discount, decimal (BE-004/005/006/014) | **Done** — 5 operations, 35 tests                       |
-| 5    | Quotation create/revise/issue/expire (BE-007/010/011)               | **Done** — 4 operations, part of 38 tests               |
-| 6    | Decisions and evidence (BE-008/009/012)                             | **Done** — 2 operations, part of 38 tests               |
-| 7    | Additional-work integration (BE-013)                                | **Done** — 11 tests, CommercialApprovalReader port      |
-| 8    | SEC/QA/DO/DOC                                                       | Not started                                             |
+| Wave | Scope                                                               | Status                                                           |
+| ---- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 0    | Protected baseline + recovery                                       | **Done**                                                         |
+| 1    | Contract archaeology                                                | **Done** — `evidence/wave-1-contract-archaeology.md`             |
+| 2    | Module foundation                                                   | **Done** — 3 modules, catalogs, audit actions, services          |
+| 3    | Service catalog, availability, labour time (BE-001…003)             | **Done** — GET /services, 21 tests                               |
+| 4    | Price lists, selection, tax, discount, decimal (BE-004/005/006/014) | **Done** — 5 operations, 35 tests                                |
+| 5    | Quotation create/revise/issue/expire (BE-007/010/011)               | **Done** — 4 operations, part of 38 tests                        |
+| 6    | Decisions and evidence (BE-008/009/012)                             | **Done** — 2 operations, part of 38 tests                        |
+| 7    | Additional-work integration (BE-013)                                | **Done** — 11 tests, CommercialApprovalReader port               |
+| 8    | SEC/QA/DO/DOC                                                       | **Done** — inventory gate + 6 evidence documents, 27/27 anchored |
 
 ## Decisions fixed by the catalog (do not re-litigate)
 
