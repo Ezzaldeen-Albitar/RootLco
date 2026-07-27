@@ -37,6 +37,7 @@ import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
 import { pricingModule } from '@/modules/pricing';
+import { callerHoldsPermissionTenantWide } from '@/server/auth/authorization';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,6 +91,27 @@ export async function POST(
       const parsed = parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
+      }
+      /**
+       * Publication is a TENANT-WIDE act, so it needs tenant-wide authority.
+       *
+       * A price list carries no company and no branch, and publishing a version is what
+       * makes its rules the prices the tenant charges — including any wildcard rule,
+       * which applies to every company and branch. There is no scope target to
+       * authorize, so `scope: 'tenant'` here degrades to the scope-blind
+       * `iam.has_permission`, and a branch-scoped holder of `svc.price.publish` could
+       * flip a tenant-wide price live.
+       *
+       * Drafting is separated from publishing precisely because publication is the
+       * irreversible commitment — the freeze guard permits only `published → archived` —
+       * so the authority to commit it must not be narrower than its effect.
+       */
+      if (!(await callerHoldsPermissionTenantWide(db, 'svc.price.publish'))) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            'Publishing a price-list version sets the prices the whole tenant charges, ' +
+            'so it requires svc.price.publish granted tenant-wide.',
+        });
       }
       const published = await pricingModule().priceLists.publishVersion(
         db,

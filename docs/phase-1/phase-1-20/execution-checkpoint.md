@@ -41,16 +41,16 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 
 ### Baseline measurements (recalculated, not inherited)
 
-| Metric        | Value                                                              | How                                                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit          | **866** (was 843)                                                  | `npm run test` — 841 passed + 2 cold-cache timeouts, both green on re-run (`592ms`/`717ms`) with a raised timeout. Environmental, not a baseline defect; hosted CI #245 was 4/4 on this SHA. |
-| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                            |
-| Backend       | **1182** (was 1077)                                                | `npm run test:backend` — 52 files, all passed, exit 0                                                                                                                                        |
-| OpenAPI       | **152 paths / 181 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                      |
-| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                        |
-| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                       |
-| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                           |
-| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                |
+| Metric        | Value                                                              | How                                                                                                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit          | **899** (was 843)                                                  | `npm run test` — 42 files, all passed, exit 0 at the remediation head. Two tests in `operation-coverage-gate.test.ts` time out on a COLD filesystem cache in this OneDrive-backed tree; green warm and in CI.                                                |
+| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                                                                                            |
+| Backend       | **1211** (was 1077)                                                | `npm run test:backend` — 56 files, all passed, exit 0, 399s. Measured at the remediation head; the commit message for `0096560` says 1219, which was an estimate written before the suite finished and is wrong. The measured figure is the one that counts. |
+| OpenAPI       | **152 paths / 181 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                                                                                      |
+| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                                                                                        |
+| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                                                                                       |
+| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                                                                                           |
+| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                                                                                |
 
 ## Wave status
 
@@ -65,7 +65,7 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | 6    | Decisions and evidence (BE-008/009/012)                             | **Done** — 2 operations, part of 38 tests                        |
 | 7    | Additional-work integration (BE-013)                                | **Done** — 11 tests, CommercialApprovalReader port               |
 | 8    | SEC/QA/DO/DOC                                                       | **Done** — inventory gate + 6 evidence documents, 27/27 anchored |
-| 9    | Adversarial review + remediation                                    | **Done** — 5 Highs, 10 Mediums, 7 Lows closed; see below         |
+| 9    | Adversarial review + remediation                                    | **Done** — 5 Highs, 9 Mediums, 7 Lows closed; see below          |
 
 ## Decisions fixed by the catalog (do not re-litigate)
 
@@ -91,6 +91,14 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `P1-20-A-01` | Low      | `svc.branch_service_availability` has no effective-date columns; availability is a single current row per `(company, branch, service)`. The phase prose's "effective period" and "overlap constraints" do not exist in the protected schema and were not invented. |
 | `P1-20-A-02` | Low      | `svc.standard_labor_times` hangs off `service_version_id` only. There is **no** branch override for labour time in the protected schema.                                                                                                                           |
+
+Six more were recorded as the phase progressed; `evidence/open-decisions.md` is the
+authoritative list and now carries **nine**: A-03 (`decided_by` is the recording staff
+user), A-04 (three catalog audit actions have no producer yet), A-05 (expiry has no
+scheduler), A-06 (no alert routing destination is provisioned), A-07 (the price-ambiguity
+guard is structurally unreachable and mirrors protected SQL), A-08 (price-list reads are
+bounded rather than paged) and A-09 (three pre-existing module cycles that no gate
+refuses). All nine are Low, all nine are open, and none is a defect being reclassified.
 
 ## Commits on the feature branch
 
@@ -173,8 +181,12 @@ carries a test that fails without it.
   lock order, so a concurrent issue or rejection cannot change the standing between
   the check and the INSERT into a frozen column.
 - **`quo.quotation.read` was not required to cite a revision.**
-  `wo.additional_work.approve` alone let a caller learn a revision's acceptance state
-  and total from the refusal messages. Checked inside
+  `wo.additional_work.approve` alone let a caller learn a revision's existence, scope,
+  revision status, expiry and acceptance outcome from the refusal messages. An earlier
+  wording here and in `security-review.md` also claimed the total and the currency; a
+  review checked all seven refusals and neither is rendered into any message on this path,
+  so the claim was inflated and has been narrowed to what the messages actually say.
+  Checked inside
   `assertLinkableQuotationRevision` rather than declared on the operation, because
   `permissions` is a conjunction and every P1-19 caller approving _without_ a
   quotation would otherwise need a commercial permission.
@@ -227,7 +239,7 @@ carries a test that fails without it.
 
 ### Open, carried into the gate
 
-- **P1-20-A-06 — three module cycles pre-date this phase and no gate refuses them.**
+- **P1-20-A-09 — three module cycles pre-date this phase and no gate refuses them.**
   `work-order` ↔ `diagnostics`, ↔ `quality`, ↔ `technician`, all present at
   `0d86a19`; `check-module-boundaries.mjs` has no cycle rule, so
   `validate:module-boundaries` reports OK. P1-20 introduced none — the port is the

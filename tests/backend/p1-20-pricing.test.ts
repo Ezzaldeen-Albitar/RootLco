@@ -47,7 +47,7 @@ import {
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { establishP1_19Fixtures } from './p1-19-helpers';
+import { BRANCH_A2, establishP1_19Fixtures } from './p1-19-helpers';
 import {
   BRANCH_A2_OF_COMPANY_A2,
   COMPANY_A2,
@@ -1254,5 +1254,116 @@ describe('callerApprovalCeiling respects grant scope', () => {
     // the limit reaches it. Without this half the fix could have been "always return
     // null", which no assertion above would have caught.
     expect(await ceilingFor(COMPANY_A1)).toEqual({ amount: '25.0000', currencyCode: 'JOD' });
+  });
+});
+
+/**
+ * Tenant-wide price writes require tenant-wide authority (P1-20-SEC-001, P1-20-SEC-003).
+ *
+ * This closes the escalation the `scope: 'branch'` change on `svc.price-rule-record` only
+ * half closed. Authorizing the SELECTOR protects the narrow case and leaves the broad one
+ * open: a rule with both selectors omitted is a WILDCARD, which `svc.resolve_price` applies
+ * to every company and every branch, and an empty target makes `requiresScopedEvaluation`
+ * return false whatever the declared scope — so that path fell through to the scope-blind
+ * `iam.has_permission`. An actor granted `svc.price.manage` in one branch could therefore
+ * price every branch, which is exactly what the change was supposed to prevent.
+ *
+ * `SVC_PRICE_SCOPED_A2` is the decisive principal: it holds `svc.price.manage` and
+ * `svc.price.publish` in FULL, so every refusal below is the SCOPE MODE of its grant and
+ * nothing else. `SVC_FULL` holds the same permissions through an unrestricted grant and
+ * must succeed on the identical request, which is what makes the discrimination real
+ * rather than a blanket refusal.
+ */
+describe('tenant-wide price writes need an unrestricted grant', () => {
+  it('refuses a WILDCARD price rule to a branch-scoped actor, and allows it to an unrestricted one', async () => {
+    authAs(SVC_FULL);
+    const list = (await (
+      await createList({ priceListCode: nextCode(), name: 'Wildcard scope', currency: 'JOD' })
+    ).json()) as ListBody;
+    const version = (await (
+      await createVersion(list.id, { effectiveFrom: '2023-01-01' }, list.recordVersion)
+    ).json()) as VersionBody;
+
+    // The wildcard rule: no companyId, no branchId. Broadest possible selector.
+    const wildcard = { serviceId: SERVICE_A, amount: '0.0100' };
+
+    authAs(SVC_PRICE_SCOPED_A2);
+    const refused = await recordRule(list.id, version.id, wildcard);
+    expect(refused.status).toBe(403);
+    const body = (await refused.json()) as { code: string };
+    expect(body.code).toBe('ERR-IAM-001');
+    expect(
+      await countRows(admin, 'svc.price_rules', 'price_list_version_id = $1', [version.id])
+    ).toBe(0);
+
+    // The SAME request from an unrestricted grant succeeds, so the refusal above is the
+    // grant's scope mode and not the request, the permission, or the version's state.
+    authAs(SVC_FULL);
+    expect((await recordRule(list.id, version.id, wildcard)).status).toBe(201);
+    expect(
+      await countRows(admin, 'svc.price_rules', 'price_list_version_id = $1', [version.id])
+    ).toBe(1);
+
+    // And the branch-scoped actor can still write a rule for its OWN branch, which is
+    // what its grant says. A blanket refusal would have been the wrong fix.
+    authAs(SVC_PRICE_SCOPED_A2);
+    expect(
+      (
+        await recordRule(list.id, version.id, {
+          serviceId: SERVICE_A,
+          amount: '5.0000',
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A2,
+          priority: 3,
+        })
+      ).status
+    ).toBe(201);
+  });
+
+  it('refuses PUBLICATION to a branch-scoped actor holding svc.price.publish in full', async () => {
+    authAs(SVC_FULL);
+    const list = (await (
+      await createList({ priceListCode: nextCode(), name: 'Publish scope', currency: 'JOD' })
+    ).json()) as ListBody;
+    const version = (await (
+      await createVersion(list.id, { effectiveFrom: '2023-02-01' }, list.recordVersion)
+    ).json()) as VersionBody;
+    expect(
+      (await recordRule(list.id, version.id, { serviceId: SERVICE_A, amount: '9.0000' })).status
+    ).toBe(201);
+
+    /**
+     * Publication is what makes a version's prices the ones the tenant charges, and it is
+     * effectively irreversible — the freeze guard permits only `published → archived`. A
+     * price list carries no company and no branch, so there is no target to authorize and
+     * `scope: 'tenant'` degraded to a scope-blind check.
+     */
+    authAs(SVC_PRICE_SCOPED_A2);
+    const refused = await publish(
+      list.id,
+      version.id,
+      { effectiveFrom: '2023-02-01' },
+      await priceListVersionOf(list.id)
+    );
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    const still = await admin.query<{ status: string }>(
+      `SELECT status FROM svc.price_list_versions WHERE id = $1`,
+      [version.id]
+    );
+    expect(still.rows[0]?.status).toBe('draft');
+
+    // Unrestricted: the same version publishes.
+    authAs(SVC_FULL);
+    expect(
+      (
+        await publish(
+          list.id,
+          version.id,
+          { effectiveFrom: '2023-02-01' },
+          await priceListVersionOf(list.id)
+        )
+      ).status
+    ).toBe(200);
   });
 });

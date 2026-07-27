@@ -669,11 +669,38 @@ describe('P1-20-BE-013 — there is one approval truth', () => {
         )
       ).status
     ).toBe(201);
-    // The link is its own audit fact, so an auditor can answer "on what commercial
-    // basis was this released?" from the trail rather than by inference.
+    /**
+     * The link is its own audit fact, so an auditor can answer "on what commercial basis
+     * was this released?" from the trail rather than by inference.
+     *
+     * The FIELDS are asserted, not just the row: an audit record whose details are empty
+     * records that something happened and not what. The revision ref is `internal` and no
+     * amount appears at all — the revision's totals live in `quo.quotation_revisions`
+     * under their own authorization, and the reference is what makes them reachable.
+     */
+    const approvalId = await approvalIdFor(request.id);
+    expect(await auditCountFor('quo.additional_work.quotation_linked', approvalId)).toBe(1);
+    const linkDetails = await admin.query<{ field_name: string; value_classification: string }>(
+      `SELECT d.field_name, d.value_classification
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'quo.additional_work.quotation_linked' AND r.entity_id = $1`,
+      [approvalId]
+    );
+    const linkFields = linkDetails.rows.map((row) => row.field_name).sort();
+    expect(linkFields).toEqual([
+      'additional_work_request_id',
+      'decision',
+      'quotation_revision_ref',
+      'work_order_id',
+    ]);
     expect(
-      await auditCountFor('quo.additional_work.quotation_linked', await approvalIdFor(request.id))
-    ).toBe(1);
+      linkDetails.rows.find((row) => row.field_name === 'quotation_revision_ref')
+        ?.value_classification
+    ).toBe('internal');
+    // No amount, in any field.
+    expect(linkFields).not.toContain('grandTotal');
+    expect(linkFields).not.toContain('currency');
 
     // The commercial decision rows are the quotation module's, and the operational
     // approval adds no copy of them — only the reference.

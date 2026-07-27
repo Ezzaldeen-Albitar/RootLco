@@ -2,49 +2,56 @@
 
 The canonical 27 identifiers and where each is implemented and evidenced. Anchors are
 verified mechanically by `scripts/p1-20-endpoint-inventory.mjs`, which fails the build
-for any identifier that resolves nowhere — and excludes its own generated documents
-from the search, so listing a task here is not what makes it resolve.
+for any identifier that resolves nowhere.
+
+**Listing a task here does not make it resolve.** The gate does not search `docs/` at
+all — an identifier must appear in `src/`, `tests/` or `scripts/`. That rule replaced an
+exclusion list, because excluding only the two generated documents was not enough: this
+register prints all 27 identifiers in its tables, so five of them resolved to _this file_
+and nothing else, and deleting every P1-20 source and test file would still have reported
+27/27. A task whose deliverable genuinely is a document names one explicit file instead,
+which is why `P1-20-DOC-002` must appear in `evidence/change-log.md`.
 
 Covers **P1-20-DOC-001** (contract, catalog and traceability synchronization) and
 **P1-20-DOC-002** (operator/developer guidance and change-log update).
 
 ## Backend — 14
 
-| Task           | Title                                     | Implementation                                                                                          | Evidence                                                                                     |
-| -------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `P1-20-BE-001` | Service management                        | `src/modules/service-catalog/` — `GET /api/v1/services`                                                 | `tests/backend/p1-20-service-catalog.test.ts` (21)                                           |
-| `P1-20-BE-002` | Branch service availability               | `svc.branch_service_availability` read + `isSellableAt`; the availability filter on the catalog list    | same suite — branch-filter isolation cases; `P1-20-A-01` records the absent effective period |
-| `P1-20-BE-003` | Standard labour time                      | `listLaborTimes` / `publishedVersion`, minutes as a `numeric(10,2)` STRING with an explicit `unit`      | `ServiceCatalogService.publishedVersion`; `P1-20-A-02` records the absent branch override    |
-| `P1-20-BE-004` | Price-list selection                      | `svc.resolve_price` via `PriceResolutionService`; full lifecycle in `PriceListService`                  | `tests/backend/p1-20-pricing.test.ts` (35)                                                   |
-| `P1-20-BE-005` | Tax calculation                           | `org.tax_classes`/`org.tax_rates` resolution; a missing rate is a refusal, not 0%                       | pricing suite — untaxed vs unrated cases                                                     |
-| `P1-20-BE-006` | Discount authorization                    | `DiscountAuthorizationService` — policy threshold **and** `iam.approval_limits` ceiling, maker≠approver | `tests/unit/p1-20-discount-authorization.test.ts` (24)                                       |
-| `P1-20-BE-007` | Quotation creation / versioning / sending | `QuotationService.create` / `revise` / `issue`                                                          | `tests/backend/p1-20-quotation.test.ts` (38)                                                 |
-| `P1-20-BE-008` | Approval                                  | `QuotationDecisionService.decideItem` / `decideRevision`                                                | quotation suite — approval and roll-up                                                       |
-| `P1-20-BE-009` | Rejection                                 | same services; `rejected` is the schema's word, not `declined`                                          | quotation suite — "treats one rejected line as a rejected quotation"                         |
-| `P1-20-BE-010` | Expiration                                | `QuotationService.expireLapsed`, plus per-request `hasExpired`                                          | quotation suite — expiry refusals; link suite — expired revision                             |
-| `P1-20-BE-011` | Revision                                  | `QuotationService.revise`; issued revisions are immutable                                               | quotation suite — "leaves an ISSUED revision unchanged when the price list is republished"   |
-| `P1-20-BE-012` | Approval evidence                         | `AttachmentService.verifyEvidenceVersion` + `quo.approval_evidence`                                     | quotation suite — direct-key, shape-coupling and unlinked-document cases                     |
-| `P1-20-BE-013` | Additional-work quotation                 | `CommercialApprovalReader` port; `wo.customer_approvals.quotation_revision_ref` set at INSERT           | `tests/backend/p1-20-additional-work-link.test.ts` (11)                                      |
-| `P1-20-BE-014` | NUMERIC/DECIMAL source of truth           | `Decimal`/`Money` on scaled `bigint`; every amount computed in SQL                                      | `tests/unit/p1-20-decimal.test.ts` (32)                                                      |
+| Task           | Title                                     | Implementation                                                                                                               | Evidence                                                                                                                                                   |
+| -------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-20-BE-001` | Service management                        | `src/modules/service-catalog/` — `GET /api/v1/services`                                                                      | `tests/backend/p1-20-service-catalog.test.ts` (21)                                                                                                         |
+| `P1-20-BE-002` | Branch service availability               | `svc.branch_service_availability` read + `isSellableAt`; the availability filter on the catalog list                         | same suite — branch-filter isolation cases; `P1-20-A-01` records the absent effective period                                                               |
+| `P1-20-BE-003` | Standard labour time                      | `listLaborTimes` / `publishedVersion`, minutes as a `numeric(10,2)` STRING with an explicit `unit`                           | `ServiceCatalogService.publishedVersion`; `P1-20-A-02` records the absent branch override                                                                  |
+| `P1-20-BE-004` | Price-list selection                      | `svc.resolve_price` via `PriceResolutionService`; full lifecycle in `PriceListService`                                       | `tests/backend/p1-20-pricing.test.ts` (45)                                                                                                                 |
+| `P1-20-BE-005` | Tax calculation                           | `org.tax_classes`/`org.tax_rates` resolution; a missing rate is a refusal, not 0%                                            | pricing suite — untaxed vs unrated cases                                                                                                                   |
+| `P1-20-BE-006` | Discount authorization                    | `DiscountAuthorizationService` — policy threshold **and** `iam.approval_limits` ceiling, maker≠approver                      | `tests/unit/p1-20-discount-authorization.test.ts` (24)                                                                                                     |
+| `P1-20-BE-007` | Quotation creation / versioning / sending | `QuotationService.create` / `revise` / `issue`                                                                               | `tests/backend/p1-20-quotation.test.ts` (56)                                                                                                               |
+| `P1-20-BE-008` | Approval                                  | `QuotationDecisionService.decideItem` / `decideRevision`                                                                     | quotation suite — approval and roll-up                                                                                                                     |
+| `P1-20-BE-009` | Rejection                                 | same services; `rejected` is the schema's word, not `declined`                                                               | quotation suite — "treats one rejected line as a rejected quotation"                                                                                       |
+| `P1-20-BE-010` | Expiration                                | `QuotationService.expireLapsed`, plus per-request `hasExpired`; the database clock on both sides                             | quotation suite — the three `expireLapsed` sweep cases, including "NEVER expires a quotation the customer already accepted"; link suite — expired revision |
+| `P1-20-BE-011` | Revision                                  | `QuotationService.revise`; issued revisions are immutable                                                                    | quotation suite — "leaves an ISSUED revision unchanged when the price list is republished"                                                                 |
+| `P1-20-BE-012` | Approval evidence                         | `AttachmentService.verifyEvidenceVersion` + `quo.approval_evidence`                                                          | quotation suite — direct-key, shape-coupling and unlinked-document cases                                                                                   |
+| `P1-20-BE-013` | Additional-work quotation                 | `CommercialApprovalReader` port, installed by the approval route itself; `quotation_revision_ref` set at INSERT under a lock | `tests/backend/p1-20-additional-work-link.test.ts` (12)                                                                                                    |
+| `P1-20-BE-014` | NUMERIC/DECIMAL source of truth           | `Decimal`/`Money` on scaled `bigint`; every amount computed in SQL                                                           | `tests/unit/p1-20-decimal.test.ts` (32)                                                                                                                    |
 
 ## Security — 4
 
-| Task            | Evidence                                                                                                 |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| `P1-20-SEC-001` | `evidence/security-review.md` §SEC-001 — full authorization map; structural scope guard                  |
-| `P1-20-SEC-002` | `evidence/security-review.md` §SEC-002 — no price in the catalog read, money as strings, evidence policy |
-| `P1-20-SEC-003` | `evidence/security-review.md` §SEC-003 — 24-row abuse-case table, each with its test                     |
-| `P1-20-SEC-004` | `evidence/security-review.md` §SEC-004 — 17 audit actions, class agreement enforced twice                |
+| Task            | Evidence                                                                                                                                |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-20-SEC-001` | `evidence/security-review.md` §SEC-001 — full authorization map; structural scope guard                                                 |
+| `P1-20-SEC-002` | `evidence/security-review.md` §SEC-002 — no price in the catalog read, money as strings, evidence policy                                |
+| `P1-20-SEC-003` | `evidence/security-review.md` §SEC-003 — 24-row abuse-case table, each with its test                                                    |
+| `P1-20-SEC-004` | `evidence/security-review.md` §SEC-004 — 17 audit actions, class agreement enforced twice, and the two that had no producer now emitted |
 
 ## QA — 5
 
-| Task           | Evidence                                                                         |
-| -------------- | -------------------------------------------------------------------------------- |
-| `P1-20-QA-001` | `evidence/qa-evidence.md` §QA-001 — 56 unit tests, drift pins                    |
-| `P1-20-QA-002` | `evidence/qa-evidence.md` §QA-002 — error-path matrix, OpenAPI parity arithmetic |
-| `P1-20-QA-003` | `evidence/qa-evidence.md` §QA-003 — isolation table                              |
-| `P1-20-QA-004` | `evidence/qa-evidence.md` §QA-004 — concurrency and rollback table               |
-| `P1-20-QA-005` | `evidence/qa-evidence.md` §QA-005 — P1-19 regression 39/39, generated evidence   |
+| Task           | Evidence                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `P1-20-QA-001` | `evidence/qa-evidence.md` §QA-001 — 56 unit tests, drift pins                                                             |
+| `P1-20-QA-002` | `evidence/qa-evidence.md` §QA-002 — error-path matrix, OpenAPI parity arithmetic                                          |
+| `P1-20-QA-003` | `evidence/qa-evidence.md` §QA-003 — isolation table                                                                       |
+| `P1-20-QA-004` | `evidence/qa-evidence.md` §QA-004 — concurrency and rollback table                                                        |
+| `P1-20-QA-005` | `evidence/qa-evidence.md` §QA-005 — P1-19 regression 39/39, the P1-19 time-bomb fixed as a regression, generated evidence |
 
 ## DevOps — 2
 
@@ -62,5 +69,9 @@ Covers **P1-20-DOC-001** (contract, catalog and traceability synchronization) an
 
 ## Totals
 
-**27/27** identifiers, all resolving to at least one anchor outside this register and
-outside the gate's own generated output.
+**27/27** identifiers, all resolving to at least one anchor in `src/`, `tests/` or
+`scripts/` — or, for `P1-20-DOC-002` alone, in the one document it delivers.
+
+The gate reached that number honestly: it failed with **12** unanchored identifiers the
+first time the document exclusion was made structural, and each was closed by doing the
+work rather than by mentioning the identifier.

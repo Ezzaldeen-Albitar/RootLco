@@ -12,6 +12,9 @@
  * than in a customer's totals.
  */
 import { describe, expect, it } from 'vitest';
+import { types as pgTypes } from 'pg';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   Decimal,
   DecimalError,
@@ -221,5 +224,74 @@ describe('Money — currency is part of the value', () => {
 
   it('renders a stored value through moneyView as a string pair', () => {
     expect(moneyView('1234.5000', 'JOD')).toEqual({ amount: '1234.5000', currency: 'JOD' });
+  });
+});
+
+/**
+ * The driver-level assumption every money read in this phase rests on.
+ *
+ * `numeric` is OID 1700, and node-postgres returns it as a **string** by default.
+ * That is the entire reason a `numeric(18,4)` can round-trip through this codebase
+ * without ever becoming a float. It is a default, not a guarantee: one
+ * `pg.types.setTypeParser(1700, parseFloat)` anywhere in the process — a plausible
+ * "convenience" for a reporting query — would silently turn every uncast money column
+ * into an IEEE-754 double, and `99999999999999.9999` would come back as
+ * `100000000000000`. No test would fail, because every assertion on money in this
+ * repository compares strings that would then be numbers.
+ *
+ * Two defences, and this is the second one. First: every money column is selected with
+ * an explicit `::text` cast, so the parser is not consulted at all. Second: this test,
+ * which fails the moment the default changes — because the casts are a convention a
+ * future author can forget, and the default is what protects them until they remember.
+ */
+const SRC = join(process.cwd(), 'src');
+
+/** Every .ts file's text under a directory, for a structural source assertion. */
+function collectSql(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...collectSql(full));
+    else if (entry.endsWith('.ts')) out.push(readFileSync(full, 'utf8'));
+  }
+  return out;
+}
+
+describe('the pg numeric type parser is not overridden', () => {
+  it('returns numeric (OID 1700) as a string, not a number', () => {
+    // 1700 = numeric/decimal. `getTypeParser` returns the function that will be applied
+    // to the wire value, so this asserts the behaviour rather than the registration.
+    const parse = pgTypes.getTypeParser(1700) as (value: string) => unknown;
+    const parsed = parse('99999999999999.9999');
+    expect(typeof parsed).toBe('string');
+    expect(parsed).toBe('99999999999999.9999');
+  });
+
+  it('records that numeric ARRAYS (OID 1231) are parsed as FLOATS, and that this phase never selects one', () => {
+    /**
+     * A genuine driver hazard, pinned rather than assumed away.
+     *
+     * Unlike the scalar, node-postgres parses `numeric[]` **elements** into JS numbers.
+     * So `SELECT array_agg(amount)` would hand back doubles no matter how carefully the
+     * scalar path is written — the `::text` convention on a column says nothing about an
+     * aggregate that leaves the database as an array.
+     *
+     * This phase does not select a numeric array anywhere, and the second assertion is
+     * what keeps that true: if a future query aggregates money into an array, this fails
+     * and points at the reason.
+     */
+    // 1231 is numeric[]; the typings enumerate only scalar OIDs, so the cast is on the
+    // OID rather than on the result.
+    const parse = pgTypes.getTypeParser(
+      1231 as unknown as Parameters<typeof pgTypes.getTypeParser>[0]
+    ) as (value: string) => unknown;
+    const parsed = parse('{1.0001,2.0002}') as unknown[];
+    expect(parsed.every((element) => typeof element === 'number')).toBe(true);
+
+    const moduleSql = ['pricing', 'quotation', 'service-catalog']
+      .flatMap((name) => collectSql(join(SRC, 'modules', name)))
+      .join('\n');
+    expect(moduleSql).not.toMatch(/array_agg\s*\(/i);
+    expect(moduleSql).not.toMatch(/numeric\s*\[\s*\]/i);
   });
 });

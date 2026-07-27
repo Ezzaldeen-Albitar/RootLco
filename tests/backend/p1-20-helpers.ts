@@ -681,6 +681,58 @@ export async function assignPriceList(input: {
  * `role_id` rather than `user_id`, so the union-of-roles path is the one exercised:
  * a ceiling reaching an actor through a role they hold is the ordinary case.
  */
+/**
+ * A `svc.pricing_approval_policies` row, so a NON-ZERO discount threshold exists.
+ *
+ * Without a policy row the threshold is zero and every non-zero discount is already
+ * elevated — which makes the discount-splitting case impossible to express, because
+ * splitting is only interesting when each individual line sits *under* the threshold.
+ * Seeding a real policy is the only way to write that test.
+ *
+ * `maker_approver_distinct` defaults to `true` in the schema; it is set explicitly to
+ * `false` here so the splitting test measures the aggregate control and not the
+ * maker/approver control, which has its own cases.
+ */
+export async function seedDiscountPolicy(input: {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly thresholdKind: 'amount' | 'percentage';
+  readonly thresholdValue: string;
+  readonly currencyCode: string | null;
+  readonly requiredPermissionCode?: string;
+  readonly makerApproverDistinct?: boolean;
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO svc.pricing_approval_policies
+       (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+        required_permission_code, maker_approver_distinct, effective_from, status, created_by)
+     SELECT $1,$2,'discount',$3,$4::numeric(18,4),$5,$6,$7,$8::date,'active',$9
+      WHERE NOT EXISTS (
+        SELECT 1 FROM svc.pricing_approval_policies
+         WHERE tenant_id = $1 AND company_id = $2 AND policy_type = 'discount'
+           AND deleted_at IS NULL)`,
+    [
+      input.tenantId,
+      input.companyId,
+      input.thresholdKind,
+      input.thresholdValue,
+      input.currencyCode,
+      input.requiredPermissionCode ?? PRICE_MANAGE,
+      input.makerApproverDistinct ?? false,
+      EFFECTIVE_FROM,
+      USER_A,
+    ]
+  );
+}
+
+/** Removes the discount policy, so a suite can go back to the threshold-zero default. */
+export async function clearDiscountPolicy(tenantId: string): Promise<void> {
+  await admin.query(
+    `DELETE FROM svc.pricing_approval_policies WHERE tenant_id = $1 AND policy_type = 'discount'`,
+    [tenantId]
+  );
+}
+
 export async function seedDiscountCeiling(input: {
   tenantId: string;
   companyId: string;

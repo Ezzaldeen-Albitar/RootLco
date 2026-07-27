@@ -192,6 +192,38 @@ export async function callerHoldsPermission(
 }
 
 /**
+ * Whether the caller holds a permission TENANT-WIDE, i.e. through an unrestricted grant.
+ *
+ * Some writes are not scoped to a company or branch because the row they produce is not
+ * either — a wildcard `svc.price_rules` row (both selectors NULL) is applied by
+ * `svc.resolve_price` to every company and every branch in the tenant. Those writes
+ * cannot be authorized with `authorizeScope`, because there is no target to name, and
+ * leaving them to the pre-handler tenant check is worse than it looks:
+ * `requiresScopedEvaluation` returns false on an empty target *whatever* the declared
+ * scope, so the check degrades to the scope-blind `iam.has_permission` and an actor
+ * granted the permission in ONE branch can write a row that prices every branch.
+ *
+ * This asks the deployed protected function the honest question instead. An all-NULL
+ * target can only be satisfied by `scope_mode = 'unrestricted'`: the scoped-grant branch
+ * of `iam.has_permission_in_scope` compares `s.company_id = p_company`, which is NULL
+ * rather than true when no company is supplied. So no new SQL and no second definition of
+ * scope — the same function every other check uses, asked with no narrowing.
+ *
+ * Use this ONLY where the written row genuinely has tenant-wide effect. A row with a
+ * concrete company or branch must go through `authorizeScope` against that target.
+ */
+export async function callerHoldsPermissionTenantWide(
+  db: DbHandle,
+  permissionCode: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, NULL, NULL, NULL) AS allowed',
+    [permissionCode]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
  * The CALLER's own effective approval ceiling for a limit type (P1-20-BE-006).
  *
  * An approval limit is an authorization fact — how much this actor may approve —
@@ -215,10 +247,18 @@ export async function callerHoldsPermission(
  * over-granting approval authority through a scope the actor was never given, the same
  * shape as P1-18-A-01 one level up.
  *
- * The grant-scope predicate below matches the shape the deployed
- * `iam.has_permission_in_scope` uses — `scope_mode = 'unrestricted'` OR a
- * `grant_scopes` row reaching the target — so a permission check and a limit check
- * cannot disagree about which grants reach a company.
+ * The predicate below is `scope_mode = 'unrestricted'` OR a `grant_scopes` row naming
+ * the company. It is deliberately WIDER than `iam.has_permission_in_scope`, which matches
+ * a `branch`-type scope row on `branch_id` only and never on `company_id`. So the two are
+ * not equivalent and this comment does not claim they are: a residual case remains, where
+ * an actor holding role R in branch B1 of company C1 and role S in branch B2 of the same
+ * company inherits R's company-C1 ceiling while acting in B2.
+ *
+ * That widening is deliberate rather than overlooked. `iam.approval_limits` has no branch
+ * column, so a company is the only granularity a limit can be matched at, and matching a
+ * branch-scoped grant only when the limit named its exact branch would deny every
+ * branch-scoped approver the ceiling their company grants them. The narrowing that matters
+ * — not crossing into a company the grant never reached — is enforced.
  *
  * It matches on `grant_scopes.company_id` alone, and that is exact rather than
  * approximate: `ck_grant_scopes_shape` requires `company_id IS NOT NULL` for ALL three

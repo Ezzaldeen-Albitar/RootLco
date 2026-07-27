@@ -78,7 +78,21 @@ export async function GET(request: Request): Promise<Response> {
       const query = parseOrFail(Query, searchParamsToObject(url.searchParams), 'query');
 
       /**
-       * The pair must be COHERENT before it is authorized.
+       * Authorize the named scope FIRST, then check the pair is coherent.
+       *
+       * Both refuse, but in this order the refusals are truthful. `branchBelongsToCompany`
+       * reads `org.branches` under the caller's own RLS, which `sel_branches_scope`
+       * narrows by `iam.allowed_branch_ids()` — so for a caller whose grants do not cover
+       * the named branch the row is invisible and the coherence check reports
+       * "branch B does not belong to company C", which is a false statement about the
+       * tenant's data. The scope refusal is the true one, and it comes first.
+       *
+       * Coherence still runs before anything is resolved, which is what it is for.
+       */
+      await authorizeScope({ companyId: query.companyId, branchId: query.branchId });
+
+      /**
+       * The pair must be COHERENT before anything is RESOLVED with it.
        *
        * `iam.has_permission_in_scope` is disjunctive across grant-scope rows: a
        * `branch` row satisfies it on its own, and so does a `company` row. Every
@@ -106,9 +120,6 @@ export async function GET(request: Request): Promise<Response> {
           },
         });
       }
-
-      // Authorize the named scope BEFORE resolving anything with it.
-      await authorizeScope({ companyId: query.companyId, branchId: query.branchId });
 
       // The business date is the database's when the caller does not state one, so
       // the effective-range predicates and this date cannot diverge.

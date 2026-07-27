@@ -179,7 +179,13 @@ export class PricingRepository extends Repository {
       tax_class_id: string | null;
     }>(
       db,
-      `SELECT price_rule_id, amount, currency_code, tax_class_id
+      // `amount::text` explicitly, like every other money read in this phase. `pg`
+      // already returns `numeric` as a string, so this is not a behaviour change — it
+      // removes the dependency on that default. A `setTypeParser(1700, parseFloat)`
+      // anywhere in the process would turn an uncast money column into a JS float
+      // silently; the cast makes that impossible for this column, and
+      // `p1-20-decimal.test.ts` pins the driver default for the rest.
+      `SELECT price_rule_id, amount::text AS amount, currency_code, tax_class_id
          FROM svc.resolve_price($1, $2, $3, $4, $5::date)`,
       [input.serviceId, input.companyId, input.branchId, input.customerClass, input.asOf]
     );
@@ -290,7 +296,8 @@ export class PricingRepository extends Repository {
       effective_to: string | null;
     }>(
       db,
-      `SELECT tr.tax_class_id, tc.tax_class_code, tr.rate, tr.effective_from, tr.effective_to
+      `SELECT tr.tax_class_id, tc.tax_class_code, tr.rate::text AS rate,
+              tr.effective_from, tr.effective_to
          FROM org.tax_rates tr
          JOIN org.tax_classes tc
            ON tc.tenant_id = tr.tenant_id AND tc.id = tr.tax_class_id
@@ -344,7 +351,8 @@ export class PricingRepository extends Repository {
       status: string;
     }>(
       db,
-      `SELECT id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+      `SELECT id, company_id, policy_type, threshold_kind,
+              threshold_value::text AS threshold_value, currency_code,
               required_permission_code, maker_approver_distinct, effective_from, effective_to, status
          FROM svc.pricing_approval_policies
         WHERE tenant_id = $1 AND policy_type = $2

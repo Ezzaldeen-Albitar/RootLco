@@ -29,6 +29,8 @@ import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
 import { pricingModule } from '@/modules/pricing';
+import { callerHoldsPermissionTenantWide } from '@/server/auth/authorization';
+import { AppFailure } from '@/server/errors/app-failure';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -115,6 +117,30 @@ export async function POST(
         await authorizeScope({
           ...(parsed.companyId === undefined ? {} : { companyId: parsed.companyId }),
           ...(parsed.branchId === undefined ? {} : { branchId: parsed.branchId }),
+        });
+      } else if (!(await callerHoldsPermissionTenantWide(db, 'svc.price.manage'))) {
+        /**
+         * A WILDCARD rule is the broadest selector there is, not the narrowest.
+         *
+         * With both selectors omitted, `svc.resolve_price` matches the rule for every
+         * company and every branch in the tenant — `r.company_id IS NULL OR
+         * r.company_id = p_company`. So the case with no scope target is the case with
+         * the LARGEST blast radius, and leaving it to the pre-handler tenant check was
+         * the escalation this route's scope change was supposed to close, still open
+         * through the wider door: `requiresScopedEvaluation` returns false on an empty
+         * target whatever the declared scope, so that check is scope-blind, and an actor
+         * holding `svc.price.manage` in one branch could price every branch.
+         *
+         * A tenant-wide row therefore requires tenant-wide authority — an unrestricted
+         * grant, which is what an all-NULL target means to
+         * `iam.has_permission_in_scope`. A branch-scoped actor keeps the ability to
+         * write rules for their own branch, which is what their grant says.
+         */
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            'A price rule with no company or branch applies to the whole tenant, so it ' +
+            'requires svc.price.manage granted tenant-wide. Name the company and branch ' +
+            'this rule is for, or ask for an unrestricted grant.',
         });
       }
       const rule = await pricingModule().priceLists.recordRule(

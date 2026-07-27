@@ -35,7 +35,8 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { serviceCatalogModule } from '@/modules/service-catalog';
 import {
-  Money,
+  Decimal,
+  MONEY,
   QUANTITY,
   parsePositive,
   pricingModule,
@@ -824,6 +825,9 @@ export class QuotationService {
     // splitting one large discount across many lines, so the aggregate is checked
     // once at the end against the same ceiling.
     let totalDiscount = '0.0000';
+    // The document's pre-discount base, so the aggregate can be authorized against the
+    // same ratio a single line of that size would be measured against.
+    let totalBase = '0.0000';
     let elevatedLines = 0;
     let appliedCeiling: { amount: string; currency: string } | null = null;
     let appliedThreshold: DiscountAuthorization['threshold'] = null;
@@ -904,6 +908,7 @@ export class QuotationService {
       // alone is defeated by splitting: 200 lines each just under the ceiling
       // authorize 200× the amount the actor is limited to.
       totalDiscount = await this.addMoney(db, totalDiscount, discount);
+      totalBase = await this.addMoney(db, totalBase, base);
       if (authorization.requiredElevatedPermission) {
         elevatedLines += 1;
         // The policy and permission that governed the elevated lines. Every line of
@@ -936,30 +941,59 @@ export class QuotationService {
     }
 
     /**
-     * The DOCUMENT-level ceiling check.
+     * The DOCUMENT-level authorization, re-run through the SAME two gates.
      *
-     * `iam.approval_limits.amount` is a ceiling on what the actor may approve, and
-     * checking it per line does not enforce it: `MAX_ITEMS_PER_REVISION` is 200 and
-     * `uq_quotation_items_line` keys only on `line_number`, so the same service may
-     * occupy every line. An actor limited to 100 could authorize 200 lines of 100
-     * and give away 20 000.
+     * A per-line check does not enforce either gate. `MAX_ITEMS_PER_REVISION` is 200 and
+     * `uq_quotation_items_line` keys only on `line_number`, so one service may occupy
+     * every line — and splitting defeats the policy threshold exactly as it defeats the
+     * ceiling. With a threshold of 50 and a ceiling of 100, two hundred lines of 49.99
+     * are each individually under the threshold, so before this the actor needed no
+     * elevated permission, faced no maker/approver check, and had their ceiling compared
+     * against nothing at all: 9,998 given away by an actor limited to 100.
      *
-     * The per-line check stays — it mirrors `ck_quotation_items_discount`, which is
-     * genuinely per row — and this adds the aggregate the ceiling actually means.
-     * It only runs when at least one line needed elevated authority, so an
-     * all-under-threshold quotation is unaffected.
+     * An earlier version of this block only ran `if (elevatedLines > 0)`, which is
+     * precisely the case splitting avoids. It also claimed in its own comment to add
+     * "the aggregate the ceiling actually means" while leaving that hole open — the claim
+     * is what made the gap hard to see.
+     *
+     * So the aggregate is authorized the same way a single line of that size would be:
+     * the same `authorize` call, the same policy, the same ceiling, the same
+     * maker/approver rule, against the document's own discount and pre-discount base.
+     * Nothing new is invented, and the two cannot disagree about what the limits mean.
+     *
+     * It runs only when something was actually discounted. A zero-discount quotation
+     * returns early inside `authorize` and demands no configuration.
      */
-    if (elevatedLines > 0 && appliedCeiling !== null) {
-      const total = Money.of(totalDiscount, currency);
-      const allowed = Money.of(appliedCeiling.amount, appliedCeiling.currency);
-      if (total.greaterThan(allowed, 'discount approval limit (document total)')) {
-        throw new AppFailure('ERR-IAM-001', {
-          message:
-            `The quotation's total discount of ${totalDiscount} ${currency} exceeds your ` +
-            `approval limit of ${appliedCeiling.amount} ${appliedCeiling.currency}, even though ` +
-            'no single line does',
-        });
+    let aggregate: DiscountAuthorization | null = null;
+    if (!Decimal.parse(totalDiscount, MONEY).isZero) {
+      aggregate = await pricing.discounts.authorize(
+        db,
+        {
+          companyId: context.companyId,
+          branchId: context.branchId,
+          discountAmount: totalDiscount,
+          currency,
+          lineBase: totalBase,
+          asOf: context.asOf,
+          requestedBy: context.requestedBy,
+          actorId: db.context.principal.userId,
+        },
+        context.hasPermission
+      );
+      /**
+       * The AGGREGATE decides whether this was an elevated authorization.
+       *
+       * A document can need elevated authority when no single line did — that is the
+       * splitting case this block exists for — and the audit record must exist for it.
+       * Keying the record on `elevatedLines` alone would have left exactly the
+       * split-discount case unaudited, which is the one worth auditing most.
+       */
+      if (aggregate.requiredElevatedPermission) {
+        elevatedLines = Math.max(elevatedLines, 1);
+        appliedThreshold = aggregate.threshold;
+        elevatedPermission = aggregate.permissionCode;
       }
+      if (aggregate.ceiling !== null) appliedCeiling = aggregate.ceiling;
     }
 
     return {

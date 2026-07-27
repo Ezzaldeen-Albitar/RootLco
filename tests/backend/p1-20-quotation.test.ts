@@ -65,7 +65,9 @@ import {
   TAX_CLASS_A,
   assignPriceList,
   auditCountFor,
+  clearDiscountPolicy,
   seedDiscountCeiling,
+  seedDiscountPolicy,
   authAs,
   establishP1_20Fixtures,
   outboxCountFor,
@@ -1678,5 +1680,185 @@ describe('QuotationService.expireLapsed', () => {
     const issued = await issueCurrent(quotation);
     expect(await sweep()).not.toContain(issued.id);
     expect((await reread(quotation.id)).status).toBe('active');
+  });
+});
+
+/**
+ * Splitting a discount across lines does not defeat either gate (P1-20-BE-006).
+ *
+ * The hole this closes: the document-level check ran only `if (elevatedLines > 0)`, which
+ * is exactly the case splitting avoids. With a threshold of 50, lines of 49 are each
+ * individually under it — so before this the actor needed no elevated permission, faced no
+ * maker/approver check, and had their ceiling compared against nothing at all. The block's
+ * own comment claimed to add "the aggregate the ceiling actually means" while leaving that
+ * open, which is what made the gap hard to see.
+ *
+ * The fix authorizes the DOCUMENT through the same `authorize` call a single line of that
+ * size would go through — same policy, same ceiling, same maker/approver rule — so the
+ * two cannot disagree about what the limits mean.
+ *
+ * These cases need a real `svc.pricing_approval_policies` row: with no policy the threshold
+ * is zero, every non-zero discount is already elevated, and splitting is inexpressible.
+ * The policy is torn down afterwards so the rest of the suite keeps the zero default.
+ */
+describe('discount splitting defeats neither the threshold nor the ceiling', () => {
+  const POLICY_THRESHOLD = '50.0000';
+
+  beforeAll(async () => {
+    await seedDiscountPolicy({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      thresholdKind: 'amount',
+      thresholdValue: POLICY_THRESHOLD,
+      currencyCode: 'JOD',
+      // maker/approver separation has its own cases; keep it out of this measurement.
+      makerApproverDistinct: false,
+    });
+  });
+
+  afterAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  it('allows a single under-threshold discount with no elevated authority at all', async () => {
+    // The control case. 40 is under the 50 threshold, so this is an ordinary edit and must
+    // stay one — a fix that refused this would have broken the feature, not secured it.
+    const order = await createOpenWorkOrder();
+    authAs(SVC_NO_CEILING); // holds quo.quotation.manage; has NO approval ceiling
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as Quotation;
+    expect(created.currentRevision?.lines[0]?.discount).toBe('40.0000');
+    // Nothing was elevated, so nothing is audited as an authorization.
+    expect(
+      await auditCountFor('svc.discount.authorized', created.currentRevision?.id as string)
+    ).toBe(0);
+  });
+
+  it('refuses SPLIT discounts that clear the threshold only in aggregate', async () => {
+    /**
+     * Three lines of 40 = 120, over the 50 threshold in aggregate while no single line
+     * reaches it. `SVC_NO_CEILING` holds no `iam.approval_limits` row, so once the
+     * aggregate is elevated the ceiling gate refuses it — which is the same answer a
+     * single 120 line has always received.
+     */
+    const order = await createOpenWorkOrder();
+    authAs(SVC_NO_CEILING);
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [
+        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' },
+        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000', description: 'Two' },
+        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000', description: 'Three' },
+      ],
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    // The whole request is refused, so no partial quotation survives.
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(0);
+  });
+
+  it('refuses SPLIT discounts that exceed the actor ceiling only in aggregate', async () => {
+    /**
+     * The ceiling case, with an actor that HAS one. `SVC_FULL`'s ceiling is 1000 (seeded in
+     * beforeAll of this suite), so six lines of 40 = 240 is comfortably inside it and must
+     * pass, while twenty-six lines of 40 = 1040 exceeds it and must not — even though every
+     * single line is under both the 50 threshold and the 1000 ceiling.
+     */
+    const withinOrder = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const within = await createQuotation({
+      workOrderId: withinOrder.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: Array.from({ length: 6 }, (_unused, index) => ({
+        serviceId: SERVICE_A,
+        quantity: '1.000',
+        discount: '40.0000',
+        description: `Line ${index + 1}`,
+      })),
+    });
+    expect(within.status).toBe(201);
+    const withinBody = (await within.json()) as Quotation;
+    /**
+     * The LINE discounts, not the revision total.
+     *
+     * A draft revision's `captured_discount_total` is `0.0000` by design —
+     * `quo.issue_revision` is what SUMs the four totals, so a draft carries none. The
+     * per-line values are the draft's truth, and 6 x 40 is what the aggregate control
+     * measured.
+     */
+    expect(withinBody.currentRevision?.lines).toHaveLength(6);
+    expect(withinBody.currentRevision?.lines.every((line) => line.discount === '40.0000')).toBe(
+      true
+    );
+    expect(
+      await auditCountFor('svc.discount.authorized', withinBody.currentRevision?.id as string)
+    ).toBe(1);
+
+    const overOrder = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const over = await createQuotation({
+      workOrderId: overOrder.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: Array.from({ length: 26 }, (_unused, index) => ({
+        serviceId: SERVICE_A,
+        quantity: '1.000',
+        discount: '40.0000',
+        description: `Line ${index + 1}`,
+      })),
+    });
+    expect(over.status).toBe(403);
+    expect(((await over.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [overOrder.workOrderId])
+    ).toBe(0);
+  });
+
+  it('audits the split authorization even when NO single line was elevated', async () => {
+    /**
+     * The audit consequence of the fix, and a hole in its own right.
+     *
+     * Keying the audit record on `elevatedLines` — how many individual lines needed
+     * elevated authority — would have left the split case unrecorded, which is the case
+     * most worth recording: an actor gave away more than the threshold and no line shows it.
+     */
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [
+        { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000' },
+        { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000', description: 'Two' },
+      ],
+    });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as Quotation;
+    const revisionId = created.currentRevision?.id as string;
+    // Two lines of 30: 60 in aggregate, over the 50 threshold, with no single line near it.
+    // A draft's revision totals are zero until issue, so the lines are what is asserted.
+    expect(created.currentRevision?.lines.map((line) => line.discount)).toEqual([
+      '30.0000',
+      '30.0000',
+    ]);
+    expect(await auditCountFor('svc.discount.authorized', revisionId)).toBe(1);
+
+    const details = await admin.query<{ field_name: string }>(
+      `SELECT d.field_name FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'svc.discount.authorized' AND r.entity_id = $1`,
+      [revisionId]
+    );
+    const fields = details.rows.map((row) => row.field_name);
+    expect(fields).toContain('discountTotal');
+    expect(fields).toContain('thresholdValue');
+    expect(fields).toContain('ceilingAmount');
   });
 });

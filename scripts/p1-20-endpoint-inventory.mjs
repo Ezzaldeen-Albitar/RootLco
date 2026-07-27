@@ -17,7 +17,8 @@
  *      that does not own it;
  *   4. a registered event this phase implements still says `implementedIn: null`;
  *   5. an operation declares `scope: 'branch'` but its handler enforces no scope;
- *   6. a P1-20 task identifier resolves to no evidence anchor;
+ *   6. a P1-20 task names an ARTIFACT — operation, permission, audit action, event,
+ *      symbol or test — that does not exist;
  *   7. the generated documents are stale.
  *
  * The reconciliation direction is code → catalog, deliberately. Catalog → code would
@@ -50,53 +51,314 @@ const PHASE_PREFIXES = ['svc.', 'quo.'];
 const PHASE_MODULES = ['service-catalog', 'pricing', 'quotation'];
 
 /**
- * The canonical 27 task identifiers. Every one must resolve to an anchor.
+ * The canonical 27 task identifiers, each with the ARTIFACTS that prove it was done.
  *
- * The third element is WHERE the anchor has to be:
+ * ## Why this is not an identifier search
  *
- *  - `'code'` — under `src/`, `tests/` or `scripts/`. The default, and what every
- *    backend, security, QA and devops task owes: those tasks produce code, and a
- *    document describing code is not evidence the code exists.
- *  - an explicit repo-relative FILE — for a task whose deliverable genuinely is a
- *    document. Naming the exact file is what keeps it from being vacuous: the
- *    identifier has to appear in the artifact the task is about, not in whichever
- *    evidence document happens to tabulate all 27 identifiers.
+ * Three versions of this gate searched the repository for the identifier itself, and all
+ * three were vacuous, because the premise is unsatisfiable: `P1-20-BE-002` is a
+ * project-management label, not a code symbol. It can only ever appear in a comment or a
+ * string. So "the identifier appears in code" always reduced to "somebody wrote the
+ * identifier in a comment", and the gate measured typing rather than work.
  *
- * Requiring a code anchor for a documentation task would only teach the next author
- * to paste an identifier into a comment, which is the failure this gate exists to
- * prevent, dressed up as compliance.
+ * The failures were instructive. v1 counted the gate's own generated documents, so all 27
+ * resolved the moment the file was written. v2 excluded those two documents, and five
+ * identifiers then resolved to `task-register.md`, which prints all 27 in its tables — so
+ * deleting every P1-20 source file would still have reported 27/27. v3 stopped searching
+ * `docs/` entirely, and an independent review found the remaining hole: comments were not
+ * stripped from the haystack, `.md` files under `src/`/`tests/`/`scripts/` were searched,
+ * and `P1-20-DO-001` and `P1-20-DOC-001` resolved solely to this script's own header
+ * comment. Same shape, third time.
+ *
+ * ## What this checks instead
+ *
+ * Each task names the artifacts it produced, and the gate asserts those artifacts EXIST:
+ *
+ *   - `operation`  a registered operation id, read from the route tree
+ *   - `permission` a permission code that is seeded AND declared by some operation
+ *   - `audit`      an audit action in the controlled catalog that has a real producer
+ *   - `event`      an event type published by this phase's modules
+ *   - `symbol`     an exported symbol in a named source file
+ *   - `test`       a test title substring in a named test file, comments stripped
+ *   - `doc`        an identifier in one named document, for a task whose deliverable IS
+ *                  that document
+ *
+ * None of those can be satisfied by prose. A comment cannot register an operation, seed a
+ * permission, produce an audit action, export a symbol or name a test. `test` strips
+ * comments before searching, so a JSDoc quoting a test title does not count either. The
+ * one `doc` proof is deliberately narrow: a single named file, for the single task whose
+ * output is documentation, and naming the wrong file fails.
  */
 const TASKS = Object.freeze([
-  ['P1-20-BE-001', 'Service management'],
-  ['P1-20-BE-002', 'Branch service availability'],
-  ['P1-20-BE-003', 'Standard labour time'],
-  ['P1-20-BE-004', 'Price-list selection'],
-  ['P1-20-BE-005', 'Tax calculation'],
-  ['P1-20-BE-006', 'Discount authorization'],
-  ['P1-20-BE-007', 'Quotation creation/versioning/sending'],
-  ['P1-20-BE-008', 'Approval'],
-  ['P1-20-BE-009', 'Rejection'],
-  ['P1-20-BE-010', 'Expiration'],
-  ['P1-20-BE-011', 'Revision'],
-  ['P1-20-BE-012', 'Approval evidence'],
-  ['P1-20-BE-013', 'Additional-work quotation'],
-  ['P1-20-BE-014', 'NUMERIC/DECIMAL financial source of truth'],
-  ['P1-20-SEC-001', 'Permission and resolved-scope enforcement'],
-  ['P1-20-SEC-002', 'Sensitive-data, export, and file-access controls'],
-  ['P1-20-SEC-003', 'Abuse-case and privilege-escalation controls'],
-  ['P1-20-SEC-004', 'Security audit-event coverage'],
-  ['P1-20-QA-001', 'Unit and component test coverage'],
-  ['P1-20-QA-002', 'API/contract and error-path coverage'],
-  ['P1-20-QA-003', 'Tenant/company/branch isolation coverage'],
-  ['P1-20-QA-004', 'Concurrency and idempotency coverage'],
-  ['P1-20-QA-005', 'Regression and evidence packaging'],
-  ['P1-20-DO-001', 'Continuous-integration quality gate'],
-  ['P1-20-DO-002', 'Structured logging, monitoring, and alert routing'],
-  ['P1-20-DOC-001', 'Contract, catalog, and traceability synchronization'],
+  [
+    'P1-20-BE-001',
+    'Service management',
+    [
+      ['operation', 'svc.service-list'],
+      ['permission', 'svc.service.read'],
+      ['symbol', 'src/modules/service-catalog/index.ts', 'serviceCatalogModule'],
+      ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'svc.service-list'],
+    ],
+  ],
+  [
+    'P1-20-BE-002',
+    'Branch service availability',
+    [
+      [
+        'symbol',
+        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        'findAvailability',
+      ],
+      [
+        'symbol',
+        'src/modules/service-catalog/application/service-catalog-service.ts',
+        'isSellableAt',
+      ],
+      ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'branch filter'],
+    ],
+  ],
+  [
+    'P1-20-BE-003',
+    'Standard labour time',
+    [
+      [
+        'symbol',
+        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        'listLaborTimes',
+      ],
+      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'MINUTES'],
+    ],
+  ],
+  [
+    'P1-20-BE-004',
+    'Price-list selection',
+    [
+      ['operation', 'svc.price-resolve'],
+      ['operation', 'svc.price-list-version-publish'],
+      ['permission', 'svc.price.publish'],
+      ['symbol', 'src/modules/pricing/application/price-resolution-service.ts', 'resolve'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'resolves a published price'],
+    ],
+  ],
+  [
+    'P1-20-BE-005',
+    'Tax calculation',
+    [
+      ['symbol', 'src/modules/pricing/data/pricing-repository.ts', 'findTaxRate'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'NO effective rate'],
+    ],
+  ],
+  [
+    'P1-20-BE-006',
+    'Discount authorization',
+    [
+      ['symbol', 'src/modules/pricing/application/discount-authorization-service.ts', 'authorize'],
+      ['audit', 'svc.discount.authorized'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'splitting defeats neither'],
+      ['test', 'tests/unit/p1-20-discount-authorization.test.ts', 'maker'],
+    ],
+  ],
+  [
+    'P1-20-BE-007',
+    'Quotation creation/versioning/sending',
+    [
+      ['operation', 'quo.quotation-create'],
+      ['operation', 'quo.quotation-issue'],
+      ['event', 'quotation.revision-issued'],
+      ['permission', 'quo.quotation.manage'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'issues, freezes totals'],
+    ],
+  ],
+  [
+    'P1-20-BE-008',
+    'Approval',
+    [
+      ['operation', 'quo.quotation-item-decide'],
+      ['operation', 'quo.quotation-revision-decide'],
+      ['audit', 'quo.quotation.accepted'],
+      ['permission', 'quo.decision.record'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'rolls the quotation up to accepted'],
+    ],
+  ],
+  [
+    'P1-20-BE-009',
+    'Rejection',
+    [
+      ['audit', 'quo.quotation.rejected'],
+      ['event', 'quotation.rejected'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'one rejected line'],
+    ],
+  ],
+  [
+    'P1-20-BE-010',
+    'Expiration',
+    [
+      ['symbol', 'src/modules/quotation/application/quotation-service.ts', 'expireLapsed'],
+      ['symbol', 'src/modules/quotation/data/quotation-repository.ts', 'serverNow'],
+      ['audit', 'quo.quotation.expired'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'NEVER expires a quotation'],
+    ],
+  ],
+  [
+    'P1-20-BE-011',
+    'Revision',
+    [
+      ['operation', 'quo.quotation-revision-create'],
+      ['audit', 'quo.quotation_revision.created'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'leaves an ISSUED revision unchanged'],
+    ],
+  ],
+  [
+    'P1-20-BE-012',
+    'Approval evidence',
+    [
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'refuses an unlinked document as evidence'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'rejects a direct storage key'],
+    ],
+  ],
+  [
+    'P1-20-BE-013',
+    'Additional-work quotation',
+    [
+      ['symbol', 'src/server/contracts/commercial-approval.ts', 'CommercialApprovalReader'],
+      [
+        'symbol',
+        'src/modules/work-order/application/additional-work-service.ts',
+        'assertLinkableQuotationRevision',
+      ],
+      ['audit', 'quo.additional_work.quotation_linked'],
+      ['test', 'tests/backend/p1-20-additional-work-link.test.ts', 'links an ACCEPTED revision'],
+    ],
+  ],
+  [
+    'P1-20-BE-014',
+    'NUMERIC/DECIMAL financial source of truth',
+    [
+      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'Decimal'],
+      ['symbol', 'src/modules/pricing/domain/money.ts', 'Money'],
+      ['test', 'tests/unit/p1-20-decimal.test.ts', 'no binary floating-point drift'],
+      ['test', 'tests/unit/p1-20-decimal.test.ts', 'numeric type parser is not overridden'],
+    ],
+  ],
+  [
+    'P1-20-SEC-001',
+    'Permission and resolved-scope enforcement',
+    [
+      ['symbol', 'src/server/auth/authorization.ts', 'callerHoldsPermissionTenantWide'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'need an unrestricted grant'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'tenant, scope and idempotency floors'],
+    ],
+  ],
+  [
+    'P1-20-SEC-002',
+    'Sensitive-data, export, and file-access controls',
+    [
+      [
+        'test',
+        'tests/backend/p1-20-service-catalog.test.ts',
+        'no amount, currency, or price-rule field',
+      ],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'never JSON numbers'],
+    ],
+  ],
+  [
+    'P1-20-SEC-003',
+    'Abuse-case and privilege-escalation controls',
+    [
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'refuses a WILDCARD price rule'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'callerApprovalCeiling respects grant scope'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'REJECTS a client-supplied price'],
+    ],
+  ],
+  [
+    'P1-20-SEC-004',
+    'Security audit-event coverage',
+    [
+      ['audit', 'svc.price_rule.recorded'],
+      ['audit', 'quo.quotation_revision.issued'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'audits WHY an elevated discount'],
+    ],
+  ],
+  [
+    'P1-20-QA-001',
+    'Unit and component test coverage',
+    [
+      ['test', 'tests/unit/p1-20-decimal.test.ts', 'protected column specs'],
+      [
+        'test',
+        'tests/unit/p1-20-discount-authorization.test.ts',
+        'percentage thresholds are exact',
+      ],
+    ],
+  ],
+  [
+    'P1-20-QA-002',
+    'API/contract and error-path coverage',
+    [
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'unknown query parameter'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', '404s an unknown quotation'],
+    ],
+  ],
+  [
+    'P1-20-QA-003',
+    'Tenant/company/branch isolation coverage',
+    [
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'never resolves a tenant-A price'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'never lets a tenant-B caller'],
+      ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'UNRELATED permission'],
+    ],
+  ],
+  [
+    'P1-20-QA-004',
+    'Concurrency and idempotency coverage',
+    [
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'forced RACE'],
+      ['test', 'tests/backend/p1-20-pricing.test.ts', 'forced race'],
+      ['test', 'tests/backend/p1-20-quotation.test.ts', 'refuses no key'],
+    ],
+  ],
+  [
+    'P1-20-QA-005',
+    'Regression and evidence packaging',
+    [
+      ['symbol', 'tests/backend/p1-19-labor-sessions.test.ts', 'correctionWindow'],
+      [
+        'test',
+        'tests/backend/p1-20-additional-work-link.test.ts',
+        'CommercialApprovalReader installation',
+      ],
+    ],
+  ],
+  [
+    'P1-20-DO-001',
+    'Continuous-integration quality gate',
+    [
+      // Exact forms, so a rename fails rather than passing on a shared prefix: the
+      // npm script key as declared, and the CI invocation as written.
+      ['symbol', 'package.json', '"validate:p1-20-inventory":'],
+      ['symbol', '.github/workflows/ci.yml', 'run validate:p1-20-inventory'],
+    ],
+  ],
+  [
+    'P1-20-DO-002',
+    'Structured logging, monitoring, and alert routing',
+    [
+      ['symbol', 'src/modules/quotation/application/quotation-service.ts', 'expireLapsed'],
+      ['doc', 'docs/phase-1/phase-1-20/evidence/devops-observability.md'],
+    ],
+  ],
+  [
+    'P1-20-DOC-001',
+    'Contract, catalog, and traceability synchronization',
+    [
+      ['symbol', 'scripts/p1-20-endpoint-inventory.mjs', 'TRACEABILITY'],
+      ['symbol', 'tests/openapi-contract.test.ts', 'quotation-revisions'],
+    ],
+  ],
   [
     'P1-20-DOC-002',
     'Operator/developer guidance and change-log update',
-    'docs/phase-1/phase-1-20/evidence/change-log.md',
+    [['doc', 'docs/phase-1/phase-1-20/evidence/change-log.md']],
   ],
 ]);
 
@@ -130,7 +392,22 @@ const field = (chunk, name) => {
 function parseOperations(source, file) {
   const parts = source.split(/export const [A-Z0-9_]+_OPERATION = defineOperation\(\{/).slice(1);
   return parts.map((part) => {
-    const declaration = part.slice(0, part.indexOf('});'));
+    /**
+     * The DECLARATION is comment-stripped too, not just the handler.
+     *
+     * `field()` returns the FIRST `name: '…'` match, so a comment above or inside the
+     * literal beats the real value. That is not hypothetical: the JSDoc on
+     * `svc.service-list` explains why `scope: 'branch'` would fail closed, and the
+     * generated inventory therefore reported that operation as `branch` while the route
+     * declares `tenant` — contradicting the authorization map in the same commit and
+     * falsifying the claim that these documents "cannot disagree with the code".
+     *
+     * The dangerous direction is the other one: a genuinely branch-scoped operation whose
+     * comment mentions `scope: 'tenant'` earlier would be read as tenant and skip the
+     * `scopeEnforced` check altogether — a scope-blind operation passing the guard that
+     * exists to catch exactly that.
+     */
+    const declaration = stripComments(part.slice(0, part.indexOf('});')));
     const handler = stripComments(part.slice(part.indexOf('});')));
     const permissions = [
       ...(/permissions:\s*\[([^\]]*)\]/.exec(declaration)?.[1] ?? '').matchAll(
@@ -235,6 +512,21 @@ function main() {
         `${parsedCount} parsed. A declaration not assigned to ` +
         `\`export const <NAME>_OPERATION\` is invisible to every check in this gate.`
     );
+  }
+
+  // EVERY module, for the audit-producer scan only: an action this phase declares may be
+  // emitted from a module this phase does not own (BE-013 writes from `work-order`).
+  const allModuleSources = [];
+  {
+    const stack = [join(ROOT, 'src', 'modules')];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      for (const entry of readdirSync(current)) {
+        const full = join(current, entry);
+        if (statSync(full).isDirectory()) stack.push(full);
+        else if (entry.endsWith('.ts')) allModuleSources.push([full, readFileSync(full, 'utf8')]);
+      }
+    }
   }
 
   const moduleSources = [];
@@ -352,7 +644,17 @@ function main() {
    */
   for (const [file, source] of routeSources) {
     const clean = stripComments(source);
-    if (!clean.includes('quotationRevisionRef')) continue;
+    /**
+     * Keyed on the PORT and on the field, because either alone has a false negative.
+     *
+     * `quotationRevisionRef` is the field the current route passes, but a route that
+     * spread a parsed body into `recordApproval`, or that called
+     * `commercialApprovalReader()` directly for a read, would reach the port with no such
+     * literal and pass a field-name rule silently. Naming the reader as well catches the
+     * direct case; keeping the field catches the indirect one.
+     */
+    if (!clean.includes('quotationRevisionRef') && !clean.includes('commercialApprovalReader'))
+      continue;
     if (!clean.includes("'@/modules/quotation'")) {
       failures.push(
         `${relative(ROOT, file).split('\\').join('/')}: cites quotationRevisionRef but does not ` +
@@ -362,68 +664,133 @@ function main() {
     }
   }
 
-  // ---- 6. Every task identifier resolves to an anchor --------------------
+  // ---- 6. Every task resolves to ARTIFACTS that exist ---------------------
   /**
-   * NO DOCUMENT counts as an anchor. Only `src/`, `tests/` or `scripts/`.
+   * Each proof is checked against the thing it names, never against the identifier.
    *
-   * Excluding just this script and the two files it generates was not enough, and
-   * an independent review caught it: `task-register.md` is hand-written evidence
-   * that prints all 27 identifiers in its tables, so five of them (`BE-002`,
-   * `BE-003`, `BE-009`, `BE-010`, `DOC-001`) resolved to that file and nothing
-   * else. The gate could then never fail — deleting every P1-20 source and test
-   * file would still have reported 27/27.
-   *
-   * The rule is now structural rather than a blacklist: `docs/` is not searched at
-   * all, so an identifier must appear in code, a test, or a gate script. A document
-   * may still *describe* a task, and should, but describing it is not evidence that
-   * it exists.
-   *
-   * This script IS searched, because it is itself the CI quality gate and the
-   * traceability generator, which is real work for three of the tasks. But its
-   * `TASKS` declaration is blanked out first: that array is the gate's INPUT, and a
-   * gate whose input satisfies its own assertion asserts nothing.
+   * See the commentary above `TASKS` for why three identifier-search versions of this
+   * check were all vacuous. The short form: a task id can only appear in a comment, so
+   * searching for it measures typing. These proofs check registrations, seeds, catalogs,
+   * exported symbols and test titles, none of which prose can satisfy.
    */
   const anchors = new Map();
-  const searchRoots = [join(ROOT, 'src'), join(ROOT, 'tests'), join(ROOT, 'scripts')];
-  const SELF = relative(ROOT, fileURLToPath(import.meta.url))
-    .split('\\')
-    .join('/');
-  const haystack = [];
-  for (const root of searchRoots) {
-    if (!existsSync(root)) continue;
-    const stack = [root];
-    while (stack.length > 0) {
-      const current = stack.pop();
-      for (const entry of readdirSync(current)) {
-        const full = join(current, entry);
-        if (statSync(full).isDirectory()) stack.push(full);
-        else if (/\.(ts|mjs|md)$/.test(entry)) {
-          const name = relative(ROOT, full).split('\\').join('/');
-          const text = readFileSync(full, 'utf8');
-          haystack.push([
-            name,
-            name === SELF ? text.replace(/const TASKS =[\s\S]*?\n\]\);/, '') : text,
-          ]);
+  const registeredIds = new Set(operations.map((op) => op.id));
+  const declaredPermissions = new Set(operations.flatMap((op) => op.permissions));
+  const publishedTypes = new Set(published.map((event) => event.eventType));
+  /**
+   * Which audit actions are actually EMITTED.
+   *
+   * Two false negatives had to be closed here, and both were found by this check failing
+   * on actions that are genuinely produced:
+   *
+   *  - Scope. `quo.additional_work.quotation_linked` is appended from
+   *    `src/modules/work-order`, which is not one of this phase's three modules. Every
+   *    module is scanned, because which module emits an action is not something the phase
+   *    boundary decides.
+   *  - Ternaries. `quo.quotation.accepted`/`.rejected` are chosen by
+   *    `action: outcome === 'accepted' ? … : …`, so a single-capture regex sees neither.
+   *    The whole line is read and every dotted literal on it is collected — the same
+   *    correction the event scanner already needed for the same reason.
+   */
+  const producedAudit = new Set(
+    [...allModuleSources, ...routeSources].flatMap(([, source]) =>
+      [...stripComments(source).matchAll(/action:\s*([^\n]+)/g)].flatMap((line) =>
+        [...line[1].matchAll(/'([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]+)+)'/g)].map((m) => m[1])
+      )
+    )
+  );
+
+  /**
+   * The text a proof is matched against, with comments removed only where that is safe.
+   *
+   * `stripComments` understands `//` and `/* … *` + `/`, which is TypeScript and
+   * JavaScript. Applying it to JSON or YAML would be actively wrong: the `//` inside any
+   * `https://` URL would swallow the rest of that line and turn a present artifact into a
+   * missing one. Those formats have no comment syntax this function should be guessing at,
+   * and prose in them is not the hazard the stripping exists for.
+   */
+  const visibleText = (relativePath, source) =>
+    /.(ts|mjs|js|tsx)$/.test(relativePath) ? stripComments(source) : source;
+
+  const readIfPresent = (relativePath) => {
+    const abs = join(ROOT, relativePath);
+    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  };
+
+  for (const [id, , proofs] of TASKS) {
+    const resolved = [];
+    for (const proof of proofs) {
+      const [kind, first, second] = proof;
+      if (kind === 'operation') {
+        if (registeredIds.has(first)) resolved.push(`operation ${first}`);
+        else failures.push(`${id}: names operation "${first}", which is not registered`);
+        continue;
+      }
+      if (kind === 'permission') {
+        // Both halves: seeded in the catalog AND actually declared by an operation. A
+        // seeded code no operation asks for proves nothing about this phase.
+        const seeded = permissionSeed.includes(`'${first}'`);
+        if (seeded && declaredPermissions.has(first)) resolved.push(`permission ${first}`);
+        else {
+          failures.push(
+            `${id}: permission "${first}" is ${seeded ? 'seeded but declared by no operation' : 'not in the permission seed'}`
+          );
         }
+        continue;
       }
-    }
-  }
-  for (const [id, , where] of TASKS) {
-    if (where !== undefined && where !== 'code') {
-      // A DOCUMENT task, anchored in the one named artifact. Read directly rather than
-      // searched, so a mention anywhere else in `docs/` cannot satisfy it.
-      const abs = join(ROOT, where);
-      const present = existsSync(abs) && readFileSync(abs, 'utf8').includes(id);
-      anchors.set(id, present ? [where] : []);
-      if (!present) {
-        failures.push(`${id}: not named in ${where}, the artifact this task delivers`);
+      if (kind === 'audit') {
+        // In the controlled catalog AND emitted somewhere. "Declared" is not "produced" —
+        // two P1-20 actions sat in the catalog with no producer at all.
+        const inCatalog = auditCatalog.includes(`'${first}'`);
+        if (inCatalog && producedAudit.has(first)) resolved.push(`audit ${first}`);
+        else {
+          failures.push(
+            `${id}: audit action "${first}" is ${inCatalog ? 'in the catalog but emitted by nothing' : 'not in the controlled catalog'}`
+          );
+        }
+        continue;
       }
-      continue;
+      if (kind === 'event') {
+        if (publishedTypes.has(first)) resolved.push(`event ${first}`);
+        else failures.push(`${id}: event "${first}" is published by nothing in this phase`);
+        continue;
+      }
+      if (kind === 'symbol') {
+        const source = readIfPresent(first);
+        if (source === null) {
+          failures.push(`${id}: names ${first}, which does not exist`);
+        } else if (visibleText(first, source).includes(second)) {
+          resolved.push(`${first} -> ${second}`);
+        } else {
+          failures.push(`${id}: ${first} does not contain "${second}" outside its comments`);
+        }
+        continue;
+      }
+      if (kind === 'test') {
+        const source = readIfPresent(first);
+        if (source === null) {
+          failures.push(`${id}: names test file ${first}, which does not exist`);
+          continue;
+        }
+        // Comments stripped, so a JSDoc quoting a test title cannot stand in for the
+        // test. What remains is executable code: an `it(...)`/`describe(...)` title.
+        if (visibleText(first, source).includes(second)) resolved.push(`${first} -> "${second}"`);
+        else failures.push(`${id}: no test matching "${second}" in ${first}`);
+        continue;
+      }
+      if (kind === 'doc') {
+        // The ONE documentary proof kind, for a task whose deliverable IS the document.
+        // The exact file is named, so a mention elsewhere in `docs/` cannot satisfy it.
+        const source = readIfPresent(first);
+        if (source !== null && source.includes(id)) resolved.push(`${first} names ${id}`);
+        else failures.push(`${id}: not named in ${first}, the artifact this task delivers`);
+        continue;
+      }
+      failures.push(`${id}: unknown proof kind "${kind}"`);
     }
-    const hits = haystack.filter(([, text]) => text.includes(id)).map(([file]) => file);
-    anchors.set(id, hits);
-    if (hits.length === 0) {
-      failures.push(`${id}: no evidence anchor — the identifier appears nowhere in the repository`);
+    anchors.set(id, resolved);
+    if (resolved.length === 0) {
+      failures.push(`${id}: no artifact proof resolved`);
     }
   }
 
