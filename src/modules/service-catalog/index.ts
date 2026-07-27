@@ -27,6 +27,7 @@
 import { composeModule } from '@/server/layering';
 import { ServiceCatalogRepository } from './data/service-catalog-repository';
 import { ServiceCatalogService } from './application/service-catalog-service';
+import { ServiceCatalogWriteService } from './application/service-catalog-write-service';
 
 export type {
   BranchAvailabilityRow,
@@ -42,6 +43,14 @@ export type {
   ServiceVersionView,
   ServiceView,
 } from './application/service-catalog-service';
+
+export type {
+  BranchAvailabilityView,
+  CreateServiceInput,
+  PublishedVersionView,
+  SetAvailabilityInput,
+  UpdateServiceInput,
+} from './application/service-catalog-write-service';
 
 export {
   ACTIVATION_STATES,
@@ -61,10 +70,22 @@ export {
   type ServiceVersionState,
 } from './domain/service-catalog';
 
-/** Composition root: constructs the module's services once per process. */
+/**
+ * Composition root: constructs the module's services once per process.
+ *
+ * Reads and writes are two services over ONE repository, not two repositories. The
+ * split is by authority — `svc.service.read` versus `svc.service.manage`, and a
+ * write additionally requires that grant to be tenant-wide — while the SQL for a
+ * table belongs in one place, because two files writing `svc.services` is how a
+ * tenant predicate ends up on one query and not the other.
+ */
 export const serviceCatalogModule = composeModule({
   module: 'service-catalog',
-  create: () => ({
-    services: new ServiceCatalogService(new ServiceCatalogRepository()),
-  }),
+  create: () => {
+    const repository = new ServiceCatalogRepository();
+    return {
+      services: new ServiceCatalogService(repository),
+      catalogWrites: new ServiceCatalogWriteService(repository),
+    };
+  },
 });

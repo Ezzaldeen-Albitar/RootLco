@@ -1,5 +1,17 @@
 # Phase 1-20 — Hostile Completeness Audit
 
+> **RESOLUTION NOTE (added after the audit, not by it).** This file is a point-in-time
+> record and its findings are preserved verbatim below — including the ones that have
+> since been fixed — because a rewritten audit is no longer evidence of what was found.
+> The audit’s single largest structural finding, that `P1-20-BE-001` shipped as a
+> read-only listing with no mutation surface and that `P1-20-A-04` reclassified unbuilt
+> required scope as an accepted limitation, was **upheld and has been CLOSED**: four
+> operations now implement it (`svc.service-create`, `svc.service-update`,
+> `svc.service-version-publish`, `svc.branch-availability-set`) and all three catalogued
+> audit actions have producers. The audit’s own "minimal fix" suggestion — restate BE-001
+> as read-only and accept the limitation — was NOT taken, because the protected contract
+> requires the surface. See `P1-20-G-01` in `open-decisions.md`.
+
 Audited diff: `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0..7a582728905d8a39f84e9a59dc6d115b7ca56b86`
 (base = the P1-19 gate merge on `develop`; 16 commits, 70 files, +18 979 / −48).
 

@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 13,
-    "publicApi": 13,
-    "operationDepth": 13,
+    "registered": 17,
+    "publicApi": 17,
+    "operationDepth": 17,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -309,6 +309,51 @@
       "unitOnly": false
     },
     {
+      "id": "svc.branch-availability-set",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/services/{serviceId}/branch-availability",
+      "public": false,
+      "files": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.price-list-create",
       "surface": "public-api",
       "method": "POST",
@@ -530,6 +575,40 @@
       "unitOnly": false
     },
     {
+      "id": "svc.service-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/services",
+      "public": false,
+      "files": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.service-list",
       "surface": "public-api",
       "method": "GET",
@@ -555,6 +634,98 @@
         "isolation",
         "route",
         "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-update",
+      "surface": "public-api",
+      "method": "PATCH",
+      "path": "/services/{serviceId}",
+      "public": false,
+      "files": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "stale-version"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-version-publish",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/services/{serviceId}/versions/{versionId}/publication",
+      "public": false,
+      "files": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "stale-version"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "stale-version",
         "success"
       ],
       "missing": [],

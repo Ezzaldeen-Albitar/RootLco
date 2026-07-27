@@ -28,6 +28,8 @@ import { StaticClaimsAuthenticator, setSessionAuthenticator } from '@/server/con
 const WIDENING_PERMISSION = 'org.tenant.read';
 
 export const SERVICE_READ = 'svc.service.read';
+/** The single catalog WRITE permission. Seeded since P1-10; declared by no operation until P1-20-G-01 was closed. */
+export const SERVICE_MANAGE = 'svc.service.manage';
 export const PRICE_READ = 'svc.price.read';
 export const PRICE_MANAGE = 'svc.price.manage';
 export const PRICE_PUBLISH = 'svc.price.publish';
@@ -284,6 +286,65 @@ export const WO_APPROVER_NO_QUOTATION_READ: Principal = {
   permissions: [WORK_ORDER_READ, ADDITIONAL_WORK_REQUEST, ADDITIONAL_WORK_APPROVE, JOB_MANAGE],
 };
 
+/**
+ * The catalog WRITE surface's success principal (P1-20-G-01).
+ *
+ * Deliberately a new principal rather than `svc.service.manage` bolted onto `SVC_FULL`:
+ * `SVC_FULL` is the success principal for every pricing and quotation case in two other
+ * suites, and widening it would change what a refusal there means. This one holds the
+ * catalog read and the catalog write, unrestricted, and nothing else — so a success here
+ * cannot be attributed to some unrelated authority.
+ */
+export const SVC_CATALOG_MANAGER: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000171',
+  userId: 'd2900000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_20_catalog_manager',
+  tenantId: TENANT_A,
+  permissions: [SERVICE_READ, SERVICE_MANAGE],
+};
+
+/**
+ * `svc.service.manage` IN FULL, scoped to branch A2 only (P1-20-G-01).
+ *
+ * The isolation principal for the catalog write surface, and it is the shape that
+ * matters: a 403 caused by a MISSING permission proves nothing about scope, because a
+ * scope-blind implementation produces exactly the same 403. This principal holds the
+ * operation's own permission unreservedly, and `establishP1_20Fixtures` gives it the
+ * widening grant that puts BRANCH_A1 inside `iam.allowed_branch_ids()` — so an A1 row is
+ * READABLE and the permission is HELD. The only thing left that can refuse an A1-targeted
+ * availability write is the scoped permission check (P1-18-A-01).
+ *
+ * It doubles as the proof that the three TENANT-WIDE catalog writes need an unrestricted
+ * grant: this principal's `svc.service.manage` is complete but scoped, so
+ * `callerHoldsPermissionTenantWide` refuses it while `SVC_CATALOG_MANAGER` — same
+ * permission, unrestricted grant — succeeds on the identical request.
+ */
+export const SVC_CATALOG_SCOPED_A2: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000181',
+  userId: 'd2900000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_20_catalog_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: [SERVICE_READ, SERVICE_MANAGE],
+  grantId: 'd2900000-0000-4000-8000-000000000183',
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+};
+
+/**
+ * Tenant B holding the catalog write permission, unrestricted.
+ *
+ * `SVC_TENANT_B` and `SVC_TENANT_B_FULL` both lack `svc.service.manage`, so neither can
+ * carry a cross-tenant proof on this surface: their 403 would be ambiguous between the
+ * wrong tenant and the missing permission, and a test that cannot tell the two apart
+ * proves the weaker one.
+ */
+export const SVC_CATALOG_TENANT_B: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000191',
+  userId: 'd2900000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_20_catalog_tenant_b',
+  tenantId: TENANT_B,
+  permissions: [SERVICE_READ, SERVICE_MANAGE],
+};
+
 export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_FULL,
   SVC_READER,
@@ -293,8 +354,11 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_NO_CEILING,
   SVC_PRICE_SCOPED_A2,
   SVC_QUO_SCOPED_A2,
+  SVC_CATALOG_MANAGER,
+  SVC_CATALOG_SCOPED_A2,
   SVC_TENANT_B,
   SVC_TENANT_B_FULL,
+  SVC_CATALOG_TENANT_B,
   WO_APPROVER_WITH_QUOTATION_READ,
   WO_APPROVER_NO_QUOTATION_READ,
 ];
@@ -516,6 +580,7 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
     { userId: SVC_PERMISSION_ELSEWHERE.userId, grantId: 'd2900000-0000-4000-8000-0000000000f2' },
     { userId: SVC_PRICE_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f3' },
     { userId: SVC_QUO_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f4' },
+    { userId: SVC_CATALOG_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f5' },
   ];
   for (const target of WIDENED) {
     const widening = await admin.connect();
@@ -757,6 +822,104 @@ export async function seedDiscountCeiling(input: {
       USER_A,
     ]
   );
+}
+
+/** Reads a service's current `record_version`, for an `If-Match` header. */
+export async function serviceRecordVersionOf(serviceId: string): Promise<number> {
+  const result = await admin.query<{ record_version: number }>(
+    `SELECT record_version FROM svc.services WHERE id = $1`,
+    [serviceId]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error(`service ${serviceId} not found`);
+  return row.record_version;
+}
+
+/**
+ * Seeds a DRAFT `svc.service_versions` row and returns its id.
+ *
+ * Planted with the admin pool rather than through the API because P1-20 ships no
+ * draft-version creation route — the protected contract's catalog rows are service and
+ * category INSERT/UPDATE plus `svc.publish_service_version`, and inventing a fifth
+ * operation to make a test convenient would be building unrequired surface. This is
+ * recorded as an open gap in `evidence/open-decisions.md`, not hidden by the fixture.
+ *
+ * `svc.publish_service_version` itself is deliberately NOT used here: it resolves the
+ * tenant from `iam.current_tenant_id()`, which an admin-pool fixture does not set.
+ */
+export async function seedDraftServiceVersion(input: {
+  readonly tenantId: string;
+  readonly serviceId: string;
+  readonly versionNo: number;
+  readonly effectiveFrom: string;
+}): Promise<string> {
+  const result = await admin.query<{ id: string }>(
+    `INSERT INTO svc.service_versions
+       (tenant_id, service_id, version_no, effective_from, status, created_by)
+     VALUES ($1,$2,$3,$4::date,'draft',$5)
+     RETURNING id`,
+    [input.tenantId, input.serviceId, input.versionNo, input.effectiveFrom, USER_A]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error('draft service version insert returned no row');
+  return row.id;
+}
+
+/**
+ * Reads a service version's status and its effective range.
+ *
+ * The range is not decoration: `svc.publish_service_version` closes the previously
+ * open version's `effective_to` at the new `effective_from`, and that closure is the
+ * only observable evidence that succession happened rather than two independent
+ * publications. Both dates come back as `::text` because they are `date` columns and
+ * a driver-parsed `Date` would carry a timezone the column does not have.
+ */
+export async function serviceVersionRowOf(
+  versionId: string
+): Promise<{ status: string; effectiveFrom: string; effectiveTo: string | null } | null> {
+  const result = await admin.query<{
+    status: string;
+    effective_from: string;
+    effective_to: string | null;
+  }>(
+    `SELECT status, effective_from::text AS effective_from, effective_to::text AS effective_to
+       FROM svc.service_versions WHERE id = $1`,
+    [versionId]
+  );
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : { status: row.status, effectiveFrom: row.effective_from, effectiveTo: row.effective_to };
+}
+
+/** Reads the single availability row for a triple, or null. */
+export async function availabilityRowOf(
+  companyId: string,
+  branchId: string,
+  serviceId: string
+): Promise<{ isAvailable: boolean; status: string } | null> {
+  const result = await admin.query<{ is_available: boolean; status: string }>(
+    `SELECT is_available, status FROM svc.branch_service_availability
+      WHERE company_id = $1 AND branch_id = $2 AND service_id = $3 AND deleted_at IS NULL`,
+    [companyId, branchId, serviceId]
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : { isAvailable: row.is_available, status: row.status };
+}
+
+/** Reads a service row's lifecycle and code, to prove a refused write changed nothing. */
+export async function serviceRowOf(
+  serviceId: string
+): Promise<{ serviceCode: string; name: string; lifecycleStatus: string } | null> {
+  const result = await admin.query<{
+    service_code: string;
+    name: string;
+    lifecycle_status: string;
+  }>(`SELECT service_code, name, lifecycle_status FROM svc.services WHERE id = $1`, [serviceId]);
+  const row = result.rows[0];
+  return row === undefined
+    ? null
+    : { serviceCode: row.service_code, name: row.name, lifecycleStatus: row.lifecycle_status };
 }
 
 /** Reads a price list's current `record_version`, for an `If-Match` header. */

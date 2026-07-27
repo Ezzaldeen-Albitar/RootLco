@@ -22,7 +22,8 @@
 `package.json`, `ci.yml`).
 
 The commercial backend on the frozen Phase 1-10 `svc` and Phase 1-10 `quo` schemas: the
-service-catalog read surface with branch availability and standard labour time; the
+service-catalog read AND MUTATION surface — create, edit, publish a version, set branch
+availability — with standard labour time; the
 price-list lifecycle with forward-only publication; deterministic price and tax resolution;
 discount authorization against both a policy threshold and the actor's own approval ceiling;
 quotation creation, revision, issue and expiry; item-level and revision-wide customer
@@ -207,14 +208,27 @@ runtime-reachable destructive cascade, complete FK index coverage, no duplicate 
 dictionary drift), `schema_hash` unchanged before and after all three suites, worktree
 unchanged by the run.
 
-## Accepted limitations — nine, all Low, all open
+## Accepted limitations — nine Low open, one closed
 
 `docs/phase-1/phase-1-20/evidence/open-decisions.md` — A-01 availability has no effective
 period · A-02 no branch override for labour time · A-03 `decided_by` is the recording staff
-user · A-04 three catalog audit actions have no producer yet · A-05 expiry has no scheduler ·
+user · A-04 **CLOSED** (the three catalog audit actions now have producers) · A-05 expiry has no
+scheduler ·
 A-06 no alert-routing destination is provisioned · A-07 the price-ambiguity guard is
 structurally unreachable and mirrors protected SQL · A-08 price-list reads are bounded rather
-than paged · A-09 three module cycles pre-date this phase and no gate refuses them.
+than paged · A-09 three module cycles pre-date this phase and no gate refuses them · A-10 an
+idempotent replay answers 200 even where the first attempt answered 201 (platform-wide since
+P1-15, not introduced here).
+
+## Open scope gaps
+
+`P1-20-G-01` — the missing service-catalog mutation surface — is **CLOSED**: four operations
+(`svc.service-create`, `svc.service-update`, `svc.service-version-publish`,
+`svc.branch-availability-set`) on the already-seeded `svc.service.manage`, no new permission,
+no seed change, no migration. Two narrower gaps replace it and stay open: `P1-20-G-02` (no
+public write path for `svc.service_categories`) and `P1-20-G-03` (no public create path for a
+draft `svc.service_versions` row). Both are Low, and each names the protected column whose
+policy nothing in the catalog decides.
 
 ## Out of scope, verified absent
 

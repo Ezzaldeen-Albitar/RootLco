@@ -95,15 +95,53 @@ const TASKS = Object.freeze([
     'Service management',
     [
       ['operation', 'svc.service-list'],
+      // The MUTATION half. It is named here rather than left implicit because for most
+      // of the phase this task's proofs were the read surface alone, and the gate said
+      // 27/27 while the protected contract's "Manage a service catalog" and "Publish a
+      // service version" rows had no implementation at all (P1-20-G-01). A proof set
+      // that a missing deliverable can satisfy is not a proof set.
+      ['operation', 'svc.service-create'],
+      ['operation', 'svc.service-update'],
+      ['operation', 'svc.service-version-publish'],
       ['permission', 'svc.service.read'],
+      ['permission', 'svc.service.manage'],
+      ['audit', 'svc.service.updated'],
+      ['audit', 'svc.service_version.published'],
+      ['event', 'service.published'],
       ['symbol', 'src/modules/service-catalog/index.ts', 'serviceCatalogModule'],
+      [
+        'symbol',
+        'src/modules/service-catalog/application/service-catalog-write-service.ts',
+        'ServiceCatalogWriteService',
+      ],
+      // `publishServiceVersion` is the CALL into the protected function. Naming the
+      // repository method is what stops a future reimplementation of succession from
+      // satisfying this task.
+      [
+        'symbol',
+        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        'publishServiceVersion',
+      ],
       ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'svc.service-list'],
+      ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'archived as terminal'],
+      [
+        'test',
+        'tests/backend/p1-20-service-catalog.test.ts',
+        'refuses serviceCode with a 422 rather than silently discarding it',
+      ],
+      [
+        'test',
+        'tests/backend/p1-20-service-catalog.test.ts',
+        'closes the prior version at the new boundary',
+      ],
     ],
   ],
   [
     'P1-20-BE-002',
     'Branch service availability',
     [
+      ['operation', 'svc.branch-availability-set'],
+      ['audit', 'svc.branch_availability.changed'],
       [
         'symbol',
         'src/modules/service-catalog/data/service-catalog-repository.ts',
@@ -111,10 +149,23 @@ const TASKS = Object.freeze([
       ],
       [
         'symbol',
+        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        'branchBelongsToCompany',
+      ],
+      [
+        'symbol',
         'src/modules/service-catalog/application/service-catalog-service.ts',
         'isSellableAt',
       ],
       ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'branch filter'],
+      // The isolation case, named explicitly: this is the one catalog write with real
+      // scope columns, so it is the one place a scope-blind implementation is a live
+      // risk rather than a theoretical one.
+      [
+        'test',
+        'tests/backend/p1-20-service-catalog.test.ts',
+        'isolation: refuses branch A1 for a principal holding svc.service.manage IN FULL in A2',
+      ],
     ],
   ],
   [
@@ -552,7 +603,24 @@ function main() {
     join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'),
     'utf8'
   );
-  const eventCatalog = readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8');
+  /**
+   * The event catalog is read with its COMMENTS STRIPPED.
+   *
+   * Check 4 below matches `implementedIn:` inside a 400-character window after an
+   * `eventType:`, and that window covers the entry's explanatory comment. On the raw
+   * source the first match wins, so prose is indistinguishable from a field: a comment
+   * saying `implementedIn: 'P1-20'` above a field that still says `null` would satisfy
+   * the check while the catalog kept documenting an unproduced event — which is exactly
+   * the class of defect check 4 exists to catch. `service.published` found this
+   * concretely: the comment recording why the entry USED to read `implementedIn: null`
+   * failed the check on an entry that had already been corrected.
+   *
+   * Stripping is the same treatment `parseOperations` and the audit-action scan already
+   * give their sources; only this one read was raw.
+   */
+  const eventCatalog = stripComments(
+    readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8')
+  );
 
   // ---- 1. Permissions exist in the seed -----------------------------------
   for (const op of operations) {

@@ -1,5 +1,7 @@
 /**
- * GET /api/v1/services — the service catalog (Phase 1-20, P1-20-BE-001…003).
+ * /api/v1/services — the service catalog (Phase 1-20, P1-20-BE-001…003).
+ *
+ * `GET` lists it; `POST` creates a service.
  *
  * Cursor-paginated, tenant-scoped, ordered by `(service_code, id)` — a total order
  * backed by `uq_services_code`, so a page is stable even when two services share
@@ -27,7 +29,11 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
+import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermissionTenantWide } from '@/server/auth/authorization';
 import {
+  EXTERNAL_CODE,
+  MAX_DESCRIPTION,
   MAX_NAME,
   SERVICE_LIFECYCLE_STATES,
   serviceCatalogModule,
@@ -106,5 +112,89 @@ export async function GET(request: Request): Promise<Response> {
         ),
       };
     }
+  );
+}
+
+/**
+ * Create body — a closed allow-list, and `.strict()` is load-bearing twice.
+ *
+ * It refuses `lifecycleStatus`, so a caller cannot believe it created a service
+ * already archived: `ck_services_archived_at` ties `archived` to a non-null
+ * `archived_at` that only `svc.guard_service_lifecycle` sets, and a service is
+ * created `active` with no parameter offering anything else.
+ *
+ * It also refuses `id`, so the tenant cannot choose a primary key — `gen_random_uuid()`
+ * does — and refuses every price-shaped field, because a service carries no price at
+ * all: `svc.price_rules` does, under `svc.price.manage`, in a different module.
+ */
+const CreateBody = z
+  .object({
+    serviceCategoryId: schemas.uuid,
+    // `ck_services_code_format` — mixed case is permitted for this external-facing
+    // code, unlike the lower-snake category code.
+    serviceCode: z.string().regex(EXTERNAL_CODE, 'must be an external service code'),
+    name: z.string().min(1).max(MAX_NAME),
+    description: z.string().min(1).max(MAX_DESCRIPTION).optional(),
+  })
+  .strict();
+
+export const SERVICE_CREATE_OPERATION = defineOperation({
+  id: 'svc.service-create',
+  module: 'service-catalog',
+  method: 'POST',
+  path: '/services',
+  summary: 'Create a service in the tenant catalog under an existing category.',
+  permissions: ['svc.service.manage'],
+  // `tenant`, because `svc.services` HAS no company_id and no branch_id: a service is
+  // tenant-wide reference data and creating one is a tenant-wide act. The handler does
+  // not stop at the declaration — see the tenant-wide check below.
+  scope: 'tenant',
+  auditClass: 'privileged',
+  auditAction: 'svc.service.updated',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    SERVICE_CREATE_OPERATION,
+    request,
+    async ({ db }) => {
+      const parsed = parseOrFail(CreateBody, body, 'body');
+      /**
+       * Creating a service is a TENANT-WIDE act, so it needs tenant-wide authority.
+       *
+       * There is no scope target to authorize — the row has no company and no branch —
+       * and `requiresScopedEvaluation` returns false on an empty target *whatever* the
+       * declared scope, so the pre-handler check degrades to the scope-blind
+       * `iam.has_permission` (P1-18-A-01). Without this, an actor granted
+       * `svc.service.manage` in one branch could add a service to the catalog of every
+       * branch in the tenant — and `service_code` is immutable afterwards, so the code
+       * it consumes is consumed for good.
+       *
+       * The same control `svc.price-list-version-publish` and the wildcard branch of
+       * `svc.price-rule-record` use, for the same reason.
+       */
+      if (!(await callerHoldsPermissionTenantWide(db, 'svc.service.manage'))) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            'A service is tenant-wide catalog reference data, so creating one requires ' +
+            'svc.service.manage granted tenant-wide.',
+        });
+      }
+      const created = await serviceCatalogModule().catalogWrites.create(db, {
+        serviceCategoryId: parsed.serviceCategoryId,
+        serviceCode: parsed.serviceCode,
+        name: parsed.name,
+        description: parsed.description,
+      });
+      return { status: 201, body: created, recordVersion: created.recordVersion };
+    },
+    { body }
   );
 }

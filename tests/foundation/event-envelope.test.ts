@@ -241,9 +241,12 @@ describe('reserved-name registry', () => {
       'quotation.revision-issued',
       'reception.approved',
       'rework.linked',
-      // 'service.published' is deliberately ABSENT: it is reserved with
-      // implementedIn: null because P1-20 ships the catalog read surface and no
-      // public service-version publication exists to emit it.
+      // Published from `src/modules/service-catalog` by the P1-20 service-catalog
+      // mutation surface. It was reserved with `implementedIn: null` for most of the
+      // phase on the false premise that the protected contract mandated no public
+      // service-version publication; the contract lists `svc.publish_service_version`
+      // as a deliverable, and the operation now exists (P1-20-G-01).
+      'service.published',
       'session.revoked',
       'user.invited',
       'user.status.changed',
@@ -277,10 +280,10 @@ describe('reserved-name registry', () => {
       // (Wave 8). `tech` publishes `labor.session-changed`, whose owner is `tech`
       // because the row lives in `tech.labor_sessions`.
       'P1-19': ['wo', 'tech', 'dia', 'qms'],
-      // P1-20 publishes from two of its three modules. `service-catalog` is absent
-      // deliberately: `service.published` stays reserved with implementedIn: null
-      // because this phase ships the catalog read surface and nothing emits it.
-      'P1-20': ['pricing', 'quotation'],
+      // P1-20 publishes from all three of its modules: `pricing`
+      // (`price-list.published`), `quotation` (six names) and `service-catalog`
+      // (`service.published`, from the version publication route).
+      'P1-20': ['pricing', 'quotation', 'service-catalog'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;

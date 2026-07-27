@@ -413,12 +413,16 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     schemaVersion: 1,
     aggregateType: 'svc.service_version',
     owner: 'service-catalog',
-    // RESERVED, not implemented. P1-20 delivers the catalog READ surface and the
-    // protected requirements mandate no public service-version publication, so
-    // nothing emits this yet. Marking it P1-20 would be a false claim, and the
-    // envelope suite catches exactly that by requiring a real producer for every
-    // implemented name.
-    implementedIn: null,
+    // Published by `ServiceCatalogWriteService.publishVersion`, from
+    // `POST /services/{serviceId}/versions/{versionId}/publication`.
+    //
+    // This entry was marked RESERVED for most of the phase, justified by the claim
+    // that "the protected requirements mandate no public service-version publication".
+    // That claim was false — `docs/phase-1/phase-1-10/p1-20-backend-contract.md` lists
+    // `svc.publish_service_version(...)` as a P1-20 deliverable — and the entry was
+    // reserved because the operation had not been built, not because the contract
+    // excluded it. See P1-20-G-01 in `evidence/open-decisions.md`.
+    implementedIn: 'P1-20',
     description:
       'A service version was published and became the effective definition of that service for a date range.',
   },

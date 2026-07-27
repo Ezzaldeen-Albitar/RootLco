@@ -41,16 +41,16 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 
 ### Baseline measurements (recalculated, not inherited)
 
-| Metric        | Value                                                              | How                                                                                                                                                                                                                                                    |
-| ------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit          | **901**                                                            | `npm run test` — 42 files, exit 0. Measured at the remediation head; the audit measured 901 too, against the 899 three documents still carried from the parent commit.                                                                                 |
-| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                                                                                      |
-| Backend       | **1219**                                                           | `npm run test:backend` — 56 files, exit 0, from the clean room (empty database, single process). The dev database gives the same figure only when nothing else touches it. 1217 was the audited head `7a58272`, before the two create-atomicity tests. |
-| OpenAPI       | **152 paths / 181 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                                                                                |
-| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                                                                                  |
-| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                                                                                 |
-| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                                                                                     |
-| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                                                                          |
+| Metric        | Value                                                              | How                                                                                                                                                                                                                                                                               |
+| ------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit          | **903**                                                            | `npm run test` — 42 files, exit 0. 901 before the Wave 10 mutation surface; the audit measured 901 too, against the 899 three documents still carried from the parent commit.                                                                                                     |
+| Database      | **1610**                                                           | `npm run test:db` — 136 files, all passed, exit 0                                                                                                                                                                                                                                 |
+| Backend       | **1249**                                                           | `npm run test:backend` — 56 files, exit 0, serial, dev database with nothing else touching it. 1219 before Wave 10 added 30 service-catalog mutation tests; 1217 was the audited head `7a58272`, before the two create-atomicity tests. The clean room must re-prove this figure. |
+| OpenAPI       | **155 paths / 185 operations** (baseline was 140/168)              | counted from `docs/api/openapi.v1.json`                                                                                                                                                                                                                                           |
+| Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                                                                                                             |
+| Permissions   | **96** (was 93; +3 read codes) · audit actions **127** (was 110)   | `SELECT count(*) FROM iam.permissions`                                                                                                                                                                                                                                            |
+| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                                                                                                                |
+| Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                                                                                                     |
 
 ## Wave status
 
@@ -60,12 +60,60 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | 1    | Contract archaeology                                                | **Done** — `evidence/wave-1-contract-archaeology.md`             |
 | 2    | Module foundation                                                   | **Done** — 3 modules, catalogs, audit actions, services          |
 | 3    | Service catalog, availability, labour time (BE-001…003)             | **Done** — GET /services, 21 tests                               |
+| 3b   | Service-catalog MUTATION surface (closes `P1-20-G-01`)              | **Done** — 4 operations, 51 tests in the same suite              |
 | 4    | Price lists, selection, tax, discount, decimal (BE-004/005/006/014) | **Done** — 5 operations, 35 tests                                |
 | 5    | Quotation create/revise/issue/expire (BE-007/010/011)               | **Done** — 4 operations, part of 38 tests                        |
 | 6    | Decisions and evidence (BE-008/009/012)                             | **Done** — 2 operations, part of 38 tests                        |
 | 7    | Additional-work integration (BE-013)                                | **Done** — 11 tests, CommercialApprovalReader port               |
 | 8    | SEC/QA/DO/DOC                                                       | **Done** — inventory gate + 6 evidence documents, 27/27 anchored |
 | 9    | Adversarial review + remediation                                    | **Done** — 5 Highs, 9 Mediums, 7 Lows closed; see below          |
+| 10   | `P1-20-G-01` — the missing service-catalog mutation surface         | **Done** — see below                                             |
+
+## Wave 10 — the service-catalog mutation surface (`P1-20-G-01`)
+
+The hostile completeness audit found that `docs/phase-1/phase-1-10/p1-20-backend-contract.md`
+lists "Manage a service catalog" and "Publish a service version" as P1-20 deliverables and
+that this phase had shipped the catalog READ surface only. That gap is now closed.
+
+| Operation                     | Route                                                         | Permission           | Scope    | Audit action                      |
+| ----------------------------- | ------------------------------------------------------------- | -------------------- | -------- | --------------------------------- |
+| `svc.service-create`          | `POST /services`                                              | `svc.service.manage` | `tenant` | `svc.service.updated`             |
+| `svc.service-update`          | `PATCH /services/{serviceId}`                                 | `svc.service.manage` | `tenant` | `svc.service.updated`             |
+| `svc.service-version-publish` | `POST /services/{serviceId}/versions/{versionId}/publication` | `svc.service.manage` | `tenant` | `svc.service_version.published`   |
+| `svc.branch-availability-set` | `POST /services/{serviceId}/branch-availability`              | `svc.service.manage` | `branch` | `svc.branch_availability.changed` |
+
+No new permission code, no seed change, no migration. All three previously producer-less
+audit actions now have producers, and `service.published` moved from reserved to
+`implementedIn: 'P1-20'`. P1-20 operations 13 → **17**, OpenAPI 152/181 → **155/185**.
+
+Four things worth not rediscovering:
+
+1. **Three of the four are tenant-wide acts.** `svc.services` and `svc.service_versions`
+   carry no `company_id` and no `branch_id`, so `requiresScopedEvaluation` sees an empty
+   target and the pre-handler check degrades to the scope-blind `iam.has_permission`
+   whatever scope is declared. Each demands `callerHoldsPermissionTenantWide`. Only
+   `svc.branch_service_availability` has real scope columns, and only that operation
+   calls `authorizeScope`.
+2. **The inventory gate read `envelope.ts` WITHOUT stripping comments.** Its
+   `implementedIn:` check matches inside a 400-character window after `eventType:`, which
+   covers the entry's own explanatory comment — so prose was indistinguishable from a
+   field, and a comment claiming `implementedIn: 'P1-20'` above a field still reading
+   `null` would have satisfied it. The source is now `stripComments`-ed, and the fix was
+   mutation-verified in both directions.
+3. **An idempotent replay answers 200, not 201.** `route-handler.ts` stores `value.body`
+   alone, so a replay is rebuilt as `{ body }` with no status. Platform-wide since P1-15;
+   recorded as `P1-20-A-10` rather than changed.
+4. **Four mutations were run and each was killed by the intended test**: relaxing the
+   update body to `.passthrough()` (immutable `service_code`), disabling the archived
+   guard (two tests, two routes), disabling `callerHoldsPermissionTenantWide` on create,
+   and deleting the `authorizeScope` call on branch availability — that last one made the
+   out-of-scope A1 write **succeed**, which is the scope-blind failure the isolation test
+   exists to catch.
+
+`P1-20-G-01` is withdrawn as CLOSED in `evidence/open-decisions.md` and replaced by two
+narrower, honestly-scoped gaps: `P1-20-G-02` (no category write path) and `P1-20-G-03`
+(no draft-version create path). Neither was invented around — each names the protected
+column whose policy nothing decides.
 
 ## Decisions fixed by the catalog (do not re-litigate)
 

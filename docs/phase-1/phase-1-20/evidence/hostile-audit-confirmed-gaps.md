@@ -1,5 +1,17 @@
 # P1-20 — hostile audit: the CONFIRMED gap register
 
+> **RESOLUTION NOTE (added after the audit, not by it).** This file is a point-in-time
+> record and its findings are preserved verbatim below — including the ones that have
+> since been fixed — because a rewritten audit is no longer evidence of what was found.
+> The audit’s single largest structural finding, that `P1-20-BE-001` shipped as a
+> read-only listing with no mutation surface and that `P1-20-A-04` reclassified unbuilt
+> required scope as an accepted limitation, was **upheld and has been CLOSED**: four
+> operations now implement it (`svc.service-create`, `svc.service-update`,
+> `svc.service-version-publish`, `svc.branch-availability-set`) and all three catalogued
+> audit actions have producers. The audit’s own "minimal fix" suggestion — restate BE-001
+> as read-only and accept the limitation — was NOT taken, because the protected contract
+> requires the surface. See `P1-20-G-01` in `open-decisions.md`.
+
 Produced by the hostile 100/100 completeness audit over `0d86a19..7a58272`, nine
 independent reconciliation dimensions, every claimed gap adversarially verified by a
 separate agent instructed to refute it.

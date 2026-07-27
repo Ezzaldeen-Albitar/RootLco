@@ -1381,6 +1381,26 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant', 'isolation'],
     note: 'keyset page of the catalog ordered by (service_code, id), a total order backed by uq_services_code so a page is stable when two services share a name; returns NO price, because resolution depends on company/branch/class/date and is gated on svc.price.read — bolting one on would leak the price book to every catalog reader; availableAtBranchId is a scope TARGET, authorized before it is used, so the difference between an empty and a non-empty page cannot be used to probe which branches stock a service (isolation) — without that the declared branch scope would be inert (P1-18-A-01); a tenant-B service never appears (cross-tenant); an unknown parameter, a bad cursor, an oversized page and a timezone-carrying effectiveOn are refused (denial)',
   },
+  'svc.service-create': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'the mutation surface the protected contract requires and the phase originally shipped without (P1-20-G-01); service_code is frozen by tg_services_immutable from this moment, so the code chosen here identifies the service for life and a duplicate collides on uq_services_code; a service is created active and lifecycleStatus is not a settable field, because ck_services_archived_at ties archived to an archived_at only svc.guard_service_lifecycle writes; svc.services carries NO company_id or branch_id, so creating one is a tenant-wide act and the handler demands svc.service.manage granted tenant-wide — a declared tenant scope alone degrades to the scope-blind iam.has_permission (P1-18-A-01) and a branch-scoped holder could seed the catalog of every branch; cross-tenant is proved with a tenant-B principal holding svc.service.manage unrestricted, so its refusal is the tenant boundary and not a missing permission',
+  },
+  'svc.service-update': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
+    note: 'service_code is IMMUTABLE and the body schema is .strict(), so naming it is a 422 rather than a silently discarded field — a permissive schema would let a caller believe the code changed; archived is TERMINAL and the service refuses every write to an archived row, which is strictly stronger than svc.guard_service_lifecycle (that trigger refuses only the transition out of archived, so a rename of an archived service would pass it); reactivation is expressible at the boundary on purpose, so the ERR-TRN-001 refusal is the applications and not an enum error; description distinguishes absent from null because ck_services_desc_not_blank accepts NULL and refuses the empty string; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.service-version-publish': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'stale-version'],
+    note: 'svc.publish_service_version is CALLED, never reimplemented: it locks the service, refuses a version belonging to another service, refuses a non-draft version, refuses an effective_from at or before the currently open published version’s start, and closes that version’s effective_to — so forward-only succession and the ex_service_versions_no_published_overlap gist backstop are the database’s and a second definition cannot drift from them; If-Match guards the SERVICE, which is the row a concurrent editor moves and the row the function locks first; publication emits service.published, whose catalog entry said implementedIn: null for most of the phase on the false premise that the protected contract mandated no public publication',
+  },
+  'svc.branch-availability-set': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the ONE catalog write with real scope columns — svc.branch_service_availability carries company_id and branch_id, so scope:branch is genuine here and the pair from the body is the concrete authorizeScope target; the isolation case uses a principal holding svc.service.manage IN FULL scoped to branch A2 plus a widening grant that puts A1 in its permission-blind iam.allowed_branch_ids() union, so the A1 row is readable and only the scoped permission check can refuse it (P1-18-A-01); the company/branch pair is also checked for coherence, because iam.has_permission_in_scope is disjunctive across grant rows and a caller pairing their own branch with another company’s id passes on the branch row alone; exactly one live row per (company, branch, service) means this is a state change and the transition survives only in the audit detail’s previousValue',
+  },
   'svc.price-list-list': {
     files: ['tests/backend/p1-20-pricing.test.ts'],
     required: ['denial', 'cross-tenant'],
