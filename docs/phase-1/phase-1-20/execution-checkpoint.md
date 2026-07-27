@@ -76,17 +76,58 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | `P1-20-A-01` | Low      | `svc.branch_service_availability` has no effective-date columns; availability is a single current row per `(company, branch, service)`. The phase prose's "effective period" and "overlap constraints" do not exist in the protected schema and were not invented. |
 | `P1-20-A-02` | Low      | `svc.standard_labor_times` hangs off `service_version_id` only. There is **no** branch override for labour time in the protected schema.                                                                                                                           |
 
+## Commits on the feature branch
+
+| SHA | What |
+| --- | ---- |
+| `84618ea` | Wave 0–1 evidence + `Decimal`/`Money` + `service-catalog` module (domain, repository, service, surface) |
+| `e269d52` | `pricing` module — `PriceResolutionService`, `DiscountAuthorizationService`, `iam.callerApprovalCeiling` |
+
+Verified green at `e269d52`: `tsc --noEmit` exit 0, `eslint` 0 problems,
+`format:check` clean, `validate:module-boundaries` OK (335 files),
+56/56 new unit tests (32 decimal + 24 discount).
+
+## Design decisions made during implementation
+
+- **`iam` owns the approval ceiling.** `callerApprovalCeiling` was added to
+  `AuthorizationRepository` + `AccessAdministrationService` and exposed as
+  `iamModule().access.callerApprovalCeiling`. `pricing` depends on a narrow
+  `ApprovalCeilingReader` port, so it cannot reach the rest of that surface.
+  A direct read of `iam.approval_limits`/`iam.role_grants` from `pricing` was
+  written first and removed — it breached ADR-001 rule 3.
+- **`Decimal` exposes `scale` and `scaledUnits`** so the percentage-threshold
+  comparison derives its scaling exponent instead of assuming `numeric(_,4)`.
+- **BigInt values are constructed, not literal** — build targets ES2017.
+- **`svc` is split by aggregate**: `service-catalog` owns services/categories/
+  versions/labour/availability; `pricing` owns lists/versions/rules/assignments/
+  discounts/policies **and** the `org.tax_*` reads.
+
+## Two self-corrections worth not repeating
+
+1. `assertPercentageRange` used `parseFloat` — the exact pattern the phase
+   forbids for a financial value. Replaced with the exact comparator.
+2. A zero-base guard in `exceedsThreshold` was **unreachable** (a non-zero
+   discount on a zero base is already refused as exceeding the base). Removed
+   rather than left as an untestable claim; the test now pins the ordering.
+
 ## Known defects / review findings
 
-None yet.
+None open. No adversarial review has run yet.
 
 ## Current PR / CI
 
-None yet.
+None yet — branch is local only, not pushed.
 
 ## Exact next action
 
-Finish Wave 2: `service-catalog`, `pricing`, `quotation` module skeletons
-(`domain`/`data`/`application`/`index.ts`), register new permission codes in
-`supabase/seeds/04_iam_permission_catalog.sql`, add `svc`/`quo` entries to
-`EVENT_CATALOG`, then run `validate:module-boundaries` + `typecheck`.
+1. Build the `quotation` module: `domain/quotation.ts` (statuses, channels,
+   evidence kinds, decision vocabulary), `data/quotation-repository.ts`
+   (quotations, revisions, items, decisions, evidence; wrapping
+   `quo.issue_revision` and `quo.record_item_decision`), the application
+   services, and `index.ts`.
+2. Add the read permission codes the catalog lacks
+   (`svc.service.read`, `svc.price.read`, `quo.quotation.read`) to
+   `supabase/seeds/04_iam_permission_catalog.sql`, idempotently.
+3. Add `svc`/`quo` entries to `EVENT_CATALOG` using the shipped unsuffixed
+   naming with `schemaVersion: 1`.
+4. Then Wave 3 routes.
