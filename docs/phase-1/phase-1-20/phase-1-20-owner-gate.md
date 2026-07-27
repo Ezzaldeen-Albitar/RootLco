@@ -43,7 +43,7 @@ It governs no database change. **P1-20 adds no migration.** It does change one s
 | Commits entering         | 30 — 29 feature commits plus the merge; **no commit reachable from `develop` that is not reachable from `e746253`**       |
 | `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched; P1-20 is **not** on `main`                                        |
 | Authoritative CI         | Push run **#267** (`30296722364`) — event `push`, branch `develop`, SHA `db7ef97`, **Success 4/4, 6m 50s**                 |
-| Merged                   | PR #84 (feature), PR #__GATE_PR__ (gate record)                                                                           |
+| Merged                   | PR #84 (feature), PR #85 (gate record)                                                                           |
 | Diff                     | 77 files, +25,384 / −413 — src 41, docs 19, tests 12, scripts 2, supabase 1, `package.json`, `ci.yml`                     |
 | Migrations               | **119** — none added, none modified, no `120`                                                                             |
 | Only `supabase/` change  | `seeds/04_iam_permission_catalog.sql` (+12 / −1) — 3 permission codes, 93 → **96**                                        |
