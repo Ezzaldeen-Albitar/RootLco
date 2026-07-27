@@ -2261,3 +2261,89 @@ describe('quo.quotation-create — atomicity of the number it consumes', () => {
     ).toBe(0);
   });
 });
+
+/**
+ * The named discount requester is RESOLVED against the database (P1-20-BE-006,
+ * P1-20-SEC-003).
+ *
+ * `4cfce7b` fixed a real control — `discountRequestedBy` arrived from the request body, was
+ * compared against the actor id and nothing else, and was never persisted, so any well-formed
+ * UUID cleared `maker_approver_distinct` and the invention left no trace. The final
+ * verification pass then found that the fix itself had no honest coverage: the only exercise
+ * of `isActiveUserInTenant` was `vi.fn().mockResolvedValue(...)` in a unit test — the mock,
+ * not the SQL — and deleting the whole `requestedBy` audit detail left every suite green.
+ *
+ * A control proven only against a mock of itself is not proven. These cases drive the real
+ * route against PostgreSQL and assert both halves: the refusal AND the record.
+ */
+describe('discount maker/approver — the requester is resolved against PostgreSQL', () => {
+  beforeAll(async () => {
+    await seedDiscountPolicy({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      thresholdKind: 'amount',
+      thresholdValue: '10.0000',
+      currencyCode: 'JOD',
+      // TRUE here — this suite is about the separation itself, not the threshold.
+      makerApproverDistinct: true,
+    });
+  });
+  afterAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  const quoteWithRequester = async (requestedBy: string | undefined): Promise<Response> => {
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    return createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+  };
+
+  it('refuses a requester that resolves to no user at all', async () => {
+    // A well-formed UUID that is nobody. Before the fix this CLEARED the control, because
+    // distinctness from the actor was the only test applied.
+    const refused = await quoteWithRequester('d2999999-0000-4000-8000-00000000beef');
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+
+  it('refuses a REAL user who belongs to another tenant', async () => {
+    /**
+     * The tenant filter, which the existence check alone does not give you.
+     *
+     * `SVC_TENANT_B` is a genuine, active `iam.user_accounts` row — it just belongs to tenant
+     * B. An existence-only check would accept it and let a separation of duties inside this
+     * tenant be satisfied by someone outside it.
+     */
+    const refused = await quoteWithRequester(SVC_TENANT_B.userId);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+
+  it('accepts a real in-tenant requester and RECORDS who it was', async () => {
+    // `SVC_READER` is a real active user in tenant A and is not the actor, which is exactly
+    // what the separation requires. It needs no permission of its own — it is the maker, not
+    // the approver.
+    const accepted = await quoteWithRequester(SVC_READER.userId);
+    expect(accepted.status).toBe(201);
+    const created = (await accepted.json()) as Quotation;
+    const revisionId = created.currentRevision?.id as string;
+
+    const details = await admin.query<{ field_name: string; new_value_masked: string | null }>(
+      `SELECT d.field_name, d.new_value_masked
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'svc.discount.authorized' AND r.entity_id = $1`,
+      [revisionId]
+    );
+    const requester = details.rows.find((row) => row.field_name === 'requestedBy');
+    // The second half of the fix: WHO the control was satisfied by has to be recoverable
+    // afterwards, or an invented requester is undetectable even once it is refused at write.
+    expect(requester).toBeDefined();
+    expect(requester?.new_value_masked).toContain(SVC_READER.userId);
+  });
+});
