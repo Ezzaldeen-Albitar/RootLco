@@ -38,7 +38,7 @@ grant that a fresh deployment would not have.
 | No fabricated business data                   | **green** — 1,273 tracked files, no indicators                                                                                                      |
 | Full **unit** suite                           | **901 passed**, 42 files                                                                                                                            |
 | Full **backend** suite                        | **1219 passed**, 56 files                                                                                                                           |
-| Full **database** suite                       | **1608 passed / 2 failed** under load — see below; **1610/1610** required and re-taken on a quiet machine                                           |
+| Full **database** suite                       | **1610 passed**, 136 files — on a quiet machine, third pass; see below for the two contended passes                                                 |
 | P1-20 inventory gate                          | **green** — 13 operations; permissions, audit actions, events and all 27 tasks reconcile                                                            |
 | Operation-depth coverage gate                 | **green** — 13/13 P1-20 at operation depth, 0 pending, 0 unit-only, 0 metadata-only                                                                 |
 | OpenAPI validation                            | **green** — structurally valid, every operation guarded                                                                                             |
@@ -96,9 +96,15 @@ reading is **resource contention during the run**, not a defect in the tree — 
 consequence is that the number cannot be recorded from a contended run. The authoritative
 database figure is taken on a quiet machine and recorded above only when it is 1610/1610.
 
-This is stated rather than smoothed over because "it passes when run alone" is exactly the
-sentence that hides a real intermittent defect. The four facts above are what distinguish
-this case, and the quiet re-run is what closes it.
+**The quiet re-run closed it: 1610 passed, 136 files, zero failures.** Same container, same
+SHA, same command — the only variable removed was the load. That is the confirmation the
+contention reading needed, and it is why the recorded figure comes from this pass and not
+from either contended one.
+
+Both contended passes are reported above rather than deleted. "It passes when run alone" is
+exactly the sentence that hides a real intermittent defect, so the four facts that
+distinguish this case from that one are written down, and so is the fact that it took three
+passes to get a number worth recording.
 
 ## What the clean room proved that the development database could not
 

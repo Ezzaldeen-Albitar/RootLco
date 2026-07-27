@@ -188,7 +188,7 @@ finding was reproduced before it was touched; nothing was implemented on a sugge
 | -------- | ------------------------ | ----------------------------------- |
 | Unit     | **901** / 42 files       | **901**                             |
 | Backend  | **PENDING** quiet re-run | **1219** / 56 files                 |
-| Database | **PENDING** quiet re-run | **PENDING** quiet re-run            |
+| Database | **PENDING** quiet re-run | **1610** / 136 files                |
 
 P1-20's own suites: catalog 21 · pricing 47 · quotation 62 · additional-work link 12 ·
 unit decimal 34 · unit discount 24.
