@@ -601,6 +601,60 @@ export class AttachmentService extends ApplicationService implements FileService
    * configured and claiming otherwise would be the exact misrepresentation the
    * withholding exists to prevent.
    */
+  /**
+   * Verifies a document version is usable as immutable evidence for an entity
+   * (P1-20-BE-012, P1-20-SEC-002).
+   *
+   * Added for quotation approval evidence, and it lives here because
+   * `shared.document_versions` and `shared.document_links` belong to this module
+   * — a consumer reading them itself would be a second definition of what a
+   * valid attachment is.
+   *
+   * It answers the three questions a consumer must not answer for itself:
+   *
+   *  1. **Does the version exist in the caller's scope?** `findVersion` is
+   *     RLS-narrowed, so a version from another tenant simply is not found.
+   *  2. **What is the version's own company and branch?** Returned so the caller
+   *     can refuse evidence from a different branch than the record it is
+   *     evidencing. A `null` here means the version is tenant-wide.
+   *  3. **Is it actually linked to that entity?** Without this, any document the
+   *     caller can see could be attached as evidence for any record — the
+   *     "forged attachment" case. The link must be live and name this exact
+   *     `(entityType, entityId)`.
+   *
+   * A caller passes a `versionId`, never a storage key. Storage keys are not
+   * accepted anywhere on this surface, so a client cannot name raw object storage.
+   */
+  async verifyEvidenceVersion(
+    db: DbHandle,
+    versionId: string,
+    entityType: string,
+    entityId: string
+  ): Promise<{
+    versionId: string;
+    documentId: string;
+    companyId: string | null;
+    branchId: string | null;
+    status: string;
+    linkedToEntity: boolean;
+  }> {
+    const version = await this.documents.findVersion(db, versionId);
+    if (!version) {
+      throw new AppFailure('ERR-RES-001', { message: 'Version not found in the caller scope' });
+    }
+    const links = await this.documents.liveLinks(db, version.document_id);
+    return {
+      versionId: version.id,
+      documentId: version.document_id,
+      companyId: version.company_id,
+      branchId: version.branch_id,
+      status: version.status,
+      linkedToEntity: links.some(
+        (link) => link.entity_type === entityType && link.entity_id === entityId
+      ),
+    };
+  }
+
   async scanState(
     db: DbHandle,
     versionId: string

@@ -262,6 +262,26 @@ export class QuotationRepository extends Repository {
 
   // ---- Reads ---------------------------------------------------------------
 
+  /**
+   * The server's business date, as `YYYY-MM-DD`.
+   *
+   * Read from the database rather than from the Node process clock so that the
+   * date used to resolve a price is the same clock `svc.resolve_price`,
+   * `now()`-based expiry and the effective-range predicates all use. A caller
+   * cannot supply it: an attacker-chosen `asOf` would select a price from a
+   * period the tenant is not trading in.
+   */
+  public async businessDate(db: DbHandle): Promise<string> {
+    const row = await this.runOne<{ business_date: string }>(
+      db,
+      `SELECT current_date::text AS business_date`
+    );
+    if (row === null) {
+      throw new Error('quotation: could not read the server business date');
+    }
+    return row.business_date;
+  }
+
   public async findQuotation(db: DbHandle, quotationId: string): Promise<QuotationRow | null> {
     const context = this.assertContext(db);
     const row = await this.runOne<QuotationSql>(
