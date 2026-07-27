@@ -33,23 +33,23 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | Backend       | **1077**                                                           | `npm run test:backend` — 52 files, all passed, exit 0                                                                                                                                        |
 | OpenAPI       | **140 paths / 168 operations**                                     | counted from `docs/api/openapi.v1.json`                                                                                                                                                      |
 | Migrations    | **119**, no 120                                                    | `supabase/migrations`                                                                                                                                                                        |
-| Permissions   | **93**                                                             | `SELECT count(*) FROM iam.permissions`                                                                                                                                                       |
-| Event catalog | **31** entries                                                     | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                           |
+| Permissions   | **96** (was 93; +3 read codes)                                     | `SELECT count(*) FROM iam.permissions`                                                                                                                                                       |
+| Event catalog | **39** entries (was 31; +8 svc/quo)                                | `EVENT_CATALOG` in `src/server/events/envelope.ts`                                                                                                                                           |
 | Schema hash   | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` | P1-19 baseline, to be re-proven in clean room                                                                                                                                                |
 
 ## Wave status
 
-| Wave | Scope                                                               | Status                                               |
-| ---- | ------------------------------------------------------------------- | ---------------------------------------------------- |
-| 0    | Protected baseline + recovery                                       | **Done**                                             |
-| 1    | Contract archaeology                                                | **Done** — `evidence/wave-1-contract-archaeology.md` |
-| 2    | Module foundation                                                   | **In progress**                                      |
-| 3    | Service catalog, availability, labour time (BE-001…003)             | Not started                                          |
-| 4    | Price lists, selection, tax, discount, decimal (BE-004/005/006/014) | Not started                                          |
-| 5    | Quotation create/revise/issue/expire (BE-007/010/011)               | Not started                                          |
-| 6    | Decisions and evidence (BE-008/009/012)                             | Not started                                          |
-| 7    | Additional-work integration (BE-013)                                | Not started                                          |
-| 8    | SEC/QA/DO/DOC                                                       | Not started                                          |
+| Wave | Scope                                                               | Status                                                                |
+| ---- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 0    | Protected baseline + recovery                                       | **Done**                                                              |
+| 1    | Contract archaeology                                                | **Done** — `evidence/wave-1-contract-archaeology.md`                  |
+| 2    | Module foundation                                                   | **Mostly done** — 3 modules, catalogs; quotation services outstanding |
+| 3    | Service catalog, availability, labour time (BE-001…003)             | Not started                                                           |
+| 4    | Price lists, selection, tax, discount, decimal (BE-004/005/006/014) | Not started                                                           |
+| 5    | Quotation create/revise/issue/expire (BE-007/010/011)               | Not started                                                           |
+| 6    | Decisions and evidence (BE-008/009/012)                             | Not started                                                           |
+| 7    | Additional-work integration (BE-013)                                | Not started                                                           |
+| 8    | SEC/QA/DO/DOC                                                       | Not started                                                           |
 
 ## Decisions fixed by the catalog (do not re-litigate)
 
@@ -131,18 +131,8 @@ Wave 2 remainder, in this order:
    `serviceCatalogModule()`, `pricingModule()` and
    `sharedServicesModule()` (number sequence `quotation`, attachment policy
    already lists `quo.quotations`).
-2. **Permission codes.** The catalog has `svc.service.manage`,
-   `svc.price.manage`, `svc.price.publish`, `quo.quotation.manage`,
-   `quo.decision.record` — it has **no read codes**. Add
-   `svc.service.read`, `svc.price.read`, `quo.quotation.read` idempotently to
-   `supabase/seeds/04_iam_permission_catalog.sql` (93 → 96), and re-run
-   `npm run validate:seed-state`.
-3. **Event catalog.** Add `svc`/`quo` entries to `EVENT_CATALOG`
-   (`src/server/events/envelope.ts`, currently 31). Shipped convention is
-   unsuffixed names + `schemaVersion: 1`, so:
-   `service.published`, `price-list.published`, `quotation.created`,
-   `quotation.revision-issued`, `quotation.item-decided`,
-   `quotation.accepted`, `quotation.rejected`, `quotation.expired`.
+2. ~~Permission codes~~ — **done** (96, idempotent, seed-state exit 0).
+3. ~~Event catalog~~ — **done** (39 entries).
 4. **Audit actions.** Check `src/server/auth/audit-actions.ts` for the
    controlled catalog and add the P1-20 actions with their classes — note the
    `financial` audit class exists and is the right one for money-moving acts.
