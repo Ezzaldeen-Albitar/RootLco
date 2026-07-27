@@ -1,0 +1,650 @@
+/**
+ * Additional-work quotation linkage (Phase 1-20, P1-20-BE-013).
+ *
+ * The commercial approval and the operational approval must agree, and there must
+ * be exactly ONE approval truth. `quo.approval_decisions` holds the customer's
+ * decision; `wo.customer_approvals.quotation_revision_ref` holds only a reference to
+ * the revision that decision was about.
+ *
+ * The reference is set at INSERT and only at INSERT, because
+ * `tg_customer_approvals_immutable` freezes the column — so every validation has to
+ * happen before the approval row exists, and a refusal must leave no partial state
+ * on either side.
+ *
+ * Each case below is a way the two approvals could disagree:
+ *
+ *  - a quotation for a DIFFERENT work order clearing this one;
+ *  - a revision from another company or branch;
+ *  - a SUPERSEDED revision, which is not what the customer is being asked about;
+ *  - a DRAFT revision, never presented;
+ *  - an EXPIRED revision, which authorizes nothing;
+ *  - a REJECTED revision releasing work the customer declined;
+ *  - a revision still AWAITING decisions.
+ *
+ * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
+ *   wo.additional-work-approval: route service authorization success denial cross-tenant isolation audit outbox stale-version rollback
+ */
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { Pool } from 'pg';
+import {
+  COMPANY_A1,
+  TENANT_A,
+  adminPool,
+  cleanBackendFixtures,
+  ensureBackendFixtures,
+  ensureTestLogins,
+  runtimeAppPool,
+} from './helpers';
+import {
+  FULL,
+  PARTNER_A,
+  createOpenWorkOrder,
+  establishP1_19Fixtures,
+  partyRoleFor,
+  authAs as authAsWo,
+} from './p1-19-helpers';
+import {
+  SERVICE_A,
+  SVC_FULL,
+  TAX_CLASS_A,
+  assignPriceList,
+  authAs,
+  establishP1_20Fixtures,
+  priceListVersionOf,
+  seedDiscountCeiling,
+} from './p1-20-helpers';
+import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { POST as CREATE_LIST } from '@/app/api/v1/price-lists/route';
+import { POST as CREATE_PL_VERSION } from '@/app/api/v1/price-lists/[priceListId]/versions/route';
+import { POST as RECORD_RULE } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
+import { POST as PUBLISH } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
+import { POST as CREATE_QUOTATION } from '@/app/api/v1/quotations/route';
+import { GET as QUOTATION_DETAIL } from '@/app/api/v1/quotations/[quotationId]/route';
+import { POST as CREATE_REVISION } from '@/app/api/v1/quotations/[quotationId]/revisions/route';
+import { POST as ISSUE } from '@/app/api/v1/quotations/[quotationId]/issue/route';
+import { POST as DECIDE_REVISION } from '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
+import { POST as RAISE } from '@/app/api/v1/work-orders/[workOrderId]/additional-work/route';
+import { POST as CREATE_JOB } from '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
+import { POST as APPROVE } from '@/app/api/v1/additional-work/[requestId]/approval/route';
+
+let admin: Pool;
+let runtime: Pool;
+let codeSeq = 0;
+let assignmentPriority = 300;
+
+const nextCode = (): string => {
+  codeSeq += 1;
+  return `FX-AW-${String(Date.now() % 100000)}-${codeSeq}`;
+};
+
+const jsonPost = (url: string, body: unknown, ifMatch?: number): Request =>
+  new Request(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': crypto.randomUUID(),
+      ...(ifMatch === undefined ? {} : { 'if-match': String(ifMatch) }),
+    },
+    body: JSON.stringify(body),
+  });
+
+interface Quotation {
+  readonly id: string;
+  readonly recordVersion: number;
+  readonly currentRevisionId: string | null;
+  readonly currentRevision: { readonly id: string } | null;
+}
+
+/** Publishes a price for SERVICE_A and assigns it at a fresh priority. */
+async function publishPrice(amount: string): Promise<void> {
+  authAs(SVC_FULL);
+  const list = (await (
+    await CREATE_LIST(
+      jsonPost('http://localhost/api/v1/price-lists', {
+        priceListCode: nextCode(),
+        name: 'Link fixture',
+        currency: 'JOD',
+      })
+    )
+  ).json()) as { id: string; recordVersion: number };
+  const version = (await (
+    await CREATE_PL_VERSION(
+      jsonPost('http://localhost/x', { effectiveFrom: '2020-01-01' }, list.recordVersion),
+      { params: Promise.resolve({ priceListId: list.id }) }
+    )
+  ).json()) as { id: string };
+  await RECORD_RULE(
+    jsonPost('http://localhost/x', {
+      serviceId: SERVICE_A,
+      amount,
+      companyId: COMPANY_A1,
+      taxClassId: TAX_CLASS_A,
+    }),
+    { params: Promise.resolve({ priceListId: list.id, versionId: version.id }) }
+  );
+  await PUBLISH(
+    jsonPost(
+      'http://localhost/x',
+      { effectiveFrom: '2020-01-01' },
+      await priceListVersionOf(list.id)
+    ),
+    { params: Promise.resolve({ priceListId: list.id, versionId: version.id }) }
+  );
+  assignmentPriority += 1;
+  await assignPriceList({
+    tenantId: TENANT_A,
+    priceListId: list.id,
+    companyId: COMPANY_A1,
+    branchId: null,
+    customerClass: null,
+    priority: assignmentPriority,
+  });
+}
+
+/** A quotation on a given work order, with one line. */
+async function quoteFor(workOrderId: string): Promise<Quotation> {
+  authAs(SVC_FULL);
+  const response = await CREATE_QUOTATION(
+    jsonPost('http://localhost/api/v1/quotations', {
+      workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000' }],
+    })
+  );
+  expect(response.status).toBe(201);
+  return (await response.json()) as Quotation;
+}
+
+async function rereadQuotation(quotationId: string): Promise<Quotation> {
+  authAs(SVC_FULL);
+  return (await (
+    await QUOTATION_DETAIL(new Request(`http://localhost/api/v1/quotations/${quotationId}`), {
+      params: Promise.resolve({ quotationId }),
+    })
+  ).json()) as Quotation;
+}
+
+async function issueQuotation(q: Quotation, expiresAt?: string): Promise<string> {
+  authAs(SVC_FULL);
+  const revisionId = q.currentRevision?.id as string;
+  const response = await ISSUE(
+    jsonPost(
+      `http://localhost/api/v1/quotations/${q.id}/issue`,
+      { revisionId, ...(expiresAt === undefined ? {} : { expiresAt }) },
+      q.recordVersion
+    ),
+    { params: Promise.resolve({ quotationId: q.id }) }
+  );
+  expect(response.status).toBe(200);
+  return revisionId;
+}
+
+async function acceptRevision(revisionId: string): Promise<void> {
+  authAs(SVC_FULL);
+  const response = await DECIDE_REVISION(
+    jsonPost(`http://localhost/api/v1/quotation-revisions/${revisionId}/decisions`, {
+      decision: 'approved',
+      channel: 'in_person',
+      decidingPartyRef: PARTNER_A,
+      presentedRevisionId: revisionId,
+    }),
+    { params: Promise.resolve({ revisionId }) }
+  );
+  expect(response.status).toBe(201);
+}
+
+async function rejectRevision(revisionId: string): Promise<void> {
+  authAs(SVC_FULL);
+  const response = await DECIDE_REVISION(
+    jsonPost(`http://localhost/api/v1/quotation-revisions/${revisionId}/decisions`, {
+      decision: 'rejected',
+      channel: 'phone',
+      presentedRevisionId: revisionId,
+    }),
+    { params: Promise.resolve({ revisionId }) }
+  );
+  expect(response.status).toBe(201);
+}
+
+/**
+ * Raises an additional-work request, with a real originating job.
+ *
+ * The origin is REQUIRED by the P1-19 service - a request whose provenance is
+ * unrecorded cannot be traced to what discovered it - so the fixture creates a job
+ * first. Passing neither a job nor a finding is a 422, and reading recordVersion off
+ * that failed body produced an If-Match of "undefined" and a 428 that looked
+ * nothing like the real cause.
+ */
+async function raiseRequest(workOrderId: string): Promise<{ id: string; recordVersion: number }> {
+  authAsWo(FULL);
+  const job = await CREATE_JOB(
+    jsonPost(`http://localhost/api/v1/work-orders/${workOrderId}/jobs`, {
+      title: 'Brake inspection',
+    }),
+    { params: Promise.resolve({ workOrderId }) }
+  );
+  expect(job.status).toBe(201);
+  const jobId = ((await job.json()) as { id: string }).id;
+
+  authAsWo(FULL);
+  const response = await RAISE(
+    jsonPost(`http://localhost/api/v1/work-orders/${workOrderId}/additional-work`, {
+      summary: 'Replace the worn brake discs',
+      isRequired: true,
+      originatingJobId: jobId,
+    }),
+    { params: Promise.resolve({ workOrderId }) }
+  );
+  expect(response.status).toBe(201);
+  return (await response.json()) as { id: string; recordVersion: number };
+}
+
+function approve(requestId: string, body: unknown, ifMatch: number): Promise<Response> {
+  return APPROVE(
+    jsonPost(`http://localhost/api/v1/additional-work/${requestId}/approval`, body, ifMatch),
+    { params: Promise.resolve({ requestId }) }
+  );
+}
+
+async function storedRef(requestId: string): Promise<string | null | undefined> {
+  const result = await admin.query<{ quotation_revision_ref: string | null }>(
+    `SELECT quotation_revision_ref FROM wo.customer_approvals
+      WHERE additional_work_request_id = $1`,
+    [requestId]
+  );
+  return result.rows[0]?.quotation_revision_ref;
+}
+
+async function approvalCount(requestId: string): Promise<number> {
+  const result = await admin.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM wo.customer_approvals
+      WHERE additional_work_request_id = $1`,
+    [requestId]
+  );
+  return Number.parseInt(result.rows[0]?.n ?? '0', 10);
+}
+
+beforeAll(async () => {
+  admin = adminPool();
+  await ensureTestLogins(admin);
+  await cleanBackendFixtures(admin);
+  await ensureBackendFixtures(admin);
+  await establishP1_19Fixtures(admin);
+  await establishP1_20Fixtures(admin);
+  runtime = runtimeAppPool(8);
+  __setPrimaryPoolForTests(runtime);
+  await seedDiscountCeiling({
+    tenantId: TENANT_A,
+    companyId: COMPANY_A1,
+    roleId: SVC_FULL.roleId,
+    amount: '9999.0000',
+    currencyCode: 'JOD',
+  });
+  await publishPrice('100.0000');
+});
+
+afterEach(() => __resetAuthenticatorForTests());
+afterAll(async () => {
+  __setPrimaryPoolForTests(undefined);
+  if (runtime) await runtime.end();
+  if (admin) {
+    await cleanBackendFixtures(admin);
+    await admin.end();
+  }
+});
+
+describe('P1-20-BE-013 — the accepted commercial scope clears the operational gate', () => {
+  it('links an ACCEPTED revision to the approval, on the same work order', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const revisionId = await issueQuotation(quotation);
+    await acceptRevision(revisionId);
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Replace the worn brake discs — JOD 110.0000',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBe(201);
+
+    // The reference is stored, and it is the revision the customer accepted.
+    expect(await storedRef(request.id)).toBe(revisionId);
+  });
+
+  it('permits an approval with NO quotation reference, because the column is nullable', async () => {
+    // A verbal approval of obviously-required work is a real workflow; the link is
+    // optional by design and its absence must not be an error.
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'phone',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Verbally approved, no priced quotation',
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBe(201);
+    expect(await storedRef(request.id)).toBeNull();
+  });
+});
+
+describe('P1-20-BE-013 — a quotation that does not justify the work clears nothing', () => {
+  /** Builds a request plus an accepted quotation on a DIFFERENT work order. */
+  async function crossOrderSetup(): Promise<{
+    requestId: string;
+    version: number;
+    roleId: string;
+    otherRevisionId: string;
+  }> {
+    const order = await createOpenWorkOrder();
+    const other = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const otherQuotation = await quoteFor(other.workOrderId);
+    const otherRevisionId = await issueQuotation(otherQuotation);
+    await acceptRevision(otherRevisionId);
+    return {
+      requestId: request.id,
+      version: request.recordVersion,
+      roleId: await partyRoleFor(order.visitId),
+      otherRevisionId,
+    };
+  }
+
+  it('refuses a revision belonging to another work order', async () => {
+    const setup = await crossOrderSetup();
+    authAsWo(FULL);
+    const response = await approve(
+      setup.requestId,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: setup.roleId,
+        presentedScope: 'Someone else’s quotation',
+        quotationRevisionRef: setup.otherRevisionId,
+      },
+      setup.version
+    );
+    expect(response.status).toBe(422);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-VAL-001');
+    // Nothing partial: no approval row at all, so the request is still decidable.
+    expect(await approvalCount(setup.requestId)).toBe(0);
+  });
+
+  it('refuses a REJECTED revision, so declined work is never released', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const revisionId = await issueQuotation(quotation);
+    await rejectRevision(revisionId);
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Customer said no',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    expect(await approvalCount(request.id)).toBe(0);
+  });
+
+  it('refuses a revision still AWAITING decisions', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const revisionId = await issueQuotation(quotation);
+    // Issued but undecided: the customer has been shown it and said nothing.
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'portal',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Not yet decided',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    expect(await approvalCount(request.id)).toBe(0);
+  });
+
+  it('refuses a DRAFT revision, which was never presented', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const draftRevisionId = quotation.currentRevision?.id as string;
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'A draft',
+        quotationRevisionRef: draftRevisionId,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(await approvalCount(request.id)).toBe(0);
+  });
+
+  it('refuses a SUPERSEDED revision', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const first = await issueQuotation(quotation);
+
+    // Revise and issue again: `first` is now superseded.
+    const afterFirst = await rereadQuotation(quotation.id);
+    authAs(SVC_FULL);
+    const second = (await (
+      await CREATE_REVISION(
+        jsonPost(
+          `http://localhost/api/v1/quotations/${quotation.id}/revisions`,
+          { lines: [{ serviceId: SERVICE_A, quantity: '2.000' }] },
+          afterFirst.recordVersion
+        ),
+        { params: Promise.resolve({ quotationId: quotation.id }) }
+      )
+    ).json()) as { id: string };
+    const afterRevise = await rereadQuotation(quotation.id);
+    authAs(SVC_FULL);
+    await ISSUE(
+      jsonPost(
+        `http://localhost/api/v1/quotations/${quotation.id}/issue`,
+        { revisionId: second.id },
+        afterRevise.recordVersion
+      ),
+      { params: Promise.resolve({ quotationId: quotation.id }) }
+    );
+    await acceptRevision(second.id);
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'The old revision',
+        quotationRevisionRef: first,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-CON-001');
+    expect(await approvalCount(request.id)).toBe(0);
+
+    // The CURRENT accepted revision does clear it.
+    authAsWo(FULL);
+    const accepted = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'The current revision',
+        quotationRevisionRef: second.id,
+      },
+      request.recordVersion
+    );
+    expect(accepted.status).toBe(201);
+    expect(await storedRef(request.id)).toBe(second.id);
+  });
+
+  it('refuses an EXPIRED revision', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    // Issue with a short expiry, then let the database clock pass it.
+    const revisionId = await issueQuotation(quotation, new Date(Date.now() + 1_000).toISOString());
+    await acceptRevision(revisionId);
+    // Force the lapse rather than sleeping: expiry is compared against now().
+    await admin.query(
+      `UPDATE quo.quotation_revisions SET expires_at = now() - interval '1 hour' WHERE id = $1`,
+      [revisionId]
+    );
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'A lapsed quotation',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    expect(await approvalCount(request.id)).toBe(0);
+  });
+
+  it('refuses an unknown revision id without disclosing whether it exists', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    const response = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Invented reference',
+        quotationRevisionRef: '00000000-0000-4000-8000-0000000000cc',
+      },
+      request.recordVersion
+    );
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-RES-001');
+    expect(await approvalCount(request.id)).toBe(0);
+  });
+});
+
+describe('P1-20-BE-013 — there is one approval truth', () => {
+  it('stores only a REFERENCE; the decision itself stays in quo.approval_decisions', async () => {
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const revisionId = await issueQuotation(quotation);
+    await acceptRevision(revisionId);
+
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    expect(
+      (
+        await approve(
+          request.id,
+          {
+            decision: 'approved',
+            channel: 'in_person',
+            decidingPartyRoleId: roleId,
+            presentedScope: 'Linked',
+            quotationRevisionRef: revisionId,
+          },
+          request.recordVersion
+        )
+      ).status
+    ).toBe(201);
+
+    // The commercial decision rows are the quotation module's, and the operational
+    // approval adds no copy of them — only the reference.
+    const commercial = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM quo.approval_decisions WHERE quotation_revision_id = $1`,
+      [revisionId]
+    );
+    expect(Number.parseInt(commercial.rows[0]?.n ?? '0', 10)).toBeGreaterThan(0);
+
+    const operational = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM wo.customer_approvals
+        WHERE additional_work_request_id = $1`,
+      [request.id]
+    );
+    expect(operational.rows[0]?.n).toBe('1');
+  });
+
+  it('does not touch inventory', async () => {
+    // P1-21 owns reservation and issue. Asserted rather than assumed, because a
+    // commercial approval is exactly where stock coupling would be tempting.
+    const before = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM inv.stock_movements`
+    );
+    const order = await createOpenWorkOrder();
+    const request = await raiseRequest(order.workOrderId);
+    const quotation = await quoteFor(order.workOrderId);
+    const revisionId = await issueQuotation(quotation);
+    await acceptRevision(revisionId);
+    const roleId = await partyRoleFor(order.visitId);
+    authAsWo(FULL);
+    await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Linked',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    const after = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM inv.stock_movements`
+    );
+    expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+  });
+});

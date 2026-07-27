@@ -43,6 +43,7 @@ import {
   assertRevisionEditable,
   hasExpired,
   isTerminalRevision,
+  rollUpDecisions,
 } from '../domain/quotation';
 import type {
   ItemRow,
@@ -571,6 +572,67 @@ export class QuotationService {
     const revision = await this.repository.findRevision(db, quotation.currentRevisionId);
     const items = revision === null ? [] : await this.repository.listItems(db, revision.id);
     return this.view(quotation, revision, items);
+  }
+
+  /**
+   * The commercial standing of one revision, for another module to gate on
+   * (P1-20-BE-013).
+   *
+   * Exists so `@/modules/work-order` can decide whether a quotation revision
+   * justifies releasing additional work WITHOUT reading any `quo` table — the
+   * P1-19 integration point is `wo.customer_approvals.quotation_revision_ref`, and
+   * that column belongs to work-order while every fact about the revision belongs
+   * here.
+   *
+   * `outcome` is DERIVED from the item decisions on every call, exactly as the
+   * quotation's own status is. There is no second stored approval truth: this
+   * method reads the same `quo.approval_decisions` rows and folds them with
+   * `rollUpDecisions`, so a consumer cannot be told "approved" by one path and
+   * "rejected" by another.
+   *
+   * It returns the revision's own scope and its quotation's `work_order_id` so the
+   * caller can prove the link is to the right order in the right branch, rather
+   * than trusting an id a client supplied.
+   *
+   * `null` when the revision is not visible to the caller — RLS decides that, so a
+   * cross-tenant revision simply is not found.
+   */
+  public async commercialApproval(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<{
+    readonly revisionId: string;
+    readonly quotationId: string;
+    readonly workOrderId: string;
+    readonly companyId: string;
+    readonly branchId: string;
+    readonly currency: string;
+    readonly grandTotal: string;
+    readonly revisionStatus: string;
+    readonly isCurrentRevision: boolean;
+    readonly hasExpired: boolean;
+    /** `accepted`, `rejected`, or `null` while lines remain undecided. */
+    readonly outcome: 'accepted' | 'rejected' | null;
+  } | null> {
+    const revision = await this.repository.findRevision(db, revisionId);
+    if (revision === null) return null;
+    const quotation = await this.repository.findQuotation(db, revision.quotationId);
+    if (quotation === null) return null;
+
+    const tally = await this.repository.tallyDecisions(db, revision.id);
+    return {
+      revisionId: revision.id,
+      quotationId: quotation.id,
+      workOrderId: quotation.workOrderId,
+      companyId: revision.companyId,
+      branchId: revision.branchId,
+      currency: revision.currencyCode,
+      grandTotal: revision.capturedGrandTotal,
+      revisionStatus: revision.status,
+      isCurrentRevision: quotation.currentRevisionId === revision.id,
+      hasExpired: hasExpired(revision.expiresAt, new Date()),
+      outcome: rollUpDecisions(tally),
+    };
   }
 
   // ---- internals -----------------------------------------------------------

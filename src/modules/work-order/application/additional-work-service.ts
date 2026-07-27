@@ -37,6 +37,7 @@
  */
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
+import { commercialApprovalReader } from '@/server/contracts/commercial-approval';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
@@ -158,6 +159,20 @@ export interface DecideInput {
   readonly presentedScope: string;
   readonly expectedVersion: number;
   readonly evidence?: readonly ApprovalEvidenceInput[] | undefined;
+  /**
+   * The approved quotation revision this operational approval rests on
+   * (P1-20-BE-013).
+   *
+   * Optional, because additional work may be approved without a priced quotation —
+   * a verbal approval of an obviously-required repair is a real workflow and the
+   * column is nullable. When supplied it is validated against the quotation module
+   * before anything is written.
+   *
+   * It is accepted HERE rather than filled in later because
+   * `tg_customer_approvals_immutable` freezes `quotation_revision_ref`: there is no
+   * subsequent moment at which the link could be established.
+   */
+  readonly quotationRevisionRef?: string | undefined;
 }
 
 /** Version states a document may be in and still be bound as evidence. */
@@ -543,6 +558,14 @@ export class AdditionalWorkService extends ApplicationService {
       await this.assertBindableVersion(db, item.documentVersionId);
     }
 
+    // Same reason, same place: the quotation link is validated before anything is
+    // written, so a bad reference cannot leave an approval recorded with a link that
+    // does not hold (P1-20-BE-013).
+    const quotationRevisionRef =
+      input.quotationRevisionRef === undefined
+        ? null
+        : await this.assertLinkableQuotationRevision(db, request, input.quotationRevisionRef);
+
     let approval: CustomerApprovalRow;
     try {
       approval = await this.repository.recordApproval(db, {
@@ -553,6 +576,7 @@ export class AdditionalWorkService extends ApplicationService {
         decision: input.decision,
         channel: input.channel,
         presentedScope: input.presentedScope,
+        quotationRevisionRef,
       });
     } catch (error) {
       throw this.mapApprovalFailure(error, requestId, input.decidingPartyRoleId);
@@ -856,6 +880,89 @@ export class AdditionalWorkService extends ApplicationService {
    * for every caller. What CAN be refused is a version somebody rejected or
    * quarantined, and that is what is refused.
    */
+  /**
+   * Validates that a quotation revision may be linked to this approval, and
+   * returns its id (P1-20-BE-013).
+   *
+   * Every check here closes a way the commercial and operational approvals could
+   * disagree. It asks `@/modules/quotation` for the revision's standing rather than
+   * reading any `quo` table, so there is exactly one definition of what "approved"
+   * means and this module cannot drift from it.
+   *
+   * Refused, and why each matters:
+   *
+   *  - **not visible** — a cross-tenant or unknown revision. RLS decides, so the
+   *    answer is simply "not found" rather than a leak of existence.
+   *  - **another work order** — the whole point of the link is that the customer
+   *    approved work on THIS order. A quotation for a different order clears
+   *    nothing, however legitimately approved it is.
+   *  - **another company or branch** — the request's scope and the revision's must
+   *    match. `wo.customer_approvals` carries its own scope columns and the
+   *    coherence guard pins them to the request's, so a mismatch here would
+   *    otherwise become a link across a branch boundary.
+   *  - **not the current revision** — a superseded revision is not what the customer
+   *    is being asked about now.
+   *  - **not issued** — a draft was never presented, and `superseded`/`rejected`/
+   *    `expired` are terminal.
+   *  - **expired** — a lapsed quotation authorizes nothing.
+   *  - **outcome not accepted** — a rejected or still-undecided revision must not
+   *    release work. The outcome is derived from the item decisions on every call,
+   *    so this cannot be satisfied by a stale roll-up.
+   *
+   * This creates no second approval truth: the commercial decision stays in
+   * `quo.approval_decisions` and this method only decides whether to record the
+   * reference.
+   */
+  private async assertLinkableQuotationRevision(
+    db: DbHandle,
+    request: AdditionalWorkRequestRow,
+    revisionId: string
+  ): Promise<string> {
+    const standing = await commercialApprovalReader().standingOf(db, revisionId);
+    if (standing === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Quotation revision ${revisionId} is not visible`,
+      });
+    }
+    if (standing.workOrderId !== request.workOrderId) {
+      throw new AppFailure('ERR-VAL-001', {
+        message:
+          `Quotation revision ${revisionId} belongs to work order ${standing.workOrderId}, not ` +
+          `${request.workOrderId}`,
+      });
+    }
+    if (standing.companyId !== request.companyId || standing.branchId !== request.branchId) {
+      throw new AppFailure('ERR-IAM-001', {
+        message: `Quotation revision ${revisionId} belongs to another company or branch`,
+      });
+    }
+    if (!standing.isCurrentRevision) {
+      throw new AppFailure('ERR-CON-001', {
+        message: `Quotation revision ${revisionId} has been superseded`,
+      });
+    }
+    if (standing.revisionStatus !== 'issued') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Quotation revision ${revisionId} is ${standing.revisionStatus}; only an issued ` +
+          'revision may be linked',
+      });
+    }
+    if (standing.hasExpired) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Quotation revision ${revisionId} has expired`,
+      });
+    }
+    if (standing.outcome !== 'accepted') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Quotation revision ${revisionId} is not accepted (` +
+          `${standing.outcome ?? 'awaiting decisions'}), so it cannot release additional work`,
+      });
+    }
+    return standing.revisionId;
+  }
+
   private async assertBindableVersion(db: DbHandle, documentVersionId: string): Promise<void> {
     // The caller's handle, so the read runs inside this transaction: a version
     // registered earlier in the same request must be visible, and the visibility

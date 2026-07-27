@@ -82,6 +82,20 @@ const Body = z
     decidingPartyRoleId: schemas.uuid,
     presentedScope: z.string().trim().min(1).max(MAX_PRESENTED_SCOPE),
     evidence: z.array(Evidence).max(MAX_APPROVAL_EVIDENCE).optional(),
+    /**
+     * The approved quotation revision this decision rests on (P1-20-BE-013).
+     *
+     * Optional: additional work may be approved without a priced quotation, and
+     * wo.customer_approvals.quotation_revision_ref is nullable. When supplied it is
+     * validated through the commercial-approval port - same work order, same
+     * company and branch, current, issued, unexpired, and ACCEPTED - before
+     * anything is written.
+     *
+     * It is accepted at decision time and nowhere else, because
+     * tg_customer_approvals_immutable freezes the column: there is no later moment
+     * at which this link could be established.
+     */
+    quotationRevisionRef: schemas.uuid.optional(),
   })
   .strict();
 
@@ -133,6 +147,7 @@ export async function POST(
           presentedScope: parsed.presentedScope,
           expectedVersion,
           evidence: parsed.evidence,
+          quotationRevisionRef: parsed.quotationRevisionRef,
         },
         authorizeScope
       );

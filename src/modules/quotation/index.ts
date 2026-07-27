@@ -30,6 +30,7 @@
  * recomputed from the item rows.
  */
 import { composeModule } from '@/server/layering';
+import { setCommercialApprovalReader } from '@/server/contracts/commercial-approval';
 import { QuotationRepository } from './data/quotation-repository';
 import { QuotationService } from './application/quotation-service';
 import { QuotationDecisionService } from './application/quotation-decision-service';
@@ -96,4 +97,22 @@ export const quotationModule = composeModule({
       decisions: new QuotationDecisionService(repository),
     };
   },
+});
+
+/**
+ * Installs the commercial-approval port at MODULE LOAD, not inside `create()`.
+ *
+ * Inside the composition root it would install only once something had already
+ * asked for a quotation service, so a process that reached
+ * `POST /additional-work/{requestId}/approval` first would find the port missing.
+ * At module scope, importing this surface is enough — and the closure defers to
+ * `quotationModule()`, so the services themselves are still built lazily on first
+ * use.
+ *
+ * The dependency is inverted through the foundation on purpose: `quotation` already
+ * imports `work-order` for `requireWorkOrder`, so importing back would close a
+ * module cycle.
+ */
+setCommercialApprovalReader({
+  standingOf: (db, revisionId) => quotationModule().quotations.commercialApproval(db, revisionId),
 });
