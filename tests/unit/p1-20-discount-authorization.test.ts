@@ -29,15 +29,21 @@ interface PolicyShape {
 function build(options: {
   policy?: PolicyShape | null;
   ceiling?: { amount: string; currencyCode: string } | null;
+  /** Whether a named discount requester resolves to an active user in this tenant. */
+  requesterExists?: boolean;
 }): DiscountAuthorizationService {
   const repository = {
     findApprovalPolicy: vi.fn().mockResolvedValue(options.policy ?? null),
+    isActiveUserInTenant: vi.fn().mockResolvedValue(options.requesterExists ?? true),
   } as unknown as PricingRepository;
   const ceilings: ApprovalCeilingReader = {
     callerApprovalCeiling: vi.fn().mockResolvedValue(options.ceiling ?? null),
   };
   return new DiscountAuthorizationService(repository, ceilings);
 }
+
+/** A second, real user id — the party a maker/approver separation names. */
+const OTHER_USER = 'd2900000-0000-4000-8000-0000000000ff';
 
 const allow = async (): Promise<boolean> => true;
 const deny = async (): Promise<boolean> => false;
@@ -276,5 +282,61 @@ describe('discount authorization — maker must not be approver', () => {
       allow
     );
     expect(result.authorized).toBe(true);
+  });
+});
+
+/**
+ * The named requester must EXIST (P1-20-BE-006, P1-20-SEC-003).
+ *
+ * `maker_approver_distinct` was cleared by any well-formed UUID other than the actor's own:
+ * `discountRequestedBy` arrived from the request body, was compared against the actor id and
+ * nothing else, and was never persisted — so an actor could authorize their own
+ * over-threshold discount by inventing a colleague, and the invention left no trace. The
+ * hostile audit confirmed it against `information_schema`: zero `%request%` columns anywhere
+ * in `quo`.
+ *
+ * Distinctness is not separation of duties. These cases pin the difference.
+ */
+describe('discount maker/approver — the requester is resolved, not merely distinct', () => {
+  const policy = {
+    id: 'd2000000-0000-4000-8000-0000000009f1',
+    thresholdKind: 'amount' as const,
+    thresholdValue: '10.0000',
+    currencyCode: 'JOD',
+    requiredPermissionCode: 'svc.price.manage',
+    makerApproverDistinct: true,
+  };
+
+  it('refuses a requester that resolves to no active user in this tenant', async () => {
+    const service = build({
+      policy,
+      ceiling: { amount: '999.0000', currencyCode: 'JOD' },
+      requesterExists: false,
+    });
+    const failure = await service
+      .authorize(db, request({ discountAmount: '50.0000', requestedBy: OTHER_USER }), allow)
+      .then(
+        () => null,
+        (error: unknown) => error
+      );
+    expect(failure).toBeInstanceOf(AppFailure);
+    expect((failure as AppFailure).code).toBe('ERR-IAM-001');
+    expect((failure as AppFailure).message).toMatch(/not an active user in this tenant/);
+  });
+
+  it('accepts a requester that resolves, and returns it for the audit record', async () => {
+    const service = build({
+      policy,
+      ceiling: { amount: '999.0000', currencyCode: 'JOD' },
+      requesterExists: true,
+    });
+    const result = await service.authorize(
+      db,
+      request({ discountAmount: '50.0000', requestedBy: OTHER_USER }),
+      allow
+    );
+    expect(result.requiredElevatedPermission).toBe(true);
+    // The value is carried out so the caller can audit WHO the control was satisfied by.
+    expect(result.requestedBy).toBe(OTHER_USER);
   });
 });

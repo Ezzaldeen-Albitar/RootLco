@@ -35,6 +35,21 @@ for any `scope: 'branch'` operation whose handler contains no `authorizeScope`,
 search, because P1-19's equivalent guard was first satisfied by the comment
 explaining the fix.
 
+### ¹ Tenant-scoped is not the same as unguarded
+
+The map above says `tenant` for the price-list operations because a price list carries no
+company and no branch. That is accurate as a REGISTRY fact and was, until `7a58272`, an
+incomplete description of the control — an earlier revision of this section reasoned from it
+as though the tenant check were sufficient, and an independent audit caught that the section
+still described the escalation as the design after the code had closed it.
+
+Two of those operations now require **tenant-wide authority** in the handler:
+`svc.price-rule-record` when both selectors are omitted (a wildcard rule prices every
+branch), and `svc.price-list-version-publish` (publication makes a version's prices the ones
+the tenant charges). Both ask the deployed `iam.has_permission_in_scope` with an all-NULL
+target, which only `scope_mode = 'unrestricted'` satisfies. A branch-scoped actor keeps the
+ability to write rules naming its own branch.
+
 ### Why the tenant-scoped operations are correct rather than convenient
 
 `svc.price_lists` carries no `company_id` and no `branch_id` — a price list is

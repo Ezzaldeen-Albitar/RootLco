@@ -99,6 +99,8 @@ export interface DiscountAuthorization {
    * nothing was configured*. That distinction is the whole reason the field carries
    * the policy id rather than only the number.
    */
+  /** The requester the maker/approver control was satisfied by, for the audit record. */
+  readonly requestedBy: string | null;
   readonly threshold: {
     readonly policyId: string;
     readonly kind: string;
@@ -144,6 +146,7 @@ export class DiscountAuthorizationService {
         requiredElevatedPermission: false,
         permissionCode: null,
         ceiling: null,
+        requestedBy: null,
         threshold: null,
       };
     }
@@ -189,6 +192,27 @@ export class DiscountAuthorizationService {
           message:
             'This company requires the approver of a discount to be someone other than the ' +
             'person who requested it, and that other person must be named',
+        });
+      }
+      /**
+       * The named requester must EXIST. Distinctness alone is not separation of duties.
+       *
+       * `discountRequestedBy` arrives from the request body and was previously compared
+       * against the actor's id and nothing else — so any well-formed UUID cleared the
+       * control, and an actor could authorize their own over-threshold discount by inventing
+       * a colleague. It was also never persisted and never audited, so the invention left no
+       * trace to find afterwards; both halves are fixed, here and in the audit record.
+       */
+      if (
+        policy?.makerApproverDistinct === true &&
+        request.requestedBy !== null &&
+        !(await this.repository.isActiveUserInTenant(db, request.requestedBy))
+      ) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            `The named discount requester ${request.requestedBy} is not an active user in ` +
+            'this tenant, so it cannot satisfy the maker/approver separation this company ' +
+            'requires',
         });
       }
     }
@@ -246,6 +270,7 @@ export class DiscountAuthorizationService {
       authorized: true,
       requiredElevatedPermission: overThreshold,
       permissionCode,
+      requestedBy: request.requestedBy,
       ceiling: ceiling === null ? null : { amount: ceiling.amount, currency: ceiling.currencyCode },
       threshold:
         policy === null

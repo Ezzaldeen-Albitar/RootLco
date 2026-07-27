@@ -120,6 +120,31 @@ export class PricingRepository extends Repository {
    * decision, and `shared-services` already reads `org.*` for the same class of
    * reason. RLS narrows it to the caller's tenant.
    */
+  /**
+   * Whether a named discount requester is a REAL, active user in this tenant.
+   *
+   * `maker_approver_distinct` is a separation-of-duties control, and a control that accepts
+   * an unverified string is not one: before this, any well-formed UUID other than the
+   * actor's own cleared it, so an actor could authorize their own over-threshold discount by
+   * inventing a requester. Nothing downstream ever resolved the value, and nothing persisted
+   * it, so the invention left no trace either.
+   *
+   * The tenant filter is the point as much as the existence check — naming a user from
+   * another tenant must not satisfy a separation of duties inside this one.
+   */
+  public async isActiveUserInTenant(db: DbHandle, userId: string): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1 FROM iam.user_accounts
+          WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND deleted_at IS NULL
+       ) AS ok`,
+      [context.principal.tenantId, userId]
+    );
+    return row?.ok === true;
+  }
+
   public async branchBelongsToCompany(
     db: DbHandle,
     companyId: string,

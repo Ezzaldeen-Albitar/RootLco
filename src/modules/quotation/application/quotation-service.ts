@@ -98,6 +98,8 @@ interface DiscountSummary {
   readonly elevatedLines: number;
   readonly permissionCode: string | null;
   readonly ceiling: { amount: string; currency: string } | null;
+  /** Who the maker/approver control was satisfied by. Resolved, not merely supplied. */
+  readonly requestedBy: string | null;
   readonly threshold: DiscountAuthorization['threshold'];
 }
 
@@ -832,6 +834,7 @@ export class QuotationService {
     let appliedCeiling: { amount: string; currency: string } | null = null;
     let appliedThreshold: DiscountAuthorization['threshold'] = null;
     let elevatedPermission: string | null = null;
+    let appliedRequestedBy: string | null = null;
 
     for (const line of context.lines) {
       lineNumber += 1;
@@ -916,6 +919,7 @@ export class QuotationService {
         // policy that applied — not an arbitrary choice between different ones.
         appliedThreshold = authorization.threshold;
         elevatedPermission = authorization.permissionCode;
+        appliedRequestedBy = authorization.requestedBy;
       }
       if (authorization.ceiling !== null) appliedCeiling = authorization.ceiling;
 
@@ -992,6 +996,7 @@ export class QuotationService {
         elevatedLines = Math.max(elevatedLines, 1);
         appliedThreshold = aggregate.threshold;
         elevatedPermission = aggregate.permissionCode;
+        appliedRequestedBy = aggregate.requestedBy;
       }
       if (aggregate.ceiling !== null) appliedCeiling = aggregate.ceiling;
     }
@@ -1004,6 +1009,7 @@ export class QuotationService {
         currency,
         elevatedLines,
         permissionCode: elevatedPermission,
+        requestedBy: appliedRequestedBy,
         ceiling: appliedCeiling,
         threshold: appliedThreshold,
       },
@@ -1048,6 +1054,14 @@ export class QuotationService {
           field: 'requiredPermission',
           classification: 'internal',
           value: summary.permissionCode ?? 'none',
+        },
+        // WHO asked for it. A separation-of-duties control that leaves no record of the
+        // party it was satisfied by cannot be audited after the fact, which is how an
+        // invented requester went undetectable.
+        {
+          field: 'requestedBy',
+          classification: 'internal',
+          value: summary.requestedBy ?? 'self',
         },
         // A null policy is recorded as such rather than omitted: "no policy was
         // configured, so the threshold was zero" is the reason the discount needed
