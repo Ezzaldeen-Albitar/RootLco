@@ -891,9 +891,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   {
     code: 'svc.discount.authorized',
     class: 'financial',
-    entityType: 'svc.discount_rules',
+    // The REVISION, not a discount-rule row. A discount is authorized against the
+    // actor's ceiling and the company's policy; no svc.discount_rules row need exist,
+    // and filing the record under a table it may not touch would make the trail
+    // unqueryable from the document the discount was actually applied to.
+    entityType: 'quo.quotation_revision',
     description:
-      'A discount over the configured approval threshold was authorized against the actor’s own iam.approval_limits ceiling. Records the threshold that applied and the ceiling checked, because "authorized" with no reason is not an auditable fact.',
+      'A discount over the configured approval threshold was authorized against the actor’s own iam.approval_limits ceiling. Written once per revision that needed elevated authority, naming the policy that applied (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
   },
   {
     code: 'quo.quotation.created',

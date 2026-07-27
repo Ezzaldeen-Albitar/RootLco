@@ -6543,7 +6543,7 @@
           }
         },
         "x-required-permissions": ["svc.price.manage"],
-        "x-scope": "tenant",
+        "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"

@@ -18,7 +18,7 @@ Operations: **13**. Published events: **7**.
 | `svc.price-list-version-create`  | POST   | `/price-lists/{priceListId}/versions`                         | `svc.price.manage`                           | tenant | privileged (`svc.price_list_version.created`)  | yes        | yes      |
 | `svc.price-list-version-publish` | POST   | `/price-lists/{priceListId}/versions/{versionId}/publication` | `svc.price.publish`                          | tenant | financial (`svc.price_list_version.published`) | yes        | yes      |
 | `svc.price-resolve`              | GET    | `/prices`                                                     | `svc.price.read`                             | branch | none                                           | no         | no       |
-| `svc.price-rule-record`          | POST   | `/price-lists/{priceListId}/versions/{versionId}/rules`       | `svc.price.manage`                           | tenant | financial (`svc.price_rule.recorded`)          | yes        | no       |
+| `svc.price-rule-record`          | POST   | `/price-lists/{priceListId}/versions/{versionId}/rules`       | `svc.price.manage`                           | branch | financial (`svc.price_rule.recorded`)          | yes        | no       |
 | `svc.service-list`               | GET    | `/services`                                                   | `svc.service.read`                           | branch | none                                           | no         | no       |
 
 ## Published events

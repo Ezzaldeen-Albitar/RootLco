@@ -49,6 +49,25 @@ import {
   MAX_PRESENTED_SCOPE,
   workOrderModule,
 } from '@/modules/work-order';
+/**
+ * Side-effect import: it INSTALLS the commercial-approval port (P1-20-BE-013).
+ *
+ * `@/modules/quotation` calls `setCommercialApprovalReader` at module scope, and this
+ * route is the only path that consumes it. Nothing else in `src/` imports the
+ * quotation module — no middleware, no instrumentation, no bootstrap barrel — so
+ * without this line the port's installation depended on request ORDER: a fresh Node
+ * process (cold start, restart, scale-out) that received this endpoint before any
+ * `/quotations*` route had been loaded found the port missing and answered
+ * `ERR-SYS-001`. Fail-closed, so no unvalidated link was ever written, but
+ * P1-20-BE-013 was intermittently unavailable for reasons a caller could not see.
+ *
+ * It cannot be a named import: the module is needed for its side effect, not its
+ * surface, and `work-order` must not import `quotation` (that is the cycle the port
+ * exists to avoid). A route may import both, which is why the installation belongs
+ * here. `scripts/p1-20-endpoint-inventory.mjs` enforces the pairing so a future route
+ * citing a quotation revision cannot omit it.
+ */
+import '@/modules/quotation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

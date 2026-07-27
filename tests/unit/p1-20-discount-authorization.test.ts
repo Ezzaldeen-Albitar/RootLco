@@ -13,6 +13,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { DiscountAuthorizationService } from '@/modules/pricing/application/discount-authorization-service';
 import type { ApprovalCeilingReader } from '@/modules/pricing/application/discount-authorization-service';
 import type { PricingRepository } from '@/modules/pricing/data/pricing-repository';
+import { CurrencyMismatchError } from '@/modules/pricing/domain/money';
+import { AppFailure } from '@/server/errors/app-failure';
 
 const db = {} as never;
 
@@ -157,10 +159,29 @@ describe('discount authorization — amount thresholds', () => {
   });
 
   it('refuses when the ceiling is in a different currency, never converting', async () => {
+    /**
+     * A refusal the CALLER can read, not an internal error.
+     *
+     * `Money.greaterThan` still throws `CurrencyMismatchError` — silent FX must stay
+     * unexpressible — but that is a plain `Error`, which the route handler classifies
+     * `ERR-SYS-001` and serves as HTTP 500. An approval limit in USD against a JOD price
+     * list is ordinary configuration, not a bug, so it is translated into an
+     * authorization refusal naming both currencies. This test asserted the raw
+     * `CurrencyMismatchError` message and therefore pinned the 500 in place.
+     */
     const service = build({ policy, ceiling: { amount: '999.0000', currencyCode: 'USD' } });
-    await expect(
-      service.authorize(db, request({ discountAmount: '60.0000', currency: 'JOD' }), allow)
-    ).rejects.toThrow(/currency USD does not match JOD/);
+    const failure = await service
+      .authorize(db, request({ discountAmount: '60.0000', currency: 'JOD' }), allow)
+      .then(
+        () => null,
+        (error: unknown) => error
+      );
+    expect(failure).toBeInstanceOf(AppFailure);
+    expect((failure as AppFailure).code).toBe('ERR-IAM-001');
+    expect((failure as AppFailure).message).toMatch(/denominated in USD/);
+    expect((failure as AppFailure).message).toMatch(/no conversion is performed/);
+    // The mismatch is still the CAUSE, so the operational log keeps the exact detail.
+    expect((failure as { cause?: unknown }).cause).toBeInstanceOf(CurrencyMismatchError);
   });
 });
 

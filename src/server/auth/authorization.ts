@@ -205,6 +205,31 @@ export async function callerHoldsPermission(
  * limits the LARGEST applies, because holding two roles grants the union of their
  * authority rather than the intersection.
  *
+ * ## A role-derived ceiling only counts where the GRANT reaches
+ *
+ * `iam.approval_limits` rows are per `(role, company)`, and a role grant may be
+ * confined to particular companies or branches. Matching on tenant and user alone —
+ * which this query did — credits the caller with a role's ceiling in a company their
+ * grant of that role does not cover: hold role R scoped to company A and role S scoped
+ * to company B, and acting in company B you inherited R's *company-B* limit. That is
+ * over-granting approval authority through a scope the actor was never given, the same
+ * shape as P1-18-A-01 one level up.
+ *
+ * The grant-scope predicate below matches the shape the deployed
+ * `iam.has_permission_in_scope` uses — `scope_mode = 'unrestricted'` OR a
+ * `grant_scopes` row reaching the target — so a permission check and a limit check
+ * cannot disagree about which grants reach a company.
+ *
+ * It matches on `grant_scopes.company_id` alone, and that is exact rather than
+ * approximate: `ck_grant_scopes_shape` requires `company_id IS NOT NULL` for ALL three
+ * scope types, so a branch- or department-scoped row already names its company. An
+ * earlier version derived the company by joining `org.branches`, which was both
+ * unnecessary and fragile — that join runs under RLS, so a grant whose branch fell
+ * outside the caller's own `app.branch_ids` would silently lose its ceiling. An
+ * approval limit is per company and has no branch column, so the company is the only
+ * granularity there is to match, and a branch-scoped approver keeps the ceiling their
+ * company grants them.
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -227,7 +252,15 @@ export async function callerApprovalCeiling(
                     WHERE g.tenant_id = $1 AND g.user_id = $4
                       AND g.status = 'active'
                       AND g.valid_from <= now()
-                      AND (g.valid_to IS NULL OR g.valid_to > now()))))
+                      AND (g.valid_to IS NULL OR g.valid_to > now())
+                      AND (
+                        g.scope_mode = 'unrestricted'
+                        OR EXISTS (
+                          SELECT 1 FROM iam.grant_scopes s
+                           WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                             AND s.company_id = $2
+                        )
+                      ))))
       ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
       LIMIT 1`,
     [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]

@@ -12,11 +12,20 @@ evidence packaging).
 | `tests/unit/p1-20-decimal.test.ts`                 | 32    | exact decimal and money boundaries (QA-001)                         |
 | `tests/unit/p1-20-discount-authorization.test.ts`  | 24    | discount thresholds, ceilings, maker≠approver (QA-001)              |
 | `tests/backend/p1-20-service-catalog.test.ts`      | 21    | catalog read, isolation, filters, paging (QA-002, QA-003)           |
-| `tests/backend/p1-20-pricing.test.ts`              | 35    | price-list lifecycle, publication race, resolution (QA-002, QA-004) |
-| `tests/backend/p1-20-quotation.test.ts`            | 38    | quotation lifecycle, decisions, evidence (QA-002, QA-004)           |
-| `tests/backend/p1-20-additional-work-link.test.ts` | 11    | BE-013 integration (QA-002, QA-005)                                 |
+| `tests/backend/p1-20-pricing.test.ts`              | 45    | price-list lifecycle, publication race, resolution (QA-002, QA-004) |
+| `tests/backend/p1-20-quotation.test.ts`            | 56    | quotation lifecycle, decisions, evidence, expiry (QA-002, QA-004)   |
+| `tests/backend/p1-20-additional-work-link.test.ts` | 12    | BE-013 integration and port installation (QA-002, QA-005)           |
 
-**161 tests** across the phase: 56 unit, 105 backend.
+**190 tests** across the phase: 56 unit, 134 backend.
+
+The backend count rose by 29 during Wave 9. That was not padding: the
+operation-coverage gate's derived floor did not apply to `svc.`/`quo.` at all until
+`P1_20_PREFIXES` was added to `DERIVED_PREFIXES`, and once it did it demanded eight
+evidences that did not exist. An independent audit then found that 20 already-declared
+flags across 11 operations were not backed by an assertion that could fail on the
+defect they named — chiefly because every `isolation` case used a principal that did
+not hold the operation's own permission, so its 403 was a missing permission and a
+scope-blind implementation passed unchanged.
 
 ## P1-20-QA-001 — exact decimal boundaries
 
@@ -73,18 +82,38 @@ lives in the logs.
 
 ## P1-20-QA-003 — tenant, company and branch isolation
 
-| Case                                                       | Test                                                                                 |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Cross-tenant catalog invisible both directions             | service catalog: "never shows a tenant-B caller tenant A's services, and vice versa" |
-| Cross-tenant price list invisible                          | pricing: "never shows a tenant-B list to tenant A"                                   |
-| Cross-tenant price resolution refused, amount never echoed | pricing: "never resolves a tenant-A price for a tenant-B caller"                     |
-| Cross-tenant quotation refused                             | quotation: "never lets a tenant-B caller quote a tenant-A work order"                |
-| Cross-tenant quotation detail discloses no amount          | quotation: "403 without quo.quotation.read, and 404-shaped for another tenant"       |
-| Cross-branch catalog filter refused                        | service catalog: "refuses a branch filter for a branch the caller has no grant in"   |
-| Cross-branch price resolution refused                      | pricing: "refuses a branch the caller holds no price permission in"                  |
-| Cross-branch quotation detail refused                      | quotation: "refuses a caller scoped to another branch"                               |
-| **Permission-blind grant union does not widen access**     | both the service-catalog and pricing `SVC_PERMISSION_ELSEWHERE` cases                |
-| Availability asymmetry makes the filter meaningful         | `SERVICE_A` is available in A1 only, `SERVICE_A_ALT` in A2 only                      |
+| Case                                                          | Test                                                                                 |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Cross-tenant catalog invisible both directions                | service catalog: "never shows a tenant-B caller tenant A's services, and vice versa" |
+| Cross-tenant price list invisible                             | pricing: "never shows a tenant-B list to tenant A"                                   |
+| Cross-tenant price resolution refused, amount never echoed    | pricing: "never resolves a tenant-A price for a tenant-B caller"                     |
+| Cross-tenant quotation refused                                | quotation: "never lets a tenant-B caller quote a tenant-A work order"                |
+| Cross-tenant quotation detail discloses no amount             | quotation: "403 without quo.quotation.read, and 404-shaped for another tenant"       |
+| Cross-tenant price-list version / rule / publication          | pricing: the three `svc pricing writes` floor cases                                  |
+| Cross-tenant revision create / issue / item / revision decide | quotation: the four `quo writes` floor cases                                         |
+| Cross-branch catalog filter refused                           | service catalog: "refuses a branch filter for a branch the caller has no grant in"   |
+| Cross-branch price resolution refused                         | pricing: "refuses a branch the caller holds no price permission in"                  |
+| Cross-branch price RULE refused                               | pricing: "svc.price-rule-record refuses … and another branch"                        |
+| Cross-branch quotation detail refused                         | quotation: "refuses a caller scoped to another branch"                               |
+| Cross-branch quotation create / revise / issue / decide       | quotation: the four `quo writes` floor cases                                         |
+| **Permission-blind grant union does not widen access**        | the service-catalog `SVC_PERMISSION_ELSEWHERE` case                                  |
+| Availability asymmetry makes the filter meaningful            | `SERVICE_A` is available in A1 only, `SERVICE_A_ALT` in A2 only                      |
+| Role-derived approval ceiling does not cross a company        | pricing: `callerApprovalCeiling respects grant scope` (both halves)                  |
+
+### Why the isolation principals changed in Wave 9
+
+Every cross-branch case above now uses a principal that holds the operation's own
+permission **in full**, scoped to branch A2, with a widening grant putting A1 into its
+`iam.allowed_branch_ids()` union. Both halves matter: without the permission the 403 is
+a missing permission and proves nothing about scope, and without the widening grant the
+target row is invisible to RLS and the request fails whether the check consults scope or
+not. With both, a scope-blind `iam.has_permission` would **allow** the request — so the
+refusal can only be the scoped check (P1-18-A-01).
+
+The principals used before Wave 9 — `SVC_SCOPED_A2` and `SVC_PERMISSION_ELSEWHERE` —
+hold `svc.service.read` alone. They remain in the catalog cases, where that IS the
+declared permission, and are kept alongside the new cases as the permission-refusal
+half.
 
 ## P1-20-QA-004 — concurrency and idempotency
 
@@ -100,14 +129,38 @@ lives in the logs.
 | Duplicate item decision (same)                | settles idempotently; exactly one stored decision row                                                              |
 | Conflicting item decision (opposite)          | refused — the first decision is final                                                                              |
 | Revision-wide decide meeting an opposite line | aborts wholly; the other line stays undecided                                                                      |
-| Stale `If-Match`                              | `ERR-CON-001` on price-list version create, revision create, issue                                                 |
+| **Raced quotation issue** (`Promise.all`)     | exactly one 200 and one 4xx; exactly one `issued` revision; exactly one outbox row                                 |
+| **Raced opposite item decisions**             | exactly one 201 and one 4xx; exactly one row in `quo.approval_decisions`                                           |
+| Stale `If-Match`                              | `ERR-CON-001` on price-list version create, **publication**, revision create and **issue**                         |
 | Missing `If-Match`                            | `ERR-CON-002`                                                                                                      |
-| Missing `Idempotency-Key`                     | `ERR-INT-002`                                                                                                      |
+| Missing `Idempotency-Key`                     | `ERR-INT-002` on all four quotation writes and all four pricing writes                                             |
+
+The two raced cases were added in Wave 9, driven with `Promise.all` against one row.
+The suite previously credited `concurrency` to sequential "a second attempt is refused"
+cases, which prove idempotency and say nothing about a race; and it credited
+`stale-version` to tests that only proved the `If-Match` header was **required**, never
+that a wrong value is refused.
 
 ### Transaction completeness and rollback
 
+Two of the three rollback claims here were **pre-check refusals** before Wave 9 —
+they were thrown before any write, so "nothing was written" was trivially true of a
+command that never wrote. Both are now proved by forcing a failure _after_ writes:
+
+- **Issue, failing at the LAST statement**: the outbox key the issue is about to
+  publish is pre-taken for the tenant, so `publishEvent` raises after
+  `quo.issue_revision` has moved the revision to `issued`, repointed
+  `current_revision_id`, moved the quotation to `active` and frozen all four totals,
+  and after the audit record. Afterwards the revision is `draft`, the quotation is
+  `draft`, `current_revision_id` is NULL and the audit record is absent.
+- **Revision-wide decision, failing MID-LOOP**: line two is approved individually
+  first, which leaves the revision decidable, so a revision-wide _rejection_ writes
+  line one's rejection and only then hits the opposite-decision conflict on line two.
+  Afterwards exactly the one pre-existing approval survives and no outcome event
+  exists.
 - **Issue with zero items**: refused, and the revision remains `draft` with **no**
-  audit record and **no** outbox row. Proven by deleting the items and re-issuing.
+  audit record and **no** outbox row. Retained under its own name as the pre-check it
+  is, not as rollback evidence.
 - **Additional-work link refusal**: every invalid reference leaves **no**
   `wo.customer_approvals` row at all — asserted by count, not by inspection. The
   reference must be set at INSERT because `tg_customer_approvals_immutable` freezes
@@ -120,15 +173,48 @@ lives in the logs.
 ## P1-20-QA-005 — regression and evidence packaging
 
 - **P1-19 regression**: `tests/backend/p1-19-additional-work.test.ts` passes 39/39
-  after the `DecideInput` extension, so the BE-013 change is additive.
+  after the `DecideInput` extension, so the BE-013 change is additive. The whole
+  backend suite is green at the remediation head.
+- **A P1-19 time bomb was fixed as a regression, not as feature work.**
+  `p1-19-labor-sessions.test.ts` pinned a correction window to an absolute
+  `2026-07-26` while `tech.guard_labor_session` refuses a start before
+  `job_created - interval '1 day'` — so it passed the day P1-19 was written and failed
+  every day after. Reproduced at the P1-19 gate SHA `0d86a19` in a separate worktree
+  **before** changing anything, which is what establishes it was not a P1-20
+  regression, then fixed with a relative `correctionWindow()`.
+- **One P1-19 behaviour genuinely changed and it is not a regression:** citing a
+  quotation revision on an additional-work approval now requires
+  `quo.quotation.read`. A P1-19 caller approving _without_ a quotation is unaffected
+  (the check runs only when a revision is cited), which is why the requirement is not
+  declared on the operation — `permissions` is a conjunction.
 - **Generated evidence**: `endpoint-inventory.md` and `task-traceability.md` are
   produced by `scripts/p1-20-endpoint-inventory.mjs` and cannot disagree with the
   code, because the code is their only input.
-- **The traceability gate is not self-satisfying.** Its first version counted its own
-  generated document as an anchor, so all 27 identifiers "resolved" the moment the
-  file was written. Both generated documents and the script itself are now excluded
-  from the search, which is why the gate failed honestly with 12 unanchored
-  identifiers until this evidence existed.
+- **The traceability gate is not self-satisfying, and it took three passes to get
+  there.** Its first version counted its own generated document as an anchor, so all
+  27 identifiers "resolved" the moment the file was written. Excluding the two
+  generated documents was still not enough: `task-register.md` is hand-written
+  evidence that prints all 27 identifiers in its tables, so five of them resolved to
+  that file and nothing else — deleting every P1-20 source and test file would still
+  have reported 27/27.
+
+  The rule is now structural rather than a blacklist. `docs/` is not searched at all,
+  so an identifier must appear in code, a test or a gate script. The gate script
+  itself IS searched — it is the CI quality gate and the traceability generator, which
+  is real work for three of the tasks — but its `TASKS` declaration is blanked out
+  first, because a gate whose input satisfies its own assertion asserts nothing. A
+  task whose deliverable genuinely is a document names an explicit file instead, so
+  `P1-20-DOC-002` must appear in `change-log.md` and nowhere else counts; forcing a
+  code anchor there would only teach the next author to paste an identifier into a
+  comment, which is the failure being prevented, dressed as compliance.
+
+  It then failed honestly with 12 unanchored identifiers until the corresponding work
+  existed.
+
+- **The gate cannot silently miss an operation.** `parseOperations` keys on
+  `export const <NAME>_OPERATION`, a convention the compiler does not enforce, so the
+  number of `defineOperation(` call sites is counted independently and a mismatch
+  fails the gate rather than quietly undercounting the surface.
 
 ## Known test-environment note
 

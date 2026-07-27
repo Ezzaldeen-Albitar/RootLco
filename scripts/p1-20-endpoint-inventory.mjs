@@ -49,7 +49,23 @@ const PHASE_PREFIXES = ['svc.', 'quo.'];
 /** Modules this phase owns, for the producer/owner reconciliation. */
 const PHASE_MODULES = ['service-catalog', 'pricing', 'quotation'];
 
-/** The canonical 27 task identifiers. Every one must resolve to an anchor. */
+/**
+ * The canonical 27 task identifiers. Every one must resolve to an anchor.
+ *
+ * The third element is WHERE the anchor has to be:
+ *
+ *  - `'code'` — under `src/`, `tests/` or `scripts/`. The default, and what every
+ *    backend, security, QA and devops task owes: those tasks produce code, and a
+ *    document describing code is not evidence the code exists.
+ *  - an explicit repo-relative FILE — for a task whose deliverable genuinely is a
+ *    document. Naming the exact file is what keeps it from being vacuous: the
+ *    identifier has to appear in the artifact the task is about, not in whichever
+ *    evidence document happens to tabulate all 27 identifiers.
+ *
+ * Requiring a code anchor for a documentation task would only teach the next author
+ * to paste an identifier into a comment, which is the failure this gate exists to
+ * prevent, dressed up as compliance.
+ */
 const TASKS = Object.freeze([
   ['P1-20-BE-001', 'Service management'],
   ['P1-20-BE-002', 'Branch service availability'],
@@ -77,7 +93,11 @@ const TASKS = Object.freeze([
   ['P1-20-DO-001', 'Continuous-integration quality gate'],
   ['P1-20-DO-002', 'Structured logging, monitoring, and alert routing'],
   ['P1-20-DOC-001', 'Contract, catalog, and traceability synchronization'],
-  ['P1-20-DOC-002', 'Operator/developer guidance and change-log update'],
+  [
+    'P1-20-DOC-002',
+    'Operator/developer guidance and change-log update',
+    'docs/phase-1/phase-1-20/evidence/change-log.md',
+  ],
 ]);
 
 function walk(dir) {
@@ -184,6 +204,39 @@ function main() {
     .filter((op) => op.id && PHASE_PREFIXES.some((p) => op.id.startsWith(p)))
     .sort((a, b) => (a.id < b.id ? -1 : 1));
 
+  // EVERY route in the API tree, not only this phase's: the port-pairing rule below
+  // has to see the P1-19 approval route, which registers a `wo.` operation.
+  const routeSources = routeFiles.map((file) => [file, readFileSync(file, 'utf8')]);
+
+  /**
+   * The parser must not silently MISS a declaration.
+   *
+   * `parseOperations` splits on `export const <NAME>_OPERATION = defineOperation({`,
+   * which is the repository's convention but not something the compiler enforces. A
+   * declaration assigned to a differently named constant would simply not be seen — and
+   * an operation invisible to this gate has no permission reconciliation, no audit-action
+   * check, no scope check and no place in the inventory, while the gate reports success.
+   *
+   * So the number of `defineOperation(` call sites is counted independently and
+   * compared. A mismatch fails the gate rather than quietly undercounting: better to
+   * fail on a naming convention than to certify a surface the gate never read.
+   */
+  const callSites = routeSources.reduce(
+    (total, [, source]) => total + (stripComments(source).match(/defineOperation\(/g) ?? []).length,
+    0
+  );
+  const parsedCount = routeFiles.reduce(
+    (total, file) => total + parseOperations(readFileSync(file, 'utf8'), file).length,
+    0
+  );
+  if (callSites !== parsedCount) {
+    failures.push(
+      `operation parser drift: ${callSites} defineOperation( call site(s) in the route tree but ` +
+        `${parsedCount} parsed. A declaration not assigned to ` +
+        `\`export const <NAME>_OPERATION\` is invisible to every check in this gate.`
+    );
+  }
+
   const moduleSources = [];
   for (const name of PHASE_MODULES) {
     const dir = join(ROOT, 'src', 'modules', name);
@@ -283,9 +336,58 @@ function main() {
     }
   }
 
-  // ---- 5. Every task identifier resolves to an anchor --------------------
+  /**
+   * ---- 5. A route that cites a quotation revision installs the port ---------
+   *
+   * `@/modules/quotation` installs `CommercialApprovalReader` at module scope, and
+   * `@/modules/work-order` must not import it — that is the cycle the port exists to
+   * break. So the installation can only happen in a ROUTE that loads both, and the
+   * one route consuming the port did not load it: nothing else in `src/` imports the
+   * quotation module, so whether the port existed depended on which endpoint a fresh
+   * process happened to serve first.
+   *
+   * A comment cannot enforce a pairing. This can: any route mentioning
+   * `quotationRevisionRef` must also import `@/modules/quotation`, so the next route
+   * that cites a revision fails the build rather than shipping order-dependent.
+   */
+  for (const [file, source] of routeSources) {
+    const clean = stripComments(source);
+    if (!clean.includes('quotationRevisionRef')) continue;
+    if (!clean.includes("'@/modules/quotation'")) {
+      failures.push(
+        `${relative(ROOT, file).split('\\').join('/')}: cites quotationRevisionRef but does not ` +
+          `import '@/modules/quotation', so CommercialApprovalReader may be uninstalled in a ` +
+          `process that serves this route first`
+      );
+    }
+  }
+
+  // ---- 6. Every task identifier resolves to an anchor --------------------
+  /**
+   * NO DOCUMENT counts as an anchor. Only `src/`, `tests/` or `scripts/`.
+   *
+   * Excluding just this script and the two files it generates was not enough, and
+   * an independent review caught it: `task-register.md` is hand-written evidence
+   * that prints all 27 identifiers in its tables, so five of them (`BE-002`,
+   * `BE-003`, `BE-009`, `BE-010`, `DOC-001`) resolved to that file and nothing
+   * else. The gate could then never fail — deleting every P1-20 source and test
+   * file would still have reported 27/27.
+   *
+   * The rule is now structural rather than a blacklist: `docs/` is not searched at
+   * all, so an identifier must appear in code, a test, or a gate script. A document
+   * may still *describe* a task, and should, but describing it is not evidence that
+   * it exists.
+   *
+   * This script IS searched, because it is itself the CI quality gate and the
+   * traceability generator, which is real work for three of the tasks. But its
+   * `TASKS` declaration is blanked out first: that array is the gate's INPUT, and a
+   * gate whose input satisfies its own assertion asserts nothing.
+   */
   const anchors = new Map();
-  const searchRoots = [join(ROOT, 'src'), join(ROOT, 'tests'), EVIDENCE, join(ROOT, 'scripts')];
+  const searchRoots = [join(ROOT, 'src'), join(ROOT, 'tests'), join(ROOT, 'scripts')];
+  const SELF = relative(ROOT, fileURLToPath(import.meta.url))
+    .split('\\')
+    .join('/');
   const haystack = [];
   for (const root of searchRoots) {
     if (!existsSync(root)) continue;
@@ -295,30 +397,30 @@ function main() {
       for (const entry of readdirSync(current)) {
         const full = join(current, entry);
         if (statSync(full).isDirectory()) stack.push(full);
-        else if (/\.(ts|mjs|md)$/.test(entry)) haystack.push([full, readFileSync(full, 'utf8')]);
+        else if (/\.(ts|mjs|md)$/.test(entry)) {
+          const name = relative(ROOT, full).split('\\').join('/');
+          const text = readFileSync(full, 'utf8');
+          haystack.push([
+            name,
+            name === SELF ? text.replace(/const TASKS =[\s\S]*?\n\]\);/, '') : text,
+          ]);
+        }
       }
     }
   }
-  for (const [id] of TASKS) {
-    const hits = haystack
-      .filter(([, text]) => text.includes(id))
-      .map(([file]) => relative(ROOT, file).split('\\').join('/'))
-      /**
-       * This gate's OWN inputs and outputs are not evidence.
-       *
-       * The task list in this script is not evidence, and neither are the two
-       * documents it generates — both of them print every identifier by
-       * construction. Leaving them in made the check vacuous: the first run wrote
-       * `task-traceability.md`, and the second run then found all 27 identifiers
-       * "anchored" by the very file that had just listed them. That is the same
-       * shape as the OpenAPI vacuous pass, arrived at from the other direction.
-       */
-      .filter(
-        (file) =>
-          file !== 'scripts/p1-20-endpoint-inventory.mjs' &&
-          file !== 'docs/phase-1/phase-1-20/evidence/task-traceability.md' &&
-          file !== 'docs/phase-1/phase-1-20/evidence/endpoint-inventory.md'
-      );
+  for (const [id, , where] of TASKS) {
+    if (where !== undefined && where !== 'code') {
+      // A DOCUMENT task, anchored in the one named artifact. Read directly rather than
+      // searched, so a mention anywhere else in `docs/` cannot satisfy it.
+      const abs = join(ROOT, where);
+      const present = existsSync(abs) && readFileSync(abs, 'utf8').includes(id);
+      anchors.set(id, present ? [where] : []);
+      if (!present) {
+        failures.push(`${id}: not named in ${where}, the artifact this task delivers`);
+      }
+      continue;
+    }
+    const hits = haystack.filter(([, text]) => text.includes(id)).map(([file]) => file);
     anchors.set(id, hits);
     if (hits.length === 0) {
       failures.push(`${id}: no evidence anchor — the identifier appears nowhere in the repository`);

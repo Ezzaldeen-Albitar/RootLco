@@ -621,6 +621,10 @@ describe('tech.labor-session-stop and the pause cycle', () => {
 /**
  * A corrected window inside the backdating tolerance the DATABASE enforces.
  *
+ * Fixed during Phase 1-20 as a REGRESSION, not as P1-20 feature work (P1-20-QA-005).
+ * Reproduced first in a worktree at the P1-19 gate SHA `0d86a19` to prove it was
+ * already failing there and was not introduced by this phase.
+ *
  * `tech.guard_labor_session` refuses a start before `job_created - interval '1 day'`,
  * and the fixture job is created now — so an ABSOLUTE date rots. These constants were
  * previously pinned to 2026-07-26, the day P1-19 was written: they passed that day and

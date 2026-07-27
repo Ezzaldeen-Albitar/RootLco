@@ -115,17 +115,55 @@ tenant, default company or default branch. The product name remains
 Recorded because each was a real error in this phase's own work, found by running
 something rather than by reading it.
 
-| Correction                                                                                                                                                            | How it was found                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `assertPercentageRange` used `parseFloat` on a financial value                                                                                                        | writing the discount tests                                                                  |
-| A zero-base guard in `exceedsThreshold` was unreachable                                                                                                               | a test that could not construct the case                                                    |
-| `svc.price_lists.currency_code` has an FK to `shared.currencies`; only EUR/JOD/USD are seeded, and my comment claimed shape-only validation                           | a 500 on GBP                                                                                |
-| Duplicate price-list code and duplicate rule signature reached clients as `ERR-SYS-001`                                                                               | the same run                                                                                |
-| Every event `producer` used the schema prefix where the module name is required                                                                                       | publication failing at runtime; the three quotation producers would have failed identically |
-| The services handler imported `@/server/db/pagination`, which B4 forbids                                                                                              | the boundary gate                                                                           |
-| `quo.quotation-detail` declared a rate-limit policy that does not exist                                                                                               | every detail call throwing                                                                  |
-| `quo.quotation-create` needed `wo.work_order.read` as well                                                                                                            | a 404 that read like a missing work order                                                   |
-| The permission probe booted the iam composition root                                                                                                                  | `EnvironmentValidationError` on a discounted line                                           |
-| The traceability gate counted its own generated document as an anchor                                                                                                 | all 27 identifiers "resolving" the moment the file was written                              |
-| The event scanner read a ternary's condition as an event type                                                                                                         | `accepted` reported as unregistered                                                         |
-| Two test expectations were wrong rather than the code — the revision-wide refusal is `ERR-TRN-001` at the state gate, and problem documents carry no internal message | running them                                                                                |
+| Correction                                                                                                                                                            | How it was found                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `assertPercentageRange` used `parseFloat` on a financial value                                                                                                        | writing the discount tests                                                                   |
+| A zero-base guard in `exceedsThreshold` was unreachable                                                                                                               | a test that could not construct the case                                                     |
+| `svc.price_lists.currency_code` has an FK to `shared.currencies`; only EUR/JOD/USD are seeded, and my comment claimed shape-only validation                           | a 500 on GBP                                                                                 |
+| Duplicate price-list code and duplicate rule signature reached clients as `ERR-SYS-001`                                                                               | the same run                                                                                 |
+| Every event `producer` used the schema prefix where the module name is required                                                                                       | publication failing at runtime; the three quotation producers would have failed identically  |
+| The services handler imported `@/server/db/pagination`, which B4 forbids                                                                                              | the boundary gate                                                                            |
+| `quo.quotation-detail` declared a rate-limit policy that does not exist                                                                                               | every detail call throwing                                                                   |
+| `quo.quotation-create` needed `wo.work_order.read` as well                                                                                                            | a 404 that read like a missing work order                                                    |
+| The permission probe booted the iam composition root                                                                                                                  | `EnvironmentValidationError` on a discounted line                                            |
+| The traceability gate counted its own generated document as an anchor                                                                                                 | all 27 identifiers "resolving" the moment the file was written                               |
+| The event scanner read a ternary's condition as an event type                                                                                                         | `accepted` reported as unregistered                                                          |
+| Two test expectations were wrong rather than the code — the revision-wide refusal is `ERR-TRN-001` at the state gate, and problem documents carry no internal message | running them                                                                                 |
+| The operation-coverage gate had no derived floor for `svc.`/`quo.` — the visible hook was extended, `DERIVED_PREFIXES` was not                                        | an independent review measuring the gate's own `--json`: 13/13 operations with `derived: []` |
+| `expireLapsed` force-expired an ACCEPTED quotation, because a revision stays `issued` after approval                                                                  | reading what the roll-up actually writes                                                     |
+| The commercial-approval port could be uninstalled in a process serving the approval endpoint                                                                          | a review tracing every importer of `@/modules/quotation`                                     |
+| 20 declared coverage flags across 11 operations had no assertion that could fail on the defect they named                                                             | a dedicated flag-honesty audit                                                               |
+| `lineBase` returned the exact scale-7 product, which `Decimal.parse(_, MONEY)` refuses                                                                                | the backend suite: 47 of 55 quotation tests 500ing on `100.0000 × 2.000`                     |
+| `svc.discount.authorized` and `quo.additional_work.quotation_linked` were declared and emitted by nothing                                                             | a per-literal producer search                                                                |
+| The quotation link was validated without a lock, into a column frozen at INSERT                                                                                       | a review of the write ordering                                                               |
+| `quo.quotation.read` was not required to cite a revision, so `wo.additional_work.approve` alone disclosed a revision's standing                                       | the same review                                                                              |
+| The link refusal named a FOREIGN work-order id, and the scope check ran after it                                                                                      | the same review                                                                              |
+| Expiry and `commercialApproval` read the Node clock, not `now()`                                                                                                      | the same review                                                                              |
+| `DecimalError`/`CurrencyMismatchError` reached callers as HTTP 500 on ordinary configuration                                                                          | a financial-correctness review                                                               |
+| A role-derived approval ceiling ignored grant scope, crossing companies                                                                                               | a cross-reference from the architecture reviewer                                             |
+| The task-anchor search still passed vacuously: `task-register.md` prints all 27 identifiers                                                                           | a second review, after the first blacklist fix                                               |
+| `quotation.accepted`/`.rejected` payloads carried `grandTotal`                                                                                                        | a review of what an outbox row may hold                                                      |
+| Four comments claimed the approval ceiling is read through `@/modules/iam`; it is the foundation helper                                                               | the architecture reviewer reading both call paths                                            |
+| `commercial-approval.ts` claimed mutual module imports are "the shape this repository avoids" — three such pairs are live                                             | the same reviewer                                                                            |
+
+### What Wave 9 cost, stated plainly
+
+Sixteen further corrections, five of them Highs, found by four independent reviewers
+after the branch was pushed and CI was green. Four are worth separating out:
+
+- **Two were defects in my own earlier fixes**, not in the original implementation. The
+  `lineBase` scale-7 regression was introduced by the totals-reconciliation fix from the
+  previous session and would have 500ed the ordinary case; the first two attempts at the
+  task-anchor rule were both still vacuous.
+- **Four were false claims in evidence rather than defects in code** — the coverage
+  flags, the isolation principals, the `@/modules/iam` comments, the mutual-import claim.
+  That is the same failure mode P1-18 and P1-19 each had to remediate, and it is the one
+  a green gate is least able to catch: every one of those gates passed.
+- **The gate that should have caught the largest cluster was itself the defect.**
+  Extending `parseProvidedFlags` to accept `svc|quo` made the gate _look_ extended while
+  `derivedRequirements()` returned `[]` for all thirteen operations. A gate that reports
+  success on an empty requirement set is worse than no gate, because it is cited as
+  evidence.
+- **One was a genuine behaviour change to a closed phase**, and it is recorded rather
+  than smuggled: citing a quotation revision on a P1-19 additional-work approval now
+  requires `quo.quotation.read`. Approvals that cite no quotation are unaffected.

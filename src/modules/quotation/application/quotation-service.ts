@@ -34,7 +34,14 @@ import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/autho
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { serviceCatalogModule } from '@/modules/service-catalog';
-import { pricingModule, type PermissionProbe } from '@/modules/pricing';
+import {
+  Money,
+  QUANTITY,
+  parsePositive,
+  pricingModule,
+  type DiscountAuthorization,
+  type PermissionProbe,
+} from '@/modules/pricing';
 import { sharedServicesModule } from '@/modules/shared-services';
 import { workOrderModule } from '@/modules/work-order';
 import {
@@ -73,6 +80,24 @@ export interface CreateQuotationInput {
   readonly lines: readonly QuotationLineInput[];
   /** Who requested a discount, when that differs from the caller. */
   readonly discountRequestedBy?: string | undefined;
+}
+
+/**
+ * What a revision's discounts needed, for the audit record.
+ *
+ * Collected while pricing the lines because that is the only place the policy and
+ * the ceiling are read; recorded after the revision exists, because an audit record
+ * has to name the row it is about.
+ */
+interface DiscountSummary {
+  /** `numeric(18,4)` STRING: every line's discount, summed by PostgreSQL. */
+  readonly total: string;
+  readonly currency: string;
+  /** How many lines needed the elevated permission. Zero means nothing to audit. */
+  readonly elevatedLines: number;
+  readonly permissionCode: string | null;
+  readonly ceiling: { amount: string; currency: string } | null;
+  readonly threshold: DiscountAuthorization['threshold'];
 }
 
 export interface IssueQuotationInput {
@@ -237,6 +262,8 @@ export class QuotationService {
       items.push(await this.repository.insertItem(db, revision, item));
     }
 
+    await this.auditDiscountAuthorization(db, revision, priced.discount);
+
     await appendAudit(db, {
       action: 'quo.quotation.created',
       entityType: 'quo.quotation',
@@ -344,6 +371,8 @@ export class QuotationService {
     for (const item of priced.items) {
       items.push(await this.repository.insertItem(db, revision, item));
     }
+
+    await this.auditDiscountAuthorization(db, revision, priced.discount);
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -482,27 +511,44 @@ export class QuotationService {
   }
 
   /**
-   * Expires issued revisions whose `expires_at` has passed.
+   * Expires issued revisions whose `expires_at` has passed (P1-20-BE-010,
+   * P1-20-DO-002).
    *
-   * Bounded and idempotent. The lapse test is the database's `now()`, so the
-   * sweep and the per-request expiry check cannot disagree. A revision that a
-   * concurrent decision has already moved out of `issued` is skipped rather than
-   * forced — `quo.guard_quotation_revision_freeze` treats
-   * `superseded`/`rejected`/`expired` as terminal, so forcing would be an error,
-   * and the decision that got there first is the truth.
+   * Bounded and idempotent. The lapse test is the database's `now()` on both
+   * sides — the candidate query's SQL predicate and the re-check under the lock
+   * read the same transaction-scoped clock, so they cannot disagree and a
+   * container whose clock has drifted ahead of the database's cannot expire a
+   * revision the database does not consider lapsed.
+   *
+   * Two states are skipped rather than forced, and each is a distinct hazard:
+   *
+   *  - A revision a concurrent decision has moved out of `issued`.
+   *    `quo.guard_quotation_revision_freeze` treats `superseded`/`rejected`/
+   *    `expired` as terminal, so forcing would raise, and the decision that got
+   *    there first is the truth.
+   *  - A quotation that is no longer `active`. A revision stays `issued` after
+   *    every line is APPROVED — only a rejection moves it — so revision status
+   *    alone does not distinguish "awaiting a decision" from "already accepted",
+   *    and expiring the latter would revoke a customer's approval in a background
+   *    sweep. The candidate query already excludes it; this is the re-check under
+   *    the lock, for a decision that landed in between.
    */
   public async expireLapsed(db: DbHandle, limit: number): Promise<readonly string[]> {
     const lapsed = await this.repository.listLapsedRevisions(db, limit);
+    if (lapsed.length === 0) return [];
+    // ONE clock for the whole sweep, and the same one the candidate query used:
+    // `now()` is the transaction's start time, so this is not a second reading.
+    const asOf = await this.repository.serverNow(db);
     const expired: string[] = [];
 
     for (const candidate of lapsed) {
       // Take the parent lock first, then re-read the revision under it: between
       // the sweep query and here, a decision may have superseded or rejected it.
       const quotation = await this.repository.lockQuotation(db, candidate.quotationId);
-      if (quotation === null) continue;
+      if (quotation === null || quotation.status !== 'active') continue;
       const current = await this.repository.lockRevision(db, candidate.id);
       if (current === null || current.status !== 'issued') continue;
-      if (!hasExpired(current.expiresAt, new Date())) continue;
+      if (!hasExpired(current.expiresAt, asOf)) continue;
 
       await this.repository.updateRevisionStatus(db, current.id, 'expired');
       const next = await this.repository.updateQuotationStatus(
@@ -599,7 +645,8 @@ export class QuotationService {
    */
   public async commercialApproval(
     db: DbHandle,
-    revisionId: string
+    revisionId: string,
+    options: { readonly lock?: boolean } = {}
   ): Promise<{
     readonly revisionId: string;
     readonly quotationId: string;
@@ -614,7 +661,28 @@ export class QuotationService {
     /** `accepted`, `rejected`, or `null` while lines remain undecided. */
     readonly outcome: 'accepted' | 'rejected' | null;
   } | null> {
-    const revision = await this.repository.findRevision(db, revisionId);
+    /**
+     * Locking, when the caller is about to WRITE something that depends on the
+     * answer.
+     *
+     * Without a lock this is a plain read, and the standing it reports can change
+     * before the caller acts on it: between "accepted, current, issued" and the
+     * INSERT of `wo.customer_approvals.quotation_revision_ref`, a concurrent
+     * `quo.issue_revision` can supersede this revision or a rejection can move it
+     * to terminal. The reference column is frozen by
+     * `tg_customer_approvals_immutable`, so a link taken on a stale answer can
+     * never be corrected — which is precisely why the read has to be able to hold
+     * still.
+     *
+     * The lock order is the module's documented one — quotation, then revision —
+     * because `quo.issue_revision` and `quo.record_item_decision` both take the
+     * parent lock internally, and taking the revision first would deadlock against
+     * them.
+     */
+    const revision =
+      options.lock === true
+        ? await this.lockParentThenRevision(db, revisionId)
+        : await this.repository.findRevision(db, revisionId);
     if (revision === null) return null;
     const quotation = await this.repository.findQuotation(db, revision.quotationId);
     if (quotation === null) return null;
@@ -630,9 +698,28 @@ export class QuotationService {
       grandTotal: revision.capturedGrandTotal,
       revisionStatus: revision.status,
       isCurrentRevision: quotation.currentRevisionId === revision.id,
-      hasExpired: hasExpired(revision.expiresAt, new Date()),
+      // The DATABASE clock, like every other expiry decision in this module.
+      hasExpired: hasExpired(revision.expiresAt, await this.repository.serverNow(db)),
       outcome: rollUpDecisions(tally),
     };
+  }
+
+  /**
+   * Locks the parent quotation, then the revision, and returns the locked revision.
+   *
+   * The revision is read once to learn its parent, then re-read under the parent's
+   * lock: the first read is not evidence of anything, it only tells us which
+   * quotation to lock. `null` from either read means not visible.
+   */
+  private async lockParentThenRevision(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<RevisionRow | null> {
+    const probe = await this.repository.findRevision(db, revisionId);
+    if (probe === null) return null;
+    const parent = await this.repository.lockQuotation(db, probe.quotationId);
+    if (parent === null) return null;
+    return this.repository.lockRevision(db, revisionId);
   }
 
   // ---- internals -----------------------------------------------------------
@@ -723,12 +810,24 @@ export class QuotationService {
       requestedBy: string | null;
       hasPermission: PermissionProbe;
     }
-  ): Promise<{ currency: string; items: readonly NewItemInput[] }> {
+  ): Promise<{
+    currency: string;
+    items: readonly NewItemInput[];
+    discount: DiscountSummary;
+  }> {
     const catalog = serviceCatalogModule().services;
     const pricing = pricingModule();
     const items: NewItemInput[] = [];
     let currency: string | null = null;
     let lineNumber = 0;
+    // Document-level discount accounting. A per-line ceiling check is defeated by
+    // splitting one large discount across many lines, so the aggregate is checked
+    // once at the end against the same ceiling.
+    let totalDiscount = '0.0000';
+    let elevatedLines = 0;
+    let appliedCeiling: { amount: string; currency: string } | null = null;
+    let appliedThreshold: DiscountAuthorization['threshold'] = null;
+    let elevatedPermission: string | null = null;
 
     for (const line of context.lines) {
       lineNumber += 1;
@@ -745,6 +844,23 @@ export class QuotationService {
           message:
             `Line ${lineNumber}: service ${line.serviceId} is not available at this branch on ` +
             `${context.asOf}`,
+        });
+      }
+
+      // The quantity is the one client-supplied multiplicand of an authoritative
+      // amount, so it goes through the exact type rather than a regex alone. The
+      // route pattern admits `0` and an unbounded integer part, both of which would
+      // otherwise reach `numeric(12,3)` and surface as a constraint violation
+      // (`ck_quotation_items_quantity`) or a driver overflow — a 500 — instead of a
+      // field-level refusal.
+      try {
+        parsePositive(line.quantity, QUANTITY);
+      } catch (cause) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Line ${lineNumber}: ${cause instanceof Error ? cause.message : 'invalid quantity'}`,
+          safeDetails: {
+            violations: [{ path: `body.lines[${lineNumber - 1}].quantity`, rule: 'quantity' }],
+          },
         });
       }
 
@@ -767,10 +883,10 @@ export class QuotationService {
       }
 
       const discount = line.discount ?? '0';
-      // The base a percentage discount applies to. Computed by the database so the
-      // authorization check and the stored line agree exactly.
-      const base = await this.lineBase(db, price.unitPrice, line.quantity);
-      await pricing.discounts.authorize(
+      // The base a percentage discount applies to. Computed by the database, and
+      // refused unless it is exact at scale 4 — see `lineBase`.
+      const base = await this.lineBase(db, lineNumber, price.unitPrice, line.quantity);
+      const authorization = await pricing.discounts.authorize(
         db,
         {
           companyId: context.companyId,
@@ -784,6 +900,19 @@ export class QuotationService {
         },
         context.hasPermission
       );
+      // Accumulate for the DOCUMENT-level ceiling check below. A per-line check
+      // alone is defeated by splitting: 200 lines each just under the ceiling
+      // authorize 200× the amount the actor is limited to.
+      totalDiscount = await this.addMoney(db, totalDiscount, discount);
+      if (authorization.requiredElevatedPermission) {
+        elevatedLines += 1;
+        // The policy and permission that governed the elevated lines. Every line of
+        // one document resolves the same company policy, so the last write is the
+        // policy that applied — not an arbitrary choice between different ones.
+        appliedThreshold = authorization.threshold;
+        elevatedPermission = authorization.permissionCode;
+      }
+      if (authorization.ceiling !== null) appliedCeiling = authorization.ceiling;
 
       items.push({
         lineNumber,
@@ -805,28 +934,213 @@ export class QuotationService {
     if (currency === null) {
       throw new QuotationRuleError('No line resolved a currency');
     }
-    return { currency, items };
+
+    /**
+     * The DOCUMENT-level ceiling check.
+     *
+     * `iam.approval_limits.amount` is a ceiling on what the actor may approve, and
+     * checking it per line does not enforce it: `MAX_ITEMS_PER_REVISION` is 200 and
+     * `uq_quotation_items_line` keys only on `line_number`, so the same service may
+     * occupy every line. An actor limited to 100 could authorize 200 lines of 100
+     * and give away 20 000.
+     *
+     * The per-line check stays — it mirrors `ck_quotation_items_discount`, which is
+     * genuinely per row — and this adds the aggregate the ceiling actually means.
+     * It only runs when at least one line needed elevated authority, so an
+     * all-under-threshold quotation is unaffected.
+     */
+    if (elevatedLines > 0 && appliedCeiling !== null) {
+      const total = Money.of(totalDiscount, currency);
+      const allowed = Money.of(appliedCeiling.amount, appliedCeiling.currency);
+      if (total.greaterThan(allowed, 'discount approval limit (document total)')) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            `The quotation's total discount of ${totalDiscount} ${currency} exceeds your ` +
+            `approval limit of ${appliedCeiling.amount} ${appliedCeiling.currency}, even though ` +
+            'no single line does',
+        });
+      }
+    }
+
+    return {
+      currency,
+      items,
+      discount: {
+        total: totalDiscount,
+        currency,
+        elevatedLines,
+        permissionCode: elevatedPermission,
+        ceiling: appliedCeiling,
+        threshold: appliedThreshold,
+      },
+    };
   }
 
   /**
-   * `round(unit * qty, 4)` computed by PostgreSQL.
+   * Records `svc.discount.authorized` when a revision's lines needed elevated
+   * authority (P1-20-BE-006, P1-20-SEC-004).
    *
-   * Needed by the discount ceiling check *before* the row exists. It is computed
-   * in SQL, at the column's own precision and scale, so the number the
-   * authorization compares is byte-identical to the base the stored line will
-   * use — a TypeScript multiplication here could authorize a discount the CHECK
-   * constraint then rejects, or worse, accept one it should not.
+   * Emitted once per revision rather than once per line: the ceiling is a limit on
+   * the actor, the document-level check is what enforces it, and 200 records saying
+   * the same thing about the same actor would bury the fact rather than record it.
+   *
+   * Nothing is written when no line needed elevated authority. A discount under the
+   * configured threshold is an ordinary edit any actor who may write the quotation
+   * may make, and auditing it as an *authorization* would misstate what happened.
    */
-  private async lineBase(db: DbHandle, unitPrice: string, quantity: string): Promise<string> {
-    const row = await db.query<{ base: string }>(
-      `SELECT round($1::numeric(18,4) * $2::numeric(12,3), 4)::text AS base`,
+  private async auditDiscountAuthorization(
+    db: DbHandle,
+    revision: RevisionRow,
+    summary: DiscountSummary
+  ): Promise<void> {
+    if (summary.elevatedLines === 0) return;
+    await appendAudit(db, {
+      action: 'svc.discount.authorized',
+      entityType: 'quo.quotation_revision',
+      entityId: revision.id,
+      companyId: revision.companyId,
+      branchId: revision.branchId,
+      details: [
+        // The amount given away is what the business charges, so it carries the same
+        // classification as every other price in the trail.
+        { field: 'discountTotal', classification: 'restricted', value: summary.total },
+        { field: 'currency', classification: 'public', value: summary.currency },
+        {
+          field: 'elevatedLineCount',
+          classification: 'public',
+          value: String(summary.elevatedLines),
+        },
+        {
+          field: 'requiredPermission',
+          classification: 'internal',
+          value: summary.permissionCode ?? 'none',
+        },
+        // A null policy is recorded as such rather than omitted: "no policy was
+        // configured, so the threshold was zero" is the reason the discount needed
+        // authorizing, and an absent field would read as "not applicable".
+        {
+          field: 'thresholdPolicyId',
+          classification: 'internal',
+          value: summary.threshold?.policyId ?? 'unconfigured',
+        },
+        {
+          field: 'thresholdKind',
+          classification: 'internal',
+          value: summary.threshold?.kind ?? 'zero-by-default',
+        },
+        {
+          field: 'thresholdValue',
+          classification: 'internal',
+          value: summary.threshold?.value ?? '0',
+        },
+        {
+          field: 'ceilingAmount',
+          classification: 'restricted',
+          value: summary.ceiling?.amount ?? 'none',
+        },
+        {
+          field: 'ceilingCurrency',
+          classification: 'public',
+          value: summary.ceiling?.currency ?? 'none',
+        },
+      ],
+    });
+  }
+
+  /**
+   * `a + b` at money scale, computed by PostgreSQL.
+   *
+   * `Decimal` deliberately exposes no `add` — the whole point of it — so the running
+   * discount total is summed in SQL, exactly like every other authoritative amount
+   * in this phase.
+   */
+  private async addMoney(db: DbHandle, a: string, b: string): Promise<string> {
+    const row = await db.query<{ sum: string }>(
+      `SELECT ($1::numeric(18,4) + $2::numeric(18,4))::text AS sum`,
+      [a, b]
+    );
+    const sum = row.rows[0]?.sum;
+    if (sum === undefined) {
+      throw new AppFailure('ERR-SYS-001', { message: 'Could not total the line discounts' });
+    }
+    return sum;
+  }
+
+  /**
+   * `unit * qty` computed by PostgreSQL, and refused unless it is EXACT at scale 4.
+   *
+   * The exactness check is the load-bearing part, and it closes a defect that made
+   * some perfectly legal quotations permanently unissuable.
+   *
+   * `captured_unit_price` is `numeric(18,4)` and `captured_quantity` is
+   * `numeric(12,3)`, so the raw product has scale **7**. Two constraints then
+   * disagree about what to do with those extra digits:
+   *
+   *  - `ck_quotation_items_line_total` rounds per line, so each stored line holds
+   *    `round(baseᵢ, 4)`;
+   *  - `quo.issue_revision` assigns `SUM(captured_unit_price * captured_quantity)`
+   *    into a `numeric(18,4)` variable, i.e. `round(Σ baseᵢ, 4)`, and
+   *    `ck_quotation_revisions_totals` compares that against `SUM(line_total)`.
+   *
+   * `Σ round(baseᵢ, 4) = round(Σ baseᵢ, 4)` is **not** an identity. Two lines of
+   * `1.0001 × 1.500` give `1.5001500` each: the per-line sum is `3.0004` and the
+   * rounded sum is `3.0003`, so the revision CHECK fails inside
+   * `quo.issue_revision` — a `23514` surfacing as `ERR-SYS-001`, HTTP 500, with the
+   * draft left unissuable and the caller told nothing useful.
+   *
+   * Both constraints are frozen, so the application must keep the disagreement from
+   * arising: if every line's product is exact at scale 4 then `round(baseᵢ,4) = baseᵢ`
+   * and the two expressions coincide by construction. A quantity whose product does
+   * not fit is refused here, naming the field, instead of failing far away at issue.
+   *
+   * Returning the EXACT product also fixes the discount ceiling:
+   * `ck_quotation_items_discount` compares against the **unrounded** product, so a
+   * rounded-up base could authorize a discount the CHECK then rejects.
+   */
+  private async lineBase(
+    db: DbHandle,
+    lineNumber: number,
+    unitPrice: string,
+    quantity: string
+  ): Promise<string> {
+    const row = await db.query<{ raw: string; base: string; exact: boolean }>(
+      /**
+       * Three values, and each one is needed.
+       *
+       * `raw` is the unrounded product at its natural scale 7 — for the error message
+       * only, because that is the number the caller has to understand.
+       *
+       * `base` is the same product at MONEY's scale 4. It is only ever RETURNED when
+       * `exact` is true, and `exact` says the two are equal, so nothing is lost by the
+       * cast. It has to be the scale-4 form: `Decimal.parse(_, MONEY)` refuses a
+       * 7-decimal string, and returning `raw` made every quotation whose product had
+       * trailing zeros — `100.0000 × 2.000 = 200.0000000`, the ordinary case — fail with
+       * `DecimalError` and an HTTP 500 inside the discount check.
+       */
+      `SELECT ($1::numeric(18,4) * $2::numeric(12,3))::text AS raw,
+              round($1::numeric(18,4) * $2::numeric(12,3), 4)::text AS base,
+              ($1::numeric(18,4) * $2::numeric(12,3))
+                = round($1::numeric(18,4) * $2::numeric(12,3), 4) AS exact`,
       [unitPrice, quantity]
     );
-    const base = row.rows[0]?.base;
-    if (base === undefined) {
+    const result = row.rows[0];
+    if (result === undefined) {
       throw new AppFailure('ERR-SYS-001', { message: 'Could not compute the line base' });
     }
-    return base;
+    if (!result.exact) {
+      throw new AppFailure('ERR-VAL-001', {
+        message:
+          `Line ${lineNumber}: quantity ${quantity} against unit price ${unitPrice} produces ` +
+          `${result.raw}, which does not fit the four decimal places the line total holds. ` +
+          'Choose a quantity whose product is exact to four decimal places.',
+        safeDetails: {
+          violations: [
+            { path: `body.lines[${lineNumber - 1}].quantity`, rule: 'inexact_line_base' },
+          ],
+        },
+      });
+    }
+    return result.base;
   }
 
   private view(

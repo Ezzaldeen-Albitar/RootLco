@@ -65,6 +65,7 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 | 6    | Decisions and evidence (BE-008/009/012)                             | **Done** — 2 operations, part of 38 tests                        |
 | 7    | Additional-work integration (BE-013)                                | **Done** — 11 tests, CommercialApprovalReader port               |
 | 8    | SEC/QA/DO/DOC                                                       | **Done** — inventory gate + 6 evidence documents, 27/27 anchored |
+| 9    | Adversarial review + remediation                                    | **Done** — 5 Highs, 10 Mediums, 7 Lows closed; see below         |
 
 ## Decisions fixed by the catalog (do not re-litigate)
 
@@ -138,211 +139,342 @@ Verified green at `e6bba08`: `format:check`, `lint`, `tsc --noEmit`,
    discount on a zero base is already refused as exceeding the base). Removed
    rather than left as an untestable claim; the test now pins the ordering.
 
-## Known defects / review findings
+## Wave 9 — adversarial review and remediation (this session)
 
-None open. No adversarial review has run yet.
+Four independent read-only reviewers ran against the pushed branch. Three returned
+confirmed findings; every one below was reproduced before it was fixed, and each fix
+carries a test that fails without it.
+
+### Highs closed
+
+| #   | Finding                                                                                                                                                                                                                                                                                                                                                 | Fix                                                                                                                                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1  | **The operation-coverage gate had no derived floor for `svc.`/`quo.`** The commit extended the visible hook (`parseProvidedFlags` accepts `svc\|quo`) but not `DERIVED_PREFIXES`, so `derivedRequirements()` returned `[]` for all 13 operations: `route`, `service`, `success` and `authorization` were _provided but not required_ for every one.     | `P1_20_PREFIXES` added to `DERIVED_PREFIXES`, the strict comment-stripping set, the `isDerived` set, `counts.p1_20`, a console block and a phase-1-20 matrix. The floor then demanded 8 missing evidences, all since written.     |
+| H2  | **`expireLapsed` force-expired an ACCEPTED quotation.** A revision stays `issued` after every line is approved — only a rejection moves it — so candidate selection on revision status alone also selected accepted quotations, and expiry moved them `accepted` → `expired` with an audit record claiming the previous status was `active`.            | Parent-state test in the candidate query **and** re-checked under the lock. Test: `NEVER expires a quotation the customer already accepted`.                                                                                      |
+| H3  | **The commercial-approval port could be uninstalled in a process serving the approval endpoint.** Nothing in `src/` imported `@/modules/quotation`, so whether the port existed depended on request order; a cold start receiving the approval route first answered `ERR-SYS-001`.                                                                      | Side-effect `import '@/modules/quotation'` in the approval route, a gate rule pairing the two, and a fresh-module-registry test. Mutation-verified: removing the import fails both.                                               |
+| H4  | **20 declared coverage flags across 11 operations were not proven.** Chiefly: every `isolation` case used a principal that did not hold the operation's own permission, so the 403 was a missing permission and a scope-blind implementation passed; `cross-tenant` on quotation-create used a principal missing one of two declared permissions; three | New principals `SVC_PRICE_SCOPED_A2`, `SVC_QUO_SCOPED_A2`, `SVC_TENANT_B_FULL`, each holding the operation's permission in full, plus widening grants so the target row is READABLE and only the scoped check can refuse. Then 14 |
+|     | `rollback` claims were pre-check refusals that wrote nothing; two `concurrency` claims were sequential awaits; `authorization` was unproven on four write operations; `outbox`, `success` and `denial` were each unproven somewhere.                                                                                                                    | new cases: genuine races (`Promise.all`), genuine rollbacks (pre-taken outbox key; a mid-loop conflict after a write), real 401/403 pairs, real 404/422 denials, and the missing outbox assertion.                                |
+| H5  | **`lineBase` returned the exact scale-7 product**, which `Decimal.parse(_, MONEY)` refuses. `100.0000 × 2.000 = 200.0000000` — the ordinary case — became a `DecimalError` and an HTTP 500 inside the discount check. Introduced by this phase's own earlier totals-reconciliation fix.                                                                 | Return the scale-4 form, which the exactness check proves equal to the exact product. Caught by the backend suite, not by unit tests: the value is computed by PostgreSQL.                                                        |
+
+### Mediums closed
+
+- **`svc.discount.authorized` and `quo.additional_work.quotation_linked` had no
+  producer.** Both were declared in the controlled catalog and emitted by nothing, so
+  the catalog documented behaviour that did not exist. The discount record is now
+  written once per revision that needed elevated authority, carrying the policy that
+  applied (or `unconfigured`, i.e. threshold zero), the permission required, the
+  document-level discount total and the ceiling checked. The link record is written
+  whenever `quotation_revision_ref` is filled — a column frozen at INSERT, which
+  previously left no audit trace at all. The catalog's `entityType` for the discount
+  action was corrected from `svc.discount_rules` (no such row need exist) to
+  `quo.quotation_revision`.
+- **The link was validated without a lock.** `standingOf` now takes
+  `{ lock: true }`, implemented as parent-then-revision in the module's documented
+  lock order, so a concurrent issue or rejection cannot change the standing between
+  the check and the INSERT into a frozen column.
+- **`quo.quotation.read` was not required to cite a revision.**
+  `wo.additional_work.approve` alone let a caller learn a revision's acceptance state
+  and total from the refusal messages. Checked inside
+  `assertLinkableQuotationRevision` rather than declared on the operation, because
+  `permissions` is a conjunction and every P1-19 caller approving _without_ a
+  quotation would otherwise need a commercial permission.
+- **The link refusal disclosed a foreign work-order id**, and the checks ran in the
+  wrong order — scope is now decided first, so a caller with no grant in the
+  revision's scope learns nothing about the work order it belongs to.
+- **Expiry read the Node clock.** `serverNow()` is read once per sweep, and because
+  `now()` is transaction-scoped it is the same clock the candidate query used.
+  `commercialApproval` had the same defect and the same fix.
+- **`DecimalError`/`CurrencyMismatchError` reached callers as HTTP 500.** An approval
+  limit denominated in another currency is ordinary configuration; it is now an
+  `ERR-IAM-001` naming both currencies, with the mismatch retained as the `cause`. An
+  unparseable amount threshold fails closed, matching the percentage case.
+- **A role-derived approval ceiling ignored grant scope.** `iam.approval_limits` rows
+  are per `(role, company)` and the role subquery filtered on tenant and user only, so
+  an actor inherited a role's ceiling in every company that role had a limit in —
+  including companies their grant of it never covered. Now gated on
+  `scope_mode = 'unrestricted'` OR a `grant_scopes` row naming the company, which
+  `ck_grant_scopes_shape` guarantees is populated for all three scope types.
+  Demonstrating it needed two companies in one tenant, so the fixtures seed
+  `COMPANY_A2`.
+- **The gate could miss a declaration silently.** `parseOperations` keys on a naming
+  convention the compiler does not enforce; the number of `defineOperation(` call
+  sites is now counted independently and a mismatch fails the gate.
+- **The task-anchor search was vacuous.** `docs/` is no longer searched at all, this
+  script's own `TASKS` literal is blanked before it is scanned, and a documentation
+  task must name itself in the specific artifact it delivers rather than in whichever
+  evidence file tabulates all 27 identifiers.
+
+### Lows closed
+
+- `quotation.accepted`/`quotation.rejected` no longer carry `grandTotal`: an
+  acceptance is a state change, the totals are `restricted`, and an outbox payload has
+  different retention and no per-consumer authorization.
+- Four comments claiming the approval ceiling is read "through `@/modules/iam`'s
+  public surface" corrected — it is `callerApprovalCeiling` in the foundation, and
+  `authorization.ts` records why routing it through the iam module was rejected.
+- `commercial-approval.ts` no longer claims that mutual module imports are "the shape
+  this repository avoids": three such pairs pre-date this phase and no gate refuses
+  them. Recorded as an open finding instead.
+- `PermissionProbe` is documented as supplied by the application service, not the
+  route (a route-supplied probe would be a B11 violation).
+- The service-catalog suite header no longer reasons from `scope: 'branch'`; the route
+  declares `tenant` and explains why.
+- The `wo.additional-work-approval` COVERAGE-EVIDENCE block in the P1-20 link suite
+  was a copy of P1-19's full flag list; trimmed to the four flags that file proves.
+- `'needs svc.price.publish, not merely svc.price.manage'` retitled — `SVC_READER`
+  holds neither. The split is now proved with `SVC_NO_CEILING`, which holds
+  `svc.price.manage` and not `svc.price.publish`.
+
+### Open, carried into the gate
+
+- **P1-20-A-06 — three module cycles pre-date this phase and no gate refuses them.**
+  `work-order` ↔ `diagnostics`, ↔ `quality`, ↔ `technician`, all present at
+  `0d86a19`; `check-module-boundaries.mjs` has no cycle rule, so
+  `validate:module-boundaries` reports OK. P1-20 introduced none — the port is the
+  correct pattern — and adding a B13 rule now would fail the build on pre-existing
+  debt belonging to another phase's remediation.
+- **P1-20-A-07 — `countTiedPriceRules` mirrors ~45 lines of `svc.resolve_price`
+  precedence SQL for a condition `uq_price_rules_signature` makes unreachable**, with
+  no test comparing the two. Retained deliberately: it defends a correctness property
+  that rests on that index continuing to exist. The structural guarantee is asserted
+  directly instead of pretending the branch has a positive test.
+- **P1-20-A-05 — `expireLapsed` is not wired to a scheduler.** No production
+  scheduling infrastructure is provisioned; the method is the repository-supported
+  contract a scheduler will call, and it is now exercised directly by three tests.
 
 ## Current PR / CI
 
-None yet — branch is local only, not pushed.
+PR #84 to `develop`, **Draft**. The remediation above is not yet pushed, so the
+hosted run on the current head predates it.
 
 ## Exact next action
 
-Wave 3 remainder, then Waves 4–8. Concretely, in order:
+1. Push the remediation commit; confirm the hosted run targets the exact pushed head.
+2. Full local reproof at the final SHA: unit, DB, backend, build, every gate.
+3. Exact-SHA clean-room reproof from an empty PostgreSQL 17 (container `p120cr`,
+   port 15432): 119 migrations, no 120, `schema_hash a677eb05…` unchanged, seeds
+   idempotent, business tables empty.
+4. Finalise the PR body, remove Draft, verify CI on the exact head, merge to
+   protected `develop`, verify the merge parents/tree and its push CI.
+5. Protected-develop reproof, then the documentation-only gate-record branch
+   `gate/p1-20-service-catalog-pricing-quotation-backend` and its PR.
+6. Record the Go decision. Do **not** promote `develop` to `main` (ADR-006 reserves
+   that for the founders). Do **not** start P1-21.
 
-1. **Pricing write services + routes** — `POST /price-lists`,
-   `POST /price-lists/{priceListId}/versions`, publication through
-   `svc.publish_price_list_version`, and a resolved-price read gated on
-   `svc.price.read`. The repository already has every read; the writes are new.
-2. **Quotation routes** — `POST /quotations`, `GET /quotations/{quotationId}`,
-   `POST /quotations/{quotationId}/revisions`,
-   `POST /quotations/{quotationId}/issue`,
-   `POST /quotation-items/{quotationItemId}/decisions`,
-   `POST /quotation-revisions/{revisionId}/decisions`.
-   The application services for all six already exist and are typechecked.
-3. **BE-013 additional-work link** — fill
-   `wo.customer_approvals.quotation_revision_ref` through a new method on the
-   `work-order` module surface (that table is its own), then the 14 proofs the
-   instruction lists.
-4. **Every route needs four things in the SAME commit**, or a gate goes red:
-   a manifest entry in `scripts/check-operation-test-coverage.mjs`; a
-   `COVERAGE-EVIDENCE` block in a backend test that also _invokes_ the operation;
-   an import line in `tests/openapi-contract.test.ts`; then
-   `UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts` to regenerate
-   the document.
-5. **P1-20 inventory script** modelled on `scripts/p1-19-endpoint-inventory.mjs`,
-   wired into `package.json` and `.github/workflows/ci.yml`.
-6. Waves 5–8, the hostile audit, independent reviews, full local reproof,
-   exact-SHA clean room, then the two protected merges.
-   [OK ] apt.appointment-cancel tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] apt.appointment-create tests/backend/p1-18-appointment-lifecycle.test.ts
-   [OK ] apt.appointment-no-show tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] apt.appointment-reschedule tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] crm.address-add tests/backend/p1-16-customer-profile.test.ts
-   [OK ] crm.alert-raise tests/backend/p1-16-customer-governance.test.ts
-   [OK ] crm.company-create tests/backend/p1-16-customer-creation.test.ts
-   [OK ] crm.consent-record tests/backend/p1-16-customer-profile.test.ts
-   [OK ] crm.contact-add tests/backend/p1-16-customer-profile.test.ts
-   [OK ] crm.customer-history tests/backend/p1-16-customer-identity.test.ts
-   [OK ] crm.customer-merge tests/backend/p1-16-customer-identity.test.ts
-   [OK ] crm.customer-search tests/backend/p1-16-customer-search.test.ts
-   [OK ] crm.customer-status-set tests/backend/p1-16-customer-governance.test.ts
-   [OK ] crm.customer-timeline tests/backend/p1-16-customer-identity.test.ts
-   [OK ] crm.duplicate-review tests/backend/p1-16-customer-identity.test.ts
-   [OK ] crm.duplicate-scan tests/backend/p1-16-customer-identity.test.ts
-   [OK ] crm.individual-create tests/backend/p1-16-customer-creation.test.ts
-   [OK ] crm.note-add tests/backend/p1-16-customer-governance.test.ts
-   [OK ] crm.preference-set tests/backend/p1-16-customer-profile.test.ts
-   [OK ] crm.restriction-impose tests/backend/p1-16-customer-governance.test.ts
-   [OK ] crm.tag-assign tests/backend/p1-16-customer-governance.test.ts
-   [OK ] crm.vehicle-link tests/backend/p1-16-customer-identity.test.ts
-   [OK ] dia.diagnostic-complete tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-create tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-detail tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-dtc-record tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-evidence-record tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-finding-record tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-history tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-item-result tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-list tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-measurement-record tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-recommendation-record tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-review tests/backend/p1-19-diagnostics.test.ts
-   [OK ] dia.diagnostic-transition tests/backend/p1-19-diagnostics.test.ts
-   [OK ] iam.approval-limit-create tests/backend/iam-access-administration.test.ts
-   [OK ] iam.approval-limit-end tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.approval-limit-list tests/backend/iam-operations.test.ts
-   [OK ] iam.audit-event-detail tests/backend/iam-operations.test.ts
-   [OK ] iam.audit-event-list tests/backend/iam-operations.test.ts
-   [OK ] iam.auth-login tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.auth-logout tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.auth-password-reset tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.auth-password-reset-completion tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.auth-session tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.branch-settings-read tests/backend/iam-operations.test.ts
-   [OK ] iam.branch-settings-write tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.company-settings-read tests/backend/iam-operations.test.ts
-   [OK ] iam.company-settings-write tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.grant-issue tests/backend/iam-access-administration.test.ts
-   [OK ] iam.grant-revoke tests/backend/iam-access-administration.test.ts
-   [OK ] iam.grant-scope-add tests/backend/iam-access-administration.test.ts
-   [OK ] iam.grant-scope-list tests/backend/iam-operations.test.ts
-   [OK ] iam.grant-scope-remove tests/backend/iam-access-administration.test.ts
-   [OK ] iam.invitation-activate tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.invitation-cancel tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.invitation-create tests/backend/iam-auth-provider.test.ts
-   [OK ] iam.permission-list tests/backend/iam-operations.test.ts
-   [OK ] iam.role-create tests/backend/iam-operations.test.ts
-   [OK ] iam.role-list tests/backend/iam-operations.test.ts
-   [OK ] iam.role-permission-add tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.role-permission-list tests/backend/iam-operations.test.ts
-   [OK ] iam.role-permission-remove tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.role-permission-update tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.role-update tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.tenant-settings-read tests/backend/iam-operations.test.ts
-   [OK ] iam.tenant-settings-update tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.user-detail tests/backend/iam-operations.test.ts
-   [OK ] iam.user-list tests/backend/iam-operations.test.ts
-   [OK ] iam.user-session-list tests/backend/iam-operations.test.ts
-   [OK ] iam.user-session-revoke-all tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.user-status-change tests/backend/iam-admin-writes.test.ts
-   [OK ] iam.user-update tests/backend/iam-admin-writes.test.ts
-   [OK ] meta.ping tests/backend/api-ping.test.ts
-   [OK ] qms.qc-check-result tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.qc-record-detail tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.qc-record-finalize tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.qc-record-list tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.qc-record-open tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.reopen-attempt tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.reopen-attempt-list tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-cost-read tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-cost-record tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-create tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-detail tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-list tests/backend/p1-19-quality-rework.test.ts
-   [OK ] qms.rework-sign-off tests/backend/p1-19-quality-rework.test.ts
-   [OK ] rec.reception-approve tests/backend/p1-18-reception-approval.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-authorization tests/backend/p1-18-reception-parties.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-condition-evidence tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-convert-to-work-order tests/backend/p1-18-reception-conversion.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-create tests/backend/p1-18-reception-create.test.ts
-   [OK ] rec.reception-party-role tests/backend/p1-18-reception-parties.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-refusal tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] rec.reception-signature tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
-   [OK ] shared.attachment-download-authorize tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.attachment-link-create tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.attachment-link-withdraw tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.attachment-upload-authorize tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.attachment-version-register tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.attachment-version-reject tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.branch-status-change tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.branch-status-read tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.export-authorize tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.export-catalogue tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.health-live tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-dispatch-and-health.test.ts
-   [OK ] shared.health-ready tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-dispatch-and-health.test.ts
-   [OK ] shared.notification-enqueue tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
-   [OK ] shared.template-activation-set tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-create tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-update tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-version-approve tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-version-create tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-version-preview tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-version-retire tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] shared.template-version-revise tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
-   [OK ] svc.service-list tests/backend/p1-20-service-catalog.test.ts
-   [OK ] tech.labor-session-correct tests/backend/p1-19-labor-sessions.test.ts
-   [OK ] tech.labor-session-list tests/backend/p1-19-labor-sessions.test.ts
-   [OK ] tech.labor-session-start tests/backend/p1-19-labor-sessions.test.ts
-   [OK ] tech.labor-session-stop tests/backend/p1-19-labor-sessions.test.ts
-   [OK ] tech.technician-available tests/backend/p1-19-job-assignments.test.ts
-   [OK ] tech.technician-queue tests/backend/p1-19-job-assignments.test.ts
-   [OK ] veh.vehicle-authorized-party-add tests/backend/p1-17-vehicle-relations.test.ts
-   [OK ] veh.vehicle-authorized-party-retire tests/backend/p1-17-vehicle-relations.test.ts
-   [OK ] veh.vehicle-create tests/backend/p1-17-vehicle-create-update.test.ts
-   [OK ] veh.vehicle-document-list tests/backend/p1-17-vehicle-history.test.ts
-   [OK ] veh.vehicle-duplicate-review tests/backend/p1-17-vehicle-duplicates.test.ts
-   [OK ] veh.vehicle-duplicate-scan tests/backend/p1-17-vehicle-duplicates.test.ts
-   [OK ] veh.vehicle-ev-profile-read tests/backend/p1-17-vehicle-lifecycle.test.ts
-   [OK ] veh.vehicle-ev-profile-set tests/backend/p1-17-vehicle-lifecycle.test.ts
-   [OK ] veh.vehicle-history tests/backend/p1-17-vehicle-history.test.ts
-   [OK ] veh.vehicle-merge tests/backend/p1-17-vehicle-merge.test.ts
-   [OK ] veh.vehicle-odometer-history tests/backend/p1-17-vehicle-odometer.test.ts
-   [OK ] veh.vehicle-odometer-record tests/backend/p1-17-vehicle-odometer.test.ts
-   [OK ] veh.vehicle-ownership-history tests/backend/p1-17-vehicle-registration.test.ts
-   [OK ] veh.vehicle-ownership-transfer tests/backend/p1-17-vehicle-registration.test.ts
-   [OK ] veh.vehicle-plate-assign tests/backend/p1-17-vehicle-registration.test.ts
-   [OK ] veh.vehicle-plate-history tests/backend/p1-17-vehicle-registration.test.ts
-   [OK ] veh.vehicle-relationship-list tests/backend/p1-17-vehicle-relations.test.ts
-   [OK ] veh.vehicle-search tests/backend/p1-17-vehicle-search.test.ts
-   [OK ] veh.vehicle-status-change tests/backend/p1-17-vehicle-lifecycle.test.ts
-   [OK ] veh.vehicle-update tests/backend/p1-17-vehicle-create-update.test.ts
-   [OK ] wo.additional-work-approval tests/backend/p1-19-customer-approvals.test.ts
-   [OK ] wo.additional-work-approval-read tests/backend/p1-19-customer-approvals.test.ts
-   [OK ] wo.additional-work-detail-read tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.additional-work-detail-record tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.additional-work-fulfillment tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.additional-work-list tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.additional-work-request tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.additional-work-withdraw tests/backend/p1-19-additional-work.test.ts
-   [OK ] wo.job-assignment-create tests/backend/p1-19-job-assignments.test.ts
-   [OK ] wo.job-assignment-end tests/backend/p1-19-job-assignments.test.ts
-   [OK ] wo.job-assignment-list tests/backend/p1-19-job-assignments.test.ts
-   [OK ] wo.job-create tests/backend/p1-19-work-order-jobs.test.ts
-   [OK ] wo.job-history tests/backend/p1-19-job-lifecycle.test.ts
-   [OK ] wo.job-reassignment tests/backend/p1-19-job-assignments.test.ts
-   [OK ] wo.job-transition tests/backend/p1-19-job-lifecycle.test.ts + tests/backend/p1-19-customer-approvals.test.ts
-   [OK ] wo.job-update tests/backend/p1-19-work-order-jobs.test.ts
-   [OK ] wo.required-part-list tests/backend/p1-19-work-order-lines.test.ts
-   [OK ] wo.required-part-record tests/backend/p1-19-work-order-lines.test.ts
-   [OK ] wo.service-line-list tests/backend/p1-19-work-order-lines.test.ts
-   [OK ] wo.service-line-record tests/backend/p1-19-work-order-lines.test.ts
-   [OK ] wo.work-order-closure tests/backend/p1-19-work-order-core.test.ts
-   [OK ] wo.work-order-closure-eligibility tests/backend/p1-19-work-order-core.test.ts
-   [OK ] wo.work-order-detail tests/backend/p1-19-work-order-reads.test.ts
-   [OK ] wo.work-order-history tests/backend/p1-19-work-order-reads.test.ts
-   [OK ] wo.work-order-list tests/backend/p1-19-work-order-reads.test.ts
-   [OK ] wo.work-order-transition tests/backend/p1-19-work-order-core.test.ts
+### Traps already identified — do not rediscover
+
+- The registry `PATH_PATTERN` rejects `:action` — use sub-resource nouns.
+- `ScopeAuthorizer` is exported from `@/server/auth/authorization`, **not**
+  from `route-handler`.
+- Build targets **ES2017**: write `BigInt(0)`, never `0n`.
+- `iam.role_grants` has **no** `deleted_at` — it uses
+  `status='active'` + `valid_from`/`valid_to`.
+- `numeric` must be selected with an explicit `::text` cast (the shipped
+  convention) and must never be parsed into a `number`.
+- Two unit tests in `tests/foundation/operation-coverage-gate.test.ts` time out
+  on a **cold** filesystem cache in this OneDrive-backed tree. They are green
+  warm and in CI; do not "fix" them.
+- A route citing a quotation revision must side-effect `import '@/modules/quotation'`;
+  the P1-20 inventory gate enforces the pairing.
+- `Decimal.parse(_, MONEY)` refuses a scale-7 string: `unit * qty` is scale 7 by
+  construction, so pass the `round(...,4)` form once exactness has been proved.
+- Audit details live in `iam.audit_record_details` (one row per field, with its own
+  classification), not in a jsonb column on `iam.audit_records`.
+- A new coverage flag is worthless unless a principal holds the operation's own
+  permission: otherwise the 403 is a missing permission and a scope-blind
+  implementation passes.
+
+## Appendix — operation-coverage gate output (all phases)
+
+Regenerated by `node scripts/check-operation-test-coverage.mjs` at the remediation
+head. The previous paste predated Wave 9 and listed only `svc.service-list` for this
+phase, which would have read as 1-of-13 coverage.
+
+```
+Operation-to-test coverage (STRICT): 181 registered operation(s)
+  public API surface: 181 · internal: 0
+  with required evidence: 166 · invocation-only (read/catalogue): 15
+  [OK ] apt.appointment-cancel               tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] apt.appointment-create               tests/backend/p1-18-appointment-lifecycle.test.ts
+  [OK ] apt.appointment-no-show              tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] apt.appointment-reschedule           tests/backend/p1-18-appointment-lifecycle.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] crm.address-add                      tests/backend/p1-16-customer-profile.test.ts
+  [OK ] crm.alert-raise                      tests/backend/p1-16-customer-governance.test.ts
+  [OK ] crm.company-create                   tests/backend/p1-16-customer-creation.test.ts
+  [OK ] crm.consent-record                   tests/backend/p1-16-customer-profile.test.ts
+  [OK ] crm.contact-add                      tests/backend/p1-16-customer-profile.test.ts
+  [OK ] crm.customer-history                 tests/backend/p1-16-customer-identity.test.ts
+  [OK ] crm.customer-merge                   tests/backend/p1-16-customer-identity.test.ts
+  [OK ] crm.customer-search                  tests/backend/p1-16-customer-search.test.ts
+  [OK ] crm.customer-status-set              tests/backend/p1-16-customer-governance.test.ts
+  [OK ] crm.customer-timeline                tests/backend/p1-16-customer-identity.test.ts
+  [OK ] crm.duplicate-review                 tests/backend/p1-16-customer-identity.test.ts
+  [OK ] crm.duplicate-scan                   tests/backend/p1-16-customer-identity.test.ts
+  [OK ] crm.individual-create                tests/backend/p1-16-customer-creation.test.ts
+  [OK ] crm.note-add                         tests/backend/p1-16-customer-governance.test.ts
+  [OK ] crm.preference-set                   tests/backend/p1-16-customer-profile.test.ts
+  [OK ] crm.restriction-impose               tests/backend/p1-16-customer-governance.test.ts
+  [OK ] crm.tag-assign                       tests/backend/p1-16-customer-governance.test.ts
+  [OK ] crm.vehicle-link                     tests/backend/p1-16-customer-identity.test.ts
+  [OK ] dia.diagnostic-complete              tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-create                tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-detail                tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-dtc-record            tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-evidence-record       tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-finding-record        tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-history               tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-item-result           tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-list                  tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-measurement-record    tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-recommendation-record tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-review                tests/backend/p1-19-diagnostics.test.ts
+  [OK ] dia.diagnostic-transition            tests/backend/p1-19-diagnostics.test.ts
+  [OK ] iam.approval-limit-create            tests/backend/iam-access-administration.test.ts
+  [OK ] iam.approval-limit-end               tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.approval-limit-list              tests/backend/iam-operations.test.ts
+  [OK ] iam.audit-event-detail               tests/backend/iam-operations.test.ts
+  [OK ] iam.audit-event-list                 tests/backend/iam-operations.test.ts
+  [OK ] iam.auth-login                       tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.auth-logout                      tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.auth-password-reset              tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.auth-password-reset-completion   tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.auth-session                     tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.branch-settings-read             tests/backend/iam-operations.test.ts
+  [OK ] iam.branch-settings-write            tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.company-settings-read            tests/backend/iam-operations.test.ts
+  [OK ] iam.company-settings-write           tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.grant-issue                      tests/backend/iam-access-administration.test.ts
+  [OK ] iam.grant-revoke                     tests/backend/iam-access-administration.test.ts
+  [OK ] iam.grant-scope-add                  tests/backend/iam-access-administration.test.ts
+  [OK ] iam.grant-scope-list                 tests/backend/iam-operations.test.ts
+  [OK ] iam.grant-scope-remove               tests/backend/iam-access-administration.test.ts
+  [OK ] iam.invitation-activate              tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.invitation-cancel                tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.invitation-create                tests/backend/iam-auth-provider.test.ts
+  [OK ] iam.permission-list                  tests/backend/iam-operations.test.ts
+  [OK ] iam.role-create                      tests/backend/iam-operations.test.ts
+  [OK ] iam.role-list                        tests/backend/iam-operations.test.ts
+  [OK ] iam.role-permission-add              tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.role-permission-list             tests/backend/iam-operations.test.ts
+  [OK ] iam.role-permission-remove           tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.role-permission-update           tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.role-update                      tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.tenant-settings-read             tests/backend/iam-operations.test.ts
+  [OK ] iam.tenant-settings-update           tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.user-detail                      tests/backend/iam-operations.test.ts
+  [OK ] iam.user-list                        tests/backend/iam-operations.test.ts
+  [OK ] iam.user-session-list                tests/backend/iam-operations.test.ts
+  [OK ] iam.user-session-revoke-all          tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.user-status-change               tests/backend/iam-admin-writes.test.ts
+  [OK ] iam.user-update                      tests/backend/iam-admin-writes.test.ts
+  [OK ] meta.ping                            tests/backend/api-ping.test.ts
+  [OK ] qms.qc-check-result                  tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.qc-record-detail                 tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.qc-record-finalize               tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.qc-record-list                   tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.qc-record-open                   tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.reopen-attempt                   tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.reopen-attempt-list              tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-cost-read                 tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-cost-record               tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-create                    tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-detail                    tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-list                      tests/backend/p1-19-quality-rework.test.ts
+  [OK ] qms.rework-sign-off                  tests/backend/p1-19-quality-rework.test.ts
+  [OK ] quo.quotation-create                 tests/backend/p1-20-quotation.test.ts
+  [OK ] quo.quotation-detail                 tests/backend/p1-20-quotation.test.ts
+  [OK ] quo.quotation-issue                  tests/backend/p1-20-quotation.test.ts
+  [OK ] quo.quotation-item-decide            tests/backend/p1-20-quotation.test.ts
+  [OK ] quo.quotation-revision-create        tests/backend/p1-20-quotation.test.ts
+  [OK ] quo.quotation-revision-decide        tests/backend/p1-20-quotation.test.ts
+  [OK ] rec.reception-approve                tests/backend/p1-18-reception-approval.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-authorization          tests/backend/p1-18-reception-parties.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-condition-evidence     tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-convert-to-work-order  tests/backend/p1-18-reception-conversion.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-create                 tests/backend/p1-18-reception-create.test.ts
+  [OK ] rec.reception-party-role             tests/backend/p1-18-reception-parties.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-refusal                tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] rec.reception-signature              tests/backend/p1-18-reception-evidence.test.ts + tests/backend/p1-18-scope-containment.test.ts
+  [OK ] shared.attachment-download-authorize tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.attachment-link-create        tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.attachment-link-withdraw      tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.attachment-upload-authorize   tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.attachment-version-register   tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.attachment-version-reject     tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.branch-status-change          tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.branch-status-read            tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.export-authorize              tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.export-catalogue              tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.health-live                   tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-dispatch-and-health.test.ts
+  [OK ] shared.health-ready                  tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-dispatch-and-health.test.ts
+  [OK ] shared.notification-enqueue          tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-attachments-notifications.test.ts
+  [OK ] shared.template-activation-set       tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-create               tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-update               tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-version-approve      tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-version-create       tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-version-preview      tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-version-retire       tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] shared.template-version-revise       tests/backend/p1-15-operation-routes.test.ts + tests/backend/p1-15-templates-transitions-export.test.ts
+  [OK ] svc.price-list-create                tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.price-list-list                  tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.price-list-version-create        tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.price-list-version-publish       tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.price-resolve                    tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.price-rule-record                tests/backend/p1-20-pricing.test.ts
+  [OK ] svc.service-list                     tests/backend/p1-20-service-catalog.test.ts
+  [OK ] tech.labor-session-correct           tests/backend/p1-19-labor-sessions.test.ts
+  [OK ] tech.labor-session-list              tests/backend/p1-19-labor-sessions.test.ts
+  [OK ] tech.labor-session-start             tests/backend/p1-19-labor-sessions.test.ts
+  [OK ] tech.labor-session-stop              tests/backend/p1-19-labor-sessions.test.ts
+  [OK ] tech.technician-available            tests/backend/p1-19-job-assignments.test.ts
+  [OK ] tech.technician-queue                tests/backend/p1-19-job-assignments.test.ts
+  [OK ] veh.vehicle-authorized-party-add     tests/backend/p1-17-vehicle-relations.test.ts
+  [OK ] veh.vehicle-authorized-party-retire  tests/backend/p1-17-vehicle-relations.test.ts
+  [OK ] veh.vehicle-create                   tests/backend/p1-17-vehicle-create-update.test.ts
+  [OK ] veh.vehicle-document-list            tests/backend/p1-17-vehicle-history.test.ts
+  [OK ] veh.vehicle-duplicate-review         tests/backend/p1-17-vehicle-duplicates.test.ts
+  [OK ] veh.vehicle-duplicate-scan           tests/backend/p1-17-vehicle-duplicates.test.ts
+  [OK ] veh.vehicle-ev-profile-read          tests/backend/p1-17-vehicle-lifecycle.test.ts
+  [OK ] veh.vehicle-ev-profile-set           tests/backend/p1-17-vehicle-lifecycle.test.ts
+  [OK ] veh.vehicle-history                  tests/backend/p1-17-vehicle-history.test.ts
+  [OK ] veh.vehicle-merge                    tests/backend/p1-17-vehicle-merge.test.ts
+  [OK ] veh.vehicle-odometer-history         tests/backend/p1-17-vehicle-odometer.test.ts
+  [OK ] veh.vehicle-odometer-record          tests/backend/p1-17-vehicle-odometer.test.ts
+  [OK ] veh.vehicle-ownership-history        tests/backend/p1-17-vehicle-registration.test.ts
+  [OK ] veh.vehicle-ownership-transfer       tests/backend/p1-17-vehicle-registration.test.ts
+  [OK ] veh.vehicle-plate-assign             tests/backend/p1-17-vehicle-registration.test.ts
+  [OK ] veh.vehicle-plate-history            tests/backend/p1-17-vehicle-registration.test.ts
+  [OK ] veh.vehicle-relationship-list        tests/backend/p1-17-vehicle-relations.test.ts
+  [OK ] veh.vehicle-search                   tests/backend/p1-17-vehicle-search.test.ts
+  [OK ] veh.vehicle-status-change            tests/backend/p1-17-vehicle-lifecycle.test.ts
+  [OK ] veh.vehicle-update                   tests/backend/p1-17-vehicle-create-update.test.ts
+  [OK ] wo.additional-work-approval          tests/backend/p1-19-customer-approvals.test.ts
+  [OK ] wo.additional-work-approval-read     tests/backend/p1-19-customer-approvals.test.ts
+  [OK ] wo.additional-work-detail-read       tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.additional-work-detail-record     tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.additional-work-fulfillment       tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.additional-work-list              tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.additional-work-request           tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.additional-work-withdraw          tests/backend/p1-19-additional-work.test.ts
+  [OK ] wo.job-assignment-create             tests/backend/p1-19-job-assignments.test.ts
+  [OK ] wo.job-assignment-end                tests/backend/p1-19-job-assignments.test.ts
+  [OK ] wo.job-assignment-list               tests/backend/p1-19-job-assignments.test.ts
+  [OK ] wo.job-create                        tests/backend/p1-19-work-order-jobs.test.ts
+  [OK ] wo.job-history                       tests/backend/p1-19-job-lifecycle.test.ts
+  [OK ] wo.job-reassignment                  tests/backend/p1-19-job-assignments.test.ts
+  [OK ] wo.job-transition                    tests/backend/p1-19-job-lifecycle.test.ts + tests/backend/p1-19-customer-approvals.test.ts
+  [OK ] wo.job-update                        tests/backend/p1-19-work-order-jobs.test.ts
+  [OK ] wo.required-part-list                tests/backend/p1-19-work-order-lines.test.ts
+  [OK ] wo.required-part-record              tests/backend/p1-19-work-order-lines.test.ts
+  [OK ] wo.service-line-list                 tests/backend/p1-19-work-order-lines.test.ts
+  [OK ] wo.service-line-record               tests/backend/p1-19-work-order-lines.test.ts
+  [OK ] wo.work-order-closure                tests/backend/p1-19-work-order-core.test.ts
+  [OK ] wo.work-order-closure-eligibility    tests/backend/p1-19-work-order-core.test.ts
+  [OK ] wo.work-order-detail                 tests/backend/p1-19-work-order-reads.test.ts
+  [OK ] wo.work-order-history                tests/backend/p1-19-work-order-reads.test.ts
+  [OK ] wo.work-order-list                   tests/backend/p1-19-work-order-reads.test.ts
+  [OK ] wo.work-order-transition             tests/backend/p1-19-work-order-core.test.ts
 
 P1-15 registered public operations: 21
 P1-15 operation-depth: 21
@@ -384,23 +516,14 @@ P1-19 unit-only: 0
 P1-19 unreferenced: 0
 P1-19 metadata-only: 0
 
+P1-20 registered public operations: 13
+P1-20 operation-depth: 13
+P1-20 invocation-only: 0
+P1-20 pending: 0
+P1-20 unit-only: 0
+P1-20 unreferenced: 0
+P1-20 metadata-only: 0
+
 OK: every registered operation is invoked in a referencing test and provides its required evidence.
-Matrix written to docs/phase-1/phase-1-14|15/evidence/operation-test-matrix.json, a block in a
-backend test, an import line in , then
-[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco[39m. 5. **P1-20 inventory script** modelled on ,
-wired into and . 6. Waves 5-8, hostile audit, reviews, full reproof, clean room, then the two
-protected merges.
-
-### Traps already identified — do not rediscover
-
-- The registry `PATH_PATTERN` rejects `:action` — use sub-resource nouns.
-- `ScopeAuthorizer` is exported from `@/server/auth/authorization`, **not**
-  from `route-handler`.
-- Build targets **ES2017**: write `BigInt(0)`, never `0n`.
-- `iam.role_grants` has **no** `deleted_at` — it uses
-  `status='active'` + `valid_from`/`valid_to`.
-- `numeric` must be selected with an explicit `::text` cast (the shipped
-  convention) and must never be parsed into a `number`.
-- Two unit tests in `tests/foundation/operation-coverage-gate.test.ts` time out
-  on a **cold** filesystem cache in this OneDrive-backed tree. They are green
-  warm and in CI; do not "fix" them.
+Matrix written to docs/phase-1/phase-1-14|15/evidence/operation-test-matrix.json
+```

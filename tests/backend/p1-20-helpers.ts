@@ -36,6 +36,10 @@ export const QUOTATION_MANAGE = 'quo.quotation.manage';
 export const DECISION_RECORD = 'quo.decision.record';
 /** Needed to READ the work order a quotation is raised against. */
 export const WORK_ORDER_READ = 'wo.work_order.read';
+/** P1-19 permissions the additional-work linking path needs. */
+export const ADDITIONAL_WORK_REQUEST = 'wo.additional_work.request';
+export const ADDITIONAL_WORK_APPROVE = 'wo.additional_work.approve';
+export const JOB_MANAGE = 'wo.job.manage';
 
 // ---- Catalog fixture ids ---------------------------------------------------
 
@@ -50,6 +54,22 @@ export const SERVICE_VERSION_A_ALT = 'd2000000-0000-4000-8000-0000000000a2';
 export const CATEGORY_B = 'd2000000-0000-4000-8000-000000000101';
 export const SERVICE_B = 'd2000000-0000-4000-8000-00000000010a';
 export const SERVICE_VERSION_B = 'd2000000-0000-4000-8000-0000000001a1';
+
+/**
+ * A SECOND tenant-A company, and a branch in it.
+ *
+ * The shared fixtures give tenant A exactly one company, which makes one class of
+ * authorization defect untestable: an `iam.approval_limits` row is per
+ * `(role, company)`, so "this role's ceiling in a company my grant of it does not
+ * reach" needs two companies in one tenant to express at all. With a single company
+ * every branch-scoped grant reaches it through `org.branches` and the distinction
+ * collapses.
+ *
+ * Seeded here rather than in the shared helpers so no other suite's fixture surface
+ * changes; `deleteTenantCascade` removes it with the tenant.
+ */
+export const COMPANY_A2 = 'a1000000-0000-4000-8000-0000000000f1';
+export const BRANCH_A2_OF_COMPANY_A2 = 'a1100000-0000-4000-8000-0000000000f1';
 
 /** A date every published fixture version covers. */
 export const EFFECTIVE_FROM = '2020-01-01';
@@ -152,6 +172,118 @@ export const SVC_TENANT_B: Principal = {
   permissions: [SERVICE_READ, PRICE_READ, QUOTATION_READ, QUOTATION_MANAGE],
 };
 
+/**
+ * Tenant B holding EVERY commercial write permission, unrestricted.
+ *
+ * `SVC_TENANT_B` deliberately lacks `svc.price.manage`, `svc.price.publish` and
+ * `quo.decision.record`, because two existing cases use it to prove a *permission*
+ * refusal. That makes it useless for a cross-tenant proof on the write surface: a
+ * 403 there would be ambiguous, and a test that cannot distinguish "wrong tenant"
+ * from "missing permission" proves the weaker of the two. This principal removes the
+ * ambiguity — every refusal it collects is the tenant boundary and nothing else.
+ */
+export const SVC_TENANT_B_FULL: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000121',
+  userId: 'd2900000-0000-4000-8000-000000000122',
+  subject: 'fx_p1_20_tenant_b_full',
+  tenantId: TENANT_B,
+  permissions: [
+    SERVICE_READ,
+    PRICE_READ,
+    PRICE_MANAGE,
+    PRICE_PUBLISH,
+    QUOTATION_READ,
+    QUOTATION_MANAGE,
+    DECISION_RECORD,
+    WORK_ORDER_READ,
+  ],
+};
+
+/**
+ * Every price permission, scoped to branch A2 ONLY (P1-20-SEC-001).
+ *
+ * The isolation counterpart for the pricing write surface: it holds
+ * `svc.price.manage` in full, so a refusal on an A1-targeted price rule is the
+ * resolved scope and not a missing permission.
+ */
+export const SVC_PRICE_SCOPED_A2: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000131',
+  userId: 'd2900000-0000-4000-8000-000000000132',
+  subject: 'fx_p1_20_price_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: [SERVICE_READ, PRICE_READ, PRICE_MANAGE, PRICE_PUBLISH],
+  grantId: 'd2900000-0000-4000-8000-000000000133',
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+};
+
+/**
+ * Every quotation permission, scoped to branch A2 ONLY (P1-20-SEC-001).
+ *
+ * Quotations are addressed by id and take their scope from the work order they
+ * belong to, never from a request field. This principal proves that: it holds
+ * `quo.quotation.manage` and `quo.decision.record` unreservedly, and is still
+ * refused on a quotation whose work order sits in branch A1.
+ */
+export const SVC_QUO_SCOPED_A2: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000141',
+  userId: 'd2900000-0000-4000-8000-000000000142',
+  subject: 'fx_p1_20_quo_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: [
+    SERVICE_READ,
+    PRICE_READ,
+    QUOTATION_READ,
+    QUOTATION_MANAGE,
+    DECISION_RECORD,
+    WORK_ORDER_READ,
+  ],
+  grantId: 'd2900000-0000-4000-8000-000000000143',
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+};
+
+/**
+ * May approve additional work AND cite a quotation revision (P1-20-BE-013).
+ *
+ * Citing a revision on a `wo.additional-work-approval` requires `quo.quotation.read`,
+ * checked inside `assertLinkableQuotationRevision` rather than declared on the
+ * operation — the declaration is a CONJUNCTION, and every P1-19 caller recording an
+ * approval without a quotation would otherwise need a commercial permission it has no
+ * business holding.
+ *
+ * P1-19's own `FULL` principal is therefore not sufficient for the linking path and is
+ * deliberately left alone: widening it would change what the P1-19 suites prove. This
+ * principal is `FULL`'s approval permissions plus the one commercial read, which is
+ * also what makes the refusal case meaningful — the same caller minus
+ * `quo.quotation.read` is refused.
+ */
+export const WO_APPROVER_WITH_QUOTATION_READ: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000151',
+  userId: 'd2900000-0000-4000-8000-000000000152',
+  subject: 'fx_p1_20_wo_approver_quo_read',
+  tenantId: TENANT_A,
+  permissions: [
+    WORK_ORDER_READ,
+    ADDITIONAL_WORK_REQUEST,
+    ADDITIONAL_WORK_APPROVE,
+    JOB_MANAGE,
+    QUOTATION_READ,
+  ],
+};
+
+/**
+ * The same approval authority WITHOUT `quo.quotation.read`.
+ *
+ * One permission apart from the principal above, so a refusal on the linking path can
+ * only be that permission.
+ */
+export const WO_APPROVER_NO_QUOTATION_READ: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000161',
+  userId: 'd2900000-0000-4000-8000-000000000162',
+  subject: 'fx_p1_20_wo_approver_no_quo_read',
+  tenantId: TENANT_A,
+  permissions: [WORK_ORDER_READ, ADDITIONAL_WORK_REQUEST, ADDITIONAL_WORK_APPROVE, JOB_MANAGE],
+};
+
 export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_FULL,
   SVC_READER,
@@ -159,7 +291,12 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_SCOPED_A2,
   SVC_PERMISSION_ELSEWHERE,
   SVC_NO_CEILING,
+  SVC_PRICE_SCOPED_A2,
+  SVC_QUO_SCOPED_A2,
   SVC_TENANT_B,
+  SVC_TENANT_B_FULL,
+  WO_APPROVER_WITH_QUOTATION_READ,
+  WO_APPROVER_NO_QUOTATION_READ,
 ];
 
 let admin: Pool;
@@ -349,9 +486,20 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
 
   for (const principal of P1_20_PRINCIPALS) await seedPrincipal(principal);
 
-  // The widening grant: a SECOND role for SVC_PERMISSION_ELSEWHERE carrying an
-  // unrelated permission scoped to BRANCH_A1. It places A1 in that user's
-  // allowed-branch union without any catalog authority there.
+  /**
+   * The widening grants: a SECOND role carrying an UNRELATED permission scoped to
+   * BRANCH_A1, given to every principal whose real permissions are scoped to A2.
+   *
+   * This is what makes an isolation refusal mean something. Without it, an A2-scoped
+   * principal has A1 outside `iam.allowed_branch_ids()`, so an A1 row is invisible to
+   * RLS and the request fails whether or not the permission check consults scope at
+   * all — the test would pass against a scope-blind implementation. With A1 in the
+   * union the row is readable, so the ONLY thing that can refuse the request is the
+   * scoped permission check, which is the control P1-18-A-01 is about.
+   *
+   * The permission is deliberately unrelated (`org.tenant.read`): it widens the union
+   * without conferring any authority the operation under test asks for.
+   */
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
      VALUES ($1,$2,'fx_p1_20_widening','P1-20 widening',$3) ON CONFLICT (id) DO NOTHING`,
@@ -364,32 +512,54 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
      ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
     [TENANT_A, WIDENING_ROLE, USER_A, WIDENING_PERMISSION]
   );
-  const widening = await admin.connect();
-  const wideningGrant = 'd2900000-0000-4000-8000-0000000000f2';
-  try {
-    await widening.query('BEGIN');
-    const existing = await widening.query(`SELECT 1 FROM iam.role_grants WHERE id = $1`, [
-      wideningGrant,
-    ]);
-    if (existing.rowCount === 0) {
-      await widening.query(
-        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
-         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
-        [wideningGrant, TENANT_A, SVC_PERMISSION_ELSEWHERE.userId, WIDENING_ROLE, USER_A]
-      );
-      await widening.query(
-        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
-         VALUES ($1,$2,'branch',$3,$4,$5)`,
-        [TENANT_A, wideningGrant, COMPANY_A1, BRANCH_A1, USER_A]
-      );
+  const WIDENED: readonly { readonly userId: string; readonly grantId: string }[] = [
+    { userId: SVC_PERMISSION_ELSEWHERE.userId, grantId: 'd2900000-0000-4000-8000-0000000000f2' },
+    { userId: SVC_PRICE_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f3' },
+    { userId: SVC_QUO_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f4' },
+  ];
+  for (const target of WIDENED) {
+    const widening = await admin.connect();
+    try {
+      await widening.query('BEGIN');
+      const existing = await widening.query(`SELECT 1 FROM iam.role_grants WHERE id = $1`, [
+        target.grantId,
+      ]);
+      if (existing.rowCount === 0) {
+        await widening.query(
+          `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+           VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+          [target.grantId, TENANT_A, target.userId, WIDENING_ROLE, USER_A]
+        );
+        await widening.query(
+          `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+           VALUES ($1,$2,'branch',$3,$4,$5)`,
+          [TENANT_A, target.grantId, COMPANY_A1, BRANCH_A1, USER_A]
+        );
+      }
+      await widening.query('COMMIT');
+    } catch (error) {
+      await widening.query('ROLLBACK');
+      throw error;
+    } finally {
+      widening.release();
     }
-    await widening.query('COMMIT');
-  } catch (error) {
-    await widening.query('ROLLBACK');
-    throw error;
-  } finally {
-    widening.release();
   }
+
+  // The second tenant-A company and its branch. See COMPANY_A2 above.
+  await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'fx_p120_company_a2','P1-20 Fixture Company A2','JOD',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches
+       (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'fx_p120_branch_a2c2','P1-20 Fixture Branch (company A2)','UTC',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A2_OF_COMPANY_A2, TENANT_A, COMPANY_A2, USER_A]
+  );
 
   await seedCatalog({
     tenantId: TENANT_A,

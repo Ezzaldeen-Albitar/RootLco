@@ -21,14 +21,41 @@
  *  - a REJECTED revision releasing work the customer declined;
  *  - a revision still AWAITING decisions.
  *
+ * ## What this block does and does not claim
+ *
+ * `wo.additional-work-approval` is a P1-19 operation and its evidence is
+ * `tests/backend/p1-19-customer-approvals.test.ts`, which the coverage manifest names.
+ * This file is NOT in that entry: it adds the P1-20 LINK cases on top, and the flags
+ * below are only what this file itself proves.
+ *
+ * The block previously copied P1-19's full flag list — authorization, isolation,
+ * cross-tenant, audit, outbox, stale-version, rollback — none of which exists here:
+ * every `approve()` call uses `authAsWo(FULL)` with the correct `recordVersion`, the
+ * file contains no `auditCountFor` or `outboxCountFor`, and its `approvalCount(...) === 0`
+ * assertions follow refusals its own header says happen *before the approval row
+ * exists*, which is a pre-check and not a rollback. The block was inert only because
+ * the manifest does not name this file; adding it would have credited seven flags that
+ * are not here. Copying another suite's declarations is how a gate stops measuring.
+ *
+ * ## Who may cite a revision
+ *
+ * Citing one requires `quo.quotation.read` in the request's own company and branch,
+ * checked inside `assertLinkableQuotationRevision`. It is NOT declared on the
+ * operation: `permissions` is a conjunction, so declaring it would force every P1-19
+ * caller recording an approval *without* a quotation to hold a commercial permission
+ * too. So the linking cases below authenticate as
+ * `WO_APPROVER_WITH_QUOTATION_READ` — P1-19's approval authority plus that one read —
+ * and `WO_APPROVER_NO_QUOTATION_READ`, one permission apart, proves the refusal.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
- *   wo.additional-work-approval: route service authorization success denial cross-tenant isolation audit outbox stale-version rollback
+ *   wo.additional-work-approval: route service success denial authorization
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import {
   COMPANY_A1,
   TENANT_A,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -46,8 +73,11 @@ import {
 import {
   SERVICE_A,
   SVC_FULL,
+  WO_APPROVER_NO_QUOTATION_READ,
+  WO_APPROVER_WITH_QUOTATION_READ,
   TAX_CLASS_A,
   assignPriceList,
+  auditCountFor,
   authAs,
   establishP1_20Fixtures,
   priceListVersionOf,
@@ -256,6 +286,18 @@ async function storedRef(requestId: string): Promise<string | null | undefined> 
   return result.rows[0]?.quotation_revision_ref;
 }
 
+/** The approval row's id, which the link audit record is filed against. */
+async function approvalIdFor(requestId: string): Promise<string> {
+  const result = await admin.query<{ id: string }>(
+    `SELECT id::text AS id FROM wo.customer_approvals
+      WHERE additional_work_request_id = $1 AND deleted_at IS NULL`,
+    [requestId]
+  );
+  const id = result.rows[0]?.id;
+  if (id === undefined) throw new Error(`no approval row for request ${requestId}`);
+  return id;
+}
+
 async function approvalCount(requestId: string): Promise<number> {
   const result = await admin.query<{ n: string }>(
     `SELECT count(*)::text AS n FROM wo.customer_approvals
@@ -303,7 +345,7 @@ describe('P1-20-BE-013 — the accepted commercial scope clears the operational 
     await acceptRevision(revisionId);
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -327,7 +369,7 @@ describe('P1-20-BE-013 — the accepted commercial scope clears the operational 
     const order = await createOpenWorkOrder();
     const request = await raiseRequest(order.workOrderId);
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -367,7 +409,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
 
   it('refuses a revision belonging to another work order', async () => {
     const setup = await crossOrderSetup();
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       setup.requestId,
       {
@@ -393,7 +435,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     await rejectRevision(revisionId);
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -418,7 +460,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     // Issued but undecided: the customer has been shown it and said nothing.
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -442,7 +484,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     const draftRevisionId = quotation.currentRevision?.id as string;
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -490,7 +532,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     await acceptRevision(second.id);
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -507,7 +549,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     expect(await approvalCount(request.id)).toBe(0);
 
     // The CURRENT accepted revision does clear it.
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const accepted = await approve(
       request.id,
       {
@@ -537,7 +579,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     );
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -558,7 +600,7 @@ describe('P1-20-BE-013 — a quotation that does not justify the work clears not
     const order = await createOpenWorkOrder();
     const request = await raiseRequest(order.workOrderId);
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     const response = await approve(
       request.id,
       {
@@ -585,7 +627,33 @@ describe('P1-20-BE-013 — there is one approval truth', () => {
     await acceptRevision(revisionId);
 
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+
+    /**
+     * The same approval, WITHOUT `quo.quotation.read`, is refused first.
+     *
+     * `WO_APPROVER_NO_QUOTATION_READ` is one permission apart from the principal that
+     * succeeds below: same tenant, same branch, same `wo.additional_work.approve`. So
+     * this 403 can only be the commercial read, which is the control's whole point —
+     * without it, `wo.additional_work.approve` alone let a caller learn a revision's
+     * acceptance state, currency and total from the refusal messages this file asserts.
+     */
+    authAs(WO_APPROVER_NO_QUOTATION_READ);
+    const withoutRead = await approve(
+      request.id,
+      {
+        decision: 'approved',
+        channel: 'in_person',
+        decidingPartyRoleId: roleId,
+        presentedScope: 'Linked',
+        quotationRevisionRef: revisionId,
+      },
+      request.recordVersion
+    );
+    expect(withoutRead.status).toBe(403);
+    expect(((await withoutRead.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    expect(await approvalCount(request.id)).toBe(0);
+
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     expect(
       (
         await approve(
@@ -601,6 +669,11 @@ describe('P1-20-BE-013 — there is one approval truth', () => {
         )
       ).status
     ).toBe(201);
+    // The link is its own audit fact, so an auditor can answer "on what commercial
+    // basis was this released?" from the trail rather than by inference.
+    expect(
+      await auditCountFor('quo.additional_work.quotation_linked', await approvalIdFor(request.id))
+    ).toBe(1);
 
     // The commercial decision rows are the quotation module's, and the operational
     // approval adds no copy of them — only the reference.
@@ -630,7 +703,7 @@ describe('P1-20-BE-013 — there is one approval truth', () => {
     const revisionId = await issueQuotation(quotation);
     await acceptRevision(revisionId);
     const roleId = await partyRoleFor(order.visitId);
-    authAsWo(FULL);
+    authAs(WO_APPROVER_WITH_QUOTATION_READ);
     await approve(
       request.id,
       {
@@ -646,5 +719,72 @@ describe('P1-20-BE-013 — there is one approval truth', () => {
       `SELECT count(*)::text AS n FROM inv.stock_movements`
     );
     expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+  });
+});
+
+/**
+ * The port is installed by the path that USES it (P1-20-BE-013).
+ *
+ * `@/modules/quotation` calls `setCommercialApprovalReader` at module scope, and
+ * `@/modules/work-order` must not import it — that is the cycle the port exists to
+ * break. So whether the port exists depended on some *other* route having been loaded
+ * first: nothing else in `src/` imports the quotation module, so a fresh Node process
+ * (cold start, restart, scale-out) that received this endpoint before any `/quotations*`
+ * route found the reader uninstalled and answered `ERR-SYS-001`. Fail-closed, so no
+ * unvalidated link was ever written, but P1-20-BE-013 was intermittently unavailable
+ * for reasons a caller could not see or retry around.
+ *
+ * Every other test in this file imports the quotation routes at module scope, so the
+ * port is always installed in the test process and none of them can observe this. A
+ * fresh module registry is the only way to see it: `vi.resetModules()` gives the dynamic
+ * imports below their own graph, so the reader they see is the one the approval route's
+ * own imports produce and nothing else.
+ *
+ * The stub handle proves which implementation answered. The uninstalled default throws
+ * before touching a database; the real one reads through the repository, so a handle
+ * whose `query` raises a sentinel distinguishes "installed" from "still the default"
+ * without needing the port to succeed.
+ */
+describe('CommercialApprovalReader installation', () => {
+  const SENTINEL = 'SENTINEL_DB_REACHED';
+  const stubDb = {
+    context: {
+      correlationId: '00000000-0000-4000-8000-0000000000ff',
+      operation: 'wo.additional-work-approval',
+      module: 'work-order',
+      principal: { tenantId: TENANT_A, userId: USER_A },
+    },
+    query: () => {
+      throw new Error(SENTINEL);
+    },
+  };
+
+  it('is uninstalled by default and installed by importing the approval route alone', async () => {
+    vi.resetModules();
+
+    const contract = await import('@/server/contracts/commercial-approval');
+    contract.__resetCommercialApprovalReaderForTests();
+
+    // The fail-loud default: an authorization-shaped question answered by an
+    // uninstalled port must not look like a legitimate "not found".
+    await expect(
+      contract
+        .commercialApprovalReader()
+        .standingOf(stubDb as never, 'd2999999-0000-4000-8000-0000000000aa')
+    ).rejects.toThrow(/not installed/);
+
+    // The ONLY import: the approval route. It pulls in `@/modules/work-order` and,
+    // because of the side-effect import added for this reason, `@/modules/quotation`.
+    await import('@/app/api/v1/additional-work/[requestId]/approval/route');
+
+    // Now a real implementation answers — proved by it reaching the database handle,
+    // which the default never does.
+    await expect(
+      contract
+        .commercialApprovalReader()
+        .standingOf(stubDb as never, 'd2999999-0000-4000-8000-0000000000aa')
+    ).rejects.toThrow(SENTINEL);
+
+    vi.resetModules();
   });
 });

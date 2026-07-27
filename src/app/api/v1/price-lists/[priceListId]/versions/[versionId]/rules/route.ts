@@ -61,7 +61,21 @@ export const PRICE_RULE_RECORD_OPERATION = defineOperation({
   path: '/price-lists/{priceListId}/versions/{versionId}/rules',
   summary: 'Record a price rule on a draft price-list version.',
   permissions: ['svc.price.manage'],
-  scope: 'tenant',
+  /**
+   * `branch`, not `tenant`.
+   *
+   * A price list has no company or branch, but a price RULE does: `company_id` and
+   * `branch_id` are the selectors `svc.resolve_price` scores at
+   * `branch*4 + company*2 + class*1`, so this row decides one branch's price.
+   *
+   * Declaring `tenant` here made the pre-handler check scope-blind, and the columns
+   * arrive from the request body with no foreign key behind them — so an actor
+   * holding `svc.price.manage` scoped only to branch A2 could write a
+   * branch-A1-specific rule at maximum priority and set the price charged in a
+   * branch they hold nothing in. The handler now authorizes the selector it is
+   * given, before the row is written.
+   */
+  scope: 'branch',
   auditClass: 'financial',
   auditAction: 'svc.price_rule.recorded',
   idempotent: true,
@@ -81,9 +95,28 @@ export async function POST(
   return handleOperation(
     PRICE_RULE_RECORD_OPERATION,
     request,
-    async ({ db }) => {
+    async ({ db, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(Body, body, 'body');
+      /**
+       * Authorize the SELECTOR before it is stored.
+       *
+       * A rule naming a company or branch narrows the price for that scope, so the
+       * caller must hold `svc.price.manage` there. A wildcard rule (both omitted)
+       * names no scope to narrow and is left to the pre-handler tenant check —
+       * `authorizeScope({})` would fail closed and refuse every wildcard rule.
+       *
+       * The company/branch coherence check inside `recordRule` runs too, so a branch
+       * that does not belong to the named company is refused rather than authorized
+       * against whichever half happens to match: `iam.has_permission_in_scope` is
+       * disjunctive across scope rows.
+       */
+      if (parsed.companyId !== undefined || parsed.branchId !== undefined) {
+        await authorizeScope({
+          ...(parsed.companyId === undefined ? {} : { companyId: parsed.companyId }),
+          ...(parsed.branchId === undefined ? {} : { branchId: parsed.branchId }),
+        });
+      }
       const rule = await pricingModule().priceLists.recordRule(
         db,
         params.priceListId,

@@ -217,6 +217,35 @@ export class PriceListService {
         safeDetails: { violations: [{ path: 'body.taxClassId', rule: 'tax_needs_company' }] },
       });
     }
+    /**
+     * A branch selector must name a branch of the company it is paired with.
+     *
+     * `svc.price_rules` has NO foreign key on `company_id` or `branch_id` — only on
+     * `service_id`, `tenant_id` and `price_list_version_id` — so nothing else stops an
+     * incoherent or non-existent pair being stored. That matters twice over: the
+     * scope authorization on the route is disjunctive across grant rows, and an
+     * unverified branch would also file this rule's audit record under a scope the
+     * caller may not hold.
+     */
+    if (input.branchId !== undefined) {
+      if (input.companyId === undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'A branch-scoped price rule must also name its company',
+          safeDetails: { violations: [{ path: 'body.branchId', rule: 'branch_needs_company' }] },
+        });
+      }
+      const coherent = await this.repository.branchBelongsToCompany(
+        db,
+        input.companyId,
+        input.branchId
+      );
+      if (!coherent) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Branch ${input.branchId} does not belong to company ${input.companyId}`,
+          safeDetails: { violations: [{ path: 'body.branchId', rule: 'branch_company_mismatch' }] },
+        });
+      }
+    }
 
     let rule: { id: string; amount: string; recordVersion: number };
     try {

@@ -33,6 +33,7 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
+import { AppFailure } from '@/server/errors/app-failure';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
 import { pricingModule } from '@/modules/pricing';
 
@@ -75,6 +76,37 @@ export async function GET(request: Request): Promise<Response> {
     async ({ db, request: raw, authorizeScope }) => {
       const url = new URL(raw.url);
       const query = parseOrFail(Query, searchParamsToObject(url.searchParams), 'query');
+
+      /**
+       * The pair must be COHERENT before it is authorized.
+       *
+       * `iam.has_permission_in_scope` is disjunctive across grant-scope rows: a
+       * `branch` row satisfies it on its own, and so does a `company` row. Every
+       * other branch-scoped operation in this phase derives both halves from one
+       * database row and therefore cannot be incoherent — this is the only route
+       * where a caller supplies them independently.
+       *
+       * Without this check, a principal holding `svc.price.read` in branch B1 of
+       * company C1 could ask for `companyId=C2&branchId=B1`: the branch scope row
+       * satisfies the permission check, and `svc.resolve_price` then selects C2's
+       * assignment and company-level rule and `findTaxRate` returns C2's rate —
+       * disclosing another company's price, currency and tax rate to a caller with
+       * no grant in it.
+       */
+      const coherent = await pricingModule().prices.branchBelongsToCompany(
+        db,
+        query.companyId,
+        query.branchId
+      );
+      if (!coherent) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Branch ${query.branchId} does not belong to company ${query.companyId}`,
+          safeDetails: {
+            violations: [{ path: 'query.branchId', rule: 'branch_company_mismatch' }],
+          },
+        });
+      }
+
       // Authorize the named scope BEFORE resolving anything with it.
       await authorizeScope({ companyId: query.companyId, branchId: query.branchId });
 

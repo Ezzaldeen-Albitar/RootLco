@@ -114,5 +114,6 @@ export const quotationModule = composeModule({
  * module cycle.
  */
 setCommercialApprovalReader({
-  standingOf: (db, revisionId) => quotationModule().quotations.commercialApproval(db, revisionId),
+  standingOf: (db, revisionId, options) =>
+    quotationModule().quotations.commercialApproval(db, revisionId, options ?? {}),
 });

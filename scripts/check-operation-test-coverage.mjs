@@ -106,12 +106,28 @@ export const P1_18_PREFIXES = ['apt.', 'rec.'];
  * declare.
  */
 export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
+/**
+ * P1-20 spans TWO id namespaces — `svc.` (service catalog and pricing, which share
+ * the frozen Phase 1-10 `svc` schema) and `quo.` (quotation).
+ *
+ * Listed here for the reason stated above P1-19, and it was earned again: the first
+ * P1-20 commit extended the visible hook — the `parseProvidedFlags` alternation
+ * accepts `svc|quo` — but not this array, so `derivedRequirements()` returned `[]`
+ * for all thirteen P1-20 operations and the required floor was whatever the manifest
+ * volunteered. An independent review measured it from this script's own `--json`
+ * output: `route`, `service` and `authorization` were *provided but not required*
+ * for every one of the thirteen, and deleting those assertions would have kept the
+ * gate green. Extending the alternation without extending the prefixes is the exact
+ * shape of a gate that looks stricter than it is.
+ */
+export const P1_20_PREFIXES = ['svc.', 'quo.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
   P1_17_PREFIX,
   ...P1_18_PREFIXES,
   ...P1_19_PREFIXES,
+  ...P1_20_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1803,7 +1819,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((prefix) => id.startsWith(prefix));
+      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((prefix) =>
+        id.startsWith(prefix)
+      );
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -1834,7 +1852,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // later phase's feature branch.
     const isDerived =
       id.startsWith(DERIVED_PREFIX) ||
-      [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((p) => id.startsWith(p));
+      [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1897,6 +1915,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
   // P1-19 spans four namespaces, so its phase row set is their union.
   const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-20 spans two namespaces, so its phase row set is their union.
+  const p1_20Rows = matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1926,6 +1946,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_17: phaseCounts(vehRows),
     p1_18: phaseCounts(aptRecRows),
     p1_19: phaseCounts(p1_19Rows),
+    p1_20: phaseCounts(p1_20Rows),
   };
   return { failures, matrix, counts };
 }
@@ -2043,6 +2064,15 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-20', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_20,
+      operations: matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -2104,6 +2134,15 @@ async function runCli() {
     console.log(`P1-19 unit-only: ${t.unitOnly}`);
     console.log(`P1-19 unreferenced: ${t.unreferenced}`);
     console.log(`P1-19 metadata-only: ${t.metadataOnly}`);
+    const u = counts.p1_20;
+    console.log('');
+    console.log(`P1-20 registered public operations: ${u.registered}`);
+    console.log(`P1-20 operation-depth: ${u.operationDepth}`);
+    console.log(`P1-20 invocation-only: ${u.invocationOnly}`);
+    console.log(`P1-20 pending: ${u.pending}`);
+    console.log(`P1-20 unit-only: ${u.unitOnly}`);
+    console.log(`P1-20 unreferenced: ${u.unreferenced}`);
+    console.log(`P1-20 metadata-only: ${u.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

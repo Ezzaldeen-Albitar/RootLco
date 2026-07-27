@@ -583,6 +583,16 @@ export class QuotationDecisionService {
       });
     }
 
+    /**
+     * A rejection is TERMINAL for the revision (P1-20-BE-009).
+     *
+     * An acceptance deliberately leaves the revision `issued`: it is still the
+     * document the customer agreed to, and `quo.guard_quotation_revision_freeze`
+     * treats `superseded`/`rejected`/`expired` as terminal, so there is no
+     * `accepted` revision state to move to. A rejection is different — the revision
+     * as presented is dead, and marking it so is what stops a later revision-wide
+     * approval from overwriting the customer's refusal.
+     */
     if (outcome === 'rejected') {
       await this.repository.updateRevisionStatus(db, revision.id, 'rejected');
     }
@@ -612,12 +622,23 @@ export class QuotationDecisionService {
       producer: 'quotation.quotation-decision-service',
       companyId: quotation.companyId,
       branchId: quotation.branchId,
+      /**
+       * NO amount. The currency stays because it is not a price.
+       *
+       * `quotation.revision-issued` carries `grandTotal` because issuing IS the act
+       * of quoting a figure, and its consumer is the delivery intent that presents
+       * that figure to the customer. An acceptance is a state change, and a consumer
+       * that needs the amount reads the revision under its own authorization — where
+       * the totals are classified `restricted`. Putting them in an outbox payload
+       * moves a restricted figure into a row with different retention and no
+       * per-consumer authorization, and every consumer of this event gets it whether
+       * it needs it or not.
+       */
       payload: {
         quotationId: quotation.id,
         revisionId: revision.id,
         revisionNumber: revision.revisionNumber,
         currency: revision.currencyCode,
-        grandTotal: revision.capturedGrandTotal,
       },
       // Keyed on the revision: a quotation reaches a given outcome once per
       // revision, so a replay collides instead of publishing twice.

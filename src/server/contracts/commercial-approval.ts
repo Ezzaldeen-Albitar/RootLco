@@ -9,10 +9,19 @@
  * question at approval time.
  *
  * A direct import would close a cycle: `quotation` already imports `work-order` for
- * `requireWorkOrder`, because a quotation's scope comes from its work order. Two
- * modules importing each other's public surface is exactly the shape this
- * repository avoids, and `composeModule`'s laziness would hide the cycle rather
- * than remove it.
+ * `requireWorkOrder`, because a quotation's scope comes from its work order, and
+ * `composeModule`'s memoised laziness would HIDE such a cycle rather than remove it —
+ * it surfaces only as a partially-initialised module under a particular import order.
+ *
+ * An earlier version of this comment claimed that two modules importing each other is
+ * "the shape this repository avoids". That was false, and stating it here would have
+ * made a rule-3 audit read three live counter-examples as sanctioned practice:
+ * `work-order` ↔ `diagnostics`, `work-order` ↔ `quality` and `work-order` ↔ `technician`
+ * are each mutually importing today, all three predating this phase, and
+ * `scripts/check-module-boundaries.mjs` enforces B1 and B3–B12 with no cycle rule — so
+ * `validate:module-boundaries` reports OK with all three present. This port is
+ * therefore the shape the repository SHOULD have and does not yet enforce; the gap is
+ * recorded as an open finding rather than asserted away here.
  *
  * So the dependency is inverted through the foundation, the same way
  * `FileService` and `NotificationService` already are: work-order depends on this
@@ -53,6 +62,20 @@ export interface CommercialApprovalStanding {
   readonly outcome: 'accepted' | 'rejected' | null;
 }
 
+/** How the standing should be read. */
+export interface StandingOptions {
+  /**
+   * Hold the row still for the rest of the transaction.
+   *
+   * Required of any caller that is about to WRITE something derived from the answer.
+   * `wo.customer_approvals.quotation_revision_ref` is frozen by
+   * `tg_customer_approvals_immutable`, so a link taken on a standing that changed
+   * between the check and the INSERT can never be corrected — an unlocked read is
+   * only safe for reporting.
+   */
+  readonly lock?: boolean;
+}
+
 export interface CommercialApprovalReader {
   /**
    * One revision's standing, or `null` when it is not visible to the caller.
@@ -60,7 +83,11 @@ export interface CommercialApprovalReader {
    * Visibility is RLS's decision, so a cross-tenant revision is reported as absent
    * rather than as forbidden — the same non-disclosure every other read follows.
    */
-  standingOf(db: DbHandle, revisionId: string): Promise<CommercialApprovalStanding | null>;
+  standingOf(
+    db: DbHandle,
+    revisionId: string,
+    options?: StandingOptions
+  ): Promise<CommercialApprovalStanding | null>;
 }
 
 /**

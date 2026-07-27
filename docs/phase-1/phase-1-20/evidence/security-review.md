@@ -12,21 +12,21 @@ an open item rather than asserted.
 
 ### Authorization map
 
-| Operation                        | Permissions (conjunction)                    | Scope      | How the scope target is obtained                                          |
-| -------------------------------- | -------------------------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `svc.service-list`               | `svc.service.read`                           | tenant     | `availableAtBranchId` is re-authorized as a concrete target when supplied |
-| `svc.price-list-list`            | `svc.price.read`                             | tenant     | none — `svc.price_lists` has no company or branch column                  |
-| `svc.price-list-create`          | `svc.price.manage`                           | tenant     | as above                                                                  |
-| `svc.price-list-version-create`  | `svc.price.manage`                           | tenant     | as above                                                                  |
-| `svc.price-rule-record`          | `svc.price.manage`                           | tenant     | as above                                                                  |
-| `svc.price-list-version-publish` | `svc.price.publish`                          | tenant     | as above                                                                  |
-| `svc.price-resolve`              | `svc.price.read`                             | **branch** | `companyId` + `branchId` are REQUIRED query parameters and are the target |
-| `quo.quotation-create`           | `quo.quotation.manage`, `wo.work_order.read` | **branch** | the work order's own company and branch, via `requireWorkOrder`           |
-| `quo.quotation-detail`           | `quo.quotation.read`                         | **branch** | the quotation row's own company and branch, after it is read              |
-| `quo.quotation-revision-create`  | `quo.quotation.manage`                       | **branch** | the locked quotation's own scope                                          |
-| `quo.quotation-issue`            | `quo.quotation.manage`                       | **branch** | the locked quotation's own scope                                          |
-| `quo.quotation-item-decide`      | `quo.decision.record`                        | **branch** | the locked parent quotation's own scope                                   |
-| `quo.quotation-revision-decide`  | `quo.decision.record`                        | **branch** | the locked parent quotation's own scope                                   |
+| Operation                        | Permissions (conjunction)                    | Scope      | How the scope target is obtained                                            |
+| -------------------------------- | -------------------------------------------- | ---------- | --------------------------------------------------------------------------- |
+| `svc.service-list`               | `svc.service.read`                           | tenant     | `availableAtBranchId` is re-authorized as a concrete target when supplied   |
+| `svc.price-list-list`            | `svc.price.read`                             | tenant     | none — `svc.price_lists` has no company or branch column                    |
+| `svc.price-list-create`          | `svc.price.manage`                           | tenant     | as above                                                                    |
+| `svc.price-list-version-create`  | `svc.price.manage`                           | tenant     | as above                                                                    |
+| `svc.price-rule-record`          | `svc.price.manage`                           | **branch** | `companyId`/`branchId` in the body ARE the selectors, authorized before use |
+| `svc.price-list-version-publish` | `svc.price.publish`                          | tenant     | as above                                                                    |
+| `svc.price-resolve`              | `svc.price.read`                             | **branch** | `companyId` + `branchId` are REQUIRED query parameters and are the target   |
+| `quo.quotation-create`           | `quo.quotation.manage`, `wo.work_order.read` | **branch** | the work order's own company and branch, via `requireWorkOrder`             |
+| `quo.quotation-detail`           | `quo.quotation.read`                         | **branch** | the quotation row's own company and branch, after it is read                |
+| `quo.quotation-revision-create`  | `quo.quotation.manage`                       | **branch** | the locked quotation's own scope                                            |
+| `quo.quotation-issue`            | `quo.quotation.manage`                       | **branch** | the locked quotation's own scope                                            |
+| `quo.quotation-item-decide`      | `quo.decision.record`                        | **branch** | the locked parent quotation's own scope                                     |
+| `quo.quotation-revision-decide`  | `quo.decision.record`                        | **branch** | the locked parent quotation's own scope                                     |
 
 **No operation declares `scope: 'branch'` without enforcing it.** That is checked
 structurally, not asserted: `scripts/p1-20-endpoint-inventory.mjs` fails the build
@@ -46,18 +46,92 @@ an empty one, so every call would 403. `svc.service-list` is the same case with 
 addition — when the caller _does_ name a branch, that branch is authorized before it
 is used as a filter, which is strictly stronger than the tenant check.
 
-### The decisive isolation case
+### Why `svc.price-rule-record` is branch-scoped
 
-`SVC_PERMISSION_ELSEWHERE` holds the read permission scoped to branch **A2** and an
-unrelated permission scoped to branch **A1**. The second grant places A1 in that
-principal's `iam.allowed_branch_ids()` union, which is the permission-**blind** union
-of every active grant — so RLS alone does not refuse it. Only a scoped permission
-check does.
+A price list has no company or branch, but a price **rule** does. `company_id` and
+`branch_id` are the selectors `svc.resolve_price` scores at
+`branch*4 + company*2 + class*1`, so one rule row decides one branch's price — and they
+arrive from the request body with no foreign key behind them. Declaring `tenant` made
+the pre-handler check scope-blind, so an actor holding `svc.price.manage` scoped only to
+branch A2 could write a branch-A1-specific rule at maximum priority and set the price
+charged in a branch they hold nothing in. The handler now authorizes the selector it is
+given, before the row is written.
+
+A wildcard rule (both selectors omitted) names no scope to narrow and is left to the
+tenant check, because `authorizeScope({})` fails closed and would refuse every wildcard
+rule. And the company/branch pair is checked for COHERENCE before it is authorized:
+`iam.has_permission_in_scope` is disjunctive across grant-scope rows, so an incoherent
+pair could otherwise be authorized against whichever half happens to match.
+
+### The decisive isolation cases
+
+An isolation case only proves something if the principal **holds the operation's own
+permission** and the target row is **readable**. Both halves are load-bearing:
+
+- Without the permission, the 403 is a missing permission, and a scope-blind
+  `iam.has_permission` produces exactly the same 403 — the test cannot fail on the
+  defect it names.
+- Without a widening grant, the target branch is outside
+  `iam.allowed_branch_ids()` — the permission-**blind** union of every active grant —
+  so RLS hides the row and the request fails whether scope was consulted or not.
+
+With both, a scope-blind check would **allow** the request. The three principals below
+each hold their operation's permission in full, scoped to branch A2, plus an unrelated
+permission scoped to A1:
+
+| Principal                  | Holds                                                             | Proves                                                             |
+| -------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `SVC_PERMISSION_ELSEWHERE` | `svc.service.read`                                                | the catalog branch filter                                          |
+| `SVC_PRICE_SCOPED_A2`      | `svc.price.read`, `svc.price.manage`, `svc.price.publish`         | price resolution and the price-rule selector                       |
+| `SVC_QUO_SCOPED_A2`        | `quo.quotation.read`/`.manage`, `quo.decision.record`, `wo.…read` | quotation create, detail, revise, issue and both decision surfaces |
+
+This is a Wave 9 correction. Before it, the pricing and quotation isolation cases used
+`SVC_SCOPED_A2` and `SVC_PERMISSION_ELSEWHERE`, which hold `svc.service.read` alone —
+so every one of those 403s was a missing-permission refusal wearing an isolation label,
+and this document's earlier claim that `SVC_PERMISSION_ELSEWHERE` "holds the read
+permission" was true only of the catalog operation. The old cases are kept beside the
+new ones as the permission-refusal half.
 
 - `tests/backend/p1-20-service-catalog.test.ts` — "refuses A1 for a caller whose A1
   grant carries an UNRELATED permission".
 - `tests/backend/p1-20-pricing.test.ts` — "refuses a branch the caller holds no price
-  permission in (P1-18-A-01)".
+  permission in (P1-18-A-01)" and "svc.price-rule-record refuses … another branch".
+- `tests/backend/p1-20-quotation.test.ts` — the four `quo writes` floor cases and the
+  create/detail isolation cases.
+
+### A role's approval ceiling stops where its grant stops
+
+`iam.approval_limits` rows are per `(role, company)`, and a role grant may be confined
+to particular companies or branches. `callerApprovalCeiling` filtered its role subquery
+on tenant and user only, so an actor inherited a role's ceiling in **every** company that
+role had a limit in — including companies their grant of that role never covered. Hold
+role R scoped to company A and role S scoped to company B, and acting in company B you
+were credited with R's company-B limit.
+
+It is now gated on `scope_mode = 'unrestricted'` OR a `grant_scopes` row naming the
+company, which `ck_grant_scopes_shape` guarantees is populated for all three scope
+types — so the ceiling check and `iam.has_permission_in_scope` cannot disagree about
+which grants reach a company. Demonstrating it needs two companies in one tenant, which
+is why the fixtures seed `COMPANY_A2`; both halves are asserted, because "always return
+null" would satisfy the negative alone.
+
+### Citing a quotation revision requires `quo.quotation.read`
+
+`wo.additional-work-approval` is a P1-19 operation and declares no commercial
+permission. On its own that let a caller holding `wo.additional_work.approve` learn a
+revision's acceptance state, currency and total from the refusal messages the linking
+path produces — the exact surface `quo.quotation.read` governs.
+
+The requirement is enforced inside `assertLinkableQuotationRevision` rather than added
+to the operation's `permissions`, because that list is a **conjunction**: declaring it
+would force every P1-19 caller recording an approval _without_ a quotation to hold a
+commercial permission it has no business holding. It names the concrete company and
+branch, so the answer consults grant scope rather than the scope-blind fallback.
+
+The scope check also runs **before** the work-order check now. Testing the work order
+first told a caller naming a revision from another company _which_ work order it
+belonged to before the scope check ever ran — a foreign work-order id disclosed to a
+caller holding nothing in that scope, from an endpoint they legitimately reach.
 
 ### Separated authorities
 
@@ -185,16 +259,55 @@ Class agreement is enforced twice: `defineOperation` rejects a mismatch at modul
 load, and `scripts/p1-20-endpoint-inventory.mjs` re-checks by reading the source, so
 an operation no test imports still fails CI.
 
+### Every declared action has a producer, and two did not
+
+`svc.discount.authorized` and `quo.additional_work.quotation_linked` were registered in
+the controlled catalog and emitted by **nothing**. The catalog therefore documented
+behaviour that did not exist, and in both cases the missing record was the one an
+auditor would actually reach for:
+
+- **The discount.** `DiscountAuthorizationService.authorize` returns the threshold that
+  applied and the ceiling it checked precisely so the caller can record them — its own
+  doc says "authorized" with no reason is not an auditable fact — and the return value
+  was discarded. It is now written once per revision that needed elevated authority,
+  carrying the policy id (or `unconfigured`, which means threshold zero and is _why_ the
+  discount needed authorizing), the threshold kind and value, the permission required,
+  the document-level discount total and the ceiling. Once per revision rather than per
+  line, because the ceiling limits the actor and the document-level check is what
+  enforces it; 200 identical records would bury the fact rather than record it. The
+  catalog's `entityType` was corrected from `svc.discount_rules` — no such row need
+  exist — to `quo.quotation_revision`.
+- **The link.** `wo.customer_approvals.quotation_revision_ref` is frozen by
+  `tg_customer_approvals_immutable`, so it is written exactly once and can never be
+  corrected — and nothing recorded that it had been written. The approval record carries
+  the decision, the channel and the party, and nothing about the quotation, so "on what
+  commercial basis was this extra work released?" was unanswerable from the trail. It is
+  now its own record, naming the revision, the request and the work order. No amount:
+  the totals live in `quo.quotation_revisions` under their own authorization, and the
+  reference is what makes them reachable.
+
+Both are asserted by tests that read `iam.audit_record_details` and check the
+classification of each field, not merely that a row exists.
+
 ### Audit content rules observed
 
 - Amounts are classified `restricted` (`svc.price_rule.recorded`,
-  `quo.quotation_revision.issued`), because a price is what the business charges.
+  `quo.quotation_revision.issued`, and both amounts in `svc.discount.authorized`),
+  because a price is what the business charges.
 - Free text a customer or advisor typed is `internal`, never `public`.
 - Evidence **content** and reference notes are never recorded — only the row id.
+- An **outbox payload is not an audit record.** `quotation.accepted` and
+  `quotation.rejected` carried `grandTotal`; they no longer do. An acceptance is a state
+  change, the totals are `restricted`, and an outbox row has different retention and no
+  per-consumer authorization — every consumer would receive the figure whether it needed
+  it or not. `quotation.revision-issued` keeps its total, because issuing _is_ the act of
+  quoting a figure and its consumer is the delivery intent that presents it.
 
 ## Open security items
 
-| Id           | Severity | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P1-20-A-03` | Low      | `quo.approval_decisions.decided_by` is the STAFF user who recorded the decision, not the customer. The schema has no customer-principal column, so the integrity control is that a claimed `decidingPartyRef` must equal the quotation's `payer_partner_ref`. The recorded fact is truthfully "staff user X recorded that the payer decided Y over channel Z". Stated rather than papered over.                                                     |
-| `P1-20-A-04` | Low      | Three service-catalog audit actions (`svc.service.updated`, `svc.branch_availability.changed`, `svc.service_version.published`) are registered but have no producing operation yet: this phase ships the catalog READ surface, and the protected requirements do not mandate public mutations. Registered now so a later phase cannot invent a conflicting code. No operation declares them, so the inventory gate does not report them as missing. |
+| Id           | Severity | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-20-A-03` | Low      | `quo.approval_decisions.decided_by` is the STAFF user who recorded the decision, not the customer. The schema has no customer-principal column, so the integrity control is that a claimed `decidingPartyRef` must equal the quotation's `payer_partner_ref`. The recorded fact is truthfully "staff user X recorded that the payer decided Y over channel Z". Stated rather than papered over.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `P1-20-A-04` | Low      | Three service-catalog audit actions (`svc.service.updated`, `svc.branch_availability.changed`, `svc.service_version.published`) are registered but have no producing operation yet: this phase ships the catalog READ surface, and the protected requirements do not mandate public mutations. Registered now so a later phase cannot invent a conflicting code. No operation declares them, so the inventory gate does not report them as missing. Unlike the event catalog, the audit catalog has no `implementedIn` field, so this table is the only place their absence is stated — which is exactly how `svc.discount.authorized` and `quo.additional_work.quotation_linked` went unproduced until an independent review found them. A `reserved` flag plus a catalog test demanding a producer for every non-reserved action would make it structural; that belongs to the phase that adds the mutation surface. |
+| `P1-20-A-06` | Low      | Three module cycles pre-date this phase (`work-order` ↔ `diagnostics`, ↔ `quality`, ↔ `technician`, all present at `0d86a19`) and `check-module-boundaries.mjs` has no cycle rule, so `validate:module-boundaries` reports OK with all three live. P1-20 introduced none — `CommercialApprovalReader` is the correct pattern and the reason none was added — but a B13 rule now would fail the build on another phase's debt. The false claim that mutual imports are "the shape this repository avoids" has been removed from `commercial-approval.ts`.                                                                                                                                                                                                                                                                                                                                                               |
+| `P1-20-A-07` | Low      | `countTiedPriceRules` mirrors ~45 lines of `svc.resolve_price` precedence SQL for a tie `uq_price_rules_signature` makes structurally impossible, with no test comparing the two. Retained deliberately: it defends a correctness property that rests on that index continuing to exist — drop or widen it and resolution silently becomes an `id`-ordered coin flip on a customer's price. The structural guarantee is asserted directly instead of pretending the branch has a positive test.                                                                                                                                                                                                                                                                                                                                                                                                                        |

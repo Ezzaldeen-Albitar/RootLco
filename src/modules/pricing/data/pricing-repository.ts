@@ -104,6 +104,41 @@ export class PricingRepository extends Repository {
   protected readonly module = 'pricing';
 
   /**
+   * Whether `branchId` is a live branch of `companyId` in the caller's tenant.
+   *
+   * Needed because `iam.has_permission_in_scope` is **disjunctive** across grant
+   * scopes: a `branch` scope row satisfies the check on its own, and a `company`
+   * scope row does too. So a caller who names an INCOHERENT pair — their own branch
+   * with someone else's company — passes the permission check while
+   * `svc.resolve_price` then selects the other company's assignment, rules and tax
+   * rate. Every other branch-scoped operation in this phase derives both halves from
+   * one row and cannot be incoherent; the pair only arrives independently where a
+   * caller supplies it.
+   *
+   * `org.branches` is read here rather than through the iam module because this is a
+   * containment predicate on organizational structure, not an authorization
+   * decision, and `shared-services` already reads `org.*` for the same class of
+   * reason. RLS narrows it to the caller's tenant.
+   */
+  public async branchBelongsToCompany(
+    db: DbHandle,
+    companyId: string,
+    branchId: string
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1 FROM org.branches b
+          WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
+            AND b.deleted_at IS NULL
+       ) AS ok`,
+      [context.principal.tenantId, companyId, branchId]
+    );
+    return row?.ok === true;
+  }
+
+  /**
    * The server's business date, as `YYYY-MM-DD`.
    *
    * Read from the database rather than the Node clock, so the date used to resolve

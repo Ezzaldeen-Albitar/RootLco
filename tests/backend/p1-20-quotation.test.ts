@@ -25,10 +25,10 @@
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.quotation-create: route service authorization success denial cross-tenant isolation audit outbox idempotency
  *   quo.quotation-detail: route service authorization success denial cross-tenant isolation
- *   quo.quotation-revision-create: route service authorization success denial audit stale-version concurrency
- *   quo.quotation-issue: route service authorization success denial audit outbox stale-version concurrency rollback
- *   quo.quotation-item-decide: route service authorization success denial cross-tenant audit outbox concurrency
- *   quo.quotation-revision-decide: route service authorization success denial audit outbox rollback
+ *   quo.quotation-revision-create: route service authorization success denial audit stale-version concurrency cross-tenant idempotency isolation
+ *   quo.quotation-issue: route service authorization success denial audit outbox stale-version concurrency rollback cross-tenant idempotency isolation
+ *   quo.quotation-item-decide: route service authorization success denial cross-tenant audit outbox concurrency idempotency isolation
+ *   quo.quotation-revision-decide: route service authorization success denial audit outbox rollback cross-tenant idempotency isolation
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -36,8 +36,11 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   TENANT_A,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
+  contextFor,
+  countRows,
   ensureBackendFixtures,
   ensureTestLogins,
   runtimeAppPool,
@@ -56,7 +59,9 @@ import {
   SVC_READER,
   SVC_SCOPED_A2,
   SVC_NO_CEILING,
+  SVC_QUO_SCOPED_A2,
   SVC_TENANT_B,
+  SVC_TENANT_B_FULL,
   TAX_CLASS_A,
   assignPriceList,
   auditCountFor,
@@ -67,6 +72,8 @@ import {
   priceListVersionOf,
 } from './p1-20-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { withTransaction } from '@/server/db/transaction';
+import { quotationModule } from '@/modules/quotation';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { POST as CREATE_LIST } from '@/app/api/v1/price-lists/route';
 import { POST as CREATE_PL_VERSION } from '@/app/api/v1/price-lists/[priceListId]/versions/route';
@@ -320,6 +327,60 @@ describe('quo.quotation-create — the server computes the money', () => {
     expect(line?.lineTotal).toBe('165.0000');
   });
 
+  it('audits WHY an elevated discount was authorized, once per revision', async () => {
+    /**
+     * `svc.discount.authorized` (P1-20-BE-006, P1-20-SEC-004).
+     *
+     * The action was declared in the controlled catalog and had NO producer: nothing in
+     * `src/` emitted it, so the catalog documented behaviour that did not exist and
+     * "this discount was authorized" was not recoverable from the audit trail at all.
+     * `DiscountAuthorizationService.authorize` returns the threshold and the ceiling
+     * precisely so the caller can record them — its own doc says "authorized" with no
+     * reason is not an auditable fact — and the return value was discarded.
+     *
+     * One record per revision, not per line: the ceiling limits the ACTOR, the
+     * document-level check is what enforces it, and 200 identical records would bury
+     * the fact rather than record it.
+     */
+    const quotation = await seedQuotation({ quantity: '2.000', discount: '10.0000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    expect(await auditCountFor('svc.discount.authorized', revisionId)).toBe(1);
+
+    // Details are rows in `iam.audit_record_details`, not a jsonb column: the audit
+    // trail stores one row per field with its own classification.
+    const record = await admin.query<{ field_name: string; value_classification: string }>(
+      `SELECT d.field_name, d.value_classification
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'svc.discount.authorized' AND r.entity_id = $1`,
+      [revisionId]
+    );
+    const details = JSON.stringify(record.rows);
+    // The threshold that applied and the ceiling checked — the two facts that make the
+    // authorization reviewable. With no policy row configured the threshold is zero by
+    // default, and that is recorded as such rather than omitted.
+    expect(details).toContain('thresholdPolicyId');
+    expect(details).toContain('thresholdKind');
+    expect(details).toContain('thresholdValue');
+    expect(details).toContain('ceilingAmount');
+    expect(details).toContain('elevatedLineCount');
+    expect(details).toContain('requiredPermission');
+    // The amount given away and the ceiling checked are prices, so both are
+    // `restricted` — the same classification every other amount in this trail carries.
+    const restricted = record.rows.filter((row) => row.value_classification === 'restricted');
+    expect(restricted.map((row) => row.field_name).sort()).toEqual([
+      'ceilingAmount',
+      'discountTotal',
+    ]);
+
+    // A quotation with NO discount records nothing: an ordinary edit is not an
+    // authorization, and auditing it as one would misstate what happened.
+    const plain = await seedQuotation({ quantity: '1.000' });
+    expect(
+      await auditCountFor('svc.discount.authorized', plain.currentRevision?.id as string)
+    ).toBe(0);
+  });
+
   it('refuses a discount when the actor has NO approval ceiling', async () => {
     // SVC_UNPERMITTED_DISCOUNT holds quotation.manage and work_order.read but no
     // discount ceiling. Fail-closed: no ceiling is no authority, never unlimited.
@@ -404,27 +465,63 @@ describe('quo.quotation-create — the server computes the money', () => {
   });
 
   it('refuses a work order in a branch the caller has no grant in (P1-18-A-01)', async () => {
-    const order = await createOpenWorkOrder({ branchId: BRANCH_A2 });
-    // SVC_PERMISSION_ELSEWHERE is scoped to A2 for svc.service.read only and holds
-    // no quotation permission at all, so it is refused; the point of the case is
-    // that the WORK ORDER's own scope decides, never a request field.
-    authAs(SVC_PERMISSION_ELSEWHERE);
+    /**
+     * The isolation case, with a principal that HOLDS both declared permissions.
+     *
+     * An earlier version used `SVC_PERMISSION_ELSEWHERE` — `svc.service.read` alone —
+     * against a work order in BRANCH_A2, the very branch that principal is granted in.
+     * So it held neither `quo.quotation.manage` nor `wo.work_order.read`, and no
+     * out-of-scope resource was ever addressed: a scope-blind implementation passed.
+     *
+     * `SVC_QUO_SCOPED_A2` holds both permissions unreservedly, scoped to A2, and its
+     * widening grant puts A1 in its allowed-branch union. The work order is in A1, so
+     * the row is readable and the permissions are held: only the work order's own
+     * resolved scope can refuse this.
+     */
+    const order = await createOpenWorkOrder({ branchId: BRANCH_A1 });
+    authAs(SVC_QUO_SCOPED_A2);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000' }],
     });
     expect(response.status).toBe(403);
-    void BRANCH_A1;
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(0);
+
+    // A principal holding NO quotation permission is also refused — the permission
+    // case, kept distinct from the scope case above.
+    authAs(SVC_PERMISSION_ELSEWHERE);
+    expect(
+      (
+        await createQuotation({
+          workOrderId: order.workOrderId,
+          lines: [{ serviceId: SERVICE_A, quantity: '1.000' }],
+        })
+      ).status
+    ).toBe(403);
+    void BRANCH_A2;
   });
 
   it('never lets a tenant-B caller quote a tenant-A work order', async () => {
     const order = await createOpenWorkOrder();
-    authAs(SVC_TENANT_B);
+    /**
+     * `SVC_TENANT_B_FULL`, not `SVC_TENANT_B`: the latter lacks `wo.work_order.read`,
+     * one of the two permissions this route declares. Permissions are a CONJUNCTION and
+     * are checked before any row is read, so a refusal of that principal is explained
+     * by the missing permission alone and the tenant boundary is never reached.
+     */
+    authAs(SVC_TENANT_B_FULL);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000' }],
     });
     expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(0);
   });
 
   it('writes one audit record and one outbox event', async () => {
@@ -475,8 +572,25 @@ describe('quo.quotation-detail', () => {
 
   it('refuses a caller scoped to another branch', async () => {
     const quotation = await seedQuotation();
+    // Holds `quo.quotation.read` in full, scoped to A2, with A1 in its allowed-branch
+    // union. `SVC_SCOPED_A2` — used here before — holds `svc.service.read` only, so its
+    // 403 was a missing permission and proved nothing about the row's scope.
+    authAs(SVC_QUO_SCOPED_A2);
+    const refused = await detail(quotation.id);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+
+    // The permission case, kept separate.
     authAs(SVC_SCOPED_A2);
     expect((await detail(quotation.id)).status).toBe(403);
+  });
+
+  it('404s an unknown quotation and 422s a malformed id', async () => {
+    authAs(SVC_FULL);
+    const unknown = await detail('d2999999-0000-4000-8000-0000000000ee');
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { code: string }).code).toBe('ERR-RES-001');
+    expect((await detail('not-a-uuid')).status).toBe(422);
   });
 });
 
@@ -534,6 +648,32 @@ describe('quo.quotation-revision-create — immutability of an issued revision',
       )
     ).json()) as Revision;
     expect(next.lines[0]?.unitPrice).toBe('500.0000');
+  });
+
+  it('403 without quo.quotation.manage', async () => {
+    // The authorization floor: every other `revise` caller holds the permission
+    // (SVC_TENANT_B_FULL for the tenant case, SVC_QUO_SCOPED_A2 for the scope case),
+    // so neither of those refusals is evidence that a missing permission is refused.
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    authAs(SVC_READER);
+    const refused = await revise(
+      quotation.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000' }] },
+      quotation.recordVersion
+    );
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+
+    __resetAuthenticatorForTests();
+    expect(
+      (
+        await revise(
+          quotation.id,
+          { lines: [{ serviceId: SERVICE_A, quantity: '1.000' }] },
+          quotation.recordVersion
+        )
+      ).status
+    ).toBe(401);
   });
 
   it('requires If-Match and refuses a stale version', async () => {
@@ -647,6 +787,114 @@ describe('quo.quotation-issue', () => {
       [first.id]
     );
     expect(superseded.rows[0]?.status).toBe('superseded');
+  });
+
+  it('403 without quo.quotation.manage, 401 unauthenticated', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    authAs(SVC_READER);
+    const refused = await issue(quotation.id, { revisionId }, quotation.recordVersion);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+
+    __resetAuthenticatorForTests();
+    expect((await issue(quotation.id, { revisionId }, quotation.recordVersion)).status).toBe(401);
+
+    const after = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.quotation_revisions WHERE id = $1`,
+      [revisionId]
+    );
+    expect(after.rows[0]?.status).toBe('draft');
+  });
+
+  it('refuses a WRONG If-Match, not merely a missing one', async () => {
+    // `versionGuarded: true` means the header is mandatory AND a wrong value is
+    // refused. Every other issue call in this suite passed the CURRENT version, so
+    // only the first half was ever exercised.
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    authAs(SVC_FULL);
+    const stale = await issue(quotation.id, { revisionId }, 999);
+    expect(stale.status).toBeGreaterThanOrEqual(400);
+    expect(((await stale.json()) as { code: string }).code).toBe('ERR-CON-001');
+
+    const after = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.quotation_revisions WHERE id = $1`,
+      [revisionId]
+    );
+    expect(after.rows[0]?.status).toBe('draft');
+  });
+
+  it('under a forced RACE issues exactly once and publishes exactly one event', async () => {
+    /**
+     * Genuinely concurrent, which "a second attempt is refused" is not.
+     *
+     * Two requests race on one draft revision with the same If-Match. The
+     * quotation-row lock serialises them, the loser sees a bumped `record_version`
+     * (`ERR-CON-001`) or a non-draft revision, and the deterministic outbox key makes a
+     * double publish impossible rather than merely unlikely.
+     */
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    authAs(SVC_FULL);
+    const [a, b] = await Promise.all([
+      issue(quotation.id, { revisionId }, quotation.recordVersion),
+      issue(quotation.id, { revisionId }, quotation.recordVersion),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses.filter((code) => code === 200)).toHaveLength(1);
+    expect(statuses.filter((code) => code >= 400)).toHaveLength(1);
+    expect(await outboxCountFor(`quotation.revision-issued:${revisionId}`)).toBe(1);
+
+    const rows = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM quo.quotation_revisions
+        WHERE quotation_id = $1 AND status = 'issued'`,
+      [quotation.id]
+    );
+    expect(rows.rows[0]?.n).toBe('1');
+  });
+
+  it('rollback: a failure at the LAST statement undoes the issue entirely', async () => {
+    /**
+     * A genuine rollback, forced AFTER every write.
+     *
+     * The zero-line case below is a refusal thrown before `quo.issue_revision` runs —
+     * "nothing was written" is trivially true of a command that never wrote. Here the
+     * outbox key this issue is about to publish is pre-taken for the tenant, so
+     * `publishEvent` raises at the last statement of the transaction, after
+     * `quo.issue_revision` has moved the revision to `issued`, repointed
+     * `current_revision_id`, moved the quotation to `active` and frozen all four
+     * totals, and after the audit record has been appended. Every one of those must be
+     * gone afterwards.
+     *
+     * A different `aggregate_id` on the pre-inserted row keeps it out of this
+     * revision's own counts while still colliding on `event_key`.
+     */
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+    await admin.query(
+      `INSERT INTO shared.event_outbox
+         (tenant_id, event_key, event_type, aggregate_type, aggregate_id, schema_version,
+          aggregate_version, producer, created_by)
+       VALUES ($1,$2,'quotation.revision-issued','quo.quotation_revision',$3,1,1,
+               'quotation.quotation-service',$4)`,
+      [TENANT_A, `quotation.revision-issued:${revisionId}`, crypto.randomUUID(), USER_A]
+    );
+
+    authAs(SVC_FULL);
+    const response = await issue(quotation.id, { revisionId }, quotation.recordVersion);
+    expect(response.status).toBeGreaterThanOrEqual(400);
+
+    const after = await admin.query<{ r: string; q: string; current: string | null }>(
+      `SELECT r.status AS r, q.status AS q, q.current_revision_id::text AS current
+         FROM quo.quotation_revisions r JOIN quo.quotations q ON q.id = r.quotation_id
+        WHERE r.id = $1`,
+      [revisionId]
+    );
+    expect(after.rows[0]?.r).toBe('draft');
+    expect(after.rows[0]?.q).toBe('draft');
+    expect(after.rows[0]?.current).toBeNull();
+    expect(await auditCountFor('quo.quotation_revision.issued', revisionId)).toBe(0);
   });
 
   it('leaves no state and no event when the revision has no lines', async () => {
@@ -824,15 +1072,88 @@ describe('quo.quotation-item-decide', () => {
   });
 
   it('403 without quo.decision.record', async () => {
+    /**
+     * A TENANT-A principal lacking only `quo.decision.record`.
+     *
+     * This case used `SVC_TENANT_B` and asserted `>= 400`, which conflates two
+     * different refusals: that principal is in another tenant AND lacks the permission,
+     * so the assertion could not attribute the refusal to either. The tenant boundary
+     * has its own case below, with a principal that holds the permission.
+     */
     const quotation = await seedQuotation({ quantity: '1.000' });
     const issued = await issueCurrent(quotation);
-    authAs(SVC_TENANT_B);
+    authAs(SVC_READER);
+    const response = await decideItem(issued.lines[0]?.id as string, {
+      decision: 'approved',
+      channel: 'in_person',
+      presentedRevisionId: issued.id,
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe('ERR-IAM-001');
+
+    __resetAuthenticatorForTests();
+    expect(
+      (
+        await decideItem(issued.lines[0]?.id as string, {
+          decision: 'approved',
+          channel: 'in_person',
+          presentedRevisionId: issued.id,
+        })
+      ).status
+    ).toBe(401);
+  });
+
+  it('never lets a tenant-B caller decide a tenant-A line', async () => {
+    // `SVC_TENANT_B_FULL` holds `quo.decision.record` unrestricted, so the only thing
+    // that can refuse it is the tenant boundary.
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    authAs(SVC_TENANT_B_FULL);
     const response = await decideItem(issued.lines[0]?.id as string, {
       decision: 'approved',
       channel: 'in_person',
       presentedRevisionId: issued.id,
     });
     expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_revision_id = $1', [issued.id])
+    ).toBe(0);
+    expect((await reread(quotation.id)).status).toBe('active');
+  });
+
+  it('under a forced RACE records exactly one decision for a line', async () => {
+    /**
+     * Genuinely concurrent. The existing replay pair is two sequential `await`s, which
+     * proves idempotency and says nothing about a race.
+     *
+     * Two opposite decisions on the same line at the same time: whichever lands first
+     * is the customer's decision, and `uq_approval_decisions_item` plus the parent lock
+     * taken inside `quo.record_item_decision` must leave exactly one row. Both landing
+     * would mean a line simultaneously approved and rejected.
+     */
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    const itemId = issued.lines[0]?.id as string;
+    authAs(SVC_FULL);
+    const [a, b] = await Promise.all([
+      decideItem(itemId, {
+        decision: 'approved',
+        channel: 'in_person',
+        presentedRevisionId: issued.id,
+      }),
+      decideItem(itemId, {
+        decision: 'rejected',
+        channel: 'phone',
+        presentedRevisionId: issued.id,
+      }),
+    ]);
+    const codes = [a.status, b.status];
+    expect(codes.filter((code) => code === 201)).toHaveLength(1);
+    expect(codes.filter((code) => code >= 400)).toHaveLength(1);
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_revision_id = $1', [issued.id])
+    ).toBe(1);
   });
 
   it('rejects a direct storage key — the field cannot express one', async () => {
@@ -1005,5 +1326,357 @@ describe('quo.quotation-revision-decide — atomic orchestration', () => {
         })
       ).status
     ).toBe(403);
+  });
+
+  it('emits exactly one outcome event for the revision', async () => {
+    // The `outbox` floor for this operation, which the success case above did not
+    // assert: it checked the audit record and the per-item decision rows only.
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    authAs(SVC_FULL);
+    expect(
+      (
+        await decideRevision(issued.id, {
+          decision: 'approved',
+          channel: 'in_person',
+          decidingPartyRef: PARTNER_A,
+          presentedRevisionId: issued.id,
+        })
+      ).status
+    ).toBe(201);
+    expect(await outboxCountFor(`quotation.accepted:${issued.id}`)).toBe(1);
+    expect(await outboxCountFor(`quotation.rejected:${issued.id}`)).toBe(0);
+  });
+
+  it('rollback: a per-line conflict mid-loop undoes the decisions already written', async () => {
+    /**
+     * A genuine partial-abort, forced AFTER a write.
+     *
+     * The existing all-or-nothing case is refused at the STATE gate, before any write
+     * on this request — its own comment says so — so the surviving row belongs to the
+     * earlier command and the assertion cannot fail whatever the transaction does.
+     *
+     * Here line TWO is approved individually first, which leaves the revision decidable
+     * (the roll-up returns `null` while line one is undecided, so nothing moves to a
+     * terminal state). A revision-wide REJECTION then writes line one's rejection and
+     * only then hits the opposite-decision conflict on line two. Line one's rejection
+     * therefore existed inside the transaction and must be gone afterwards.
+     */
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const created = (await (
+      await createQuotation({
+        workOrderId: order.workOrderId,
+        payerPartnerRef: PARTNER_A,
+        lines: [
+          { serviceId: SERVICE_A, quantity: '1.000' },
+          { serviceId: SERVICE_A, quantity: '2.000', description: 'Second' },
+        ],
+      })
+    ).json()) as Quotation;
+    const issued = await issueCurrent(created);
+    const [lineOne, lineTwo] = [issued.lines[0]?.id as string, issued.lines[1]?.id as string];
+
+    authAs(SVC_FULL);
+    expect(
+      (
+        await decideItem(lineTwo, {
+          decision: 'approved',
+          channel: 'phone',
+          presentedRevisionId: issued.id,
+        })
+      ).status
+    ).toBe(201);
+    // Still decidable: one line undecided, so the roll-up moved nothing.
+    expect((await reread(created.id)).status).toBe('active');
+
+    authAs(SVC_FULL);
+    const response = await decideRevision(issued.id, {
+      decision: 'rejected',
+      channel: 'in_person',
+      decidingPartyRef: PARTNER_A,
+      presentedRevisionId: issued.id,
+    });
+    expect(response.status).toBeGreaterThanOrEqual(400);
+
+    // Exactly the ONE pre-existing approval survives: line one's rejection, written
+    // earlier in the same transaction, was rolled back with it.
+    const rows = await admin.query<{ item: string; decision: string }>(
+      `SELECT quotation_item_id::text AS item, decision FROM quo.approval_decisions
+        WHERE quotation_revision_id = $1`,
+      [issued.id]
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.item).toBe(lineTwo);
+    expect(rows.rows[0]?.decision).toBe('approved');
+    void lineOne;
+    // And no outcome event: the revision never reached a terminal roll-up.
+    expect(await outboxCountFor(`quotation.rejected:${issued.id}`)).toBe(0);
+  });
+});
+
+/**
+ * The floors the operation-coverage gate derives from the registrations themselves
+ * (P1-20-SEC-001, P1-20-QA-003, P1-20-QA-004).
+ *
+ * A quotation takes its scope from the work order it belongs to and is addressed by
+ * id, so `isolation` and `cross-tenant` are the two ways a caller could reach one it
+ * has no authority over, and `idempotency` is declared by all four writes. The gate
+ * began requiring these only when `svc.`/`quo.` were added to `DERIVED_PREFIXES`;
+ * before that it accepted whatever the manifest volunteered.
+ *
+ * `SVC_QUO_SCOPED_A2` holds `quo.quotation.manage` and `quo.decision.record` in FULL,
+ * scoped to branch A2. Every refusal it collects below is therefore the resolved
+ * scope of the row and not a missing permission — the distinction P1-18-A-01 exists
+ * to make.
+ */
+describe('quo writes — tenant, scope and idempotency floors', () => {
+  /** The same POST, minus the `Idempotency-Key` header. */
+  const withoutKey = (url: string, body: unknown, ifMatch?: number): Request =>
+    new Request(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(ifMatch === undefined ? {} : { 'if-match': String(ifMatch) }),
+      },
+      body: JSON.stringify(body),
+    });
+
+  it('quo.quotation-revision-create refuses no key, another tenant, and another branch', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const lines = [{ serviceId: SERVICE_A, quantity: '3.000' }];
+
+    authAs(SVC_FULL);
+    const noKey = await CREATE_REVISION(
+      withoutKey(
+        `http://localhost/api/v1/quotations/${quotation.id}/revisions`,
+        { lines },
+        quotation.recordVersion
+      ),
+      { params: Promise.resolve({ quotationId: quotation.id }) }
+    );
+    expect(noKey.status).toBeGreaterThanOrEqual(400);
+    expect(((await noKey.json()) as { code: string }).code).toBe('ERR-INT-002');
+
+    authAs(SVC_TENANT_B_FULL);
+    const asB = await revise(quotation.id, { lines }, quotation.recordVersion);
+    expect(asB.status).toBeGreaterThanOrEqual(400);
+    expect(asB.status).toBeLessThan(500);
+
+    authAs(SVC_QUO_SCOPED_A2);
+    const wrongBranch = await revise(quotation.id, { lines }, quotation.recordVersion);
+    expect(wrongBranch.status).toBe(403);
+
+    // Neither attempt created a revision: still exactly the one from creation.
+    expect(
+      await countRows(admin, 'quo.quotation_revisions', 'quotation_id = $1', [quotation.id])
+    ).toBe(1);
+  });
+
+  it('quo.quotation-issue refuses no key, another tenant, and another branch', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const revisionId = quotation.currentRevision?.id as string;
+
+    authAs(SVC_FULL);
+    const noKey = await ISSUE(
+      withoutKey(
+        `http://localhost/api/v1/quotations/${quotation.id}/issue`,
+        { revisionId },
+        quotation.recordVersion
+      ),
+      { params: Promise.resolve({ quotationId: quotation.id }) }
+    );
+    expect(noKey.status).toBeGreaterThanOrEqual(400);
+    expect(((await noKey.json()) as { code: string }).code).toBe('ERR-INT-002');
+
+    authAs(SVC_TENANT_B_FULL);
+    const asB = await issue(quotation.id, { revisionId }, quotation.recordVersion);
+    expect(asB.status).toBeGreaterThanOrEqual(400);
+    expect(asB.status).toBeLessThan(500);
+
+    authAs(SVC_QUO_SCOPED_A2);
+    const wrongBranch = await issue(quotation.id, { revisionId }, quotation.recordVersion);
+    expect(wrongBranch.status).toBe(403);
+
+    // The revision is still a draft, so nothing was presented to a customer.
+    const after = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.quotation_revisions WHERE id = $1`,
+      [revisionId]
+    );
+    expect(after.rows[0]?.status).toBe('draft');
+  });
+
+  it('quo.quotation-item-decide refuses no key and another branch', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    const itemId = issued.lines[0]?.id as string;
+    const decision = {
+      decision: 'approved',
+      channel: 'in_person',
+      presentedRevisionId: issued.id,
+    };
+
+    authAs(SVC_FULL);
+    const noKey = await DECIDE_ITEM(
+      withoutKey(`http://localhost/api/v1/quotation-items/${itemId}/decisions`, decision),
+      { params: Promise.resolve({ quotationItemId: itemId }) }
+    );
+    expect(noKey.status).toBeGreaterThanOrEqual(400);
+    expect(((await noKey.json()) as { code: string }).code).toBe('ERR-INT-002');
+
+    authAs(SVC_QUO_SCOPED_A2);
+    expect((await decideItem(itemId, decision)).status).toBe(403);
+
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_revision_id = $1', [issued.id])
+    ).toBe(0);
+  });
+
+  it('quo.quotation-revision-decide refuses no key, another tenant, and another branch', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation);
+    const decision = {
+      decision: 'approved',
+      channel: 'in_person',
+      decidingPartyRef: PARTNER_A,
+      presentedRevisionId: issued.id,
+    };
+
+    authAs(SVC_FULL);
+    const noKey = await DECIDE_REVISION(
+      withoutKey(`http://localhost/api/v1/quotation-revisions/${issued.id}/decisions`, decision),
+      { params: Promise.resolve({ revisionId: issued.id }) }
+    );
+    expect(noKey.status).toBeGreaterThanOrEqual(400);
+    expect(((await noKey.json()) as { code: string }).code).toBe('ERR-INT-002');
+
+    authAs(SVC_TENANT_B_FULL);
+    const asB = await decideRevision(issued.id, decision);
+    expect(asB.status).toBeGreaterThanOrEqual(400);
+    expect(asB.status).toBeLessThan(500);
+
+    authAs(SVC_QUO_SCOPED_A2);
+    expect((await decideRevision(issued.id, decision)).status).toBe(403);
+
+    expect(
+      await countRows(admin, 'quo.approval_decisions', 'quotation_revision_id = $1', [issued.id])
+    ).toBe(0);
+    // And the quotation was not rolled up by an unauthorized decision.
+    expect((await reread(quotation.id)).status).toBe('active');
+  });
+});
+
+/**
+ * `QuotationService.expireLapsed` — the sweep contract (P1-20-BE-010, P1-20-DO-002).
+ *
+ * No route reaches it: expiry is time-driven, and a customer's window closing is not
+ * something a client asks for. That makes it exactly the kind of surface that ships
+ * unexercised, so it is driven directly here through a request context, against the
+ * real database and the real guards.
+ *
+ * `expires_at` is not frozen by `tg_quotation_revisions_immutable`, so a fixture can
+ * backdate it as admin. Issuing with a past expiry is refused by the route on
+ * purpose, which is why backdating — rather than a fabricated clock — is how a lapsed
+ * revision comes to exist.
+ */
+describe('QuotationService.expireLapsed', () => {
+  const backdate = (revisionId: string): Promise<unknown> =>
+    admin.query(
+      `UPDATE quo.quotation_revisions SET expires_at = now() - interval '1 hour' WHERE id = $1`,
+      [revisionId]
+    );
+
+  const sweep = (limit = 10): Promise<readonly string[]> =>
+    withTransaction(
+      contextFor({
+        userId: SVC_FULL.userId,
+        tenantId: TENANT_A,
+        companyIds: [COMPANY_A1],
+        branchIds: [BRANCH_A1],
+        operation: 'quo.quotation-expire-sweep',
+        module: 'quotation',
+      }),
+      (db) => quotationModule().quotations.expireLapsed(db, limit)
+    );
+
+  it('expires a lapsed issued revision, audits it, and emits exactly one event', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation, '2099-01-01T00:00:00.000Z');
+    await backdate(issued.id);
+
+    const expired = await sweep();
+    expect(expired).toContain(issued.id);
+
+    const after = await admin.query<{ r: string; q: string }>(
+      `SELECT r.status AS r, q.status AS q
+         FROM quo.quotation_revisions r JOIN quo.quotations q ON q.id = r.quotation_id
+        WHERE r.id = $1`,
+      [issued.id]
+    );
+    expect(after.rows[0]?.r).toBe('expired');
+    expect(after.rows[0]?.q).toBe('expired');
+    expect(await auditCountFor('quo.quotation.expired', quotation.id)).toBe(1);
+    expect(await outboxCountFor(`quotation.expired:${issued.id}`)).toBe(1);
+
+    // Idempotent: the revision is terminal, so a second sweep finds no candidate and
+    // cannot publish a second event. Forcing it would raise from the freeze guard.
+    expect(await sweep()).toEqual([]);
+    expect(await outboxCountFor(`quotation.expired:${issued.id}`)).toBe(1);
+  });
+
+  it('NEVER expires a quotation the customer already accepted', async () => {
+    /**
+     * The defect this case exists for.
+     *
+     * A revision stays `issued` after every line is APPROVED — only a rejection moves
+     * it, to `rejected`. So selecting candidates on revision status alone also selects
+     * the revisions of ACCEPTED quotations, and expiring one moves the quotation from
+     * `accepted` to `expired`: a customer's approval revoked by a background sweep,
+     * with an audit record claiming the previous status was `active`. Nothing in the
+     * database refuses it — `expired` is a legal successor of `active` and the freeze
+     * guard only governs the revision — so the only thing standing between an accepted
+     * quotation and silent revocation is the parent-state test, and the only thing
+     * keeping that test honest is this case.
+     */
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    const issued = await issueCurrent(quotation, '2099-01-01T00:00:00.000Z');
+
+    authAs(SVC_FULL);
+    const accepted = await decideRevision(issued.id, {
+      decision: 'approved',
+      channel: 'in_person',
+      decidingPartyRef: PARTNER_A,
+      presentedRevisionId: issued.id,
+    });
+    expect(accepted.status).toBe(201);
+    expect((await reread(quotation.id)).status).toBe('accepted');
+    // The revision is STILL `issued` — which is the whole hazard.
+    const mid = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.quotation_revisions WHERE id = $1`,
+      [issued.id]
+    );
+    expect(mid.rows[0]?.status).toBe('issued');
+
+    await backdate(issued.id);
+    expect(await sweep()).toEqual([]);
+
+    const after = await admin.query<{ r: string; q: string }>(
+      `SELECT r.status AS r, q.status AS q
+         FROM quo.quotation_revisions r JOIN quo.quotations q ON q.id = r.quotation_id
+        WHERE r.id = $1`,
+      [issued.id]
+    );
+    expect(after.rows[0]?.q).toBe('accepted');
+    expect(after.rows[0]?.r).toBe('issued');
+    expect(await auditCountFor('quo.quotation.expired', quotation.id)).toBe(0);
+    expect(await outboxCountFor(`quotation.expired:${issued.id}`)).toBe(0);
+  });
+
+  it('leaves a revision with no expiry alone, however old', async () => {
+    const quotation = await seedQuotation({ quantity: '1.000' });
+    // No `expiresAt`: a revision with no expiry never lapses (`expires_at` NULL).
+    const issued = await issueCurrent(quotation);
+    expect(await sweep()).not.toContain(issued.id);
+    expect((await reread(quotation.id)).status).toBe('active');
   });
 });

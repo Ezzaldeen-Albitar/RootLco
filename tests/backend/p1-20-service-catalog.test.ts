@@ -2,13 +2,19 @@
  * Service catalog reads (Phase 1-20, P1-20-BE-001…003, P1-20-QA-003).
  *
  * The isolation cases are the point of this suite, not an appendix.
- * `GET /api/v1/services` declares `scope: 'branch'` but its path names no branch,
- * so the only thing that makes that declaration real is the service authorizing
- * `availableAtBranchId` as a scope target BEFORE using it as a filter. Without
- * that, `requiresScopedEvaluation` returns false on an empty target whatever the
- * declared scope says, the check degrades to scope-blind `iam.has_permission`, and
- * `app.branch_ids` — the permission-blind union of every active grant — becomes
- * the only narrowing (P1-18-A-01).
+ *
+ * `GET /api/v1/services` declares `scope: 'tenant'`, NOT `'branch'` — an earlier
+ * version of this header said `'branch'` and reasoned from that, describing code the
+ * route does not contain. The route explains the choice: the listing is legitimately
+ * unfiltered, `requireScopedPermissions` fails closed on an empty target (the P1-19
+ * hardening that closed P1-18-A-01), and declaring `'branch'` would therefore 403
+ * every unfiltered listing, including an unrestricted principal's.
+ *
+ * What makes the branch filter safe is not the declaration but the handler: when
+ * `availableAtBranchId` IS supplied it is authorized as a concrete scope target before
+ * it is used as a filter. Without that step the narrowing would come from
+ * `app.branch_ids` alone — the permission-blind union of every active grant — and a
+ * principal granted an unrelated permission in A1 would read A1's availability.
  *
  * The `SVC_PERMISSION_ELSEWHERE` case is what proves it: that principal holds
  * `svc.service.read` scoped to A2 and an unrelated permission scoped to A1, so A1

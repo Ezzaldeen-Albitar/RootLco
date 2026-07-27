@@ -282,6 +282,24 @@ export class QuotationRepository extends Repository {
     return row.business_date;
   }
 
+  /**
+   * The database's `now()` — the ONE clock expiry is decided by.
+   *
+   * `now()` is the current transaction's start time, so a caller that reads it once
+   * and reuses it agrees with every `expires_at <= now()` predicate in the same
+   * transaction *by construction*. Reading the application's clock instead would
+   * make the sweep's SQL predicate and its own re-check answer to two different
+   * clocks, and a container whose clock ran ahead of the database's would expire a
+   * revision the database does not consider lapsed.
+   */
+  public async serverNow(db: DbHandle): Promise<Date> {
+    const row = await this.runOne<{ now: Date }>(db, `SELECT now() AS now`);
+    if (row === null) {
+      throw new Error('quotation: could not read the server clock');
+    }
+    return row.now;
+  }
+
   public async findQuotation(db: DbHandle, quotationId: string): Promise<QuotationRow | null> {
     const context = this.assertContext(db);
     const row = await this.runOne<QuotationSql>(
@@ -746,10 +764,27 @@ export class QuotationRepository extends Repository {
     const context = this.assertContext(db);
     const result = await this.run<RevisionSql>(
       db,
-      `SELECT ${REVISION_COLUMNS} FROM quo.quotation_revisions
-        WHERE tenant_id = $1 AND status = 'issued' AND deleted_at IS NULL
-          AND expires_at IS NOT NULL AND expires_at <= now()
-        ORDER BY expires_at, id
+      /**
+       * The parent's state is part of the candidate test, not an afterthought.
+       *
+       * A revision stays `issued` after every line is APPROVED — only a rejection
+       * moves it, to `rejected`. So `status = 'issued'` alone selects the revisions
+       * of accepted quotations too, and expiring one would move a quotation from
+       * `accepted` to `expired`: a customer's approval silently revoked by a
+       * background sweep, with an audit record saying the previous status was
+       * `active` when it was not. `active` is the only quotation state an expiry may
+       * act on — `draft` has no issued revision, and `accepted`, `rejected`,
+       * `expired` and `cancelled` are all decided already.
+       */
+      `SELECT ${REVISION_COLUMNS} FROM quo.quotation_revisions r
+        WHERE r.tenant_id = $1 AND r.status = 'issued' AND r.deleted_at IS NULL
+          AND r.expires_at IS NOT NULL AND r.expires_at <= now()
+          AND EXISTS (
+            SELECT 1 FROM quo.quotations q
+             WHERE q.tenant_id = r.tenant_id AND q.id = r.quotation_id
+               AND q.status = 'active' AND q.deleted_at IS NULL
+          )
+        ORDER BY r.expires_at, r.id
         LIMIT $2`,
       [context.principal.tenantId, limit]
     );

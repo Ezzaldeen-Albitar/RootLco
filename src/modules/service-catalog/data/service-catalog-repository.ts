@@ -326,7 +326,18 @@ export class ServiceCatalogRepository extends Repository {
       : null;
   }
 
-  /** Standard labour times attached to a service version. */
+  /**
+   * Standard labour times attached to a service version (P1-20-BE-003).
+   *
+   * Attached to the VERSION, not the service, which is what makes a published
+   * standard time stable: `svc.service_versions` is the immutable unit, so a revised
+   * labour standard is a new version rather than an edit under work already estimated
+   * against the old one.
+   *
+   * `standard_minutes` is `numeric(10,2)` and is returned as a decimal STRING for the
+   * same reason every amount in this phase is — a float cannot represent every value
+   * the column holds, and this one is multiplied by a labour rate downstream.
+   */
   public async listLaborTimes(
     db: DbHandle,
     serviceVersionId: string
@@ -359,7 +370,14 @@ export class ServiceCatalogRepository extends Repository {
     }));
   }
 
-  /** Reads the single availability row for a `(company, branch, service)` triple. */
+  /**
+   * Reads the single availability row for a `(company, branch, service)` triple
+   * (P1-20-BE-002).
+   *
+   * `null` means NO row, which is not the same as `is_available = false`: an absent
+   * row is an unconfigured branch and a present false row is a deliberate withdrawal.
+   * Both refuse a sale, and the caller can tell an operator which one it is.
+   */
   public async findAvailability(
     db: DbHandle,
     companyId: string,

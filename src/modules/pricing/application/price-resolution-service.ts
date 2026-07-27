@@ -54,6 +54,21 @@ export interface PriceQuery {
 export class PriceResolutionService {
   public constructor(private readonly repository: PricingRepository) {}
 
+  /**
+   * Whether a branch belongs to a company, for a caller that supplies BOTH halves.
+   *
+   * Exposed because `iam.has_permission_in_scope` is disjunctive across grant
+   * scopes, so an incoherent pair can pass authorization and then select another
+   * company's prices. Callers that derive the pair from one row do not need this.
+   */
+  public async branchBelongsToCompany(
+    db: DbHandle,
+    companyId: string,
+    branchId: string
+  ): Promise<boolean> {
+    return this.repository.branchBelongsToCompany(db, companyId, branchId);
+  }
+
   /** The server's business date, for a caller that must state the date it used. */
   public async businessDate(db: DbHandle): Promise<string> {
     return this.repository.businessDate(db);

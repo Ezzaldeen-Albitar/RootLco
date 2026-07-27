@@ -10,10 +10,18 @@
  *     discount may be before it needs a specific permission. Under the threshold,
  *     any actor who may edit the quotation may apply it. At or over it, the actor
  *     must hold `required_permission_code`.
- *  2. **The actor's own ceiling** — `iam.approval_limits`, read through the iam
- *     module's public surface. A permission says *what kind* of thing you may
- *     approve; a limit says *how much*. Holding the permission does not raise the
- *     ceiling, and having a large ceiling does not grant the permission.
+ *  2. **The actor's own ceiling** — `iam.approval_limits`, read through the
+ *     foundation helper `callerApprovalCeiling` in `@/server/auth/authorization`,
+ *     NOT through `@/modules/iam`. That helper records why routing it through the iam
+ *     module was rejected, and foundation reads of `iam.*` have precedent in
+ *     `resolve-context.ts`. Saying "the iam module's public surface" — as this comment
+ *     and three others in this module did — sends a rule-3 audit to the wrong file:
+ *     there are TWO readers of `iam.approval_limits` and only one is inside the
+ *     owning module.
+ *
+ *     A permission says *what kind* of thing you may approve; a limit says *how
+ *     much*. Holding the permission does not raise the ceiling, and having a large
+ *     ceiling does not grant the permission.
  *
  * ## Maker ≠ approver
  *
@@ -32,11 +40,11 @@
 import type { DbHandle } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
 import { Decimal, MONEY, PERCENTAGE } from '../domain/decimal';
-import { Money } from '../domain/money';
-import { DISCOUNT_LIMIT_TYPE, PricingRuleError } from '../domain/pricing';
+import { CurrencyMismatchError, Money } from '../domain/money';
+import { DISCOUNT_LIMIT_TYPE, PricingRuleError, assertPercentageRange } from '../domain/pricing';
 import type { PricingRepository } from '../data/pricing-repository';
 
-/** Reads the caller's ceiling. Satisfied by the `iam` module's public surface. */
+/** Reads the caller's ceiling. Satisfied by `callerApprovalCeiling` (foundation). */
 export interface ApprovalCeilingReader {
   callerApprovalCeiling(
     db: DbHandle,
@@ -46,7 +54,14 @@ export interface ApprovalCeilingReader {
   ): Promise<{ amount: string; currencyCode: string } | null>;
 }
 
-/** Checks whether the CALLER holds a permission code. Supplied by the route. */
+/**
+ * Checks whether the CALLER holds a permission code.
+ *
+ * Supplied by the calling APPLICATION service, not the route — `QuotationService`
+ * binds it to the work order's own company and branch. A route-supplied probe would be
+ * a B11 violation, and it would also have to read a scope from the request, which is
+ * the bypass this phase spent its authorization budget removing.
+ */
 export type PermissionProbe = (permissionCode: string) => Promise<boolean>;
 
 export interface DiscountRequest {
@@ -75,6 +90,21 @@ export interface DiscountAuthorization {
   readonly permissionCode: string | null;
   /** The ceiling that was checked, for the audit record. `null` when none applied. */
   readonly ceiling: { amount: string; currency: string } | null;
+  /**
+   * The threshold that applied, for the audit record.
+   *
+   * `null` means **no policy row existed**, which is not the same as "no threshold":
+   * an unconfigured company is treated as threshold zero, so a null here recorded
+   * beside `requiredElevatedPermission: true` says the discount was elevated *because
+   * nothing was configured*. That distinction is the whole reason the field carries
+   * the policy id rather than only the number.
+   */
+  readonly threshold: {
+    readonly policyId: string;
+    readonly kind: string;
+    readonly value: string;
+    readonly currency: string | null;
+  } | null;
 }
 
 export class DiscountAuthorizationService {
@@ -114,6 +144,7 @@ export class DiscountAuthorizationService {
         requiredElevatedPermission: false,
         permissionCode: null,
         ceiling: null,
+        threshold: null,
       };
     }
 
@@ -137,11 +168,27 @@ export class DiscountAuthorizationService {
           message: `Authorizing this discount requires ${permissionCode}`,
         });
       }
-      if (policy?.makerApproverDistinct === true && request.requestedBy === request.actorId) {
+      /**
+       * Maker ≠ approver, including the case where no maker was named.
+       *
+       * The original condition was `requestedBy === actorId`, which never fired when
+       * `discountRequestedBy` was omitted — `null === '<uuid>'` is false. Omitting an
+       * optional field therefore bypassed the entire separation control, and the
+       * caller became both maker and approver silently. That is exactly what the
+       * field's own contract says must be refused, and two independent reviews found
+       * it before it shipped.
+       *
+       * An absent requester now means "the caller is requesting it themselves",
+       * which is the only honest reading: nobody else has been recorded as asking.
+       */
+      if (
+        policy?.makerApproverDistinct === true &&
+        (request.requestedBy === null || request.requestedBy === request.actorId)
+      ) {
         throw new AppFailure('ERR-IAM-001', {
           message:
             'This company requires the approver of a discount to be someone other than the ' +
-            'person who requested it',
+            'person who requested it, and that other person must be named',
         });
       }
     }
@@ -161,9 +208,34 @@ export class DiscountAuthorizationService {
       }
       const allowed = Money.of(ceiling.amount, ceiling.currencyCode);
       const requested = Money.of(request.discountAmount, request.currency);
-      // Currency mismatch here is a hard refusal, never a conversion: a ceiling
-      // denominated in another currency does not authorize this discount at all.
-      if (requested.greaterThan(allowed, 'discount approval limit')) {
+      /**
+       * Currency mismatch is a hard REFUSAL, never a conversion — and it has to be a
+       * refusal the caller can read.
+       *
+       * `Money.greaterThan` throws `CurrencyMismatchError`, which is a plain `Error`
+       * and therefore classified `ERR-SYS-001` — an HTTP 500 — by the route handler.
+       * That is reachable from ordinary configuration: an approval limit denominated
+       * in USD against a price list in JOD is a mismatch, not a bug, and answering it
+       * with "internal server error" tells an operator nothing about the row they need
+       * to fix. The comparison is intentionally left able to throw (silent FX is the
+       * thing `Money` exists to make unexpressible); it is translated here instead.
+       */
+      let overCeiling: boolean;
+      try {
+        overCeiling = requested.greaterThan(allowed, 'discount approval limit');
+      } catch (cause) {
+        if (cause instanceof CurrencyMismatchError) {
+          throw new AppFailure('ERR-IAM-001', {
+            message:
+              `Your discount approval limit is denominated in ${ceiling.currencyCode} and ` +
+              `this discount is in ${request.currency}. A limit in another currency ` +
+              'authorizes nothing here, and no conversion is performed.',
+            cause,
+          });
+        }
+        throw cause;
+      }
+      if (overCeiling) {
         throw new AppFailure('ERR-IAM-001', {
           message: 'The discount exceeds your approval limit',
         });
@@ -175,6 +247,15 @@ export class DiscountAuthorizationService {
       requiredElevatedPermission: overThreshold,
       permissionCode,
       ceiling: ceiling === null ? null : { amount: ceiling.amount, currency: ceiling.currencyCode },
+      threshold:
+        policy === null
+          ? null
+          : {
+              policyId: policy.id,
+              kind: policy.thresholdKind,
+              value: policy.thresholdValue,
+              currency: policy.currencyCode,
+            },
     };
   }
 
@@ -200,9 +281,43 @@ export class DiscountAuthorizationService {
   ): boolean {
     if (policy.thresholdKind === 'amount') {
       if (policy.currencyCode !== currency) return true;
-      return !discount.lessThan(Decimal.parse(policy.thresholdValue, MONEY));
+      /**
+       * An unparseable threshold fails CLOSED, for the same reason an out-of-range
+       * percentage does.
+       *
+       * `ck_pricing_approval_policies_threshold_value` bounds the value at `>= 0` and
+       * the column is `numeric(18,4)`, so this should always parse — but "should
+       * always" is not a guarantee, and `Decimal.parse` throwing here would surface as
+       * an HTTP 500 on a legitimate quotation. A configuration this service cannot read
+       * is treated as exceeded, so a malformed policy can never be more permissive than
+       * no policy at all.
+       */
+      try {
+        return !discount.lessThan(Decimal.parse(policy.thresholdValue, MONEY));
+      } catch {
+        return true;
+      }
     }
     if (policy.thresholdKind === 'percentage') {
+      /**
+       * A percentage threshold outside `0..100` is treated as EXCEEDED.
+       *
+       * `ck_pricing_approval_policies_threshold_value` bounds the value only at
+       * `>= 0` — there is no upper bound for the percentage case. Since `authorize`
+       * already guarantees `discount <= base`, the ratio can never exceed 100%, so a
+       * threshold above 100 made `overThreshold` permanently false: no elevated
+       * permission, no maker/approver check, and the ceiling block skipped entirely.
+       * One mistyped configuration row disabled the whole discount control.
+       *
+       * Failing CLOSED here rather than throwing keeps the module's stance
+       * consistent — a MISSING policy already means threshold zero — so an invalid
+       * policy cannot be more permissive than no policy at all.
+       */
+      try {
+        assertPercentageRange(policy.thresholdValue, 'threshold_value');
+      } catch {
+        return true;
+      }
       // `base` cannot be zero here: `authorize` returns early on a zero discount
       // and refuses any discount greater than the base, so reaching this line
       // means `base >= discount > 0`. A zero-base guard would be unreachable
