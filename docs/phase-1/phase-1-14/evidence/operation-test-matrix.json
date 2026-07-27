@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 168,
-    "publicApi": 168,
+    "registered": 169,
+    "publicApi": 169,
     "internal": 0,
-    "withRequiredEvidence": 153,
+    "withRequiredEvidence": 154,
     "invocationOnly": 15,
     "p1_15": {
       "registered": 21,
@@ -3917,6 +3917,30 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/services",
+      "public": false,
+      "files": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "referenced": true,
+      "derived": [],
+      "declared": ["denial", "cross-tenant", "isolation"],
+      "required": ["denial", "cross-tenant", "isolation"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

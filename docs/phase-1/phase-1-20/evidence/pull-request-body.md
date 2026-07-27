@@ -7,13 +7,13 @@ this same branch and this same PR.
 
 ## Prerequisite — P1-19 verified closed
 
-| | |
-| --- | --- |
-| P1-19 final gate SHA | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` |
-| Verified containment | `d8278c7` (feature merge), `da0b8b2` (reviewed feature), `600ca9c` (reviewed gate) — all three are ancestors of `origin/develop` |
-| `origin/develop` parents | `d8278c7` + `600ca9c` — unchanged since P1-19 closed |
-| P1-19 decision | `Go — P1-19 Work Order, Diagnostics, and Technician Backend Gate Passed` |
-| `origin/main` | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched, and P1-20 will not touch it |
+|                          |                                                                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| P1-19 final gate SHA     | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0`                                                                                       |
+| Verified containment     | `d8278c7` (feature merge), `da0b8b2` (reviewed feature), `600ca9c` (reviewed gate) — all three are ancestors of `origin/develop` |
+| `origin/develop` parents | `d8278c7` + `600ca9c` — unchanged since P1-19 closed                                                                             |
+| P1-19 decision           | `Go — P1-19 Work Order, Diagnostics, and Technician Backend Gate Passed`                                                         |
+| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched, and P1-20 will not touch it                                              |
 
 ## Protected base
 
@@ -24,13 +24,13 @@ documentation anywhere — Case A, no collision, no competing implementation.
 
 ## Present in this PR so far
 
-| Commit | Contents |
-| ------ | -------- |
-| `84618ea` | Wave 0–1 evidence; exact `Decimal`/`Money`; `service-catalog` module |
+| Commit    | Contents                                                                  |
+| --------- | ------------------------------------------------------------------------- |
+| `84618ea` | Wave 0–1 evidence; exact `Decimal`/`Money`; `service-catalog` module      |
 | `e269d52` | `pricing` module — deterministic price resolution, discount authorization |
-| `0b838e1` | `quotation` domain + repository (money computed in SQL) |
-| `69d749e` | 3 read permissions (93 → 96); 8 `svc`/`quo` events (31 → 39) |
-| `49bf130` | Execution checkpoint |
+| `0b838e1` | `quotation` domain + repository (money computed in SQL)                   |
+| `69d749e` | 3 read permissions (93 → 96); 8 `svc`/`quo` events (31 → 39)              |
+| `49bf130` | Execution checkpoint                                                      |
 
 ## Verified green on this head
 

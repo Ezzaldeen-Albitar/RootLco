@@ -100,11 +100,15 @@ export class ServiceCatalogService {
   ): Promise<Page<ServiceView>> {
     if (filter.availableAtBranchId !== undefined) {
       await authorizeScope({ branchId: filter.availableAtBranchId });
-    } else {
-      // No branch named: the read is tenant-wide catalog reference data, so the
-      // declared permission is evaluated against the caller's own resolved scope.
-      await authorizeScope({});
     }
+    // No branch named: nothing further to authorize. The pre-handler check already
+    // evaluated `svc.service.read` for this caller, and the read is tenant-wide
+    // catalog reference data that RLS narrows to their tenant.
+    //
+    // `authorizeScope({})` is deliberately NOT called here. `requireScopedPermissions`
+    // fails closed on an empty target whatever the declared scope is — the P1-19
+    // hardening that closed P1-18-A-01 — so passing one would refuse every
+    // unfiltered listing, including for an unrestricted principal.
     const page = await this.repository.listServices(db, filter, request);
     return { ...page, items: page.items.map(toServiceView) };
   }

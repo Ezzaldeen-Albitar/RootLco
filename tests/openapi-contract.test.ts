@@ -180,6 +180,8 @@ import '@/app/api/v1/work-orders/[workOrderId]/rework/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/sign-off/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/cost/route';
+// Phase 1-20 — service catalog, pricing, quotation.
+import '@/app/api/v1/services/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

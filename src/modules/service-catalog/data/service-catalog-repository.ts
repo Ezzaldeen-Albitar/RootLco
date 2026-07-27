@@ -134,6 +134,17 @@ const toService = (row: ServiceSql): ServiceRow => ({
   recordVersion: row.record_version,
 });
 
+/**
+ * Escapes the three characters that are special to a `LIKE`/`ILIKE` pattern.
+ *
+ * The backslash must be escaped FIRST, otherwise the backslashes introduced for
+ * `%` and `_` would themselves be escaped a second time and the pattern would
+ * match a literal backslash instead. Paired with `ESCAPE '\'` at the call site.
+ */
+function escapeLikeTerm(term: string): string {
+  return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 export class ServiceCatalogRepository extends Repository {
   protected readonly module = 'service-catalog';
 
@@ -164,8 +175,16 @@ export class ServiceCatalogRepository extends Repository {
       clauses.push(`s.lifecycle_status = $${values.length}`);
     }
     if (filter.search !== undefined) {
-      values.push(`${filter.search}%`);
-      clauses.push(`(s.service_code ILIKE $${values.length} OR s.name ILIKE $${values.length})`);
+      // The term is ESCAPED, not merely parameterised. Binding a value stops SQL
+      // injection but does nothing about LIKE metacharacters: a bound `%` is still
+      // a wildcard in the pattern, so a search for `%` would return the entire
+      // catalog and a search for a literal `_` would match any character. Both are
+      // wrong answers to the question the caller asked.
+      values.push(`${escapeLikeTerm(filter.search)}%`);
+      clauses.push(
+        `(s.service_code ILIKE $${values.length} ESCAPE '\\'` +
+          ` OR s.name ILIKE $${values.length} ESCAPE '\\')`
+      );
     }
     if (filter.availableAtBranchId !== undefined) {
       values.push(filter.availableAtBranchId);

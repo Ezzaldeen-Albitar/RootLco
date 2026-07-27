@@ -1358,6 +1358,13 @@ export const MANIFEST = {
     required: [],
     note: 'bounded probe; names and booleans only, no role or driver detail',
   },
+
+  // ---- Phase 1-20 — service catalog, pricing, quotation --------------------
+  'svc.service-list': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the catalog ordered by (service_code, id), a total order backed by uq_services_code so a page is stable when two services share a name; returns NO price, because resolution depends on company/branch/class/date and is gated on svc.price.read — bolting one on would leak the price book to every catalog reader; availableAtBranchId is a scope TARGET, authorized before it is used, so the difference between an empty and a non-empty page cannot be used to probe which branches stock a service (isolation) — without that the declared branch scope would be inert (P1-18-A-01); a tenant-B service never appears (cross-tenant); an unknown parameter, a bad cursor, an oversized page and a timezone-carrying effectiveOn are refused (denial)',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1489,13 +1496,14 @@ export function parseProvidedFlags(source) {
       continue;
     }
     // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
-    // with P1-17, and `apt`/`rec` with P1-18. The prefix list is explicit rather
+    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19, and
+    // `svc`/`quo` with P1-20. The prefix list is explicit rather
     // than a wildcard so a typo in a declaration is a missing flag — which fails
     // the gate — instead of a silently accepted new namespace. Forgetting to add a
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
