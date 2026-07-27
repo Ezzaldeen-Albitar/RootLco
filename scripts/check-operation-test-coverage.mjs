@@ -106,12 +106,28 @@ export const P1_18_PREFIXES = ['apt.', 'rec.'];
  * declare.
  */
 export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
+/**
+ * P1-20 spans TWO id namespaces — `svc.` (service catalog and pricing, which share
+ * the frozen Phase 1-10 `svc` schema) and `quo.` (quotation).
+ *
+ * Listed here for the reason stated above P1-19, and it was earned again: the first
+ * P1-20 commit extended the visible hook — the `parseProvidedFlags` alternation
+ * accepts `svc|quo` — but not this array, so `derivedRequirements()` returned `[]`
+ * for all thirteen P1-20 operations and the required floor was whatever the manifest
+ * volunteered. An independent review measured it from this script's own `--json`
+ * output: `route`, `service` and `authorization` were *provided but not required*
+ * for every one of the thirteen, and deleting those assertions would have kept the
+ * gate green. Extending the alternation without extending the prefixes is the exact
+ * shape of a gate that looks stricter than it is.
+ */
+export const P1_20_PREFIXES = ['svc.', 'quo.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
   P1_17_PREFIX,
   ...P1_18_PREFIXES,
   ...P1_19_PREFIXES,
+  ...P1_20_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1358,6 +1374,93 @@ export const MANIFEST = {
     required: [],
     note: 'bounded probe; names and booleans only, no role or driver detail',
   },
+
+  // ---- Phase 1-20 — service catalog, pricing, quotation --------------------
+  'svc.service-list': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the catalog ordered by (service_code, id), a total order backed by uq_services_code so a page is stable when two services share a name; returns NO price, because resolution depends on company/branch/class/date and is gated on svc.price.read — bolting one on would leak the price book to every catalog reader; availableAtBranchId is a scope TARGET, authorized before it is used, so the difference between an empty and a non-empty page cannot be used to probe which branches stock a service (isolation) — without that the declared branch scope would be inert (P1-18-A-01); a tenant-B service never appears (cross-tenant); an unknown parameter, a bad cursor, an oversized page and a timezone-carrying effectiveOn are refused (denial)',
+  },
+  'svc.service-create': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'the mutation surface the protected contract requires and the phase originally shipped without (P1-20-G-01); service_code is frozen by tg_services_immutable from this moment, so the code chosen here identifies the service for life and a duplicate collides on uq_services_code; a service is created active and lifecycleStatus is not a settable field, because ck_services_archived_at ties archived to an archived_at only svc.guard_service_lifecycle writes; svc.services carries NO company_id or branch_id, so creating one is a tenant-wide act and the handler demands svc.service.manage granted tenant-wide — a declared tenant scope alone degrades to the scope-blind iam.has_permission (P1-18-A-01) and a branch-scoped holder could seed the catalog of every branch; cross-tenant is proved with a tenant-B principal holding svc.service.manage unrestricted, so its refusal is the tenant boundary and not a missing permission',
+  },
+  'svc.service-update': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
+    note: 'service_code is IMMUTABLE and the body schema is .strict(), so naming it is a 422 rather than a silently discarded field — a permissive schema would let a caller believe the code changed; archived is TERMINAL and the service refuses every write to an archived row, which is strictly stronger than svc.guard_service_lifecycle (that trigger refuses only the transition out of archived, so a rename of an archived service would pass it); reactivation is expressible at the boundary on purpose, so the ERR-TRN-001 refusal is the applications and not an enum error; description distinguishes absent from null because ck_services_desc_not_blank accepts NULL and refuses the empty string; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.service-version-publish': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'stale-version'],
+    note: 'svc.publish_service_version is CALLED, never reimplemented: it locks the service, refuses a version belonging to another service, refuses a non-draft version, refuses an effective_from at or before the currently open published version’s start, and closes that version’s effective_to — so forward-only succession and the ex_service_versions_no_published_overlap gist backstop are the database’s and a second definition cannot drift from them; If-Match guards the SERVICE, which is the row a concurrent editor moves and the row the function locks first; publication emits service.published, whose catalog entry said implementedIn: null for most of the phase on the false premise that the protected contract mandated no public publication',
+  },
+  'svc.branch-availability-set': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the ONE catalog write with real scope columns — svc.branch_service_availability carries company_id and branch_id, so scope:branch is genuine here and the pair from the body is the concrete authorizeScope target; the isolation case uses a principal holding svc.service.manage IN FULL scoped to branch A2 plus a widening grant that puts A1 in its permission-blind iam.allowed_branch_ids() union, so the A1 row is readable and only the scoped permission check can refuse it (P1-18-A-01); the company/branch pair is also checked for coherence, because iam.has_permission_in_scope is disjunctive across grant rows and a caller pairing their own branch with another company’s id passes on the branch row alone; exactly one live row per (company, branch, service) means this is a state change and the transition survives only in the audit detail’s previousValue',
+  },
+  'svc.price-list-list': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded tenant read; svc.price_lists carries no company_id or branch_id so a list is tenant-wide reference data and there is no branch to target — what makes it privileged is svc.price.read, which is medium risk because a price list exposes what the business charges every segment; a holder of svc.service.read alone is refused (denial) and a tenant-B list never appears (cross-tenant)',
+  },
+  'svc.price-list-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'currency_code is frozen by tg_price_lists_immutable from this moment, so the code supplied here denominates every amount ever attached and the audit record captures it; validated as an ISO-4217 SHAPE only, because the platform ships no currency table and no jurisdiction default — no currency is hard-coded; svc.price.read is not sufficient (denial); a duplicate price_list_code collides on uq_price_lists_code',
+  },
+  'svc.price-list-version-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'version_no is MAX+1 computed under the price list’s FOR UPDATE lock with uq_price_list_versions_no as the backstop; effectiveFrom here is PROVISIONAL and svc.publish_price_list_version overwrites it, which is why forward-only succession is the database’s decision and not a value a caller can pre-set; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.price-rule-record': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit'],
+    note: 'the amount crosses as a decimal STRING and is bound with a ::numeric(18,4) cast, so the stored figure is exactly what the caller sent and never a value that passed through a double — an over-scale amount, a negative one and exponential notation are all refused (denial); svc.guard_price_rule_parent_frozen refuses a rule on a published parent, which is what makes published prices immutable, so there is deliberately no update or delete route; a tax class on a rule that is not company-scoped is refused, mirroring ck_price_rules_tax_needs_company',
+  },
+  'svc.price-list-version-publish': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version', 'concurrency'],
+    note: 'a SECOND permission (svc.price.publish) because drafting a price is not making it real, and publication is effectively irreversible — the freeze guard allows only published→archived; svc.publish_price_list_version closes the currently open published version at the new effective_from and refuses a date at or before its start, so succession is the database’s; the one precondition the function does NOT enforce is asserted here — a version with no active rules must not be published, or every later quotation line fails far away with what looks like missing data; a forced concurrent publication leaves exactly one published version and one event',
+  },
+  'quo.quotation-create': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'idempotency'],
+    note: 'quo.quotations.work_order_id is NOT NULL, so the WORK ORDER is the scope authority — requireWorkOrder defers the scoped check to the row’s own company and branch, and nothing reads a company or branch from the request, because a client-supplied branch would be an authorization bypass; the client says WHAT to quote and never what it costs, and .strict() REJECTS unitPrice/lineTotal rather than ignoring them so a caller cannot believe it set a price; every amount is computed by PostgreSQL in the same expression shape the CHECK constraints validate, and the currency comes from the first line’s resolved price list with a later mismatch a hard failure and never a conversion',
+  },
+  'quo.quotation-detail': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the path names no branch, so the scope is re-decided against the row’s own company and branch after it is read — otherwise the declared branch scope is inert and the permission-blind app.branch_ids union is the only narrowing (P1-18-A-01); every money field crosses as a decimal STRING; the ETag carries the record_version an issue or revise must send back',
+  },
+  'quo.quotation-revision-create': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit', 'concurrency'],
+    note: 'a new revision is how a commercial change reaches a customer, because quo.guard_quotation_item refuses item writes on a non-draft parent and that is what makes an issued revision an immutable snapshot — the test republishes the price list and proves the ISSUED revision’s captured amounts do not move; revision_number is MAX+1 under the quotation’s FOR UPDATE lock with uq_quotation_revisions_number as the backstop, and a forced concurrent pair yields distinct numbers',
+  },
+  'quo.quotation-issue': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version', 'concurrency', 'rollback'],
+    note: 'quo.issue_revision recomputes all four totals by SUM, refuses zero items, supersedes the prior issued revision and repoints current_revision_id, with uq_quotation_revisions_one_issued as the backstop so two issued revisions cannot coexist; the totals are frozen afterwards by quo.guard_quotation_revision_freeze; NO irreversible delivery happens in the transaction — the event goes to shared.event_outbox, so a rolled-back issue cannot leave a customer holding a quotation the database never issued, and a duplicate issue publishes exactly one event',
+  },
+  'quo.quotation-item-decide': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'concurrency'],
+    note: 'the ITEM is the resource because that is what the schema stores — quo.record_item_decision is item-keyed and uq_approval_decisions_item makes the first decision on a line final, so a conflicting second decision is refused rather than overwriting a recorded customer choice; presentedRevisionId is REQUIRED and is the control that stops approval of revision N approving revision N+1; a claimed decidingPartyRef must match the quotation’s own payer_partner_ref (forged party); evidence is a document_versions id — a storage key is unexpressible — and must be linked to THIS quotation, or any visible document could be attached as evidence for any quotation',
+  },
+  'quo.quotation-revision-decide': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'rollback'],
+    note: 'an ORCHESTRATION over the per-item function, not a second store — there is no revision-level decision row in quo and this creates none; all-or-nothing in one transaction, so a line already carrying the OPPOSITE decision aborts the whole command rather than discarding a recorded choice; the quotation-level outcome is recomputed from the item rows every time, and any rejected line means rejected because treating a partial rejection as acceptance would authorize work the customer declined',
+  },
+  'svc.price-resolve': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'companyId and branchId are REQUIRED and are the authorizationTarget, so scope:branch is real rather than inert — a caller granted svc.price.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (isolation, P1-18-A-01); three answers are refusals rather than defaults, each with its own message: no configured price is not zero, a tax class with no effective rate is not an untaxed line, and a rule-level specificity+priority tie is structurally IMPOSSIBLE while uq_price_rules_signature exists (NULLS NOT DISTINCT, and a specificity score determines which columns are non-null, so a tie implies an identical signature) - the test asserts that structural guarantee directly rather than pretending the defensive ERR-CON-001 branch has a positive case',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1489,13 +1592,14 @@ export function parseProvidedFlags(source) {
       continue;
     }
     // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
-    // with P1-17, and `apt`/`rec` with P1-18. The prefix list is explicit rather
+    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19, and
+    // `svc`/`quo` with P1-20. The prefix list is explicit rather
     // than a wildcard so a typo in a declaration is a missing flag — which fails
     // the gate — instead of a silently accepted new namespace. Forgetting to add a
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1735,7 +1839,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((prefix) => id.startsWith(prefix));
+      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((prefix) =>
+        id.startsWith(prefix)
+      );
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -1766,7 +1872,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // later phase's feature branch.
     const isDerived =
       id.startsWith(DERIVED_PREFIX) ||
-      [...P1_18_PREFIXES, ...P1_19_PREFIXES].some((p) => id.startsWith(p));
+      [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1829,6 +1935,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
   // P1-19 spans four namespaces, so its phase row set is their union.
   const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-20 spans two namespaces, so its phase row set is their union.
+  const p1_20Rows = matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1858,6 +1966,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_17: phaseCounts(vehRows),
     p1_18: phaseCounts(aptRecRows),
     p1_19: phaseCounts(p1_19Rows),
+    p1_20: phaseCounts(p1_20Rows),
   };
   return { failures, matrix, counts };
 }
@@ -1975,6 +2084,15 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-20', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_20,
+      operations: matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -2036,6 +2154,15 @@ async function runCli() {
     console.log(`P1-19 unit-only: ${t.unitOnly}`);
     console.log(`P1-19 unreferenced: ${t.unreferenced}`);
     console.log(`P1-19 metadata-only: ${t.metadataOnly}`);
+    const u = counts.p1_20;
+    console.log('');
+    console.log(`P1-20 registered public operations: ${u.registered}`);
+    console.log(`P1-20 operation-depth: ${u.operationDepth}`);
+    console.log(`P1-20 invocation-only: ${u.invocationOnly}`);
+    console.log(`P1-20 pending: ${u.pending}`);
+    console.log(`P1-20 unit-only: ${u.unitOnly}`);
+    console.log(`P1-20 unreferenced: ${u.unreferenced}`);
+    console.log(`P1-20 metadata-only: ${u.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

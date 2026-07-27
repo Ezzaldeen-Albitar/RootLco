@@ -180,6 +180,22 @@ import '@/app/api/v1/work-orders/[workOrderId]/rework/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/sign-off/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/cost/route';
+// Phase 1-20 — service catalog, pricing, quotation.
+import '@/app/api/v1/services/route';
+import '@/app/api/v1/services/[serviceId]/route';
+import '@/app/api/v1/services/[serviceId]/branch-availability/route';
+import '@/app/api/v1/services/[serviceId]/versions/[versionId]/publication/route';
+import '@/app/api/v1/price-lists/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
+import '@/app/api/v1/prices/route';
+import '@/app/api/v1/quotations/route';
+import '@/app/api/v1/quotations/[quotationId]/route';
+import '@/app/api/v1/quotations/[quotationId]/revisions/route';
+import '@/app/api/v1/quotations/[quotationId]/issue/route';
+import '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
+import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

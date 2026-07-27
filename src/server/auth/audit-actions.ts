@@ -830,6 +830,138 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A job’s descriptive fields were changed under optimistic concurrency. Deliberately never records a state change: a job moves only through wo.guard_job_transition, and the update path cannot write the state column at all.',
   },
+
+  // ---- Phase 1-20 — service catalog, pricing, quotation --------------------
+  //
+  // The first actions in this catalog to use the `financial` class. It is the
+  // right one here and was unused until now: these acts create, price, and
+  // commit the platform to a monetary figure a customer can hold it to. The
+  // decision actions are `approval` rather than `financial` because what they
+  // record is a party's authorization, not a change to an amount — the amounts
+  // were frozen when the revision was issued and cannot move afterwards.
+  {
+    code: 'svc.service.updated',
+    class: 'privileged',
+    entityType: 'svc.service',
+    description:
+      'A service catalog entry was created or its descriptive fields changed. Not `financial`: a service carries no price — svc.price_rules does — so changing one alters what may be sold, not what it costs.',
+  },
+  {
+    code: 'svc.branch_availability.changed',
+    class: 'privileged',
+    entityType: 'svc.branch_service_availability',
+    description:
+      'A service was made available or unavailable at a branch. There is exactly one such row per (company, branch, service), so this records a change of state rather than an addition to a history.',
+  },
+  {
+    code: 'svc.service_version.published',
+    class: 'privileged',
+    entityType: 'svc.service_version',
+    description:
+      'A service version was published, fixing that service’s definition for a date range. Published versions are frozen by svc.guard_service_version_freeze, so this action is the last point at which the version could change.',
+  },
+  {
+    code: 'svc.price_list.created',
+    class: 'financial',
+    entityType: 'svc.price_list',
+    description:
+      'A price list was created. Financial because its currency_code is immutable from this moment and every amount later attached to it is denominated in that currency.',
+  },
+  {
+    code: 'svc.price_list_version.created',
+    class: 'privileged',
+    entityType: 'svc.price_list_version',
+    description:
+      'A draft price-list version was created. Not `financial`: a draft is not yet a price anyone is charged against, and its effective_from is provisional until svc.publish_price_list_version overwrites it.',
+  },
+  {
+    code: 'svc.price_rule.recorded',
+    class: 'financial',
+    entityType: 'svc.price_rules',
+    description:
+      'A price rule was recorded on a draft price-list version. Financial because the amount is the figure the tenant will charge once the version is published, and svc.guard_price_rule_parent_frozen makes it immutable at that point.',
+  },
+  {
+    code: 'svc.price_list_version.published',
+    class: 'financial',
+    entityType: 'svc.price_list_version',
+    description:
+      'A price-list version was published and became immutable, so its amounts are from then on the prices the tenant charges. The gist EXCLUDE forbids an overlapping published range, so publication also decides which prices are superseded.',
+  },
+  {
+    code: 'svc.discount.authorized',
+    class: 'financial',
+    // The REVISION, not a discount-rule row. A discount is authorized against the
+    // actor's ceiling and the company's policy; no svc.discount_rules row need exist,
+    // and filing the record under a table it may not touch would make the trail
+    // unqueryable from the document the discount was actually applied to.
+    entityType: 'quo.quotation_revision',
+    description:
+      'A discount over the configured approval threshold was authorized against the actor’s own iam.approval_limits ceiling. Written once per revision that needed elevated authority, naming the policy that applied (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
+  },
+  {
+    code: 'quo.quotation.created',
+    class: 'financial',
+    entityType: 'quo.quotation',
+    description:
+      'A quotation was created in draft against a work order, with its first revision and priced lines. Every amount was resolved from the protected price list and computed by the database; no client-supplied total is accepted.',
+  },
+  {
+    code: 'quo.quotation_revision.created',
+    class: 'financial',
+    entityType: 'quo.quotation_revision',
+    description:
+      'A new draft revision was created because the commercial content changed. An issued revision is never edited — quo.guard_quotation_item refuses item writes on a non-draft parent — so a revision is how a price change reaches a customer.',
+  },
+  {
+    code: 'quo.quotation_revision.issued',
+    class: 'financial',
+    entityType: 'quo.quotation_revision',
+    description:
+      'A revision was issued to the customer. quo.issue_revision recomputed the four document totals from the live items, superseded any prior issued revision, and repointed current_revision_id. The totals are frozen from here.',
+  },
+  {
+    code: 'quo.quotation.expired',
+    class: 'financial',
+    entityType: 'quo.quotation',
+    description:
+      'An issued revision passed its expires_at without a complete decision, so the quotation lapsed. Evaluated against the database’s now(), never an application clock.',
+  },
+  {
+    code: 'quo.quotation_item.decided',
+    class: 'approval',
+    entityType: 'quo.quotation_item',
+    description:
+      'The customer’s approval or rejection of one quotation line was recorded. uq_approval_decisions_item makes the first decision on a line permanent. Records that evidence exists and which row it is, never what the evidence says.',
+  },
+  {
+    code: 'quo.quotation_revision.decided',
+    class: 'approval',
+    entityType: 'quo.quotation_revision',
+    description:
+      'One decision was recorded against every undecided line of a revision, atomically. The aggregate act a reviewer needs to see; the per-line facts remain the stored truth in quo.approval_decisions.',
+  },
+  {
+    code: 'quo.quotation.accepted',
+    class: 'approval',
+    entityType: 'quo.quotation',
+    description:
+      'Every line of the current issued revision was approved, so the quotation as a whole is accepted. Derived from the item decisions on every read, never stored as an independent truth.',
+  },
+  {
+    code: 'quo.quotation.rejected',
+    class: 'approval',
+    entityType: 'quo.quotation',
+    description:
+      'At least one line of the current issued revision was rejected, so the quotation as presented was not accepted. A partial rejection is not an acceptance: treating it as one would authorize work the customer declined.',
+  },
+  {
+    code: 'quo.additional_work.quotation_linked',
+    class: 'approval',
+    entityType: 'wo.customer_approval',
+    description:
+      'An approved quotation revision was linked to a P1-19 additional-work customer approval, filling wo.customer_approvals.quotation_revision_ref. Creates no second approval truth: the commercial decision stays in quo.approval_decisions.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

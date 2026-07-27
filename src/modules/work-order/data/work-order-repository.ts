@@ -1338,6 +1338,16 @@ export class WorkOrderRepository extends Repository {
       readonly decision: string;
       readonly channel: string;
       readonly presentedScope: string;
+      /**
+       * The approved quotation revision, when the commercial layer supplied one
+       * (P1-20-BE-013).
+       *
+       * Set at INSERT and only at INSERT: tg_customer_approvals_immutable freezes
+       * quotation_revision_ref, so there is no later moment at which this link can
+       * be filled in. The caller validates the revision through the quotation
+       * module before reaching here.
+       */
+      readonly quotationRevisionRef?: string | null | undefined;
     }
   ): Promise<CustomerApprovalRow> {
     const context = this.assertContext(db);
@@ -1345,8 +1355,9 @@ export class WorkOrderRepository extends Repository {
       db,
       `INSERT INTO wo.customer_approvals
          (tenant_id, company_id, branch_id, additional_work_request_id,
-          deciding_party_role_id, decision, channel, presented_scope, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          deciding_party_role_id, decision, channel, presented_scope,
+          quotation_revision_ref, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING ${APPROVAL_COLUMNS}`,
       [
         context.principal.tenantId,
@@ -1357,6 +1368,7 @@ export class WorkOrderRepository extends Repository {
         input.decision,
         input.channel,
         input.presentedScope,
+        input.quotationRevisionRef ?? null,
         context.principal.userId,
       ]
     );

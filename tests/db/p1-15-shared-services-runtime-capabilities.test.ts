@@ -401,10 +401,14 @@ describe('P1-15 / global security posture', () => {
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    // 71 at P1-15; P1-19 added 22 codes across wo/tech/dia/qms (see
-    // supabase/seeds/04_iam_permission_catalog.sql). The pin moves with the seed
-    // deliberately: it is what catches an accidental catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(93);
+    // 71 at P1-15; P1-19 added 22 codes across wo/tech/dia/qms; P1-20 added the
+    // three commercial READ codes P1-10 never seeded — svc.service.read,
+    // svc.price.read and quo.quotation.read — taking the catalog to 96. Reads are
+    // separated from writes for the same reason as everywhere else in the catalog:
+    // a service advisor who must see the catalog and a customer's quotation must not
+    // thereby be able to change a price. The pin moves with the seed deliberately:
+    // it is what catches an accidental catalog edit.
+    expect(Number(total.rows[0]?.n)).toBe(96);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

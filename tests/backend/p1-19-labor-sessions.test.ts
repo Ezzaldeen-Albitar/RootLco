@@ -618,8 +618,33 @@ describe('tech.labor-session-stop and the pause cycle', () => {
   });
 });
 
+/**
+ * A corrected window inside the backdating tolerance the DATABASE enforces.
+ *
+ * Fixed during Phase 1-20 as a REGRESSION, not as P1-20 feature work (P1-20-QA-005).
+ * Reproduced first in a worktree at the P1-19 gate SHA `0d86a19` to prove it was
+ * already failing there and was not introduced by this phase.
+ *
+ * `tech.guard_labor_session` refuses a start before `job_created - interval '1 day'`,
+ * and the fixture job is created now — so an ABSOLUTE date rots. These constants were
+ * previously pinned to 2026-07-26, the day P1-19 was written: they passed that day and
+ * failed with ERR-TRN-001 every day after, on the P1-19 gate SHA itself, because the
+ * tolerance boundary moves with the job while the literal did not.
+ *
+ * Two hours inside the boundary, so the test is not sensitive to how long the fixture
+ * takes to run.
+ */
+function correctionWindow(): { startedAt: string; endedAt: string } {
+  const start = new Date(Date.now() - 22 * 60 * 60 * 1000);
+  start.setUTCMilliseconds(0);
+  start.setUTCSeconds(0);
+  const end = new Date(start.getTime() + 2.5 * 60 * 60 * 1000);
+  return { startedAt: start.toISOString(), endedAt: end.toISOString() };
+}
+
 describe('tech.labor-session-correct', () => {
   it('preserves the original and links the replacement, rather than editing', async () => {
+    const window = correctionWindow();
     const job = await seedWorkingJob();
     authAs(FULL);
     const opened = (await (
@@ -633,11 +658,7 @@ describe('tech.labor-session-correct', () => {
     authAs(FULL);
     const response = await correct(
       opened.id,
-      {
-        startedAt: '2026-07-26T09:00:00.000Z',
-        endedAt: '2026-07-26T11:30:00.000Z',
-        reason: 'technician forgot to clock in until mid-morning',
-      },
+      { ...window, reason: 'technician forgot to clock in until mid-morning' },
       { version: stopped.recordVersion }
     );
     expect(response.status).toBe(201);
@@ -645,8 +666,8 @@ describe('tech.labor-session-correct', () => {
     expect(corrected.id).not.toBe(opened.id);
     expect(corrected.correctionOfId).toBe(opened.id);
     expect(corrected.source).toBe('correction');
-    expect(corrected.startedAt).toBe('2026-07-26T09:00:00.000Z');
-    expect(corrected.endedAt).toBe('2026-07-26T11:30:00.000Z');
+    expect(corrected.startedAt).toBe(window.startedAt);
+    expect(corrected.endedAt).toBe(window.endedAt);
     expect(await auditCount(CORRECTED_ACTION, corrected.id)).toBe(1);
     expect(await outboxCount(SESSION_EVENT, corrected.id)).toBe(1);
 
@@ -672,8 +693,7 @@ describe('tech.labor-session-correct', () => {
       await stop(opened.id, { version: opened.recordVersion })
     ).json()) as SessionBody;
     const good = {
-      startedAt: '2026-07-26T09:00:00.000Z',
-      endedAt: '2026-07-26T11:30:00.000Z',
+      ...correctionWindow(),
       reason: 'amended',
     };
 
@@ -682,7 +702,12 @@ describe('tech.labor-session-correct', () => {
       (
         await correct(
           opened.id,
-          { ...good, startedAt: '2026-07-26T12:00:00.000Z', endedAt: '2026-07-26T10:00:00.000Z' },
+          {
+            ...good,
+            // Deliberately inverted: the end precedes the start.
+            startedAt: correctionWindow().endedAt,
+            endedAt: correctionWindow().startedAt,
+          },
           { version: stopped.recordVersion }
         )
       ).status
@@ -697,7 +722,7 @@ describe('tech.labor-session-correct', () => {
       (
         await correct(
           opened.id,
-          { ...good, startedAt: '2026-07-26T09:00:00' },
+          { ...good, startedAt: correctionWindow().startedAt.replace('Z', '') },
           { version: stopped.recordVersion }
         )
       ).status
@@ -725,8 +750,7 @@ describe('tech.labor-session-correct', () => {
       await start(job.id, { technicianProfileId: TECH_A1 })
     ).json()) as SessionBody;
     const payload = {
-      startedAt: '2026-07-26T09:00:00.000Z',
-      endedAt: '2026-07-26T11:30:00.000Z',
+      ...correctionWindow(),
       reason: 'amended',
     };
 

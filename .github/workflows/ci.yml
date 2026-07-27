@@ -99,6 +99,15 @@ jobs:
       # P1-13-BE-020: the published contract must be structurally sound. The
       # code/spec DIVERGENCE gate is the unit suite below, which regenerates the
       # document from the operation registry and compares.
+      # P1-20: the same treatment for the commercial surface. It additionally
+      # reconciles the event PRODUCER against the catalog owner, refuses an event
+      # this phase publishes while the catalog still says implementedIn: null, and
+      # fails when any of the 27 task identifiers resolves to no evidence anchor.
+      # It excludes its OWN generated documents from that search, because counting
+      # them made the check vacuous.
+      - name: P1-20 endpoint inventory and task traceability
+        run: npm run validate:p1-20-inventory
+
       - name: OpenAPI validation
         run: npm run validate:openapi
 

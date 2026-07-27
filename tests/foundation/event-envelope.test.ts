@@ -228,9 +228,25 @@ describe('reserved-name registry', () => {
       'organization.branch.status.changed',
       // Wave 8. Owner `qms`: finalization is what closure blocker B5 reads, and a
       // rework link is what B6 reads — the two facts the closure gate waits on.
+      // P1-20 publishes the eight svc/quo events from src/modules/{pricing,quotation}.
+      // Names are UNSUFFIXED: the version lives in schemaVersion and in
+      // shared.event_outbox.schema_version, so a .v1 in the name would encode it twice.
+      'price-list.published',
       'quality-control.finalized',
+      'quotation.accepted',
+      'quotation.created',
+      'quotation.expired',
+      'quotation.item-decided',
+      'quotation.rejected',
+      'quotation.revision-issued',
       'reception.approved',
       'rework.linked',
+      // Published from `src/modules/service-catalog` by the P1-20 service-catalog
+      // mutation surface. It was reserved with `implementedIn: null` for most of the
+      // phase on the false premise that the protected contract mandated no public
+      // service-version publication; the contract lists `svc.publish_service_version`
+      // as a deliverable, and the operation now exists (P1-20-G-01).
+      'service.published',
       'session.revoked',
       'user.invited',
       'user.status.changed',
@@ -264,6 +280,10 @@ describe('reserved-name registry', () => {
       // (Wave 8). `tech` publishes `labor.session-changed`, whose owner is `tech`
       // because the row lives in `tech.labor_sessions`.
       'P1-19': ['wo', 'tech', 'dia', 'qms'],
+      // P1-20 publishes from all three of its modules: `pricing`
+      // (`price-list.published`), `quotation` (six names) and `service-catalog`
+      // (`service.published`, from the version publication route).
+      'P1-20': ['pricing', 'quotation', 'service-catalog'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;

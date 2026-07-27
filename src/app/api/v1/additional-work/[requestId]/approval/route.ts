@@ -49,6 +49,25 @@ import {
   MAX_PRESENTED_SCOPE,
   workOrderModule,
 } from '@/modules/work-order';
+/**
+ * Side-effect import: it INSTALLS the commercial-approval port (P1-20-BE-013).
+ *
+ * `@/modules/quotation` calls `setCommercialApprovalReader` at module scope, and this
+ * route is the only path that consumes it. Nothing else in `src/` imports the
+ * quotation module — no middleware, no instrumentation, no bootstrap barrel — so
+ * without this line the port's installation depended on request ORDER: a fresh Node
+ * process (cold start, restart, scale-out) that received this endpoint before any
+ * `/quotations*` route had been loaded found the port missing and answered
+ * `ERR-SYS-001`. Fail-closed, so no unvalidated link was ever written, but
+ * P1-20-BE-013 was intermittently unavailable for reasons a caller could not see.
+ *
+ * It cannot be a named import: the module is needed for its side effect, not its
+ * surface, and `work-order` must not import `quotation` (that is the cycle the port
+ * exists to avoid). A route may import both, which is why the installation belongs
+ * here. `scripts/p1-20-endpoint-inventory.mjs` enforces the pairing so a future route
+ * citing a quotation revision cannot omit it.
+ */
+import '@/modules/quotation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,6 +101,20 @@ const Body = z
     decidingPartyRoleId: schemas.uuid,
     presentedScope: z.string().trim().min(1).max(MAX_PRESENTED_SCOPE),
     evidence: z.array(Evidence).max(MAX_APPROVAL_EVIDENCE).optional(),
+    /**
+     * The approved quotation revision this decision rests on (P1-20-BE-013).
+     *
+     * Optional: additional work may be approved without a priced quotation, and
+     * wo.customer_approvals.quotation_revision_ref is nullable. When supplied it is
+     * validated through the commercial-approval port - same work order, same
+     * company and branch, current, issued, unexpired, and ACCEPTED - before
+     * anything is written.
+     *
+     * It is accepted at decision time and nowhere else, because
+     * tg_customer_approvals_immutable freezes the column: there is no later moment
+     * at which this link could be established.
+     */
+    quotationRevisionRef: schemas.uuid.optional(),
   })
   .strict();
 
@@ -133,6 +166,7 @@ export async function POST(
           presentedScope: parsed.presentedScope,
           expectedVersion,
           evidence: parsed.evidence,
+          quotationRevisionRef: parsed.quotationRevisionRef,
         },
         authorizeScope
       );

@@ -397,6 +397,103 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     implementedIn: 'P1-19',
     description: 'A rework case was linked to the work order it corrects, or signed off.',
   },
+  // ---- Phase 1-20 — service catalog, pricing, quotation ---------------------
+  //
+  // The P1-10 backend contract anticipated these as `service.published.v1`,
+  // `price-list.published.v1`, `quotation.created.v1` and so on. The `.v1`
+  // suffix is NOT used: every shipped name in this catalog is unsuffixed and
+  // carries its version in `schemaVersion`, which is also what
+  // `shared.event_outbox.schema_version` stores. Encoding the version twice, in
+  // two places that can disagree, is exactly the drift this registry exists to
+  // prevent. The mapping from the planned names to these is recorded in
+  // docs/phase-1/phase-1-20/evidence/wave-1-contract-archaeology.md.
+  {
+    code: 'EVT-SVC-001',
+    eventType: 'service.published',
+    schemaVersion: 1,
+    aggregateType: 'svc.service_version',
+    owner: 'service-catalog',
+    // Published by `ServiceCatalogWriteService.publishVersion`, from
+    // `POST /services/{serviceId}/versions/{versionId}/publication`.
+    //
+    // This entry was marked RESERVED for most of the phase, justified by the claim
+    // that "the protected requirements mandate no public service-version publication".
+    // That claim was false — `docs/phase-1/phase-1-10/p1-20-backend-contract.md` lists
+    // `svc.publish_service_version(...)` as a P1-20 deliverable — and the entry was
+    // reserved because the operation had not been built, not because the contract
+    // excluded it. See P1-20-G-01 in `evidence/open-decisions.md`.
+    implementedIn: 'P1-20',
+    description:
+      'A service version was published and became the effective definition of that service for a date range.',
+  },
+  {
+    code: 'EVT-SVC-002',
+    eventType: 'price-list.published',
+    schemaVersion: 1,
+    aggregateType: 'svc.price_list_version',
+    owner: 'pricing',
+    implementedIn: 'P1-20',
+    description:
+      'A price-list version was published and became immutable. Carries no amounts: a consumer that may see prices reads them under its own authorization.',
+  },
+  {
+    code: 'EVT-QUO-001',
+    eventType: 'quotation.created',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description: 'A quotation was created in draft against a work order.',
+  },
+  {
+    code: 'EVT-QUO-002',
+    eventType: 'quotation.revision-issued',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation_revision',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'A quotation revision was issued to the customer, superseding any previously issued revision. The payload carries totals and currency because a delivery consumer needs them to render the document.',
+  },
+  {
+    code: 'EVT-QUO-003',
+    eventType: 'quotation.item-decided',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation_item',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'A customer approved or rejected one quotation line. The aggregate is the ITEM because the database records a decision per item, not per revision.',
+  },
+  {
+    code: 'EVT-QUO-004',
+    eventType: 'quotation.accepted',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'Every line of the current issued revision was approved, so the quotation as a whole is accepted.',
+  },
+  {
+    code: 'EVT-QUO-005',
+    eventType: 'quotation.rejected',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'At least one line of the current issued revision was rejected, so the quotation as presented was not accepted.',
+  },
+  {
+    code: 'EVT-QUO-006',
+    eventType: 'quotation.expired',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description: 'An issued quotation revision passed its expiry without a complete decision.',
+  },
 ]);
 
 export function findEvent(eventType: string): EventCatalogEntry | undefined {
