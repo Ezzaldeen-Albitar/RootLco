@@ -30,7 +30,7 @@
  */
 import type { DbHandle } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { serviceCatalogModule } from '@/modules/service-catalog';
@@ -171,8 +171,7 @@ export class QuotationService {
   public async create(
     db: DbHandle,
     input: CreateQuotationInput,
-    authorizeScope: ScopeAuthorizer,
-    hasPermission: PermissionProbe
+    authorizeScope: ScopeAuthorizer
   ): Promise<QuotationView> {
     if (input.lines.length === 0) {
       throw new AppFailure('ERR-VAL-001', {
@@ -206,7 +205,7 @@ export class QuotationService {
       customerClass: input.customerClass ?? null,
       asOf,
       requestedBy: input.discountRequestedBy ?? null,
-      hasPermission,
+      hasPermission: this.permissionProbe(db, workOrder.companyId, workOrder.branchId),
     });
     const currency = priced.currency;
 
@@ -292,8 +291,7 @@ export class QuotationService {
       readonly discountRequestedBy?: string | undefined;
       readonly expectedVersion: number;
     },
-    authorizeScope: ScopeAuthorizer,
-    hasPermission: PermissionProbe
+    authorizeScope: ScopeAuthorizer
   ): Promise<RevisionView> {
     if (input.lines.length === 0) {
       throw new AppFailure('ERR-VAL-001', { message: 'A revision must have at least one line' });
@@ -320,7 +318,7 @@ export class QuotationService {
       customerClass: input.customerClass ?? null,
       asOf,
       requestedBy: input.discountRequestedBy ?? null,
-      hasPermission,
+      hasPermission: this.permissionProbe(db, quotation.companyId, quotation.branchId),
     });
 
     // The new revision inherits the quotation's immutable currency. A revision
@@ -576,6 +574,21 @@ export class QuotationService {
   }
 
   // ---- internals -----------------------------------------------------------
+
+  /**
+   * A permission probe bound to one company and branch.
+   *
+   * `svc.pricing_approval_policies.required_permission_code` is a value an operator
+   * configured, so it appears in no `defineOperation` declaration and the operation
+   * registry cannot evaluate it. The probe asks the iam module — which owns
+   * authorization — through its public surface, and always names a concrete
+   * company and branch, so the answer consults grant scope rather than falling back
+   * to a scope-blind check.
+   */
+  private permissionProbe(db: DbHandle, companyId: string, branchId: string): PermissionProbe {
+    return (permissionCode: string) =>
+      callerHoldsPermission(db, permissionCode, { companyId, branchId });
+  }
 
   /** Locks the quotation and authorizes against its OWN company and branch. */
   private async lockAndAuthorize(

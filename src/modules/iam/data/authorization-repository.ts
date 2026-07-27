@@ -734,51 +734,6 @@ export class AuthorizationRepository extends Repository {
     return result.rowCount ?? 0;
   }
 
-  /**
-   * The CALLER's own effective approval ceiling for a limit type (P1-20-BE-006).
-   *
-   * Added for the commercial layer, which must know whether the actor may
-   * authorize a discount of a given size. It lives here rather than in
-   * `@/modules/pricing` because `iam.approval_limits` and `iam.role_grants` are
-   * this module's tables (ADR-001 rule 3), and a second reader elsewhere would be
-   * a second definition of which grant confers which ceiling.
-   *
-   * A ceiling reaches the caller two ways: assigned to them directly
-   * (`user_id`), or through a role they hold (`role_id`). A direct limit wins
-   * over a role limit; among role limits the LARGEST applies, because holding two
-   * roles grants the union of their authority, not the intersection.
-   *
-   * `null` means the actor has **no** ceiling — which callers must treat as no
-   * authority, never as unlimited.
-   */
-  async callerApprovalCeiling(
-    db: DbHandle,
-    companyId: string,
-    limitType: string,
-    asOf: string
-  ): Promise<{ amount: string; currencyCode: string } | null> {
-    const row = await this.runOne<{ amount: string; currency_code: string }>(
-      db,
-      `SELECT al.amount::text AS amount, al.currency_code
-         FROM iam.approval_limits al
-        WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
-          AND al.effective_from <= $5::date
-          AND (al.effective_to IS NULL OR al.effective_to > $5::date)
-          AND (al.user_id = $4
-               OR (al.user_id IS NULL AND al.role_id IN (
-                     SELECT g.role_id
-                       FROM iam.role_grants g
-                      WHERE g.tenant_id = $1 AND g.user_id = $4
-                        AND g.status = 'active'
-                        AND g.valid_from <= now()
-                        AND (g.valid_to IS NULL OR g.valid_to > now()))))
-        ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
-        LIMIT 1`,
-      [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
-    );
-    return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
-  }
-
   async listApprovalLimits(
     db: DbHandle,
     filters: { companyId?: string | undefined; userId?: string | undefined },

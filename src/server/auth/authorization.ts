@@ -157,6 +157,86 @@ export async function requirePermissions(
 }
 
 /**
+ * Whether the CALLER holds one permission code in a company and branch
+ * (P1-20-BE-006).
+ *
+ * Every other function in this file evaluates an *operation's* declared codes.
+ * This one takes a bare code, because the commercial layer must evaluate a value
+ * an operator configured — `svc.pricing_approval_policies.required_permission_code`
+ * — which by construction appears in no `defineOperation` declaration.
+ *
+ * It lives in the foundation, beside `requirePermissions`, rather than on a module
+ * surface, for two reasons. Authorization evaluation is already this file's job and
+ * `iam.has_permission_in_scope` is already called here, so nothing new crosses a
+ * boundary. And routing it through `@/modules/iam` would force that module's
+ * composition root — including its Supabase client configuration — to boot on any
+ * request that prices a discounted line, which is a coupling a permission check has
+ * no business creating.
+ *
+ * The company and branch are REQUIRED. A scope-blind variant would be a second way
+ * to answer an authorization question without consulting grant scope, which is the
+ * P1-18-A-01 shape exactly. It answers only about the caller — there is no
+ * parameter for whose permissions to read — so it cannot become a probe for another
+ * user's authority.
+ */
+export async function callerHoldsPermission(
+  db: DbHandle,
+  permissionCode: string,
+  scope: { companyId: string; branchId: string }
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, $2, $3, NULL) AS allowed',
+    [permissionCode, scope.companyId, scope.branchId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
+ * The CALLER's own effective approval ceiling for a limit type (P1-20-BE-006).
+ *
+ * An approval limit is an authorization fact — how much this actor may approve —
+ * so it belongs beside the permission checks rather than on a module surface. That
+ * placement is also what keeps a priced quotation line from booting
+ * `@/modules/iam`'s composition root, Supabase client configuration and all, on
+ * every discounted line.
+ *
+ * A ceiling reaches the caller two ways: assigned directly (`user_id`), or through
+ * a role they hold (`role_id`). A direct limit wins over a role limit; among role
+ * limits the LARGEST applies, because holding two roles grants the union of their
+ * authority rather than the intersection.
+ *
+ * `null` means the actor has **no** ceiling, which callers must treat as no
+ * authority and never as unlimited.
+ */
+export async function callerApprovalCeiling(
+  db: DbHandle,
+  companyId: string,
+  limitType: string,
+  asOf: string
+): Promise<{ amount: string; currencyCode: string } | null> {
+  const result = await db.query<{ amount: string; currency_code: string }>(
+    `SELECT al.amount::text AS amount, al.currency_code
+       FROM iam.approval_limits al
+      WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+        AND al.effective_from <= $5::date
+        AND (al.effective_to IS NULL OR al.effective_to > $5::date)
+        AND (al.user_id = $4
+             OR (al.user_id IS NULL AND al.role_id IN (
+                   SELECT g.role_id
+                     FROM iam.role_grants g
+                    WHERE g.tenant_id = $1 AND g.user_id = $4
+                      AND g.status = 'active'
+                      AND g.valid_from <= now()
+                      AND (g.valid_to IS NULL OR g.valid_to > now()))))
+      ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
+      LIMIT 1`,
+    [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
+  );
+  const row = result.rows[0];
+  return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
+}
+
+/**
  * Enforces authorization against a scope discovered INSIDE the transaction,
  * failing closed when the caller names no scope to narrow by.
  *

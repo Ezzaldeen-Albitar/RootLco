@@ -30,7 +30,7 @@
  * unexpressible rather than merely discouraged.
  */
 import { composeModule } from '@/server/layering';
-import { iamModule } from '@/modules/iam';
+import { callerApprovalCeiling } from '@/server/auth/authorization';
 import { PricingRepository } from './data/pricing-repository';
 import { PriceResolutionService } from './application/price-resolution-service';
 import { DiscountAuthorizationService } from './application/discount-authorization-service';
@@ -105,13 +105,15 @@ export const pricingModule = composeModule({
     return {
       prices: new PriceResolutionService(repository),
       priceLists: new PriceListService(repository),
-      // The ceiling reader is the iam module's own service, injected rather than
-      // reached into: `DiscountAuthorizationService` depends on the narrow
-      // `ApprovalCeilingReader` port, so it can be tested without iam and cannot
-      // reach anything else on that surface.
+      // The ceiling reader is the FOUNDATION authorization helper, not the iam
+      // module: an approval limit is an authorization fact, and routing it through
+      // a module surface forced that module's composition root - Supabase client
+      // configuration included - to boot on every discounted quotation line.
+      // DiscountAuthorizationService still depends only on the narrow
+      // ApprovalCeilingReader port, so it can be tested without any of this.
       discounts: new DiscountAuthorizationService(repository, {
         callerApprovalCeiling: (db, companyId, limitType, asOf) =>
-          iamModule().access.callerApprovalCeiling(db, companyId, limitType, asOf),
+          callerApprovalCeiling(db, companyId, limitType, asOf),
       }),
     };
   },

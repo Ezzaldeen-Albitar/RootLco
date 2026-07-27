@@ -627,28 +627,6 @@ export class AccessAdministrationService extends ApplicationService {
   }
 
   /**
-   * The caller's own effective approval ceiling (P1-20-BE-006).
-   *
-   * Exposed on this module's public surface so `@/modules/pricing` can ask
-   * whether an actor may authorize a discount without reading `iam` tables
-   * itself. It answers only about the CALLER — there is no parameter for whose
-   * ceiling to read, so it cannot be turned into a probe for another user's
-   * authority.
-   *
-   * Deliberately carries no permission check of its own: it discloses nothing the
-   * caller does not already have, and the *authorization decision* built on it
-   * belongs to the pricing module, which knows what is being authorized.
-   */
-  async callerApprovalCeiling(
-    db: DbHandle,
-    companyId: string,
-    limitType: string,
-    asOf: string
-  ): Promise<{ amount: string; currencyCode: string } | null> {
-    return this.authorization.callerApprovalCeiling(db, companyId, limitType, asOf);
-  }
-
-  /**
    * Creates an approval limit for a role or a user within a company.
    *
    * `ck_approval_limits_one_subject` requires exactly one of `role_id`/`user_id`,

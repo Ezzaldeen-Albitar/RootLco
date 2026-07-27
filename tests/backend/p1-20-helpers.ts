@@ -34,6 +34,8 @@ export const PRICE_PUBLISH = 'svc.price.publish';
 export const QUOTATION_READ = 'quo.quotation.read';
 export const QUOTATION_MANAGE = 'quo.quotation.manage';
 export const DECISION_RECORD = 'quo.decision.record';
+/** Needed to READ the work order a quotation is raised against. */
+export const WORK_ORDER_READ = 'wo.work_order.read';
 
 // ---- Catalog fixture ids ---------------------------------------------------
 
@@ -76,6 +78,7 @@ export const SVC_FULL: Principal = {
     QUOTATION_READ,
     QUOTATION_MANAGE,
     DECISION_RECORD,
+    WORK_ORDER_READ,
   ],
 };
 
@@ -124,6 +127,20 @@ export const SVC_PERMISSION_ELSEWHERE: Principal = {
   scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
 };
 
+/**
+ * May create a quotation, but holds NO discount approval ceiling.
+ *
+ * Exists to prove the fail-closed path: with no `iam.approval_limits` row, any
+ * non-zero discount is refused. Deliberately NOT given a ceiling anywhere.
+ */
+export const SVC_NO_CEILING: Principal = {
+  roleId: 'd2900000-0000-4000-8000-000000000111',
+  userId: 'd2900000-0000-4000-8000-000000000112',
+  subject: 'fx_p1_20_no_ceiling',
+  tenantId: TENANT_A,
+  permissions: [SERVICE_READ, PRICE_READ, PRICE_MANAGE, QUOTATION_MANAGE, WORK_ORDER_READ],
+};
+
 const WIDENING_ROLE = 'd2900000-0000-4000-8000-0000000000f1';
 
 /** Tenant B, everything — proves a tenant boundary, not a permission one. */
@@ -141,6 +158,7 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_UNPERMITTED,
   SVC_SCOPED_A2,
   SVC_PERMISSION_ELSEWHERE,
+  SVC_NO_CEILING,
   SVC_TENANT_B,
 ];
 
@@ -410,6 +428,39 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
 
   await seedTax(TENANT_A, COMPANY_A1, TAX_CLASS_A, TAX_CLASS_A_UNRATED);
   await seedTax(TENANT_B, COMPANY_B1, TAX_CLASS_B, TAX_CLASS_B_UNRATED);
+  await seedQuotationSequence(TENANT_A, COMPANY_A1, BRANCH_A1);
+  await seedQuotationSequence(TENANT_A, COMPANY_A1, BRANCH_A2);
+  await seedQuotationSequence(TENANT_B, COMPANY_B1, BRANCH_B1);
+}
+
+/**
+ * The `quotation` number sequence, per company and branch.
+ *
+ * Required, not optional: `quo.quotations.quotation_number` is NOT NULL and comes
+ * from `sharedServicesModule().numbers.allocate`, which maps an unconfigured
+ * sequence to `ERR-RES-001`. Without this row a quotation create fails with a 404
+ * that reads exactly like a missing work order — which is how it presented before
+ * this fixture existed, and it cost real time to attribute correctly.
+ *
+ * The sequence is registered in `shared-services/domain/sequence-registry.ts` with
+ * code `quotation`; this only creates the per-scope counter row.
+ */
+async function seedQuotationSequence(
+  tenantId: string,
+  companyId: string,
+  branchId: string
+): Promise<void> {
+  await admin.query(
+    `INSERT INTO shared.number_sequences
+       (tenant_id, company_id, branch_id, sequence_code, prefix_template, next_value,
+        pad_width, period_reset_rule, created_by)
+     SELECT $1,$2,$3,'quotation','QUO-',1,6,'never',$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM shared.number_sequences
+         WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+           AND sequence_code = 'quotation')`,
+    [tenantId, companyId, branchId, USER_A]
+  );
 }
 
 /**
@@ -441,6 +492,45 @@ export async function assignPriceList(input: {
       input.branchId,
       input.customerClass,
       input.priority,
+      EFFECTIVE_FROM,
+      USER_A,
+    ]
+  );
+}
+
+/**
+ * Grants one principal a discount approval ceiling.
+ *
+ * Needed because the discount path FAILS CLOSED: with no
+ * `svc.pricing_approval_policies` row the threshold is zero, so any non-zero
+ * discount demands both the elevated permission and a ceiling in
+ * `iam.approval_limits` — and no ceiling means no authority, never unlimited.
+ * A caller without one is refused with 403, which is the designed behaviour and is
+ * asserted separately rather than papered over by seeding every principal.
+ *
+ * `role_id` rather than `user_id`, so the union-of-roles path is the one exercised:
+ * a ceiling reaching an actor through a role they hold is the ordinary case.
+ */
+export async function seedDiscountCeiling(input: {
+  tenantId: string;
+  companyId: string;
+  roleId: string;
+  amount: string;
+  currencyCode: string;
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1,$2,$3,'discount',$4::numeric(18,4),$5,$6::date,$7
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1 AND company_id = $2 AND role_id = $3 AND limit_type = 'discount')`,
+    [
+      input.tenantId,
+      input.companyId,
+      input.roleId,
+      input.amount,
+      input.currencyCode,
       EFFECTIVE_FROM,
       USER_A,
     ]
