@@ -216,6 +216,30 @@ command that never wrote. Both are now proved by forcing a failure _after_ write
   number of `defineOperation(` call sites is counted independently and a mismatch
   fails the gate rather than quietly undercounting the surface.
 
+## Two suites must never run against one database at the same time
+
+The DB-backed suites all call `cleanBackendFixtures` in `beforeAll`, which truncates the
+tenant fixture set and rebuilds it. That is correct for a suite running alone and fatal for
+two running together: each one deletes the other's roles, grants and approval limits
+mid-flight, and the failures surface far from the cause — a foreign-key error on
+`rec.reception_visits`, a `403` where a fixture principal should hold every permission, or
+an `fk_approval_limits_role` violation on a role that existed a second earlier.
+
+This was learned the expensive way during this phase, by running the full battery in the
+background while running individual suites in the foreground. The resulting figures were
+meaningless and were discarded rather than recorded. Every count in this document comes
+from a serial run with nothing else touching the database.
+
+The same rule applies to the clean room, and to any reviewer or agent asked to "verify the
+counts by running the suites" — that instruction and a concurrent battery cannot both be
+honoured.
+
+A related hazard, now closed: a test that plants a row through the admin pool and removes
+it in a trailing statement leaks that row whenever an assertion above it fails, and the
+leaked row then aborts the NEXT run's cascade. The create-atomicity test plants a colliding
+`quo.quotations` row and removes it in a `finally`, which is the only form that survives its
+own failure.
+
 ## Known test-environment note
 
 Two tests in `tests/foundation/operation-coverage-gate.test.ts` time out on a **cold**

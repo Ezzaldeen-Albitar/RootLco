@@ -292,6 +292,11 @@ hosted run on the current head predates it.
   construction, so pass the `round(...,4)` form once exactness has been proved.
 - Audit details live in `iam.audit_record_details` (one row per field, with its own
   classification), not in a jsonb column on `iam.audit_records`.
+- NEVER run two DB-backed suites at once: each `beforeAll` truncates the shared tenant
+  fixtures, so they delete each other's roles and grants and the failures point anywhere
+  but the cause. Run the battery serially, with nothing else touching the database.
+- A test that plants a row via the admin pool must remove it in a `finally`; a trailing
+  delete leaks on assertion failure and the leak aborts the next run's cascade.
 - A new coverage flag is worthless unless a principal holds the operation's own
   permission: otherwise the 403 is a missing permission and a scope-blind
   implementation passes.

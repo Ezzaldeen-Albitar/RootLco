@@ -2793,6 +2793,7 @@
         "idempotency",
         "isolation",
         "outbox",
+        "rollback",
         "route",
         "service",
         "success"

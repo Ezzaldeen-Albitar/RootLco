@@ -23,7 +23,7 @@
  * quo.quotation-revision-decide.
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
- *   quo.quotation-create: route service authorization success denial cross-tenant isolation audit outbox idempotency
+ *   quo.quotation-create: route service authorization success denial cross-tenant isolation audit outbox idempotency rollback
  *   quo.quotation-detail: route service authorization success denial cross-tenant isolation
  *   quo.quotation-revision-create: route service authorization success denial audit stale-version concurrency cross-tenant idempotency isolation
  *   quo.quotation-issue: route service authorization success denial audit outbox stale-version concurrency rollback cross-tenant idempotency isolation
@@ -54,6 +54,7 @@ import {
 } from './p1-19-helpers';
 import {
   SERVICE_A,
+  SERVICE_A_ALT,
   SVC_FULL,
   SVC_PERMISSION_ELSEWHERE,
   SVC_READER,
@@ -1860,5 +1861,133 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     expect(fields).toContain('discountTotal');
     expect(fields).toContain('thresholdValue');
     expect(fields).toContain('ceilingAmount');
+  });
+});
+
+/**
+ * The create path is atomic, including the NUMBER it consumed (P1-20-BE-007).
+ *
+ * Every other rollback proof in this phase forces a failure at the end of a transaction.
+ * `create` cannot be attacked that way: its outbox key is `quotation.created:<quotationId>`
+ * and the id is generated inside the transaction, so a test cannot pre-empt it — the same
+ * obstacle P1-19 hit with approval ids.
+ *
+ * `uq_quotations_number` is the way in. The sequence allocation runs immediately BEFORE
+ * `insertQuotation`, so pre-taking the number the sequence is about to produce makes
+ * `insertQuotation` fail with the counter already bumped. What must then be true is the
+ * thing worth proving: `next_value` goes back.
+ *
+ * That matters beyond tidiness. `shared.next_display_number()` is `SECURITY INVOKER` and is
+ * called on the request's own handle, so its increment is part of this transaction — if it
+ * were not, a failed create would burn a quotation number and leave a permanent gap in a
+ * customer-facing sequence that no later request can fill. An autonomous-transaction or
+ * separate-connection allocator would pass every other test in this file and fail this one.
+ */
+describe('quo.quotation-create — atomicity of the number it consumes', () => {
+  const sequenceState = (): Promise<{ next_value: string } | undefined> =>
+    admin
+      .query<{ next_value: string }>(
+        `SELECT next_value::text AS next_value FROM shared.number_sequences
+          WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+            AND sequence_code = 'quotation'`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1]
+      )
+      .then((result) => result.rows[0]);
+
+  it('rolls the allocated number back when the insert fails after allocation', async () => {
+    const order = await createOpenWorkOrder();
+    const before = await sequenceState();
+    expect(before).toBeDefined();
+
+    // `QUO-` + lpad(next_value, 6, '0') is what `shared.next_display_number()` will render,
+    // read from the sequence row rather than assumed.
+    const collidingNumber = `QUO-${String(before?.next_value).padStart(6, '0')}`;
+    await admin.query(
+      `INSERT INTO quo.quotations
+         (tenant_id, company_id, branch_id, work_order_id, quotation_number, currency_code,
+          status, created_by)
+       VALUES ($1,$2,$3,$4,$5,'JOD','draft',$6)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, order.workOrderId, collidingNumber, USER_A]
+    );
+
+    try {
+      authAs(SVC_FULL);
+      const response = await createQuotation({
+        workOrderId: order.workOrderId,
+        payerPartnerRef: PARTNER_A,
+        lines: [{ serviceId: SERVICE_A, quantity: '1.000' }],
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+
+      // The counter is exactly where it was: the allocation rolled back with the insert.
+      const after = await sequenceState();
+      expect(after?.next_value).toBe(before?.next_value);
+
+      // And only the pre-planted row exists — no second quotation, no orphan revision, no
+      // orphan item, no audit record and no outbox row for a quotation that does not exist.
+      const rows = await admin.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM quo.quotations WHERE work_order_id = $1`,
+        [order.workOrderId]
+      );
+      expect(rows.rows[0]?.n).toBe('1');
+      const orphans = await admin.query<{ revisions: string; items: string }>(
+        `SELECT
+         (SELECT count(*)::text FROM quo.quotation_revisions r
+            JOIN quo.quotations q ON q.id = r.quotation_id
+           WHERE q.work_order_id = $1) AS revisions,
+         (SELECT count(*)::text FROM quo.quotation_items i
+            JOIN quo.quotation_revisions r ON r.id = i.quotation_revision_id
+            JOIN quo.quotations q ON q.id = r.quotation_id
+           WHERE q.work_order_id = $1) AS items`,
+        [order.workOrderId]
+      );
+      expect(orphans.rows[0]?.revisions).toBe('0');
+      expect(orphans.rows[0]?.items).toBe('0');
+    } finally {
+      /**
+       * The planted row must never outlive this test.
+       *
+       * `finally`, not a trailing statement: an assertion failure above would otherwise
+       * leak a `quo.quotations` row, and the next run's `cleanBackendFixtures` then aborts
+       * mid-cascade — the observed symptom was a foreign-key error on
+       * `rec.reception_visits`, three tables away from the actual cause, which marked the
+       * whole file as failed rather than one test.
+       */
+      await admin.query(`DELETE FROM quo.quotations WHERE quotation_number = $1`, [
+        collidingNumber,
+      ]);
+    }
+  });
+
+  it('does not consume a number when a line is refused before any write', async () => {
+    /**
+     * The complementary half, and the reason the create path has no other post-write
+     * failure point: every line is priced, quantity-checked and discount-authorized in
+     * `priceLines` BEFORE the quotation row is written, so a bad line cannot leave partial
+     * state. Asserting the counter is untouched is what makes that ordering observable
+     * rather than a claim about the code.
+     */
+    const order = await createOpenWorkOrder();
+    const before = await sequenceState();
+
+    authAs(SVC_FULL);
+    const refused = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [
+        { serviceId: SERVICE_A, quantity: '1.000' },
+        // Not available at this branch: refused inside priceLines, before allocation.
+        { serviceId: SERVICE_A_ALT, quantity: '1.000', description: 'Not sellable here' },
+      ],
+    });
+    // ERR-VAL-001, which the error catalog maps to 422 — not 400. The point of the case is
+    // the sequence counter below, not the status, but the status must still be the real one.
+    expect(refused.status).toBe(422);
+
+    const after = await sequenceState();
+    expect(after?.next_value).toBe(before?.next_value);
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(0);
   });
 });
