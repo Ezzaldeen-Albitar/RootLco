@@ -78,10 +78,11 @@ No concurrent queue execution created P1-20 work. Canonical branch created fresh
 
 ## Commits on the feature branch
 
-| SHA | What |
-| --- | ---- |
-| `84618ea` | Wave 0–1 evidence + `Decimal`/`Money` + `service-catalog` module (domain, repository, service, surface) |
+| SHA       | What                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------- |
+| `84618ea` | Wave 0–1 evidence + `Decimal`/`Money` + `service-catalog` module (domain, repository, service, surface)  |
 | `e269d52` | `pricing` module — `PriceResolutionService`, `DiscountAuthorizationService`, `iam.callerApprovalCeiling` |
+| `0b838e1` | `quotation` domain + repository (money computed in SQL, verified against the live CHECKs)                |
 
 Verified green at `e269d52`: `tsc --noEmit` exit 0, `eslint` 0 problems,
 `format:check` clean, `validate:module-boundaries` OK (335 files),
@@ -120,14 +121,43 @@ None yet — branch is local only, not pushed.
 
 ## Exact next action
 
-1. Build the `quotation` module: `domain/quotation.ts` (statuses, channels,
-   evidence kinds, decision vocabulary), `data/quotation-repository.ts`
-   (quotations, revisions, items, decisions, evidence; wrapping
-   `quo.issue_revision` and `quo.record_item_decision`), the application
-   services, and `index.ts`.
-2. Add the read permission codes the catalog lacks
-   (`svc.service.read`, `svc.price.read`, `quo.quotation.read`) to
-   `supabase/seeds/04_iam_permission_catalog.sql`, idempotently.
-3. Add `svc`/`quo` entries to `EVENT_CATALOG` using the shipped unsuffixed
-   naming with `schemaVersion: 1`.
-4. Then Wave 3 routes.
+Wave 2 remainder, in this order:
+
+1. **`quotation` application services + `index.ts`.** Needed:
+   `QuotationService` (create → revise → issue → expire, each locking
+   `quo.quotations` FIRST), `QuotationDecisionService` (per-item decision,
+   evidence, roll-up via `rollUpDecisions`), and an
+   `AdditionalWorkLinkService` for BE-013. Composition root wires
+   `serviceCatalogModule()`, `pricingModule()` and
+   `sharedServicesModule()` (number sequence `quotation`, attachment policy
+   already lists `quo.quotations`).
+2. **Permission codes.** The catalog has `svc.service.manage`,
+   `svc.price.manage`, `svc.price.publish`, `quo.quotation.manage`,
+   `quo.decision.record` — it has **no read codes**. Add
+   `svc.service.read`, `svc.price.read`, `quo.quotation.read` idempotently to
+   `supabase/seeds/04_iam_permission_catalog.sql` (93 → 96), and re-run
+   `npm run validate:seed-state`.
+3. **Event catalog.** Add `svc`/`quo` entries to `EVENT_CATALOG`
+   (`src/server/events/envelope.ts`, currently 31). Shipped convention is
+   unsuffixed names + `schemaVersion: 1`, so:
+   `service.published`, `price-list.published`, `quotation.created`,
+   `quotation.revision-issued`, `quotation.item-decided`,
+   `quotation.accepted`, `quotation.rejected`, `quotation.expired`.
+4. **Audit actions.** Check `src/server/auth/audit-actions.ts` for the
+   controlled catalog and add the P1-20 actions with their classes — note the
+   `financial` audit class exists and is the right one for money-moving acts.
+5. Then Wave 3 routes, starting with `GET /api/v1/services`.
+
+### Traps already identified — do not rediscover
+
+- The registry `PATH_PATTERN` rejects `:action` — use sub-resource nouns.
+- `ScopeAuthorizer` is exported from `@/server/auth/authorization`, **not**
+  from `route-handler`.
+- Build targets **ES2017**: write `BigInt(0)`, never `0n`.
+- `iam.role_grants` has **no** `deleted_at` — it uses
+  `status='active'` + `valid_from`/`valid_to`.
+- `numeric` must be selected with an explicit `::text` cast (the shipped
+  convention) and must never be parsed into a `number`.
+- Two unit tests in `tests/foundation/operation-coverage-gate.test.ts` time out
+  on a **cold** filesystem cache in this OneDrive-backed tree. They are green
+  warm and in CI; do not "fix" them.

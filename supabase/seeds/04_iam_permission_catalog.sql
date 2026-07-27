@@ -214,7 +214,18 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- sign-off to come from someone other than whoever did the work.
   ('qms.rework.manage',        'qms', 'Create and resolve rework cases',                'high',   '00000000-0000-4000-8000-000000000001'),
   ('qms.rework.sign_off',      'qms', 'Independently sign off safety-critical rework',  'high',   '00000000-0000-4000-8000-000000000001'),
-  ('qms.quality_control.read', 'qms', 'Read quality-control records and rework links',  'low',    '00000000-0000-4000-8000-000000000001')
+  ('qms.quality_control.read', 'qms', 'Read quality-control records and rework links',  'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-20 (svc, quo) - Service catalog, pricing and quotation READ codes.
+  -- P1-10 seeded only the manage/publish/record codes for these domains, so the
+  -- commercial read surface had nothing to authorize against. Reads are separated
+  -- from writes for the same reason everywhere else in this catalog: a service
+  -- advisor who must see the catalog and a customer's quotation must not thereby
+  -- be able to change a price. svc.price.read is 'medium' rather than 'low'
+  -- because a price list is commercially sensitive - it exposes what the business
+  -- charges every customer segment, not just the one in front of you.
+  ('svc.service.read',         'svc', 'Read the service catalog and branch availability', 'low',    '00000000-0000-4000-8000-000000000001'),
+  ('svc.price.read',           'svc', 'Read price lists, rules and resolved prices',      'medium', '00000000-0000-4000-8000-000000000001'),
+  ('quo.quotation.read',       'quo', 'Read quotations, revisions and decisions',         'low',    '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
