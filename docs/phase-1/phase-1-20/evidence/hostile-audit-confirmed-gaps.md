@@ -4,9 +4,15 @@ Produced by the hostile 100/100 completeness audit over `0d86a19..7a58272`, nine
 independent reconciliation dimensions, every claimed gap adversarially verified by a
 separate agent instructed to refute it.
 
-**101 gaps claimed · 41 CONFIRMED · 47 OVERSTATED · 10 REFUTED.** Roughly half of what a
-reconciler reports does not survive an adversarial check, which is why the verify pass
-exists and why only the confirmed set is actionable.
+**101 gaps claimed · 77 CONFIRMED · 24 overstated or refuted**, consolidated by the audit's
+synthesis pass into **39 distinct findings: 6 High, 11 Medium, 22 Low**.
+
+> An earlier revision of this file said 41 confirmed. That was my own arithmetic, taken by
+> pairing verdicts to gaps in completion order before the run finished, and it was wrong —
+> which is exactly the failure mode this file warns about two paragraphs down. The figures
+> above are the run's own, and `completeness-audit.md` is the authoritative document. Roughly half of what a
+> reconciler reports does not survive an adversarial check, which is why the verify pass
+> exists and why only the confirmed set is actionable.
 
 Severity is the reconciler's, kept as reported rather than re-graded here.
 
