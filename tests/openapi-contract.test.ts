@@ -182,6 +182,11 @@ import '@/app/api/v1/rework-links/[reworkLinkId]/sign-off/route';
 import '@/app/api/v1/rework-links/[reworkLinkId]/cost/route';
 // Phase 1-20 — service catalog, pricing, quotation.
 import '@/app/api/v1/services/route';
+import '@/app/api/v1/price-lists/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
+import '@/app/api/v1/prices/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

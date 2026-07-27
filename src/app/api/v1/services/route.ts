@@ -27,7 +27,6 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
-import { pageRequest } from '@/server/db/pagination';
 import {
   MAX_NAME,
   SERVICE_LIFECYCLE_STATES,
@@ -102,10 +101,7 @@ export async function GET(request: Request): Promise<Response> {
             effectiveOn: query.effectiveOn,
             search: query.search,
           },
-          pageRequest(
-            { key: 'service_code', direction: 'asc' },
-            { cursor: query.cursor, limit: query.limit }
-          ),
+          { cursor: query.cursor, limit: query.limit },
           authorizeScope
         ),
       };

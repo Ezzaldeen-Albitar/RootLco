@@ -54,6 +54,11 @@ export interface PriceQuery {
 export class PriceResolutionService {
   public constructor(private readonly repository: PricingRepository) {}
 
+  /** The server's business date, for a caller that must state the date it used. */
+  public async businessDate(db: DbHandle): Promise<string> {
+    return this.repository.businessDate(db);
+  }
+
   /**
    * Resolves the one winning price and its effective tax rate.
    *
@@ -74,6 +79,23 @@ export class PriceResolutionService {
 
     // Ambiguity is checked only AFTER a price was found: with no price there is
     // nothing to be ambiguous about, and the extra query would be wasted.
+    //
+    // This branch is currently UNREACHABLE, and saying so is more useful than
+    // implying it is exercised. `uq_price_rules_signature` is
+    // `(version, service, company, branch, customer_class, priority)` with
+    // `NULLS NOT DISTINCT`, and a given specificity score determines exactly which
+    // of company/branch/class are non-null — 4 is branch-only, 3 is company+class,
+    // 6 is branch+company, and so on. The resolver's filter then forces each
+    // non-null column to equal the query's value. So two rules tying on BOTH
+    // specificity and priority necessarily share an identical signature, which the
+    // unique index refuses.
+    //
+    // It is kept rather than deleted because it defends a correctness property
+    // that rests on that index continuing to exist: drop or widen
+    // `uq_price_rules_signature` and resolution silently becomes an `id`-ordered
+    // coin flip on a customer's price. One indexed COUNT per resolution is a fair
+    // price for that. The structural guarantee is asserted directly in
+    // `p1-20-pricing.test.ts` instead of pretending this branch has a positive test.
     const tied = await this.repository.countTiedPriceRules(db, query);
     if (tied > 1) {
       throw new AppFailure('ERR-CON-001', {

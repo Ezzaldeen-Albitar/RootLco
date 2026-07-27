@@ -276,6 +276,55 @@ async function seedCatalog(input: {
   }
 }
 
+export const TAX_CLASS_A = 'd2000000-0000-4000-8000-000000000201';
+export const TAX_CLASS_A_UNRATED = 'd2000000-0000-4000-8000-000000000202';
+/** `numeric(9,6)` FRACTION, not a percentage. Deliberately not a real jurisdiction. */
+export const TAX_RATE_FRACTION = '0.100000';
+/** Tenant B needs its OWN class ids: pk_tax_classes is on id alone. */
+export const TAX_CLASS_B = 'd2000000-0000-4000-8000-000000000211';
+export const TAX_CLASS_B_UNRATED = 'd2000000-0000-4000-8000-000000000212';
+
+/**
+ * Seeds a tax class with an effective rate, and a second class with NO rate.
+ *
+ * The unrated class exists to prove the refusal: a price rule naming a class with
+ * no effective rate must fail, not silently price the line at 0% tax. The rate
+ * itself is an arbitrary `0.100000` — no jurisdiction, country or statutory figure
+ * is hard-coded anywhere in this fixture or in the code under test.
+ */
+async function seedTax(
+  tenantId: string,
+  companyId: string,
+  ratedClassId: string,
+  unratedClassId: string
+): Promise<void> {
+  // The class ids are PARAMETERS, not the module constants, because each tenant
+  // needs its own rows: `pk_tax_classes` is on `id` alone, so reusing one id
+  // across tenants makes the second insert a silent no-op under
+  // `ON CONFLICT (id) DO NOTHING` — and the rate that follows then has no parent
+  // and fails on `fk_tax_rates_tax_class`, far from the actual mistake.
+  await admin.query(
+    `INSERT INTO org.tax_classes (id, tenant_id, company_id, tax_class_code, name, status, created_by)
+     VALUES ($1,$2,$3,'fx_p1_20_standard','P1-20 fixture class','active',$5),
+            ($4,$2,$3,'fx_p1_20_unrated','P1-20 fixture class with no rate','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [ratedClassId, tenantId, companyId, unratedClassId, USER_A]
+  );
+  // A NOT EXISTS guard rather than `ON CONFLICT DO NOTHING`: the table carries
+  // `ex_tax_rates_no_active_overlap`, a gist EXCLUDE, and `ON CONFLICT` covers
+  // unique indexes only — an exclusion violation would still abort the fixture on
+  // the second run.
+  await admin.query(
+    `INSERT INTO org.tax_rates
+       (tenant_id, company_id, tax_class_id, rate, status, effective_from, created_by)
+     SELECT $1,$2,$3,$4::numeric(9,6),'active',$5::date,$6
+      WHERE NOT EXISTS (
+        SELECT 1 FROM org.tax_rates
+         WHERE tenant_id = $1 AND company_id = $2 AND tax_class_id = $3)`,
+    [tenantId, companyId, ratedClassId, TAX_RATE_FRACTION, EFFECTIVE_FROM, USER_A]
+  );
+}
+
 /** Establishes every P1-20 fixture. Idempotent. */
 export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
   admin = pool;
@@ -358,4 +407,72 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
     versions: [{ id: SERVICE_VERSION_B, serviceId: SERVICE_B }],
     availability: [{ companyId: COMPANY_B1, branchId: BRANCH_B1, serviceId: SERVICE_B }],
   });
+
+  await seedTax(TENANT_A, COMPANY_A1, TAX_CLASS_A, TAX_CLASS_A_UNRATED);
+  await seedTax(TENANT_B, COMPANY_B1, TAX_CLASS_B, TAX_CLASS_B_UNRATED);
+}
+
+/**
+ * Binds a price list to a scope so `svc.resolve_price` can find it.
+ *
+ * Separate from the catalog fixture because a test that is about price-list
+ * *creation* must not already have an assignment, while a test about *resolution*
+ * needs one. `priority` is a parameter so the ambiguity case can create two
+ * assignments that tie.
+ */
+export async function assignPriceList(input: {
+  tenantId: string;
+  priceListId: string;
+  companyId: string | null;
+  branchId: string | null;
+  customerClass: string | null;
+  priority: number;
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO svc.price_list_assignments
+       (tenant_id, price_list_id, company_id, branch_id, customer_class, priority,
+        effective_from, status, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::date,'active',$8)
+     ON CONFLICT DO NOTHING`,
+    [
+      input.tenantId,
+      input.priceListId,
+      input.companyId,
+      input.branchId,
+      input.customerClass,
+      input.priority,
+      EFFECTIVE_FROM,
+      USER_A,
+    ]
+  );
+}
+
+/** Reads a price list's current `record_version`, for an `If-Match` header. */
+export async function priceListVersionOf(priceListId: string): Promise<number> {
+  const result = await admin.query<{ record_version: number }>(
+    `SELECT record_version FROM svc.price_lists WHERE id = $1`,
+    [priceListId]
+  );
+  const row = result.rows[0];
+  if (row === undefined) throw new Error(`price list ${priceListId} not found`);
+  return row.record_version;
+}
+
+/** Counts audit records for an action, to prove one was written. */
+export async function auditCountFor(action: string, entityId: string): Promise<number> {
+  const result = await admin.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM iam.audit_records
+      WHERE action = $1 AND entity_id = $2`,
+    [action, entityId]
+  );
+  return Number.parseInt(result.rows[0]?.n ?? '0', 10);
+}
+
+/** Counts outbox rows for an event key, to prove exactly one was published. */
+export async function outboxCountFor(eventKey: string): Promise<number> {
+  const result = await admin.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM shared.event_outbox WHERE event_key = $1`,
+    [eventKey]
+  );
+  return Number.parseInt(result.rows[0]?.n ?? '0', 10);
 }

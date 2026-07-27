@@ -255,7 +255,7 @@ export class QuotationService {
       eventType: 'quotation.created',
       aggregateId: quotation.id,
       aggregateVersion: quotation.recordVersion,
-      producer: 'quo.quotation-service',
+      producer: 'quotation.quotation-service',
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       // No amounts: a draft quotation's totals are not yet authoritative (they are
@@ -461,7 +461,7 @@ export class QuotationService {
       eventType: 'quotation.revision-issued',
       aggregateId: issued.id,
       aggregateVersion: issued.recordVersion,
-      producer: 'quo.quotation-service',
+      producer: 'quotation.quotation-service',
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       payload: {
@@ -530,7 +530,7 @@ export class QuotationService {
         eventType: 'quotation.expired',
         aggregateId: quotation.id,
         aggregateVersion: next,
-        producer: 'quo.quotation-service',
+        producer: 'quotation.quotation-service',
         companyId: quotation.companyId,
         branchId: quotation.branchId,
         payload: {

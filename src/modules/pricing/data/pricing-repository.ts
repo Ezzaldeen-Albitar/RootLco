@@ -104,6 +104,23 @@ export class PricingRepository extends Repository {
   protected readonly module = 'pricing';
 
   /**
+   * The server's business date, as `YYYY-MM-DD`.
+   *
+   * Read from the database rather than the Node clock, so the date used to resolve
+   * a price is the same clock `svc.resolve_price` and every effective-range
+   * predicate uses. A caller-supplied date is honoured only where the contract
+   * says so; it is never inferred from the process.
+   */
+  public async businessDate(db: DbHandle): Promise<string> {
+    const row = await this.runOne<{ business_date: string }>(
+      db,
+      `SELECT current_date::text AS business_date`
+    );
+    if (row === null) throw new Error('pricing: could not read the server business date');
+    return row.business_date;
+  }
+
+  /**
    * Resolves the single winning price, or `null` when none is configured.
    *
    * `p_as_of` is a `date`, so the caller must pass a server-derived business date
@@ -404,6 +421,299 @@ export class PricingRepository extends Repository {
           recordVersion: row.record_version,
         }
       : null;
+  }
+
+  /**
+   * Lists price lists for the caller's tenant, newest code first.
+   *
+   * `svc.price_lists` has no `company_id` or `branch_id` — a list is tenant-wide
+   * reference data and it is `svc.price_list_assignments` that binds it to a
+   * company, branch or customer class. So this read is tenant-scoped, and the
+   * permission (`svc.price.read`) is what makes it privileged rather than a scope
+   * target.
+   */
+  public async listPriceLists(db: DbHandle, limit: number): Promise<readonly PriceListRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      price_list_code: string;
+      name: string;
+      currency_code: string;
+      description: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, price_list_code, name, currency_code, description, status, record_version
+         FROM svc.price_lists
+        WHERE tenant_id = $1 AND deleted_at IS NULL
+        ORDER BY price_list_code, id
+        LIMIT $2`,
+      [context.principal.tenantId, limit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      priceListCode: row.price_list_code,
+      name: row.name,
+      currencyCode: row.currency_code,
+      description: row.description,
+      status: row.status,
+      recordVersion: row.record_version,
+    }));
+  }
+
+  /**
+   * Creates a price list.
+   *
+   * `currency_code` is immutable from this moment — `tg_price_lists_immutable`
+   * freezes it — so the currency chosen here denominates every amount ever
+   * attached to this list. There is no conversion path afterwards.
+   */
+  public async insertPriceList(
+    db: DbHandle,
+    input: {
+      priceListCode: string;
+      name: string;
+      currencyCode: string;
+      description: string | null;
+    }
+  ): Promise<PriceListRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      price_list_code: string;
+      name: string;
+      currency_code: string;
+      description: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO svc.price_lists
+         (tenant_id, price_list_code, name, currency_code, description, status, created_by)
+       VALUES ($1,$2,$3,$4,$5,'active',$6)
+       RETURNING id, price_list_code, name, currency_code, description, status, record_version`,
+      [
+        context.principal.tenantId,
+        input.priceListCode,
+        input.name,
+        input.currencyCode,
+        input.description,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('pricing: price-list insert returned no row');
+    return {
+      id: row.id,
+      priceListCode: row.price_list_code,
+      name: row.name,
+      currencyCode: row.currency_code,
+      description: row.description,
+      status: row.status,
+      recordVersion: row.record_version,
+    };
+  }
+
+  /** Locks a price list, so a version or publication cannot race another. */
+  public async lockPriceList(db: DbHandle, priceListId: string): Promise<PriceListRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      price_list_code: string;
+      name: string;
+      currency_code: string;
+      description: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, price_list_code, name, currency_code, description, status, record_version
+         FROM svc.price_lists
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+        FOR UPDATE`,
+      [context.principal.tenantId, priceListId]
+    );
+    return row
+      ? {
+          id: row.id,
+          priceListCode: row.price_list_code,
+          name: row.name,
+          currencyCode: row.currency_code,
+          description: row.description,
+          status: row.status,
+          recordVersion: row.record_version,
+        }
+      : null;
+  }
+
+  /**
+   * Creates the next draft version of a price list.
+   *
+   * `version_no` is `MAX + 1` in the same statement, under the parent's lock;
+   * `uq_price_list_versions_no` is the backstop if two callers somehow read the
+   * same maximum. `effective_from` is provisional — `svc.publish_price_list_version`
+   * overwrites it at publication, which is what makes forward-only succession the
+   * database's decision rather than the caller's.
+   */
+  public async insertPriceListVersion(
+    db: DbHandle,
+    input: { priceListId: string; effectiveFrom: string; notes: string | null }
+  ): Promise<PriceListVersionRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      price_list_id: string;
+      version_no: number;
+      effective_from: string;
+      effective_to: string | null;
+      status: string;
+      notes: string | null;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO svc.price_list_versions
+         (tenant_id, price_list_id, version_no, effective_from, status, notes, created_by)
+       SELECT $1, $2, COALESCE(MAX(v.version_no), 0) + 1, $3::date, 'draft', $4, $5
+         FROM svc.price_list_versions v
+        WHERE v.tenant_id = $1 AND v.price_list_id = $2
+       RETURNING id, price_list_id, version_no, effective_from::text AS effective_from,
+                 effective_to::text AS effective_to, status, notes, record_version`,
+      [
+        context.principal.tenantId,
+        input.priceListId,
+        input.effectiveFrom,
+        input.notes,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('pricing: version insert returned no row');
+    return {
+      id: row.id,
+      priceListId: row.price_list_id,
+      versionNo: row.version_no,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
+      status: row.status,
+      notes: row.notes,
+      recordVersion: row.record_version,
+    };
+  }
+
+  public async findPriceListVersion(
+    db: DbHandle,
+    versionId: string
+  ): Promise<PriceListVersionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      price_list_id: string;
+      version_no: number;
+      effective_from: string;
+      effective_to: string | null;
+      status: string;
+      notes: string | null;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, price_list_id, version_no, effective_from::text AS effective_from,
+              effective_to::text AS effective_to, status, notes, record_version
+         FROM svc.price_list_versions
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, versionId]
+    );
+    return row
+      ? {
+          id: row.id,
+          priceListId: row.price_list_id,
+          versionNo: row.version_no,
+          effectiveFrom: row.effective_from,
+          effectiveTo: row.effective_to,
+          status: row.status,
+          notes: row.notes,
+          recordVersion: row.record_version,
+        }
+      : null;
+  }
+
+  /**
+   * Records one price rule on a DRAFT version.
+   *
+   * `amount` is bound and cast to `numeric(18,4)` — the column's own precision and
+   * scale — so the stored figure is exactly what the caller sent, never a value
+   * that passed through a JavaScript double.
+   *
+   * `svc.guard_price_rule_parent_frozen` refuses this on a published or archived
+   * parent, which is what makes a published version's prices immutable.
+   */
+  public async insertPriceRule(
+    db: DbHandle,
+    input: {
+      priceListVersionId: string;
+      serviceId: string;
+      companyId: string | null;
+      branchId: string | null;
+      customerClass: string | null;
+      amount: string;
+      taxClassId: string | null;
+      priority: number;
+    }
+  ): Promise<{ id: string; amount: string; recordVersion: number }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string; amount: string; record_version: number }>(
+      db,
+      `INSERT INTO svc.price_rules
+         (tenant_id, price_list_version_id, service_id, company_id, branch_id, customer_class,
+          amount, tax_class_id, priority, status, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::numeric(18,4),$8,$9,'active',$10)
+       RETURNING id, amount::text AS amount, record_version`,
+      [
+        context.principal.tenantId,
+        input.priceListVersionId,
+        input.serviceId,
+        input.companyId,
+        input.branchId,
+        input.customerClass,
+        input.amount,
+        input.taxClassId,
+        input.priority,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('pricing: price-rule insert returned no row');
+    return { id: row.id, amount: row.amount, recordVersion: row.record_version };
+  }
+
+  /** How many active rules a version carries — publication refuses an empty one. */
+  public async countPriceRules(db: DbHandle, versionId: string): Promise<number> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ rules: string }>(
+      db,
+      `SELECT count(*)::text AS rules FROM svc.price_rules
+        WHERE tenant_id = $1 AND price_list_version_id = $2
+          AND status = 'active' AND deleted_at IS NULL`,
+      [context.principal.tenantId, versionId]
+    );
+    return row ? Number.parseInt(row.rules, 10) : 0;
+  }
+
+  /**
+   * Publishes a version through `svc.publish_price_list_version`.
+   *
+   * The function locks the price list, refuses a non-draft version, refuses an
+   * `effective_from` at or before the currently open published version's, closes
+   * that version's `effective_to` at the new date, and publishes. Forward-only
+   * succession and the gist EXCLUDE backstop are therefore the database's, and
+   * this method does not restate either.
+   */
+  public async publishPriceListVersion(
+    db: DbHandle,
+    input: { priceListId: string; versionId: string; effectiveFrom: string }
+  ): Promise<void> {
+    await this.run(db, `SELECT svc.publish_price_list_version($1, $2, $3::date)`, [
+      input.priceListId,
+      input.versionId,
+      input.effectiveFrom,
+    ]);
   }
 
   // The caller's approval CEILING is deliberately not read here.

@@ -34,6 +34,7 @@ import { iamModule } from '@/modules/iam';
 import { PricingRepository } from './data/pricing-repository';
 import { PriceResolutionService } from './application/price-resolution-service';
 import { DiscountAuthorizationService } from './application/discount-authorization-service';
+import { PriceListService } from './application/price-list-service';
 
 export type {
   ApprovalPolicyRow,
@@ -45,6 +46,13 @@ export type {
 } from './data/pricing-repository';
 
 export type { PriceQuery, ResolvedPrice } from './application/price-resolution-service';
+export type {
+  CreatePriceListInput,
+  PriceListVersionView,
+  PriceListView,
+  PriceRuleView,
+  RecordPriceRuleInput,
+} from './application/price-list-service';
 export type {
   ApprovalCeilingReader,
   DiscountAuthorization,
@@ -96,6 +104,7 @@ export const pricingModule = composeModule({
     const repository = new PricingRepository();
     return {
       prices: new PriceResolutionService(repository),
+      priceLists: new PriceListService(repository),
       // The ceiling reader is the iam module's own service, injected rather than
       // reached into: `DiscountAuthorizationService` depends on the narrow
       // `ApprovalCeilingReader` port, so it can be tested without iam and cannot

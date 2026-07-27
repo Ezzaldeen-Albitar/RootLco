@@ -532,7 +532,7 @@ export class QuotationDecisionService {
       eventType: 'quotation.item-decided',
       aggregateId: item.id,
       aggregateVersion: item.recordVersion,
-      producer: 'quo.quotation-decision-service',
+      producer: 'quotation.quotation-decision-service',
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       // No amounts and no evidence: a consumer that may see the money reads the
@@ -609,7 +609,7 @@ export class QuotationDecisionService {
       eventType: outcome === 'accepted' ? 'quotation.accepted' : 'quotation.rejected',
       aggregateId: quotation.id,
       aggregateVersion: next,
-      producer: 'quo.quotation-decision-service',
+      producer: 'quotation.quotation-decision-service',
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       payload: {

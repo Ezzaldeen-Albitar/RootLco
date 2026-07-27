@@ -1365,6 +1365,36 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant', 'isolation'],
     note: 'keyset page of the catalog ordered by (service_code, id), a total order backed by uq_services_code so a page is stable when two services share a name; returns NO price, because resolution depends on company/branch/class/date and is gated on svc.price.read — bolting one on would leak the price book to every catalog reader; availableAtBranchId is a scope TARGET, authorized before it is used, so the difference between an empty and a non-empty page cannot be used to probe which branches stock a service (isolation) — without that the declared branch scope would be inert (P1-18-A-01); a tenant-B service never appears (cross-tenant); an unknown parameter, a bad cursor, an oversized page and a timezone-carrying effectiveOn are refused (denial)',
   },
+  'svc.price-list-list': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded tenant read; svc.price_lists carries no company_id or branch_id so a list is tenant-wide reference data and there is no branch to target — what makes it privileged is svc.price.read, which is medium risk because a price list exposes what the business charges every segment; a holder of svc.service.read alone is refused (denial) and a tenant-B list never appears (cross-tenant)',
+  },
+  'svc.price-list-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'currency_code is frozen by tg_price_lists_immutable from this moment, so the code supplied here denominates every amount ever attached and the audit record captures it; validated as an ISO-4217 SHAPE only, because the platform ships no currency table and no jurisdiction default — no currency is hard-coded; svc.price.read is not sufficient (denial); a duplicate price_list_code collides on uq_price_lists_code',
+  },
+  'svc.price-list-version-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'version_no is MAX+1 computed under the price list’s FOR UPDATE lock with uq_price_list_versions_no as the backstop; effectiveFrom here is PROVISIONAL and svc.publish_price_list_version overwrites it, which is why forward-only succession is the database’s decision and not a value a caller can pre-set; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.price-rule-record': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit'],
+    note: 'the amount crosses as a decimal STRING and is bound with a ::numeric(18,4) cast, so the stored figure is exactly what the caller sent and never a value that passed through a double — an over-scale amount, a negative one and exponential notation are all refused (denial); svc.guard_price_rule_parent_frozen refuses a rule on a published parent, which is what makes published prices immutable, so there is deliberately no update or delete route; a tax class on a rule that is not company-scoped is refused, mirroring ck_price_rules_tax_needs_company',
+  },
+  'svc.price-list-version-publish': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version', 'concurrency'],
+    note: 'a SECOND permission (svc.price.publish) because drafting a price is not making it real, and publication is effectively irreversible — the freeze guard allows only published→archived; svc.publish_price_list_version closes the currently open published version at the new effective_from and refuses a date at or before its start, so succession is the database’s; the one precondition the function does NOT enforce is asserted here — a version with no active rules must not be published, or every later quotation line fails far away with what looks like missing data; a forced concurrent publication leaves exactly one published version and one event',
+  },
+  'svc.price-resolve': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'companyId and branchId are REQUIRED and are the authorizationTarget, so scope:branch is real rather than inert — a caller granted svc.price.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (isolation, P1-18-A-01); three answers are refusals rather than defaults, each with its own message: no configured price is not zero, a tax class with no effective rate is not an untaxed line, and a rule-level specificity+priority tie is structurally IMPOSSIBLE while uq_price_rules_signature exists (NULLS NOT DISTINCT, and a specificity score determines which columns are non-null, so a tie implies an identical signature) - the test asserts that structural guarantee directly rather than pretending the defensive ERR-CON-001 branch has a positive case',
+  },
 };
 
 // ---------------------------------------------------------------------------

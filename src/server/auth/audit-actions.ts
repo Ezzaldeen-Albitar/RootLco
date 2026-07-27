@@ -868,6 +868,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A price list was created. Financial because its currency_code is immutable from this moment and every amount later attached to it is denominated in that currency.',
   },
   {
+    code: 'svc.price_list_version.created',
+    class: 'privileged',
+    entityType: 'svc.price_list_version',
+    description:
+      'A draft price-list version was created. Not `financial`: a draft is not yet a price anyone is charged against, and its effective_from is provisional until svc.publish_price_list_version overwrites it.',
+  },
+  {
+    code: 'svc.price_rule.recorded',
+    class: 'financial',
+    entityType: 'svc.price_rules',
+    description:
+      'A price rule was recorded on a draft price-list version. Financial because the amount is the figure the tenant will charge once the version is published, and svc.guard_price_rule_parent_frozen makes it immutable at that point.',
+  },
+  {
     code: 'svc.price_list_version.published',
     class: 'financial',
     entityType: 'svc.price_list_version',

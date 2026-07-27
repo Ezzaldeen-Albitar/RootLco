@@ -3,6 +3,21 @@
 > Single source of truth for resuming P1-20. Update it before any long operation
 > and after every wave.
 
+## Continuous Execution Policy
+
+- A coherent pushed checkpoint is **not** a stopping point.
+- An intermediate status report is **not** required.
+- Context that still has execution capacity must be used to continue implementation.
+- Do **not** stop to tell the user that several sessions may be required.
+- Do **not** estimate how many sessions remain.
+- Continue automatically through all remaining P1-20 work.
+- Persist findings and progress in repository evidence files.
+- Keep user-facing output silent or minimal during execution.
+- Stop only for a genuine external blocker or final official phase closure.
+
+This policy supersedes any earlier wording in this file that encouraged an
+intermediate handoff.
+
 ## Protected baseline (Wave 0 — verified, not assumed)
 
 | Key                             | Value                                                                                                                            |

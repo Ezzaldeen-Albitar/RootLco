@@ -15,9 +15,10 @@
  * round-trips would let the answer change between them.
  */
 import type { DbHandle } from '@/server/db/transaction';
-import type { Page, PageRequest } from '@/server/db/pagination';
+import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { SERVICE_ORDER } from '../data/service-catalog-repository';
 import type {
   BranchAvailabilityRow,
   LaborTimeRow,
@@ -95,9 +96,14 @@ export class ServiceCatalogService {
   public async list(
     db: DbHandle,
     filter: ServiceListFilter,
-    request: PageRequest,
+    page: { cursor?: string | undefined; limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<ServiceView>> {
+    // The page request is built HERE, not in the handler: B4 forbids a Route
+    // Handler importing `@/server/db/pagination`, and the boundary is right — a
+    // handler that can build a keyset request can also decode a cursor, which is
+    // the data layer's business. The handler passes the validated primitives.
+    const request = pageRequest(SERVICE_ORDER, page);
     if (filter.availableAtBranchId !== undefined) {
       await authorizeScope({ branchId: filter.availableAtBranchId });
     }
@@ -109,8 +115,8 @@ export class ServiceCatalogService {
     // fails closed on an empty target whatever the declared scope is — the P1-19
     // hardening that closed P1-18-A-01 — so passing one would refuse every
     // unfiltered listing, including for an unrestricted principal.
-    const page = await this.repository.listServices(db, filter, request);
-    return { ...page, items: page.items.map(toServiceView) };
+    const result = await this.repository.listServices(db, filter, request);
+    return { ...result, items: result.items.map(toServiceView) };
   }
 
   /** Reads one service, or `ERR-RES-001` when it is not visible to the caller. */
