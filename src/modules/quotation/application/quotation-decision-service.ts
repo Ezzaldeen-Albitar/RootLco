@@ -139,7 +139,7 @@ export class QuotationDecisionService {
       throw new AppFailure('ERR-RES-001', { message: `Revision ${revision.id} is not visible` });
     }
 
-    this.assertDecidable(quotation, locked, input.presentedRevisionId);
+    await this.assertDecidable(db, quotation, locked, input.presentedRevisionId);
     this.assertParty(quotation, input.decidingPartyRef ?? null);
 
     const existing = await this.repository.findDecisionForItem(db, item.id);
@@ -219,7 +219,7 @@ export class QuotationDecisionService {
       throw new AppFailure('ERR-RES-001', { message: `Revision ${revisionId} is not visible` });
     }
 
-    this.assertDecidable(quotation, locked, input.presentedRevisionId);
+    await this.assertDecidable(db, quotation, locked, input.presentedRevisionId);
     this.assertParty(quotation, input.decidingPartyRef ?? null);
 
     const items = await this.repository.listItems(db, locked.id);
@@ -373,11 +373,12 @@ export class QuotationDecisionService {
    * would approve revision 3 while believing it approved revision 2. Approval of
    * revision N must never approve revision N+1.
    */
-  private assertDecidable(
+  private async assertDecidable(
+    db: DbHandle,
     quotation: QuotationRow,
     revision: RevisionRow,
     presentedRevisionId: string
-  ): void {
+  ): Promise<void> {
     if (presentedRevisionId !== revision.id) {
       throw new AppFailure('ERR-CON-001', {
         message:
@@ -395,7 +396,22 @@ export class QuotationDecisionService {
         message: `Revision ${revision.revisionNumber} is ${revision.status}; only an issued revision may be decided`,
       });
     }
-    if (hasExpired(revision.expiresAt, new Date())) {
+    /**
+     * The DATABASE clock, not the process clock.
+     *
+     * This is the only expiry gate on the two shipped decision routes, so it decides
+     * whether a lapsed quotation can still be accepted. `new Date()` made that decision
+     * on the application container's clock: a container running behind the database would
+     * accept a decision on a revision the database considers expired, and the acceptance
+     * would then be indistinguishable from a valid one. An audit could not even detect it,
+     * because nothing records which clock was consulted.
+     *
+     * `serverNow()` reads `now()`, which is the transaction's start time, so this gate and
+     * every `expires_at <= now()` predicate in the same transaction agree by construction.
+     * The sweep and the port were moved to it earlier; this path was missed, and the
+     * evidence claiming "the database clock on both sides" was wrong until now.
+     */
+    if (hasExpired(revision.expiresAt, await this.repository.serverNow(db))) {
       throw new AppFailure('ERR-TRN-001', {
         message: 'This quotation revision has expired and can no longer be decided',
       });
