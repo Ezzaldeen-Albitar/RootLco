@@ -36,7 +36,7 @@ labels below carry their real `exit=` value.
 ### Results
 
 | Proof                                         | Result                                                                                                                                              |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Database empty before anything ran            | **green** — 0 tables outside the system catalogs                                                                                                    |
 | PostgreSQL version                            | **17.10**                                                                                                                                           |
 | All 119 migrations apply to an empty database | **green** (`exit=0`) — "All 119 migrations applied cleanly."                                                                                        |
@@ -49,9 +49,9 @@ labels below carry their real `exit=` value.
 | `iam.permissions`                             | **96** — 93 at the P1-19 baseline plus this phase's three read codes                                                                                |
 | Schema inventory                              | **green** (`exit=0`)                                                                                                                                |
 | Structural review                             | **PASS** — 537 FKs all validated, no runtime-reachable destructive cascade, FK index coverage complete, no duplicate indexes, zero dictionary drift |
-| Full **unit** suite                           | **903 passed**, 42 files                                                                                                                |
-| Full **backend** suite                        | **1264 passed**, 56 files                                                                                                          |
-| Full **database** suite                       | **1610 passed**, 136 files                                                                                                        |
+| Full **unit** suite                           | **903 passed**, 42 files                                                                                                                            |
+| Full **backend** suite                        | **1264 passed**, 56 files                                                                                                                           |
+| Full **database** suite                       | **1610 passed**, 136 files                                                                                                                          |
 | `schema_hash` **before** the suites           | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c`                                                                                  |
 | `schema_hash` **after** all three suites ran  | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` — **unchanged**                                                                  |
 | Worktree unchanged by the run                 | **green** — `git status --porcelain` empty at both ends                                                                                             |
@@ -62,19 +62,19 @@ labels below carry their real `exit=` value.
 point: **P1-20 adds no migration, so a fresh database built from the committed migrations
 must be indistinguishable from the one P1-19 gated.**
 
-| Measure                 | Frozen baseline | Clean room |
-| ----------------------- | --------------- | ---------- |
-| Schemas                 | 17              | **17**     |
-| Tables                  | 242             | **242**    |
-| Columns                 | 3562            | **3562**   |
-| Functions               | 212             | **212**    |
-| Triggers                | 541             | **541**    |
-| Policies                | 631             | **631**    |
-| Indexes                 | 999             | **999**    |
-| Constraints             | 1845            | **1845**   |
-| Views                   | 0               | **0**      |
-| `SECURITY DEFINER`      | 0               | **0**      |
-| RLS tables not forced   | 0               | **0**      |
+| Measure               | Frozen baseline | Clean room |
+| --------------------- | --------------- | ---------- |
+| Schemas               | 17              | **17**     |
+| Tables                | 242             | **242**    |
+| Columns               | 3562            | **3562**   |
+| Functions             | 212             | **212**    |
+| Triggers              | 541             | **541**    |
+| Policies              | 631             | **631**    |
+| Indexes               | 999             | **999**    |
+| Constraints           | 1845            | **1845**   |
+| Views                 | 0               | **0**      |
+| `SECURITY DEFINER`    | 0               | **0**      |
+| RLS tables not forced | 0               | **0**      |
 
 Per-schema tables: `org:17 iam:17 shared:29 crm:21 veh:23 apt:6 rec:23 wo:15 tech:9
 dia:13 qms:7 svc:11 quo:6 inv:18 sal:19 wty:5 rpt:3`.
@@ -91,7 +91,6 @@ did not, and re-running was cheaper than gating on evidence that did not match.
 ---
 
 ## Run 1 — superseded, preserved as taken
-
 
 **SHA under test: `17e59ae51395bff064677abbfe9e15eebf716383`**, branch
 `feature/p1-20-service-catalog-pricing-quotation-backend`, base `develop` =

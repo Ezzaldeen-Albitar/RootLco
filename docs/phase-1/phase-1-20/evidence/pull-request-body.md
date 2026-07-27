@@ -5,7 +5,7 @@
 > turned out wrong, and that is not repeated here.
 >
 > **Note on the committed copy.** `docs/phase-1/phase-1-20/evidence/pull-request-body.md` and
-> `clean-room-validation.md` in this branch are the *pre-final* drafts: they still read 13
+> `clean-room-validation.md` in this branch are the _pre-final_ drafts: they still read 13
 > operations, OpenAPI 152/181 and unit 901 / backend 1219, which were the true figures before
 > the service-catalog mutation surface was built. This description is the corrected and
 > authoritative text. Correcting those two files in this branch would move the head off
@@ -15,24 +15,24 @@
 
 ## Identity
 
-| Item                    | Value                                                              |
-| ----------------------- | ------------------------------------------------------------------ |
-| Base branch             | `develop`                                                          |
-| `P1_20_BASE_SHA`        | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0`                         |
-| Final reviewed head     | `e7462536d183e410ff2db9792c7a6090df7f4698`                         |
-| Hosted CI SHA           | `e7462536d183e410ff2db9792c7a6090df7f4698` — identical to the head |
-| Clean-room SHA          | `e7462536d183e410ff2db9792c7a6090df7f4698` — identical to the head |
-| `origin/main`           | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched             |
+| Item                | Value                                                              |
+| ------------------- | ------------------------------------------------------------------ |
+| Base branch         | `develop`                                                          |
+| `P1_20_BASE_SHA`    | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0`                         |
+| Final reviewed head | `e7462536d183e410ff2db9792c7a6090df7f4698`                         |
+| Hosted CI SHA       | `e7462536d183e410ff2db9792c7a6090df7f4698` — identical to the head |
+| Clean-room SHA      | `e7462536d183e410ff2db9792c7a6090df7f4698` — identical to the head |
+| `origin/main`       | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched             |
 
 ## Prerequisite — P1-19 verified closed
 
-| Item                     | Value                                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| P1-19 final gate SHA     | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0`                                                                                        |
-| Verified containment     | `d8278c7` (feature merge), `da0b8b2` (reviewed feature), `600ca9c` (reviewed gate) — all three ancestors of `origin/develop`      |
-| `origin/develop` parents | `d8278c7` + `600ca9c` — unchanged since P1-19 closed                                                                             |
-| P1-19 decision           | `Go — P1-19 Work Order, Diagnostics, and Technician Backend Gate Passed`                                                         |
-| P1-19 inventory at this head | **green — 58 operations**, re-verified after this phase moved the platform registry total                                     |
+| Item                         | Value                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| P1-19 final gate SHA         | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0`                                                                                   |
+| Verified containment         | `d8278c7` (feature merge), `da0b8b2` (reviewed feature), `600ca9c` (reviewed gate) — all three ancestors of `origin/develop` |
+| `origin/develop` parents     | `d8278c7` + `600ca9c` — unchanged since P1-19 closed                                                                         |
+| P1-19 decision               | `Go — P1-19 Work Order, Diagnostics, and Technician Backend Gate Passed`                                                     |
+| P1-19 inventory at this head | **green — 58 operations**, re-verified after this phase moved the platform registry total                                    |
 
 ## Scope of this PR
 
@@ -52,7 +52,7 @@ commercial link into the P1-19 approval path.
 **No migration, and none was authorized.**
 
 | Proof                     | Result                                                                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Migration count           | **119**, unchanged                                                                                                                                |
 | Migration 120             | **absent**                                                                                                                                        |
 | Migrations 1–119 modified | **none** — `git diff --name-status 0d86a19..e746253 -- supabase/migrations/` is empty                                                             |
@@ -87,34 +87,34 @@ asserts those exist. Mutation-verified both ways: renaming `findAvailability` fa
 
 ## Operations, contract parity and coverage
 
-| Item                                              | Value                                                                   |
-| ------------------------------------------------- | ----------------------------------------------------------------------- |
-| Registered P1-20 operations                       | **17**                                                                  |
-| At genuine operation depth                        | **17/17**                                                               |
-| Pending / unit-only / metadata-only               | **0 / 0 / 0**                                                           |
-| Invocation-only / unreferenced                    | **0 / 0**                                                               |
-| OpenAPI                                           | **155 paths / 185 operations** (baseline 140 / 168)                     |
-| P1-20 operations in OpenAPI                       | **17** — parity verified in both directions, scopes matching the routes |
+| Item                                | Value                                                                   |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| Registered P1-20 operations         | **17**                                                                  |
+| At genuine operation depth          | **17/17**                                                               |
+| Pending / unit-only / metadata-only | **0 / 0 / 0**                                                           |
+| Invocation-only / unreferenced      | **0 / 0**                                                               |
+| OpenAPI                             | **155 paths / 185 operations** (baseline 140 / 168)                     |
+| P1-20 operations in OpenAPI         | **17** — parity verified in both directions, scopes matching the routes |
 
-| Operation                        | Method | Path                                                             | Permissions                                  | Scope       |
-| -------------------------------- | ------ | ---------------------------------------------------------------- | -------------------------------------------- | ----------- |
-| `svc.service-list`               | GET    | `/services`                                                      | `svc.service.read`                           | tenant      |
-| `svc.service-create`             | POST   | `/services`                                                      | `svc.service.manage`                         | tenant¹     |
-| `svc.service-update`             | PATCH  | `/services/{serviceId}`                                          | `svc.service.manage`                         | tenant¹     |
-| `svc.service-version-publish`    | POST   | `/services/{serviceId}/versions/{versionId}/publication`         | `svc.service.manage`                         | tenant¹     |
-| `svc.branch-availability-set`    | POST   | `/services/{serviceId}/branch-availability`                      | `svc.service.manage`                         | **branch**  |
-| `svc.price-list-list`            | GET    | `/price-lists`                                                   | `svc.price.read`                             | tenant      |
-| `svc.price-list-create`          | POST   | `/price-lists`                                                   | `svc.price.manage`                           | tenant      |
-| `svc.price-list-version-create`  | POST   | `/price-lists/{priceListId}/versions`                            | `svc.price.manage`                           | tenant      |
-| `svc.price-rule-record`          | POST   | `/price-lists/{priceListId}/versions/{versionId}/rules`          | `svc.price.manage`                           | **branch**  |
-| `svc.price-list-version-publish` | POST   | `/price-lists/{priceListId}/versions/{versionId}/publication`    | `svc.price.publish`                          | tenant¹     |
-| `svc.price-resolve`              | GET    | `/prices`                                                        | `svc.price.read`                             | **branch**  |
-| `quo.quotation-create`           | POST   | `/quotations`                                                    | `quo.quotation.manage`, `wo.work_order.read` | **branch**  |
-| `quo.quotation-detail`           | GET    | `/quotations/{quotationId}`                                      | `quo.quotation.read`                         | **branch**  |
-| `quo.quotation-revision-create`  | POST   | `/quotations/{quotationId}/revisions`                            | `quo.quotation.manage`                       | **branch**  |
-| `quo.quotation-issue`            | POST   | `/quotations/{quotationId}/issue`                                | `quo.quotation.manage`                       | **branch**  |
-| `quo.quotation-item-decide`      | POST   | `/quotation-items/{quotationItemId}/decisions`                   | `quo.decision.record`                        | **branch**  |
-| `quo.quotation-revision-decide`  | POST   | `/quotation-revisions/{revisionId}/decisions`                    | `quo.decision.record`                        | **branch**  |
+| Operation                        | Method | Path                                                          | Permissions                                  | Scope      |
+| -------------------------------- | ------ | ------------------------------------------------------------- | -------------------------------------------- | ---------- |
+| `svc.service-list`               | GET    | `/services`                                                   | `svc.service.read`                           | tenant     |
+| `svc.service-create`             | POST   | `/services`                                                   | `svc.service.manage`                         | tenant¹    |
+| `svc.service-update`             | PATCH  | `/services/{serviceId}`                                       | `svc.service.manage`                         | tenant¹    |
+| `svc.service-version-publish`    | POST   | `/services/{serviceId}/versions/{versionId}/publication`      | `svc.service.manage`                         | tenant¹    |
+| `svc.branch-availability-set`    | POST   | `/services/{serviceId}/branch-availability`                   | `svc.service.manage`                         | **branch** |
+| `svc.price-list-list`            | GET    | `/price-lists`                                                | `svc.price.read`                             | tenant     |
+| `svc.price-list-create`          | POST   | `/price-lists`                                                | `svc.price.manage`                           | tenant     |
+| `svc.price-list-version-create`  | POST   | `/price-lists/{priceListId}/versions`                         | `svc.price.manage`                           | tenant     |
+| `svc.price-rule-record`          | POST   | `/price-lists/{priceListId}/versions/{versionId}/rules`       | `svc.price.manage`                           | **branch** |
+| `svc.price-list-version-publish` | POST   | `/price-lists/{priceListId}/versions/{versionId}/publication` | `svc.price.publish`                          | tenant¹    |
+| `svc.price-resolve`              | GET    | `/prices`                                                     | `svc.price.read`                             | **branch** |
+| `quo.quotation-create`           | POST   | `/quotations`                                                 | `quo.quotation.manage`, `wo.work_order.read` | **branch** |
+| `quo.quotation-detail`           | GET    | `/quotations/{quotationId}`                                   | `quo.quotation.read`                         | **branch** |
+| `quo.quotation-revision-create`  | POST   | `/quotations/{quotationId}/revisions`                         | `quo.quotation.manage`                       | **branch** |
+| `quo.quotation-issue`            | POST   | `/quotations/{quotationId}/issue`                             | `quo.quotation.manage`                       | **branch** |
+| `quo.quotation-item-decide`      | POST   | `/quotation-items/{quotationItemId}/decisions`                | `quo.decision.record`                        | **branch** |
+| `quo.quotation-revision-decide`  | POST   | `/quotation-revisions/{revisionId}/decisions`                 | `quo.decision.record`                        | **branch** |
 
 ¹ `tenant` in the registry because a service definition and a price list carry no company or
 branch, **plus an explicit tenant-wide authority check in the handler** — a `scope: 'tenant'`
@@ -126,7 +126,7 @@ Built late in the phase, after an independent audit read the protected contract 
 gap. `docs/phase-1/phase-1-10/p1-20-backend-contract.md` lists "Manage a service catalog"
 (`svc.services` / `svc.service_categories` INSERT/UPDATE) and "Publish a service version"
 (`svc.publish_service_version`) as P1-20 deliverables. The phase had shipped the READ surface
-only, and had recorded the three orphaned audit actions as an *accepted limitation*
+only, and had recorded the three orphaned audit actions as an _accepted limitation_
 (`P1-20-A-04`) on the false premise that the contract excluded mutation.
 
 That limitation is **withdrawn**, not re-worded. Four operations now implement the surface, all
@@ -163,12 +163,12 @@ and the validator are the same thing and cannot disagree.
 | `numeric` never becomes a float       | every money column selected `::text`; a unit test pins `pg`'s OID-1700 parser, and a second records that `numeric[]` IS parsed to floats and asserts none is selected |
 | `Σ round(baseᵢ,4) = round(Σ baseᵢ,4)` | not an identity — a line whose `unit × qty` is inexact at scale 4 is refused naming the field, instead of failing later inside `quo.issue_revision` as a 500          |
 | Splitting defeats neither gate        | the document is authorized through the same `authorize` call a single line of that size would take — same policy, same ceiling, same maker/approver rule              |
-| Approval limits respect grant scope   | a role's ceiling counts only in a company its grant reaches                                                                                                            |
-| No FX, ever                           | `Money` exposes no `convert`/`add`/`multiply`, asserted by absence; a cross-currency comparison is a deterministic refusal                                             |
-| Deterministic selection               | `svc.resolve_price` specificity then priority; a tie is structurally impossible under `uq_price_rules_signature`                                                       |
-| Issued revisions immutable            | proven by republishing the price list at five times the amount after issue and asserting the captured columns do not move                                              |
-| Accepted quotations never expire      | the sweep tests the PARENT state, because a revision stays `issued` after every line is approved                                                                       |
-| Standard labour time                  | protected `numeric(10,2)` minutes; resolved from the published service version, never recomputed client-side                                                            |
+| Approval limits respect grant scope   | a role's ceiling counts only in a company its grant reaches                                                                                                           |
+| No FX, ever                           | `Money` exposes no `convert`/`add`/`multiply`, asserted by absence; a cross-currency comparison is a deterministic refusal                                            |
+| Deterministic selection               | `svc.resolve_price` specificity then priority; a tie is structurally impossible under `uq_price_rules_signature`                                                      |
+| Issued revisions immutable            | proven by republishing the price list at five times the amount after issue and asserting the captured columns do not move                                             |
+| Accepted quotations never expire      | the sweep tests the PARENT state, because a revision stays `issued` after every line is approved                                                                      |
+| Standard labour time                  | protected `numeric(10,2)` minutes; resolved from the published service version, never recomputed client-side                                                          |
 
 ## Authorization and isolation
 
@@ -218,13 +218,13 @@ Rollback is proved by failures forced **after** writes, never by pre-check refus
 
 ## Reviews and audit
 
-| Pass                      | Scope                            | Outcome                                                                        |
-| ------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
-| 1–4                       | the feature branch               | 5 Highs, 9 Mediums, 7 Lows — all closed                                        |
-| 5                         | the remediation commit `0096560` | 13 findings (0C / 2H / 5M / 6L) — all closed                                   |
-| Hostile 100/100 audit     | full diff `0d86a19..final`       | **101 claimed · 77 CONFIRMED · 24 overstated or refuted**                      |
-| Audit synthesis           | consolidation of the confirmed set | **39 distinct findings — 6 High, 11 Medium, 22 Low**; all 6 Highs closed      |
-| Post-fix verification     | the fixes themselves             | 2 further Highs found against my own fix — both closed                         |
+| Pass                  | Scope                              | Outcome                                                                  |
+| --------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| 1–4                   | the feature branch                 | 5 Highs, 9 Mediums, 7 Lows — all closed                                  |
+| 5                     | the remediation commit `0096560`   | 13 findings (0C / 2H / 5M / 6L) — all closed                             |
+| Hostile 100/100 audit | full diff `0d86a19..final`         | **101 claimed · 77 CONFIRMED · 24 overstated or refuted**                |
+| Audit synthesis       | consolidation of the confirmed set | **39 distinct findings — 6 High, 11 Medium, 22 Low**; all 6 Highs closed |
+| Post-fix verification | the fixes themselves               | 2 further Highs found against my own fix — both closed                   |
 
 **Unresolved Critical: 0. Unresolved High: 0.**
 

@@ -33,57 +33,57 @@ It governs no database change. **P1-20 adds no migration.** It does change one s
 
 ## 2. Verified state at decision
 
-| Anchor                   | Value                                                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `origin/develop`         | `db7ef97a4c1e090911e22ddac5936f725470f084` (PR #84 merge)                                                                 |
-| Merge parents            | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698`                                   |
-| Merge tree               | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — **byte-identical** to `e746253^{tree}`; `git diff` merge↔head is empty       |
-| Reviewed feature SHA     | `e7462536d183e410ff2db9792c7a6090df7f4698`                                                                                |
-| Clean-room SHA           | `e7462536d183e410ff2db9792c7a6090df7f4698` — the reviewed head itself                                                     |
-| Commits entering         | 30 — 29 feature commits plus the merge; **no commit reachable from `develop` that is not reachable from `e746253`**       |
-| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched; P1-20 is **not** on `main`                                        |
-| Authoritative CI         | Push run **#267** (`30296722364`) — event `push`, branch `develop`, SHA `db7ef97`, **Success 4/4, 6m 50s**                 |
-| Merged                   | PR #84 (feature), PR #85 (gate record)                                                                           |
-| Diff                     | 77 files, +25,384 / −413 — src 41, docs 19, tests 12, scripts 2, supabase 1, `package.json`, `ci.yml`                     |
-| Migrations               | **119** — none added, none modified, no `120`                                                                             |
-| Only `supabase/` change  | `seeds/04_iam_permission_catalog.sql` (+12 / −1) — 3 permission codes, 93 → **96**                                        |
+| Anchor                   | Value                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `origin/develop`         | `db7ef97a4c1e090911e22ddac5936f725470f084` (PR #84 merge)                                                                    |
+| Merge parents            | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698`                                      |
+| Merge tree               | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — **byte-identical** to `e746253^{tree}`; `git diff` merge↔head is empty          |
+| Reviewed feature SHA     | `e7462536d183e410ff2db9792c7a6090df7f4698`                                                                                   |
+| Clean-room SHA           | `e7462536d183e410ff2db9792c7a6090df7f4698` — the reviewed head itself                                                        |
+| Commits entering         | 30 — 29 feature commits plus the merge; **no commit reachable from `develop` that is not reachable from `e746253`**          |
+| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched; P1-20 is **not** on `main`                                           |
+| Authoritative CI         | Push run **#267** (`30296722364`) — event `push`, branch `develop`, SHA `db7ef97`, **Success 4/4, 6m 50s**                   |
+| Merged                   | PR #84 (feature), PR #85 (gate record)                                                                                       |
+| Diff                     | 77 files, +25,384 / −413 — src 41, docs 19, tests 12, scripts 2, supabase 1, `package.json`, `ci.yml`                        |
+| Migrations               | **119** — none added, none modified, no `120`                                                                                |
+| Only `supabase/` change  | `seeds/04_iam_permission_catalog.sql` (+12 / −1) — 3 permission codes, 93 → **96**                                           |
 | Clean-room `schema_hash` | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` — byte-identical to the frozen P1-17/P1-18/P1-19 baseline |
-| Test totals              | Unit **903** · Backend **1264** · DB **1610**                                                         |
-| Operations               | **17**, all at operation depth, **0 pending**                                                                             |
-| OpenAPI                  | **155 paths / 185 operations** — exact P1-20 parity in both directions                                                    |
-| Tasks                    | **27 / 27** — BE 14, SEC 4, QA 5, DO 2, DOC 2                                                                             |
+| Test totals              | Unit **903** · Backend **1264** · DB **1610**                                                                                |
+| Operations               | **17**, all at operation depth, **0 pending**                                                                                |
+| OpenAPI                  | **155 paths / 185 operations** — exact P1-20 parity in both directions                                                       |
+| Tasks                    | **27 / 27** — BE 14, SEC 4, QA 5, DO 2, DOC 2                                                                                |
 
 ## 3. Conditions
 
 All 24 conditions verified on `db7ef97a`. Evidence paths are relative to
 `docs/phase-1/phase-1-20/`.
 
-| #   | Condition                                                                                                     | Status  | Verified by                                                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Feature branch based on protected `develop`, merged with a byte-identical tree                                | **Met** | Merge parents `0d86a19` + `e746253`; merge tree `dc644ea5…` equals `e746253^{tree}`; zero-file diff                            |
-| 2   | No migration added or modified; 119 migrations, no migration 120                                              | **Met** | `git diff --name-status 0d86a19 db7ef97 -- supabase/migrations` empty; clean room applies 119 from empty                       |
-| 3   | The one seed change is additive structural reference data and is stated, not hidden                           | **Met** | `evidence/clean-room-validation.md`; `iam.permissions` 93 → **96**; idempotent under `ON CONFLICT (permission_code) DO NOTHING` |
-| 4   | All 27 tasks (BE 14, SEC 4, QA 5, DO 2, DOC 2) delivered and mapped to artifact evidence                       | **Met** | `evidence/task-register.md`; `validate:p1-20-inventory` reconciles all 27 against artifacts, not prose — see §4                |
-| 5   | Every operation registered with permissions, scope, audit class and action                                    | **Met** | Generated `evidence/endpoint-inventory.md` — 17 operations, 8 published events                                                 |
-| 6   | Permission, event, audit-action and error catalogs synchronized and reconciled in CI                          | **Met** | `validate:p1-20-inventory` — code→seed both directions; 3 permissions, 8 events, catalogued audit actions all with producers   |
-| 7   | Operation coverage: 17 registered == 17 operation-depth; 0 pending / invocation-only / unit-only / unreferenced | **Met** | `validate:operation-coverage` on `db7ef97`                                                                                     |
-| 8   | Contract parity: every P1-20 route published in OpenAPI and every published operation guarded                 | **Met** | `validate:openapi` — 155 paths / 185 operations, structurally valid, every operation guarded                                   |
-| 9   | Financial calculation is exact decimal end to end, with no authoritative floating-point path                  | **Met** | `evidence/qa-evidence.md`; `tests/unit/p1-20-decimal.test.ts` pins `pg`'s OID-1700 parser and the `numeric[]` float hazard     |
-| 10  | Tax, discount ordering and four-decimal rounding match the protected CHECK constraints                        | **Met** | The insert writes the constraint expressions themselves, so engine and validator cannot disagree — see §5                      |
-| 11  | Discount authorization enforces both a policy threshold and the actor's own approval ceiling                  | **Met** | `tests/unit/p1-20-discount-authorization.test.ts`; `tests/backend/p1-20-quotation.test.ts`; unparseable threshold fails closed |
-| 12  | Maker/approver separation, and a document-level aggregate cannot be split to evade either gate                | **Met** | The document is authorized through the same `authorize` call a single line of that size would take                            |
-| 13  | Issued quotation revisions are immutable snapshots                                                            | **Met** | Proven by republishing the price list at five times the amount after issue and asserting captured columns do not move          |
-| 14  | Tenant-wide writes require tenant-wide authority; no `scope` declaration is inert                             | **Met** | `evidence/security-review.md`; `callerHoldsPermissionTenantWide` asks the DEPLOYED `iam.has_permission_in_scope` — see §6      |
-| 15  | Cross-branch isolation proved with principals holding the operation's own permission in full                  | **Met** | `evidence/qa-evidence.md`; every case adds a widening grant so a scope-blind check would **allow** the request                 |
-| 16  | Idempotency: every write refuses a missing key; `versionGuarded` writes refuse a wrong `If-Match`             | **Met** | `evidence/qa-evidence.md`; replays asserted, not assumed                                                                       |
-| 17  | Concurrency and rollback proved by failures forced **after** writes, not by pre-check refusals                | **Met** | Raced issue and raced opposite item-decisions via `Promise.all`; three forced post-write failures                             |
-| 18  | Audit and outbox are atomic with the write and deterministic on replay                                        | **Met** | Event keys are row-id-based; a retry collides rather than double-publishing                                                    |
-| 19  | Security review (SEC-001…004), zero Critical and zero High outstanding                                        | **Met** | `evidence/security-review.md`; `evidence/review-dispositions.md`                                                               |
-| 20  | Independent adversarial reviews and a hostile completeness audit resolved                                     | **Met** | `evidence/hostile-audit-confirmed-gaps.md` — 101 claimed / 77 confirmed / 39 findings (6H, 11M, 22L); all Highs closed        |
-| 21  | Required scope was not reclassified as an accepted limitation                                                 | **Met** | `P1-20-A-04` **withdrawn** and `P1-20-G-01` **closed** by building the surface — see §7                                        |
-| 22  | Exact-SHA PostgreSQL 17 clean room from an empty database                                                     | **Met** | `evidence/clean-room-validation.md` — PG 17.10, 119 migrations + seeds twice, `schema_hash a677eb05…` before and after        |
-| 23  | Feature pull request open to `develop`, conflict-free, all hosted checks green on the exact head              | **Met** | PR #84 — 4/4 green on `e746253`, "No conflicts with base branch"                                                              |
-| 24  | Authoritative protected push CI green on the merge SHA, and `origin/main` untouched                           | **Met** | Run **#267** (`30296722364`) — push, `develop`, `db7ef97`, **Success 4/4, 6m 50s**; `origin/main` = `491c4e0`                  |
+| #   | Condition                                                                                                       | Status  | Verified by                                                                                                                     |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Feature branch based on protected `develop`, merged with a byte-identical tree                                  | **Met** | Merge parents `0d86a19` + `e746253`; merge tree `dc644ea5…` equals `e746253^{tree}`; zero-file diff                             |
+| 2   | No migration added or modified; 119 migrations, no migration 120                                                | **Met** | `git diff --name-status 0d86a19 db7ef97 -- supabase/migrations` empty; clean room applies 119 from empty                        |
+| 3   | The one seed change is additive structural reference data and is stated, not hidden                             | **Met** | `evidence/clean-room-validation.md`; `iam.permissions` 93 → **96**; idempotent under `ON CONFLICT (permission_code) DO NOTHING` |
+| 4   | All 27 tasks (BE 14, SEC 4, QA 5, DO 2, DOC 2) delivered and mapped to artifact evidence                        | **Met** | `evidence/task-register.md`; `validate:p1-20-inventory` reconciles all 27 against artifacts, not prose — see §4                 |
+| 5   | Every operation registered with permissions, scope, audit class and action                                      | **Met** | Generated `evidence/endpoint-inventory.md` — 17 operations, 8 published events                                                  |
+| 6   | Permission, event, audit-action and error catalogs synchronized and reconciled in CI                            | **Met** | `validate:p1-20-inventory` — code→seed both directions; 3 permissions, 8 events, catalogued audit actions all with producers    |
+| 7   | Operation coverage: 17 registered == 17 operation-depth; 0 pending / invocation-only / unit-only / unreferenced | **Met** | `validate:operation-coverage` on `db7ef97`                                                                                      |
+| 8   | Contract parity: every P1-20 route published in OpenAPI and every published operation guarded                   | **Met** | `validate:openapi` — 155 paths / 185 operations, structurally valid, every operation guarded                                    |
+| 9   | Financial calculation is exact decimal end to end, with no authoritative floating-point path                    | **Met** | `evidence/qa-evidence.md`; `tests/unit/p1-20-decimal.test.ts` pins `pg`'s OID-1700 parser and the `numeric[]` float hazard      |
+| 10  | Tax, discount ordering and four-decimal rounding match the protected CHECK constraints                          | **Met** | The insert writes the constraint expressions themselves, so engine and validator cannot disagree — see §5                       |
+| 11  | Discount authorization enforces both a policy threshold and the actor's own approval ceiling                    | **Met** | `tests/unit/p1-20-discount-authorization.test.ts`; `tests/backend/p1-20-quotation.test.ts`; unparseable threshold fails closed  |
+| 12  | Maker/approver separation, and a document-level aggregate cannot be split to evade either gate                  | **Met** | The document is authorized through the same `authorize` call a single line of that size would take                              |
+| 13  | Issued quotation revisions are immutable snapshots                                                              | **Met** | Proven by republishing the price list at five times the amount after issue and asserting captured columns do not move           |
+| 14  | Tenant-wide writes require tenant-wide authority; no `scope` declaration is inert                               | **Met** | `evidence/security-review.md`; `callerHoldsPermissionTenantWide` asks the DEPLOYED `iam.has_permission_in_scope` — see §6       |
+| 15  | Cross-branch isolation proved with principals holding the operation's own permission in full                    | **Met** | `evidence/qa-evidence.md`; every case adds a widening grant so a scope-blind check would **allow** the request                  |
+| 16  | Idempotency: every write refuses a missing key; `versionGuarded` writes refuse a wrong `If-Match`               | **Met** | `evidence/qa-evidence.md`; replays asserted, not assumed                                                                        |
+| 17  | Concurrency and rollback proved by failures forced **after** writes, not by pre-check refusals                  | **Met** | Raced issue and raced opposite item-decisions via `Promise.all`; three forced post-write failures                               |
+| 18  | Audit and outbox are atomic with the write and deterministic on replay                                          | **Met** | Event keys are row-id-based; a retry collides rather than double-publishing                                                     |
+| 19  | Security review (SEC-001…004), zero Critical and zero High outstanding                                          | **Met** | `evidence/security-review.md`; `evidence/review-dispositions.md`                                                                |
+| 20  | Independent adversarial reviews and a hostile completeness audit resolved                                       | **Met** | `evidence/hostile-audit-confirmed-gaps.md` — 101 claimed / 77 confirmed / 39 findings (6H, 11M, 22L); all Highs closed          |
+| 21  | Required scope was not reclassified as an accepted limitation                                                   | **Met** | `P1-20-A-04` **withdrawn** and `P1-20-G-01` **closed** by building the surface — see §7                                         |
+| 22  | Exact-SHA PostgreSQL 17 clean room from an empty database                                                       | **Met** | `evidence/clean-room-validation.md` — PG 17.10, 119 migrations + seeds twice, `schema_hash a677eb05…` before and after          |
+| 23  | Feature pull request open to `develop`, conflict-free, all hosted checks green on the exact head                | **Met** | PR #84 — 4/4 green on `e746253`, "No conflicts with base branch"                                                                |
+| 24  | Authoritative protected push CI green on the merge SHA, and `origin/main` untouched                             | **Met** | Run **#267** (`30296722364`) — push, `develop`, `db7ef97`, **Success 4/4, 6m 50s**; `origin/main` = `491c4e0`                   |
 
 ## 4. The task gate took four attempts, and the first three were vacuous
 
@@ -181,12 +181,12 @@ failure in this phase's evidence. It is recorded under its own identifier in
 
 ## 8. Findings disposition
 
-| Review                                    | Raised | Confirmed | Critical | High  | Medium | Low | Outstanding |
-| ----------------------------------------- | ------ | --------- | -------- | ----- | ------ | --- | ----------- |
-| Passes 1–4 (feature branch)               | —      | 21        | 0        | 5     | 9      | 7   | 0           |
-| Pass 5 (remediation commit `0096560`)     | 13     | 13        | 0        | 2     | 5      | 6   | 0           |
-| Hostile 100/100 completeness audit        | 101    | 77        | 0        | **6** | 11     | 22  | 0           |
-| Post-fix verification (of my own fixes)   | —      | 2         | 0        | **2** | 0      | 0   | 0           |
+| Review                                  | Raised | Confirmed | Critical | High  | Medium | Low | Outstanding |
+| --------------------------------------- | ------ | --------- | -------- | ----- | ------ | --- | ----------- |
+| Passes 1–4 (feature branch)             | —      | 21        | 0        | 5     | 9      | 7   | 0           |
+| Pass 5 (remediation commit `0096560`)   | 13     | 13        | 0        | 2     | 5      | 6   | 0           |
+| Hostile 100/100 completeness audit      | 101    | 77        | 0        | **6** | 11     | 22  | 0           |
+| Post-fix verification (of my own fixes) | —      | 2         | 0        | **2** | 0      | 0   | 0           |
 
 **Zero unresolved Critical. Zero unresolved High.**
 
@@ -204,7 +204,7 @@ Two corrections to my own evidence belong in the record:
 
 - **A gate that reports success on an empty requirement set is worse than no gate**,
   because it is cited as evidence. Extending `parseProvidedFlags` to accept `svc|quo`
-  made the coverage gate *look* extended while `derivedRequirements()` returned `[]` for
+  made the coverage gate _look_ extended while `derivedRequirements()` returned `[]` for
   every operation.
 - **A task identifier can only ever live in a comment**, so artifact proofs are the only
   non-vacuous form of task traceability.
@@ -222,18 +222,18 @@ Two corrections to my own evidence belong in the record:
 
 ## 10. Decision record
 
-| Item                 | Value                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| Decision             | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**                       |
-| Decided on           | `db7ef97a4c1e090911e22ddac5936f725470f084` (protected `develop`)                                 |
-| Decided by           | Solo developer review under the Standing Technical Authorization Policy                          |
-| Owner authorization  | Explicit, for the complete P1-20 technical closure flow including the protected merges           |
-| Conditions           | 24 of 24 **Met**                                                                                 |
-| Unresolved Critical  | **0**                                                                                            |
-| Unresolved High      | **0**                                                                                            |
-| Accepted limitations | `P1-20-A-01`…`A-03`, `A-05`…`A-10` — nine Low, all Open and documented; `A-04` **withdrawn**     |
-| Open scope gaps      | `P1-20-G-02`, `P1-20-G-03` — both Low, both Open; `G-01` **closed**                              |
-| Next phase           | P1-21 — Inventory. **Unblocked. Not started by this record.**                                    |
+| Item                 | Value                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| Decision             | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**                   |
+| Decided on           | `db7ef97a4c1e090911e22ddac5936f725470f084` (protected `develop`)                             |
+| Decided by           | Solo developer review under the Standing Technical Authorization Policy                      |
+| Owner authorization  | Explicit, for the complete P1-20 technical closure flow including the protected merges       |
+| Conditions           | 24 of 24 **Met**                                                                             |
+| Unresolved Critical  | **0**                                                                                        |
+| Unresolved High      | **0**                                                                                        |
+| Accepted limitations | `P1-20-A-01`…`A-03`, `A-05`…`A-10` — nine Low, all Open and documented; `A-04` **withdrawn** |
+| Open scope gaps      | `P1-20-G-02`, `P1-20-G-03` — both Low, both Open; `G-01` **closed**                          |
+| Next phase           | P1-21 — Inventory. **Unblocked. Not started by this record.**                                |
 
 ## 11. Exclusions
 

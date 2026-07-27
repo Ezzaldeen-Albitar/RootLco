@@ -175,16 +175,16 @@ after the branch was pushed and CI was green. Four are worth separating out:
 Added by the documentation-only gate branch
 `gate/p1-20-service-catalog-pricing-quotation-backend`. No executable file changes.
 
-| Item                     | Value                                                                                  |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| Feature PR               | #84 — merged into protected `develop`                                                  |
-| Reviewed feature SHA     | `e7462536d183e410ff2db9792c7a6090df7f4698`                                             |
-| Protected merge SHA      | `db7ef97a4c1e090911e22ddac5936f725470f084`                                             |
-| Merge parents            | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698` |
-| Merge tree               | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — byte-identical to `e746253^{tree}`        |
-| Protected push CI        | Run #267 (`30296722364`) — push / `develop` / `db7ef97` — **Success 4/4**, 6m 50s      |
-| Decision                 | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**             |
-| `origin/main`            | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched                                 |
+| Item                 | Value                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| Feature PR           | #84 — merged into protected `develop`                                                   |
+| Reviewed feature SHA | `e7462536d183e410ff2db9792c7a6090df7f4698`                                              |
+| Protected merge SHA  | `db7ef97a4c1e090911e22ddac5936f725470f084`                                              |
+| Merge parents        | `0d86a198ad1d13aa0b3219a8f6ecafea3a699cf0` + `e7462536d183e410ff2db9792c7a6090df7f4698` |
+| Merge tree           | `dc644ea5821d1a8c7da8efd22ddf924cf15d31bf` — byte-identical to `e746253^{tree}`         |
+| Protected push CI    | Run #267 (`30296722364`) — push / `develop` / `db7ef97` — **Success 4/4**, 6m 50s       |
+| Decision             | **Go — P1-20 Service Catalog, Pricing, and Quotation Backend Gate Passed**              |
+| `origin/main`        | `491c4e0882763b5d5864737e63b4e31ca708a6b5` — untouched                                  |
 
 ### Two evidence documents were corrected in this gate branch
 
@@ -206,3 +206,16 @@ corrected here rather than left to be read as current:
 
 Recording this rather than silently overwriting: a stale evidence document that reads as
 current is the same failure mode this phase's largest finding turned on.
+
+### Documents that keep pre-final figures on purpose
+
+`completeness-audit.md` and `hostile-audit-confirmed-gaps.md` still read 13 operations,
+OpenAPI 152/181, unit 901 and backend 1219. Those figures were correct at the SHA each
+audit ran against, and both files already carry a resolution note saying so. They are
+**not** corrected, because a rewritten audit is no longer evidence of what was found. The
+authoritative current figures are in `phase-1-20-owner-gate.md`: 17 operations, OpenAPI
+155/185, unit 903, backend 1264, database 1610.
+
+One further correction: `execution-checkpoint.md` recorded backend **1261** in its
+baseline table. The measured figure is **1264**, reproduced independently by the
+protected-develop reproof, the clean room on `db7ef97`, and hosted CI on `e746253`.
