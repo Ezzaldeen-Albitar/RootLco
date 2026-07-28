@@ -30,6 +30,25 @@ Enforced by `scripts/ci/check-workflow-security.mjs` on every pull request.
 | WFS-008 | No `\|\| true` or `\|\| :` that discards an exit status                                     |
 | WFS-009 | No `continue-on-error: true`                                                                |
 | WFS-010 | Every job declares `timeout-minutes`                                                        |
+| WFS-011 | A reusable workflow declares exactly ONE job — _critical_                                   |
+
+**WFS-011 exists because the first hosted run failed at startup.** A caller’s
+`permissions:` are the **ceiling for every job** in the workflow it calls,
+including jobs an `if:` would skip, and GitHub validates that statically before
+any condition is evaluated. The security workflow originally held three jobs
+selected by `inputs.task`, so the callers that correctly granted only
+`contents: read` were rejected:
+
+```
+The nested job 'code-security' is requesting 'security-events: write',
+but is only allowed 'security-events: none'.
+```
+
+Granting SARIF write to every caller would have made it start while handing
+write scope to the job whose whole purpose is pattern-matching over
+untrusted-adjacent text. The file was split into `_reusable-secret-scan.yml`,
+`_reusable-dependency-security.yml` and `_reusable-code-security.yml` — one
+job, one fixed permission set each.
 
 A suppression must name the rule and sit on the line or in the comment block
 immediately above it. There are exactly **two** in the repository, both with the

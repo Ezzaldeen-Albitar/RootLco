@@ -152,17 +152,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-dependency-security.yml
     with:
-      task: dependency-security
       ref: ${{ needs.change-detection.outputs.head-sha }}
 
   secret-scan:
     name: secret-scan
     needs: change-detection
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-secret-scan.yml
     with:
-      task: secret-scan
       ref: ${{ needs.change-detection.outputs.head-sha }}
       depth: standard
 
@@ -227,9 +225,8 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-code-security.yml
     with:
-      task: code-security
       ref: ${{ needs.change-detection.outputs.head-sha }}
 
   container-security:

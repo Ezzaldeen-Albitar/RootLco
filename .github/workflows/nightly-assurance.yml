@@ -65,9 +65,8 @@ jobs:
 
   historical-secret-scan:
     name: historical-secret-scan
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-secret-scan.yml
     with:
-      task: secret-scan
       # The whole reachable history, which is O(history) and would dominate a PR.
       depth: deep
       artifact-retention-days: 60
@@ -77,9 +76,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-dependency-security.yml
     with:
-      task: dependency-security
       artifact-retention-days: 60
 
   container-deep-scan:
@@ -98,9 +96,8 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: ./.github/workflows/_reusable-security.yml
+    uses: ./.github/workflows/_reusable-code-security.yml
     with:
-      task: code-security
       artifact-retention-days: 60
 
   # ===========================================================================

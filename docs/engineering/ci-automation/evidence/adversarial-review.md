@@ -48,9 +48,9 @@ and no else-branch. A caller typo — `unit_coverage` — would check out, run
 ignore`) and exit **success**. `ci-gate` would read that success and say Go.
 
 **Fixed**: each reusable workflow validates its task in its first step.
-`_reusable-security.yml` gained an ungated `validate-task` job, because its
-three `if:`-gated jobs would otherwise leave the outcome to skip semantics
-rather than an assertion.
+The security workflow was later SPLIT into three single-job files (AR-28),
+which removes the class entirely: with one job per file there is no task to
+mistype.
 
 ### AR-03 · a falsy `needs` entry produced Go
 
@@ -201,6 +201,39 @@ mitigations are: `CODEOWNERS` now covers all four surfaces, and
 protected branch, with no change detection and no permitted skip — is the
 authoritative record. Required-reviewer enforcement is an owner setting; see
 `branch-ruleset.md`.
+
+## AR-28 — found by the first hosted run, not by any reviewer
+
+```
+Invalid workflow file: .github/workflows/pr-ci.yml#L149
+The nested job 'code-security' is requesting 'security-events: write',
+but is only allowed 'security-events: none'.
+```
+
+**Startup failure. Zero jobs ran.**
+
+A caller’s `permissions:` are the CEILING for every job in the workflow it
+calls — including jobs an `if:` would skip. GitHub validates this statically,
+before any condition is evaluated. `_reusable-security.yml` held three jobs
+selected by `inputs.task`, so the `secret-scan` and `dependency-security`
+callers — which correctly granted only what they needed — were rejected because
+the file also contained a job wanting SARIF write.
+
+The tempting fix is to grant `security-events: write` to every caller. That
+makes it start and hands write scope to the job whose whole purpose is
+pattern-matching over untrusted-adjacent text. The real fix is one job per
+file: `_reusable-secret-scan.yml`, `_reusable-dependency-security.yml`,
+`_reusable-code-security.yml`.
+
+Worth noting honestly: **three adversarial reviewers examined permissions and
+token scope in depth and none caught this.** All three read the design as
+correct — and by the rules they were reasoning about, it was. The rule they
+were missing is one that only shows up when GitHub actually parses the file.
+`actionlint` did not catch it either, and neither did the repository's own
+workflow-security linter — which is why WFS-011 now exists.
+
+It is now WFS-011, at _critical_, with a test that fails if the rule is
+removed.
 
 ---
 

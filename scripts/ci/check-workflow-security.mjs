@@ -18,6 +18,7 @@
  *   WFS-008  no `|| true` / `|| :` that swallows an exit status
  *   WFS-009  `continue-on-error: true` is not used
  *   WFS-010  every job declares `timeout-minutes`
+ *   WFS-011  a reusable workflow declares exactly ONE job
  *
  * Deliberately implemented WITHOUT a YAML dependency: this runs in the
  * `secret-scan` job, which does not `npm ci`, and adding a parser to read our own
@@ -261,6 +262,41 @@ export function lintWorkflow(name, source, options = {}) {
       );
     }
   });
+
+  // ---- WFS-011: a reusable workflow declares exactly one job ------------
+  //
+  // A caller's `permissions:` are the CEILING for every job in the workflow it
+  // calls — including jobs an `if:` will skip. GitHub validates that statically,
+  // before any condition is evaluated. So a reusable file holding two jobs with
+  // different permission needs cannot be called by anyone: whoever grants the
+  // narrower set fails validation with
+  //
+  //   The nested job 'X' is requesting 'security-events: write',
+  //   but is only allowed 'security-events: none'.
+  //
+  // This repository shipped exactly that and the whole pipeline failed at
+  // startup. "Grant the wider set to every caller" makes it start and quietly
+  // destroys least privilege; one job per file is the fix that does not.
+  if (/^on:\s*$/m.test(source) && /^\s{2}workflow_call:/m.test(source)) {
+    const jobsBlockIndex = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+    if (jobsBlockIndex !== -1) {
+      const declared = [];
+      for (let i = jobsBlockIndex + 1; i < lines.length; i += 1) {
+        const match = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(lines[i]);
+        if (match) declared.push({ name: match[1], line: i + 1 });
+      }
+      if (declared.length > 1) {
+        add(
+          'WFS-011',
+          declared[1].line,
+          `reusable workflow declares ${declared.length} jobs (${declared.map((j) => j.name).join(', ')}). ` +
+            'A caller’s permissions are the ceiling for EVERY job here, including ones an `if:` would skip, ' +
+            'so a caller granting less than the widest job needs cannot start. Split into one file per job.',
+          'critical'
+        );
+      }
+    }
+  }
 
   // ---- WFS-010: every job has a timeout ---------------------------------
   const jobsIndex = lines.findIndex((l) => /^jobs:\s*$/.test(l));

@@ -126,7 +126,9 @@ exactly one job each:
 | `pull-requests: read`                    | `dependency-security` only | dependency-review diff |
 | `id-token: write`, `attestations: write` | `release-artifact` only    | build provenance       |
 
-`_reusable-security.yml` is split into three _jobs_ rather than one job with
-three branches specifically because job-level `permissions:` cannot be an
-expression — so granting SARIF write to the CodeQL job would have granted it to
-the secret scanner too.
+Security is split into THREE FILES — `_reusable-secret-scan.yml`,
+`_reusable-dependency-security.yml`, `_reusable-code-security.yml` — each with
+exactly one job. A caller's permissions are the ceiling for EVERY job in the
+file it calls, including ones an `if:` would skip, so one file holding all
+three could not be called by anyone granting less than SARIF write. Enforced
+by WFS-011.

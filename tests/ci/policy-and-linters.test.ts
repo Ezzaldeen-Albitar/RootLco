@@ -134,6 +134,49 @@ describe('workflow security linter', () => {
     expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-010');
   });
 
+  it('WFS-011 catches a reusable workflow with more than one job', () => {
+    // The defect that made the first hosted run fail at STARTUP. A caller's
+    // permissions are the ceiling for every job in the file it calls, including
+    // ones an `if:` would skip — so a file holding a `security-events: write`
+    // job cannot be called by anyone who does not grant it.
+    const reusable = `name: R
+on:
+  workflow_call:
+    inputs:
+      task:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          set -euo pipefail
+          echo a
+  b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      security-events: write
+    steps:
+      - run: |
+          set -euo pipefail
+          echo b
+`;
+    const findings = lintWorkflow('_reusable-x.yml', reusable);
+    expect(rules(findings)).toContain('WFS-011');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-011').severity).toBe('critical');
+
+    // One job is fine, and a NON-reusable workflow may of course have many.
+    const single = reusable.slice(0, reusable.indexOf('  b:'));
+    expect(rules(lintWorkflow('_reusable-x.yml', single))).not.toContain('WFS-011');
+    const notReusable = reusable.replace('on:\n  workflow_call:', 'on:\n  push:');
+    expect(rules(lintWorkflow('pr-ci.yml', notReusable))).not.toContain('WFS-011');
+  });
+
   it('extracts a run block by indentation, not by guessing where it ends', () => {
     const blocks = extractRunBlocks(MINIMAL_WORKFLOW.split('\n'));
     expect(blocks).toHaveLength(1);

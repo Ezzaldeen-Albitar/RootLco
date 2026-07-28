@@ -49,7 +49,9 @@ shaped the design:
     ├── _reusable-node-quality.yml
     ├── _reusable-database-assurance.yml
     ├── _reusable-integration-tests.yml
-    ├── _reusable-security.yml
+    ├── _reusable-secret-scan.yml
+    ├── _reusable-dependency-security.yml
+    ├── _reusable-code-security.yml
     ├── _reusable-container.yml
     ├── _reusable-clean-room.yml
     └── _reusable-release-artifact.yml

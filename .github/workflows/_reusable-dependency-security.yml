@@ -1,0 +1,181 @@
+# =============================================================================
+# RootLco — reusable dependency and supply-chain security.
+#
+# ONE job, ONE fixed permission set — `contents: read` plus `pull-requests: read`
+# for the dependency-review action, and nothing else. See the header of
+# `_reusable-secret-scan.yml` for why these three security jobs live in three
+# files rather than one: a caller's permissions are the ceiling for EVERY job in
+# the file it calls, including jobs an `if:` would skip.
+#
+# The policy is asymmetric on purpose. Production advisories are never waived.
+# Development advisories may be waived only by an exact, evidenced, expiring
+# exception whose CLAIM is cross-checked against a mechanically derived
+# dependency-path proof.
+# =============================================================================
+
+name: Reusable — dependency security
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-security:
+    name: dependency-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # `dependency-review-action` reads the pull request's dependency graph.
+      pull-requests: read
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Audit the production and full dependency trees
+        run: |
+          set -euo pipefail
+          # `npm audit` exits non-zero whenever it finds anything, and the POLICY
+          # — not the exit code — decides what blocks. The reports are captured
+          # with an explicit fallback, then PARSED, so a finding can never be
+          # confused with a tooling failure and an empty file can never pass.
+          # dependency-policy.mjs additionally rejects an npm ERROR object, which
+          # would otherwise parse cleanly and report zero advisories.
+          npm audit --omit=dev --json > audit-production.json || printf ''
+          npm audit --json > audit-full.json || printf ''
+          for file in audit-production.json audit-full.json; do
+            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "${file}" \
+              || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
+          done
+
+      - name: Licence inventory
+        run: node scripts/ci/licence-inventory.mjs --json licences.json
+
+      - name: Production dependency tree
+        run: |
+          set -euo pipefail
+          # The production tree as npm ACTUALLY resolves it, not as package.json
+          # classifies it. `npm ls` exits non-zero on an extraneous or missing
+          # package, which is information rather than a failure here — the tree
+          # is still written, and the parse below is what must succeed.
+          npm ls --omit=dev --all --json > production-tree.json || printf ''
+          node -e 'JSON.parse(require("node:fs").readFileSync("production-tree.json","utf8"))' \
+            || { echo "::error::npm ls produced unparseable output; the production tree cannot be proven."; exit 1; }
+          printf 'production top-level: %s\n' \
+            "$(node -e 'const t=require("./production-tree.json");process.stdout.write(Object.keys(t.dependencies??{}).join(", "))')"
+
+      - name: Dependency-path and reachability proof
+        run: |
+          set -euo pipefail
+          # Derives, mechanically, the full path from the root package to every
+          # waived package, and whether any instance is production-reachable.
+          # The gate cross-checks each exception's CLAIM against this, so a
+          # waiver cannot go on asserting "development only" after the package
+          # moves. The container job supplies the image half of the proof.
+          node scripts/ci/dependency-path-proof.mjs \
+            --package brace-expansion \
+            --production-tree production-tree.json \
+            --json reachability-brace-expansion.json \
+            --markdown reachability-brace-expansion.md
+
+      - name: Dependency policy
+        run: |
+          set -euo pipefail
+          node scripts/ci/dependency-policy.mjs \
+            --prod-audit audit-production.json --dev-audit audit-full.json \
+            --exceptions .github/ci-baselines/dependency-exceptions.json \
+            --licences licences.json \
+            --reachability-proof reachability-brace-expansion.json \
+            --json dependency-policy.json --markdown dependency-policy.md
+
+      - name: Outdated inventory (reported, never blocking)
+        if: '!cancelled()'
+        run: |
+          set -euo pipefail
+          # `npm outdated` exits 1 whenever anything is behind, which is almost
+          # always true. It is evidence for the nightly dependency conversation,
+          # not a merge gate, so its status is captured rather than propagated.
+          npm outdated --json > outdated.json || printf ''
+          node -e '
+            const fs = require("node:fs");
+            let data = {};
+            try { data = JSON.parse(fs.readFileSync("outdated.json", "utf8") || "{}"); } catch { data = {}; }
+            const rows = Object.entries(data);
+            console.log(`packages behind latest: ${rows.length}`);
+            const md = ["### Outdated dependencies", "", `**${rows.length}** package(s) behind latest. Reported only — never blocking.`, ""];
+            if (rows.length) {
+              md.push("| Package | Current | Wanted | Latest |", "| --- | --- | --- | --- |");
+              for (const [name, v] of rows.slice(0, 40)) md.push(`| \`${name}\` | ${v.current ?? "—"} | ${v.wanted ?? "—"} | ${v.latest ?? "—"} |`);
+            }
+            fs.writeFileSync("outdated.md", md.join("\n") + "\n");
+          '
+
+      - name: GitHub dependency review
+        # Only meaningful on a pull request: it diffs the base and head manifests.
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+          # AGPL and SSPL are incompatible with a proprietary product. The same
+          # list is enforced offline by dependency-policy.mjs, so an outage of
+          # this action cannot silently drop the control.
+          deny-licenses: AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for file in dependency-policy.md reachability-brace-expansion.md outdated.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Dependency security at `%s`_\n' "${RESOLVED_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-dependency-security
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # These describe package NAMES and VERSIONS only. No source, no
+          # environment and no credential leaves the runner.
+          path: |
+            audit-production.json
+            audit-full.json
+            outdated.json
+            licences.json
+            production-tree.json
+            reachability-brace-expansion.json
+            dependency-policy.json
+            *.md
