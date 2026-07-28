@@ -43,12 +43,14 @@ backend tier and stylesheets are not executable.
 
 | Metric     | Value   |
 | ---------- | ------- |
-| Lines      | 91.06 % |
-| Statements | 91.06 % |
-| Functions  | 84.87 % |
-| Branches   | 93.62 % |
+| Lines      | 93.26 % |
+| Statements | 93.26 % |
+| Functions  | 84.75 % |
+| Branches   | 93.61 % |
 
-Measured locally at the audit; corrected from the first GitHub-hosted run.
+Measured locally at the audit; corrected from the first GitHub-hosted run, then
+re-measured when `src/shared/errors/app-error.ts` was deleted — see "Closed gap"
+below for why three of these four numbers moved in the direction they did.
 
 ### Enforced floors
 
@@ -66,17 +68,39 @@ Measured locally at the audit; corrected from the first GitHub-hosted run.
 Each floor sits a few points below its measured value — enough headroom for
 cross-platform attribution drift, tight enough that a real regression trips it.
 
-## Known gap
+## Closed gap
 
 `src/shared/errors/app-error.ts` — 35 lines, **0 % covered**, and **zero
-references anywhere in the repository**. It is dead code superseded by
-`src/server/errors/**`.
+references anywhere in the repository** — was dead code superseded by
+`src/server/errors/**`. It was deliberately **left in** the coverage include set
+rather than excluded, because excluding it would have raised the global number by
+hiding code rather than by testing it, and a baseline that improves because
+something stopped being counted is a lie about the codebase.
 
-It is deliberately **left in** the coverage include set. Excluding it would raise
-the global number by 2.35 pp by hiding code rather than by testing it, and a
-baseline that improves because something stopped being counted is a lie about
-the codebase. Removal is tracked separately; when it lands, the baseline rises
-and the commit must say why.
+**It has now been deleted**, along with its entry in the coverage `include` list.
+That is the honest resolution: the code is gone, so it is neither counted nor
+hidden. The baseline was re-measured rather than adjusted by hand.
+
+The distinction the original note insisted on still holds, and the measurement
+shows it plainly: **covered lines did not change**. They are 1355 before and 1355
+after. Only the denominator fell, from 1488 to 1453 — exactly the 35 lines this
+file contributed. Nothing became better tested.
+
+| Metric           | Before  | After   | Δ        | Counts                |
+| ---------------- | ------- | ------- | -------- | --------------------- |
+| Lines/statements | 91.06 % | 93.26 % | +2.20 pp | 1355/1488 → 1355/1453 |
+| Functions        | 84.87 % | 84.75 % | −0.12 pp | 101/119 → 100/118     |
+| Branches         | 93.62 % | 93.61 % | −0.01 pp | 338/361 → 337/360     |
+
+Two things a future reader should not be surprised by:
+
+- **Functions and branches fell rather than rose.** v8 counted the module's
+  top-level scope as one covered function and one covered branch even though no
+  statement inside it ever executed, so deleting the file removed one covered
+  unit from each. These are baseline _reductions_, inside the 0.5 pp tolerance,
+  and they are deliberate.
+- The earlier estimate of **2.35 pp** for the line gain was slightly high; the
+  measured gain is **2.20 pp**.
 
 ## The ratcheting procedure
 

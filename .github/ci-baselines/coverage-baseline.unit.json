@@ -7,18 +7,13 @@
   "touchedFileMinimum": 60,
   "touchedFileExemptPrefixes": ["src/app/", "src/styles/"],
   "global": {
-    "lines": 91.06,
-    "statements": 91.06,
-    "functions": 84.87,
-    "branches": 93.62
+    "lines": 93.26,
+    "statements": 93.26,
+    "functions": 84.75,
+    "branches": 93.61
   },
-  "knownGaps": [
-    {
-      "path": "src/shared/errors/app-error.ts",
-      "measured": 0,
-      "note": "Dead code: a Phase 1-1 error class superseded by src/server/errors/**, with zero references anywhere in the repository. Deliberately NOT removed from the coverage include set — excluding it would raise the number by hiding code rather than by testing it. Tracked for deletion in a separate change; when it goes, the baseline rises and the commit must say why."
-    }
-  ],
+  "globalNote": "Lines and statements rose from 91.06 because src/shared/errors/app-error.ts was DELETED as dead code, not because anything became better tested: covered lines are unchanged at 1355 and only the total fell, by exactly the 35 lines that file contributed. Functions (84.87 -> 84.75) and branches (93.62 -> 93.61) fell rather than rose, because v8 counted that module's top-level scope as one covered function and one covered branch even though no statement in it ever executed. Both reductions are deliberate and are inside the 0.5 pp tolerance.",
+  "knownGaps": [],
   "criticalModules": [
     {
       "id": "error-mapping",
