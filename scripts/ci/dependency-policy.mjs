@@ -555,6 +555,26 @@ export function toMarkdown(result) {
     `| development | ${result.development.blocking} | ${result.development.waived} | itemised, expiring exceptions |`
   );
   lines.push('');
+
+  // `npm audit` reports one advisory once per AFFECTED NODE, so a single root
+  // advisory appears as many rows — 12, here, for one GHSA. Reported without
+  // this line, "12 waived" reads as twelve accepted risks and makes the
+  // exception record look like a blanket waiver, which is exactly what the
+  // policy forbids. The distinct count is what a reviewer actually needs.
+  const distinctRoots = new Set(
+    result.development.advisories.map((a) => a.ghsa).filter((id) => typeof id === 'string')
+  );
+  const inherited = result.development.advisories.filter((a) => !a.ghsa).length;
+  if (result.development.advisories.length) {
+    lines.push(
+      `**${distinctRoots.size} distinct advisor${distinctRoots.size === 1 ? 'y' : 'ies'}** across ` +
+        `${result.development.advisories.length} affected node(s) — ${inherited} of them ancestors that ` +
+        'are vulnerable only because a dependency is. An ancestor exposed to any root that is NOT ' +
+        'waived stays blocking, so a new advisory cannot be absorbed by an existing waiver.'
+    );
+    lines.push('');
+  }
+
   if (result.development.advisories.length) {
     lines.push('<details><summary>Development advisories</summary>');
     lines.push('');
