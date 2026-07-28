@@ -148,3 +148,57 @@ Wave 2 — create the `inventory` module skeleton (domain vocabulary, exact quan
 value object, repository, services, public surface) under
 `src/modules/inventory/`, following the `service-catalog` / `work-order` module
 conventions, then commit and continue to Wave 3.
+
+---
+
+## Progress log (live)
+
+| Wave | Content                                          | Status   | Commit    |
+| ---- | ------------------------------------------------ | -------- | --------- |
+| 0    | Baseline + local-CI command matrix               | **DONE** | `5427754` |
+| 1    | Protected inventory contract archaeology         | **DONE** | `5427754` |
+| 2    | Inventory module foundation                      | **DONE** | `41015b3` |
+| 3    | API surface + permission/audit/event catalogs    | **DONE** | `08544ca` |
+| 4    | Domain unit tests + coverage-gate floor          | **DONE** | `9754725` |
+| 5    | Read-surface backend tests                       | **DONE** | `9c69ee4` |
+| 6    | Stock + intake backend tests                     | **DONE** | `d9951ac` |
+| 7    | Database integrity/concurrency tests             | **DONE** | `5e14c20` |
+| 8    | 28-task traceability gate + non-backend evidence | **DONE** | `8a8b0e2` |
+
+**HEAD = `8a8b0e2`. Nothing pushed. No PR. `origin/develop` and `origin/main` untouched.**
+
+### Verified green at HEAD
+
+| Gate                                  | Result                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `validate:p1-21-inventory`            | 14 operations; permissions, audit actions, events and **28/28** task identifiers reconcile |
+| `validate:operation-coverage`         | every operation invoked with its required evidence; `inv.` registered in BOTH gate hooks   |
+| `validate:openapi`                    | **169 paths / 199 operations** = 185 + 14, parity both directions                          |
+| `validate:authorization-coverage`     | every operation guarded, every route registered                                            |
+| `validate:module-boundaries`          | no boundary or layering violation                                                          |
+| `typecheck` / `lint` / `format:check` | clean                                                                                      |
+| Unit                                  | **926** (903 baseline + 23)                                                                |
+| Backend P1-21 suites                  | 26 + 33 + 36 = **95** new, all green                                                       |
+| Database P1-21 suite                  | **14** new, all green (10-way race → exactly one winner)                                   |
+| Migrations                            | **119**, no 120, none modified. Schema hash `a677eb05…` unchanged                          |
+| Permissions                           | 96 → **100**                                                                               |
+
+### Defects found and fixed while building (all caught by the database or a test)
+
+| #   | Defect                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------- |
+| 1   | `opening_inventory_batches.batch_code` NOT NULL was never supplied — no batch could have been created            |
+| 2   | `counted_by` modelled nullable; now the authenticated caller and NOT settable, so maker-checker cannot be evaded |
+| 3   | `opening_inventory_lines` company/branch omitted; now taken from the batch                                       |
+| 4   | `Quantity.parse().assertPostable()` outside the error mapping — a zero quantity returned 500 instead of 4xx      |
+| 5   | A false gate proof claiming `inv.cost.view` is declared by an operation                                          |
+| 6   | Gate header carried P1-20's failure history rewritten as P1-21's — a fabricated provenance in an evidence file   |
+
+### Exact next action
+
+Independent adversarial reviews (§23), then the hostile 100/100 audit (§24), then
+`FINAL_FEATURE_SHA` local CI (§25) and the fresh clean room (§26) — the two of which
+must agree on one SHA — then first push, PR, billing-only bypass check, merge,
+protected reproof, gate record, and closure.
+
+**P1-21 is NOT closed and must not be reported as closed.**
