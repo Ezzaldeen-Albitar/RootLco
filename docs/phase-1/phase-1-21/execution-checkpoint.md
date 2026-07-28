@@ -202,3 +202,53 @@ must agree on one SHA — then first push, PR, billing-only bypass check, merge,
 protected reproof, gate record, and closure.
 
 **P1-21 is NOT closed and must not be reported as closed.**
+
+---
+
+## Cycle 2 — post-review state (supersedes the tables above)
+
+Four independent adversarial reviews were run against the complete diff and
+adjudicated. One Critical, five High and one test-honesty finding were opened and all
+are now fixed, each with a regression test that fails if the fix is removed.
+
+**Nothing pushed. No PR. Both protected branches untouched.**
+
+### Measured at HEAD — every number read off the RESULT line, not the total
+
+| Gate                                       | Result                                              |
+| ------------------------------------------ | --------------------------------------------------- |
+| `npm run test` (unit)                      | **926 passed / 43 files**, exit 0                   |
+| `npm run test:backend`                     | **1376 passed / 59 files**, exit 0                  |
+| `npm run test:db`                          | **1624 passed / 137 files**, exit 0                 |
+| `validate:p1-21-inventory`                 | 14 operations, **28/28** task identifiers reconcile |
+| `validate:operation-coverage`              | every operation invoked with its required evidence  |
+| `validate:openapi`                         | **169 paths / 199 operations**                      |
+| authorization coverage / module boundaries | green                                               |
+| typecheck / lint / format                  | green                                               |
+| Migrations                                 | **119**, no 120, none modified                      |
+| Permissions                                | 96 to **100**                                       |
+
+The unit figure is stated deliberately. An earlier revision of this file recorded
+"Verified green at HEAD | Unit | 926" while the suite was failing 3 of those 926 — the
+count was right and the outcome was never read. Every number above was taken from the
+suite's own result line.
+
+### Findings resolved this cycle
+
+| ID    | Finding                                                                                                                                                                                                                                             |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1    | `npm run test` was RED at every commit of the phase and reported green: 11 audit actions and 3 events were added to the controlled catalogs without extending the foundation allow-lists                                                            |
+| H1    | The branch scope check was skippable by omitting a query parameter — the same principal was refused branch A1 (403) and served it with the parameter left out (200)                                                                                 |
+| H2    | A 0.001-unit damage destroyed an arbitrarily large reservation, unaudited and unpublished                                                                                                                                                           |
+| H3    | `stock.movement.posted` was published for issues only, contradicting the event catalog and the change log                                                                                                                                           |
+| H4    | `release()` decided from an unlocked pre-read, so a concurrent issue produced evidence for a release that never happened                                                                                                                            |
+| H5    | Quarantined stock could be reserved and issued back onto a customer vehicle, invisibly                                                                                                                                                              |
+| T1    | `idempotency` was declared for two operations with no replay test behind it                                                                                                                                                                         |
+| E1-E6 | Evidence defects: random-UUID cross-tenant proofs, a vacuous quarantine assertion, two false gate-header claims, five documentary tasks with no structural proof, a literal `27` task count, and a P1-20 finding relabelled as this phase's history |
+
+Full detail and the resolution table are in `review-adjudication.md`.
+
+### Exact next action
+
+Final exact-SHA local CI on a fresh database, then the clean room, then first push,
+PR, billing-only bypass check, merge, protected reproof, gate record, closure.

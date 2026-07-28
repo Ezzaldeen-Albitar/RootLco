@@ -371,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 93', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 100', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -406,9 +406,18 @@ describe('P1-15 / global security posture', () => {
     // svc.price.read and quo.quotation.read — taking the catalog to 96. Reads are
     // separated from writes for the same reason as everywhere else in the catalog:
     // a service advisor who must see the catalog and a customer's quotation must not
-    // thereby be able to change a price. The pin moves with the seed deliberately:
-    // it is what catches an accidental catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(96);
+    // thereby be able to change a price.
+    //
+    // P1-21 adds four and no more, taking the catalog to 100: inv.item.read,
+    // inv.custody.manage, inv.external_purchase.record and inv.audit.read. It adds
+    // no reserve/issue/return code because inv.stock.operate already covers those by
+    // its own catalog description, and no opening-approval code because
+    // inv.adjustment.approve already does — a near-duplicate would make the authority
+    // model less legible, not more precise.
+    //
+    // The pin moves with the seed deliberately: it is what catches an accidental
+    // catalog edit.
+    expect(Number(total.rows[0]?.n)).toBe(100);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
