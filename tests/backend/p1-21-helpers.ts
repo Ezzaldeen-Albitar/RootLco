@@ -79,6 +79,22 @@ export const WAREHOUSE_A2 = 'e1000000-0000-4000-8000-0000000000c4';
 export const QUARANTINE_A2 = 'e1000000-0000-4000-8000-0000000000c5';
 export const WAREHOUSE_B1 = 'e1000000-0000-4000-8000-0000000000c6';
 
+/**
+ * A SECOND company inside tenant A, with its own branch, location and stock.
+ *
+ * H6 needs it. Every other tenant-A fixture hangs off `COMPANY_A1`, so a (company,
+ * branch) pair could never be INCOHERENT — and the leak only exists for an
+ * incoherent pair. With one company in the tenant the hole is unreachable by
+ * construction, which is exactly why nothing caught it.
+ */
+export const COMPANY_A9 = 'e1000000-0000-4000-8000-0000000009c1';
+export const BRANCH_A9 = 'e1000000-0000-4000-8000-0000000009b1';
+export const WAREHOUSE_A9 = 'e1000000-0000-4000-8000-0000000009d1';
+
+const COMPANY_SCOPED_GRANT = 'e1000000-0000-4000-8000-0000000009f1';
+const COMPANY_SCOPED_WIDENING_ROLE = 'e1000000-0000-4000-8000-0000000009e3';
+const COMPANY_SCOPED_WIDENING_GRANT = 'e1000000-0000-4000-8000-0000000009f2';
+
 export const INV_FULL: Principal = {
   roleId: 'e1000000-0000-4000-8000-000000000101',
   userId: 'e1000000-0000-4000-8000-000000000102',
@@ -140,6 +156,30 @@ export const INV_PERMISSION_ELSEWHERE: Principal = {
   grantId: 'e1000000-0000-4000-8000-0000000001f2',
 };
 
+/**
+ * H6 — inventory permissions held COMPANY-scoped to `COMPANY_A1`, plus an unrelated
+ * BRANCH-scoped grant on `BRANCH_A9` (a branch of the OTHER company).
+ *
+ * `iam.has_permission_in_scope` matches
+ *   (scope_type='company' AND company_id = p_company)
+ *   OR (scope_type='branch' AND branch_id = p_branch)
+ * so naming `companyId=COMPANY_A1&branchId=BRANCH_A9` satisfies the check on the
+ * COMPANY half while pointing the query at company A9 — and the widening grant puts
+ * A9 inside `iam.allowed_branch_ids()`, so RLS admits the rows too. Only a
+ * `company_id` SQL predicate refuses it.
+ *
+ * Its grant is built by hand rather than through `Principal.scope`, which always
+ * writes `scope_type='branch'`. No other P1-21 principal has a company-scoped grant,
+ * which is the second reason the hole survived every existing isolation test.
+ */
+export const INV_COMPANY_SCOPED: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000009e1',
+  userId: 'e1000000-0000-4000-8000-0000000009e2',
+  subject: 'fx_p1_21_company_scoped',
+  tenantId: TENANT_A,
+  permissions: ALL_INVENTORY,
+};
+
 /** Tenant B, unrestricted. A refusal from it is the tenant boundary, not authority. */
 export const INV_TENANT_B: Principal = {
   roleId: 'e1000000-0000-4000-8000-000000000161',
@@ -156,6 +196,7 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_NO_COST,
   INV_SCOPED_A2,
   INV_PERMISSION_ELSEWHERE,
+  INV_COMPANY_SCOPED,
   INV_TENANT_B,
 ];
 
@@ -248,6 +289,10 @@ async function seedPrincipal(principal: Principal): Promise<void> {
       [principal.tenantId, principal.roleId, USER_A, code]
     );
   }
+
+  // Its grant is COMPANY-scoped and built by hand below; `Principal.scope` can only
+  // express a branch scope, and an unrestricted grant here would defeat H6 entirely.
+  if (principal.userId === INV_COMPANY_SCOPED.userId) return;
 
   if (principal.scope === undefined) {
     const existing = await admin.query(
@@ -349,6 +394,101 @@ export async function establishP1_21Fixtures(pool: Pool): Promise<void> {
     widening.release();
   }
 
+  // ---- H6: a second company in tenant A, and a COMPANY-scoped principal ----------
+  await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'fx_p1_21_company_a9','P1-21 Second Company','JOD',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A9, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches
+       (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'fx_p1_21_branch_a9','P1-21 Second Branch','Asia/Amman',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A9, TENANT_A, COMPANY_A9, USER_A]
+  );
+
+  const companyScoped = await admin.connect();
+  try {
+    await companyScoped.query('BEGIN');
+    const existing = await companyScoped.query(`SELECT 1 FROM iam.role_grants WHERE id = $1`, [
+      COMPANY_SCOPED_GRANT,
+    ]);
+    if (existing.rowCount === 0) {
+      await companyScoped.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [
+          COMPANY_SCOPED_GRANT,
+          TENANT_A,
+          INV_COMPANY_SCOPED.userId,
+          INV_COMPANY_SCOPED.roleId,
+          USER_A,
+        ]
+      );
+      // scope_type = 'company' — deliberately, and uniquely among P1-21 principals.
+      await companyScoped.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
+         VALUES ($1,$2,'company',$3,$4)`,
+        [TENANT_A, COMPANY_SCOPED_GRANT, COMPANY_A1, USER_A]
+      );
+    }
+    await companyScoped.query('COMMIT');
+  } catch (error) {
+    await companyScoped.query('ROLLBACK');
+    throw error;
+  } finally {
+    companyScoped.release();
+  }
+
+  // ...and an UNRELATED permission branch-scoped to A9, so A9 is inside this caller's
+  // permission-blind allowed-branch union and RLS is not what refuses the request.
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,'fx_p1_21_widening_a9','P1-21 widening A9',$3) ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_SCOPED_WIDENING_ROLE, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code = $4
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, COMPANY_SCOPED_WIDENING_ROLE, USER_A, WIDENING_PERMISSION]
+  );
+  const widenA9 = await admin.connect();
+  try {
+    await widenA9.query('BEGIN');
+    const existing = await widenA9.query(`SELECT 1 FROM iam.role_grants WHERE id = $1`, [
+      COMPANY_SCOPED_WIDENING_GRANT,
+    ]);
+    if (existing.rowCount === 0) {
+      await widenA9.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [
+          COMPANY_SCOPED_WIDENING_GRANT,
+          TENANT_A,
+          INV_COMPANY_SCOPED.userId,
+          COMPANY_SCOPED_WIDENING_ROLE,
+          USER_A,
+        ]
+      );
+      await widenA9.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1,$2,'branch',$3,$4,$5)`,
+        [TENANT_A, COMPANY_SCOPED_WIDENING_GRANT, COMPANY_A9, BRANCH_A9, USER_A]
+      );
+    }
+    await widenA9.query('COMMIT');
+  } catch (error) {
+    await widenA9.query('ROLLBACK');
+    throw error;
+  } finally {
+    widenA9.release();
+  }
+
   const client = await admin.connect();
   try {
     await client.query('BEGIN');
@@ -397,6 +537,8 @@ export async function establishP1_21Fixtures(pool: Pool): Promise<void> {
       [QUARANTINE_A1, COMPANY_A1, BRANCH_A1, 'FX-QR-A1', 'quarantine'],
       [WAREHOUSE_A2, COMPANY_A1, BRANCH_A2, 'FX-WH-A2', 'warehouse'],
       [QUARANTINE_A2, COMPANY_A1, BRANCH_A2, 'FX-QR-A2', 'quarantine'],
+      // In the OTHER company, so H6 has real stock to disclose or refuse.
+      [WAREHOUSE_A9, COMPANY_A9, BRANCH_A9, 'FX-WH-A9', 'warehouse'],
     ];
     for (const [id, companyId, branchId, code, type] of locations) {
       // The parent is resolved HERE rather than in SQL. Deciding it in a CASE would
@@ -546,4 +688,14 @@ export async function cleanP1_21Fixtures(): Promise<void> {
   ]) {
     await admin.query(statement, [TENANT_A, TENANT_B]);
   }
+
+  // The H6 second company, newest dependency first. The grants go before the org rows
+  // they reference, and `fk_grant_scopes_grant` is ON DELETE CASCADE — so the scope
+  // rows leave with their grant rather than in a separate statement, which would trip
+  // the DEFERRABLE "a scoped active grant must carry at least one scope" trigger.
+  await admin.query(`DELETE FROM iam.role_grants WHERE id = ANY($1)`, [
+    [COMPANY_SCOPED_GRANT, COMPANY_SCOPED_WIDENING_GRANT],
+  ]);
+  await admin.query(`DELETE FROM org.branches WHERE id = $1`, [BRANCH_A9]);
+  await admin.query(`DELETE FROM org.legal_companies WHERE id = $1`, [COMPANY_A9]);
 }

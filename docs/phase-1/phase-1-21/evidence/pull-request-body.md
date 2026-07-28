@@ -66,7 +66,7 @@ any pipe. No `|| true`, no ignored result.
 | -------- | --------------------------- |
 | Unit     | **926 passed / 43 files**   |
 | Database | **1624 passed / 137 files** |
-| Backend  | **1376 passed / 59 files**  |
+| Backend  | **1380 passed / 59 files**  |
 
 Plus lint, typecheck, format, stylelint, module boundaries (378 files, 11 rules),
 authorization coverage, operation coverage, the P1-19/P1-20/P1-21 inventories,
@@ -92,7 +92,7 @@ concurrency; authorization, RLS and isolation; exact quantity, audit/outbox and 
 contracts; and task/evidence honesty. Every finding was reproduced personally before
 being accepted.
 
-**One Critical, five High and one test-honesty finding were found and all are fixed**,
+**One Critical, six High and one test-honesty finding were found and all are fixed**,
 each with a regression test that fails if the fix is removed:
 
 - **C1** — `npm run test` had been **red at every commit of the phase** and was

@@ -353,7 +353,11 @@ export class InventoryReadService {
     await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
     // Built by spreading rather than by assigning `undefined`:
     // `exactOptionalPropertyTypes` is on, so an absent filter must be an absent KEY.
-    const cellFilter: { branchId?: string; itemId?: string } = {
+    // H6: `companyId` is passed through and applied as a SQL predicate. Authorization
+    // is satisfied by company OR branch, so the query — not the check — is what makes
+    // an incoherent (company, branch) pair select nothing.
+    const cellFilter: { companyId: string; branchId: string; itemId?: string } = {
+      companyId: filter.companyId,
       branchId: filter.branchId,
       ...(filter.itemId === undefined ? {} : { itemId: filter.itemId }),
     };
@@ -362,10 +366,28 @@ export class InventoryReadService {
       cellFilter,
       resolveLimit(limit)
     );
-    const openCommitments =
-      filter.workOrderId === undefined
-        ? null
-        : await this.repository.countOpenCommitments(db, filter.workOrderId);
+    let openCommitments: {
+      readonly activeReservations: number;
+      readonly openIssues: number;
+    } | null = null;
+    if (filter.workOrderId !== undefined) {
+      // `countOpenCommitments` filters on tenant and work order only — deliberately, because
+      // its other caller is the closure port where the work order IS the authorized subject.
+      // Here the id is caller-supplied, so it must be pinned to the authorized pair first.
+      const scope = await this.repository.readWorkOrderScope(db, filter.workOrderId);
+      if (!scope) {
+        throw new AppFailure('ERR-RES-001', {
+          message: `Work order ${filter.workOrderId} was not found`,
+        });
+      }
+      if (scope.companyId !== filter.companyId || scope.branchId !== filter.branchId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'workOrderId names a different company or branch from the one authorized',
+          safeDetails: { violations: [{ path: 'query.workOrderId', rule: 'custom' }] },
+        });
+      }
+      openCommitments = await this.repository.countOpenCommitments(db, filter.workOrderId);
+    }
     const incoherent = cells.filter((c) => !c.coherent).length;
 
     await appendAudit(db, {

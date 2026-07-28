@@ -47,6 +47,9 @@ import {
 } from './helpers';
 import { BRANCH_A2, BRANCH_B1, COMPANY_B1, establishP1_19Fixtures } from './p1-19-helpers';
 import {
+  BRANCH_A9,
+  COMPANY_A9,
+  INV_COMPANY_SCOPED,
   INV_FULL,
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
@@ -56,6 +59,7 @@ import {
   ITEM_A_ARCHIVED,
   ITEM_A_WILDCARD,
   QUARANTINE_A1,
+  WAREHOUSE_A9,
   WAREHOUSE_A1,
   WAREHOUSE_A2,
   WAREHOUSE_B1,
@@ -114,6 +118,16 @@ beforeAll(async () => {
     locationId: WAREHOUSE_A2,
     quantity: '4.000',
     branchId: BRANCH_A2,
+  });
+  // Stock in the OTHER company. Without it the H6 assertions below are vacuous:
+  // "no cells returned" would be true of an empty branch whether or not the
+  // `company_id` predicate exists.
+  await seedStock({
+    itemId: ITEM_A,
+    locationId: WAREHOUSE_A9,
+    quantity: '7.000',
+    companyId: COMPANY_A9,
+    branchId: BRANCH_A9,
   });
 }, 120_000);
 
@@ -635,6 +649,105 @@ describe('H1 — no read reaches stock without naming and authorizing a branch',
       );
       expect(allowed.status, `${name} A2`).toBe(200);
     }
+  });
+
+  /**
+   * H6 regression — an INCOHERENT (company, branch) pair must select nothing.
+   *
+   * `iam.has_permission_in_scope` matches
+   *   (scope_type='company' AND company_id = p_company)
+   *   OR (scope_type='branch' AND branch_id = p_branch)
+   * so a COMPANY-scoped grant on A1 passes the check while naming a branch of the
+   * OTHER company. `authorizeScope` therefore cannot be what refuses this — only a
+   * `company_id` SQL predicate can.
+   *
+   * Measured before the fix: `/inventory-reconciliations` returned 200 with
+   * `cellsChecked: 1`, disclosing company A9's SKU, location and `storedOnHand`
+   * "7.000", while `/stock-availability` with the IDENTICAL pair returned zero items
+   * — because availability carried both predicates and reconciliation carried one.
+   *
+   * These fail if the `company_id` predicate is dropped from any branch-scoped read.
+   */
+  it('returns nothing for an incoherent company/branch pair on every read', async () => {
+    authAs(INV_COMPANY_SCOPED);
+
+    const recon = await call(
+      RECONCILE,
+      `/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
+    );
+    expect(recon.status, 'reconciliation for an incoherent pair').toBe(200);
+    const reconBody = await bodyOf<{
+      cellsChecked: number;
+      cells: readonly { companyId: string }[];
+    }>(recon);
+    // The decisive assertion: no cell, and in particular no cell belonging to A9.
+    expect(reconBody.cellsChecked).toBe(0);
+    expect(reconBody.cells).toHaveLength(0);
+    expect(reconBody.cells.some((c) => c.companyId === COMPANY_A9)).toBe(false);
+
+    const avail = await call(
+      AVAILABILITY,
+      `/api/v1/stock-availability?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
+    );
+    expect(avail.status).toBe(200);
+    expect((await bodyOf<{ items: readonly unknown[] }>(avail)).items).toHaveLength(0);
+
+    const movements = await call(
+      MOVEMENTS,
+      `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
+    );
+    expect(movements.status).toBe(200);
+    expect((await bodyOf<{ items: readonly unknown[] }>(movements)).items).toHaveLength(0);
+  });
+
+  /**
+   * THE CONTROL, without which the test above is vacuous.
+   *
+   * `cellsChecked: 0` proves nothing unless A9 actually holds stock that a correct
+   * implementation would have returned to someone. An unrestricted caller naming the
+   * COHERENT pair must see it — so the zero above is the `company_id` predicate
+   * refusing an incoherent pair, not an empty fixture.
+   */
+  it('CONTROL — the A9 stock the incoherent pair failed to reach really is there', async () => {
+    authAs(INV_FULL);
+    const response = await call(
+      RECONCILE,
+      `/api/v1/inventory-reconciliations?companyId=${COMPANY_A9}&branchId=${BRANCH_A9}`
+    );
+    expect(response.status).toBe(200);
+    const body = await bodyOf<{
+      cellsChecked: number;
+      cells: readonly { companyId: string; storedOnHand: string }[];
+    }>(response);
+    expect(body.cellsChecked).toBeGreaterThan(0);
+    expect(body.cells[0]?.companyId).toBe(COMPANY_A9);
+    // The exact quantity seeded into A9, compared as a string: this is the payload
+    // that leaked, and an exact match rules out an incidental non-empty result.
+    expect(body.cells[0]?.storedOnHand).toBe('7.000');
+  });
+
+  it('refuses the company-scoped caller the OTHER company outright', async () => {
+    // Naming the coherent A9 pair is a 403: its inventory permissions are scoped to
+    // COMPANY_A1, and the A9 grant carries only the unrelated widening permission.
+    // So there is no pair at all that hands this caller A9's stock.
+    authAs(INV_COMPANY_SCOPED);
+    const response = await call(
+      RECONCILE,
+      `/api/v1/inventory-reconciliations?companyId=${COMPANY_A9}&branchId=${BRANCH_A9}`
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('refuses a workOrderId that points outside the authorized pair', async () => {
+    // `countOpenCommitments` filters on tenant and work order alone, so the id must be
+    // pinned to the authorized pair before it is counted.
+    authAs(INV_FULL);
+    const foreign = await call(
+      RECONCILE,
+      `/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+        `&workOrderId=${randomUUID()}`
+    );
+    expect(foreign.status).toBe(404);
   });
 
   it('refuses a location that reaches outside the authorized pair', async () => {

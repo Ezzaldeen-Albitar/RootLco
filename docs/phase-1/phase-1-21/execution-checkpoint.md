@@ -303,3 +303,72 @@ conditions hold and the bypass merge may proceed — followed by the protected m
 reproof, the documentation-only gate record, and closure.
 
 **P1-21 is NOT closed.**
+
+---
+
+## Cycle 4 — the exact-SHA re-verification found a sixth High
+
+The re-verification did not reproduce the recorded results and proceed to merge. The
+focused final review it began with found a **new High in the executable code**, so the
+bypass was not taken and the branch moved again.
+
+### H6 — an incoherent (company, branch) pair disclosed another company's stock
+
+The H1 fix was complete at the service layer and **incomplete at the SQL layer**.
+`readAvailability` and `readMovements` filter on `company_id` AND `branch_id`;
+`reconcileBalances` filtered on `branch_id` alone. Because the deployed
+`iam.has_permission_in_scope` matches `company OR branch`, a caller holding the
+permission COMPANY-scoped to one company passes the check while naming a branch of
+another — and `iam.allowed_branch_ids()` is permission-blind, so RLS admits the rows.
+
+Reproduced against a live database before any code changed, one principal, two
+requests differing only in which SQL the route reaches:
+
+| Request                                                                 | Result                                                    |
+| ----------------------------------------------------------------------- | --------------------------------------------------------- |
+| `GET /inventory-reconciliations?companyId=<A1>&branchId=<branch of A9>` | **200**, one cell — A9 SKU and `storedOnHand` **`7.000`** |
+| `GET /stock-availability?companyId=<A1>&branchId=<branch of A9>`        | **200**, `items: []`                                      |
+
+Two fixture blind spots had to coincide for this to survive: every tenant-A fixture
+hung off one company, so no pair could be incoherent; and no P1-21 principal carried a
+`scope_type = 'company'` grant, because `Principal.scope` only writes branch scopes.
+
+Fixed by giving `reconcileBalances` the same required `companyId` and the same
+`b.company_id = $2` predicate the other two reads carry. Mutation-proved: reverting the
+predicate fails exactly one assertion — `expected 1 to be +0`, the leaked cell — with
+the control still green, and the file restored byte-identically afterwards.
+
+Closed alongside it: the caller-supplied `workOrderId` filter on the same read reached
+`countOpenCommitments`, which filters on tenant and work order only. It is now pinned to
+the authorized pair through a new non-locking `readWorkOrderScope`.
+
+### An honest note on the vacuity I nearly shipped
+
+The first version of the H6 regression asserted `cellsChecked === 0` **without seeding
+any stock into the second company**. It passed — and would have passed against the
+unfixed code, because an empty branch also returns zero cells. That is precisely the
+defect T1 records, reproduced by me one screen after writing T1 up. It was caught by
+running the mutation rather than by reading the test, which is the argument for
+mutation-testing every regression rather than trusting that a green test means
+anything. The fixture now seeds `7.000` into A9 and a control asserts an unrestricted
+caller naming the coherent pair receives exactly that.
+
+### Consequence for the exact-SHA proof
+
+The branch advanced, so `7c717c3` and `3e8e80d` are both superseded. Every exact-SHA
+proof — local equivalent CI and fresh clean room — must run against the **new** head,
+and conditions 5 and 6 of the bypass are evaluated only against that SHA.
+
+Measured after the fix, before the exact-SHA battery: unit **926 / 43 files**, backend
+**1380 / 59 files**, `validate:p1-21-inventory` 14 operations and 28/28 identifiers,
+authorization coverage, operation coverage, OpenAPI, module boundaries, lint, typecheck
+and format all exit 0.
+
+### Where the exact-SHA evidence is recorded
+
+The final local CI and clean room run against the head **cannot be committed to the
+feature branch**: writing the result into a file on that branch creates a new commit,
+which changes the head the result claims to describe. That regress is what stalled
+Cycle 3. The exact-SHA evidence is therefore recorded in the **gate record**, which is
+created from the protected merge commit after the feature merge and is documentation
+only — the first place in the process where a SHA can be named without moving it.

@@ -1415,16 +1415,24 @@ export class InventoryRepository extends Repository {
    */
   public async reconcileBalances(
     db: DbHandle,
-    filter: { readonly branchId?: string; readonly itemId?: string },
+    filter: { readonly companyId: string; readonly branchId: string; readonly itemId?: string },
     limit: number
   ): Promise<readonly BalanceReconciliationRow[]> {
     const context = this.assertContext(db);
-    const values: unknown[] = [context.principal.tenantId];
-    const clauses: string[] = ['b.tenant_id = $1'];
-    if (filter.branchId !== undefined) {
-      values.push(filter.branchId);
-      clauses.push(`b.branch_id = $${values.length}`);
-    }
+    // H6: company AND branch are PREDICATES, and neither is optional.
+    //
+    // This read used to filter on `branch_id` alone. `iam.has_permission_in_scope`
+    // matches (scope_type='company' AND company_id = p_company) OR (scope_type='branch'
+    // AND branch_id = p_branch), so a caller holding the permission COMPANY-scoped to
+    // company X passes the check while naming a branch of company Y — and the branch-only
+    // filter then returned company Y's balances, admitted by RLS because
+    // `iam.allowed_branch_ids()` is the permission-blind union of every active grant.
+    // Measured before the fix: 200 with `companyId=<A1>&branchId=<branch of A9>`
+    // returning A9's SKU and on-hand, while `/stock-availability` with the identical
+    // pair returned zero items — because IT carries both predicates. This is that same
+    // pair of predicates, so the incoherent pair now selects nothing structurally.
+    const values: unknown[] = [context.principal.tenantId, filter.companyId, filter.branchId];
+    const clauses: string[] = ['b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3'];
     if (filter.itemId !== undefined) {
       values.push(filter.itemId);
       clauses.push(`b.item_id = $${values.length}`);
@@ -1486,6 +1494,29 @@ export class InventoryRepository extends Repository {
    * P1-19 deferred to P1-21 both need this fact, and so does refusing a second
    * issue against a work order that is no longer accepting parts.
    */
+  /**
+   * The company/branch a work order belongs to, without locking it.
+   *
+   * `lockWorkOrderState` takes `FOR UPDATE`, which is right on a write path and wrong
+   * on a read: an audit read must not block the row it reports on. This exists so
+   * `reconcile` can refuse a `workOrderId` that points outside the authorized pair —
+   * `countOpenCommitments` filters on tenant and work order alone, so without this
+   * check a caller could count another branch's commitments for any work-order id it
+   * could name and that RLS admitted.
+   */
+  public async readWorkOrderScope(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<{ readonly companyId: string; readonly branchId: string } | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ company_id: string; branch_id: string }>(
+      db,
+      `SELECT company_id, branch_id FROM wo.work_orders WHERE tenant_id = $1 AND id = $2`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return row ? { companyId: row.company_id, branchId: row.branch_id } : null;
+  }
+
   public async countOpenCommitments(
     db: DbHandle,
     workOrderId: string

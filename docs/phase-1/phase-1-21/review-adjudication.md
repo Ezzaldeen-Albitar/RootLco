@@ -48,7 +48,7 @@ directly: none found any. Every repository query binds `context.principal.tenant
 every `inv` table is `FORCE ROW LEVEL SECURITY`, and the tenant-B fixture rows prove
 the boundary from both sides.
 
-## High — all RESOLVED
+## High — all RESOLVED (H1–H6)
 
 ### H1 — An unfiltered read bypasses the branch scope check entirely
 
@@ -169,6 +169,66 @@ disposition path (`inv.stock_adjustments` + `inv.approve_adjustment`, needing
 `inv.adjustment.approve` and a second person), not through `inv.stock.operate`.
 
 **Repository defect.**
+
+### H6 — An incoherent (company, branch) pair discloses another company's stock
+
+**Found in the final pre-merge review of the exact PR head, and verified by direct
+reproduction against a live database before a line was changed.**
+
+H1 required `companyId` + `branchId` on all three branch-scoped reads and made
+`authorizeScope` unconditional. That fix was applied completely at the service layer
+and **incompletely at the SQL layer**: `readAvailability` and `readMovements` filter
+on `company_id` AND `branch_id`, but `reconcileBalances` filtered on `branch_id`
+alone.
+
+That gap is reachable because authorization is satisfied by company **or** branch. The
+deployed `iam.has_permission_in_scope` matches
+
+```
+   (s.scope_type = 'company' AND s.company_id = p_company)
+OR (s.scope_type = 'branch'  AND s.branch_id  = p_branch)
+```
+
+so a caller holding the permission COMPANY-scoped to company X passes the check while
+naming a branch of company Y — and `iam.allowed_branch_ids()` is the permission-blind
+union of every active grant, so RLS admits company Y's rows if the caller holds any
+grant there.
+
+Measured on the unmodified tree, one principal, one request each:
+
+| Request (identical query string)                                        | Result                                                                             |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET /inventory-reconciliations?companyId=<A1>&branchId=<branch of A9>` | **200**, `cellsChecked: 1` — company A9's SKU, location and `storedOnHand` `7.000` |
+| `GET /stock-availability?companyId=<A1>&branchId=<branch of A9>`        | **200**, `items: []`                                                               |
+
+The two rows differ only in which SQL the route reaches. That is the whole finding:
+the `company_id` predicate is what refuses an incoherent pair, and one read did not
+carry it.
+
+**Why nothing caught it.** Two independent fixture blind spots had to hold at once —
+every tenant-A fixture hung off a single company, so no pair could be incoherent; and
+no P1-21 principal had a `scope_type = 'company'` grant, because `Principal.scope`
+only ever writes a branch scope. Either alone makes the hole unreachable by
+construction.
+
+**Resolution.** `reconcileBalances` now takes a required `companyId` and applies
+`b.company_id = $2` alongside `b.branch_id = $3`, so an incoherent pair selects
+nothing structurally rather than being refused by a check that cannot refuse it. A
+second company, its branch, its stock and a company-scoped principal were added to the
+shared fixtures, and the regression asserts all three reads return nothing for the
+incoherent pair — with a **control** proving an unrestricted caller naming the coherent
+pair does get A9's `7.000`, so the zero is the predicate and not an empty branch.
+
+**Mutation-proved.** Reverting the predicate to `['b.tenant_id = $1', 'b.branch_id = $2']`
+fails exactly one assertion — `expected 1 to be +0`, the leaked cell — while the control
+and all 34 other tests stay green. The file was then restored byte-identically
+(`diff` empty).
+
+Closed in the same change: `countOpenCommitments` filters on tenant and work order
+only, so the caller-supplied `workOrderId` filter on the same read could count another
+branch's commitments. It is now pinned to the authorized pair through a new
+non-locking `readWorkOrderScope`. The closure port keeps its documented no-permission
+read, where the work order is already the authorized subject.
 
 ## Test-honesty — open
 
