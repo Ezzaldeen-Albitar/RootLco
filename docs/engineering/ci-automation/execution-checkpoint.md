@@ -155,7 +155,40 @@ mutation anchors verified, `actionlint` 0 errors across 13 workflow files.
 
 ---
 
-## Cycle 6 — Wave 7: BLOCKED
+## Cycle 6 — supply-chain disposition
+
+**Production dependency advisories: Resolved through compatible patch upgrades.**
+**brace-expansion advisory: Open — upstream-blocked development-tooling
+exception with no proven production or runtime reachability.**
+
+The incompatible override is absent and stays absent. The compatible production
+patches stay: `next` 16.2.12, `postcss ^8.5.24`, `sharp ^0.35.3`.
+`npm audit --omit=dev` reports **0 vulnerabilities**.
+
+**A finding that changed the analysis.** The lockfile resolves
+`brace-expansion` THREE times, and one is already patched: `minimatch@10.2.5`
+requires `^5.0.5`, so `node_modules/brace-expansion` is **5.0.8**. npm's `nodes`
+list names only the other two — 1.1.16 under `minimatch@3`, 2.1.3 under glob's
+`minimatch@9`. The earlier override forced _all_ of them to 5.x, which is
+precisely why ESLint broke.
+
+Reachability is now **derived, not claimed** — 70 root-to-target walks all
+beginning on a devDependencies edge; `npm ls --omit=dev` returns `(empty)`; no
+import anywhere in `src/` or `scripts/`; every glob pattern from committed
+configuration; and absence from the built image asserted by enumerating the real
+image filesystem on a hosted runner. Full record:
+[`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
+
+The exception is exact — one advisory, one package, one range, one
+dependency-path fingerprint, one expiry — and ten gate rules enforce it, each
+with a mutation test. Deleting a _rule_ makes its test fail; verified on two of
+them.
+
+Local battery: 24 checks, all pass. Unit tier **1063**.
+
+---
+
+## Cycle 7 — Wave 7: BLOCKED
 
 The branch `feature/platform-comprehensive-ci-automation` is pushed. **The pull
 request cannot be opened from this session.**
