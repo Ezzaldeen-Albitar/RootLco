@@ -576,6 +576,40 @@ keys it did not find.
   reintroduced `yarn` is caught by the new resolve-based check and returns
   **0 matches** under the old path rule.
 
+### AR-41 / AR-42 · the dependency-graph probe took four attempts
+
+Worth recording in full, because the failure mode repeated and the lesson is
+about method rather than about this endpoint.
+
+| #   | Rule                                           | Why it was wrong                                                                  |
+| --- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| 1   | any `403`/`404` means the feature is off       | a rate limit or a bad token silently disabled the check                           |
+| 2   | the body must SAY the feature is off           | the API replies `404 Not Found`, which says nothing — failed where it should pass |
+| 3   | rule out rate limit, token scope, and bad refs | the token-scope pattern included the generic word `forbidden`                     |
+| 4   | …with `forbidden` removed                      | the observed reply is exactly `403 {"message":"Forbidden"}`                       |
+
+Attempt 3 caught the precise case the branch existed to let through. GitHub
+names a genuine token-scope failure specifically —
+`Resource not accessible by integration` — so that is what is matched now, and
+the generic word is not.
+
+The only reason any of this was diagnosable is that the error message
+interpolates the response body, so the failure annotation carried
+`HTTP 403 … : Forbidden`. **Annotations are the only public surface on this
+repository's Actions runs**; without the body in the message there would have
+been nothing to read. Any check that fails on an external response should print
+what it received.
+
+Verified against eight bodies: `Forbidden`, `Not Found`, the documented
+feature-disabled prose and an empty body all proceed to the ref probe; both
+rate-limit forms, `Resource not accessible by integration` and the SAML SSO
+message all fail.
+
+The ref probe itself does **not** false-block fork pull requests. Verified
+rather than assumed: `GET /repos/nodejs/node/commits/<head sha of an open fork
+PR>` returns **200**, because GitHub makes pull-request head commits resolvable
+through the base repository.
+
 ### Recorded but not fixed
 
 Four findings reproduced mechanically and were then **refuted as defects** by
