@@ -20,9 +20,7 @@
       "post": {
         "operationId": "wo.additional-work-approval",
         "summary": "Record the customer decision on an additional-work request.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -77,9 +75,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.additional_work.approve"
-        ],
+        "x-required-permissions": ["wo.additional_work.approve"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -88,9 +84,7 @@
       "get": {
         "operationId": "wo.additional-work-approval-read",
         "summary": "Read the recorded customer decision and its evidence.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -133,9 +127,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -146,9 +138,7 @@
       "get": {
         "operationId": "wo.additional-work-detail-read",
         "summary": "Read the restricted customer-facing description.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -191,10 +181,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read",
-          "iam.sensitive.view"
-        ],
+        "x-required-permissions": ["wo.work_order.read", "iam.sensitive.view"],
         "x-scope": "branch",
         "x-audit-class": "security",
         "x-rate-limit-policy": "expensive-read",
@@ -203,9 +190,7 @@
       "put": {
         "operationId": "wo.additional-work-detail-record",
         "summary": "Record or replace the restricted customer-facing description.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -254,10 +239,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.additional_work.request",
-          "iam.sensitive.view"
-        ],
+        "x-required-permissions": ["wo.additional_work.request", "iam.sensitive.view"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -268,9 +250,7 @@
       "post": {
         "operationId": "wo.additional-work-fulfillment",
         "summary": "Record approved additional work as carried out, or waive it.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -325,9 +305,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.additional_work.request"
-        ],
+        "x-required-permissions": ["wo.additional_work.request"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -338,9 +316,7 @@
       "post": {
         "operationId": "wo.additional-work-withdraw",
         "summary": "Withdraw an additional-work request the workshop raised.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -395,9 +371,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.additional_work.request"
-        ],
+        "x-required-permissions": ["wo.additional_work.request"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -408,9 +382,7 @@
       "post": {
         "operationId": "apt.appointment-create",
         "summary": "Book an appointment for a vehicle on a branch calendar.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -459,9 +431,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "apt.appointment.manage"
-        ],
+        "x-required-permissions": ["apt.appointment.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -472,9 +442,7 @@
       "post": {
         "operationId": "apt.appointment-cancel",
         "summary": "Cancel an appointment with a catalogued reason.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -529,9 +497,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "apt.appointment.lifecycle.manage"
-        ],
+        "x-required-permissions": ["apt.appointment.lifecycle.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -542,9 +508,7 @@
       "post": {
         "operationId": "apt.appointment-no-show",
         "summary": "Record a confirmed appointment as a no-show.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -599,9 +563,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "apt.appointment.lifecycle.manage"
-        ],
+        "x-required-permissions": ["apt.appointment.lifecycle.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -612,9 +574,7 @@
       "post": {
         "operationId": "apt.appointment-reschedule",
         "summary": "Set or move the confirmed window of an appointment.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -669,9 +629,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "apt.appointment.manage"
-        ],
+        "x-required-permissions": ["apt.appointment.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -682,9 +640,7 @@
       "post": {
         "operationId": "wo.job-assignment-end",
         "summary": "End a job assignment, recording why.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -736,9 +692,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.assignment.manage"
-        ],
+        "x-required-permissions": ["tech.assignment.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -749,9 +703,7 @@
       "post": {
         "operationId": "shared.attachment-download-authorize",
         "summary": "Issue a short-lived signed download URL for an accepted version.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -794,9 +746,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -807,9 +757,7 @@
       "post": {
         "operationId": "shared.attachment-link-create",
         "summary": "Link a document to a business entity.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -858,9 +806,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -871,9 +817,7 @@
       "delete": {
         "operationId": "shared.attachment-link-withdraw",
         "summary": "Withdraw a document link. The row is retained with a withdrawal stamp.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -916,9 +860,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -929,9 +871,7 @@
       "post": {
         "operationId": "shared.attachment-upload-authorize",
         "summary": "Create document metadata and issue a short-lived signed upload URL.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -980,9 +920,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -993,9 +931,7 @@
       "post": {
         "operationId": "shared.attachment-version-register",
         "summary": "Register an uploaded object as a pending document version.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1044,9 +980,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1057,9 +991,7 @@
       "post": {
         "operationId": "shared.attachment-version-reject",
         "summary": "Reject a pending document version. The state is terminal.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1102,9 +1034,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1115,9 +1045,7 @@
       "get": {
         "operationId": "iam.audit-event-list",
         "summary": "List audit records within a bounded date range.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1160,9 +1088,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.audit.view"
-        ],
+        "x-required-permissions": ["iam.audit.view"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "expensive-read",
@@ -1173,9 +1099,7 @@
       "get": {
         "operationId": "iam.audit-event-detail",
         "summary": "Read one audit record, with masked details for sensitive-view holders.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1218,9 +1142,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.audit.view"
-        ],
+        "x-required-permissions": ["iam.audit.view"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -1231,9 +1153,7 @@
       "post": {
         "operationId": "iam.auth-login",
         "summary": "Verify credentials and open a session.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1277,9 +1197,7 @@
       "post": {
         "operationId": "iam.auth-logout",
         "summary": "End the session the presented bearer token belongs to.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1323,9 +1241,7 @@
       "post": {
         "operationId": "iam.auth-password-reset",
         "summary": "Request a password-reset mail. Always answers identically.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1369,9 +1285,7 @@
       "post": {
         "operationId": "iam.auth-password-reset-completion",
         "summary": "Set a new password using a provider recovery token.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1415,9 +1329,7 @@
       "get": {
         "operationId": "iam.auth-session",
         "summary": "Describe the current session, its resolved scope, and its permissions.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1460,9 +1372,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.read"
-        ],
+        "x-required-permissions": ["iam.user.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -1473,9 +1383,7 @@
       "post": {
         "operationId": "crm.duplicate-review",
         "summary": "Record a review decision on a duplicate candidate.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1524,9 +1432,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.duplicate.review"
-        ],
+        "x-required-permissions": ["crm.customer.duplicate.review"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1537,9 +1443,7 @@
       "post": {
         "operationId": "inv.customer-supplied-part-create",
         "summary": "Record a customer-owned part taken into custody against a work order.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1588,9 +1492,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.custody.manage"
-        ],
+        "x-required-permissions": ["inv.custody.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1601,9 +1503,7 @@
       "get": {
         "operationId": "crm.customer-search",
         "summary": "Search customers in the caller tenant by an allow-listed field set.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1646,9 +1546,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.read"
-        ],
+        "x-required-permissions": ["crm.customer.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -1659,9 +1557,7 @@
       "post": {
         "operationId": "crm.address-add",
         "summary": "Add an address to a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1710,9 +1606,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.profile.write"
-        ],
+        "x-required-permissions": ["crm.customer.profile.write"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1723,9 +1617,7 @@
       "post": {
         "operationId": "crm.alert-raise",
         "summary": "Raise an advisory alert against a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1774,9 +1666,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.governance.manage"
-        ],
+        "x-required-permissions": ["crm.customer.governance.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1787,9 +1677,7 @@
       "post": {
         "operationId": "crm.consent-record",
         "summary": "Record a customer consent decision.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1838,9 +1726,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.consent.write"
-        ],
+        "x-required-permissions": ["crm.customer.consent.write"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1851,9 +1737,7 @@
       "post": {
         "operationId": "crm.contact-add",
         "summary": "Add a contact channel to a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1902,9 +1786,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.profile.write"
-        ],
+        "x-required-permissions": ["crm.customer.profile.write"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -1915,9 +1797,7 @@
       "post": {
         "operationId": "crm.duplicate-scan",
         "summary": "Score a customer against comparable ones and record duplicate candidates.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -1966,9 +1846,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.duplicate.review"
-        ],
+        "x-required-permissions": ["crm.customer.duplicate.review"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "expensive-read",
@@ -1979,9 +1857,7 @@
       "get": {
         "operationId": "crm.customer-history",
         "summary": "Read the governance history of a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2024,9 +1900,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.read"
-        ],
+        "x-required-permissions": ["crm.customer.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -2037,9 +1911,7 @@
       "post": {
         "operationId": "crm.customer-merge",
         "summary": "Merge a duplicate customer into the surviving record.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2088,9 +1960,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.merge"
-        ],
+        "x-required-permissions": ["crm.customer.merge"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2101,9 +1971,7 @@
       "post": {
         "operationId": "crm.note-add",
         "summary": "Author a note against a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2152,9 +2020,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.note.write"
-        ],
+        "x-required-permissions": ["crm.customer.note.write"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2165,9 +2031,7 @@
       "put": {
         "operationId": "crm.preference-set",
         "summary": "Set a customer communication preference for one channel and purpose.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2216,9 +2080,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.profile.write"
-        ],
+        "x-required-permissions": ["crm.customer.profile.write"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2229,9 +2091,7 @@
       "post": {
         "operationId": "crm.restriction-impose",
         "summary": "Impose a commercial or service restriction on a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2280,9 +2140,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.restriction.manage"
-        ],
+        "x-required-permissions": ["crm.customer.restriction.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2293,9 +2151,7 @@
       "put": {
         "operationId": "crm.customer-status-set",
         "summary": "Change the customer lifecycle status with a recorded reason.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2344,9 +2200,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.governance.manage"
-        ],
+        "x-required-permissions": ["crm.customer.governance.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2357,9 +2211,7 @@
       "post": {
         "operationId": "crm.tag-assign",
         "summary": "Assign a segment tag to a customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2408,9 +2260,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.governance.manage"
-        ],
+        "x-required-permissions": ["crm.customer.governance.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2421,9 +2271,7 @@
       "get": {
         "operationId": "crm.customer-timeline",
         "summary": "Read the customer timeline, newest first.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2466,9 +2314,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.read"
-        ],
+        "x-required-permissions": ["crm.customer.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -2479,9 +2325,7 @@
       "post": {
         "operationId": "crm.vehicle-link",
         "summary": "Link a customer to a vehicle in a relationship role.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2530,9 +2374,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.vehicle.manage"
-        ],
+        "x-required-permissions": ["crm.customer.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2543,9 +2385,7 @@
       "post": {
         "operationId": "crm.company-create",
         "summary": "Create an organization customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2594,9 +2434,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.create"
-        ],
+        "x-required-permissions": ["crm.customer.create"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2607,9 +2445,7 @@
       "post": {
         "operationId": "crm.individual-create",
         "summary": "Create an individual customer.",
-        "tags": [
-          "crm"
-        ],
+        "tags": ["crm"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2658,9 +2494,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "crm.customer.create"
-        ],
+        "x-required-permissions": ["crm.customer.create"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2671,9 +2505,7 @@
       "post": {
         "operationId": "inv.damaged-stock-create",
         "summary": "Record damaged stock and move it out of sellable availability into quarantine.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2722,9 +2554,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2735,9 +2565,7 @@
       "post": {
         "operationId": "shared.export-authorize",
         "summary": "Authorize an export of tenant data. Produces no file.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2780,9 +2608,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rpt.export"
-        ],
+        "x-required-permissions": ["rpt.export"],
         "x-scope": "tenant",
         "x-audit-class": "export",
         "x-rate-limit-policy": "expensive-read",
@@ -2793,9 +2619,7 @@
       "get": {
         "operationId": "shared.export-catalogue",
         "summary": "List the resources and fields this deployment can export.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2838,9 +2662,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rpt.export"
-        ],
+        "x-required-permissions": ["rpt.export"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -2851,9 +2673,7 @@
       "post": {
         "operationId": "inv.external-purchase-part-create",
         "summary": "Record an ad-hoc external purchase reference against a work order.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2902,9 +2722,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.external_purchase.record"
-        ],
+        "x-required-permissions": ["inv.external_purchase.record"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -2915,9 +2733,7 @@
       "get": {
         "operationId": "shared.health-live",
         "summary": "Liveness probe. Reports that the process is running; touches nothing.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -2961,9 +2777,7 @@
       "get": {
         "operationId": "shared.health-ready",
         "summary": "Readiness probe. Reports a bounded dependency verdict with no internal detail.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3007,9 +2821,7 @@
       "post": {
         "operationId": "iam.approval-limit-create",
         "summary": "Create an approval limit for a role or a user within a company.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3058,9 +2870,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.approval.manage"
-        ],
+        "x-required-permissions": ["iam.approval.manage"],
         "x-scope": "tenant",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -3069,9 +2879,7 @@
       "get": {
         "operationId": "iam.approval-limit-list",
         "summary": "List approval limits in the caller tenant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3114,9 +2922,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.approval.manage"
-        ],
+        "x-required-permissions": ["iam.approval.manage"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -3127,9 +2933,7 @@
       "patch": {
         "operationId": "iam.approval-limit-end",
         "summary": "Close the effective window of an approval limit.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3181,9 +2985,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.approval.manage"
-        ],
+        "x-required-permissions": ["iam.approval.manage"],
         "x-scope": "tenant",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -3194,9 +2996,7 @@
       "post": {
         "operationId": "iam.grant-issue",
         "summary": "Grant a role to a user, optionally scoped to companies or branches.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3245,9 +3045,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.grant.manage"
-        ],
+        "x-required-permissions": ["iam.grant.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3258,9 +3056,7 @@
       "delete": {
         "operationId": "iam.grant-revoke",
         "summary": "Revoke a role grant with immediate effect.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3312,9 +3108,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.grant.manage"
-        ],
+        "x-required-permissions": ["iam.grant.manage"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -3325,9 +3119,7 @@
       "post": {
         "operationId": "iam.grant-scope-add",
         "summary": "Attach a company, branch, or department scope to a grant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3376,9 +3168,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.grant.manage"
-        ],
+        "x-required-permissions": ["iam.grant.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3387,9 +3177,7 @@
       "get": {
         "operationId": "iam.grant-scope-list",
         "summary": "List the scopes attached to a grant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3432,9 +3220,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.read"
-        ],
+        "x-required-permissions": ["iam.role.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -3445,9 +3231,7 @@
       "delete": {
         "operationId": "iam.grant-scope-remove",
         "summary": "Remove a scope from a grant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3490,9 +3274,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.grant.manage"
-        ],
+        "x-required-permissions": ["iam.grant.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3503,9 +3285,7 @@
       "post": {
         "operationId": "iam.invitation-create",
         "summary": "Invite a user into the caller tenant and create their invited account.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3554,9 +3334,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage"
-        ],
+        "x-required-permissions": ["iam.user.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3567,9 +3345,7 @@
       "delete": {
         "operationId": "iam.invitation-cancel",
         "summary": "Cancel an outstanding invitation and disable the provider identity.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3612,9 +3388,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage"
-        ],
+        "x-required-permissions": ["iam.user.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3625,9 +3399,7 @@
       "post": {
         "operationId": "iam.invitation-activate",
         "summary": "Activate an invited account once the provider confirms acceptance.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3676,9 +3448,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage"
-        ],
+        "x-required-permissions": ["iam.user.manage"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -3689,9 +3459,7 @@
       "get": {
         "operationId": "iam.permission-list",
         "summary": "List the platform permission catalog.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3734,9 +3502,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.read"
-        ],
+        "x-required-permissions": ["iam.role.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -3747,9 +3513,7 @@
       "post": {
         "operationId": "iam.role-create",
         "summary": "Create a tenant role.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3798,9 +3562,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.manage"
-        ],
+        "x-required-permissions": ["iam.role.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3809,9 +3571,7 @@
       "get": {
         "operationId": "iam.role-list",
         "summary": "List roles in the caller tenant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3854,9 +3614,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.read"
-        ],
+        "x-required-permissions": ["iam.role.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -3867,9 +3625,7 @@
       "patch": {
         "operationId": "iam.role-update",
         "summary": "Rename, re-describe, or archive a tenant role.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3921,9 +3677,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.manage"
-        ],
+        "x-required-permissions": ["iam.role.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3934,9 +3688,7 @@
       "post": {
         "operationId": "iam.role-permission-add",
         "summary": "Map a permission onto a role with an allow or deny effect.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -3985,9 +3737,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.manage"
-        ],
+        "x-required-permissions": ["iam.role.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -3996,9 +3746,7 @@
       "get": {
         "operationId": "iam.role-permission-list",
         "summary": "List the permission mappings of a role.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4041,9 +3789,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.read"
-        ],
+        "x-required-permissions": ["iam.role.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -4054,9 +3800,7 @@
       "delete": {
         "operationId": "iam.role-permission-remove",
         "summary": "Remove a permission mapping from a role.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4099,9 +3843,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.manage"
-        ],
+        "x-required-permissions": ["iam.role.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4110,9 +3852,7 @@
       "patch": {
         "operationId": "iam.role-permission-update",
         "summary": "Change a permission mapping between allow and deny.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4164,9 +3904,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.role.manage"
-        ],
+        "x-required-permissions": ["iam.role.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4177,9 +3915,7 @@
       "get": {
         "operationId": "iam.user-list",
         "summary": "List users in the caller tenant.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4222,9 +3958,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.read"
-        ],
+        "x-required-permissions": ["iam.user.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -4235,9 +3969,7 @@
       "get": {
         "operationId": "iam.user-detail",
         "summary": "Read one user with their role grants.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4280,9 +4012,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.read"
-        ],
+        "x-required-permissions": ["iam.user.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -4291,9 +4021,7 @@
       "patch": {
         "operationId": "iam.user-update",
         "summary": "Update a user display name or MFA requirement.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4345,9 +4073,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage"
-        ],
+        "x-required-permissions": ["iam.user.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4358,9 +4084,7 @@
       "get": {
         "operationId": "iam.user-session-list",
         "summary": "List the sessions of a user.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4403,9 +4127,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.session.view_all"
-        ],
+        "x-required-permissions": ["iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -4414,9 +4136,7 @@
       "delete": {
         "operationId": "iam.user-session-revoke-all",
         "summary": "Revoke every live session of a user.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4459,10 +4179,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage",
-          "iam.session.view_all"
-        ],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -4473,9 +4190,7 @@
       "post": {
         "operationId": "iam.user-status-change",
         "summary": "Lock, unlock, or archive a user and revoke their sessions.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4524,10 +4239,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "iam.user.manage",
-          "iam.session.view_all"
-        ],
+        "x-required-permissions": ["iam.user.manage", "iam.session.view_all"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -4538,9 +4250,7 @@
       "get": {
         "operationId": "dia.diagnostic-detail",
         "summary": "Read a diagnostic report with every entry recorded on it.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4583,9 +4293,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.read"
-        ],
+        "x-required-permissions": ["dia.diagnostic.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -4596,9 +4304,7 @@
       "post": {
         "operationId": "dia.diagnostic-complete",
         "summary": "Complete a diagnostic report once every mandatory item is resolved.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4653,9 +4359,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.complete"
-        ],
+        "x-required-permissions": ["dia.diagnostic.complete"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4666,9 +4370,7 @@
       "post": {
         "operationId": "dia.diagnostic-dtc-record",
         "summary": "Record a diagnostic trouble code against a report.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4717,9 +4419,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4730,9 +4430,7 @@
       "post": {
         "operationId": "dia.diagnostic-evidence-record",
         "summary": "Bind an exact document version to a diagnostic report as evidence.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4781,9 +4479,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4794,9 +4490,7 @@
       "post": {
         "operationId": "dia.diagnostic-finding-record",
         "summary": "Record a diagnostic finding with its severity and disposition.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4845,9 +4539,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4858,9 +4550,7 @@
       "get": {
         "operationId": "dia.diagnostic-history",
         "summary": "Read the append-only status ledger of a diagnostic report.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4903,9 +4593,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.read"
-        ],
+        "x-required-permissions": ["dia.diagnostic.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -4916,9 +4604,7 @@
       "put": {
         "operationId": "dia.diagnostic-item-result",
         "summary": "Answer one template item, or document why it does not apply.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -4967,9 +4653,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -4980,9 +4664,7 @@
       "post": {
         "operationId": "dia.diagnostic-measurement-record",
         "summary": "Record a numeric reading, flagged against the item’s configured range.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5031,9 +4713,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5044,9 +4724,7 @@
       "post": {
         "operationId": "dia.diagnostic-recommendation-record",
         "summary": "Record an advisory recommendation on a diagnostic report.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5095,9 +4773,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5108,9 +4784,7 @@
       "post": {
         "operationId": "dia.diagnostic-review",
         "summary": "Review a completed diagnostic report.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5159,9 +4833,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.review"
-        ],
+        "x-required-permissions": ["dia.diagnostic.review"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -5172,9 +4844,7 @@
       "post": {
         "operationId": "dia.diagnostic-transition",
         "summary": "Move a diagnostic report to another status in its fixed lifecycle.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5229,9 +4899,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5242,9 +4910,7 @@
       "get": {
         "operationId": "inv.inventory-reconciliation-read",
         "summary": "Re-derive stored stock balances from the movement ledger and report any disagreement.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5287,9 +4953,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.audit.read"
-        ],
+        "x-required-permissions": ["inv.audit.read"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "expensive-read",
@@ -5300,9 +4964,7 @@
       "get": {
         "operationId": "inv.item-search",
         "summary": "Search the tenant inventory item catalog.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5345,9 +5007,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.item.read"
-        ],
+        "x-required-permissions": ["inv.item.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -5358,9 +5018,7 @@
       "patch": {
         "operationId": "wo.job-update",
         "summary": "Update a job's descriptive fields.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5412,9 +5070,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.job.manage"
-        ],
+        "x-required-permissions": ["wo.job.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5425,9 +5081,7 @@
       "post": {
         "operationId": "wo.job-assignment-create",
         "summary": "Assign a technician to a job.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5476,9 +5130,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.assignment.manage"
-        ],
+        "x-required-permissions": ["tech.assignment.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5487,9 +5139,7 @@
       "get": {
         "operationId": "wo.job-assignment-list",
         "summary": "Read the append-only assignment history of a job.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5532,9 +5182,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.technician.read"
-        ],
+        "x-required-permissions": ["tech.technician.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -5545,9 +5193,7 @@
       "get": {
         "operationId": "wo.job-history",
         "summary": "Read the append-only status history of a job, newest first.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5590,9 +5236,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -5603,9 +5247,7 @@
       "post": {
         "operationId": "dia.diagnostic-create",
         "summary": "Open a diagnostic report on a job against a published template version.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5654,9 +5296,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.record"
-        ],
+        "x-required-permissions": ["dia.diagnostic.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5665,9 +5305,7 @@
       "get": {
         "operationId": "dia.diagnostic-list",
         "summary": "List the diagnostic reports of a job, newest revision first.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5710,9 +5348,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "dia.diagnostic.read"
-        ],
+        "x-required-permissions": ["dia.diagnostic.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -5723,9 +5359,7 @@
       "get": {
         "operationId": "tech.labor-session-list",
         "summary": "Read the labour log of a job, newest start first.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5768,9 +5402,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.technician.read"
-        ],
+        "x-required-permissions": ["tech.technician.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -5779,9 +5411,7 @@
       "post": {
         "operationId": "tech.labor-session-start",
         "summary": "Start a labour session for a technician on a job.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5830,9 +5460,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.labor.record"
-        ],
+        "x-required-permissions": ["tech.labor.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5843,9 +5471,7 @@
       "post": {
         "operationId": "wo.job-reassignment",
         "summary": "Hand a job from its current primary technician to another.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5894,9 +5520,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.assignment.manage"
-        ],
+        "x-required-permissions": ["tech.assignment.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5907,9 +5531,7 @@
       "post": {
         "operationId": "wo.job-transition",
         "summary": "Move a job to another state in its configured graph.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -5964,9 +5586,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.job.transition"
-        ],
+        "x-required-permissions": ["wo.job.transition"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -5977,9 +5597,7 @@
       "post": {
         "operationId": "tech.labor-session-correct",
         "summary": "Correct a labour session window, preserving the original.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6031,9 +5649,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.labor.correct"
-        ],
+        "x-required-permissions": ["tech.labor.correct"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6044,9 +5660,7 @@
       "post": {
         "operationId": "tech.labor-session-stop",
         "summary": "Stop an open labour session.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6098,9 +5712,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.labor.record"
-        ],
+        "x-required-permissions": ["tech.labor.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6111,9 +5723,7 @@
       "post": {
         "operationId": "shared.template-create",
         "summary": "Create a tenant message template.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6162,9 +5772,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6175,9 +5783,7 @@
       "patch": {
         "operationId": "shared.template-update",
         "summary": "Rename, re-describe, or disable a tenant message template.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6229,9 +5835,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6242,9 +5846,7 @@
       "put": {
         "operationId": "shared.template-activation-set",
         "summary": "Set or clear the active version of a tenant message template.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6296,9 +5898,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6309,9 +5909,7 @@
       "post": {
         "operationId": "shared.template-version-create",
         "summary": "Create the next draft version of a tenant message template.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6360,9 +5958,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6373,9 +5969,7 @@
       "get": {
         "operationId": "meta.ping",
         "summary": "Authenticated foundation health probe reporting the caller resolved scope.",
-        "tags": [
-          "meta"
-        ],
+        "tags": ["meta"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6418,9 +6012,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.tenant.read"
-        ],
+        "x-required-permissions": ["org.tenant.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -6431,9 +6023,7 @@
       "post": {
         "operationId": "shared.notification-enqueue",
         "summary": "Enqueue an outbound message from an approved template version.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6482,9 +6072,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.notification.send"
-        ],
+        "x-required-permissions": ["shared.notification.send"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6495,9 +6083,7 @@
       "post": {
         "operationId": "inv.opening-batch-create",
         "summary": "Open a draft opening-inventory batch for a branch.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6546,9 +6132,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6559,9 +6143,7 @@
       "post": {
         "operationId": "inv.opening-batch-approve",
         "summary": "Approve an opening-inventory batch, posting one opening movement per counted line.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6610,9 +6192,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.adjustment.approve"
-        ],
+        "x-required-permissions": ["inv.adjustment.approve"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -6623,9 +6203,7 @@
       "post": {
         "operationId": "inv.opening-batch-line-create",
         "summary": "Record a counted item quantity on a draft opening-inventory batch.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6668,9 +6246,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "standard-command",
@@ -6681,9 +6257,7 @@
       "get": {
         "operationId": "iam.branch-settings-read",
         "summary": "Read the current settings of a branch.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6726,9 +6300,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.branch.read"
-        ],
+        "x-required-permissions": ["org.branch.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -6737,9 +6309,7 @@
       "post": {
         "operationId": "iam.branch-settings-write",
         "summary": "Write the next version of a branch setting.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6788,9 +6358,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6801,9 +6369,7 @@
       "get": {
         "operationId": "iam.company-settings-read",
         "summary": "Read the current settings of a company.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6846,9 +6412,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.company.read"
-        ],
+        "x-required-permissions": ["org.company.read"],
         "x-scope": "company",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -6857,9 +6421,7 @@
       "post": {
         "operationId": "iam.company-settings-write",
         "summary": "Write the next version of a company setting.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6908,9 +6470,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "company",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -6921,9 +6481,7 @@
       "get": {
         "operationId": "iam.tenant-settings-read",
         "summary": "Read the caller tenant settings.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -6966,9 +6524,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.tenant.read"
-        ],
+        "x-required-permissions": ["org.tenant.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -6977,9 +6533,7 @@
       "patch": {
         "operationId": "iam.tenant-settings-update",
         "summary": "Update the caller tenant display name, locale, or timezone.",
-        "tags": [
-          "iam"
-        ],
+        "tags": ["iam"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7031,9 +6585,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -7044,9 +6596,7 @@
       "post": {
         "operationId": "shared.branch-status-change",
         "summary": "Activate or deactivate a branch through the transition engine.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7098,9 +6648,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -7109,9 +6657,7 @@
       "get": {
         "operationId": "shared.branch-status-read",
         "summary": "Read a branch status and the transitions available from it.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7154,9 +6700,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.branch.read"
-        ],
+        "x-required-permissions": ["org.branch.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -7167,9 +6711,7 @@
       "post": {
         "operationId": "svc.price-list-create",
         "summary": "Create a price list in a fixed currency.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7218,9 +6760,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.manage"
-        ],
+        "x-required-permissions": ["svc.price.manage"],
         "x-scope": "tenant",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -7229,9 +6769,7 @@
       "get": {
         "operationId": "svc.price-list-list",
         "summary": "List the tenant price lists.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7274,9 +6812,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.read"
-        ],
+        "x-required-permissions": ["svc.price.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -7287,9 +6823,7 @@
       "post": {
         "operationId": "svc.price-list-version-create",
         "summary": "Create the next draft version of a price list.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7344,9 +6878,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.manage"
-        ],
+        "x-required-permissions": ["svc.price.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -7357,9 +6889,7 @@
       "post": {
         "operationId": "svc.price-list-version-publish",
         "summary": "Publish a draft price-list version, fixing its amounts from a date.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7414,9 +6944,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.publish"
-        ],
+        "x-required-permissions": ["svc.price.publish"],
         "x-scope": "tenant",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -7427,9 +6955,7 @@
       "post": {
         "operationId": "svc.price-rule-record",
         "summary": "Record a price rule on a draft price-list version.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7478,9 +7004,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.manage"
-        ],
+        "x-required-permissions": ["svc.price.manage"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -7491,9 +7015,7 @@
       "get": {
         "operationId": "svc.price-resolve",
         "summary": "Resolve the single applicable price and tax rate for a service.",
-        "tags": [
-          "pricing"
-        ],
+        "tags": ["pricing"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7536,9 +7058,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.price.read"
-        ],
+        "x-required-permissions": ["svc.price.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -7549,9 +7069,7 @@
       "get": {
         "operationId": "qms.qc-record-detail",
         "summary": "Read a quality-control record with its check outcomes.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7594,9 +7112,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read"
-        ],
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -7607,9 +7123,7 @@
       "put": {
         "operationId": "qms.qc-check-result",
         "summary": "Record the outcome of one configured quality check.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7658,9 +7172,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.record"
-        ],
+        "x-required-permissions": ["qms.quality_control.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -7671,9 +7183,7 @@
       "post": {
         "operationId": "qms.qc-record-finalize",
         "summary": "Finalize a quality-control record as passed or failed.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7728,9 +7238,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.finalize"
-        ],
+        "x-required-permissions": ["qms.quality_control.finalize"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -7741,9 +7249,7 @@
       "post": {
         "operationId": "quo.quotation-item-decide",
         "summary": "Record the customer's approval or rejection of one quotation line.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7792,9 +7298,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.decision.record"
-        ],
+        "x-required-permissions": ["quo.decision.record"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -7805,9 +7309,7 @@
       "post": {
         "operationId": "quo.quotation-revision-decide",
         "summary": "Record one decision against every undecided line of a revision, atomically.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7856,9 +7358,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.decision.record"
-        ],
+        "x-required-permissions": ["quo.decision.record"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -7869,9 +7369,7 @@
       "post": {
         "operationId": "quo.quotation-create",
         "summary": "Create a quotation with its first draft revision and priced lines.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7920,10 +7418,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.quotation.manage",
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["quo.quotation.manage", "wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -7934,9 +7429,7 @@
       "get": {
         "operationId": "quo.quotation-detail",
         "summary": "Read a quotation with its current revision and priced lines.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -7979,9 +7472,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.quotation.read"
-        ],
+        "x-required-permissions": ["quo.quotation.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -7992,9 +7483,7 @@
       "post": {
         "operationId": "quo.quotation-issue",
         "summary": "Issue a draft revision to the customer, freezing its totals.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8049,9 +7538,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.quotation.manage"
-        ],
+        "x-required-permissions": ["quo.quotation.manage"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -8062,9 +7549,7 @@
       "post": {
         "operationId": "quo.quotation-revision-create",
         "summary": "Create a new draft revision, leaving any issued revision untouched.",
-        "tags": [
-          "quotation"
-        ],
+        "tags": ["quotation"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8119,9 +7604,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "quo.quotation.manage"
-        ],
+        "x-required-permissions": ["quo.quotation.manage"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "standard-command",
@@ -8132,9 +7615,7 @@
       "post": {
         "operationId": "rec.reception-create",
         "summary": "Open a reception visit and accept custody of the vehicle.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8183,9 +7664,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.manage"
-        ],
+        "x-required-permissions": ["rec.reception.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8196,9 +7675,7 @@
       "post": {
         "operationId": "rec.reception-approve",
         "summary": "Advance a reception visit to authorized.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8253,9 +7730,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.approve"
-        ],
+        "x-required-permissions": ["rec.reception.approve"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -8266,9 +7741,7 @@
       "post": {
         "operationId": "rec.reception-authorization",
         "summary": "Record an authorizing party decision on a reception visit.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8317,9 +7790,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.authorization.verify"
-        ],
+        "x-required-permissions": ["rec.reception.authorization.verify"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -8330,9 +7801,7 @@
       "post": {
         "operationId": "rec.reception-condition-evidence",
         "summary": "Append one piece of pre-service condition evidence to a reception visit.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8381,9 +7850,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.evidence.manage"
-        ],
+        "x-required-permissions": ["rec.reception.evidence.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8394,9 +7861,7 @@
       "post": {
         "operationId": "rec.reception-convert-to-work-order",
         "summary": "Convert an authorized reception visit into one minimal work order.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8451,9 +7916,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.convert"
-        ],
+        "x-required-permissions": ["rec.reception.convert"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8464,9 +7927,7 @@
       "post": {
         "operationId": "rec.reception-party-role",
         "summary": "Assign a dated party role on a reception visit.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8515,9 +7976,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.party.manage"
-        ],
+        "x-required-permissions": ["rec.reception.party.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8528,9 +7987,7 @@
       "post": {
         "operationId": "rec.reception-refusal",
         "summary": "Record that a party refused a reception step.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8579,9 +8036,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.signature.manage"
-        ],
+        "x-required-permissions": ["rec.reception.signature.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8592,9 +8047,7 @@
       "post": {
         "operationId": "rec.reception-signature",
         "summary": "Record a party signature against a reception visit.",
-        "tags": [
-          "reception"
-        ],
+        "tags": ["reception"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8643,9 +8096,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "rec.reception.signature.manage"
-        ],
+        "x-required-permissions": ["rec.reception.signature.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8656,9 +8107,7 @@
       "get": {
         "operationId": "qms.rework-detail",
         "summary": "Read one rework case.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8701,9 +8150,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read"
-        ],
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -8714,9 +8161,7 @@
       "get": {
         "operationId": "qms.rework-cost-read",
         "summary": "Read the restricted cost of quality for a rework case.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8759,10 +8204,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read",
-          "iam.sensitive.view"
-        ],
+        "x-required-permissions": ["qms.quality_control.read", "iam.sensitive.view"],
         "x-scope": "branch",
         "x-audit-class": "security",
         "x-rate-limit-policy": "expensive-read",
@@ -8771,9 +8213,7 @@
       "put": {
         "operationId": "qms.rework-cost-record",
         "summary": "Record the restricted cost of quality for a rework case.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8822,10 +8262,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.rework.manage",
-          "iam.sensitive.view"
-        ],
+        "x-required-permissions": ["qms.rework.manage", "iam.sensitive.view"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8836,9 +8273,7 @@
       "post": {
         "operationId": "qms.rework-sign-off",
         "summary": "Record the independent sign-off on a rework case.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8893,9 +8328,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.rework.sign_off"
-        ],
+        "x-required-permissions": ["qms.rework.sign_off"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -8906,9 +8339,7 @@
       "post": {
         "operationId": "svc.service-create",
         "summary": "Create a service in the tenant catalog under an existing category.",
-        "tags": [
-          "service-catalog"
-        ],
+        "tags": ["service-catalog"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -8957,9 +8388,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.service.manage"
-        ],
+        "x-required-permissions": ["svc.service.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -8968,9 +8397,7 @@
       "get": {
         "operationId": "svc.service-list",
         "summary": "List the service catalog, optionally narrowed to a branch and date.",
-        "tags": [
-          "service-catalog"
-        ],
+        "tags": ["service-catalog"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9013,9 +8440,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.service.read"
-        ],
+        "x-required-permissions": ["svc.service.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -9026,9 +8451,7 @@
       "patch": {
         "operationId": "svc.service-update",
         "summary": "Edit a service’s descriptive fields, or archive it.",
-        "tags": [
-          "service-catalog"
-        ],
+        "tags": ["service-catalog"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9083,9 +8506,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.service.manage"
-        ],
+        "x-required-permissions": ["svc.service.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9096,9 +8517,7 @@
       "post": {
         "operationId": "svc.branch-availability-set",
         "summary": "Set whether a branch offers a service.",
-        "tags": [
-          "service-catalog"
-        ],
+        "tags": ["service-catalog"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9147,9 +8566,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.service.manage"
-        ],
+        "x-required-permissions": ["svc.service.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9160,9 +8577,7 @@
       "post": {
         "operationId": "svc.service-version-publish",
         "summary": "Publish a draft service version, fixing that service’s definition from a date.",
-        "tags": [
-          "service-catalog"
-        ],
+        "tags": ["service-catalog"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9217,9 +8632,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "svc.service.manage"
-        ],
+        "x-required-permissions": ["svc.service.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9230,9 +8643,7 @@
       "get": {
         "operationId": "inv.stock-availability-read",
         "summary": "Read on-hand, reserved, and available stock for an item, location, or branch.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9275,9 +8686,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.read"
-        ],
+        "x-required-permissions": ["inv.stock.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -9288,9 +8697,7 @@
       "post": {
         "operationId": "inv.stock-issue-create",
         "summary": "Issue a part from stock to a work order, consuming its reservation.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9339,9 +8746,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9352,9 +8757,7 @@
       "get": {
         "operationId": "inv.stock-movement-list",
         "summary": "List the immutable stock movement ledger, correlated by business reference.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9397,9 +8800,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.read"
-        ],
+        "x-required-permissions": ["inv.stock.read"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "expensive-read",
@@ -9410,9 +8811,7 @@
       "post": {
         "operationId": "inv.stock-reservation-create",
         "summary": "Reserve stock at a location, optionally against a work order.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9461,9 +8860,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9474,9 +8871,7 @@
       "post": {
         "operationId": "inv.stock-reservation-release",
         "summary": "Release an active stock reservation, returning its quantity to available.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9519,9 +8914,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9532,9 +8925,7 @@
       "post": {
         "operationId": "inv.stock-return-create",
         "summary": "Return a previously issued part to the stock location it came from.",
-        "tags": [
-          "inventory"
-        ],
+        "tags": ["inventory"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9583,9 +8974,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "inv.stock.operate"
-        ],
+        "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9596,9 +8985,7 @@
       "get": {
         "operationId": "tech.technician-queue",
         "summary": "Read the active assignments of one technician.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9641,9 +9028,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.technician.read"
-        ],
+        "x-required-permissions": ["tech.technician.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -9654,9 +9039,7 @@
       "get": {
         "operationId": "tech.technician-available",
         "summary": "Rank a branch’s technicians against a skill, certification and time requirement.",
-        "tags": [
-          "technician"
-        ],
+        "tags": ["technician"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9699,9 +9082,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "tech.technician.read"
-        ],
+        "x-required-permissions": ["tech.technician.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -9712,9 +9093,7 @@
       "patch": {
         "operationId": "shared.template-version-revise",
         "summary": "Revise the content of a draft template version.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9766,9 +9145,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9779,9 +9156,7 @@
       "post": {
         "operationId": "shared.template-version-approve",
         "summary": "Approve a draft template version. Approved content is immutable.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9833,9 +9208,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -9846,9 +9219,7 @@
       "post": {
         "operationId": "shared.template-version-preview",
         "summary": "Render a template version with sample values. Sends nothing.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9891,9 +9262,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "standard-command",
@@ -9904,9 +9273,7 @@
       "post": {
         "operationId": "shared.template-version-retire",
         "summary": "Retire an approved template version.",
-        "tags": [
-          "shared-services"
-        ],
+        "tags": ["shared-services"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -9958,9 +9325,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "org.settings.manage"
-        ],
+        "x-required-permissions": ["org.settings.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -9971,9 +9336,7 @@
       "post": {
         "operationId": "veh.vehicle-duplicate-review",
         "summary": "Record a review decision on a duplicate vehicle candidate.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10022,9 +9385,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.duplicate.review"
-        ],
+        "x-required-permissions": ["veh.vehicle.duplicate.review"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10035,9 +9396,7 @@
       "post": {
         "operationId": "veh.vehicle-create",
         "summary": "Create a draft vehicle in the caller tenant.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10086,9 +9445,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10097,9 +9454,7 @@
       "get": {
         "operationId": "veh.vehicle-search",
         "summary": "Search vehicles in the caller tenant by an allow-listed field set.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10142,9 +9497,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10155,9 +9508,7 @@
       "patch": {
         "operationId": "veh.vehicle-update",
         "summary": "Edit descriptive fields of a vehicle master.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10206,9 +9557,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10219,9 +9568,7 @@
       "post": {
         "operationId": "veh.vehicle-authorized-party-add",
         "summary": "Authorize a customer as a scoped authorized party for a vehicle.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10270,9 +9617,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.relationship.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.relationship.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10283,9 +9628,7 @@
       "post": {
         "operationId": "veh.vehicle-authorized-party-retire",
         "summary": "Retire an authorized party by closing its authorization interval.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10334,9 +9677,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.relationship.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.relationship.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10347,9 +9688,7 @@
       "get": {
         "operationId": "veh.vehicle-document-list",
         "summary": "List the documents reachable from a vehicle.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10392,9 +9731,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "shared.document.manage"
-        ],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10405,9 +9742,7 @@
       "post": {
         "operationId": "veh.vehicle-duplicate-scan",
         "summary": "Score a vehicle against comparable ones and record duplicate candidates.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10456,9 +9791,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.duplicate.review"
-        ],
+        "x-required-permissions": ["veh.vehicle.duplicate.review"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "expensive-read",
@@ -10469,9 +9802,7 @@
       "get": {
         "operationId": "veh.vehicle-ev-profile-read",
         "summary": "Read a vehicle’s electric-drive profile.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10514,9 +9845,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10525,9 +9854,7 @@
       "post": {
         "operationId": "veh.vehicle-ev-profile-set",
         "summary": "Set (create or replace) a vehicle’s electric-drive profile.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10576,9 +9903,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10589,9 +9914,7 @@
       "get": {
         "operationId": "veh.vehicle-history",
         "summary": "List a vehicle’s attribute-change history.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10634,9 +9957,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10647,9 +9968,7 @@
       "post": {
         "operationId": "veh.vehicle-merge",
         "summary": "Merge a duplicate vehicle into the surviving record.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10698,9 +10017,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.merge"
-        ],
+        "x-required-permissions": ["veh.vehicle.merge"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10711,9 +10028,7 @@
       "get": {
         "operationId": "veh.vehicle-odometer-history",
         "summary": "List a vehicle’s odometer readings.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10756,9 +10071,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10767,9 +10080,7 @@
       "post": {
         "operationId": "veh.vehicle-odometer-record",
         "summary": "Record an odometer reading or a correction for a vehicle.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10818,9 +10129,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.odometer.record"
-        ],
+        "x-required-permissions": ["veh.vehicle.odometer.record"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10831,9 +10140,7 @@
       "get": {
         "operationId": "veh.vehicle-ownership-history",
         "summary": "List a vehicle’s ownership history.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10876,9 +10183,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10887,9 +10192,7 @@
       "post": {
         "operationId": "veh.vehicle-ownership-transfer",
         "summary": "Transfer a vehicle’s ownership, closing the prior owner.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -10938,9 +10241,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.relationship.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.relationship.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10951,9 +10252,7 @@
       "post": {
         "operationId": "veh.vehicle-plate-assign",
         "summary": "Assign a new active plate to a vehicle, closing the current one.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11002,9 +10301,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11013,9 +10310,7 @@
       "get": {
         "operationId": "veh.vehicle-plate-history",
         "summary": "List a vehicle’s plate history.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11058,9 +10353,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11071,9 +10364,7 @@
       "get": {
         "operationId": "veh.vehicle-relationship-list",
         "summary": "List a vehicle’s customer relationships.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11116,9 +10407,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.read"
-        ],
+        "x-required-permissions": ["veh.vehicle.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11129,9 +10418,7 @@
       "patch": {
         "operationId": "veh.vehicle-status-change",
         "summary": "Change a vehicle’s lifecycle and/or workshop status.",
-        "tags": [
-          "vehicle"
-        ],
+        "tags": ["vehicle"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11180,9 +10467,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "veh.vehicle.status.manage"
-        ],
+        "x-required-permissions": ["veh.vehicle.status.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11193,9 +10478,7 @@
       "get": {
         "operationId": "wo.work-order-list",
         "summary": "List the work orders of one branch, newest opened first.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11238,9 +10521,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11251,9 +10532,7 @@
       "get": {
         "operationId": "wo.work-order-detail",
         "summary": "Read one work order with its jobs and reachable states.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11296,9 +10575,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "standard-command",
@@ -11309,9 +10586,7 @@
       "get": {
         "operationId": "wo.additional-work-list",
         "summary": "List the additional-work requests of a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11354,9 +10629,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11365,9 +10638,7 @@
       "post": {
         "operationId": "wo.additional-work-request",
         "summary": "Raise an additional-work request against a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11416,9 +10687,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.additional_work.request"
-        ],
+        "x-required-permissions": ["wo.additional_work.request"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11429,9 +10698,7 @@
       "post": {
         "operationId": "wo.work-order-closure",
         "summary": "Close a work order once every closure condition is met.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11486,10 +10753,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.transition",
-          "wo.work_order.close"
-        ],
+        "x-required-permissions": ["wo.work_order.transition", "wo.work_order.close"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11500,9 +10764,7 @@
       "get": {
         "operationId": "wo.work-order-closure-eligibility",
         "summary": "Report every unmet closure condition for a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11545,9 +10807,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11558,9 +10818,7 @@
       "get": {
         "operationId": "wo.work-order-history",
         "summary": "Read the append-only status history of a work order, newest first.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11603,9 +10861,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11616,9 +10872,7 @@
       "post": {
         "operationId": "wo.job-create",
         "summary": "Add a job to a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11667,9 +10921,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.job.manage"
-        ],
+        "x-required-permissions": ["wo.job.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11680,9 +10932,7 @@
       "get": {
         "operationId": "qms.qc-record-list",
         "summary": "List the quality-control records of a work order.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11725,9 +10975,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read"
-        ],
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11736,9 +10984,7 @@
       "post": {
         "operationId": "qms.qc-record-open",
         "summary": "Open a pending quality-control record on a work order.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11787,9 +11033,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.record"
-        ],
+        "x-required-permissions": ["qms.quality_control.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -11800,9 +11044,7 @@
       "post": {
         "operationId": "qms.reopen-attempt",
         "summary": "Record — and refuse — an attempt to reopen a closed work order.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11851,9 +11093,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.transition"
-        ],
+        "x-required-permissions": ["wo.work_order.transition"],
         "x-scope": "branch",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
@@ -11862,9 +11102,7 @@
       "get": {
         "operationId": "qms.reopen-attempt-list",
         "summary": "List the recorded reopen attempts on a work order.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11907,9 +11145,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read"
-        ],
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11920,9 +11156,7 @@
       "get": {
         "operationId": "wo.required-part-list",
         "summary": "List the parts a work order needs.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -11965,9 +11199,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -11976,9 +11208,7 @@
       "post": {
         "operationId": "wo.required-part-record",
         "summary": "Record a part a work order needs. Reserves and issues nothing.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12027,9 +11257,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.line.manage"
-        ],
+        "x-required-permissions": ["wo.work_order.line.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -12040,9 +11268,7 @@
       "post": {
         "operationId": "qms.rework-create",
         "summary": "Open a rework work order against a closed original and link the two.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12091,9 +11317,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.rework.manage"
-        ],
+        "x-required-permissions": ["qms.rework.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -12102,9 +11326,7 @@
       "get": {
         "operationId": "qms.rework-list",
         "summary": "List the rework cases raised against a work order.",
-        "tags": [
-          "quality"
-        ],
+        "tags": ["quality"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12147,9 +11369,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "qms.quality_control.read"
-        ],
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -12160,9 +11380,7 @@
       "get": {
         "operationId": "wo.service-line-list",
         "summary": "List the service lines of a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12205,9 +11423,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.read"
-        ],
+        "x-required-permissions": ["wo.work_order.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -12216,9 +11432,7 @@
       "post": {
         "operationId": "wo.service-line-record",
         "summary": "Record a service or labour line on a work order.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12267,9 +11481,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.line.manage"
-        ],
+        "x-required-permissions": ["wo.work_order.line.manage"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -12280,9 +11492,7 @@
       "post": {
         "operationId": "wo.work-order-transition",
         "summary": "Move a work order to another state in its configured graph.",
-        "tags": [
-          "work-order"
-        ],
+        "tags": ["work-order"],
         "parameters": [
           {
             "$ref": "#/components/parameters/CorrelationId"
@@ -12337,9 +11547,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": [
-          "wo.work_order.transition"
-        ],
+        "x-required-permissions": ["wo.work_order.transition"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -12360,20 +11568,12 @@
       "ProblemDocument": {
         "type": "object",
         "description": "RFC 9457 problem document. Every failure response in this API uses this shape.",
-        "required": [
-          "type",
-          "title",
-          "status",
-          "code",
-          "correlationId"
-        ],
+        "required": ["type", "title", "status", "code", "correlationId"],
         "properties": {
           "type": {
             "type": "string",
             "format": "uri",
-            "examples": [
-              "urn:rootlco:error:ERR-VAL-001"
-            ]
+            "examples": ["urn:rootlco:error:ERR-VAL-001"]
           },
           "title": {
             "type": "string"
@@ -12422,10 +11622,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "path",
-                "rule"
-              ],
+              "required": ["path", "rule"],
               "properties": {
                 "path": {
                   "type": "string"
@@ -12454,10 +11651,7 @@
       "Money": {
         "type": "object",
         "description": "Exact decimal amount as a string plus an ISO-4217 code. Never a JSON number: IEEE-754 cannot represent decimal money exactly.",
-        "required": [
-          "amount",
-          "currency"
-        ],
+        "required": ["amount", "currency"],
         "properties": {
           "amount": {
             "type": "string",
@@ -12472,20 +11666,14 @@
       "PageEnvelope": {
         "type": "object",
         "description": "Opaque-cursor page. Offset paging is not offered.",
-        "required": [
-          "items",
-          "hasMore"
-        ],
+        "required": ["items", "hasMore"],
         "properties": {
           "items": {
             "type": "array",
             "items": {}
           },
           "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hasMore": {
             "type": "boolean"

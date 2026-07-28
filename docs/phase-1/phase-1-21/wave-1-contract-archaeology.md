@@ -268,3 +268,12 @@ New codes are added only where no existing code carries the meaning.
   `iam.has_permission_in_scope` rather than the scope-blind `iam.has_permission`.
 - Restricted cost tables are gated by `iam.has_permission('inv.cost.view')` **inside
   the RLS policy**, so a caller without it sees no cost row at all.
+
+## 12. Task coverage
+
+This document is the deliverable of **P1-21-DOC-001** (contract, catalog, and
+traceability synchronization). It records the protected contract as read at the base
+SHA, the vocabulary each application constant is transcribed from, and the four
+divergences (`D-01`…`D-04`) that shaped the implementation. The catalog and
+traceability reconciliation it synchronizes with is enforced mechanically by
+`npm run validate:p1-21-inventory`.
