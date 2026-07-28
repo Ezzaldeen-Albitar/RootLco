@@ -19,6 +19,7 @@
  *   WFS-009  `continue-on-error: true` is not used
  *   WFS-010  every job declares `timeout-minutes`
  *   WFS-011  a reusable workflow declares exactly ONE job
+ *   WFS-012  a bootstrap sparse checkout of `.github/actions` stays in cone mode
  *
  * Deliberately implemented WITHOUT a YAML dependency: this runs in the
  * `secret-scan` job, which does not `npm ci`, and adding a parser to read our own
@@ -297,6 +298,36 @@ export function lintWorkflow(name, source, options = {}) {
       }
     }
   }
+
+  // ---- WFS-012: a bootstrap sparse checkout must stay in cone mode ------
+  //
+  // A local `uses: ./…` needs the action present before it can resolve, so every
+  // job here bootstraps with a sparse checkout of `.github/actions`. That sparse
+  // state has to be undone by the full checkout inside the action — and against
+  // a NON-CONE sparse checkout it is not:
+  //
+  //   `actions/checkout` runs `git sparse-checkout disable` when given no sparse
+  //   input. On a non-cone repository that is a no-op — `core.sparseCheckout`
+  //   stays true and no file is restored. Verified by replaying both checkouts:
+  //   non-cone leaves 1 file in the workspace, cone leaves the full 1399.
+  //
+  // The visible symptom is `setup-node` reporting "Dependencies lock file is not
+  // found", which points at the wrong step entirely. Shipped once, at all 21
+  // call sites at once.
+  lines.forEach((line, index) => {
+    if (!/^\s*sparse-checkout-cone-mode:\s*false\s*$/.test(line)) return;
+    if (suppressed(lines, index, 'WFS-012')) return;
+    const near = lines.slice(Math.max(0, index - 4), index + 5);
+    if (!near.some((l) => /^\s*sparse-checkout:\s*\.github\/actions\s*$/.test(l))) return;
+    add(
+      'WFS-012',
+      index + 1,
+      'a bootstrap checkout of `.github/actions` disables cone mode. `git sparse-checkout disable` ' +
+        'is a no-op against a non-cone repository, so the full checkout inside the composite action ' +
+        'restores nothing and the job runs against a one-file workspace. Remove this line — cone mode is the default.',
+      'critical'
+    );
+  });
 
   // ---- WFS-010: every job has a timeout ---------------------------------
   const jobsIndex = lines.findIndex((l) => /^jobs:\s*$/.test(l));

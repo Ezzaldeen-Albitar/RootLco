@@ -85,6 +85,55 @@ runs:
         echo "sha=${resolved}" >> "${GITHUB_OUTPUT}"
         echo "resolved checkout ref: ${resolved}"
 
+    # Callers must bootstrap a sparse checkout before they can reach this action
+    # at all (a local `uses: ./…` resolves from an empty workspace). That sparse
+    # state is NOT reliably undone by the checkout below:
+    #
+    #   `actions/checkout` calls `git sparse-checkout disable` when it is given
+    #   no sparse-checkout input — but against a NON-CONE sparse checkout that
+    #   command is a no-op. It leaves `core.sparseCheckout=true` and restores
+    #   nothing, so the workspace stays at one file. `setup-node` then reports
+    #   "Dependencies lock file is not found" and the real cause is invisible.
+    #
+    # Reproduced locally by replaying both checkouts: non-cone leaves 1 file,
+    # cone leaves 1399. The bootstraps are cone-mode for that reason, and this
+    # step is the belt-and-braces that makes the action correct even if some
+    # future caller bootstraps sparsely by other means.
+    - name: Undo any sparse checkout left by the caller's bootstrap
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -d .git ]; then
+          echo "no repository in the workspace yet — nothing to undo"
+          exit 0
+        fi
+        # `git config --get` exits 1 when the key is absent, which is the normal
+        # case here, so it is read with an explicit default rather than allowed
+        # to abort the step under `set -e`. Deliberately not `|| true`: a real
+        # failure of the commands below must still stop the job.
+        enabled="$(git config --get core.sparseCheckout || printf 'false')"
+        sparse_file="$(git rev-parse --git-path info/sparse-checkout)"
+        if [ "${enabled}" != "true" ] && [ ! -f "${sparse_file}" ]; then
+          echo "workspace is not sparse"
+          exit 0
+        fi
+        echo "undoing the bootstrap sparse checkout"
+        git sparse-checkout disable
+        # `disable` is a NO-OP against a non-cone repository: it leaves
+        # core.sparseCheckout=true and restores nothing. So the flag is cleared
+        # explicitly. Only when it is still `true` — in cone mode git has already
+        # cleared it and may have written `false` into the WORKTREE config, where
+        # `--unset-all` against the local file exits 5 and would fail this step.
+        if [ "$(git config --get core.sparseCheckout || printf 'false')" = "true" ]; then
+          git config --unset-all core.sparseCheckout
+        fi
+        rm -f "${sparse_file}"
+        # Assert the outcome rather than trusting the commands that produced it.
+        if [ "$(git config --get core.sparseCheckout || printf 'false')" = "true" ]; then
+          echo "::error::core.sparseCheckout is still true, so the workspace would stay sparse."
+          exit 1
+        fi
+
     - name: Checkout
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
@@ -120,6 +169,23 @@ runs:
         # output is comparing SHAs and not a tag name.
         echo "sha=${actual}" >> "${GITHUB_OUTPUT}"
         echo "OK: at the exact commit"
+
+        # Being at the right COMMIT is not the same as having the whole TREE.
+        # A leftover sparse checkout leaves HEAD correct and the working tree
+        # nearly empty, which every later step then misreports as its own
+        # problem. Assert the tree positively, and count files so that a
+        # partially-materialised workspace cannot pass either.
+        missing=''
+        for required in package.json package-lock.json tsconfig.json; do
+          [ -f "${required}" ] || missing="${missing} ${required}"
+        done
+        tracked="$(git ls-files | wc -l)"
+        present="$(git ls-files | while read -r f; do [ -e "${f}" ] && printf 'x'; done | wc -c)"
+        if [ -n "${missing}" ] || [ "${present}" -lt "${tracked}" ]; then
+          echo "::error::The workspace is incomplete: ${present} of ${tracked} tracked files exist.${missing:+ Missing:${missing}.} This is what a sparse checkout that was never undone looks like; every later step would blame itself instead."
+          exit 1
+        fi
+        echo "OK: complete tree, ${present} of ${tracked} tracked files present"
 
     - name: Set up Node
       id: node

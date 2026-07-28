@@ -237,6 +237,59 @@ removed.
 
 ---
 
+## AR-29 — the AR-01 fix carried its own defect, at all 21 sites
+
+With the startup failure gone, the pipeline reached the runner and every job
+died in the same place: `Set up the project`.
+
+```
+Dependencies lock file is not found in /home/runner/work/RootLco/RootLco.
+Supported file patterns: package-lock.json,npm-shrinkwrap.json,yarn.lock
+```
+
+The message points at `setup-node`, which is three steps away from the cause.
+
+AR-01 was fixed by bootstrapping a sparse checkout of `.github/actions` before
+each `uses: ./…`, written in **non-cone** mode. The assumption was that the full
+checkout inside the composite action would undo it — and `actions/checkout`
+does call `git sparse-checkout disable` when given no sparse input, which is
+why the design looked sound.
+
+**Against a non-cone repository that command is a no-op.** It leaves
+`core.sparseCheckout=true`, restores no file, and reports success. Every job
+then ran against a one-file workspace.
+
+Verified rather than argued, by replaying both checkouts locally:
+
+| bootstrap                    | files after the composite's checkout | `package-lock.json` |
+| ---------------------------- | ------------------------------------ | ------------------- |
+| non-cone (what shipped)      | 1                                    | absent              |
+| cone                         | 1399                                 | present             |
+| non-cone + explicit teardown | 1399                                 | present             |
+
+**Fixed** in three layers, because the outer two each failed once already:
+
+1. All 21 bootstraps use cone mode — the default. The line is simply gone.
+2. The composite explicitly tears down any sparse state before its checkout,
+   so it stays correct for a caller that bootstraps sparsely by other means.
+   Exercised in all four workspace states (cone, non-cone, plain, empty); note
+   that the obvious teardown exits **5** in cone mode, because git writes the
+   cleared flag into the _worktree_ config where `--unset-all` cannot see it.
+3. The post-checkout assertion no longer just compares the commit. Being at the
+   right commit is not the same as having the tree, so it now counts tracked
+   files against files on disk and names the three that must exist. A partial
+   workspace fails there, with the cause in the message, instead of three steps
+   later in someone else's error text.
+
+It is now WFS-012, at _critical_.
+
+Two findings in a row have now come from the runner rather than from review,
+and both were in the _remediation_ for an earlier finding. That is the honest
+shape of this work: the fix for AR-01 was never executed before it shipped, and
+neither was the fix for AR-28.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**

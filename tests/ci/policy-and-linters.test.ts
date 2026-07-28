@@ -177,6 +177,53 @@ jobs:
     expect(rules(lintWorkflow('pr-ci.yml', notReusable))).not.toContain('WFS-011');
   });
 
+  it('WFS-012 catches a bootstrap sparse checkout that disables cone mode', () => {
+    // The second hosted failure. `git sparse-checkout disable` — which is what
+    // actions/checkout runs when given no sparse input — is a NO-OP against a
+    // non-cone repository. The workspace stays at one file, and the error
+    // surfaces three steps later as "Dependencies lock file is not found".
+    const bootstrap = (coneLine: string) => `name: W
+on:
+  push:
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+${coneLine}          fetch-depth: 1
+      - uses: ./.github/actions/setup-project
+`;
+    const findings = lintWorkflow(
+      'pr-ci.yml',
+      bootstrap('          sparse-checkout-cone-mode: false\n')
+    );
+    expect(rules(findings)).toContain('WFS-012');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-012').severity).toBe('critical');
+
+    // Cone mode — the default — is the fixed form and must stay silent.
+    expect(rules(lintWorkflow('pr-ci.yml', bootstrap('')))).not.toContain('WFS-012');
+
+    // Non-cone is legitimate for a checkout that is NOT the action bootstrap:
+    // nothing later depends on that workspace being complete.
+    const unrelated = `name: W
+on:
+  push:
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: docs/**
+          sparse-checkout-cone-mode: false
+`;
+    expect(rules(lintWorkflow('pr-ci.yml', unrelated))).not.toContain('WFS-012');
+  });
+
   it('extracts a run block by indentation, not by guessing where it ends', () => {
     const blocks = extractRunBlocks(MINIMAL_WORKFLOW.split('\n'));
     expect(blocks).toHaveLength(1);
