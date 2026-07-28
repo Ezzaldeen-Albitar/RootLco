@@ -197,6 +197,22 @@ import '@/app/api/v1/quotations/[quotationId]/issue/route';
 import '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
 import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 
+// Phase 1-21 — inventory.
+import '@/app/api/v1/items/route';
+import '@/app/api/v1/stock-availability/route';
+import '@/app/api/v1/stock-movements/route';
+import '@/app/api/v1/inventory-reconciliations/route';
+import '@/app/api/v1/opening-inventory-batches/route';
+import '@/app/api/v1/opening-inventory-batches/[batchId]/lines/route';
+import '@/app/api/v1/opening-inventory-batches/[batchId]/approval/route';
+import '@/app/api/v1/stock-reservations/route';
+import '@/app/api/v1/stock-reservations/[reservationId]/release/route';
+import '@/app/api/v1/stock-issues/route';
+import '@/app/api/v1/stock-returns/route';
+import '@/app/api/v1/damaged-stock/route';
+import '@/app/api/v1/customer-supplied-parts/route';
+import '@/app/api/v1/external-purchase-parts/route';
+
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
 describe('OpenAPI contract', () => {
