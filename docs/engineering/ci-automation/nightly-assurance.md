@@ -45,7 +45,20 @@ a nightly job without deciding its tier fails loudly rather than being ignored.
 ## The full RLS matrix
 
 PR runs cover `iam, org, inv, wo, crm, sal, quo`. Nightly adds `veh, apt, rec,
-tech, dia, qms, svc, wty, rpt, shared, audit, meta` — every application schema.
+tech, dia, qms, svc, wty, rpt, shared` — every application schema.
+
+Both tiers first **reconcile the declared lists against the database**. Two
+failures, either of which would make the matrix a weaker claim than it looks:
+
+- a schema exists that no list mentions — it is never checked and nobody
+  noticed. A future phase adding a schema hits this immediately;
+- a schema is declared and does not exist — the matrix reports it as covered
+  while checking nothing, which is the same vacuity as a coverage floor over an
+  empty set.
+
+Twelve non-application schemas (`extensions`, `supabase_migrations`, `public`
+and the Supabase-managed ones) are classified with the reason each holds no
+tenant data.
 
 The matrix is catalog-derived: for each role × table × action it records whether
 the privilege is granted, whether RLS is enabled and forced, which policies cover

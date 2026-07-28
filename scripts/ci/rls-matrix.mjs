@@ -43,9 +43,28 @@ export const ADDITIONAL_SCHEMAS = [
   'wty',
   'rpt',
   'shared',
-  'audit',
-  'meta',
 ];
+
+/**
+ * Schemas that exist but hold no application data, with the reason. Anything in
+ * the database that is in NEITHER this list nor the two above is a finding: a
+ * schema nobody classified is a schema nobody checked.
+ */
+export const NON_APPLICATION_SCHEMAS = {
+  extensions:
+    'PostgreSQL extension objects (pgcrypto and friends). No tenant data, no RLS surface.',
+  supabase_migrations: 'the migration ledger, written by the migration runner.',
+  public: 'empty by convention in this schema design; every module owns a named schema.',
+  graphql: 'Supabase-managed, absent from a bare postgres container.',
+  graphql_public: 'Supabase-managed, absent from a bare postgres container.',
+  realtime: 'Supabase-managed, absent from a bare postgres container.',
+  storage: 'Supabase-managed, absent from a bare postgres container.',
+  vault: 'Supabase-managed, absent from a bare postgres container.',
+  auth: 'Supabase-managed, absent from a bare postgres container.',
+  net: 'Supabase-managed, absent from a bare postgres container.',
+  pgbouncer: 'Supabase-managed, absent from a bare postgres container.',
+  cron: 'Supabase-managed, absent from a bare postgres container.',
+};
 
 /** Runtime roles the application actually connects as. */
 export const RUNTIME_ROLES = [
@@ -70,6 +89,51 @@ export const FORCE_RLS_EXEMPT = {
 async function query(client, sql, params = []) {
   const { rows } = await client.query(sql, params);
   return rows;
+}
+
+/**
+ * Reconciles the declared schema lists against what the database actually holds.
+ *
+ * Two failures, both of which make the matrix a weaker claim than it looks:
+ *
+ *   unclassified — a schema exists that no list mentions. It is never checked,
+ *                  and nobody noticed. A future phase adding a schema hits this.
+ *   phantom      — a schema is declared and does not exist. The matrix reports
+ *                  it as covered while checking nothing, which is the same
+ *                  vacuity as a coverage floor over an empty set.
+ */
+export async function reconcileSchemas(client) {
+  const present = (
+    await query(
+      client,
+      `SELECT nspname FROM pg_namespace
+        WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema'
+        ORDER BY 1`
+    )
+  ).map((r) => r.nspname);
+
+  const declared = new Set([...CRITICAL_SCHEMAS, ...ADDITIONAL_SCHEMAS]);
+  const known = new Set([...declared, ...Object.keys(NON_APPLICATION_SCHEMAS)]);
+
+  const failures = [];
+  for (const schema of present) {
+    if (!known.has(schema)) {
+      failures.push(
+        `schema \`${schema}\` exists in the database but appears in no list in scripts/ci/rls-matrix.mjs. ` +
+          'It is therefore never checked. Add it to CRITICAL_SCHEMAS or ADDITIONAL_SCHEMAS, or record why it ' +
+          'holds no application data in NON_APPLICATION_SCHEMAS.'
+      );
+    }
+  }
+  const phantom = [...declared].filter((s) => !present.includes(s));
+  for (const schema of phantom) {
+    failures.push(
+      `schema \`${schema}\` is declared as an application schema but does not exist. ` +
+        'The matrix would report it as covered while checking nothing.'
+    );
+  }
+
+  return { present, failures, phantom };
 }
 
 export async function buildMatrix(client, schemas, options = {}) {
@@ -319,9 +383,15 @@ async function main(argv) {
 
   let matrix;
   try {
+    // Reconcile FIRST: a matrix built over an incomplete or phantom schema list
+    // is a weaker claim than it appears, whatever the cells say.
+    const reconciliation = await reconcileSchemas(client);
     matrix = await buildMatrix(client, schemas, {
       noPolicyIsAdvisory: argv.includes('--no-policy-advisory'),
     });
+    matrix.failures.unshift(...reconciliation.failures);
+    matrix.ok = matrix.failures.length === 0;
+    matrix.schemasPresent = reconciliation.present;
   } catch (error) {
     console.error(`matrix generation failed: ${error.message}`);
     await client.end();
