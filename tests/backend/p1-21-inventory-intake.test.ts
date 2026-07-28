@@ -57,6 +57,7 @@ import {
   countRowsOf,
   establishP1_21Fixtures,
 } from './p1-21-helpers';
+import { Quantity } from '@/modules/inventory';
 import { POST as BATCH_CREATE } from '@/app/api/v1/opening-inventory-batches/route';
 import { POST as LINE_CREATE } from '@/app/api/v1/opening-inventory-batches/[batchId]/lines/route';
 import { POST as BATCH_APPROVE } from '@/app/api/v1/opening-inventory-batches/[batchId]/approval/route';
@@ -356,8 +357,11 @@ describe('inv.opening-batch-approve', () => {
     expect(approved.approvedBy).toBe(INV_APPROVER.userId);
 
     // NOW the stock exists, and it exists because a movement was posted.
-    expect(Number((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand)).toBe(
-      Number(balanceBefore) + 7.5
+    // Exact decimal arithmetic rather than Number(): 7.5 is binary-exact, so a
+    // float assertion would pass here and would also pass against an implementation
+    // that truncated the third decimal.
+    expect((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand).toBe(
+      Quantity.parse(balanceBefore).plus(Quantity.parse('7.500')).toString()
     );
     expect(await auditCountFor('inv.opening_batch.approved', batchId)).toBe(1);
   });

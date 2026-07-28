@@ -68,6 +68,7 @@ import {
   reservationStatusOf,
   seedStock,
 } from './p1-21-helpers';
+import { Quantity } from '@/modules/inventory';
 import { POST as RESERVE } from '@/app/api/v1/stock-reservations/route';
 import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]/release/route';
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
@@ -150,8 +151,12 @@ describe('inv.stock-reservation-create', () => {
     // is the GENERATED difference.
     const balance = await balanceOf(ITEM_A, WAREHOUSE_A1);
     expect(balance?.reserved).toBe('3.500');
+    // Exact decimal arithmetic, through the same value object production uses. A
+    // Number()-based assertion would pass here only because 3.5 is binary-exact, and
+    // would keep passing against an implementation that lost the third decimal — in
+    // the one suite whose purpose is to prove it does not.
     expect(balance?.available).toBe(
-      (Number(balance!.onHand) - 3.5).toFixed(3) // display only; the assertions below are exact
+      Quantity.parse(balance!.onHand).minus(Quantity.parse('3.500')).toString()
     );
     expect(balance!.onHand).not.toBe('0.000');
 
@@ -310,7 +315,9 @@ describe('inv.stock-reservation-release', () => {
     expect(released.replayed).toBe(false);
 
     const after = await balanceOf(ITEM_A, WAREHOUSE_A1);
-    expect(Number(after!.reserved)).toBe(Number(before!.reserved) - 4);
+    expect(after!.reserved).toBe(
+      Quantity.parse(before!.reserved).minus(Quantity.parse('4.000')).toString()
+    );
     // on_hand is untouched: a release moves nothing.
     expect(after!.onHand).toBe(before!.onHand);
 
@@ -411,7 +418,9 @@ describe('inv.stock-issue-create', () => {
 
     const after = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
     // Stock left, the reservation was consumed, and available never went negative.
-    expect(Number(after!.onHand)).toBe(Number(balanceBefore!.onHand) - Number(available));
+    expect(after!.onHand).toBe(
+      Quantity.parse(balanceBefore!.onHand).minus(Quantity.parse(available)).toString()
+    );
     expect(after!.reserved).toBe('0.000');
     expect(await reservationStatusOf(reservation.id)).toBe('consumed');
 
@@ -589,8 +598,8 @@ describe('inv.stock-return-create', () => {
     const returned = await bodyOf<{ id: string; totalReturned: string }>(first);
     expect(returned.totalReturned).toBe('3.000');
     // Stock came back: a return is an `in` movement.
-    expect(Number((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand)).toBe(
-      Number(afterIssue!.onHand) + 3
+    expect((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand).toBe(
+      Quantity.parse(afterIssue!.onHand).plus(Quantity.parse('3.000')).toString()
     );
     expect(await auditCountFor('inv.part.returned', returned.id)).toBe(1);
 
@@ -679,11 +688,13 @@ describe('inv.damaged-stock-create', () => {
 
     // Sellable stock fell...
     const after = await balanceOf(ITEM_A, WAREHOUSE_A1);
-    expect(Number(after!.onHand)).toBe(Number(before!.onHand) - 2);
+    expect(after!.onHand).toBe(
+      Quantity.parse(before!.onHand).minus(Quantity.parse('2.000')).toString()
+    );
     // ...and the units are in quarantine, not gone. Availability is not inflated:
     // they sit in a different cell that the default availability read excludes.
-    expect(Number((await balanceOf(ITEM_A, QUARANTINE_A1))!.onHand)).toBe(
-      Number(quarantineBefore) + 2
+    expect((await balanceOf(ITEM_A, QUARANTINE_A1))!.onHand).toBe(
+      Quantity.parse(quarantineBefore).plus(Quantity.parse('2.000')).toString()
     );
     // A paired movement: one `out`, one `in`, distinguished only by direction.
     expect(await movementCountFor(ITEM_A, QUARANTINE_A1)).toBeGreaterThan(0);
