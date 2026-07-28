@@ -146,8 +146,51 @@ const toMovementView = (row: MovementRow): MovementView => ({
   correlationId: row.correlationId,
 });
 
+/**
+ * Open inventory commitments against one work order.
+ *
+ * The fact `wo.work_orders.parts_forward_state` was left as a hook for
+ * (`DEFERRED_CLOSURE_BLOCKERS` in `@/modules/work-order`, owner `P1-21`): a work
+ * order must not be certified complete while stock is still reserved for it or
+ * still issued to it and unreturned.
+ */
+export interface OpenInventoryCommitments {
+  readonly activeReservations: number;
+  readonly openIssues: number;
+  /** True when either count is non-zero, i.e. closure must be refused. */
+  readonly blocking: boolean;
+}
+
 export class InventoryReadService {
   public constructor(private readonly repository: InventoryRepository) {}
+
+  /**
+   * Answers "does this work order still hold stock?" for the work-order module.
+   *
+   * Deliberately a **port on the public surface** rather than a table read by the
+   * caller: `work-order` may not touch `inv` tables, exactly as it may not touch
+   * `qms` ones and asks `@/modules/quality` for B5/B6 instead. The dependency runs
+   * one way only — this module reads `wo.work_orders` through SQL and imports
+   * nothing from `work-order` — so there is no cycle.
+   *
+   * This is a **read with no authorization of its own**. It is called from inside
+   * the work-order closure transaction, after that operation has already locked
+   * and authorized the work order against its own company and branch, and it
+   * returns two integers about that already-authorized row. Adding a second
+   * permission check here would demand `inv.stock.read` of every caller allowed to
+   * close a work order, which is a different and wrong rule.
+   */
+  public async openCommitmentsFor(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<OpenInventoryCommitments> {
+    const counts = await this.repository.countOpenCommitments(db, workOrderId);
+    return {
+      activeReservations: counts.activeReservations,
+      openIssues: counts.openIssues,
+      blocking: counts.activeReservations > 0 || counts.openIssues > 0,
+    };
+  }
 
   /**
    * P1-21-BE-001 — item search.

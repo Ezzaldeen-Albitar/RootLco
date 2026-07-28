@@ -41,7 +41,13 @@ import {
   ensureBackendFixtures,
   ensureTestLogins,
 } from './helpers';
-import { createOpenWorkOrder, createWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
+import {
+  FULL,
+  advance,
+  createOpenWorkOrder,
+  createWorkOrder,
+  establishP1_19Fixtures,
+} from './p1-19-helpers';
 import {
   INV_FULL,
   INV_PERMISSION_ELSEWHERE,
@@ -67,6 +73,9 @@ import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
 import { POST as RETURN } from '@/app/api/v1/stock-returns/route';
 import { POST as DAMAGE } from '@/app/api/v1/damaged-stock/route';
+import { GET as ELIGIBILITY } from '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
+import { POST as CLOSURE } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import { POST as TRANSITION } from '@/app/api/v1/work-orders/[workOrderId]/transition/route';
 
 let admin: Pool;
 
@@ -770,5 +779,166 @@ describe('inv.damaged-stock-create', () => {
       reason: 'Dropped',
     });
     expect(response.status).toBe(403);
+  });
+});
+
+/**
+ * The P1-19 hand-off (closure integration).
+ *
+ * DEFERRED_CLOSURE_BLOCKERS in the work-order module names P1-21 as the owner of two
+ * conditions wo.guard_work_order_closure cannot express — active-reservation and
+ * open-part-issue — because no Phase 1-9 table recorded either. P1-21 can now answer
+ * both, so the eligibility endpoint stops merely NAMING them and starts evaluating
+ * them, and the closure command refuses while either is outstanding.
+ *
+ * Enforcement is application-level and stays out of CLOSURE_BLOCKER_REGISTRY on
+ * purpose: every entry there declares wo.guard_work_order_closure as its enforcer and
+ * a reconciliation test pins that, so a seventh entry would claim the database
+ * enforces something it does not. Closing the gap in the guard needs a migration
+ * P1-21 is not authorized to add.
+ */
+describe('work-order closure is blocked while inventory is outstanding', () => {
+  const eligibility = (workOrderId: string): Promise<Response> =>
+    ELIGIBILITY(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure-eligibility`),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+
+  const closeCall = (workOrderId: string, version: number): Promise<Response> =>
+    CLOSURE(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+
+  it('refuses closure while a reservation is active, and allows it once released', async () => {
+    // Reserved AFTER the order opens, because a draft work order cannot receive
+    // parts — the D-02 rule this phase added — so the fixture has to walk the graph
+    // in the same order a real branch would.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
+    authAs(INV_FULL);
+    const created = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '2.000',
+      workOrderId: wo.workOrderId,
+    });
+    expect(created.status).toBe(201);
+    const reservation = await bodyOf<{ id: string }>(created);
+    const version = await advance(wo.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+
+    // FULL, not INV_FULL: closing needs `wo.work_order.close`, which the inventory
+    // principals deliberately do not carry. The inventory port itself performs no
+    // permission check — it answers a question about an already-authorized row.
+    authAs(FULL);
+    const blocked = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { activeReservations: number; openIssues: number; blocking: boolean };
+    }>(await eligibility(wo.workOrderId));
+    expect(blocked.inventoryCommitments.activeReservations).toBe(1);
+    expect(blocked.inventoryCommitments.blocking).toBe(true);
+    expect(blocked.eligible).toBe(false);
+
+    // And the COMMAND refuses, so eligibility and closure cannot disagree.
+    expect((await closeCall(wo.workOrderId, version)).status).toBe(409);
+
+    authAs(INV_FULL);
+    await releaseCall(reservation.id, { reason: 'not needed' });
+
+    authAs(FULL);
+    const clear = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { activeReservations: number; blocking: boolean };
+    }>(await eligibility(wo.workOrderId));
+    expect(clear.inventoryCommitments.activeReservations).toBe(0);
+    expect(clear.inventoryCommitments.blocking).toBe(false);
+    expect(clear.eligible).toBe(true);
+    expect((await closeCall(wo.workOrderId, version)).status).toBe(200);
+  });
+
+  it('refuses closure while an issue is unreturned, and allows it once returned', async () => {
+    // The work order must be open before it can receive parts, so the issue is made
+    // mid-path rather than before it.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
+    authAs(INV_FULL);
+    const issued = await bodyOf<{ id: string }>(
+      await post(ISSUE, '/api/v1/stock-issues', {
+        workOrderId: wo.workOrderId,
+        itemId: ITEM_A_ALT,
+        locationId: WAREHOUSE_A1,
+        quantity: '3.000',
+      })
+    );
+    const version = await advance(wo.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+
+    authAs(FULL);
+    const blocked = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { openIssues: number; blocking: boolean };
+    }>(await eligibility(wo.workOrderId));
+    expect(blocked.inventoryCommitments.openIssues).toBe(1);
+    expect(blocked.eligible).toBe(false);
+    expect((await closeCall(wo.workOrderId, version)).status).toBe(409);
+
+    // Returning the WHOLE issued quantity clears it; a partial return would not.
+    authAs(INV_FULL);
+    await post(RETURN, '/api/v1/stock-returns', { partIssueId: issued.id, quantity: '3.000' });
+
+    authAs(FULL);
+    const clear = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { openIssues: number; blocking: boolean };
+    }>(await eligibility(wo.workOrderId));
+    expect(clear.inventoryCommitments.openIssues).toBe(0);
+    expect(clear.eligible).toBe(true);
+    expect((await closeCall(wo.workOrderId, version)).status).toBe(200);
+  });
+
+  it('does not block a CANCELLATION, which abandons work rather than certifying it', async () => {
+    // wo.guard_work_order_closure exempts a cancellation from B1-B6, and the
+    // inventory blocker follows the same rule: stock outstanding on an abandoned
+    // order is a different problem from stock outstanding on a completed one.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const reserved = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+      workOrderId: wo.workOrderId,
+    });
+    expect(reserved.status).toBe(201);
+    const version = wo.recordVersion;
+    authAs(FULL);
+    const cancelled = await TRANSITION(
+      new Request(`http://localhost/api/v1/work-orders/${wo.workOrderId}/transition`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'cancelled', reason: 'Customer withdrew the vehicle' }),
+      }),
+      { params: Promise.resolve({ workOrderId: wo.workOrderId }) }
+    );
+    expect(cancelled.status).toBe(200);
   });
 });

@@ -59,6 +59,7 @@ export type {
   AvailabilityView,
   ItemView,
   MovementView,
+  OpenInventoryCommitments,
   ReconciliationView,
 } from './application/inventory-read-service';
 
