@@ -497,6 +497,10 @@ jobs:
           format: json
           output: trivy-image.json
           scanners: vuln,secret,misconfig
+          # Needed so the report carries `Packages`. Without it the enumeration
+          # assertion below has nothing to check, and a blind scan is exactly what
+          # it exists to catch.
+          list-all-pkgs: true
           # PR mode reports only what a patched release exists for; the nightly
           # deep scan drops that filter and reports everything.
           ignore-unfixed: ${{ !inputs.deep }}
@@ -513,6 +517,41 @@ jobs:
           ignore-unfixed: ${{ !inputs.deep }}
           severity: ${{ inputs.severity }}
           exit-code: '0'
+
+      # A scan that enumerated NOTHING reports zero vulnerabilities, and zero
+      # looks identical to clean. This happened here: deleting `/lib/apk/db`
+      # alongside the apk binary left Trivy still recognising "alpine 3.24.1"
+      # from /etc/alpine-release while listing 0 OS packages — so the OS scan was
+      # blind and said "0 findings". Measured, both ways:
+      #
+      #   /lib/apk/db present : os-pkgs packages=18  vulns=0
+      #   /lib/apk/db removed : os-pkgs packages=0   vulns=0
+      #
+      # So the report must prove it looked at something before its silence counts.
+      - name: The scan must have enumerated packages
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync("trivy-image.json", "utf8"));
+            const results = report.Results ?? [];
+            const counts = results.map((r) => ({
+              target: r.Target, cls: r.Class, packages: (r.Packages ?? []).length,
+            }));
+            for (const c of counts) console.log(`${c.cls} ${c.target}: ${c.packages} package(s)`);
+            const os = counts.find((c) => c.cls === "os-pkgs");
+            const lang = counts.find((c) => c.cls === "lang-pkgs");
+            const fail = [];
+            if (!os) fail.push("no os-pkgs result at all — the OS was not identified");
+            else if (os.packages < 5) fail.push(`os-pkgs enumerated ${os.packages} package(s); an Alpine image has ~18. The package database was probably removed, so a zero-vulnerability result means the scanner saw nothing.`);
+            if (!lang) fail.push("no lang-pkgs result — the application dependency scan did not run");
+            else if (lang.packages < 5) fail.push(`lang-pkgs enumerated ${lang.packages} package(s); the standalone bundle has far more.`);
+            if (fail.length) {
+              for (const f of fail) console.error(`::error::${f}`);
+              process.exit(1);
+            }
+            console.log("Both scanners enumerated packages, so a zero-finding result is a measurement rather than a blind spot.");
+          '
 
       - name: Container vulnerability policy
         id: policy

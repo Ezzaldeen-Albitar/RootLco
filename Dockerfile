@@ -149,7 +149,19 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
 # Removed rather than excused: the runtime needs curl (installed above, in an
 # earlier layer) and nothing else, so an OS package manager on a deployed host is
 # an installer for whatever an attacker with RCE wants next.
-RUN rm -rf /sbin/apk /etc/apk /lib/apk /usr/share/apk /var/cache/apk \
+#
+# ONLY THE BINARY. `/lib/apk/db` stays, and that is not an oversight — it is the
+# installed-package database Trivy reads to enumerate OS packages. Deleting it
+# alongside the binary (the first attempt) left Trivy still recognising
+# "alpine 3.24.1" from /etc/alpine-release while enumerating ZERO packages, so
+# the OS scan reported "0 vulnerabilities" because it could see nothing:
+#
+#   with    /lib/apk/db : os-pkgs packages=18  vulns=0
+#   without /lib/apk/db : os-pkgs packages=0   vulns=0   <- blind, looks identical
+#
+# A hardening step that silently disables a scanner is a net loss. The container
+# job now asserts the enumerated package count is non-zero so this cannot recur.
+RUN rm -f /sbin/apk \
  && for pm in npm npx yarn yarnpkg pnpm corepack apk; do \
       if command -v "$pm" >/dev/null 2>&1; then \
         echo "FATAL: $pm still resolves after removal" >&2; exit 1; \
