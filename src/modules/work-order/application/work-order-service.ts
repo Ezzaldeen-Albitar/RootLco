@@ -17,6 +17,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { qualityModule } from '@/modules/quality';
+import { inventoryModule, type OpenInventoryCommitments } from '@/modules/inventory';
 import {
   JOB_HISTORY_ORDER,
   WORK_ORDER_HISTORY_ORDER,
@@ -53,12 +54,30 @@ export interface ClosureEligibility {
    * short-circuits and B1–B6 are not evaluated at all.
    */
   readonly alreadyTerminal: boolean;
-  /** Conditions the protected schema cannot yet express. Never silently "clear". */
+  /**
+   * Conditions the protected DATABASE guard cannot express, and who evaluates them.
+   *
+   * `wo.guard_work_order_closure` still raises only B1–B6, so these two conditions
+   * remain absent from `CLOSURE_BLOCKER_REGISTRY` — every entry there declares
+   * `wo.guard_work_order_closure` as its enforcer and a reconciliation test pins
+   * that. What changed in P1-21 is that they are no longer merely *named*: they are
+   * evaluated, and reported in `inventoryCommitments` below.
+   */
   readonly deferred: {
     readonly owner: string;
     readonly conditions: readonly string[];
     readonly reason: string;
   };
+  /**
+   * The evaluated answer to the two deferred conditions (P1-21).
+   *
+   * Phase 1-9 left `wo.work_orders.parts_forward_state` as the forward hook and
+   * assigned P1-21 the job of turning it into a blocker. It is enforced in the
+   * application rather than in the guard because closing that gap in the database
+   * would require a new migration, which P1-21 is not authorized to add — so the
+   * enforcement point is stated here rather than implied.
+   */
+  readonly inventoryCommitments: OpenInventoryCommitments;
 }
 
 /**
@@ -1132,6 +1151,9 @@ export class WorkOrderService extends ApplicationService {
     const alreadyTerminal = current?.isTerminal ?? false;
 
     const blockers = alreadyTerminal ? [] : await this.blockersFor(db, workOrderId);
+    // Evaluated even when the order is already terminal, because an operator asking
+    // why a closed order still holds stock deserves the number rather than a blank.
+    const inventoryCommitments = await inventoryModule().reads.openCommitmentsFor(db, workOrderId);
     return {
       workOrderId,
       state: workOrder.state,
@@ -1152,7 +1174,10 @@ export class WorkOrderService extends ApplicationService {
        * — three states that a client can tell apart without inspecting `state` against
        * a catalog it may not have read.
        */
-      eligible: !alreadyTerminal && blockers.length === 0,
+      // An open inventory commitment makes the order ineligible, and `close()`
+      // refuses it for the same reason. Reporting `eligible: true` here while the
+      // command refused would be worse than not evaluating it at all.
+      eligible: !alreadyTerminal && blockers.length === 0 && !inventoryCommitments.blocking,
       blockers,
       alreadyTerminal,
       deferred: {
@@ -1160,6 +1185,7 @@ export class WorkOrderService extends ApplicationService {
         conditions: DEFERRED_CLOSURE_BLOCKERS.conditions,
         reason: DEFERRED_CLOSURE_BLOCKERS.reason,
       },
+      inventoryCommitments,
     };
   }
 
@@ -1294,6 +1320,36 @@ export class WorkOrderService extends ApplicationService {
           violations: [{ path: 'body.toState', rule: 'closure_requires_closure_operation' }],
         },
       });
+    }
+    /**
+     * The inventory closure blocker (P1-21), enforced INSIDE the locked transaction.
+     *
+     * Phase 1-9 left `wo.work_orders.parts_forward_state` as a forward hook and
+     * assigned P1-21 the two conditions `wo.guard_work_order_closure` cannot express:
+     * a work order must not be certified complete while stock is still reserved for
+     * it, or still issued to it and unreturned.
+     *
+     * Three details are deliberate. It runs only when `closing` is true, so a
+     * cancellation is exempt exactly as B1–B6 are — abandoning work is not
+     * certifying it complete, and stock outstanding on an abandoned order is a
+     * different problem. It runs after the work-order row is locked, so a
+     * concurrent issue cannot slip in between the check and the transition. And it
+     * is application-level rather than a seventh registry entry, because closing
+     * this gap in the database would need a migration P1-21 is not authorized to
+     * add — so `CLOSURE_BLOCKER_REGISTRY` continues to mean "what the guard
+     * enforces", and this refusal names its own enforcer instead of borrowing the
+     * guard's authority.
+     */
+    if (closing) {
+      const commitments = await inventoryModule().reads.openCommitmentsFor(db, workOrderId);
+      if (commitments.blocking) {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            `Work order ${workOrderId} still holds inventory: ` +
+            `${commitments.activeReservations} active reservation(s) and ` +
+            `${commitments.openIssues} unreturned issue(s). Release or return them before closing.`,
+        });
+      }
     }
     if (!closing && via === 'closure') {
       throw new AppFailure('ERR-VAL-001', {

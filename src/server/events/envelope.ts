@@ -494,6 +494,54 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     implementedIn: 'P1-20',
     description: 'An issued quotation revision passed its expiry without a complete decision.',
   },
+
+  // ---- Inventory (P1-21) ---------------------------------------------------
+  //
+  // The phase plan proposed `inventory.stock-reserved.v1`,
+  // `inventory.stock-moved.v1`, and `inventory.reservation-released.v1`. None of
+  // those names is expressible here: `event_type` carries no version segment
+  // because `schema_version` is its own column, and the established namespace for
+  // this domain is `stock.*` rather than `inventory.*`. The mapping is recorded in
+  // docs/phase-1/phase-1-21/wave-1-contract-archaeology.md.
+  //
+  // Phase 1-10's handoff note anticipated nine event names, including
+  // `part.issued`, `part.returned`, `stock.damaged`, and
+  // `opening-inventory.approved`. Those are all movement postings, and
+  // `stock.movement.posted` carries `movementType`, `direction`, and the business
+  // reference in its payload — so one event describes them without four consumers
+  // having to subscribe to four names for the same fact. The reservation-expired
+  // name is deliberately NOT registered: no producer exists for it, because the
+  // scheduled `inv.expire_reservations` caller is a carried-forward obligation and
+  // reserving a name for an unbuilt producer is how a catalog fills with fiction.
+  {
+    code: 'EVT-INV-001',
+    eventType: 'stock.reserved',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_reservation',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description:
+      'Stock was reserved against an item and location, reducing available quantity without moving anything.',
+  },
+  {
+    code: 'EVT-INV-002',
+    eventType: 'stock.reservation.released',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_reservation',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description: 'An active stock reservation was released and its quantity returned to available.',
+  },
+  {
+    code: 'EVT-INV-003',
+    eventType: 'stock.movement.posted',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_movement',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description:
+      'An immutable stock movement was appended to the ledger, carrying its type, direction, and validated business reference.',
+  },
 ]);
 
 export function findEvent(eventType: string): EventCatalogEntry | undefined {

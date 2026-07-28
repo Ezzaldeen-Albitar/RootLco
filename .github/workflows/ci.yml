@@ -108,6 +108,12 @@ jobs:
       - name: P1-20 endpoint inventory and task traceability
         run: npm run validate:p1-20-inventory
 
+      # Phase 1-21 (P1-21-DOC-001): the same reconciliation for inventory. Registered
+      # here so a missing task identifier or an unreconciled catalog entry fails the
+      # build rather than being noticed at gate time.
+      - name: P1-21 endpoint inventory and task traceability
+        run: npm run validate:p1-21-inventory
+
       - name: OpenAPI validation
         run: npm run validate:openapi
 

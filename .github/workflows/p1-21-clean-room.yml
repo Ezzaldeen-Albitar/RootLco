@@ -1,0 +1,224 @@
+# =============================================================================
+# RootLco — P1-21 Hosted Clean Room.
+#
+# `ci.yml` proves the repository's commands pass. It does NOT prove three things
+# a clean room must prove, and this workflow exists for exactly those three:
+#
+#   1. The database was EMPTY before the first migration. `ci.yml` relies on the
+#      service container being fresh, which is true but never asserted — so a
+#      future change that seeded state early would not be caught.
+#   2. The schema hash is IDENTICAL before and after the suites. `ci.yml` has no
+#      schema-hash step at all, so a suite that mutated the schema would leave no
+#      trace and every result above it would be silently unsound.
+#   3. The working tree is CLEAN afterwards. A suite that writes a tracked file is
+#      a defect, not a nuisance.
+#
+# It also differs from `ci.yml` in two ways that make it a stricter proof:
+#
+#   - It checks out the **exact pull-request head**, not the merge ref that
+#     `actions/checkout` uses by default for a `pull_request` event, and asserts
+#     the SHA. "Clean room at the exact SHA" is otherwise not literally true.
+#   - Every suite runs in ONE job against ONE database, so they are serial by
+#     construction and share state the way a real deployment would.
+#
+# NO PRODUCTION SECRETS. Every value here is a safe, non-secret literal, and this
+# workflow consumes no repository secret. The repository is public; nothing in
+# this file or its logs may depend on a credential.
+# =============================================================================
+
+name: P1-21 Hosted Clean Room
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: p1-21-clean-room-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+  NEXT_PUBLIC_APP_ENV: 'local'
+
+jobs:
+  clean-room:
+    name: Exact-SHA hosted clean room
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container, not a credential
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value as above
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container value as above
+
+    steps:
+      # The EXACT pull-request head, not the merge ref. For a `pull_request`
+      # event `actions/checkout` defaults to the merge commit, which is a tree
+      # that exists nowhere in the branch history — proving it says nothing
+      # about the commit being merged.
+      - name: Checkout the exact pull-request head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert the checked-out commit is the exact head
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "expected: ${expected}"
+          echo "actual:   ${actual}"
+          if [ "${expected}" != "${actual}" ]; then
+            echo "::error::Clean room is not at the exact head. Every result below would be about a different tree."
+            exit 1
+          fi
+          echo "OK: clean room is at the exact head"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Lockfile only. `npm install` may resolve a tree the lockfile does not pin.
+      - name: Install dependencies (locked)
+        run: npm ci
+
+      # THE assertion `ci.yml` is missing. A clean room that starts against a
+      # database someone already migrated proves nothing at all.
+      - name: Assert the database holds zero application tables
+        run: |
+          set -euo pipefail
+          psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc 'SELECT version();'
+          n="$(psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')")"
+          echo "application tables before migration: ${n}"
+          if [ "${n}" != "0" ]; then
+            echo "::error::The clean room database is not empty (${n} application tables)."
+            exit 1
+          fi
+          echo "OK: database is genuinely empty"
+
+      - name: Apply every migration to the empty database
+        run: |
+          set -euo pipefail
+          files="$(ls supabase/migrations/*.sql | wc -l)"
+          echo "migration files in tree: ${files}"
+          npm run db:apply-migrations
+          applied="$(psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc \
+            'SELECT count(*) FROM supabase_migrations.schema_migrations' 2>/dev/null || echo 'unknown')"
+          echo "migrations recorded as applied: ${applied}"
+
+      - name: Apply declared seeds twice and validate clean business state
+        run: npm run validate:seed-state
+
+      # Recorded BEFORE the suites so the comparison afterwards is meaningful.
+      - name: Schema hash before the suites
+        run: |
+          set -euo pipefail
+          npm run --silent validate:schema-inventory -- --hash-only | tail -1 > /tmp/schema-hash-before.txt
+          echo "schema hash before: $(cat /tmp/schema-hash-before.txt)"
+
+      # Serial by construction: one job, one database, one step after another.
+      - name: Unit and foundation suite
+        run: npm run test
+
+      - name: Database suite (RLS, constraints, concurrency, negative stock)
+        run: npm run test:db
+
+      - name: Backend suite (authorization, isolation, idempotency, outbox)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+          WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+        run: npm run test:backend
+
+      # If this differs, a suite mutated the schema and every result above it is
+      # unsound. `ci.yml` cannot detect that.
+      - name: Schema hash after the suites must be identical
+        run: |
+          set -euo pipefail
+          npm run --silent validate:schema-inventory -- --hash-only | tail -1 > /tmp/schema-hash-after.txt
+          before="$(cat /tmp/schema-hash-before.txt)"
+          after="$(cat /tmp/schema-hash-after.txt)"
+          echo "before: ${before}"
+          echo "after:  ${after}"
+          if [ "${before}" != "${after}" ]; then
+            echo "::error::A test suite changed the schema. Every result above this step is unsound."
+            exit 1
+          fi
+          echo "OK: schema hash unchanged across every suite"
+
+      - name: Contract and coverage gates
+        run: |
+          set -euo pipefail
+          npm run validate:openapi
+          npm run validate:authorization-coverage
+          npm run validate:operation-coverage
+          npm run validate:module-boundaries
+          npm run validate:p1-19-inventory
+          npm run validate:p1-20-inventory
+          npm run validate:p1-21-inventory
+          npm run validate:encoding
+
+      - name: Security scans
+        run: |
+          set -euo pipefail
+          node scripts/check-scope-exclusions.mjs
+          npm run security:tracked-secrets
+          npm run security:browser-secrets
+          npm run validate:no-fake-data
+
+      - name: Production build
+        run: npm run build
+
+      - name: Docker compose configuration
+        run: docker compose config --quiet
+
+      - name: Build the production runner image
+        run: docker build --target runner -t rootlco/web:clean-room .
+
+      # ADR-007. Assert it rather than trusting the Dockerfile to stay correct.
+      - name: Assert the production image does not run as root
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint sh rootlco/web:clean-room -c 'id -u')"
+          echo "runtime uid=${uid}"
+          if [ "${uid}" = "0" ]; then
+            echo "::error::Production image runs as root. ADR-007 requires a non-root runtime."
+            exit 1
+          fi
+
+      # A suite that writes a tracked file is a defect, not a nuisance.
+      - name: Assert the working tree is clean
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::A suite modified a tracked file. The clean room must leave the tree untouched."
+            git status --porcelain
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "OK: working tree clean"

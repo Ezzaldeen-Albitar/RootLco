@@ -962,6 +962,91 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An approved quotation revision was linked to a P1-19 additional-work customer approval, filling wo.customer_approvals.quotation_revision_ref. Creates no second approval truth: the commercial decision stays in quo.approval_decisions.',
   },
+
+  // ---- Phase 1-21 — inventory ---------------------------------------------
+  //
+  // Quantity movements are `privileged` rather than `financial`. Phase 1-10 put
+  // valuation deliberately out of scope: inv.stock_movements carries a quantity and
+  // no amount, and the only money in the whole `inv` schema lives in the two
+  // restricted 1:1 cost tables. Filing a quantity movement as `financial` would
+  // make every stock issue look like a money event to whoever triages the trail.
+  {
+    code: 'inv.opening_batch.created',
+    class: 'privileged',
+    entityType: 'inv.opening_inventory_batch',
+    description:
+      'A draft opening-inventory batch was created. Creates no stock: the batch is a counted intention until inv.approve_opening_batch posts its opening movements, and ck_opening_inventory_batches_maker_checker requires a different approver.',
+  },
+  {
+    code: 'inv.opening_batch.approved',
+    class: 'approval',
+    entityType: 'inv.opening_inventory_batch',
+    description:
+      'An opening-inventory batch was approved, posting one immutable opening movement per counted line. This is the only path by which stock appears from nothing, which is why it is an approval and why the maker may not be the approver.',
+  },
+  {
+    code: 'inv.stock.reserved',
+    class: 'privileged',
+    entityType: 'inv.stock_reservation',
+    description:
+      'Stock was reserved against a cell, reducing available quantity without moving anything. Single-winner under the inv.reserve_stock balance lock, so a concurrent request for the same final unit is refused rather than queued.',
+  },
+  {
+    code: 'inv.stock.reservation_released',
+    class: 'privileged',
+    entityType: 'inv.stock_reservation',
+    description:
+      'An active stock reservation was released, returning its quantity to available. Recorded only when the release actually changed state: inv.release_reservation is a no-op on an already terminal reservation, and auditing that would claim a change that never happened.',
+  },
+  {
+    code: 'inv.part.issued',
+    class: 'privileged',
+    entityType: 'inv.part_issue',
+    description:
+      'A part was issued from stock to a work order, posting an out movement. The reservation is consumed before the movement is posted, because reducing on_hand while reserved is still held would breach ck_stock_balances_available.',
+  },
+  {
+    code: 'inv.part.returned',
+    class: 'privileged',
+    entityType: 'inv.part_return',
+    description:
+      'A previously issued part was returned to stock, posting an in movement. Bounded by the issue it reverses: the sum of returns may not exceed the issued quantity, enforced under a row lock and again at the constraint layer.',
+  },
+  {
+    code: 'inv.stock.damaged',
+    class: 'privileged',
+    entityType: 'inv.damaged_stock',
+    description:
+      'Stock was recorded as damaged and moved out of a sellable location into quarantine. Damaged units leave sellable availability structurally rather than by a flag, and conflicting reservations at the source are released first so available never goes negative.',
+  },
+  {
+    code: 'inv.customer_supplied_part.recorded',
+    class: 'privileged',
+    entityType: 'inv.customer_supplied_part',
+    description:
+      'A customer-owned part was taken into custody against a work order. Posts no movement and changes no balance: ck_customer_supplied_parts_owned makes company ownership unrepresentable, and no customer_supplied reference kind exists for a movement to cite.',
+  },
+  {
+    code: 'inv.external_purchase.recorded',
+    class: 'financial',
+    entityType: 'inv.external_purchase_part',
+    description:
+      'An ad-hoc external purchase was recorded against a work order, optionally with a restricted unit cost. Financial because the unit cost is a figure the tenant will be charged, even though is_procurement is false and the entry is neither a purchase order nor a goods receipt and adds no stock.',
+  },
+  {
+    code: 'inv.movement_history.read',
+    class: 'privileged',
+    entityType: 'inv.stock_movements',
+    description:
+      'The stock movement ledger was read. Audited because the ledger is the complete record of what a branch holds and consumes, so an unlogged bulk read of it is exactly the reconnaissance an audit trail exists to catch. The record names the filter, never the rows.',
+  },
+  {
+    code: 'inv.reconciliation.performed',
+    class: 'privileged',
+    entityType: 'inv.stock_balances',
+    description:
+      'Stored stock balances were re-derived from the movement ledger and compared. A non-zero incoherent count is evidence that inv.guard_stock_balance_coherence was bypassed rather than a routine finding, which is why the result is reported and never silently repaired.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

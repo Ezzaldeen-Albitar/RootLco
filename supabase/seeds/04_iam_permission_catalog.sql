@@ -45,6 +45,17 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('inv.stock.operate',        'inv', 'Post movements, reserve, issue, return',   'medium', '00000000-0000-4000-8000-000000000001'),
   ('inv.adjustment.approve',   'inv', 'Approve stock adjustments/opening batches','high',   '00000000-0000-4000-8000-000000000001'),
   ('inv.cost.view',            'inv', 'View item/purchase/adjustment cost',       'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-21 — Inventory backend. Four codes only: inv.stock.operate already
+  -- covers reserve/release/issue/return/damage by its own description, and
+  -- inv.adjustment.approve already covers opening-batch approval, so neither is
+  -- duplicated. The four below name authorities no existing code carries — reading
+  -- the item catalog is not reading stock, custody of a customer's property is not
+  -- operating stock, an external purchase reference is not a movement, and a
+  -- reconciliation read is a privileged audit act.
+  ('inv.item.read',            'inv', 'Search and read the item catalog',        'low',    '00000000-0000-4000-8000-000000000001'),
+  ('inv.custody.manage',       'inv', 'Record custody of customer-supplied parts','medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.external_purchase.record','inv','Record ad-hoc external purchase references','medium','00000000-0000-4000-8000-000000000001'),
+  ('inv.audit.read',           'inv', 'Read inventory reconciliation evidence',  'high',   '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Billing & Payment (sal)
   ('sal.invoice.manage',       'sal', 'Create and manage draft invoices',         'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),
