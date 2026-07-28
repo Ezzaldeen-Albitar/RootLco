@@ -252,3 +252,54 @@ Full detail and the resolution table are in `review-adjudication.md`.
 
 Final exact-SHA local CI on a fresh database, then the clean room, then first push,
 PR, billing-only bypass check, merge, protected reproof, gate record, closure.
+
+---
+
+## Cycle 3 — pushed, PR #87 open, NOT merged
+
+| Fact                            | Value                                                        |
+| ------------------------------- | ------------------------------------------------------------ |
+| FINAL_FEATURE_SHA / remote head | `7c717c3d3392cb28278bd03c10f441bf4c9cf064`                   |
+| Feature PR                      | #87, base `develop`, **Open**, "Able to merge", no conflicts |
+| LOCAL_CI_SHA                    | `6e0f3644ca6850fcaa4e01c1e64178e656022c9f`                   |
+| CLEAN_ROOM_SHA                  | `0daacb1692ba0c92d0c39d2fad0d074d7767104a`                   |
+| `origin/develop`                | `bb9cc881…` untouched                                        |
+| `origin/main`                   | `491c4e08…` untouched                                        |
+
+### Hosted checks — billing lock confirmed from the actual annotations
+
+Run `30354181717`. Exactly **one** annotation, verbatim:
+
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased. Please check the 'Billing & plans' section in
+> your settings
+
+No checkout, no `npm ci`, no repository command — searched for and absent. This is an
+account-level lock, not a repository failure.
+
+### The bypass is NOT taken, and why
+
+Of the owner's ten conditions, eight hold: jobs did not start (1), no checkout (2), no
+repository command executed (3), the only annotation is the known billing message (4),
+no conflicts (7), unresolved Critical 0 (8), unresolved High 0 (9), and the merge would
+go through the PR with a merge commit (10).
+
+**Conditions 5 and 6 do not literally hold.** They require the local equivalent CI and
+the fresh clean room to have passed **on the exact PR head SHA**. Both ran two
+documentation commits earlier. The executable diff between those SHAs and the head is
+**empty** — verified with
+`git diff --stat <sha>..HEAD -- src tests scripts package.json package-lock.json supabase .github`
+— so every executable and test path is byte-identical, and the substance of the
+conditions is met. But "byte-identical executable tree" is not the same sentence as
+"on the exact PR head SHA", and an authorized bypass is not the place to substitute a
+weaker one of my own choosing.
+
+### Exact next action
+
+Re-run the full local equivalent CI **and** the fresh clean room at
+`7c717c3d3392cb28278bd03c10f441bf4c9cf064` exactly. Both are expected to reproduce the
+recorded results, since the delta is documentation only. Once they do, all ten
+conditions hold and the bypass merge may proceed — followed by the protected merge
+reproof, the documentation-only gate record, and closure.
+
+**P1-21 is NOT closed.**
