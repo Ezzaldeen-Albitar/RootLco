@@ -193,14 +193,20 @@ exception with no proven production or runtime reachability.**
 
 ## What the hosted runs actually found
 
-Five runs, and the first two could not execute at all. Recorded in full in
+Nine runs, and the first two could not execute at all. Recorded in full in
 [`adversarial-review.md`](evidence/adversarial-review.md).
 
-| Run | Head      | Outcome                                                |
-| --- | --------- | ------------------------------------------------------ |
-| 1   | `8740531` | `startup_failure`, **zero jobs** — AR-28               |
-| 2   | `67014fc` | every job failed in `Set up the project` — AR-29       |
-| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures — AR-30 … AR-33 |
+| Run | Head      | Outcome                                                 |
+| --- | --------- | ------------------------------------------------------- |
+| 1   | `8740531` | `startup_failure`, **zero jobs** — AR-28                |
+| 2   | `67014fc` | every job failed in `Set up the project` — AR-29        |
+| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures — AR-30 … AR-33  |
+| 4   | `9088013` | 11 of 13 green — AR-34, AR-35, AR-36                    |
+| 5   | `ca4c594` | 14/14 green — but latent AR-37 not yet found            |
+| 6   | `f741d2f` | 12/13 — AR-41                                           |
+| 7   | `0e492bb` | 12/13 — AR-42                                           |
+| 8   | `d166449` | **14/14 green, `ci-gate` Go**                           |
+| 9   | `c95e8d9` | **14/14 green, `ci-gate` Go** — then AR-43, AR-44 found |
 
 AR-28 and AR-29 were both defects in the _remediation_ for an earlier finding,
 and neither was reachable by reading the files: three adversarial reviewers,

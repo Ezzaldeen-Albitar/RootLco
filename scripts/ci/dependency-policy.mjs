@@ -236,10 +236,24 @@ export function validateExactMatch(entry, advisory, devAudit, failures, proofs =
         'An unevidenced safety claim is the thing this file exists to prevent.'
     );
   }
+  // REACHABILITY, not absence — and the difference is not pedantry. This field
+  // was written three times as an absence claim and was wrong three times:
+  // first npm's bundled tree carried an affected brace-expansion, then yarn's
+  // vendored bundle did, and finally the `node` BINARY itself did, because Node
+  // compiles its internal tooling into the executable. Absence was never
+  // achievable — a Node application image contains Node — so each correction was
+  // fixing the wrong claim.
+  //
+  // What a waiver can honestly assert, and what this checks, is that the running
+  // application cannot REACH the code: module resolution does not expose it and
+  // nothing on the request path invokes it. An entry that also wants to describe
+  // presence should say so separately via `finalContainerCodePresent`.
   if (entry.finalContainerReachable !== false || !entry.finalContainerReachableEvidence) {
     reject(
       `exception \`${entry.id}\` must assert \`finalContainerReachable: false\` WITH evidence taken from ` +
-        'the built image, not from the package.json classification.'
+        'the built image, not from the package.json classification. Note this means NOT REACHABLE ' +
+        'from the running application — not "absent from the image", which vendored code makes ' +
+        'unachievable and which a path-based inventory cannot prove either way.'
     );
   }
 

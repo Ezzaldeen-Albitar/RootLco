@@ -37,6 +37,7 @@ What remains genuinely owner-only is unchanged — steps 5, 9 and 10 below.
 | 6       | `f741d2f` | 12/13; `dependency-security` only — AR-41                     |
 | 7       | `0e492bb` | 12/13; `dependency-security` only — AR-42                     |
 | 8       | `d166449` | **14/14 green, `ci-gate` Go** — and carrying every review fix |
+| 9       | `c95e8d9` | **14/14 green, `ci-gate` Go** — documentation on top          |
 
 The legacy `ci.yml` has passed 4/4 on every one of these commits, which is what
 gives independent confidence that the dependency remediation itself is sound —
@@ -78,20 +79,22 @@ Two consequences worth carrying:
 
 ## After the pull request is open
 
-| #   | Step                                                | Who       | Evidence                                                                              |
-| --- | --------------------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
-| 1   | First hosted `pr-ci` run                            | automatic | 13 jobs; expect first-run failures — the workflows have never executed                |
-| 2   | Diagnose from artifacts, fix, push                  | —         | never re-run blindly                                                                  |
-| 3   | Record the measured baselines the run produces      | —         | backend coverage, build size, image size, structural totals, seeded structural tables |
-| 4   | `ci-gate` **Go** at one exact SHA                   | —         | run URL                                                                               |
-| 5   | Merge with a **merge commit**                       | owner     | no squash, no rebase                                                                  |
-| 6   | `protected-gate` on the merge SHA                   | automatic | run URL                                                                               |
-| 7   | Gate branch, documentation-only, gate PR            | —         | proves the clean room cannot be skipped                                               |
-| 8   | `protected-gate` on the final develop SHA           | automatic | run URL                                                                               |
-| 9   | Add `ci-gate` to required checks                    | owner     | branch protection                                                                     |
-| 10  | Remove the four `ci.yml` job names; delete `ci.yml` | owner     | separate PR                                                                           |
+| #   | Step                                                | Who       | Evidence                                                                       |
+| --- | --------------------------------------------------- | --------- | ------------------------------------------------------------------------------ |
+| 1   | First hosted `pr-ci` run                            | automatic | 13 jobs; expect first-run failures — the workflows have never executed         |
+| 2   | Diagnose from artifacts, fix, push                  | —         | never re-run blindly                                                           |
+| 3   | Record the measured baselines the run produces      | **owner** | backend coverage, build size, image size, seeded structural tables — see below |
+| 4   | `ci-gate` **Go** at one exact SHA                   | —         | run URL                                                                        |
+| 5   | Merge with a **merge commit**                       | owner     | no squash, no rebase                                                           |
+| 6   | `protected-gate` on the merge SHA                   | automatic | run URL                                                                        |
+| 7   | Gate branch, documentation-only, gate PR            | —         | proves the clean room cannot be skipped                                        |
+| 8   | `protected-gate` on the final develop SHA           | automatic | run URL                                                                        |
+| 9   | Add `ci-gate` to required checks                    | owner     | branch protection                                                              |
+| 10  | Remove the four `ci.yml` job names; delete `ci.yml` | owner     | separate PR                                                                    |
 
-Steps 5, 9 and 10 are owner actions. Everything else follows from them.
+Steps **3**, 5, 9 and 10 are owner actions. Step 3 was reassigned once the
+measurements turned out to live only in artifacts and job summaries, neither of
+which is readable without a signed-in session.
 
 ## Baselines to record from the first hosted runs
 
@@ -109,6 +112,33 @@ Committed **unset** on purpose. Each has the reason written in its file.
 
 Until each is recorded, its gate **reports the measurement and passes**. That is
 measure-first, not a disabled check — and each file says which it is.
+
+### Step 3 is OPEN, and cannot be closed from this environment
+
+Still unset after eight hosted runs:
+
+| File                             | Unset                                                   |
+| -------------------------------- | ------------------------------------------------------- |
+| `build-size-baseline.json`       | `standaloneBytes`, `staticBytes`, `totalBytes`          |
+| `container-baseline.json`        | `imageSizeBytes`                                        |
+| `coverage-baseline.backend.json` | `establishedBy` (the floors themselves are set)         |
+| `schema-baseline.json`           | `seededStructuralTables`                                |
+| `performance-baseline.json`      | `establishedBy` — needs three agreeing nightlies anyway |
+
+The runs that measured these have all passed. The numbers exist. They are written
+to the job summary and to the uploaded evidence artifact — **and neither is
+readable without a signed-in session** (see above). So this step is reassigned to
+the owner rather than left looking done.
+
+To close it, for each baseline: download the job's `evidence-*` artifact, read the
+measured value, and commit it with `establishedBy` set to the run URL. Do it in a
+reviewable commit of its own — a ratchet whose origin nobody can point at is not
+a ratchet.
+
+Deliberately NOT closed by measuring locally. A Windows workstation build is not
+the artefact the ratchet is meant to guard, and seeding a size or coverage floor
+from the wrong environment produces a gate that is either permanently slack or
+fails on its first honest run.
 
 ## Expected first-run failures
 

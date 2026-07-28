@@ -540,7 +540,9 @@ derived from a transient throttle.
 Found twice over: by a reviewer, and independently by hitting a real
 `403 {"message":"API rate limit exceeded…"}` while querying the API by hand.
 
-**Fixed**: the tolerated branch must now be **positively identified from the
+**Superseded — see AR-41/AR-42 below, and AR-44.** The fix recorded here was
+itself replaced twice more; what shipped is described there, not here. At the
+time: the tolerated branch must be **positively identified from the
 response body**. Verified against five real bodies — only the genuine
 "feature disabled" text is tolerated; rate limit, token scope, bad ref and empty
 body all fail loudly.
@@ -563,7 +565,7 @@ keys it did not find.
   because `grep -c` prints `0` _and_ exits 1. `[ "0\n0" -gt 0 ]` is not a
   comparison — bash reports `integer expected` and returns 2, which `if` reads
   as false. Every clean run took that path for all ten packages in both loops:
-  **the verdict was correct by accident**. Fixed with `|| :`, which keeps the
+  **the verdict was correct by accident**. Fixed with `x="$(…)" || x=0`, which keeps the
   count grep already printed and discards only the status.
 - **The "outside `/app`" loop counted _all_ hits** while asserting they were
   "base-image surface … do not fix this in package.json" — so a wholesale `/app`
@@ -609,6 +611,63 @@ The ref probe itself does **not** false-block fork pull requests. Verified
 rather than assumed: `GET /repos/nodejs/node/commits/<head sha of an open fork
 PR>` returns **200**, because GitHub makes pull-request head commits resolvable
 through the base repository.
+
+## A second review, of the fixes from the first
+
+`d166449` and `c95e8d9` were both **14/14 green with `ci-gate` Go**. The four
+commits since the previous review were nonetheless handed to three more hostile
+lenses, with every finding given to a separate agent told to refute it. The
+reviewers were told outright that the dependency-graph probe had been wrong four
+times and to assume the fifth version was wrong too.
+
+It was. So was the container claim — for the third time.
+
+### AR-43 · the absence claim was never achievable, and that is why it kept failing
+
+`finalContainerReachable: false` had been corrected twice: once for npm's
+bundled tree (AR-35), once for yarn's vendored bundle (AR-37). It was **still
+false**, and this time nothing could be deleted to fix it:
+
+```
+/usr/local/bin/node   127,260,816 bytes
+  // node_modules/brace-expansion/dist/commonjs/index.js
+  escSlash · expandTop · isAlphaSequence            (7 markers)
+```
+
+**Node bundles its internal tooling into the executable.** A Node application
+image contains Node, so brace-expansion's code is present by construction. Three
+corrections had been fixing the wrong claim: the record kept asserting ABSENCE,
+which is unachievable, instead of NON-REACHABILITY, which is both true and the
+security-relevant question.
+
+Measured in the built image: `require("brace-expansion")` fails with
+`MODULE_NOT_FOUND`, and the name is not in `module.builtinModules`. Nothing on
+the request path — `node server.js` serving Next.js standalone — performs brace
+expansion, and the advisory needs an attacker-supplied brace pattern.
+
+**Fixed by changing the claim, not the image.** The record now states both facts:
+`finalContainerCodePresent: true` with the node-binary evidence, and
+`finalContainerReachable: false` meaning _not reachable from the running
+application_. `dependency-policy.mjs` now says so in the rule itself, so the next
+person cannot read the field as an absence claim. The package-manager removal is
+kept as real hardening on its own merits — it is simply no longer what the claim
+rests on.
+
+### AR-44 · the probe's default was fail-OPEN, which is the opposite of what it claimed
+
+Both exclusions ran on the **extracted** `message`, which is the empty string for
+any body that is not JSON with a string `message`. An unreadable body therefore
+matched nothing, fell through, and was recorded as "the Dependency graph is not
+enabled" — a claim about a repository setting derived from a body that could not
+be parsed. A body of `<html>403 Forbidden. Rate limit exceeded.</html>` was
+tolerated, because the words were never looked at.
+
+That is the precise opposite of this step's own stated principle. **Fixed**: the
+body must be readable before anything is concluded from it, and the exclusions
+are additionally matched against the raw bytes. Verified across nine shapes —
+`Forbidden` and `Not Found` tolerate; empty, HTML-encoded rate limit, and a
+non-string `message` now all fail, as do both JSON rate-limit forms, token scope
+and SAML SSO.
 
 ### Recorded but not fixed
 

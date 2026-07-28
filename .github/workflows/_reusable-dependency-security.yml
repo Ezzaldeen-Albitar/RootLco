@@ -196,6 +196,27 @@ jobs:
               printf '## Dependency review\n\nDependency graph enabled; the review ran.\n' > depgraph.md
               ;;
             403 | 404)
+              # The exclusions below run on the EXTRACTED `message`, which is the
+              # empty string for any body that is not JSON with a string
+              # `message`. That made the default fail-OPEN: an unreadable body
+              # matched no exclusion, fell through, and was recorded as "the
+              # Dependency graph is not enabled" — a claim about a repository
+              # SETTING derived from a body that could not be parsed. Worse, a
+              # body of `<html>403 Forbidden. Rate limit exceeded.</html>` was
+              # tolerated, because the words were never looked at.
+              #
+              # So: the body must be READABLE before anything is concluded from
+              # it, and the exclusions are additionally matched against the RAW
+              # bytes so a re-encoded rate limit cannot slip past.
+              if [ ! -s depgraph-probe.json ] || [ -z "${message}" ]; then
+                echo "::error::HTTP ${code} probing the dependency graph, and the response body is empty or not JSON with a string message. Nothing can be established from it, so it is not recorded as a repository setting. Body follows:"
+                head -c 400 depgraph-probe.json || printf '(empty)'
+                exit 1
+              fi
+              if grep -qiE 'rate limit|abuse detection|secondary rate' depgraph-probe.json; then
+                echo "::error::HTTP ${code} probing the dependency graph; the raw body mentions a rate limit. That is not a repository setting."
+                exit 1
+              fi
               if printf '%s' "${message}" | grep -qiE 'rate limit|abuse detection|secondary rate'; then
                 echo "::error::HTTP ${code} probing the dependency graph: ${message}. That is a RATE LIMIT, not a repository setting, and it must not be recorded as a governance gap."
                 exit 1
