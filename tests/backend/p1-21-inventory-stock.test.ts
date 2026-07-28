@@ -65,6 +65,7 @@ import {
   establishP1_21Fixtures,
   movementCountFor,
   outboxCountFor,
+  countRowsOf,
   reservationStatusOf,
   seedStock,
 } from './p1-21-helpers';
@@ -742,7 +743,13 @@ describe('inv.damaged-stock-create', () => {
     ).toBe(422);
   });
 
-  it('releases conflicting reservations rather than driving available negative', async () => {
+  it('H2 — refuses a damage that would destroy more reserved stock than it damages', async () => {
+    // THE regression. `inv.free_reservations_for_loss` releases WHOLE reservation
+    // rows newest-first until the freed quantity covers the loss; it never releases
+    // part of one. So damaging 0.001 of a fully reserved cell used to release the
+    // entire reservation — another work order's guaranteed part destroyed by a
+    // caller holding only `inv.stock.operate`, with no audit and no event. The
+    // command is now refused and the transaction rolls back.
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '4.000' });
     authAs(INV_FULL);
     const balance = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
@@ -753,19 +760,76 @@ describe('inv.damaged-stock-create', () => {
         quantity: balance!.available,
       })
     );
-    // Damaging stock that is fully reserved would breach on_hand - reserved >= 0
-    // unless inv.free_reservations_for_loss releases the conflict first.
-    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+    const before = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
+
+    const refused = await post(DAMAGE, '/api/v1/damaged-stock', {
       itemId: ITEM_A_ALT,
       fromLocationId: WAREHOUSE_A1,
       quarantineLocationId: QUARANTINE_A1,
-      quantity: '1.000',
+      quantity: '0.001',
       reason: 'Corroded',
+    });
+    expect(refused.status).toBe(409);
+    // Nothing survived: the reservation is intact and the balance is untouched.
+    expect(await reservationStatusOf(reservation.id)).toBe('active');
+    const after = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
+    expect(after!.onHand).toBe(before!.onHand);
+    expect(after!.reserved).toBe(before!.reserved);
+  });
+
+  it('H2 — attributes a proportionate collateral release with an audit row and an event', async () => {
+    // A reservation of exactly the damaged quantity IS releasable: the freed total
+    // does not exceed the damage, so the loss is proportionate. What must not happen
+    // is the release going unrecorded — the /release route emits both for the
+    // identical transition, so a consumer would otherwise keep a phantom reservation.
+    await seedStock({ itemId: ITEM_A_ALT, locationId: STORAGE_A1, quantity: '3.000' });
+    authAs(INV_FULL);
+    const reservation = await bodyOf<{ id: string }>(
+      await post(RESERVE, '/api/v1/stock-reservations', {
+        itemId: ITEM_A_ALT,
+        locationId: STORAGE_A1,
+        quantity: '3.000',
+      })
+    );
+    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A_ALT,
+      fromLocationId: STORAGE_A1,
+      quarantineLocationId: QUARANTINE_A1,
+      quantity: '3.000',
+      reason: 'Water damage',
     });
     expect(response.status).toBe(201);
     expect(await reservationStatusOf(reservation.id)).toBe('released');
-    const after = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
+    // Attributed, not silent.
+    expect(await auditCountFor('inv.stock.reservation_released', reservation.id)).toBe(1);
+    expect(await outboxCountFor(`stock.reservation.released:${reservation.id}`)).toBe(1);
+    const after = await balanceOf(ITEM_A_ALT, STORAGE_A1);
     expect(Number(after!.available)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('H3 — publishes stock.movement.posted for BOTH damage legs', async () => {
+    // The event catalog states one stock.movement.posted describes issue, return,
+    // damage and opening postings. For a while only the issue path published it, so a
+    // consumer projecting availability saw stock leave and never come back.
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '6.000' });
+    authAs(INV_FULL);
+    const damage = await bodyOf<{ id: string }>(
+      await post(DAMAGE, '/api/v1/damaged-stock', {
+        itemId: ITEM_A,
+        fromLocationId: WAREHOUSE_A1,
+        quarantineLocationId: QUARANTINE_A1,
+        quantity: '2.000',
+        reason: 'Dropped',
+      })
+    );
+    // Two movements, two events — out of sellable and in to quarantine.
+    const published = await countRowsOf(
+      `SELECT count(*)::text AS n FROM shared.event_outbox o
+         JOIN inv.stock_movements m ON o.event_key = 'stock.movement.posted:' || m.id::text
+        WHERE m.reference_kind = 'damage' AND m.reference_id = $1`,
+      [damage.id]
+    );
+    expect(published).toBe(2);
   });
 
   it('refuses a caller lacking inv.stock.operate (authorization)', async () => {
@@ -951,5 +1015,186 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
       { params: Promise.resolve({ workOrderId: wo.workOrderId }) }
     );
     expect(cancelled.status).toBe(200);
+  });
+});
+
+/**
+ * H4, H5 and T1 regressions.
+ *
+ * Each of these fails if the corresponding fix is removed, and each covers a case
+ * the suite previously could not see.
+ */
+describe('H5 — quarantined stock is not reservable and not issuable', () => {
+  it('refuses to reserve or issue from a quarantine location', async () => {
+    // Damage moves units into quarantine so they leave sellable availability. Nothing
+    // in the protected schema then stops a reservation or an issue naming that cell,
+    // so a damaged part could be reserved and fitted to a customer's vehicle — and
+    // because /stock-availability excludes quarantine by default, the drawdown would
+    // not even show in the operator's view. Measured before the fix: 201, 201, 201.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '8.000' });
+    authAs(INV_FULL);
+    const damaged = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A,
+      fromLocationId: WAREHOUSE_A1,
+      quarantineLocationId: QUARANTINE_A1,
+      quantity: '5.000',
+      reason: 'Dropped',
+    });
+    expect(damaged.status).toBe(201);
+    // The units really are in quarantine — otherwise the refusals below would be
+    // vacuous, refusing a cell that holds nothing.
+    expect(Number((await balanceOf(ITEM_A, QUARANTINE_A1))!.onHand)).toBeGreaterThan(0);
+
+    expect(
+      (
+        await post(RESERVE, '/api/v1/stock-reservations', {
+          itemId: ITEM_A,
+          locationId: QUARANTINE_A1,
+          quantity: '2.000',
+          workOrderId: wo.workOrderId,
+        })
+      ).status
+    ).toBe(409);
+    expect(
+      (
+        await post(ISSUE, '/api/v1/stock-issues', {
+          workOrderId: wo.workOrderId,
+          itemId: ITEM_A,
+          locationId: QUARANTINE_A1,
+          quantity: '1.000',
+        })
+      ).status
+    ).toBe(409);
+    // And nothing was written against the quarantine cell.
+    expect(
+      await countRowsOf(`SELECT count(*)::text AS n FROM inv.part_issues WHERE location_id = $1`, [
+        QUARANTINE_A1,
+      ])
+    ).toBe(0);
+  });
+});
+
+describe('H4 — a release that changed nothing records nothing', () => {
+  it('writes no audit row and no event when the reservation was already consumed', async () => {
+    // `release()` used to decide "did this change anything" from an UNLOCKED pre-read,
+    // so a concurrent issue consuming the reservation in that window left it recording
+    // an audit entry reading active -> consumed and publishing
+    // stock.reservation.released — telling consumers the quantity returned to
+    // available when it had in fact left through an out movement. The read is now
+    // locked, so the decision and the release are atomic. This is the sequential
+    // shadow of that race: a consumed reservation must produce no release evidence.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const reservation = await bodyOf<{ id: string }>(
+      await post(RESERVE, '/api/v1/stock-reservations', {
+        itemId: ITEM_A_ALT,
+        locationId: WAREHOUSE_A1,
+        quantity: '2.000',
+        workOrderId: wo.workOrderId,
+      })
+    );
+    await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: wo.workOrderId,
+      itemId: ITEM_A_ALT,
+      locationId: WAREHOUSE_A1,
+      quantity: '2.000',
+      reservationId: reservation.id,
+    });
+    expect(await reservationStatusOf(reservation.id)).toBe('consumed');
+
+    const released = await releaseCall(reservation.id, { reason: 'too late' });
+    expect(released.status).toBe(200);
+    const body = await bodyOf<{ status: string; replayed: boolean }>(released);
+    expect(body.status).toBe('consumed');
+    expect(body.replayed).toBe(true);
+    // The decisive assertions: no release was recorded for a release that did not
+    // happen, and the issued units did NOT come back to available.
+    expect(await auditCountFor('inv.stock.reservation_released', reservation.id)).toBe(0);
+    expect(await outboxCountFor(`stock.reservation.released:${reservation.id}`)).toBe(0);
+  });
+});
+
+describe('T1 — the declared idempotency of return and damage is real', () => {
+  it('replays a stock return without returning twice', async () => {
+    // `idempotency` was declared for this operation with no replay test behind it, so
+    // deleting `idempotent: true` from the route left the block green.
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
+    authAs(INV_FULL);
+    const issued = await bodyOf<{ id: string }>(
+      await post(ISSUE, '/api/v1/stock-issues', {
+        workOrderId: wo.workOrderId,
+        itemId: ITEM_A,
+        locationId: WAREHOUSE_A1,
+        quantity: '4.000',
+      })
+    );
+    const key = randomUUID();
+    const payload = { partIssueId: issued.id, quantity: '2.000' };
+    expect((await postWithKey(RETURN, '/api/v1/stock-returns', payload, key)).status).toBe(201);
+    const afterFirst = (await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand;
+
+    const replay = await postWithKey(RETURN, '/api/v1/stock-returns', payload, key);
+    expect([200, 201]).toContain(replay.status);
+    // Stock came back once, not twice.
+    expect((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand).toBe(afterFirst);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.part_returns WHERE part_issue_id = $1`,
+        [issued.id]
+      )
+    ).toBe(1);
+  });
+
+  it('replays a damage record without damaging twice', async () => {
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '9.000' });
+    authAs(INV_FULL);
+    const before = (await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand;
+    const key = randomUUID();
+    const payload = {
+      itemId: ITEM_A,
+      fromLocationId: WAREHOUSE_A1,
+      quarantineLocationId: QUARANTINE_A1,
+      quantity: '1.000',
+      reason: 'Scratched in transit',
+    };
+    expect((await postWithKey(DAMAGE, '/api/v1/damaged-stock', payload, key)).status).toBe(201);
+    const afterFirst = (await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand;
+    expect(afterFirst).toBe(Quantity.parse(before).minus(Quantity.parse('1.000')).toString());
+
+    const replay = await postWithKey(DAMAGE, '/api/v1/damaged-stock', payload, key);
+    expect([200, 201]).toContain(replay.status);
+    // One unit left sellable stock, not two.
+    expect((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand).toBe(afterFirst);
+  });
+});
+
+describe('H3 — a return publishes its movement too', () => {
+  it('publishes stock.movement.posted for the return leg', async () => {
+    const wo = await createOpenWorkOrder();
+    await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '7.000' });
+    authAs(INV_FULL);
+    const issued = await bodyOf<{ id: string }>(
+      await post(ISSUE, '/api/v1/stock-issues', {
+        workOrderId: wo.workOrderId,
+        itemId: ITEM_A_ALT,
+        locationId: WAREHOUSE_A1,
+        quantity: '3.000',
+      })
+    );
+    const returned = await bodyOf<{ id: string }>(
+      await post(RETURN, '/api/v1/stock-returns', { partIssueId: issued.id, quantity: '3.000' })
+    );
+    const published = await countRowsOf(
+      `SELECT count(*)::text AS n FROM shared.event_outbox o
+         JOIN inv.stock_movements m ON o.event_key = 'stock.movement.posted:' || m.id::text
+        WHERE m.reference_kind = 'part_return' AND m.reference_id = $1`,
+      [returned.id]
+    );
+    // Without this a consumer projecting availability sees stock leave on every issue
+    // and never come back — a monotonically diverging projection.
+    expect(published).toBe(1);
   });
 });

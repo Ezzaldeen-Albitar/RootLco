@@ -167,7 +167,7 @@ export class InventoryStockService {
     authorizeScope: ScopeAuthorizer
   ): Promise<ReservationView> {
     const quantity = parseQuantity(input.quantity);
-    const location = await this.requireLocation(db, input.locationId);
+    const location = await this.requireSellableLocation(db, input.locationId);
     await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
     await this.requireStockTrackedItem(db, input.itemId);
 
@@ -283,7 +283,16 @@ export class InventoryStockService {
     reason: string,
     authorizeScope: ScopeAuthorizer
   ): Promise<ReservationView> {
-    const before = await this.repository.readReservation(db, reservationId);
+    // LOCKED, not merely read. `inv.release_reservation` no-ops on an already
+    // terminal reservation, so deciding "did this call change anything" from an
+    // unlocked read is racy: a concurrent issue could consume the reservation between
+    // the read and the call, and this method would then record an audit entry and
+    // publish an event for a release that never happened — telling consumers the
+    // quantity returned to available when it had in fact left through an `out`
+    // movement. The lock makes the pre-read and the release one atomic decision, and
+    // it also serialises two concurrent releases so the second cannot collide on
+    // `uq_event_outbox_event_key` and abort a transaction the route promises is safe.
+    const before = await this.repository.lockReservation(db, reservationId);
     if (!before) {
       throw new AppFailure('ERR-RES-001', {
         message: `Reservation ${reservationId} was not found`,
@@ -377,7 +386,7 @@ export class InventoryStockService {
     const quantity = parseQuantity(input.quantity);
     assertLegalMovementReference('issue', 'part_issue', 'out');
 
-    const location = await this.requireLocation(db, input.locationId);
+    const location = await this.requireSellableLocation(db, input.locationId);
     await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
     await this.requireStockTrackedItem(db, input.itemId);
     await this.requireWorkOrderAcceptingParts(db, input.workOrderId, location);
@@ -534,6 +543,12 @@ export class InventoryStockService {
       toDomainFailure(error, 'Part return');
     }
 
+    // The `in` leg is published, like the issue's `out` leg. A consumer projecting
+    // availability from `stock.movement.posted` would otherwise see stock leave on
+    // every issue and never come back — a monotonically diverging projection, which
+    // is the availability inflation this phase exists to prevent.
+    await this.publishPostedMovements(db, 'part_return', returned.returnId);
+
     await appendAudit(db, {
       action: 'inv.part.returned',
       entityType: 'inv.part_return',
@@ -613,6 +628,24 @@ export class InventoryStockService {
     }
     await this.requireStockTrackedItem(db, input.itemId);
 
+    /**
+     * The reservations this damage is about to destroy, captured BEFORE the call.
+     *
+     * `inv.record_damage` calls `inv.free_reservations_for_loss`, which releases
+     * WHOLE reservation rows newest-first until the freed quantity covers the loss —
+     * it never releases part of one. So damaging `0.001` of a cell whose stock is
+     * fully reserved releases the entire reservation, and a caller holding only
+     * `inv.stock.operate` could destroy another work order's guaranteed part and
+     * immediately reserve it. The release granularity belongs to the protected
+     * function and cannot be changed without a migration; what belongs here is
+     * refusing the disproportionate case and attributing the rest.
+     */
+    const reservationsBefore = await this.repository.activeReservationsAt(
+      db,
+      input.itemId,
+      input.fromLocationId
+    );
+
     let damage: { damageId: string };
     try {
       damage = await this.repository.recordDamage(db, {
@@ -629,6 +662,81 @@ export class InventoryStockService {
     } catch (error) {
       toDomainFailure(error, 'Damage record');
     }
+
+    /**
+     * Attribute — and bound — the collateral releases.
+     *
+     * Anything that was active before and is no longer active was released by
+     * `inv.free_reservations_for_loss`, because nothing else in this transaction
+     * touches those rows. Two things then happen that did not before:
+     *
+     *  - the total released quantity is compared against the damage. Releasing more
+     *    than was damaged means whole rows were sacrificed for a fraction of their
+     *    quantity, so the command is REFUSED and the transaction rolls back — the
+     *    operator must release the reservation deliberately first. Without this a
+     *    0.001-unit damage silently voids a 10.000-unit reservation.
+     *  - each genuine release is audited and published exactly as the `/release`
+     *    route does, so the same state change is attributable however it was caused.
+     *    Otherwise a consumer keeps a phantom `active` reservation forever.
+     */
+    if (reservationsBefore.length > 0) {
+      const freed: (typeof reservationsBefore)[number][] = [];
+      let freedQuantity = Quantity.ZERO;
+      for (const reservation of reservationsBefore) {
+        const after = await this.repository.readReservation(db, reservation.id);
+        if (after && after.status === 'active') continue;
+        freed.push(reservation);
+        freedQuantity = freedQuantity.plus(Quantity.fromDatabase(reservation.quantity, 'quantity'));
+      }
+      if (freedQuantity.isGreaterThan(quantity)) {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            `Recording ${quantity.toString()} damaged would release reservations totalling ` +
+            `${freedQuantity.toString()}, because a reservation is released whole. Release the ` +
+            'affected reservations deliberately, then record the damage.',
+        });
+      }
+      for (const reservation of freed) {
+        await appendAudit(db, {
+          action: 'inv.stock.reservation_released',
+          entityType: 'inv.stock_reservation',
+          entityId: reservation.id,
+          companyId: reservation.companyId,
+          branchId: reservation.branchId,
+          requestRef: 'inv.damaged-stock-create',
+          details: [
+            {
+              field: 'status',
+              classification: 'internal',
+              previousValue: 'active',
+              value: 'released',
+            },
+            { field: 'reason', classification: 'internal', value: 'stock_loss' },
+            { field: 'quantity', classification: 'internal', value: reservation.quantity },
+            { field: 'damageId', classification: 'internal', value: damage.damageId },
+          ],
+        });
+        await publishEvent(db, {
+          eventType: 'stock.reservation.released',
+          aggregateId: reservation.id,
+          aggregateVersion: reservation.recordVersion,
+          producer: 'inventory.inventory-stock-service',
+          companyId: reservation.companyId,
+          branchId: reservation.branchId,
+          eventKey: `stock.reservation.released:${reservation.id}`,
+          payload: {
+            reservationId: reservation.id,
+            itemId: reservation.itemId,
+            locationId: reservation.locationId,
+            quantity: reservation.quantity,
+            reason: 'stock_loss',
+          },
+        });
+      }
+    }
+
+    // Both legs — `out` of the sellable cell and `in` to quarantine — are published.
+    await this.publishPostedMovements(db, 'damage', damage.damageId);
 
     await appendAudit(db, {
       action: 'inv.stock.damaged',
@@ -675,6 +783,38 @@ export class InventoryStockService {
     if (location.status !== 'active') {
       throw new AppFailure('ERR-TRN-001', {
         message: `Stock location ${location.locationCode} is ${location.status}`,
+      });
+    }
+    return location;
+  }
+
+  /**
+   * A location whose stock may be reserved or issued.
+   *
+   * Quarantine is excluded, and this is the control that makes the damage path mean
+   * anything. `inv.record_damage` moves damaged units OUT of a sellable location and
+   * IN to a quarantine one, so they leave sellable availability structurally — but
+   * the units still exist as a balance in the quarantine cell, and nothing in the
+   * protected schema stops a reservation or an issue naming that cell. Without this,
+   * a damaged part can be reserved and fitted to a customer's vehicle, and because
+   * `/stock-availability` excludes quarantine by default the drawdown would not even
+   * appear in the operator's view. Measured before the fix: damage 201, reserve from
+   * quarantine 201, issue from quarantine 201.
+   *
+   * Quarantined stock leaves through the approved disposition path —
+   * `inv.stock_adjustments` and `inv.approve_adjustment`, which need
+   * `inv.adjustment.approve` and a second person — not through `inv.stock.operate`.
+   */
+  private async requireSellableLocation(
+    db: DbHandle,
+    locationId: string
+  ): Promise<StockLocationRow> {
+    const location = await this.requireLocation(db, locationId);
+    if (location.locationType === 'quarantine') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Stock location ${location.locationCode} is a quarantine location; damaged stock ` +
+          'cannot be reserved or issued. Dispose of it through an approved adjustment.',
       });
     }
     return location;
@@ -736,6 +876,42 @@ export class InventoryStockService {
       assertWorkOrderAcceptsParts(state);
     } catch (error) {
       toDomainFailure(error, 'Work order');
+    }
+  }
+
+  /**
+   * Publishes `stock.movement.posted` for every movement a protected function wrote.
+   *
+   * `inv.return_part`, `inv.record_damage` and `inv.approve_opening_batch` return the
+   * business row's id rather than the movement id, which is why this resolves the
+   * movements from the reference. The event catalog states that one
+   * `stock.movement.posted` describes issue, return, damage and opening postings so a
+   * consumer need not subscribe to four names — and for a while only the issue path
+   * honoured that. This is what makes the statement true.
+   */
+  public async publishPostedMovements(
+    db: DbHandle,
+    referenceKind: string,
+    referenceId: string
+  ): Promise<void> {
+    const movements = await this.repository.findMovementsForReference(
+      db,
+      referenceKind,
+      referenceId
+    );
+    for (const movement of movements) {
+      await this.publishMovementPosted(db, {
+        movementId: movement.id,
+        companyId: movement.companyId,
+        branchId: movement.branchId,
+        itemId: movement.itemId,
+        locationId: movement.locationId,
+        movementType: movement.movementType,
+        direction: movement.direction,
+        quantity: movement.quantity,
+        referenceKind,
+        referenceId,
+      });
     }
   }
 

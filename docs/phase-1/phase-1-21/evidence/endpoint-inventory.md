@@ -10,22 +10,23 @@ Operations: **14**. Published events: **3**.
 | `inv.customer-supplied-part-create` | POST   | `/customer-supplied-parts`                      | `inv.custody.manage`           | branch | privileged (`inv.customer_supplied_part.recorded`) | yes        | no       |
 | `inv.damaged-stock-create`          | POST   | `/damaged-stock`                                | `inv.stock.operate`            | branch | privileged (`inv.stock.damaged`)                   | yes        | no       |
 | `inv.external-purchase-part-create` | POST   | `/external-purchase-parts`                      | `inv.external_purchase.record` | branch | financial (`inv.external_purchase.recorded`)       | yes        | no       |
-| `inv.inventory-reconciliation-read` | GET    | `/inventory-reconciliations`                    | `inv.audit.read`               | tenant | privileged (`inv.reconciliation.performed`)        | no         | no       |
+| `inv.inventory-reconciliation-read` | GET    | `/inventory-reconciliations`                    | `inv.audit.read`               | branch | privileged (`inv.reconciliation.performed`)        | no         | no       |
 | `inv.item-search`                   | GET    | `/items`                                        | `inv.item.read`                | tenant | none                                               | no         | no       |
 | `inv.opening-batch-approve`         | POST   | `/opening-inventory-batches/{batchId}/approval` | `inv.adjustment.approve`       | branch | approval (`inv.opening_batch.approved`)            | yes        | no       |
 | `inv.opening-batch-create`          | POST   | `/opening-inventory-batches`                    | `inv.stock.operate`            | branch | privileged (`inv.opening_batch.created`)           | yes        | no       |
 | `inv.opening-batch-line-create`     | POST   | `/opening-inventory-batches/{batchId}/lines`    | `inv.stock.operate`            | branch | none                                               | no         | no       |
-| `inv.stock-availability-read`       | GET    | `/stock-availability`                           | `inv.stock.read`               | tenant | none                                               | no         | no       |
+| `inv.stock-availability-read`       | GET    | `/stock-availability`                           | `inv.stock.read`               | branch | none                                               | no         | no       |
 | `inv.stock-issue-create`            | POST   | `/stock-issues`                                 | `inv.stock.operate`            | branch | privileged (`inv.part.issued`)                     | yes        | no       |
-| `inv.stock-movement-list`           | GET    | `/stock-movements`                              | `inv.stock.read`               | tenant | privileged (`inv.movement_history.read`)           | no         | no       |
+| `inv.stock-movement-list`           | GET    | `/stock-movements`                              | `inv.stock.read`               | branch | privileged (`inv.movement_history.read`)           | no         | no       |
 | `inv.stock-reservation-create`      | POST   | `/stock-reservations`                           | `inv.stock.operate`            | branch | privileged (`inv.stock.reserved`)                  | yes        | no       |
 | `inv.stock-reservation-release`     | POST   | `/stock-reservations/{reservationId}/release`   | `inv.stock.operate`            | branch | privileged (`inv.stock.reservation_released`)      | no         | no       |
 | `inv.stock-return-create`           | POST   | `/stock-returns`                                | `inv.stock.operate`            | branch | privileged (`inv.part.returned`)                   | yes        | no       |
 
 ## Published events
 
-| Event                        | Producer                            | Source                                                         |
-| ---------------------------- | ----------------------------------- | -------------------------------------------------------------- |
-| `stock.reserved`             | `inventory.inventory-stock-service` | `src/modules/inventory/application/inventory-stock-service.ts` |
-| `stock.reservation.released` | `inventory.inventory-stock-service` | `src/modules/inventory/application/inventory-stock-service.ts` |
-| `stock.movement.posted`      | `inventory.inventory-stock-service` | `src/modules/inventory/application/inventory-stock-service.ts` |
+| Event                        | Producer                             | Source                                                          |
+| ---------------------------- | ------------------------------------ | --------------------------------------------------------------- |
+| `stock.movement.posted`      | `inventory.inventory-intake-service` | `src/modules/inventory/application/inventory-intake-service.ts` |
+| `stock.reserved`             | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |
+| `stock.reservation.released` | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |
+| `stock.movement.posted`      | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |

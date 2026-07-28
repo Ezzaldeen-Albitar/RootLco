@@ -157,7 +157,24 @@ export interface MovementRow {
   readonly correlationId: string | null;
 }
 
+/** A movement a protected function posted, resolved from its business reference. */
+export interface PostedMovement {
+  readonly id: string;
+  readonly direction: string;
+  readonly quantity: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly movementType: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Present when the movements were resolved per line rather than per reference. */
+  readonly referenceId?: string;
+}
+
 export interface MovementListFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every query. */
+  readonly companyId: string;
+  readonly branchId: string;
   readonly itemId?: string;
   readonly locationId?: string;
   readonly workOrderId?: string;
@@ -333,16 +350,18 @@ export class InventoryRepository extends Repository {
   public async readAvailability(
     db: DbHandle,
     filter: {
+      readonly companyId: string;
+      readonly branchId: string;
       readonly itemId?: string;
       readonly locationId?: string;
-      readonly branchId?: string;
       readonly includeQuarantine?: boolean;
     },
     request: PageRequest
   ): Promise<Page<StockBalanceRow>> {
     const context = this.assertContext(db);
-    const values: unknown[] = [context.principal.tenantId];
-    const clauses: string[] = ['b.tenant_id = $1'];
+    // Company and branch are predicates, not options — see `listMovements`.
+    const values: unknown[] = [context.principal.tenantId, filter.companyId, filter.branchId];
+    const clauses: string[] = ['b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3'];
 
     if (filter.itemId !== undefined) {
       values.push(filter.itemId);
@@ -351,10 +370,6 @@ export class InventoryRepository extends Repository {
     if (filter.locationId !== undefined) {
       values.push(filter.locationId);
       clauses.push(`b.location_id = $${values.length}`);
-    }
-    if (filter.branchId !== undefined) {
-      values.push(filter.branchId);
-      clauses.push(`b.branch_id = $${values.length}`);
     }
     if (filter.includeQuarantine !== true) {
       clauses.push(`l.location_type <> 'quarantine'`);
@@ -1119,6 +1134,150 @@ export class InventoryRepository extends Repository {
     return { id: row.id };
   }
 
+  /**
+   * Finds the movements a protected function just posted for one business reference.
+   *
+   * `inv.return_part`, `inv.record_damage` and `inv.approve_opening_batch` return the
+   * business row's id, not the movement id — so publishing `stock.movement.posted`
+   * for them needs this lookup. `uq_stock_movements_source` makes
+   * `(reference_kind, reference_id, direction)` unique, so a reference yields one row
+   * per direction: one for a return or an opening line, two for damage.
+   */
+  public async findMovementsForReference(
+    db: DbHandle,
+    referenceKind: string,
+    referenceId: string
+  ): Promise<readonly PostedMovement[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{
+      id: string;
+      direction: string;
+      quantity: string;
+      item_id: string;
+      location_id: string;
+      movement_type: string;
+      company_id: string;
+      branch_id: string;
+    }>(
+      db,
+      `SELECT id, direction, quantity, item_id, location_id, movement_type,
+              company_id, branch_id
+         FROM inv.stock_movements
+        WHERE tenant_id = $1 AND reference_kind = $2 AND reference_id = $3
+        ORDER BY direction`,
+      [context.principal.tenantId, referenceKind, referenceId]
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      direction: r.direction,
+      quantity: r.quantity,
+      itemId: r.item_id,
+      locationId: r.location_id,
+      movementType: r.movement_type,
+      companyId: r.company_id,
+      branchId: r.branch_id,
+    }));
+  }
+
+  /**
+   * The `opening` movements an approved batch posted, one per counted line.
+   *
+   * `inv.approve_opening_batch` returns void and loops over the lines internally, so
+   * the movements can only be found through the lines that referenced them.
+   */
+  public async findOpeningMovementsForBatch(
+    db: DbHandle,
+    batchId: string
+  ): Promise<readonly PostedMovement[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{
+      id: string;
+      direction: string;
+      quantity: string;
+      item_id: string;
+      location_id: string;
+      movement_type: string;
+      company_id: string;
+      branch_id: string;
+      reference_id: string;
+    }>(
+      db,
+      `SELECT m.id, m.direction, m.quantity, m.item_id, m.location_id, m.movement_type,
+              m.company_id, m.branch_id, m.reference_id
+         FROM inv.stock_movements m
+         JOIN inv.opening_inventory_lines l
+           ON l.tenant_id = m.tenant_id AND l.id = m.reference_id
+        WHERE m.tenant_id = $1 AND m.reference_kind = 'opening_line' AND l.batch_id = $2
+        ORDER BY m.seq`,
+      [context.principal.tenantId, batchId]
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      direction: r.direction,
+      quantity: r.quantity,
+      itemId: r.item_id,
+      locationId: r.location_id,
+      movementType: r.movement_type,
+      companyId: r.company_id,
+      branchId: r.branch_id,
+      referenceId: r.reference_id,
+    }));
+  }
+
+  /**
+   * The active reservations at one cell.
+   *
+   * Read BEFORE `inv.record_damage`, because that function calls
+   * `inv.free_reservations_for_loss`, which terminates reservations the application
+   * never named. Comparing before and after is the only way to attribute a
+   * loss-driven release to the damage that caused it.
+   */
+  public async activeReservationsAt(
+    db: DbHandle,
+    itemId: string,
+    locationId: string
+  ): Promise<readonly ReservationRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{ id: string }>(
+      db,
+      `SELECT id FROM inv.stock_reservations
+        WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND status = 'active'
+        ORDER BY created_at DESC, id DESC`,
+      [context.principal.tenantId, itemId, locationId]
+    );
+    const out: ReservationRow[] = [];
+    for (const row of rows.rows) {
+      const full = await this.readReservation(db, row.id);
+      if (full) out.push(full);
+    }
+    return out;
+  }
+
+  /**
+   * Reads a reservation and LOCKS it, so a status decision cannot be raced.
+   *
+   * `inv.release_reservation` silently returns when the row is no longer `active`.
+   * Deciding "did this call change anything" from an unlocked pre-read is therefore
+   * wrong: a concurrent issue can consume the reservation in between, and the release
+   * would then record an audit entry and publish an event for a transition that never
+   * happened — telling consumers the quantity returned to available when it had in
+   * fact left through an `out` movement.
+   */
+  public async lockReservation(
+    db: DbHandle,
+    reservationId: string
+  ): Promise<ReservationRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM inv.stock_reservations
+        WHERE tenant_id = $1 AND id = $2
+          FOR UPDATE`,
+      [context.principal.tenantId, reservationId]
+    );
+    return row ? this.readReservation(db, row.id) : null;
+  }
+
   // -------------------------------------------------------------------------
   // P1-21-BE-011 — movement history.
   // -------------------------------------------------------------------------
@@ -1138,8 +1297,11 @@ export class InventoryRepository extends Repository {
     request: PageRequest
   ): Promise<Page<MovementRow>> {
     const context = this.assertContext(db);
-    const values: unknown[] = [context.principal.tenantId];
-    const clauses: string[] = ['m.tenant_id = $1'];
+    // Company and branch are predicates, not options. RLS narrows too, but on the
+    // permission-blind grant union — so this is the predicate that makes the read
+    // match the scope that was actually authorized.
+    const values: unknown[] = [context.principal.tenantId, filter.companyId, filter.branchId];
+    const clauses: string[] = ['m.tenant_id = $1', 'm.company_id = $2', 'm.branch_id = $3'];
 
     if (filter.itemId !== undefined) {
       values.push(filter.itemId);

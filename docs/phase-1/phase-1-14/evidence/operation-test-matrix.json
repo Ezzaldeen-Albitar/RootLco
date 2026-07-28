@@ -2310,7 +2310,7 @@
       "public": false,
       "files": ["tests/backend/p1-21-inventory-reads.test.ts"],
       "referenced": true,
-      "derived": ["route", "service", "success", "authorization", "audit"],
+      "derived": ["route", "service", "success", "authorization", "audit", "isolation"],
       "declared": ["denial", "cross-tenant", "audit"],
       "required": [
         "route",
@@ -2318,6 +2318,7 @@
         "success",
         "authorization",
         "audit",
+        "isolation",
         "denial",
         "cross-tenant"
       ],
@@ -2326,6 +2327,7 @@
         "authorization",
         "cross-tenant",
         "denial",
+        "isolation",
         "route",
         "service",
         "success"
@@ -2477,16 +2479,16 @@
       "public": false,
       "files": ["tests/backend/p1-21-inventory-reads.test.ts"],
       "referenced": true,
-      "derived": ["route", "service", "success", "authorization"],
+      "derived": ["route", "service", "success", "authorization", "isolation"],
       "declared": ["denial", "cross-tenant", "isolation"],
       "required": [
         "route",
         "service",
         "success",
         "authorization",
+        "isolation",
         "denial",
-        "cross-tenant",
-        "isolation"
+        "cross-tenant"
       ],
       "provided": [
         "authorization",
@@ -2553,7 +2555,7 @@
       "public": false,
       "files": ["tests/backend/p1-21-inventory-reads.test.ts"],
       "referenced": true,
-      "derived": ["route", "service", "success", "authorization", "audit"],
+      "derived": ["route", "service", "success", "authorization", "audit", "isolation"],
       "declared": ["denial", "cross-tenant", "audit"],
       "required": [
         "route",
@@ -2561,6 +2563,7 @@
         "success",
         "authorization",
         "audit",
+        "isolation",
         "denial",
         "cross-tenant"
       ],
@@ -2569,6 +2572,7 @@
         "authorization",
         "cross-tenant",
         "denial",
+        "isolation",
         "route",
         "service",
         "success"

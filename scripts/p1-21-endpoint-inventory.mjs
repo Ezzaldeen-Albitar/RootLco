@@ -80,11 +80,24 @@ const PHASE_MODULES = ['inventory'];
  *   - `doc`        an identifier in one named document, for a task whose deliverable IS
  *                  that document
  *
- * None of those can be satisfied by prose. A comment cannot register an operation, seed a
- * permission, produce an audit action, export a symbol or name a test. `test` strips
- * comments before searching, so a JSDoc quoting a test title does not count either. The
- * one `doc` proof is deliberately narrow: a single named file, for the single task whose
- * output is documentation, and naming the wrong file fails.
+ * A comment cannot register an operation, seed a permission, produce an audit action, or
+ * export a symbol, and `test` strips comments before searching so a JSDoc quoting a test
+ * title does not count either.
+ *
+ * ## What `doc` can and cannot prove — stated honestly
+ *
+ * `doc` IS satisfiable by prose: the check is that the identifier appears in one named
+ * file. An earlier version of this header claimed "none of those can be satisfied by
+ * prose" and "the one `doc` proof", while five tasks used `doc` and five of them rested
+ * on nothing else. Both statements were false, in a file whose entire purpose is honest
+ * evidence, so they are corrected rather than quietly left.
+ *
+ * The five documentary tasks now each carry a STRUCTURAL proof alongside the document,
+ * so the document explains the work and the artifact proves it happened. That closes the
+ * specific mutation a reviewer found: deleting the `validate:p1-21-inventory` step from
+ * `.github/workflows/ci.yml` used to keep this gate green and go unnoticed by every
+ * other check, because nothing asserted the step existed. It is now `P1-21-DO-001`'s own
+ * proof, so removing the gate from CI fails the gate.
  */
 const TASKS = Object.freeze([
   [
@@ -553,27 +566,64 @@ const TASKS = Object.freeze([
   [
     'P1-21-QA-005',
     'Regression package',
-    [['doc', 'docs/phase-1/phase-1-21/evidence/regression-package.md']],
+    [
+      ['doc', 'docs/phase-1/phase-1-21/evidence/regression-package.md'],
+      // The document describes five suites; these prove three of them exist and are
+      // wired, so the package cannot be a description of tests nobody wrote.
+      ['symbol', 'tests/backend/p1-21-inventory-stock.test.ts', 'INV_PERMISSION_ELSEWHERE'],
+      ['symbol', 'tests/db/p1-21-inventory-integrity.test.ts', 'P1-21-BE-013'],
+      ['symbol', 'tests/unit/p1-21-inventory-domain.test.ts', 'MOVEMENT_REFERENCE_MATRIX'],
+    ],
   ],
   [
     'P1-21-DO-001',
     'Local CI command matrix and Temporary Local CI Primary Mode',
-    [['doc', 'docs/phase-1/phase-1-21/evidence/local-ci-command-matrix.md']],
+    [
+      ['doc', 'docs/phase-1/phase-1-21/evidence/local-ci-command-matrix.md'],
+      // The matrix is only true if the step it documents is actually registered.
+      // Without these two, deleting the gate from CI kept this gate green.
+      ['symbol', 'package.json', '"validate:p1-21-inventory"'],
+      ['symbol', '.github/workflows/ci.yml', 'run: npm run validate:p1-21-inventory'],
+    ],
   ],
   [
     'P1-21-DO-002',
     'Clean-room runbook and structured logging',
-    [['doc', 'docs/phase-1/phase-1-21/evidence/clean-room-runbook.md']],
+    [
+      ['doc', 'docs/phase-1/phase-1-21/evidence/clean-room-runbook.md'],
+      // The title has two halves and the document alone proved neither. The
+      // reconciliation read is the monitoring signal the runbook names, and its
+      // audit action is what makes a privileged read observable at all.
+      ['operation', 'inv.inventory-reconciliation-read'],
+      ['audit', 'inv.reconciliation.performed'],
+    ],
   ],
   [
     'P1-21-DOC-001',
     'Contract, catalog, and traceability synchronization',
-    [['doc', 'docs/phase-1/phase-1-21/wave-1-contract-archaeology.md']],
+    [
+      ['doc', 'docs/phase-1/phase-1-21/wave-1-contract-archaeology.md'],
+      // Synchronization is a mechanical fact, not a prose claim: the domain
+      // vocabulary is transcribed from the frozen CHECK constraints and the database
+      // suite reads those constraints back out of pg_constraint to compare.
+      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'MOVEMENT_TYPES'],
+      [
+        'test',
+        'tests/db/p1-21-inventory-integrity.test.ts',
+        'transcribes every CHECK constraint exactly',
+      ],
+    ],
   ],
   [
     'P1-21-DOC-002',
     'Operator/developer guidance and change-log update',
-    [['doc', 'docs/phase-1/phase-1-21/evidence/change-log.md']],
+    [
+      ['doc', 'docs/phase-1/phase-1-21/evidence/change-log.md'],
+      // The change log's central operator claim is that stock appears only through an
+      // approved opening batch. These prove that path exists rather than asserting it.
+      ['operation', 'inv.opening-batch-approve'],
+      ['audit', 'inv.opening_batch.approved'],
+    ],
   ],
 ]);
 
@@ -971,8 +1021,11 @@ function main() {
         continue;
       }
       if (kind === 'audit') {
-        // In the controlled catalog AND emitted somewhere. "Declared" is not "produced" —
-        // two P1-21 actions sat in the catalog with no producer at all.
+        // In the controlled catalog AND emitted somewhere. "Declared" is not
+        // "produced": P1-20 found two of its own actions sitting in the catalog with
+        // no producer at all, which is why this check exists. (The phase label in this
+        // comment was rewritten to "P1-21" when the script was adapted, turning
+        // P1-20's finding into a claim about this phase's history. Corrected.)
         const inCatalog = auditCatalog.includes(`'${first}'`);
         if (inCatalog && producedAudit.has(first)) resolved.push(`audit ${first}`);
         else {
@@ -1059,7 +1112,10 @@ function main() {
   const traceability = [
     '# P1-21 task traceability',
     '',
-    '> GENERATED by `scripts/p1-21-endpoint-inventory.mjs`. Every one of the 27 task',
+    // Derived from TASKS.length rather than typed. The literal "27" survived the
+    // adaptation from P1-20 and contradicted the "Tasks: 28" line printed four lines
+    // below it, in the one document whose job is to be counted.
+    `> GENERATED by \`scripts/p1-21-endpoint-inventory.mjs\`. Every one of the ${TASKS.length} task`,
     '> identifiers must resolve to at least one anchor in the repository, or the gate',
     '> fails. P1-19 shipped with 13 of 33 identifiers greppable nowhere; this check',
     '> exists so that cannot recur.',

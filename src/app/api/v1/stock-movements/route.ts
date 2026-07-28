@@ -22,7 +22,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
+import {
+  parseOrFail,
+  schemas,
+  scopeTargetOption,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { MOVEMENT_TYPES, REFERENCE_KINDS, inventoryModule } from '@/modules/inventory';
 
 export const runtime = 'nodejs';
@@ -32,6 +37,12 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2
 
 const Query = z
   .object({
+    // REQUIRED, and they are the authorizationTarget. They were optional, and
+    // omitting them skipped `authorizeScope` entirely — leaving RLS, whose
+    // `app.branch_ids` is the permission-blind union of every grant (P1-18-A-01), as
+    // the only narrowing on the complete record of what a branch holds and consumes.
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
     itemId: schemas.uuid.optional(),
     locationId: schemas.uuid.optional(),
     workOrderId: schemas.uuid.optional(),
@@ -53,7 +64,7 @@ export const STOCK_MOVEMENT_LIST_OPERATION = defineOperation({
   path: '/stock-movements',
   summary: 'List the immutable stock movement ledger, correlated by business reference.',
   permissions: ['inv.stock.read'],
-  scope: 'tenant',
+  scope: 'branch',
   auditClass: 'privileged',
   auditAction: 'inv.movement_history.read',
   rateLimitPolicy: 'expensive-read',
@@ -61,16 +72,18 @@ export const STOCK_MOVEMENT_LIST_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
   return handleOperation(
     STOCK_MOVEMENT_LIST_OPERATION,
     request,
-    async ({ db, request: raw, authorizeScope }) => {
-      const url = new URL(raw.url);
-      const query = parseOrFail(Query, searchParamsToObject(url.searchParams), 'query');
+    async ({ db, authorizeScope }) => {
+      const query = parseOrFail(Query, raw, 'query');
       return {
         body: await inventoryModule().reads.listMovements(
           db,
           {
+            companyId: query.companyId,
+            branchId: query.branchId,
             ...(query.itemId === undefined ? {} : { itemId: query.itemId }),
             ...(query.locationId === undefined ? {} : { locationId: query.locationId }),
             ...(query.workOrderId === undefined ? {} : { workOrderId: query.workOrderId }),
@@ -86,6 +99,7 @@ export async function GET(request: Request): Promise<Response> {
           authorizeScope
         ),
       };
-    }
+    },
+    scopeTargetOption(raw)
   );
 }

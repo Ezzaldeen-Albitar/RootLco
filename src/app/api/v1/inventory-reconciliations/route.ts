@@ -20,7 +20,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
+import {
+  parseOrFail,
+  schemas,
+  scopeTargetOption,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { inventoryModule } from '@/modules/inventory';
 
 export const runtime = 'nodejs';
@@ -28,7 +33,11 @@ export const dynamic = 'force-dynamic';
 
 const Query = z
   .object({
-    branchId: schemas.uuid.optional(),
+    // REQUIRED, and they are the authorizationTarget. Optional they were a
+    // cross-branch disclosure: omitting them skipped `authorizeScope`, and RLS alone
+    // narrows on the permission-blind grant union (P1-18-A-01).
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
     itemId: schemas.uuid.optional(),
     workOrderId: schemas.uuid.optional(),
     limit: schemas.limit.optional(),
@@ -42,7 +51,7 @@ export const INVENTORY_RECONCILIATION_OPERATION = defineOperation({
   path: '/inventory-reconciliations',
   summary: 'Re-derive stored stock balances from the movement ledger and report any disagreement.',
   permissions: ['inv.audit.read'],
-  scope: 'tenant',
+  scope: 'branch',
   auditClass: 'privileged',
   auditAction: 'inv.reconciliation.performed',
   rateLimitPolicy: 'expensive-read',
@@ -50,17 +59,18 @@ export const INVENTORY_RECONCILIATION_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
   return handleOperation(
     INVENTORY_RECONCILIATION_OPERATION,
     request,
-    async ({ db, request: raw, authorizeScope }) => {
-      const url = new URL(raw.url);
-      const query = parseOrFail(Query, searchParamsToObject(url.searchParams), 'query');
+    async ({ db, authorizeScope }) => {
+      const query = parseOrFail(Query, raw, 'query');
       return {
         body: await inventoryModule().reads.reconcile(
           db,
           {
-            ...(query.branchId === undefined ? {} : { branchId: query.branchId }),
+            companyId: query.companyId,
+            branchId: query.branchId,
             ...(query.itemId === undefined ? {} : { itemId: query.itemId }),
             ...(query.workOrderId === undefined ? {} : { workOrderId: query.workOrderId }),
           },
@@ -68,6 +78,7 @@ export async function GET(request: Request): Promise<Response> {
           authorizeScope
         ),
       };
-    }
+    },
+    scopeTargetOption(raw)
   );
 }

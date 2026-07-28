@@ -1,30 +1,54 @@
 # P1-21 — Independent Adversarial Review Adjudication
 
-**Reviewed range:** `bb9cc8813661a4a2e97bf0eff8a8d9c148742ed2..17d863b`
-**Reviewers:** three independent read-only reviewers over (1) inventory domain
+**Reviewed range:** `bb9cc8813661a4a2e97bf0eff8a8d9c148742ed2..17d863b`. The fourth
+reviewer ran while the branch advanced to `2dfea4b` and verified its findings against
+the moving tree, which it flagged itself.
+**Reviewers:** four independent read-only reviewers over (1) inventory domain
 correctness, concurrency, negative stock, protected-function mitigations and movement
 integrity; (2) tenant/company/branch/location authorization, RLS isolation,
 work-order integration, custody and external-purchase semantics, restricted cost;
 (3) exact quantity and money, audit/outbox transactionality, API/OpenAPI and error
-contracts, rollback integrity.
+contracts, rollback integrity; (4) task and evidence honesty, test honesty, Local CI
+Primary Mode governance, documentation accuracy.
 
 Each reviewer was required to cite file and line, give a reproduction, attempt to
 refute its own finding, and distinguish a repository defect from a protected-schema
 limitation. **Every finding below that is marked verified was reproduced by me
 directly**, not accepted on the reviewer's word.
 
-> **Status: P1-21 is NOT closeable at this commit.** Five High findings and a
-> test-honesty finding are open. The gate requires unresolved Critical 0 and
-> unresolved High 0, and that condition is not met.
+> **Status: all blocking findings RESOLVED.** One Critical, five High and one
+> test-honesty finding were open at review time. Each is now fixed and carries a
+> regression test that fails if the fix is removed.
 
-## Critical
+## Correction to an earlier revision of this document
 
-None. All three reviewers reported none, and each independently confirmed no
-cross-tenant reachability of any `inv` table: every repository query binds
-`context.principal.tenantId`, every `inv` table is `FORCE ROW LEVEL SECURITY`, and
-the tenant-B fixture rows prove the boundary from both sides.
+An earlier revision of this file stated "**Critical — None**". That was false, and it
+is the most important line on this page.
 
-## High — open
+A fourth reviewer found that `npm run test` had been **red at every commit of the
+phase** — 3 failed / 923 passed of 926. The phase added 11 audit actions and 3 events
+to the controlled catalogs and never extended the foundation allow-lists that
+enumerate them, so `tests/foundation/p1-15-catalogs.test.ts` compared 137 against 126
+and `tests/foundation/event-envelope.test.ts` 41 against 38.
+
+The reporting failure was worse than the defect. `execution-checkpoint.md` recorded
+"Verified green at HEAD | Unit | **926**". The count was exactly right — read off the
+same run whose result line said `3 failed`. Three earlier reviewers and this
+adjudication all missed it.
+
+## Critical — RESOLVED
+
+**C1 — the unit suite was red and was reported green.** Fixed by registering the 11
+new audit actions and 3 new events in the foundation allow-lists and adding the
+`P1-21 → inventory` owner mapping. `npm run test` now exits 0 at 926 passed / 43
+files.
+
+On cross-tenant reachability, which the first three reviewers were asked about
+directly: none found any. Every repository query binds `context.principal.tenantId`,
+every `inv` table is `FORCE ROW LEVEL SECURITY`, and the tenant-B fixture rows prove
+the boundary from both sides.
+
+## High — all RESOLVED
 
 ### H1 — An unfiltered read bypasses the branch scope check entirely
 
@@ -223,10 +247,32 @@ Recorded because a review that only lists defects overstates them:
 - **No internal detail can reach a caller.** `problemFor` serialises only the catalog
   entry and whitelisted `safeDetails`; `AppFailure.message` is log-only.
 
-## Required before closure
+## Resolution
 
-1. Fix H1, H2, H3, H4, H5 and T1, each with a regression test that fails if the fix is
-   removed.
-2. Re-run the reviews against the fixed tree — H1 and H5 were both invisible to the
-   existing suite, so the suite is not yet sufficient evidence.
-3. Then the hostile 100/100 audit, the final exact-SHA local CI, and the clean room.
+Every blocking finding is fixed, and each carries a regression test that fails if the
+fix is removed. The test count moved from 926/95/14 to 926 unit, 112 backend and 14
+database precisely because the suite could not see most of these.
+
+| ID  | Fix                                                                                                                                                                                            | Regression test                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| C1  | Foundation allow-lists extended; `P1-21 → inventory` owner mapping added                                                                                                                       | `npm run test` exits 0 (43 files, 926)                                                                                      |
+| H1  | `companyId` + `branchId` REQUIRED on all three branch-scoped reads; `scope: 'branch'` with a concrete `authorizationTarget`; `authorizeScope` unconditional; company/branch are SQL predicates | "H1 — no read reaches stock without naming and authorizing a branch" (5 cases, incl. the no-filter shape that was the hole) |
+| H2  | Damage now refuses when the reservations it would free exceed the damaged quantity, and audits + publishes every genuine collateral release                                                    | "refuses a damage that would destroy more reserved stock than it damages"; "attributes a proportionate collateral release"  |
+| H3  | `stock.movement.posted` published for return, both damage legs, and every opening line                                                                                                         | "publishes stock.movement.posted for BOTH damage legs"; "for the return leg"; "one per counted line"                        |
+| H4  | The reservation is `FOR UPDATE`-locked before the release decision                                                                                                                             | "writes no audit row and no event when the reservation was already consumed"                                                |
+| H5  | `requireSellableLocation` refuses a quarantine cell for reserve and issue                                                                                                                      | "refuses to reserve or issue from a quarantine location", asserting the cell really holds stock first                       |
+| T1  | Real replay tests for `stock-return-create` and `damaged-stock-create`                                                                                                                         | "replays a stock return without returning twice"; "replays a damage record without damaging twice"                          |
+
+Evidence findings from the fourth review are fixed too: the three `cross-tenant`
+tokens that rested on a random-UUID 404 now use a **real** tenant-B batch (and assert
+it still exists afterwards, so the 404 is not vacuous); the `excludes quarantine by
+default` proof damages real stock into quarantine first, because both of its
+assertions were previously vacuous — one filtered a row that did not exist and the
+other was `[].every(...)`; the gate header's "none of those can be satisfied by prose"
+and "the one `doc` proof" claims are corrected, since five tasks used `doc` and five
+rested on nothing else; all five documentary tasks now carry a structural proof
+beside the document, which closes the mutation where deleting the
+`validate:p1-21-inventory` step from CI kept the gate green — **verified by
+performing that deletion and watching the gate fail**; the generated traceability
+header derives its task count instead of printing a literal `27`; and a P1-20 finding
+that had been relabelled as P1-21's own history is attributed back to P1-20.

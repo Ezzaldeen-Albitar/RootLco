@@ -33,12 +33,20 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   TENANT_A,
+  TENANT_B,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
   ensureTestLogins,
 } from './helpers';
-import { BRANCH_A2, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
+import {
+  BRANCH_A2,
+  BRANCH_B1,
+  COMPANY_B1,
+  createOpenWorkOrder,
+  establishP1_19Fixtures,
+} from './p1-19-helpers';
 import {
   INV_APPROVER,
   INV_FULL,
@@ -46,6 +54,7 @@ import {
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
   ITEM_A,
+  ITEM_A_ALT,
   ITEM_A_ARCHIVED,
   QUARANTINE_A1,
   WAREHOUSE_A1,
@@ -722,5 +731,70 @@ describe('inv.external-purchase-part-create — a reference, not procurement', (
       supplierName: 'Supplier',
     });
     expect(response.status).toBe(403);
+  });
+});
+
+/**
+ * H3 and the cross-tenant evidence repair.
+ *
+ * The three `cross-tenant` tokens in this file were previously backed by a
+ * random-UUID 404 — an id that exists nowhere, which answers identically with RLS
+ * disabled and therefore proves nothing about tenancy. They are now backed by a REAL
+ * tenant-B batch, so the refusal is the tenant boundary.
+ */
+describe('opening approval publishes its movements, and tenancy is proved on real rows', () => {
+  it('H3 — publishes one stock.movement.posted per counted line', async () => {
+    // Approval is the ONLY way stock is created from nothing, so a consumer that
+    // missed these events would have no opening balance at all and every later issue
+    // would take its projection negative.
+    authAs(INV_FULL);
+    const batchId = await newBatch();
+    await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '2.000' });
+    await lineCall(batchId, { itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '3.000' });
+    authAs(INV_APPROVER);
+    expect((await approveCall(batchId)).status).toBe(200);
+
+    const published = await countRowsOf(
+      `SELECT count(*)::text AS n FROM shared.event_outbox o
+         JOIN inv.stock_movements m ON o.event_key = 'stock.movement.posted:' || m.id::text
+         JOIN inv.opening_inventory_lines l ON l.id = m.reference_id
+        WHERE m.reference_kind = 'opening_line' AND l.batch_id = $1`,
+      [batchId]
+    );
+    expect(published).toBe(2);
+  });
+
+  it('refuses a REAL tenant-B batch, so the boundary is proved on a row that exists', async () => {
+    // Seeded directly, because tenant B has no branch-scoped inventory fixtures and
+    // the point is only that the row EXISTS and is unreachable from tenant A.
+    const seeded = await admin.query<{ id: string }>(
+      `INSERT INTO inv.opening_inventory_batches
+         (tenant_id, company_id, branch_id, batch_code, as_of_date, counted_by, created_by)
+       VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$5) RETURNING id`,
+      [TENANT_B, COMPANY_B1, BRANCH_B1, `FX-B-XT-${Date.now() % 100000}`, USER_A]
+    );
+    const tenantBBatch = seeded.rows[0]!.id;
+
+    authAs(INV_FULL);
+    // A real row, invisible across the tenant boundary — so it resolves as absent.
+    expect(
+      (
+        await lineCall(tenantBBatch, {
+          itemId: ITEM_A,
+          locationId: WAREHOUSE_A1,
+          quantity: '1.000',
+        })
+      ).status
+    ).toBe(404);
+    authAs(INV_APPROVER);
+    expect((await approveCall(tenantBBatch)).status).toBe(404);
+
+    // And it is genuinely still there — otherwise the 404s above would be vacuous.
+    const stillThere = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM inv.opening_inventory_batches WHERE id = $1`,
+      [tenantBBatch]
+    );
+    expect(Number(stillThere.rows[0]?.n)).toBe(1);
+    await admin.query(`DELETE FROM inv.opening_inventory_batches WHERE id = $1`, [tenantBBatch]);
   });
 });

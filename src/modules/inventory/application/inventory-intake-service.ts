@@ -21,6 +21,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
+import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
@@ -302,6 +303,38 @@ export class InventoryIntakeService {
     const approved = await this.repository.readOpeningBatch(db, batchId);
     if (!approved) {
       throw new AppFailure('ERR-SYS-001', { message: 'Opening batch vanished after approval' });
+    }
+
+    /**
+     * One `stock.movement.posted` per counted line.
+     *
+     * Approval is the only way stock is created from nothing, so a consumer that
+     * missed these events would have no opening balance at all — every later issue
+     * would take its projection negative. The catalog states this one event describes
+     * opening postings too; for a while only the issue path honoured that.
+     */
+    const posted = await this.repository.findOpeningMovementsForBatch(db, batchId);
+    for (const movement of posted) {
+      await publishEvent(db, {
+        eventType: 'stock.movement.posted',
+        aggregateId: movement.id,
+        // A movement is append-only and never revised, so its aggregate version is
+        // permanently 1. Claiming anything else would imply a mutable ledger.
+        aggregateVersion: 1,
+        producer: 'inventory.inventory-intake-service',
+        companyId: movement.companyId,
+        branchId: movement.branchId,
+        eventKey: `stock.movement.posted:${movement.id}`,
+        payload: {
+          movementId: movement.id,
+          itemId: movement.itemId,
+          locationId: movement.locationId,
+          movementType: movement.movementType,
+          direction: movement.direction,
+          quantity: movement.quantity,
+          reference: { kind: 'opening_line', id: movement.referenceId ?? null },
+        },
+      });
     }
 
     await appendAudit(db, {

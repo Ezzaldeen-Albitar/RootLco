@@ -227,14 +227,21 @@ export class InventoryReadService {
   public async readAvailability(
     db: DbHandle,
     filter: {
+      readonly companyId: string;
+      readonly branchId: string;
       readonly itemId?: string;
       readonly locationId?: string;
-      readonly branchId?: string;
       readonly includeQuarantine?: boolean;
     },
     page: { readonly cursor?: string; readonly limit?: number },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<AvailabilityView>> {
+    // UNCONDITIONAL. This check used to sit inside `if (filter present)`, so omitting
+    // the filter skipped it and left RLS — which narrows on the permission-blind
+    // grant union — as the only barrier. There is no longer a path through this
+    // method that does not name a branch and authorize it.
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+
     if (filter.locationId !== undefined) {
       const location = await this.repository.readLocation(db, filter.locationId);
       if (!location) {
@@ -242,16 +249,13 @@ export class InventoryReadService {
           message: `Stock location ${filter.locationId} was not found`,
         });
       }
-      await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
-      if (filter.branchId !== undefined && filter.branchId !== location.branchId) {
+      // A location may not reach past the authorized pair.
+      if (location.companyId !== filter.companyId || location.branchId !== filter.branchId) {
         throw new AppFailure('ERR-VAL-001', {
-          message: 'branchId and locationId name different branches',
-          safeDetails: { violations: [{ path: 'query.branchId', rule: 'custom' }] },
+          message: 'locationId names a different company or branch from the one authorized',
+          safeDetails: { violations: [{ path: 'query.locationId', rule: 'custom' }] },
         });
       }
-    } else if (filter.branchId !== undefined) {
-      const companyId = await this.resolveCompanyForBranch(db, filter.branchId);
-      await authorizeScope({ companyId, branchId: filter.branchId });
     }
 
     const request = {
@@ -276,6 +280,11 @@ export class InventoryReadService {
     page: { readonly cursor?: string; readonly limit?: number },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<MovementView>> {
+    // Unconditional — see `readAvailability`. The ledger is the complete record of
+    // what a branch holds and consumes, so an unauthorized read of it is the most
+    // valuable one an attacker could make.
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+
     if (filter.locationId !== undefined) {
       const location = await this.repository.readLocation(db, filter.locationId);
       if (!location) {
@@ -283,7 +292,12 @@ export class InventoryReadService {
           message: `Stock location ${filter.locationId} was not found`,
         });
       }
-      await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
+      if (location.companyId !== filter.companyId || location.branchId !== filter.branchId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'locationId names a different company or branch from the one authorized',
+          safeDetails: { violations: [{ path: 'query.locationId', rule: 'custom' }] },
+        });
+      }
     }
     const request = {
       limit: resolveLimit(page.limit),
@@ -295,6 +309,10 @@ export class InventoryReadService {
       action: 'inv.movement_history.read',
       entityType: 'inv.stock_movements',
       entityId: filter.itemId ?? null,
+      // The scope is recorded, so a single-branch read is distinguishable in the
+      // trail from a wider sweep. Every mutation in this phase already does it.
+      companyId: filter.companyId,
+      branchId: filter.branchId,
       requestRef: 'inv.stock-movement-list',
       details: [
         { field: 'itemId', classification: 'internal', value: filter.itemId ?? null },
@@ -322,18 +340,21 @@ export class InventoryReadService {
    */
   public async reconcile(
     db: DbHandle,
-    filter: { readonly branchId?: string; readonly itemId?: string; readonly workOrderId?: string },
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId?: string;
+      readonly workOrderId?: string;
+    },
     limit: number | undefined,
     authorizeScope: ScopeAuthorizer
   ): Promise<ReconciliationView> {
-    if (filter.branchId !== undefined) {
-      const companyId = await this.resolveCompanyForBranch(db, filter.branchId);
-      await authorizeScope({ companyId, branchId: filter.branchId });
-    }
+    // Unconditional — see `readAvailability`.
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
     // Built by spreading rather than by assigning `undefined`:
     // `exactOptionalPropertyTypes` is on, so an absent filter must be an absent KEY.
     const cellFilter: { branchId?: string; itemId?: string } = {
-      ...(filter.branchId === undefined ? {} : { branchId: filter.branchId }),
+      branchId: filter.branchId,
       ...(filter.itemId === undefined ? {} : { itemId: filter.itemId }),
     };
     const cells: readonly BalanceReconciliationRow[] = await this.repository.reconcileBalances(
@@ -351,9 +372,11 @@ export class InventoryReadService {
       action: 'inv.reconciliation.performed',
       entityType: 'inv.stock_balances',
       entityId: filter.itemId ?? null,
+      companyId: filter.companyId,
+      branchId: filter.branchId,
       requestRef: 'inv.inventory-reconciliation-read',
       details: [
-        { field: 'branchId', classification: 'internal', value: filter.branchId ?? null },
+        { field: 'branchId', classification: 'internal', value: filter.branchId },
         { field: 'cellsChecked', classification: 'internal', value: String(cells.length) },
         { field: 'incoherentCells', classification: 'internal', value: String(incoherent) },
       ],
@@ -371,25 +394,11 @@ export class InventoryReadService {
     };
   }
 
-  /**
-   * Resolves the company a branch belongs to.
-   *
-   * Needed because `authorizeScope` narrows on a company/branch PAIR — a branch
-   * alone would leave the company half empty and `requiresScopedEvaluation` would
-   * fall back to the scope-blind check.
-   */
-  private async resolveCompanyForBranch(db: DbHandle, branchId: string): Promise<string> {
-    const row = await db.query<{ company_id: string }>(
-      `SELECT company_id FROM org.branches
-        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
-      [db.context.principal.tenantId, branchId]
-    );
-    const companyId = row.rows[0]?.company_id;
-    if (!companyId) {
-      throw new AppFailure('ERR-RES-001', { message: `Branch ${branchId} was not found` });
-    }
-    return companyId;
-  }
+  // `resolveCompanyForBranch` was removed with the optional-filter reads. It existed
+  // to derive the company half of a scope pair from a lone `branchId`; every read now
+  // requires the pair outright, so there is nothing left to derive — and a helper
+  // that turns half a target into a whole one is exactly the shape that made the
+  // scope check look present while being skippable.
 
   private async databaseNow(db: DbHandle): Promise<string> {
     const row = await db.query<{ now: Date }>('SELECT now() AS now');
