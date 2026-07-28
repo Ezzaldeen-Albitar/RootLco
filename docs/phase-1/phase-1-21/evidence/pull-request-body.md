@@ -3,11 +3,25 @@ Implements P1-21 — Inventory Backend. Fourteen operations over the frozen Phas
 
 ## Verification mode
 
-**Owner-Approved Temporary Local CI Primary Mode.** GitHub-hosted Actions remain
-configured and required, and are unavailable under the university-account billing
-lock. **No claim is made that hosted CI ran or passed.** Verification is a complete
-local reproduction of every repository-controlled workflow command plus a fresh
-exact-SHA clean room.
+**GitHub Actions is the primary and authoritative verification path.**
+
+P1-21 began under the Owner-Approved Temporary Local CI Primary Mode, because the
+repository was private and its Actions credits were exhausted, so hosted jobs failed
+before startup with a billing message. **Before merge the repository was made public**,
+which restores standard GitHub-hosted runners on the free public tier, and hosted
+Actions became authoritative again.
+
+Two hosted proofs are required on the exact head, both on `ubuntu-latest`:
+
+- **`CI`** (`.github/workflows/ci.yml`) — quality, database, docker and secrets jobs.
+- **`P1-21 Hosted Clean Room`** (`.github/workflows/p1-21-clean-room.yml`) — a fresh VM
+  at the **exact pull-request head**, asserting an empty database before migration, an
+  unchanged schema hash across every suite, and a clean worktree afterwards. `ci.yml`
+  proves none of those three, which is why the workflow exists rather than being
+  declared redundant. See `hosted-clean-room.md`.
+
+The local reproduction and the local clean room are retained as **corroboration**, not
+as the gate. **No billing waiver is used, and no required check is bypassed.**
 
 ## Exact state
 

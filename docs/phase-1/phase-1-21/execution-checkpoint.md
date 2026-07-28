@@ -426,3 +426,90 @@ The cost is honest and unavoidable: this documentation commit moves the head, so
 Cycle 4 proofs above no longer sit on the head, and **both must run again on the commit
 this section is part of**. Their results are recorded in the gate record — the first
 document in the process created from a commit it does not itself change.
+
+---
+
+## Cycle 5 — the repository became public and Actions became authoritative again
+
+The owner changed repository visibility from private to **public**, so standard
+GitHub-hosted runners execute on the free public tier instead of consuming exhausted
+private-repository Actions credits. That ends the Temporary Local CI Primary Mode.
+
+**From this point the gate rests on GitHub Actions, not on this laptop.** The local
+battery and the local clean room are retained as corroboration and are not re-run.
+
+### The billing lock had already lifted, and it was verified rather than assumed
+
+Before the visibility change, run **#277** (`30360215916`) on `53c954d` had already
+succeeded — status **Success**, total **6m 03s**, on `ubuntu-latest`. It was checked
+step by step rather than trusted as a green tick, because a job that never starts also
+produces no failures:
+
+- Quality — `Install dependencies (locked)` 17s, Lint 15s, Type check 14s, **Unit tests
+  10s**, **Production build 24s**, plus module boundaries, authorization coverage,
+  operation coverage, the three inventories, OpenAPI, format, stylelint, encoding.
+- Database — `Apply all migrations to a clean database`, seeds twice, migration
+  immutability, six classification guards, **database suite 2m22s**, **backend
+  foundation suite 2m35s**.
+- Docker — both image targets, two build-record artifacts with sha256 digests.
+- Secrets — real checkout and all four guards.
+
+All four annotations are **warnings** about the Node 20 action deprecation. There are
+**no errors**. The earlier billing annotations belong to superseded ancestor commits
+and are historical.
+
+**The owner-authorized billing bypass was therefore never used, and will not be.**
+
+### Public-repository security preflight
+
+| Check                                             | Result                                                                                                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository visibility                             | **Public**                                                                                                                                                                   |
+| Tracked `.env` / `.env.local` / `.env.production` | **None**. Only `.env.example`, which holds placeholders                                                                                                                      |
+| Tracked key material (`.pem/.key/.p12/.pfx`)      | **None**                                                                                                                                                                     |
+| High-signal credential patterns                   | Two matches, both benign: a docs table listing token **prefixes** as detection patterns, and a logger test fixture literally valued `sk_live_do_not_log` asserting redaction |
+| Repository secrets used by workflows              | **None.** The only `secrets.` match in `.github/workflows/` is inside a comment                                                                                              |
+| `pull_request_target`                             | **Absent** — the classic public-repository privilege-escalation trigger is not used                                                                                          |
+| Pilot-tenant / excluded-scope guards              | Clean across 1321 tracked files                                                                                                                                              |
+| Fabricated business data                          | Clean across 1321 tracked files                                                                                                                                              |
+
+**No real credential was found, so nothing required rotation.**
+
+One finding worth the owner's attention, recorded rather than silently accepted:
+GitHub's own **Secret scanning is Disabled, Dependabot alerts are Disabled, and Code
+scanning needs setup** on this repository. There were therefore no alerts to read — not
+because the tree is clean, but because nothing is watching it. The repository's own
+tracked-secret and browser-secret scanners do run in CI and pass. Enabling the three
+GitHub-native scanners is a repository-settings change and is left to the owner.
+
+### Runner verification
+
+All four `ci.yml` jobs declare `runs-on: ubuntu-latest`. There is no self-hosted
+runner, no larger runner, and no paid runner group anywhere in `.github/workflows/`.
+The `group:` key at `ci.yml:24` is the **concurrency** group, not a runner group.
+**No workflow change was needed for runner reasons.**
+
+### A hosted clean room was required, and why
+
+`ci.yml` was examined step by step against the clean-room definition rather than
+declared equivalent to it. Most of the definition was already satisfied — fresh hosted
+VMs, lockfile-only install, fresh PostgreSQL 17, all suites, OpenAPI, build, Docker.
+**Three requirements were genuinely missing:**
+
+1. no assertion that the database held **zero application tables** before migration;
+2. **no schema-hash step at all**, so a suite that mutated the schema would leave no
+   trace and every result above it would be silently unsound;
+3. no **clean-worktree** check.
+
+So `.github/workflows/p1-21-clean-room.yml` was added — `P1-21 Hosted Clean Room`, one
+`ubuntu-latest` job, `postgres:17-alpine`, every suite serial in a single job against a
+single database.
+
+It is also stricter than `ci.yml` in a way that matters: for a `pull_request` event
+`actions/checkout` defaults to the **merge ref**, a synthetic commit that exists nowhere
+in the branch history — proving that tree is not the same as proving the commit being
+merged. The clean room pins `ref: github.event.pull_request.head.sha` and then
+**asserts** `git rev-parse HEAD` equals it, failing closed otherwise.
+
+Adding the workflow moves the head, so every hosted proof re-runs on the new SHA. That
+is the cost of the correction and it is paid rather than argued around.

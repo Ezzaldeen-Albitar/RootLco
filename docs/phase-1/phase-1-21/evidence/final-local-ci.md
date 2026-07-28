@@ -1,5 +1,15 @@
 # P1-21 — Final Exact-SHA Local Equivalent CI
 
+> **No longer the authoritative proof.** The repository was made public before merge,
+> which restored standard GitHub-hosted Actions runners on the free public-repository
+> tier. **GitHub Actions is now the primary and authoritative verification path for
+> P1-21**, and the gate rests on hosted runs, not on this one.
+>
+> This local reproduction was the authoritative evidence only while the repository was
+> private and Actions credits were exhausted. It is retained as corroboration — an
+> independent second execution of the same commands on a different machine — and the
+> figures below are reproduced by the hosted runs.
+
 **Ran against: this pull request's head commit.**
 **Base:** `bb9cc8813661a4a2e97bf0eff8a8d9c148742ed2`
 **Worktree at the time of the run:** clean (`git status --short` empty)

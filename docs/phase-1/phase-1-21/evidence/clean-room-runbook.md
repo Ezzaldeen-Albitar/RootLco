@@ -14,7 +14,25 @@ fixture from another suite happens to exist.
 The clean room removes all three by construction — a fresh clone at an exact SHA, a
 lockfile-only install, and an empty database on its own port.
 
-## Procedure
+## Where the clean room now runs
+
+**On GitHub-hosted runners, as `P1-21 Hosted Clean Room`**
+(`.github/workflows/p1-21-clean-room.yml`). The repository was made public before the
+P1-21 merge, which restored standard Actions runners, and the hosted job is now the
+authoritative clean room: a fresh `ubuntu-latest` VM, a fresh `postgres:17-alpine`
+service, the **exact pull-request head** rather than the merge ref, and every suite
+serial in one job against one database. See `hosted-clean-room.md`.
+
+The hosted job is stricter than the local procedure in one respect worth naming: it
+**asserts** the SHA it checked out, the empty database, the unchanged schema hash and
+the clean worktree, where the local procedure relied on the operator performing and
+reading those checks.
+
+The manual procedure below is retained because it is what a developer runs when they
+need to reproduce a hosted failure locally, and because it documents the reasoning. It
+is no longer the gate evidence.
+
+## Manual procedure (local reproduction)
 
 Run at `FINAL_FEATURE_SHA`, and only after local CI is green on the same SHA.
 

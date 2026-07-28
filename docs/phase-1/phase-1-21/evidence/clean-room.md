@@ -1,5 +1,15 @@
 # P1-21 — Fresh Exact-SHA Clean Room
 
+> **Superseded as the authoritative proof.** The repository was made public before
+> merge, which restored standard GitHub-hosted Actions runners, and the authoritative
+> clean room is now the **`P1-21 Hosted Clean Room`** workflow
+> (`.github/workflows/p1-21-clean-room.yml`) running on a fresh `ubuntu-latest` VM at
+> the exact pull-request head. See `hosted-clean-room.md`.
+>
+> The local run recorded below was performed under the private-repository regime, when
+> hosted Actions were unavailable on exhausted credits. It is retained as history, not
+> as the gate evidence, and nothing in the gate rests on it.
+
 **Ran against: this pull request's head commit**, in a fresh clone detached at that
 commit. The SHA is deliberately not transcribed here — see `final-local-ci.md` for why
 — and is recorded exactly in the gate record, which is created from the protected merge
