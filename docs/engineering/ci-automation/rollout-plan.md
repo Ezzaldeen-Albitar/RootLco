@@ -27,17 +27,54 @@ What remains genuinely owner-only is unchanged — steps 5, 9 and 10 below.
 
 ### Hosted state
 
-| Attempt | Head SHA  | `pr-ci`                                              |
-| ------- | --------- | ---------------------------------------------------- |
-| 1       | `8740531` | `startup_failure`, zero jobs — AR-28                 |
-| 2       | `67014fc` | every job failed in `Set up the project` — AR-29     |
-| 3       | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33     |
-| 4       | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36 |
-| 5       | `ca4c594` | **14/14 green, `ci-gate` Go**                        |
+| Attempt | Head SHA  | `pr-ci`                                                       |
+| ------- | --------- | ------------------------------------------------------------- |
+| 1       | `8740531` | `startup_failure`, zero jobs — AR-28                          |
+| 2       | `67014fc` | every job failed in `Set up the project` — AR-29              |
+| 3       | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33              |
+| 4       | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36          |
+| 5       | `ca4c594` | **14/14 green, `ci-gate` Go**                                 |
+| 6       | `f741d2f` | 12/13; `dependency-security` only — AR-41                     |
+| 7       | `0e492bb` | 12/13; `dependency-security` only — AR-42                     |
+| 8       | `d166449` | **14/14 green, `ci-gate` Go** — and carrying every review fix |
 
 The legacy `ci.yml` has passed 4/4 on every one of these commits, which is what
 gives independent confidence that the dependency remediation itself is sound —
 those four jobs do not use the new reusable workflows at all.
+
+### Reading the evidence without an authenticated session
+
+A constraint that shaped every diagnosis here, and that the gate record has to
+work within:
+
+**GitHub requires a signed-in session to read Actions logs, even on a public
+repository.** The REST log endpoint returns 403 without admin, the web log route
+404s, and the job page offers only _"Sign in to view logs"_.
+
+What IS public:
+
+| Surface                               | Public? | Use                                                           |
+| ------------------------------------- | ------- | ------------------------------------------------------------- |
+| Run and job conclusions               | yes     | which job failed                                              |
+| Per-step conclusions                  | yes     | which STEP failed                                             |
+| Check-run **annotations**             | yes     | the error text a step emitted with `::error::`                |
+| Job logs                              | **no**  | —                                                             |
+| Job summaries (`GITHUB_STEP_SUMMARY`) | **no**  | —                                                             |
+| Uploaded artifacts                    | **no**  | —                                                             |
+| Actions job `output.summary`          | empty   | Actions does not populate it the way a third-party check does |
+
+Two consequences worth carrying:
+
+1. **Every check that fails on an external response must print what it
+   received.** The dependency-graph probe was only diagnosable because it
+   interpolated the response body into its `::error::`, which put
+   `HTTP 403 … : Forbidden` into a public annotation. Without that there was an
+   exit code and nothing else.
+2. **The `ci-gate` decision document is owner-retrievable, not public.** The
+   verdict is written to the job summary and to `ci-gate.json` in the
+   `evidence-ci-gate` artifact. A gate record can cite the run URL and the
+   step conclusions as public evidence, and the owner attaches the artifact for
+   the decision itself.
 
 ## After the pull request is open
 

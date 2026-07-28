@@ -226,13 +226,23 @@ The owner opened **PR #89**, which cleared the block above. Five hosted runs so
 far. The prediction in Cycle 7 held in the worst way: the first two could not
 execute at all, and **not one of the genuinely expected failures happened first.**
 
-| Run | Head SHA  | `pr-ci`                                              |
-| --- | --------- | ---------------------------------------------------- |
-| 1   | `8740531` | `startup_failure`, zero jobs — AR-28                 |
-| 2   | `67014fc` | every job failed in `Set up the project` — AR-29     |
-| 3   | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33     |
-| 4   | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36 |
-| 5   | `ca4c594` | **14/14 green, `ci-gate` Go**                        |
+| Run | Head SHA  | `pr-ci`                                               |
+| --- | --------- | ----------------------------------------------------- |
+| 1   | `8740531` | `startup_failure`, zero jobs — AR-28                  |
+| 2   | `67014fc` | every job failed in `Set up the project` — AR-29      |
+| 3   | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33      |
+| 4   | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36  |
+| 5   | `ca4c594` | 14/14 green — but latent AR-37 not yet found          |
+| 6   | `f741d2f` | 12/13; `dependency-security` only — AR-41             |
+| 7   | `0e492bb` | 12/13; `dependency-security` only — AR-42             |
+| 8   | `d166449` | **14/14 green, `ci-gate` Go** — with every review fix |
+
+Run 5 is the one worth dwelling on. It was **fully green**, and it still shipped
+an affected `brace-expansion` inside the image — vendored in yarn, where no
+path-based check could see it, and asserted absent by a risk record that had
+already been corrected once. A green pipeline is evidence that the checks
+passed, not that the claims are true. The independent review of the fixes is
+what turned run 5's green into something worth trusting at run 8.
 
 **AR-28** — a caller's `permissions:` are the ceiling for _every_ job in the
 reusable workflow it calls, including ones an `if:` would skip; GitHub validates
