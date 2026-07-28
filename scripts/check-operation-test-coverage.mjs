@@ -121,6 +121,17 @@ export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
  * shape of a gate that looks stricter than it is.
  */
 export const P1_20_PREFIXES = ['svc.', 'quo.'];
+/**
+ * P1-21 spans ONE id namespace — `inv.` — because the frozen Phase 1-10 `inv`
+ * schema holds the item catalog, the ledger, and every operation table together.
+ *
+ * Listed here *and* in the `parseProvidedFlags` alternation below, because P1-20
+ * proved that extending only one of the two produces a gate that looks stricter
+ * than it is: the operations parse their declarations, provide `route`, `service`
+ * and `authorization`, and none of it is REQUIRED, so deleting those assertions
+ * keeps the gate green. Both hooks or neither.
+ */
+export const P1_21_PREFIXES = ['inv.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -128,6 +139,7 @@ const DERIVED_PREFIXES = [
   ...P1_18_PREFIXES,
   ...P1_19_PREFIXES,
   ...P1_20_PREFIXES,
+  ...P1_21_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1461,6 +1473,78 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant', 'isolation'],
     note: 'companyId and branchId are REQUIRED and are the authorizationTarget, so scope:branch is real rather than inert — a caller granted svc.price.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (isolation, P1-18-A-01); three answers are refusals rather than defaults, each with its own message: no configured price is not zero, a tax class with no effective rate is not an untaxed line, and a rule-level specificity+priority tie is structurally IMPOSSIBLE while uq_price_rules_signature exists (NULLS NOT DISTINCT, and a specificity score determines which columns are non-null, so a tie implies an identical signature) - the test asserts that structural guarantee directly rather than pretending the defensive ERR-CON-001 branch has a positive case',
   },
+
+  // ---- Phase 1-21 — inventory ---------------------------------------------
+  'inv.item-search': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'inv.item_master carries NO company_id and NO branch_id, so an item is tenant-wide reference data and the operation is scope:tenant with no branch filter at all — a branch filter here would narrow nothing, and declaring scope:branch would 403 every unfiltered listing because requireScopedPermissions fails closed on an empty target; the keyset order is (sku, id), a total order backed by uq_item_master_sku; archived items are excluded by default because inv.guard_item_lifecycle makes archived terminal; NO cost is returned, because inv.item_cost_details is gated by inv.cost.view inside its own RLS policy; a tenant-B item never appears (cross-tenant); a LIKE metacharacter in the search term is escaped, so a search for % returns the items whose sku literally contains % rather than the whole catalog (denial)',
+  },
+  'inv.stock-availability-read': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'returns exactly the four concepts the schema stores — on_hand, reserved, the GENERATED available, and the location type — and invents no damagedQty or customerSuppliedQty field, because no column holds them; quarantine is excluded by default, which is what keeps available honest, since damage moves units to a quarantine LOCATION rather than setting a flag; branchId and locationId are scope TARGETS authorized before use, so the difference between an empty and a non-empty page cannot probe which branches stock an item (isolation) — a caller holding inv.stock.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (P1-18-A-01); a locationId whose branch contradicts an explicit branchId is refused rather than silently preferring one (denial)',
+  },
+  'inv.stock-movement-list': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'read-only by construction: inv.stock_movements grants SELECT + INSERT only, so there is no update or delete route to write and a correction is a new movement; ordered by seq DESC because seq is GENERATED ALWAYS AS IDENTITY and occurred_at is NOT a total order — damage posts two rows in one transaction sharing now() to the microsecond, so a timestamp cursor would skip or repeat across a page boundary; the workOrderId filter resolves THROUGH the reference because the ledger has no work_order_id column, joining part_issues for an issue and part_returns to its issue for a return; reading is audited (audit) because the ledger is the complete record of what a branch holds and an unlogged bulk read is reconnaissance, and the audit row names the filter and the row COUNT, never the rows themselves',
+  },
+  'inv.inventory-reconciliation-read': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 're-derives every stored balance from the ledger rather than trusting the cache being audited, so a coherent=false row would mean inv.guard_stock_balance_coherence had been bypassed — a security finding, not routine drift, which is why the result is reported and never silently repaired; checkedAt comes from the DATABASE clock, not the process clock, because the reconciliation is a statement about a transaction snapshot and a host with a skewed clock must not be able to misdate the evidence; uses the existing iam.audit_records append path and creates no second audit subsystem; a caller without inv.audit.read is refused even when it holds inv.stock.read, so the reconciliation is not reachable by the ordinary stock reader',
+  },
+  'inv.opening-batch-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'isolation'],
+    note: 'creates a DRAFT and no parameter offers anything else, so this operation cannot create a balance — it creates a counted intention that a second person must approve; that shape is why the API has no set-stock-level endpoint at all: app_runtime does hold UPDATE on inv.stock_balances, but inv.guard_stock_balance_coherence requires on_hand to equal the movement sum, so stock without a movement behind it is unrepresentable; companyId and branchId are in the body and are the authorizationTarget, so scope:branch is real rather than inert (isolation, P1-18-A-01)',
+  },
+  'inv.opening-batch-line-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the line location is checked against the BATCH branch, because inv.approve_opening_batch posts each movement from the LINE location and not the batch — so a batch opened for B1 carrying a line in B2 would mint stock in B2 while only B1 was ever authorized, and the batch scope check alone cannot catch it; a quarantine destination is refused, because an opening count is a statement about sellable stock and counting straight into quarantine would create damaged stock that was never damaged; an approved batch is frozen and refuses a new line with a stated reason rather than letting inv.guard_opening_batch_approval raise (denial); the path names a batch and not a branch, so the service loads the batch company/branch and re-authorizes inside the transaction (isolation)',
+  },
+  'inv.opening-batch-approve': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the ONLY operation that creates stock from nothing, so it takes inv.adjustment.approve and not inv.stock.operate — counting and approving a count are separate authorities, and ck_opening_inventory_batches_maker_checker enforces approver <> counter in the database so the rule cannot depend on which endpoint someone called; each posted movement is bound by inv.guard_stock_movement_provenance to its own line quantity, item and location, so the movements cannot say anything the count did not; an EMPTY batch is refused, because approving nothing records an approval attesting to no count and that is worse than an error since it looks like evidence; a second approval is refused because the batch is no longer draft',
+  },
+  'inv.stock-reservation-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation)',
+  },
+  'inv.stock-reservation-release': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'isolation'],
+    note: 'a subresource and not a colon-action, because the registry PATH_PATTERN accepts only lower-case literals and {camelCase} parameters; inv.release_reservation is a no-op on an already terminal reservation — inv.guard_stock_reservation_status makes every non-active status terminal — so a duplicate release is idempotent rather than an error, and the audit row and outbox event are written ONLY when the call actually changed state, because recording a change that did not happen would make the trail lie and would let a retry loop inflate the outbox; releasing a CONSUMED reservation does not return issued units to available, since those left through an out movement and can only come back through a return; the path names a reservation and not a branch, so the reservation own company/branch are the deferred authorizationTarget (isolation, P1-18-A-01)',
+  },
+  'inv.stock-issue-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posts the out movement BEFORE consuming the reservation, so on_hand falls while reserved is still held and ck_stock_balances_available rejects the write whenever the reservation covers the stock being issued — the natural reserve-exactly-then-issue flow FAILS inside the protected function, and the fix is ordering rather than privilege, inserting part_issues then consuming then posting; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
+  },
+  'inv.stock-return-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'addressed by the ISSUE it reverses, which makes returning another work order issue unrepresentable rather than merely refused: there is no parameter in which to name a different work order, item or location, because all three are read off the issue, so stock cannot be moved sideways under cover of a return; the over-return ceiling is enforced three times — the service pre-checks for a readable message, inv.return_part re-checks under a row lock on the parent issue so two concurrent returns cannot each see room for the last unit, and inv.guard_part_return_ceiling checks again on the part_returns insert itself, which is what closes the phantom-stock path a raw insert bypassing the function would open; the ordering problem of D-01 does not arise because a return is an in movement, so on_hand rises and the available invariant cannot dip',
+  },
+  'inv.damaged-stock-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'damaged units leave sellable availability STRUCTURALLY, by a paired out/in movement into a quarantine location, rather than by a flag a later query might forget to filter on — and the two legs are distinguishable to uq_stock_movements_source only by direction, which is why damage is the one reference kind that legitimately posts two ledger rows; ck_damaged_stock_locations requires only that the two locations DIFFER, which is not enough, so the service additionally requires location_type = quarantine and refuses damaging stock already in quarantine — otherwise a damaged unit could be moved to another sellable location and stay available, the exact availability inflation this task must prevent; inv.record_damage calls inv.free_reservations_for_loss first so reducing on_hand cannot breach ck_stock_balances_available, and the reservations that lose out are recorded as stock_loss rather than silently vanishing; both locations must be in one branch, since no transfer primitive exists to move stock across one',
+  },
+  'inv.customer-supplied-part-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'posts NO movement and touches NO balance, and that is structural rather than conventional: the table is documented as custody-tracked never valued stock, ck_customer_supplied_parts_owned CHECK (customer_owned) makes company ownership unrepresentable, inv.item_master own comment states customer-supplied parts are not item_master rows, and there is no customer_supplied value in ck_stock_movements_reference_kind so a movement citing one could not be inserted even by mistake; the test asserts the balance and the ledger are UNCHANGED across the call rather than merely asserting a 201, because the failure being guarded against is a customer alternator appearing in company on-hand; affectsStock:false and customerOwned:true are in the response so a client never has to infer non-ownership from the absence of a movement id; takes inv.custody.manage and not inv.stock.operate, whose stated meaning is post/reserve/issue/return — none of which this does',
+  },
+  'inv.external-purchase-part-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'a reference and not procurement: ck_external_purchase_parts_not_procurement CHECK (is_procurement = false) is the schema refusing to become a PO/goods-receipt workflow, so this creates no purchase order, runs no approval chain and adds no stock — a part that physically arrives becomes company stock only through an opening batch or an adjustment, both of which need inv.adjustment.approve and a second person, because letting a purchase record raise on_hand directly would be an unapproved path to minting stock; the test asserts the ledger and balances are unchanged; unitCost is written to inv.external_purchase_part_details whose every RLS policy is gated by iam.has_permission(inv.cost.view), so a caller without it gets a refusal rather than a silently dropped cost, and the amount is NEVER echoed back — costRecorded is a boolean; ck_external_purchase_parts_supplier requires a partner or a name and the absence of both is a field-level refusal rather than a constraint name (denial)',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1599,7 +1683,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

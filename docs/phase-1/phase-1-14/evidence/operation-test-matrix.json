@@ -1,11 +1,11 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 185,
+    "registered": 199,
     "publicApi": 185,
     "internal": 0,
     "withRequiredEvidence": 170,
-    "invocationOnly": 15,
+    "invocationOnly": 29,
     "p1_15": {
       "registered": 21,
       "publicApi": 21,
@@ -2175,6 +2175,118 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "inv.customer-supplied-part-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.damaged-stock-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.external-purchase-part-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.inventory-reconciliation-read",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.item-search",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.opening-batch-approve",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.opening-batch-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.opening-batch-line-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-availability-read",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-issue-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-movement-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-reservation-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-reservation-release",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "inv.stock-return-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "meta.ping",
