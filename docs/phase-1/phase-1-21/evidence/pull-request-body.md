@@ -11,22 +11,27 @@ exact-SHA clean room.
 
 ## Exact state
 
-|                   |                                                                    |
-| ----------------- | ------------------------------------------------------------------ |
-| Protected base    | `bb9cc8813661a4a2e97bf0eff8a8d9c148742ed2`                         |
-| Final feature SHA | this pull request's head — named exactly in the GitHub description |
-| Local CI SHA      | `6e0f3644ca6850fcaa4e01c1e64178e656022c9f`                         |
-| Clean room SHA    | `0daacb1692ba0c92d0c39d2fad0d074d7767104a`                         |
+|                   |                                                        |
+| ----------------- | ------------------------------------------------------ |
+| Protected base    | `bb9cc8813661a4a2e97bf0eff8a8d9c148742ed2`             |
+| Final feature SHA | this pull request's head                               |
+| Local CI SHA      | the same — the full matrix ran against the head itself |
+| Clean room SHA    | the same — a fresh clone detached at the head itself   |
 
-The final SHA is deliberately **not** hard-coded in this committed file: writing it
-here would change the very commit it names. The GitHub pull-request description
-carries the exact head, and the invariant that matters is stated and verified below.
+No SHA for the head is hard-coded here, and that is deliberate: writing one into a file
+on this branch changes the very commit it names, and every attempt to correct it moves
+the target again.
 
-The head differs from the local-CI and clean-room SHAs only by documentation commits.
-The executable diff between them is **empty**, verified with
-`git diff --stat <sha>..HEAD -- src tests scripts package.json package-lock.json supabase .github`.
-Every executable and test path proved by the local CI and the clean room is therefore
-byte-identical to the one being merged.
+**An earlier revision of this file did hard-code the local-CI and clean-room SHAs and
+stated that the executable diff between them and the head was empty.** That was true
+when written and became **false** when the H6 fix landed, because that commit changed
+`src` and `tests`. Stale-by-construction evidence is worse than none, so the
+transcription is gone and the invariant is stated instead.
+
+The invariant: the local equivalent CI and the fresh clean room both ran against **this
+pull request's head commit**, not against an ancestor of it. The exact SHA is recorded
+in the gate record, which is created from the protected merge commit — the first
+document in this process that can name a SHA without moving it.
 
 ## Tasks — 28/28
 
@@ -110,6 +115,14 @@ each with a regression test that fails if the fix is removed:
   produced an audit record and an event for a release that never happened.
 - **H5** — quarantined (damaged) stock could be **reserved and issued back onto a
   customer's vehicle**, invisibly, because availability excludes quarantine by default.
+- **H6** — an **incoherent (company, branch) pair disclosed another company's stock**.
+  H1's fix was complete at the service layer and incomplete at the SQL layer:
+  availability and movements filter on `company_id` AND `branch_id`, the reconciliation
+  read filtered on `branch_id` alone. Since `iam.has_permission_in_scope` matches
+  company **or** branch, a company-scoped grant passes the check while naming a branch
+  of a different company. Measured: `200` with one cell — the other company's SKU and
+  `storedOnHand` `7.000` — against `items: []` from availability on the identical query
+  string.
 - **T1** — `idempotency` was declared for two operations with no replay test behind it.
 
 Evidence defects fixed too: random-UUID "cross-tenant" proofs replaced with a real

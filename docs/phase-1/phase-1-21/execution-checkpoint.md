@@ -372,3 +372,57 @@ which changes the head the result claims to describe. That regress is what stall
 Cycle 3. The exact-SHA evidence is therefore recorded in the **gate record**, which is
 created from the protected merge commit after the feature merge and is documentation
 only — the first place in the process where a SHA can be named without moving it.
+
+### Cycle 4 proof results
+
+Both exact-SHA proofs ran against the H6 tree.
+
+**Local equivalent CI — all 37 steps exit 0, zero failures, zero retries.** Unit
+**926 / 43**, database **1624 / 137**, backend **1380 / 59**; 119 migrations with no
+120; OpenAPI **169 paths / 199 operations**; `validate:p1-21-inventory` 14 operations
+and 28/28 identifiers; schema hash `a677eb05…` identical before and after every suite;
+uid **1001**. The `ERR_IPC_CHANNEL_CLOSED` worker crash seen in the earlier cycle did
+not recur — the stale P1-21 containers from previous cycles were removed first, which
+is the likely reason but is recorded as an observation, not a proven cause.
+
+**Fresh clean room — green**, in a clone detached at the same commit against a database
+verified to hold zero application tables. Every figure above reproduced independently.
+
+Two things from the previous clean room are now closed:
+
+- Its first unit run had reported **925 / 1 failed** with the failure identity lost.
+  This clean room retained complete stdout and stderr for every step precisely so a
+  recurrence could be named. **The first unit run passed 926/926.** There was nothing
+  to name.
+- `npm run build` failed once here, and it was diagnosed rather than retried:
+  a Turbopack panic reading `path length … exceeds max length of filesystem`. The clone
+  root was 156 characters and Windows caps paths at 260; the named chunk belongs to a
+  **P1-19** route, untouched by this phase. The **same clone**, moved to `C:\cr\RootLco`
+  with `.next` removed and nothing else changed, built **exit 0** — as did the local CI
+  at the ordinary repository path. The runbook now mandates a short clone root so the
+  environment cannot produce a log that looks like a build defect again.
+
+### Hosted checks at the H6 head
+
+Run **#276** (`30357025855`): status **Failure**, total duration **11 s**, jobs at
+10 s / 11 s / 3 s / 10 s, **no artifacts**, and **all four annotations byte-identical**:
+
+> The job was not started because recent account payments have failed or your spending
+> limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+No checkout ran and no repository command executed — the durations alone rule that out.
+Bypass conditions 1–4 hold on the evidence, not on assumption.
+
+### Why this commit exists, and what it costs
+
+An earlier revision of `pull-request-body.md` and `final-local-ci.md` hard-coded the
+local-CI and clean-room SHAs and stated the executable diff to the head was **empty**.
+That was true when written and **became false the moment the H6 fix landed**, because
+that commit changed `src` and `tests`. Committed evidence that decays into a false
+statement is worse than no evidence, so both files now state the invariant instead of
+transcribing a SHA, and neither can go stale again.
+
+The cost is honest and unavoidable: this documentation commit moves the head, so the
+Cycle 4 proofs above no longer sit on the head, and **both must run again on the commit
+this section is part of**. Their results are recorded in the gate record — the first
+document in the process created from a commit it does not itself change.

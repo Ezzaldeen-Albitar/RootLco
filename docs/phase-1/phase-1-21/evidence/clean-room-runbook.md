@@ -18,9 +18,18 @@ lockfile-only install, and an empty database on its own port.
 
 Run at `FINAL_FEATURE_SHA`, and only after local CI is green on the same SHA.
 
-1. **Isolated clone.** `git clone` the repository into a directory outside the
-   working tree and `git checkout --detach <FINAL_FEATURE_SHA>`. Detached, so the
-   clone cannot silently follow a branch that moves.
+1. **Isolated clone, at a SHORT path.** `git clone` the repository into a directory
+   outside the working tree and `git checkout --detach <FINAL_FEATURE_SHA>`. Detached,
+   so the clone cannot silently follow a branch that moves.
+
+   On Windows the clone root must be **short** — `C:\cr` or similar, not a nested
+   temp directory. Turbopack writes generated chunk names of ~85 characters under
+   `.next\server\chunks\`, and a 156-character clone root pushed one of them past the
+   260-character `MAX_PATH` limit and failed `npm run build` with
+   `path length … exceeds max length of filesystem`. That is an environment failure
+   that looks exactly like a build defect in the log, so the runbook removes it by
+   construction rather than leaving it to be diagnosed again.
+
 2. **Confirm the SHA.** `git rev-parse HEAD` must equal `FINAL_FEATURE_SHA` exactly.
    `FINAL_FEATURE_SHA`, `LOCAL_CI_SHA`, and `CLEAN_ROOM_SHA` must be identical; any
    executable or test commit invalidates the proof and all three are re-derived.
