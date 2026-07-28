@@ -110,6 +110,30 @@ function toDomainFailure(error: unknown, what: string): never {
   throw error;
 }
 
+/**
+ * Parses a quantity and maps a domain refusal onto the error catalog.
+ *
+ * The parse and the postable check BOTH throw `InventoryRuleError`, and an
+ * unmapped domain error surfaces as `ERR-SYS-001` — a 500 that tells a caller its
+ * request broke the server when in fact the server refused it. The Zod schema
+ * catches most malformed shapes at the edge, but not every one: `"0"` is a
+ * well-formed decimal string and only the `> 0` rule refuses it, so this wrapper is
+ * the difference between a 409 and a 500 for the zero case.
+ */
+function parseQuantity(raw: string, field = 'quantity'): Quantity {
+  try {
+    return Quantity.parse(raw, field).assertPostable(field);
+  } catch (error) {
+    if (error instanceof InventoryRuleError) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: error.message,
+        safeDetails: { violations: [{ path: `body.${field}`, rule: 'custom' }] },
+      });
+    }
+    throw error;
+  }
+}
+
 export class InventoryStockService {
   public constructor(private readonly repository: InventoryRepository) {}
 
@@ -142,7 +166,7 @@ export class InventoryStockService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<ReservationView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     const location = await this.requireLocation(db, input.locationId);
     await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
     await this.requireStockTrackedItem(db, input.itemId);
@@ -350,7 +374,7 @@ export class InventoryStockService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<IssueView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     assertLegalMovementReference('issue', 'part_issue', 'out');
 
     const location = await this.requireLocation(db, input.locationId);
@@ -477,7 +501,7 @@ export class InventoryStockService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<ReturnView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     assertLegalMovementReference('return', 'part_return', 'in');
 
     const issue = await this.repository.readPartIssue(db, input.partIssueId);
@@ -566,7 +590,7 @@ export class InventoryStockService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<DamageView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     assertLegalMovementReference('damage', 'damage', 'out');
     assertLegalMovementReference('damage', 'damage', 'in');
 

@@ -105,6 +105,29 @@ function toDomainFailure(error: unknown, what: string): never {
   throw error;
 }
 
+/**
+ * Parses a quantity and maps a domain refusal onto the error catalog.
+ *
+ * Both the parse and the `> 0` check throw `InventoryRuleError`, and an unmapped
+ * domain error surfaces as `ERR-SYS-001` — a 500 telling the caller its request
+ * broke the server when the server in fact refused it. The Zod schema catches most
+ * malformed shapes at the edge but not every one: `"0"` is a well-formed decimal
+ * string and only the `> 0` rule refuses it.
+ */
+function parseQuantity(raw: string, field = 'quantity'): Quantity {
+  try {
+    return Quantity.parse(raw, field).assertPostable(field);
+  } catch (error) {
+    if (error instanceof InventoryRuleError) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: error.message,
+        safeDetails: { violations: [{ path: `body.${field}`, rule: 'custom' }] },
+      });
+    }
+    throw error;
+  }
+}
+
 export class InventoryIntakeService {
   public constructor(private readonly repository: InventoryRepository) {}
 
@@ -191,7 +214,7 @@ export class InventoryIntakeService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<OpeningLineView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     assertLegalMovementReference('opening', 'opening_line', 'in');
 
     const batch = await this.requireDraftBatch(db, input.batchId);
@@ -327,7 +350,7 @@ export class InventoryIntakeService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<CustomerSuppliedPartView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     const workOrder = await this.requireWorkOrderInScope(db, input.workOrderId);
     await authorizeScope({ companyId: workOrder.companyId, branchId: workOrder.branchId });
 
@@ -415,7 +438,7 @@ export class InventoryIntakeService {
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<ExternalPurchasePartView> {
-    const quantity = Quantity.parse(input.quantity, 'quantity').assertPostable('quantity');
+    const quantity = parseQuantity(input.quantity);
     // `ck_external_purchase_parts_supplier` requires one of the two. Refused here so
     // the caller gets a field-level message instead of a constraint name.
     if (input.supplierPartnerId === undefined && input.supplierName === undefined) {
