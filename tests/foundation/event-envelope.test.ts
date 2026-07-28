@@ -248,6 +248,12 @@ describe('reserved-name registry', () => {
       // as a deliverable, and the operation now exists (P1-20-G-01).
       'service.published',
       'session.revoked',
+      // Phase 1-21 publishes all three from `src/modules/inventory`:
+      // `stock.reserved` and `stock.reservation.released` from the reservation
+      // lifecycle, and `stock.movement.posted` when a movement is appended.
+      'stock.movement.posted',
+      'stock.reservation.released',
+      'stock.reserved',
       'user.invited',
       'user.status.changed',
       'vehicle.checked-in',
@@ -284,6 +290,11 @@ describe('reserved-name registry', () => {
       // (`price-list.published`), `quotation` (six names) and `service-catalog`
       // (`service.published`, from the version publication route).
       'P1-20': ['pricing', 'quotation', 'service-catalog'],
+      // P1-21 publishes all three of its events from the single `inventory` module,
+      // which owns the whole `inv` schema. No other module may publish them:
+      // `buildEventEnvelope` refuses a producer whose leading segment differs from
+      // the catalog owner.
+      'P1-21': ['inventory'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;

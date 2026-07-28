@@ -254,6 +254,21 @@ const EXPECTED_AUDIT_ACTIONS = [
   'iam.user.locked',
   'iam.user.unlocked',
   'iam.user.updated',
+  // Phase 1-21 inventory. Quantity movements are `privileged` rather than
+  // `financial`: Phase 1-10 put valuation out of scope, so `inv.stock_movements`
+  // carries a quantity and no amount. `inv.external_purchase.recorded` IS financial,
+  // because it carries a unit cost.
+  'inv.customer_supplied_part.recorded',
+  'inv.external_purchase.recorded',
+  'inv.movement_history.read',
+  'inv.opening_batch.approved',
+  'inv.opening_batch.created',
+  'inv.part.issued',
+  'inv.part.returned',
+  'inv.reconciliation.performed',
+  'inv.stock.damaged',
+  'inv.stock.reservation_released',
+  'inv.stock.reserved',
   'org.branch.settings_updated',
   'org.branch.status_changed',
   'org.company.settings_updated',
@@ -579,6 +594,12 @@ const EXPECTED_EVENT_TYPES = [
   'rework.linked',
   'service.published',
   'session.revoked',
+  // Phase 1-21 inventory. One `stock.movement.posted` carries movementType,
+  // direction and the business reference, so it describes every posting kind
+  // without a consumer subscribing to four names for one fact.
+  'stock.movement.posted',
+  'stock.reservation.released',
+  'stock.reserved',
   'user.invited',
   'user.status.changed',
   'vehicle.checked-in',
