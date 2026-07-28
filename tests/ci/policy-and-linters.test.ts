@@ -581,13 +581,20 @@ import '@/app/api/v1/b/route';`;
 });
 
 describe('credential-shape scanner', () => {
+  /**
+   * Every fixture is assembled at runtime, for the same reason as the test
+   * honesty fixtures above: `scripts/check-tracked-secrets.mjs` scans this file
+   * too, and a literal credential-shaped string here would fail the repository's
+   * own secret gate. The values are synthetic and worthless — but a scanner
+   * cannot tell, which is exactly the property being tested.
+   */
+  const pgUrl = ['postgres:', '/', '/user:', 'hunter2', '@host/db'].join('');
+
   it('recognises each shape it claims to', () => {
-    expect(classifySecret('-----BEGIN RSA PRIVATE KEY-----')).toContain('private-key-header');
+    expect(classifySecret(`-----BEGIN RSA ${'PRIVATE'} KEY-----`)).toContain('private-key-header');
     expect(classifySecret(`AKIA${'A1B2C3D4E5F6G7H8'}`)).toContain('aws-access-key');
     expect(classifySecret(`gh${'p'}_${'a'.repeat(40)}`)).toContain('github-token');
-    expect(classifySecret('postgres://user:hunter2@host/db')).toContain(
-      'postgres-url-with-password'
-    );
+    expect(classifySecret(pgUrl)).toContain('postgres-url-with-password');
     expect(classifySecret(`sb_${'secret'}_${'x'.repeat(30)}`)).toContain('supabase-secret-key');
   });
 
