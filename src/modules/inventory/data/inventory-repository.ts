@@ -474,6 +474,13 @@ export class InventoryRepository extends Repository {
       allows_jobs: boolean;
     }>(
       db,
+      // ORDER BY is load-bearing, not cosmetic. `wo.work_order_states` carries TWO
+      // unique indexes — one for platform codes, one per tenant — so a tenant row may
+      // legally shadow a platform code and this join then matches both. Without the
+      // ordering the flag set would be whichever row the planner returned, and two
+      // call sites could reach opposite lifecycle verdicts for the same work order.
+      // `wo.guard_work_order_transition` and `WorkOrderCatalogRepository` both resolve
+      // it the same way: a tenant row shadows the platform row of the same code.
       `SELECT w.id AS work_order_id, w.company_id, w.branch_id,
               s.code, s.is_closed, s.is_terminal, s.allows_jobs
          FROM wo.work_orders w
@@ -481,6 +488,8 @@ export class InventoryRepository extends Repository {
            ON s.code = w.state
           AND (s.scope = 'platform' OR s.tenant_id = w.tenant_id)
         WHERE w.tenant_id = $1 AND w.id = $2
+        ORDER BY (s.scope = 'tenant') DESC
+        LIMIT 1
           FOR UPDATE OF w`,
       [context.principal.tenantId, workOrderId]
     );
