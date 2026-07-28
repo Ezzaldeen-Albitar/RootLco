@@ -391,6 +391,90 @@ mistaken for "the feature is off", and the outcome is never silent.
 
 ---
 
+## The fourth hosted run — 11 of 13, and one gate that was wrong
+
+At `9088013` every fix above held on the runner: `static-quality`,
+`database-migration-replay`, `database-security`, `dependency-security`,
+`integration-tests` and — importantly — **`hosted-clean-room`** all passed.
+Only `container-security` failed, and `ci-gate` correctly returned No-Go.
+
+### AR-34 · the CA trust store is not a leaked key
+
+`Nothing sensitive is baked into the image` failed on:
+
+```
+/etc/ssl/cert.pem
+/etc/ssl1.1/cert.pem
+```
+
+Those are the Alpine base image's **public CA certificates**. Every image has
+them, TLS needs them, and they are not secret. The rule was matching `*.pem` by
+**name**, which is both a false positive here and a false negative for a private
+key named `server.crt`.
+
+**Fixed** by replacing the name rule with a content rule: every file in the
+image is searched for a PEM private-key header, whatever it is called. `.env`,
+`id_rsa`, `.npmrc` and `.git` remain name-based, because there is no legitimate
+reason to ship those under any name.
+
+Verified in both directions — clean image passes; a private key planted in a
+file called `harmless.txt` is **caught**.
+
+### AR-35 · the base image shipped an affected package, and my own record overclaimed it
+
+Found by running the container job's inventory locally before pushing. The
+production image contained:
+
+```
+/usr/local/lib/node_modules/npm/node_modules/brace-expansion   2.0.2
+/usr/local/lib/node_modules/npm/node_modules/minimatch         9.0.9
+```
+
+Not from this repository — `/app` had **zero** matches — but from **npm itself**,
+bundled inside `node:22-alpine`. And `brace-expansion@2.0.2` is inside the
+GHSA-mh99-v99m-4gvg range: the advisory API gives `<= 5.0.7`, patched only in
+`5.0.8`.
+
+So the exception record's `finalContainerReachable: false` was **false as
+literally stated**. It had been reasoned about this repository's dependency
+tree and quietly meant "not in _our_ node_modules".
+
+**Fixed by making the claim true rather than rewording it.** The runner stage
+now deletes `npm`, `npx` and `/usr/local/lib/node_modules/npm`: the container
+starts `node server.js` and never invokes a package manager, so this is surface
+with no purpose. The image fell from **5497 to 3533 files**, and no copy of
+brace-expansion exists in the deployed artifact at all.
+
+The exception record now carries the correction, the discovery, and the
+resolution rather than the original claim. The gate additionally asserts three
+separate things — nothing forbidden under `/app`, nothing forbidden anywhere
+else, and npm absent — so a future base image that reintroduces one fails the
+build and **names the base image as the source** instead of sending the next
+person to edit `package.json`.
+
+### AR-36 · a new check that could never fail, in the fix for AR-34
+
+The first version of the content-based key scan used
+`grep -rl … --exclude-dir=proc`. The image is Alpine, so that is **busybox
+grep**, which has no `--exclude-dir`:
+
+```
+grep: unrecognized option: exclude-dir=proc
+```
+
+It printed its usage message, matched nothing, and exited **0**. A check that
+could never fail — the exact defect this pipeline exists to catch, committed by
+the person writing the catcher, one edit after writing it.
+
+Caught by hostile-testing the new rule instead of trusting it: the planted key
+was not reported.
+
+**Fixed** with `find … -exec grep` (POSIX) and, more importantly, the scan now
+reports how many files it examined and **fails if that number is implausible**.
+Silence is only accepted from a scan that can prove it ran.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**

@@ -106,6 +106,23 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 --ingroup nodejs nextjs
 
+# Remove npm from the RUNTIME image.
+#
+# The container starts `node server.js`; nothing at runtime invokes a package
+# manager. Keeping npm would leave its bundled dependency tree on a deployed
+# host for no purpose — and that tree is not hypothetical surface: the
+# `node:22-alpine` npm ships `brace-expansion@2.0.2`, which is inside the
+# GHSA-mh99-v99m-4gvg range (`<=5.0.7`, patched only in 5.0.8).
+#
+# Found by the container job's own image inventory, which reported
+# brace-expansion and minimatch present in the production image while `/app`
+# was clean. Deleting npm makes the exception record's
+# `finalContainerReachable: false` literally true rather than a claim that
+# quietly meant "not in OUR dependency tree".
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+
 # `output: standalone` emits a minimal server plus only the deps it actually uses.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static

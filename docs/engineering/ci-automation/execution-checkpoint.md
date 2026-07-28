@@ -188,7 +188,7 @@ Local battery: 24 checks, all pass. Unit tier **1063**.
 
 ---
 
-## Cycle 7 — Wave 7: BLOCKED
+## Cycle 7 — Wave 7: blocked at the time (superseded by Cycle 8)
 
 The branch `feature/platform-comprehensive-ci-automation` is pushed. **The pull
 request cannot be opened from this session.**
@@ -217,3 +217,70 @@ require the hosted runners, which is where the first run will find whatever the
 first run finds. `rollout-plan.md` lists the failures that are genuinely
 expected, so that a red first run is read as information rather than as a
 surprise.
+
+---
+
+## Cycle 8 — Wave 7 unblocked: the pipeline meets a real runner
+
+The owner opened **PR #89**, which cleared the block above. Three hosted runs so
+far. The prediction in Cycle 7 held in the worst way: the first two could not
+execute at all, and **not one of the genuinely expected failures happened first.**
+
+| Run | Head      | Outcome                                                |
+| --- | --------- | ------------------------------------------------------ |
+| 1   | `8740531` | `startup_failure` — **zero jobs ran** (AR-28)          |
+| 2   | `67014fc` | every job failed in `Set up the project` (AR-29)       |
+| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures (AR-30 … AR-33) |
+
+**AR-28** — a caller's `permissions:` are the ceiling for _every_ job in the
+reusable workflow it calls, including ones an `if:` would skip; GitHub validates
+that statically before conditions are evaluated. Three adversarial reviewers,
+`actionlint` and this repository's own workflow linter all passed it. Now
+WFS-011.
+
+**AR-29** — the fix for AR-01 bootstrapped a **non-cone** sparse checkout, which
+`git sparse-checkout disable` does not undo, so every job ran against a one-file
+workspace. Now WFS-012.
+
+Both were defects in the _remediation_ for an earlier finding. The pattern is
+worth stating plainly: a workflow that has never executed is not evidence of
+anything, and neither is a fix that has never executed.
+
+### A constraint that shaped the diagnosis
+
+**GitHub requires a signed-in session to read Actions logs, even on a public
+repository.** The API returns 403 without admin, the web log route 404s, and the
+job page offers only "Sign in to view logs". Only the check-run _annotations_ are
+public, and they carry the failing step and an exit code, not the message.
+
+So every cause was **reproduced locally** rather than inferred: the two-checkout
+sequence replayed with git, the eleven repository gates re-run in a clean clone,
+`hadolint` run against the same image, and the full migration sequence executed
+against a throwaway PostgreSQL 17 container.
+
+### What run 3 found, and how each was closed
+
+| ID    | Finding                                                                                                | Closed by                                                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| AR-30 | `validate:canonical-docs` can never pass on a runner — the documents are external by policy            | a `--record-only` CI mode that verifies the record and still fails on a present-but-changed document |
+| AR-31 | the replay counted `supabase_migrations.schema_migrations`, which this repository's runner never wrote | the runner now maintains the ledger, inside each migration's own transaction                         |
+| AR-32 | hadolint DL3018 ×4, unpinned `apk add`                                                                 | per-line suppressions with the reason recorded; a new unpinned `apk add` is still reported           |
+| AR-33 | dependency review blocked on the Dependency graph being disabled (P1-21-A-01)                          | probe first; report the setting for what it is; any unexpected status still fails                    |
+
+None was closed by weakening a gate. AR-31 in particular was closed by making
+the claim true rather than by deleting the check.
+
+### Verified locally before pushing
+
+- migrations 119/119 applied; ledger records 119; **schema hash `a677eb05…`
+  unchanged** — measured before and after the ledger was introduced
+- seeds applied twice, idempotent, every business table empty
+- **database tier 1624 tests green** in the exact order `ci.yml` uses, because
+  `apply-migrations.mjs` is shared with the legacy workflow
+- unit tier 1070 green; the whole static battery and `actionlint` clean
+- `hadolint` clean, and still firing on a newly added unpinned `apk add`
+- the composite's sparse-checkout teardown exercised in all four workspace states
+
+Legacy `ci.yml` has passed **4/4 on every one of the three commits**, which is
+the independent signal that the supply-chain remediation itself is sound: those
+four jobs use none of the new reusable workflows.

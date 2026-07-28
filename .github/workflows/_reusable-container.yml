@@ -188,12 +188,45 @@ jobs:
           # --- filesystem ----------------------------------------------------
           # An `.env` or a key that reached a layer is readable by anyone with
           # the image, whatever the running container shows.
+          #
+          # `*.pem` is NOT in this list, and that is deliberate. It used to be,
+          # and it failed on `/etc/ssl/cert.pem` and `/etc/ssl1.1/cert.pem` —
+          # the Alpine base image's PUBLIC CA trust store, which every image
+          # carries and which TLS needs. Excluding those two paths would have
+          # been a name-based patch to a name-based check, and would still have
+          # missed a private key called `server.crt`. The content check below
+          # replaces it and is strictly stronger.
           leaked="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
-            'find / -xdev \( -name ".env" -o -name ".env.*" -o -name "*.pem" -o -name "*.key" -o -name "id_rsa" -o -name ".npmrc" -o -name ".git" \) -not -path "*/node_modules/*" 2>/dev/null | head -40')"
+            'find / -xdev \( -name ".env" -o -name ".env.*" -o -name "id_rsa" -o -name "id_ed25519" -o -name ".npmrc" -o -name ".git" \) -not -path "*/node_modules/*" 2>/dev/null | head -40')"
           if [ -n "${leaked}" ]; then
             echo "::error::Sensitive paths present in the production image:"
             echo "${leaked}"
             bad=1
+          fi
+
+          # --- private key MATERIAL, whatever the file is called --------------
+          # Names prove nothing: a key named `server.crt` ships happily past any
+          # extension rule, and a public certificate named `key.pem` trips one
+          # for no reason. This looks for the PEM private-key header itself, in
+          # every file in the image.
+          # The image is Alpine, so the grep inside it is BUSYBOX grep, which has
+          # no `--exclude-dir`. The first version of this used it: busybox
+          # printed its usage message, matched nothing, and exited 0 — a check
+          # that could never fail. Hence `find … -exec grep` (POSIX), and hence
+          # the file count, which makes the scan prove it actually ran.
+          scan="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'find / -xdev -type f -exec grep -lE "BEGIN ([A-Z ]+ )?PRIVATE KEY" {} + 2>/dev/null | head -20; printf "__SCANNED__%s\n" "$(find / -xdev -type f 2>/dev/null | wc -l)"')"
+          scanned="$(printf '%s\n' "${scan}" | sed -n 's/^__SCANNED__//p')"
+          keys="$(printf '%s\n' "${scan}" | grep -v '^__SCANNED__' || printf '')"
+          if [ -z "${scanned}" ] || [ "${scanned}" -lt 500 ]; then
+            echo "::error::The private-key scan examined ${scanned:-no} files. It did not run, so its silence proves nothing."
+            bad=1
+          elif [ -n "${keys}" ]; then
+            echo "::error::Private key material is present in the production image:"
+            echo "${keys}"
+            bad=1
+          else
+            printf 'private-key scan: %s files examined, none carry a PEM private-key header\n' "${scanned}"
           fi
 
           # --- build history --------------------------------------------------
@@ -252,15 +285,49 @@ jobs:
           # --- development toolchain must be absent --------------------------
           # Each of these is either a build-time tool or a package whose presence
           # would mean node_modules was copied wholesale.
-          for forbidden in eslint prettier vitest typescript '@typescript-eslint' \
-                           brace-expansion minimatch test-exclude '@vitest' stylelint; do
+          #
+          # TWO assertions, deliberately separate, because the first version of
+          # this check conflated them and reported "development tooling must not
+          # ship" for packages that came from the BASE IMAGE. `/app` was clean;
+          # the hits were npm's own bundled dependencies under
+          # /usr/local/lib/node_modules/npm. Same verdict, wrong reason — and a
+          # wrong reason sends the next person to fix the wrong file.
+          FORBIDDEN="eslint prettier vitest typescript @typescript-eslint
+                     brace-expansion minimatch test-exclude @vitest stylelint"
+
+          # 1. Nothing from OUR dependency tree. This is the "node_modules was
+          #    copied wholesale" check, and it is scoped to the application.
+          for forbidden in ${FORBIDDEN}; do
+            hits="$(grep "/node_modules/${forbidden}/" image-files.txt | grep -c '^/app/' || printf 0)"
+            if [ "${hits}" -gt 0 ]; then
+              echo "::error::${forbidden} ships inside /app (${hits} file(s)). Development tooling from this repository's dependency tree must not reach the runtime image."
+              grep "/node_modules/${forbidden}/" image-files.txt | grep '^/app/' | head -3
+              bad=1
+            fi
+          done
+
+          # 2. Nothing ANYWHERE in the image either — including the base image.
+          #    npm is deleted from the runner stage precisely so this can hold:
+          #    node:22-alpine bundles brace-expansion 2.0.2, inside the
+          #    GHSA-mh99-v99m-4gvg range. If a future base image reintroduces one
+          #    of these, this fires and names the real location.
+          for forbidden in ${FORBIDDEN}; do
             hits="$(grep -c "/node_modules/${forbidden}/" image-files.txt || printf 0)"
             if [ "${hits}" -gt 0 ]; then
-              echo "::error::${forbidden} is present in the production image (${hits} file(s)). Development tooling must not ship."
+              echo "::error::${forbidden} is present in the production image outside /app (${hits} file(s)) — base-image surface, not a repository dependency. Do not 'fix' this in package.json."
               grep "/node_modules/${forbidden}/" image-files.txt | head -3
               bad=1
             fi
           done
+
+          # --- npm itself must not ship -------------------------------------
+          # The container runs `node server.js`. A package manager on a deployed
+          # host is surface with no purpose, and its bundled tree is what put an
+          # affected brace-expansion in this image in the first place.
+          if grep -qE '^/usr/local/(bin/(npm|npx)|lib/node_modules/npm/)' image-files.txt; then
+            echo "::error::npm is present in the production image. The runtime never invokes it, and its bundled dependencies become deployed surface."
+            bad=1
+          fi
 
           # --- no npm cache or package manager state -------------------------
           for forbidden in '/.npm/' '/.npmrc' '/npm-cache/' '/.yarn/' '/.pnpm-store/'; do
