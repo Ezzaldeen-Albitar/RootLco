@@ -96,7 +96,7 @@ runs:
     #   "Dependencies lock file is not found" and the real cause is invisible.
     #
     # Reproduced locally by replaying both checkouts: non-cone leaves 1 file,
-    # cone leaves 1399. The bootstraps are cone-mode for that reason, and this
+    # cone leaves the whole tree. The bootstraps are cone-mode for that reason, and this
     # step is the belt-and-braces that makes the action correct even if some
     # future caller bootstraps sparsely by other means.
     - name: Undo any sparse checkout left by the caller's bootstrap

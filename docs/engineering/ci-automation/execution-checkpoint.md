@@ -222,15 +222,17 @@ surprise.
 
 ## Cycle 8 — Wave 7 unblocked: the pipeline meets a real runner
 
-The owner opened **PR #89**, which cleared the block above. Three hosted runs so
+The owner opened **PR #89**, which cleared the block above. Five hosted runs so
 far. The prediction in Cycle 7 held in the worst way: the first two could not
 execute at all, and **not one of the genuinely expected failures happened first.**
 
-| Run | Head      | Outcome                                                |
-| --- | --------- | ------------------------------------------------------ |
-| 1   | `8740531` | `startup_failure` — **zero jobs ran** (AR-28)          |
-| 2   | `67014fc` | every job failed in `Set up the project` (AR-29)       |
-| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures (AR-30 … AR-33) |
+| Run | Head SHA  | `pr-ci`                                              |
+| --- | --------- | ---------------------------------------------------- |
+| 1   | `8740531` | `startup_failure`, zero jobs — AR-28                 |
+| 2   | `67014fc` | every job failed in `Set up the project` — AR-29     |
+| 3   | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33     |
+| 4   | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36 |
+| 5   | `ca4c594` | **14/14 green, `ci-gate` Go**                        |
 
 **AR-28** — a caller's `permissions:` are the ceiling for _every_ job in the
 reusable workflow it calls, including ones an `if:` would skip; GitHub validates

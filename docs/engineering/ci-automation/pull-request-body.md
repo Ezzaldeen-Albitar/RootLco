@@ -193,7 +193,7 @@ exception with no proven production or runtime reachability.**
 
 ## What the hosted runs actually found
 
-Three runs, and the first two could not execute at all. Recorded in full in
+Five runs, and the first two could not execute at all. Recorded in full in
 [`adversarial-review.md`](evidence/adversarial-review.md).
 
 | Run | Head      | Outcome                                                |

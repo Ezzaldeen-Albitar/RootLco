@@ -27,11 +27,13 @@ What remains genuinely owner-only is unchanged — steps 5, 9 and 10 below.
 
 ### Hosted state
 
-| Attempt | Head SHA  | `pr-ci`                                            |
-| ------- | --------- | -------------------------------------------------- |
-| 1       | `8740531` | `startup_failure` — AR-28                          |
-| 2       | `67014fc` | failure in `Set up` — AR-29                        |
-| 3       | `2654f23` | **ran** — 7 green, 6 real gate failures (AR-30…33) |
+| Attempt | Head SHA  | `pr-ci`                                              |
+| ------- | --------- | ---------------------------------------------------- |
+| 1       | `8740531` | `startup_failure`, zero jobs — AR-28                 |
+| 2       | `67014fc` | every job failed in `Set up the project` — AR-29     |
+| 3       | `2654f23` | ran: 7 green, 6 real gate failures — AR-30…AR-33     |
+| 4       | `9088013` | 11 of 13 green; container only — AR-34, AR-35, AR-36 |
+| 5       | `ca4c594` | **14/14 green, `ci-gate` Go**                        |
 
 The legacy `ci.yml` has passed 4/4 on every one of these commits, which is what
 gives independent confidence that the dependency remediation itself is sound —

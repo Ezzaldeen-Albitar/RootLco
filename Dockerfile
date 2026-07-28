@@ -106,22 +106,40 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 --ingroup nodejs nextjs
 
-# Remove npm from the RUNTIME image.
+# Remove EVERY package manager from the RUNTIME image.
 #
 # The container starts `node server.js`; nothing at runtime invokes a package
-# manager. Keeping npm would leave its bundled dependency tree on a deployed
-# host for no purpose — and that tree is not hypothetical surface: the
-# `node:22-alpine` npm ships `brace-expansion@2.0.2`, which is inside the
-# GHSA-mh99-v99m-4gvg range (`<=5.0.7`, patched only in 5.0.8).
+# manager. Keeping one leaves its dependency tree on a deployed host for no
+# purpose — and that tree is not hypothetical surface: `node:22-alpine` ships
+# npm bundling `brace-expansion@2.0.2`, inside the GHSA-mh99-v99m-4gvg range
+# (`<=5.0.7`, patched only in 5.0.8).
 #
-# Found by the container job's own image inventory, which reported
-# brace-expansion and minimatch present in the production image while `/app`
-# was clean. Deleting npm makes the exception record's
-# `finalContainerReachable: false` literally true rather than a claim that
-# quietly meant "not in OUR dependency tree".
+# This list was WRONG ONCE. It deleted npm/npx only, and the image still
+# carried Yarn Classic 1.22.22 at /opt/yarn-v1.22.22 plus corepack — and
+# yarn's single 5.3 MB `lib/cli.js` has brace-expansion's implementation
+# INLINED (escSlash/escOpen sentinels, expandTop, isAlphaSequence) together
+# with `"minimatch":"^3.0.4"`. Every check written to catch this greps for a
+# literal `/node_modules/<name>/` path segment, and a bundled copy has no such
+# path, so all of them stayed silent. Corepack is worse than what was removed:
+# it downloads and executes package managers from the network at runtime.
+#
+# The lesson, and the reason this deletes by BINARY rather than by package
+# path: a path-based inventory cannot see vendored code. The only claim it can
+# support is "no package manager is present", so that is the claim the gate
+# makes and the one the risk record now states.
 RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm \
-           /usr/local/bin/npx
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg \
+           /opt/yarn-v* \
+ && for pm in npm npx yarn yarnpkg pnpm corepack; do \
+      if command -v "$pm" >/dev/null 2>&1; then \
+        echo "FATAL: $pm still resolves after removal" >&2; exit 1; \
+      fi; \
+    done
 
 # `output: standalone` emits a minimal server plus only the deps it actually uses.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./

@@ -162,12 +162,27 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}")"
           message="$(node -e 'try{const d=require("./depgraph-probe.json");process.stdout.write(Array.isArray(d)?"":(d.message??""))}catch{process.stdout.write("")}')"
           echo "probe status: ${code}"
+          # A status code is NOT a diagnosis. GitHub answers 403 for a disabled
+          # Dependency graph, for a rate limit, and for a token whose scope is
+          # wrong — and 404 for a disabled feature AND for a bad SHA. Keying the
+          # tolerated branch on the CODE alone means a rate limit or a
+          # misconfigured token reads as "the feature is off" and silently
+          # disables the check. Observed for real: an unauthenticated probe from
+          # a workstation returned
+          #   403 {"message":"API rate limit exceeded for …"}
+          # which the code-only version would have accepted as a governance gap.
+          #
+          # So the tolerated case must be POSITIVELY identified from the body.
           case "${code}" in
             200)
               echo 'available=true' >> "${GITHUB_OUTPUT}"
               printf '## Dependency review\n\nDependency graph enabled; the review ran.\n' > depgraph.md
               ;;
             403 | 404)
+              if ! printf '%s' "${message}" | grep -qiE 'dependency graph|dependency review|not supported|must be enabled|disabled'; then
+                echo "::error::HTTP ${code} probing the dependency graph, but the response does not say the feature is disabled: ${message}. This is a rate limit, a token-scope problem or a bad ref — not a governance gap — and it must not be recorded as one."
+                exit 1
+              fi
               echo 'available=false' >> "${GITHUB_OUTPUT}"
               echo "::warning::GitHub dependency review did NOT run: the Dependency graph is not enabled on this repository (HTTP ${code}: ${message}). Tracked as P1-21-A-01. The licence deny-list and advisory thresholds are still enforced offline by dependency-policy.mjs in this same job."
               {

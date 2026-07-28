@@ -285,14 +285,15 @@ detector's own shape, or a throwaway service-container value.
 
 Carried forward from P1-21 as **P1-21-A-01**, still open:
 
-| Feature                         | State              | Effect                                                                |
-| ------------------------------- | ------------------ | --------------------------------------------------------------------- |
-| Secret scanning                 | **disabled**       | GitHub is not watching pushes for known credential formats            |
-| Push protection                 | **disabled**       | A credential can be pushed without being blocked at the point of push |
-| Dependabot alerts               | **disabled**       | No alert when a new advisory lands against an installed version       |
-| Dependabot security updates     | **disabled**       | No automatic remediation pull request                                 |
-| Code scanning                   | **not configured** | The Security tab has no default setup                                 |
-| Private vulnerability reporting | not configured     | No private channel for an external reporter                           |
+| Feature                         | State                                                                                                                                               | Effect                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Secret scanning                 | **disabled**                                                                                                                                        | GitHub is not watching pushes for known credential formats            |
+| Push protection                 | **disabled**                                                                                                                                        | A credential can be pushed without being blocked at the point of push |
+| Dependabot alerts               | **disabled**                                                                                                                                        | No alert when a new advisory lands against an installed version       |
+| Dependabot security updates     | **disabled**                                                                                                                                        | No automatic remediation pull request                                 |
+| Code scanning                   | **not configured**                                                                                                                                  | The Security tab has no default setup                                 |
+| Dependency graph                | **disabled** — `dependency-review-action` cannot run without it; the job probes for it and records its absence rather than failing the pull request |
+| Private vulnerability reporting | not configured                                                                                                                                      | No private channel for an external reporter                           |
 
 **The absence of alerts is not evidence of cleanliness — nothing is watching.**
 

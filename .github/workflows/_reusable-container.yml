@@ -214,10 +214,25 @@ jobs:
           # printed its usage message, matched nothing, and exited 0 — a check
           # that could never fail. Hence `find … -exec grep` (POSIX), and hence
           # the file count, which makes the scan prove it actually ran.
+          # The count MUST come from the same grep invocation that searches. An
+          # earlier version counted with a second, independent `find` that never
+          # invoked grep, so a total failure of the grep arm still produced a
+          # healthy count — the counter added to catch that failure could not
+          # have caught it. A planted CANARY is the positive control: a scan that
+          # cannot find a key it just wrote proves nothing about the keys it did
+          # not find. The canary header is assembled at runtime so this file does
+          # not itself contain a credential shape.
           scan="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
-            'find / -xdev -type f -exec grep -lE "BEGIN ([A-Z ]+ )?PRIVATE KEY" {} + 2>/dev/null | head -20; printf "__SCANNED__%s\n" "$(find / -xdev -type f 2>/dev/null | wc -l)"')"
+            'kw="PRIV""ATE KEY"; printf -- "-----BEGIN CANARY %s-----\n" "${kw}" > /tmp/.keyscan-canary
+             find / -xdev -type f -exec grep -lE "BEGIN ([A-Z ]+ )?PRIVATE KEY" {} + 2>/dev/null | head -20
+             printf "__SCANNED__%s\n" "$(find / -xdev -type f -exec grep -cH "" {} + 2>/dev/null | wc -l)"')"
+          if ! printf '%s\n' "${scan}" | grep -q 'keyscan-canary'; then
+            echo "::error::The private-key scan did not find its own planted canary, so it is not working (busybox grep rejects GNU flags silently). Its silence about the rest of the image proves nothing."
+            printf '%s\n' "${scan}" | head -5
+            bad=1
+          fi
           scanned="$(printf '%s\n' "${scan}" | sed -n 's/^__SCANNED__//p')"
-          keys="$(printf '%s\n' "${scan}" | grep -v '^__SCANNED__' || printf '')"
+          keys="$(printf '%s\n' "${scan}" | grep -v '^__SCANNED__' | grep -v 'keyscan-canary' | grep -v '^$')" || keys=''
           if [ -z "${scanned}" ] || [ "${scanned}" -lt 500 ]; then
             echo "::error::The private-key scan examined ${scanned:-no} files. It did not run, so its silence proves nothing."
             bad=1
@@ -295,38 +310,67 @@ jobs:
           FORBIDDEN="eslint prettier vitest typescript @typescript-eslint
                      brace-expansion minimatch test-exclude @vitest stylelint"
 
+          # `grep -c` PRINTS `0` and EXITS 1 when nothing matches, so the obvious
+          # `hits="$(grep -c … || printf 0)"` produces the two-line string "0\n0"
+          # and `[ "0\n0" -gt 0 ]` is not a comparison at all — bash reports
+          # "integer expected", returns 2, and `if` reads that as false. Every
+          # clean run took that path for every package: the verdict was right by
+          # accident. `x="$(…)" || x=0` keeps the count grep already printed and
+          # NAMES the fallback, rather than swallowing a status like `|| :` does.
+
           # 1. Nothing from OUR dependency tree. This is the "node_modules was
           #    copied wholesale" check, and it is scoped to the application.
           for forbidden in ${FORBIDDEN}; do
-            hits="$(grep "/node_modules/${forbidden}/" image-files.txt | grep -c '^/app/' || printf 0)"
-            if [ "${hits}" -gt 0 ]; then
-              echo "::error::${forbidden} ships inside /app (${hits} file(s)). Development tooling from this repository's dependency tree must not reach the runtime image."
-              grep "/node_modules/${forbidden}/" image-files.txt | grep '^/app/' | head -3
+            app_hits="$(grep -- "/node_modules/${forbidden}/" image-files.txt | grep -c '^/app/')" || app_hits=0
+            if [ "${app_hits}" -gt 0 ]; then
+              echo "::error::${forbidden} ships inside /app (${app_hits} file(s)). Development tooling from this repository's dependency tree must not reach the runtime image."
+              grep -- "/node_modules/${forbidden}/" image-files.txt | grep '^/app/' | head -3
+              bad=1
+            fi
+
+            # 2. Nothing outside /app either. The location is MEASURED, not
+            #    asserted: the previous version counted ALL hits while claiming
+            #    they were "base-image surface … do not fix this in
+            #    package.json", so a wholesale /app leak was reported twice, the
+            #    second time pointing at the wrong file — exactly the
+            #    misdirection this split was introduced to remove.
+            other="$(grep -- "/node_modules/${forbidden}/" image-files.txt | grep -v '^/app/')" || other=''
+            other_hits="$(printf '%s' "${other}" | grep -c .)" || other_hits=0
+            if [ "${other_hits}" -gt 0 ]; then
+              echo "::error::${forbidden} is present in the production image OUTSIDE /app (${other_hits} file(s)) — base-image surface, not a repository dependency. Do not 'fix' this in package.json."
+              printf '%s\n' "${other}" | head -3
               bad=1
             fi
           done
 
-          # 2. Nothing ANYWHERE in the image either — including the base image.
-          #    npm is deleted from the runner stage precisely so this can hold:
-          #    node:22-alpine bundles brace-expansion 2.0.2, inside the
-          #    GHSA-mh99-v99m-4gvg range. If a future base image reintroduces one
-          #    of these, this fires and names the real location.
-          for forbidden in ${FORBIDDEN}; do
-            hits="$(grep -c "/node_modules/${forbidden}/" image-files.txt || printf 0)"
-            if [ "${hits}" -gt 0 ]; then
-              echo "::error::${forbidden} is present in the production image outside /app (${hits} file(s)) — base-image surface, not a repository dependency. Do not 'fix' this in package.json."
-              grep "/node_modules/${forbidden}/" image-files.txt | head -3
-              bad=1
-            fi
-          done
-
-          # --- npm itself must not ship -------------------------------------
+          # --- no package manager may ship ----------------------------------
           # The container runs `node server.js`. A package manager on a deployed
-          # host is surface with no purpose, and its bundled tree is what put an
-          # affected brace-expansion in this image in the first place.
-          if grep -qE '^/usr/local/(bin/(npm|npx)|lib/node_modules/npm/)' image-files.txt; then
-            echo "::error::npm is present in the production image. The runtime never invokes it, and its bundled dependencies become deployed surface."
+          # host is surface with no purpose, and its dependency tree is what put
+          # an affected brace-expansion in this image in the first place.
+          #
+          # Checked by RESOLVING THE BINARY, not by grepping the inventory. Both
+          # reasons were learned the hard way:
+          #   - `find -type f` never lists symlinks, and /usr/local/bin/npm and
+          #     /usr/local/bin/yarn ARE symlinks — so an inventory grep for them
+          #     matched nothing even with the package manager fully installed;
+          #   - yarn is a single bundled cli.js under /opt/yarn-v1.22.22 with
+          #     brace-expansion INLINED. There is no `/node_modules/<name>/` path,
+          #     so no path-based rule above can ever see it.
+          # A path inventory cannot prove the absence of vendored code. It can
+          # prove no package manager is installed, so that is what is asserted.
+          pm_found="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'for pm in npm npx yarn yarnpkg pnpm corepack bun; do
+               p="$(command -v "${pm}" 2>/dev/null)" || p=""
+               [ -n "${p}" ] && printf "%s -> %s\n" "${pm}" "${p}"
+             done
+             exit 0')"
+          if [ -n "${pm_found}" ]; then
+            echo "::error::A package manager is present in the production image:"
+            printf '%s\n' "${pm_found}"
+            echo "::error::Its dependency tree becomes deployed surface, and a bundled copy is invisible to every path-based check here."
             bad=1
+          else
+            echo 'no package manager resolves in the production image'
           fi
 
           # --- no npm cache or package manager state -------------------------

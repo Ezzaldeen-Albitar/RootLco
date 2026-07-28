@@ -104,6 +104,24 @@ async function main() {
     const files = listMigrations();
     if (files.length === 0) throw new Error('No migrations found.');
 
+    // The ledger's PRIMARY KEY is the version, so two files sharing a numeric
+    // prefix would abort the SECOND one — and because the INSERT sits inside
+    // that migration's transaction, the failure would be reported as a failure
+    // of its SQL. Nothing in NAME_RULE prevents the collision:
+    // `0001_extensions.sql` and `0001_extensions_fix.sql` both pass it and both
+    // map to `0001`. Checked here so the diagnosis is the real one.
+    const byVersion = new Map();
+    for (const file of files) {
+      const v = versionOf(file);
+      if (byVersion.has(v)) {
+        throw new Error(
+          `Two migrations share the version prefix ${v}: ${byVersion.get(v)} and ${file}. ` +
+            'Migration versions must be unique — rename one with a distinct prefix.'
+        );
+      }
+      byVersion.set(v, file);
+    }
+
     await client.query(`CREATE SCHEMA IF NOT EXISTS ${LEDGER_SCHEMA}`);
     await client.query(
       `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (

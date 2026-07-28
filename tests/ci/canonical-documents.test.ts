@@ -117,6 +117,27 @@ describe('canonical document integrity, record-only mode', () => {
     }
   });
 
+  it('refuses --print together with --record-only, which verified nothing and always passed', () => {
+    // Found by adversarial review: the hash gate is guarded by `!PRINT_ONLY`
+    // and `--print` returns before the failure check, so the combination was a
+    // mode that reported nothing and exited 0 over a CHANGED document. A gate a
+    // stray flag can switch off is not a gate.
+    const { base, root } = makeRepo([
+      { filename: 'plan.docx', relativePath: '../plan.docx', sha256: sha('the recorded bytes') },
+    ]);
+    try {
+      writeFileSync(join(base, 'plan.docx'), 'tampered bytes');
+      const r = run(root, ['--print', '--record-only']);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('mutually exclusive');
+      // And each flag alone still behaves as documented.
+      expect(run(root, ['--record-only']).status).toBe(1); // changed document
+      expect(run(root, ['--print']).status).toBe(0); // reports, asserts nothing
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('fails on an entry with no path at all', () => {
     const { base, root } = makeRepo([{ filename: 'plan.docx', sha256: sha('x') }]);
     try {

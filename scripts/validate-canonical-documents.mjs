@@ -61,6 +61,21 @@ const RECORD = resolve(REPO_ROOT, 'docs/governance/canonical-documents.md');
 const PRINT_ONLY = process.argv.includes('--print');
 const RECORD_ONLY = process.argv.includes('--record-only');
 
+// `--print` reports hashes and asserts nothing; `--record-only` asserts. Together
+// they produced a mode that verified NOTHING and always exited 0 — the hash gate
+// is guarded by `!PRINT_ONLY`, and `--print` returns before the failure check, so
+// a CHANGED document passed. A gate that a stray flag can switch off is not a
+// gate, and CI could have grown that flag pair by accident.
+if (PRINT_ONLY && RECORD_ONLY) {
+  console.error('ERROR: --print and --record-only are mutually exclusive.');
+  console.error('  --print        reports the hashes it measures and verifies nothing.');
+  console.error(
+    '  --record-only  verifies the reference record and compares any document present.'
+  );
+  console.error('Combining them would report nothing and always succeed.');
+  process.exit(2);
+}
+
 /** Reads the machine-readable block out of the reference record. */
 async function loadRecord() {
   let md;

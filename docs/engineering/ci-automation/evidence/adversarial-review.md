@@ -259,7 +259,9 @@ why the design looked sound.
 `core.sparseCheckout=true`, restores no file, and reports success. Every job
 then ran against a one-file workspace.
 
-Verified rather than argued, by replaying both checkouts locally:
+Verified rather than argued, by replaying both checkouts locally. File counts are
+as measured at `2654f23`; the tree has grown since, which is why no rule or comment
+keys on the number:
 
 | bootstrap                    | files after the composite's checkout | `package-lock.json` |
 | ---------------------------- | ------------------------------------ | ------------------- |
@@ -472,6 +474,116 @@ was not reported.
 **Fixed** with `find … -exec grep` (POSIX) and, more importantly, the scan now
 reports how many files it examined and **fails if that number is implausible**.
 Silence is only accepted from a scan that can prove it ran.
+
+---
+
+## Fifth run green — then an independent review of the fixes themselves
+
+`ca4c594` passed **14/14 with `ci-gate` Go**. Because four of the defects so far
+had been in the author's own remediation, the four commits `8740531..ca4c594`
+were then handed to **four independent hostile reviewers**, each with a distinct
+lens, and every finding was given to a separate agent instructed to **refute**
+it. 29 raw findings, 9 verified, 5 confirmed.
+
+The most important one says the same thing as AR-35, one layer further out.
+
+### AR-37 · the same blind spot, one layer out — yarn was still there
+
+The AR-35 fix deleted exactly the three paths its new assertion grepped for, and
+grepped for exactly the three paths it deleted. `node:22-alpine` also ships
+**Yarn Classic 1.22.22** at `/opt/yarn-v1.22.22` (with `/usr/local/bin/yarn` and
+`yarnpkg` symlinks) and **corepack 0.34.6**. Both survived. Both ran as uid 1001
+in the built image.
+
+Yarn is a single bundled `lib/cli.js` — 5,320,747 bytes — with
+brace-expansion's implementation **inlined**: the `escSlash`/`escOpen`
+sentinels, `expandTop`, `isAlphaSequence`, and a literal `"minimatch":"^3.0.4"`.
+A reviewer proved it is live code rather than dead text by running, offline
+inside the image, `yarn workspaces info` against a `packages/{a,b}` glob and
+watching the brace expand.
+
+Every detector was blind to it, because **all of them key on a literal
+`/node_modules/<name>/` path segment** and a vendored copy has no such path.
+Replaying the gate's arms over a real post-removal inventory produced `bad=0`
+while `/opt/yarn-v1.22.22/lib/cli.js` sat plainly in the listing. Trivy reports
+`yarn@1.22.22` with zero vulnerabilities without decomposing the bundle.
+
+So `finalContainerReachable: false` was **false again, for the same reason it
+was false the first time**. Corepack was worse than what had been removed: it
+downloads and executes package managers from the network at runtime.
+
+**Fixed** by removing every package manager — npm, npx, corepack, yarn, yarnpkg
+and `/opt/yarn-*` — and asserting in the same Docker layer that none still
+resolves, failing the build if one does. The gate now checks for package
+managers by **resolving the binary** rather than grepping paths.
+
+The record now also states the limit rather than implying there is none: **a
+path inventory cannot prove the absence of vendored code.** That is exactly why
+the image ships no package manager at all, instead of relying on a scanner to
+find something it structurally cannot see.
+
+Severity was reported `high` and corrected to `medium` by the verifier, which is
+right: the entrypoint is `node server.js`, nothing invokes yarn, the advisory is
+a DoS needing an attacker-supplied brace pattern, and ADR-012 means there is no
+deployment target yet. It is an evidence-accuracy and incomplete-hardening
+defect in a record still pending owner approval — not an exploitable hole.
+
+### AR-38 · a status code is not a diagnosis
+
+The dependency-graph probe treated **every** `403`/`404` as "the Dependency
+graph is disabled". GitHub returns `403` for rate limits, for
+`Resource not accessible by integration`, and for SSO/IP blocks; `404` for a bad
+ref. Any of those would have been recorded as a governance gap and the review
+silently skipped, with the log asserting a fact about repository settings
+derived from a transient throttle.
+
+Found twice over: by a reviewer, and independently by hitting a real
+`403 {"message":"API rate limit exceeded…"}` while querying the API by hand.
+
+**Fixed**: the tolerated branch must now be **positively identified from the
+response body**. Verified against five real bodies — only the genuine
+"feature disabled" text is tolerated; rate limit, token scope, bad ref and empty
+body all fail loudly.
+
+### AR-39 · the counter that could not detect what it was written to detect
+
+The private-key scan's "proof it ran" file count came from a **second,
+independent `find`** that never invoked grep — so a total failure of the grep
+arm still produced a healthy count. The counter added to catch AR-36 could not
+have caught AR-36.
+
+**Fixed**: the count now comes from the same `find … -exec grep` invocation, and
+the scan plants a **canary** private key and fails if it cannot find its own
+canary. A scanner that cannot find a key it just wrote proves nothing about the
+keys it did not find.
+
+### AR-40 · three shell defects in the checks, found by three separate lenses
+
+- **`hits="$(grep -c … || printf 0)"` yields the two-line string `0\n0`**,
+  because `grep -c` prints `0` _and_ exits 1. `[ "0\n0" -gt 0 ]` is not a
+  comparison — bash reports `integer expected` and returns 2, which `if` reads
+  as false. Every clean run took that path for all ten packages in both loops:
+  **the verdict was correct by accident**. Fixed with `|| :`, which keeps the
+  count grep already printed and discards only the status.
+- **The "outside `/app`" loop counted _all_ hits** while asserting they were
+  "base-image surface … do not fix this in package.json" — so a wholesale `/app`
+  leak was reported twice, the second time pointing at the wrong file. That is
+  precisely the misdirection the two-loop split was introduced to remove. The
+  location is now **measured**, not asserted.
+- **`find -type f` never lists symlinks**, and `/usr/local/bin/npm` and
+  `/usr/local/bin/yarn` are symlinks — so the inventory arm for them could not
+  match even with the package manager fully installed. Demonstrated: a
+  reintroduced `yarn` is caught by the new resolve-based check and returns
+  **0 matches** under the old path rule.
+
+### Recorded but not fixed
+
+Four findings reproduced mechanically and were then **refuted as defects** by
+the verifier, each for a stated reason: the symlink arm (superseded by the
+resolve check), WFS-012's coverage of exotic non-cone spellings, DER/PKCS#8 key
+material having no PEM header, and the canary gap (an independent blocking
+secret scan already covers that job). Twenty lower-severity findings were not
+verified; they are listed in the workflow output rather than silently dropped.
 
 ---
 

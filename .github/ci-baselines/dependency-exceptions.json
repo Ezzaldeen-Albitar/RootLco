@@ -33,7 +33,7 @@
       "productionReachable": false,
       "productionReachableEvidence": "`npm ls brace-expansion --omit=dev --all` returns `(empty)`. The production dependency tree contains no brace-expansion, no minimatch and no eslint. Every one of the 70 root-to-target paths begins on a devDependencies edge; npm marks all three resolved instances `dev: true`. Re-derived mechanically on every run by scripts/ci/dependency-path-proof.mjs.",
       "finalContainerReachable": false,
-      "finalContainerReachableEvidence": "The Dockerfile `runner` stage copies only `.next/standalone`, `.next/static` and `public` from the build stage — it never copies `node_modules`, and `output: standalone` emits only the modules the server actually resolves. Verified against the BUILT IMAGE rather than the Dockerfile: `docker run --entrypoint sh … find / -xdev -type f` lists 0 files matching `/node_modules/brace-expansion/` or `/node_modules/minimatch/` anywhere, and /app/server.js is present so the absence is measured over a real runnable image and not an empty one. CORRECTION, and the reason this wording is now precise: the first hosted image DID contain brace-expansion@2.0.2 and minimatch@9.0.9 — not from this repository, but bundled inside npm under /usr/local/lib/node_modules/npm/ in the node:22-alpine base image. 2.0.2 is within the advisory range, so \"not reachable in the final container\" was FALSE as literally stated even though this repository was not the source. The runner stage now deletes npm, npx and /usr/local/lib/node_modules/npm — the runtime starts `node server.js` and never invokes a package manager — which removes the affected copy from the deployed artifact entirely. Image file count fell 5497 → 3533. The container gate asserts BOTH that no such package ships under /app AND that none exists anywhere in the image, so a future base image reintroducing one fails the build and names the base image as the source.",
+      "finalContainerReachableEvidence": "The Dockerfile `runner` stage copies only `.next/standalone`, `.next/static` and `public`, never `node_modules`. Verified against the BUILT IMAGE, not the Dockerfile: an inventory of 3468 files lists 0 paths matching `/node_modules/brace-expansion/` or `/node_modules/minimatch/` anywhere, and `/app/server.js` is present so the absence is measured over a real runnable image. Additionally, NO package manager resolves in the image — checked by resolving the binary for npm, npx, yarn, yarnpkg, pnpm, corepack and bun, not by grepping paths. THIS FIELD HAS BEEN CORRECTED TWICE; both corrections are recorded in `containerFindings` because the wording failed the same way each time. STATED LIMIT, so the claim is not read as more than it is: a path-based inventory CANNOT prove the absence of vendored or bundled code. Yarn Classic is a single 5.3 MB `lib/cli.js` with brace-expansion's implementation inlined and no `/node_modules/…` path at all, and Trivy reports it as `yarn@1.22.22` with zero vulnerabilities without decomposing the bundle. The only claim this evidence supports is \"no package manager and no brace-expansion package directory is installed in the image\", which is why the runner stage now removes every package manager rather than relying on a scanner to find what it cannot see.",
       "runtimeImportEvidence": "No file under src/ or scripts/ imports brace-expansion, minimatch or glob, directly or transitively. Verified by scripts/ci/dependency-path-proof.mjs on every run.",
       "exploitability": "Not reachable based on current evidence. The vulnerability is a denial of service triggered by an attacker-supplied brace expression. Reaching it requires an attacker-controlled pattern to be passed to brace expansion. In this repository the only consumers are ESLint config matching, vitest coverage include/exclude globs and test-exclude — all of which operate exclusively on patterns written in committed configuration files. No application input path reaches a glob or brace expression; the application does not depend on brace-expansion at all.",
       "attackerControlledPatterns": false,
@@ -45,7 +45,7 @@
         "No attacker-controlled brace or glob expressions: every pattern evaluated comes from committed configuration.",
         "Repository-controlled patterns only: GitHub Actions passes no event-supplied value into a glob.",
         "No production inclusion: absent from the production dependency tree, proven by `npm ls --omit=dev`.",
-        "Not present in the production container: the runner stage copies no node_modules and now also deletes npm, so no copy of brace-expansion exists in the deployed image at all. Enforced every run by an inventory of the BUILT image, which fails on a hit under /app, on a hit anywhere else, or on npm being present.",
+        "No package manager is installed in the production image: npm, npx, yarn, yarnpkg and corepack are all removed in the runner stage, which fails the build if any still resolves. The container gate re-checks this every run by resolving each binary in the built image, and separately asserts no `/node_modules/brace-expansion/` path exists under /app or anywhere else. A path inventory cannot see a VENDORED copy, which is precisely why the image ships no package manager rather than relying on a scanner to find one.",
         "Dependency monitoring: Dependabot watches npm weekly; the dependency-security job re-derives the full path proof on every pull request and every protected push.",
         "The gate fails automatically if the package ever becomes production-reachable, if the dependency path changes, or if a compatible patched version becomes installable."
       ],
@@ -64,13 +64,24 @@
       ],
       "approvalStatus": "pending-owner-approval",
       "approvalNote": "Recorded by the CI automation initiative with full evidence. Requires the platform owner's explicit acceptance before it is treated as an approved risk decision rather than a documented finding. The gate honours it either way; the status records who has actually agreed to it.",
-      "baseImageFinding": {
-        "discoveredOn": "2026-07-28",
-        "discoveredBy": "container-security image inventory (_reusable-container.yml)",
-        "finding": "node:22-alpine bundles npm, whose own dependency tree includes brace-expansion@2.0.2 (within GHSA-mh99-v99m-4gvg, <=5.0.7) and minimatch@9.0.9. Present in the production image while this repository’s /app tree was clean.",
-        "resolution": "npm, npx and /usr/local/lib/node_modules/npm are removed in the runner stage. Verified by rebuilding and re-running the inventory: 0 matching files, npm absent, /app/server.js present, NODE_ENV=production, node v22 still starts.",
-        "status": "resolved"
-      }
+      "containerFindings": [
+        {
+          "id": "AR-35",
+          "discoveredOn": "2026-07-28",
+          "discoveredBy": "container-security image inventory, run locally before pushing",
+          "finding": "node:22-alpine bundles npm, whose dependency tree includes brace-expansion@2.0.2 (within GHSA-mh99-v99m-4gvg, <=5.0.7) and minimatch@9.0.9. Present in the production image while this repository’s /app tree was clean, so `finalContainerReachable: false` was false as literally stated — it had been reasoned about this repository’s dependency tree only.",
+          "resolution": "npm, npx and /usr/local/lib/node_modules/npm removed in the runner stage.",
+          "status": "superseded-by-AR-37"
+        },
+        {
+          "id": "AR-37",
+          "discoveredOn": "2026-07-28",
+          "discoveredBy": "independent adversarial review of the AR-35 fix (three reviewers, confirmed)",
+          "finding": "The AR-35 fix deleted exactly the three paths its new assertion grepped for, and grepped for exactly the three paths it deleted. node:22-alpine ALSO ships Yarn Classic 1.22.22 at /opt/yarn-v1.22.22 (symlinks /usr/local/bin/yarn and yarnpkg) and corepack 0.34.6, both of which survived and both of which ran as uid 1001 in the built image. Yarn’s bundled cli.js contains brace-expansion’s implementation verbatim — proven live, offline, by running `yarn workspaces info` against a `packages/{a,b}` glob inside the image and watching the brace expand. Every detector was blind to it because all of them key on a literal `/node_modules/<name>/` path segment, which a bundled copy does not have. Corepack is worse than what was removed: it downloads and executes package managers from the network. So the restated claim \"no copy of brace-expansion exists in the deployed image at all\" was FALSE AGAIN, for the same reason it was false the first time.",
+          "resolution": "The runner stage now removes npm, npx, corepack, yarn, yarnpkg and /opt/yarn-* and then asserts in the same layer that none of them still resolves, failing the build if one does. The container gate additionally checks for package managers by RESOLVING THE BINARY rather than grepping the inventory — `find -type f` never lists symlinks, so the previous /usr/local/bin/(npm|npx) arm could not match even with npm fully installed. Verified: a reintroduced yarn is caught by the new check and was missed by the old one.",
+          "status": "resolved"
+        }
+      ]
     }
   ],
   "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Resolved through compatible patch upgrades: next 16.2.10 to 16.2.12, plus overrides pinning postcss to ^8.5.24 and sharp to ^0.35.3 because Next pins postcss at exactly 8.4.31 and npm's only suggested remedy was downgrading Next to 9.3.3. Production is now at zero HIGH/CRITICAL."

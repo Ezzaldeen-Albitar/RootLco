@@ -309,7 +309,7 @@ export function lintWorkflow(name, source, options = {}) {
   //   `actions/checkout` runs `git sparse-checkout disable` when given no sparse
   //   input. On a non-cone repository that is a no-op — `core.sparseCheckout`
   //   stays true and no file is restored. Verified by replaying both checkouts:
-  //   non-cone leaves 1 file in the workspace, cone leaves the full 1399.
+  //   non-cone leaves 1 file in the workspace, cone leaves the whole tree.
   //
   // The visible symptom is `setup-node` reporting "Dependencies lock file is not
   // found", which points at the wrong step entirely. Shipped once, at all 21
