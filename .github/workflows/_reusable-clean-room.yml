@@ -188,7 +188,9 @@ jobs:
           npm run validate:p1-20-inventory
           npm run validate:p1-21-inventory
           npm run validate:encoding
-          npm run validate:canonical-docs
+          # See _reusable-node-quality.yml: the canonical documents are external
+          # by design, so a runner can only verify the reference record.
+          npm run validate:canonical-docs -- --record-only
           node scripts/ci/check-route-registry-parity.mjs
           node scripts/ci/check-test-honesty.mjs
           node scripts/ci/check-workflow-security.mjs

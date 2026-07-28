@@ -31,6 +31,21 @@ Enforced by `scripts/ci/check-workflow-security.mjs` on every pull request.
 | WFS-009 | No `continue-on-error: true`                                                                |
 | WFS-010 | Every job declares `timeout-minutes`                                                        |
 | WFS-011 | A reusable workflow declares exactly ONE job — _critical_                                   |
+| WFS-012 | A bootstrap sparse checkout of `.github/actions` stays in cone mode — _critical_            |
+
+**WFS-012 exists because the second hosted run failed in every job.** The
+bootstrap checkout that makes a local `uses: ./…` resolvable was written in
+NON-CONE mode. `actions/checkout` calls `git sparse-checkout disable` when it is
+given no sparse input — but against a non-cone repository that command is a
+no-op: `core.sparseCheckout` stays true and no file is restored. Verified by
+replaying both checkouts: non-cone leaves 1 file in the workspace, cone leaves
+the full tree. The visible symptom was `setup-node` reporting "Dependencies
+lock file is not found", three steps from the cause.
+
+The composite action additionally tears down any sparse state before its own
+checkout, and asserts afterwards that the number of tracked files on disk
+matches the number tracked in git — being at the right COMMIT is not the same
+as having the TREE.
 
 **WFS-011 exists because the first hosted run failed at startup.** A caller’s
 `permissions:` are the **ceiling for every job** in the workflow it calls,

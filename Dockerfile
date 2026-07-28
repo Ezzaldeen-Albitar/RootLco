@@ -21,6 +21,19 @@ ARG NODE_VERSION=22-alpine
 FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
 # libc6-compat: some native deps expect glibc symbols on Alpine.
+#
+# DL3018 (hadolint, warning) wants `pkg=version` here. Not applied, for a
+# recorded reason rather than a silenced one: an exact Alpine package version
+# disappears from the repository on the next `node:22-alpine` patch, so pinning
+# turns every base-image update into a build failure and pressures whoever hits
+# it into an unreviewed bump. The composition of the image is instead known
+# from evidence that describes what was ACTUALLY built — the SPDX SBOM, the
+# Trivy scan of the real image, and the recorded image digest — rather than
+# from a version string asserted in advance.
+#
+# The suppression is per line, so a NEW unpinned `apk add` anywhere in this file
+# is still reported. It is not a repository-wide `.hadolint.yaml` ignore.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 # Copy only the manifests first so this layer is reused unless deps change.
 COPY package.json package-lock.json ./
@@ -30,6 +43,8 @@ RUN npm ci
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS dev
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat curl
 ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -55,6 +70,8 @@ CMD ["npm", "run", "dev:container"]
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
@@ -76,6 +93,8 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache curl
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

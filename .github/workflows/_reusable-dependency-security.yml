@@ -134,9 +134,60 @@ jobs:
             fs.writeFileSync("outdated.md", md.join("\n") + "\n");
           '
 
+      # The dependency-review action needs the repository's Dependency graph to
+      # be switched on. It is not (P1-21-A-01), and the action's failure mode is
+      # a hard error that says so:
+      #
+      #   Dependency review is not supported on this repository. Please ensure
+      #   that Dependency graph is enabled.
+      #
+      # That is a repository SETTING, not a finding about this change, and it is
+      # not something a pull request can fix. Rather than let a governance gap
+      # masquerade as a dependency failure, the availability is probed first and
+      # reported for what it is. An unexpected status still fails: only an
+      # explicit "feature is off" is tolerated, and it is never silent.
+      - name: Is the GitHub dependency graph available?
+        id: depgraph
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o depgraph-probe.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}")"
+          message="$(node -e 'try{const d=require("./depgraph-probe.json");process.stdout.write(Array.isArray(d)?"":(d.message??""))}catch{process.stdout.write("")}')"
+          echo "probe status: ${code}"
+          case "${code}" in
+            200)
+              echo 'available=true' >> "${GITHUB_OUTPUT}"
+              printf '## Dependency review\n\nDependency graph enabled; the review ran.\n' > depgraph.md
+              ;;
+            403 | 404)
+              echo 'available=false' >> "${GITHUB_OUTPUT}"
+              echo "::warning::GitHub dependency review did NOT run: the Dependency graph is not enabled on this repository (HTTP ${code}: ${message}). Tracked as P1-21-A-01. The licence deny-list and advisory thresholds are still enforced offline by dependency-policy.mjs in this same job."
+              {
+                printf '## Dependency review\n\n'
+                printf '**NOT RUN** — the repository Dependency graph is disabled (HTTP %s).\n\n' "${code}"
+                printf 'Tracked as P1-21-A-01. This is a repository setting, not a property of this change.\n'
+                printf 'The same licence deny-list and advisory thresholds are enforced offline by\n'
+                printf '`dependency-policy.mjs`, which DID run in this job, so the control is not lost —\n'
+                printf 'what is lost is the base-to-head diff of newly introduced dependencies.\n'
+              } > depgraph.md
+              ;;
+            *)
+              echo "::error::Unexpected HTTP ${code} probing the dependency graph: ${message}. Refusing to guess whether the review is applicable."
+              exit 1
+              ;;
+          esac
+
       - name: GitHub dependency review
         # Only meaningful on a pull request: it diffs the base and head manifests.
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.depgraph.outputs.available == 'true'
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
@@ -152,7 +203,7 @@ jobs:
           RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
         run: |
           set -euo pipefail
-          for file in dependency-policy.md reachability-brace-expansion.md outdated.md; do
+          for file in dependency-policy.md reachability-brace-expansion.md outdated.md depgraph.md; do
             if [ -f "${file}" ]; then
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
@@ -176,5 +227,6 @@ jobs:
             licences.json
             production-tree.json
             reachability-brace-expansion.json
+            depgraph-probe.json
             dependency-policy.json
             *.md

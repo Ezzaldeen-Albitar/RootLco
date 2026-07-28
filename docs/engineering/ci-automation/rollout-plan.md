@@ -11,26 +11,31 @@
 | 4 — release foundations            | complete                |
 | 5 — governance and documentation   | complete                |
 | 6 — hostile review and remediation | complete                |
-| 7 — exact-SHA hosted proof         | **blocked** — see below |
+| 7 — exact-SHA hosted proof         | in progress — see below |
 
-## The block
+## The pull request is open
 
-Opening the pull request requires an authenticated GitHub session. Neither
-available browser surface is signed in, and no `gh` CLI or token is configured.
-Pushing works because the remote is SSH; creating a pull request is a REST/web
-operation and is not.
+[**PR #89**](https://github.com/Ezzaldeen-Albitar/RootLco/pull/89) —
+`feature/platform-comprehensive-ci-automation` into `develop`.
 
-Everything that does not depend on that is done. The branch
-`feature/platform-comprehensive-ci-automation` is pushed and ready.
+Opening it needed an authenticated GitHub session, which this environment does
+not have: neither browser surface is signed in and there is no `gh` CLI or
+token. Pushing works only because the remote is SSH. The owner opened it; that
+part of the block is cleared.
 
-### What the owner needs to do
+What remains genuinely owner-only is unchanged — steps 5, 9 and 10 below.
 
-1. Open <https://github.com/Ezzaldeen-Albitar/RootLco/compare/develop...feature/platform-comprehensive-ci-automation?expand=1>
-2. Title: `ci(platform): build comprehensive automated assurance pipeline`
-3. Body: paste [`pull-request-body.md`](pull-request-body.md)
-4. Create.
+### Hosted state
 
-That starts the first hosted run of the whole pipeline.
+| Attempt | Head SHA  | `pr-ci`                                            |
+| ------- | --------- | -------------------------------------------------- |
+| 1       | `8740531` | `startup_failure` — AR-28                          |
+| 2       | `67014fc` | failure in `Set up` — AR-29                        |
+| 3       | `2654f23` | **ran** — 7 green, 6 real gate failures (AR-30…33) |
+
+The legacy `ci.yml` has passed 4/4 on every one of these commits, which is what
+gives independent confidence that the dependency remediation itself is sound —
+those four jobs do not use the new reusable workflows at all.
 
 ## After the pull request is open
 
@@ -80,6 +85,27 @@ These workflows have never executed. Honest expectations:
 
 None of these is a reason to weaken a gate. Each is a reason to look at the
 evidence and decide with it.
+
+## What actually happened
+
+Recorded because the table above turned out to be wrong in an instructive way.
+**Neither real failure is on it**, and neither was a gate reporting a finding —
+both were the pipeline being unable to run at all.
+
+| Run | Result                           | Cause                                                                                             |
+| --- | -------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1   | `startup_failure`, **zero jobs** | a caller's `permissions:` cap every job in the reusable workflow it calls, including skipped ones |
+| 2   | every job failed in `Set up`     | a non-cone bootstrap sparse checkout is never undone, so the workspace held one file              |
+
+Both are recorded as AR-28 and AR-29, and each now has a linter rule — WFS-011
+and WFS-012, both _critical_. The pattern worth carrying forward: **both defects
+were in the remediation for an earlier finding**, and neither was reachable by
+reading the files. Three adversarial reviewers, `actionlint`, and this
+repository's own workflow linter all passed the first one.
+
+The honest lesson is the one the table already implied but did not act on: a
+workflow that has never executed is not evidence of anything. The first green
+run is the first evidence.
 
 ## Ongoing
 

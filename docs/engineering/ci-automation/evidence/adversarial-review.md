@@ -290,6 +290,107 @@ neither was the fix for AR-28.
 
 ---
 
+## The third hosted run — the pipeline finally ran
+
+At `2654f23` the pipeline executed properly for the first time: **seven jobs
+green**, six failing, and `ci-gate` correctly returning **No-Go**. Every failure
+below is a gate reporting something real rather than infrastructure collapsing,
+which is the first evidence that any of this works.
+
+The hosted logs are not readable from here — GitHub requires a signed-in session
+to view Actions logs even on a public repository, and this environment has none.
+So each failure was reproduced locally instead, and the four causes below are
+reproductions, not inferences.
+
+### AR-30 · a gate that could never pass on a runner, by construction
+
+`static-quality` and `hosted-clean-room` both failed on `Repository gates`. All
+eleven gates in that step pass in the working copy. In a **clean clone** the
+cause is immediate:
+
+```
+- RootLco_Phase_1_Development_Plan_recovered_v01.docx
+    expected at: ../RootLco_Phase_1_Development_Plan_recovered_v01.docx
+    STATUS:      MISSING or unreadable
+```
+
+The two canonical Word documents live **outside** the repository by owner
+decision, and nothing may copy them in. A hosted runner therefore cannot ever
+see them. `validate:canonical-docs` was placed in a hosted step where the only
+way to make it green would have been to commit the documents — destroying the
+exact property the check exists to protect.
+
+**Fixed** with a `--record-only` mode for CI that verifies what a runner
+genuinely can: the reference record parses, every entry has a path, and every
+entry carries a real 64-character hash. It is not an escape hatch — a document
+that IS present is still compared, and a `pending` or absent hash still fails.
+Five tests, each a mutation of exactly one of those properties.
+
+### AR-31 · counting a ledger nothing writes
+
+Both database jobs failed on `Apply every migration from zero`. The migrations
+themselves were fine — 119/119 applied cleanly against a local PostgreSQL 17
+container, and legacy `ci.yml` passed on the same commit. The next command was
+the problem:
+
+```
+SELECT count(*) FROM supabase_migrations.schema_migrations
+ERROR:  relation "supabase_migrations.schema_migrations" does not exist
+```
+
+That ledger is maintained by the **Supabase CLI**, not by this repository's
+migration runner. Two places asked the database a question it had no way to
+answer — the workflow step, and `postChecks` in `migration-replay-checks.mjs`,
+which used it to assert that every migration file actually ran.
+
+**Fixed** by making the claim true rather than deleting the check:
+`apply-migrations.mjs` now maintains the ledger, writing each version **inside
+that migration's own transaction**, so a rollback takes the ledger row with it.
+A ledger written afterwards could record a migration that did not survive.
+
+Safe because the runner already refuses to touch a database holding module
+schemas, so it only ever sees a clean one and can never disagree with a ledger
+the Supabase CLI is managing. Verified that the added table does **not** move
+the frozen schema hash — `schema-inventory` reads an explicit module-schema
+allowlist — by measuring before and after: `a677eb05…` both times.
+
+### AR-32 · a real container finding
+
+`hadolint` reported **DL3018** four times: `apk add` without pinned versions.
+Reproduced exactly against the same image.
+
+Not silenced with a threshold change, which would have muted every other
+warning too, and not a repository-wide ignore. Each site carries a per-line
+`# hadolint ignore=DL3018` with the reason recorded once at the first: an exact
+Alpine package version disappears on the next `node:22-alpine` patch, so pinning
+converts every base-image update into a build failure. What the image actually
+contains is established from the SBOM, the Trivy scan of the built image, and
+the recorded digest — evidence about the artefact rather than a version string
+asserted in advance.
+
+Verified that a **new** unpinned `apk add` is still reported, so the rule stays
+live, and that the image still builds.
+
+### AR-33 · a repository setting failing as though it were a code defect
+
+```
+Dependency review is not supported on this repository.
+Please ensure that Dependency graph is enabled.
+```
+
+That is P1-21-A-01 — a setting the owner has not enabled — surfacing as a
+blocking dependency failure on a pull request that cannot possibly fix it.
+
+**Fixed** by probing the dependency-graph API first and reporting the state for
+what it is. `200` runs the review and lets it block. `403`/`404` records a
+warning naming P1-21-A-01, writes it into the job summary and the evidence
+artifact, and continues — because the licence deny-list and severity thresholds
+are independently enforced offline by `dependency-policy.mjs` in the same job.
+**Any other status fails**, so a transient or unknown condition cannot be
+mistaken for "the feature is off", and the outcome is never silent.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**

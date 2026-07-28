@@ -174,9 +174,43 @@ exception with no proven production or runtime reachability.**
   references repo-wide. Deliberately left in the coverage set — excluding it
   would raise the number by hiding code rather than by testing it.
 - **GitHub-native security features are still disabled** (P1-21-A-01): Secret
-  Scanning, Push Protection, Dependabot alerts, Code scanning. These are owner
-  settings changes, not repository content. Listed in
-  [`security-model.md`](security-model.md) §7.
+  Scanning, Push Protection, Dependabot alerts, Code scanning, **and the
+  Dependency graph**. These are owner settings changes, not repository content.
+  Listed in [`security-model.md`](security-model.md) §7. The dependency-review
+  step now probes for the graph and records its absence as this open item rather
+  than failing the pull request over a setting a pull request cannot change; the
+  licence deny-list and severity thresholds are enforced offline regardless.
+- **Canonical-document hashes are not verified on a runner.** The two Word
+  documents are external by owner decision and must never be committed, so CI
+  runs `validate:canonical-docs --record-only`: the reference record must parse
+  and every entry must carry a real hash, but the documents themselves are
+  compared only on the owner workstation. A document that _is_ present is still
+  compared, and a `pending` hash still fails, so this cannot hide a mismatch.
+- **`apk` package versions are not pinned** (hadolint DL3018, four sites).
+  Suppressed per line with the reason recorded, not by threshold or by a
+  repository-wide ignore; a new unpinned `apk add` is still reported. Image
+  composition is evidenced by the SBOM, the Trivy scan and the recorded digest.
+
+## What the hosted runs actually found
+
+Three runs, and the first two could not execute at all. Recorded in full in
+[`adversarial-review.md`](evidence/adversarial-review.md).
+
+| Run | Head      | Outcome                                                |
+| --- | --------- | ------------------------------------------------------ |
+| 1   | `8740531` | `startup_failure`, **zero jobs** — AR-28               |
+| 2   | `67014fc` | every job failed in `Set up the project` — AR-29       |
+| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures — AR-30 … AR-33 |
+
+AR-28 and AR-29 were both defects in the _remediation_ for an earlier finding,
+and neither was reachable by reading the files: three adversarial reviewers,
+`actionlint` and this repository's own workflow linter all passed the first.
+Each now has a linter rule at _critical_ — WFS-011 and WFS-012.
+
+The four findings from run 3 were gates working. None of them was fixed by
+weakening a gate; each was reproduced locally first, because GitHub requires a
+signed-in session to read Actions logs even on a public repository and this
+environment has none.
 
 ## Deferred
 

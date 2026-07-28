@@ -188,7 +188,13 @@ jobs:
         run: |
           set -euo pipefail
           npm run validate:encoding
-          npm run validate:canonical-docs
+          # `--record-only` because the two canonical Word documents live OUTSIDE
+          # the repository by owner decision and must never be committed. A
+          # runner cannot see them, so the default mode was a gate that could
+          # only ever be made green by destroying the property it protects.
+          # Record-only still fails on a malformed record, on an entry with no
+          # recorded hash, and on a document that IS present but changed.
+          npm run validate:canonical-docs -- --record-only
           npm run validate:no-fake-data
           npm run security:scope-exclusions
           npm run validate:module-boundaries

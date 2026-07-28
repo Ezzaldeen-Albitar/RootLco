@@ -24,8 +24,29 @@
  *              2 = the reference record itself could not be parsed
  *
  * Usage:
- *   node scripts/validate-canonical-documents.mjs           # verify
- *   node scripts/validate-canonical-documents.mjs --print   # print actual hashes
+ *   node scripts/validate-canonical-documents.mjs                 # verify
+ *   node scripts/validate-canonical-documents.mjs --print         # print hashes
+ *   node scripts/validate-canonical-documents.mjs --record-only   # CI
+ *
+ * ON `--record-only`
+ *
+ * The documents live outside the repository BY DESIGN, and nothing may copy
+ * them in. A hosted runner therefore cannot ever see them: absence there is the
+ * designed state, not a finding. Running the default mode in CI produced a gate
+ * that could never go green — which is worse than no gate, because the only way
+ * to make it pass would be to commit the documents and destroy the very
+ * property this script exists to protect.
+ *
+ * `--record-only` checks what a runner genuinely can:
+ *   - the reference record parses and lists at least one document;
+ *   - every entry carries a filename, a relative path, and a REAL recorded
+ *     hash (`pending` or missing is a failure — an unrecorded hash means the
+ *     owner-workstation check would have nothing to compare against);
+ *   - any document that IS present still matches.
+ *
+ * It is not a way to dodge a mismatch. A changed document fails in this mode
+ * exactly as it does in the default one; only ABSENCE is treated as expected,
+ * and the report says so per document rather than staying silent.
  */
 
 import { createHash } from 'node:crypto';
@@ -38,6 +59,7 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RECORD = resolve(REPO_ROOT, 'docs/governance/canonical-documents.md');
 const PRINT_ONLY = process.argv.includes('--print');
+const RECORD_ONLY = process.argv.includes('--record-only');
 
 /** Reads the machine-readable block out of the reference record. */
 async function loadRecord() {
@@ -104,16 +126,50 @@ console.log(`Reference record: docs/governance/canonical-documents.md`);
 console.log(`Repository root:  ${REPO_ROOT}\n`);
 
 let problems = 0;
+let unverifiable = 0;
+
+if (RECORD_ONLY) {
+  console.log(
+    'Record-only mode: the documents are external by design and cannot exist\n' +
+      'here. Verifying the reference record instead; a document that IS present\n' +
+      'is still compared.\n'
+  );
+}
 
 for (const doc of docs) {
   const rel = doc.relativePath;
-  const abs = isAbsolute(rel) ? rel : resolve(REPO_ROOT, rel);
   process.stdout.write(`- ${doc.filename}\n`);
   process.stdout.write(`    expected at: ${rel}\n`);
+
+  // Checked in EVERY mode. An entry with no path or no recorded hash makes the
+  // owner-workstation check vacuous — it would have nothing to compare against
+  // — so the record itself is a gate regardless of where this runs.
+  if (typeof rel !== 'string' || rel.length === 0) {
+    console.log(`    STATUS:      RECORD INVALID -- no relativePath\n`);
+    problems++;
+    continue;
+  }
+  const recorded = (doc.sha256 ?? '').toLowerCase();
+  if (!PRINT_ONLY && !/^[0-9a-f]{64}$/.test(recorded)) {
+    console.log(
+      `    STATUS:      RECORD INVALID -- sha256 is ${recorded ? `'${recorded}'` : 'absent'}, not a 64-character hash\n`
+    );
+    problems++;
+    continue;
+  }
+
+  const abs = isAbsolute(rel) ? rel : resolve(REPO_ROOT, rel);
 
   try {
     await access(abs, constants.R_OK);
   } catch {
+    if (RECORD_ONLY) {
+      // Absence is the designed state off the owner workstation. Reported per
+      // document so the log never implies the hash was compared.
+      console.log(`    STATUS:      EXTERNAL -- absent here, hash NOT compared\n`);
+      unverifiable++;
+      continue;
+    }
     console.log(`    STATUS:      MISSING or unreadable\n`);
     problems++;
     continue;
@@ -136,6 +192,8 @@ for (const doc of docs) {
     console.log(`    STATUS:      NOT RECORDED -- no hash to compare against\n`);
     problems++;
   } else if (expected === actual) {
+    // Reached in record-only mode too: a document that happens to be present
+    // is compared, so this mode cannot be used to slip a changed document past.
     console.log(`    STATUS:      OK (matches recorded hash)\n`);
   } else {
     console.log(`    STATUS:      CHANGED`);
@@ -153,6 +211,19 @@ if (problems > 0) {
   console.error(`${problems} of ${docs.length} canonical document(s) failed verification.`);
   console.error(GUIDANCE);
   process.exit(1);
+}
+
+if (RECORD_ONLY) {
+  const compared = docs.length - unverifiable;
+  console.log(
+    `Reference record valid for all ${docs.length} document(s): each has a path and a recorded hash.`
+  );
+  console.log(
+    `${compared} compared here, ${unverifiable} external and NOT compared. ` +
+      'Hash verification against the external documents happens on the owner workstation ' +
+      '(`npm run validate:canonical-docs`), not here.'
+  );
+  process.exit(0);
 }
 
 console.log(`All ${docs.length} canonical documents verified. Nothing was copied or modified.`);
