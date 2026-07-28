@@ -20,19 +20,29 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas, scopeTargetOption } from '@/server/http/validation';
-import { MAX_DESCRIPTION, inventoryModule } from '@/modules/inventory';
+import { LOCATION_CODE_FORMAT, MAX_DESCRIPTION, inventoryModule } from '@/modules/inventory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * `.strict()` is load-bearing: it refuses `countedBy`.
+ *
+ * `counted_by` is NOT NULL and `ck_opening_inventory_batches_maker` forbids the
+ * approver from equalling it, so the column is one half of the maker-checker rule.
+ * If a caller could name the counter, one person could open a batch "counted by" a
+ * colleague and approve it themselves — satisfying the CHECK while defeating the
+ * separation it exists to create. The counter is the authenticated caller, full stop.
+ */
 const CreateBody = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
+    // `ck_opening_inventory_batches_code_format`, unique per branch.
+    batchCode: z.string().regex(LOCATION_CODE_FORMAT, 'must be an alphanumeric batch code'),
     // `as_of_date` is a `date`, so a plain ISO date — accepting a timestamp would
     // imply a precision the column does not have.
     asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be an ISO date (YYYY-MM-DD)'),
-    countedBy: schemas.uuid.optional(),
     notes: z.string().min(1).max(MAX_DESCRIPTION).optional(),
   })
   .strict();
@@ -70,8 +80,8 @@ export async function POST(request: Request): Promise<Response> {
         {
           companyId: parsed.companyId,
           branchId: parsed.branchId,
+          batchCode: parsed.batchCode,
           asOfDate: parsed.asOfDate,
-          ...(parsed.countedBy === undefined ? {} : { countedBy: parsed.countedBy }),
           ...(parsed.notes === undefined ? {} : { notes: parsed.notes }),
         },
         authorizeScope

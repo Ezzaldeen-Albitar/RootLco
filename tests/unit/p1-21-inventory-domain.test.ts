@@ -175,7 +175,6 @@ describe('Quantity is exact at the third decimal', () => {
   it('refuses a number, so a lossy value cannot enter through the type system', () => {
     // @ts-expect-error deliberately passing the wrong type — this is the guard.
     expect(() => Quantity.parse(5)).toThrow(InventoryRuleError);
-    // @ts-expect-error same, on the database-facing constructor.
     expect(() => Quantity.fromDatabase(5)).toThrow(InventoryRuleError);
     expect(() => Quantity.fromDatabase(null)).toThrow(InventoryRuleError);
     // `pg` returns numeric as a string, and that is what must be accepted.

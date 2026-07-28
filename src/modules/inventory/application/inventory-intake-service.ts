@@ -31,8 +31,10 @@ export interface OpeningBatchView {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
+  readonly batchCode: string;
   readonly status: string;
-  readonly countedBy: string | null;
+  /** The caller who opened the batch. Never a caller-supplied value. */
+  readonly countedBy: string;
   readonly approvedBy: string | null;
   readonly recordVersion: number;
 }
@@ -123,8 +125,8 @@ export class InventoryIntakeService {
     input: {
       readonly companyId: string;
       readonly branchId: string;
+      readonly batchCode: string;
       readonly asOfDate: string;
-      readonly countedBy?: string;
       readonly notes?: string;
     },
     authorizeScope: ScopeAuthorizer
@@ -135,8 +137,19 @@ export class InventoryIntakeService {
       batch = await this.repository.createOpeningBatch(db, {
         companyId: input.companyId,
         branchId: input.branchId,
+        batchCode: input.batchCode,
         asOfDate: input.asOfDate,
-        countedBy: input.countedBy ?? null,
+        /**
+         * The counter is the CALLER, and is not a settable field.
+         *
+         * `counted_by` is NOT NULL and `ck_opening_inventory_batches_maker` forbids
+         * the approver from equalling it, so this column is one half of the
+         * maker-checker rule. If a caller could name an arbitrary counter, one person
+         * could open a batch "counted by" a colleague and then approve it themselves
+         * — satisfying the CHECK while defeating the separation it exists to create.
+         * Taking it from the request context makes that unrepresentable.
+         */
+        countedBy: db.context.principal.userId,
         notes: input.notes ?? null,
       });
     } catch (error) {
@@ -151,8 +164,10 @@ export class InventoryIntakeService {
       branchId: batch.branchId,
       requestRef: 'inv.opening-batch-create',
       details: [
+        { field: 'batchCode', classification: 'internal', value: batch.batchCode },
         { field: 'asOfDate', classification: 'internal', value: input.asOfDate },
         { field: 'status', classification: 'internal', value: batch.status },
+        { field: 'countedBy', classification: 'internal', value: batch.countedBy },
       ],
     });
     return batch;
@@ -210,6 +225,11 @@ export class InventoryIntakeService {
     try {
       line = await this.repository.addOpeningLine(db, {
         batchId: input.batchId,
+        // From the BATCH, never from the request: the line's scope columns are what
+        // its RLS policy narrows on, and taking them from the caller would let a
+        // line claim a branch the batch was never authorized for.
+        companyId: batch.companyId,
+        branchId: batch.branchId,
         itemId: input.itemId,
         locationId: input.locationId,
         quantity: quantity.toString(),

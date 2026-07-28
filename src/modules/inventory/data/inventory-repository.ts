@@ -171,8 +171,11 @@ export interface OpeningBatchRow {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
+  /** `ck_opening_inventory_batches_code_format`. NOT NULL. */
+  readonly batchCode: string;
   readonly status: string;
-  readonly countedBy: string | null;
+  /** NOT NULL, and `ck_opening_inventory_batches_maker` forbids approver = counter. */
+  readonly countedBy: string;
   readonly approvedBy: string | null;
   readonly recordVersion: number;
 }
@@ -503,8 +506,9 @@ export class InventoryRepository extends Repository {
     input: {
       readonly companyId: string;
       readonly branchId: string;
+      readonly batchCode: string;
       readonly asOfDate: string;
-      readonly countedBy: string | null;
+      readonly countedBy: string;
       readonly notes: string | null;
     }
   ): Promise<OpeningBatchRow> {
@@ -513,20 +517,23 @@ export class InventoryRepository extends Repository {
       id: string;
       company_id: string;
       branch_id: string;
+      batch_code: string;
       status: string;
-      counted_by: string | null;
+      counted_by: string;
       approved_by: string | null;
       record_version: number;
     }>(
       db,
       `INSERT INTO inv.opening_inventory_batches
-         (tenant_id, company_id, branch_id, as_of_date, counted_by, notes, created_by)
-       VALUES ($1, $2, $3, $4::date, $5, $6, $7)
-       RETURNING id, company_id, branch_id, status, counted_by, approved_by, record_version`,
+         (tenant_id, company_id, branch_id, batch_code, as_of_date, counted_by, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8)
+       RETURNING id, company_id, branch_id, batch_code, status, counted_by, approved_by,
+                 record_version`,
       [
         context.principal.tenantId,
         input.companyId,
         input.branchId,
+        input.batchCode,
         input.asOfDate,
         input.countedBy,
         input.notes,
@@ -538,6 +545,7 @@ export class InventoryRepository extends Repository {
       id: row.id,
       companyId: row.company_id,
       branchId: row.branch_id,
+      batchCode: row.batch_code,
       status: row.status,
       countedBy: row.counted_by,
       approvedBy: row.approved_by,
@@ -551,13 +559,15 @@ export class InventoryRepository extends Repository {
       id: string;
       company_id: string;
       branch_id: string;
+      batch_code: string;
       status: string;
-      counted_by: string | null;
+      counted_by: string;
       approved_by: string | null;
       record_version: number;
     }>(
       db,
-      `SELECT id, company_id, branch_id, status, counted_by, approved_by, record_version
+      `SELECT id, company_id, branch_id, batch_code, status, counted_by, approved_by,
+              record_version
          FROM inv.opening_inventory_batches
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
       [context.principal.tenantId, batchId]
@@ -567,6 +577,7 @@ export class InventoryRepository extends Repository {
           id: row.id,
           companyId: row.company_id,
           branchId: row.branch_id,
+          batchCode: row.batch_code,
           status: row.status,
           countedBy: row.counted_by,
           approvedBy: row.approved_by,
@@ -580,20 +591,26 @@ export class InventoryRepository extends Repository {
     db: DbHandle,
     input: {
       readonly batchId: string;
+      readonly companyId: string;
+      readonly branchId: string;
       readonly itemId: string;
       readonly locationId: string;
       readonly quantity: string;
     }
   ): Promise<{ readonly id: string }> {
     const context = this.assertContext(db);
+    // The line carries its OWN company and branch — both NOT NULL, and what its RLS
+    // policy narrows on, so they cannot be left to be inherited silently.
     const row = await this.runOne<{ id: string }>(
       db,
       `INSERT INTO inv.opening_inventory_lines
-         (tenant_id, batch_id, item_id, location_id, quantity, created_by)
-       VALUES ($1, $2, $3, $4, $5::numeric, $6)
+         (tenant_id, company_id, branch_id, batch_id, item_id, location_id, quantity, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8)
        RETURNING id`,
       [
         context.principal.tenantId,
+        input.companyId,
+        input.branchId,
         input.batchId,
         input.itemId,
         input.locationId,
