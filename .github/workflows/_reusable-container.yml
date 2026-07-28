@@ -214,14 +214,22 @@ jobs:
           # printed its usage message, matched nothing, and exited 0 — a check
           # that could never fail. Hence `find … -exec grep` (POSIX), and hence
           # the file count, which makes the scan prove it actually ran.
-          # The count MUST come from the same grep invocation that searches. An
-          # earlier version counted with a second, independent `find` that never
-          # invoked grep, so a total failure of the grep arm still produced a
-          # healthy count — the counter added to catch that failure could not
-          # have caught it. A planted CANARY is the positive control: a scan that
-          # cannot find a key it just wrote proves nothing about the keys it did
-          # not find. The canary header is assembled at runtime so this file does
-          # not itself contain a credential shape.
+          # TWO signals, and only one of them is load-bearing.
+          #
+          # The CANARY is the control: a planted key the scan must find. A scan
+          # that cannot find a key it just wrote proves nothing about the keys it
+          # did NOT find, whatever else it reports. This is what catches the
+          # busybox-grep failure (AR-36), and unlike a file count it fails for
+          # every reason the search could be broken.
+          #
+          # The count is a COVERAGE indicator, not proof of execution: it is a
+          # separate `find … -exec grep -cH ""` enumeration and would survive a
+          # failure of the key search. An earlier comment here claimed it came
+          # from the same invocation as the search. It did not, and saying so was
+          # the same kind of unearned assurance this job exists to catch.
+          #
+          # The canary header is assembled at runtime so this file does not
+          # itself contain a credential shape.
           scan="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
             'kw="PRIV""ATE KEY"; printf -- "-----BEGIN CANARY %s-----\n" "${kw}" > /tmp/.keyscan-canary
              find / -xdev -type f -exec grep -lE "BEGIN ([A-Z ]+ )?PRIVATE KEY" {} + 2>/dev/null | head -20
@@ -359,7 +367,7 @@ jobs:
           # A path inventory cannot prove the absence of vendored code. It can
           # prove no package manager is installed, so that is what is asserted.
           pm_found="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
-            'for pm in npm npx yarn yarnpkg pnpm corepack bun; do
+            'for pm in npm npx yarn yarnpkg pnpm corepack bun apk; do
                p="$(command -v "${pm}" 2>/dev/null)" || p=""
                [ -n "${p}" ] && printf "%s -> %s\n" "${pm}" "${p}"
              done
@@ -375,7 +383,7 @@ jobs:
 
           # --- no npm cache or package manager state -------------------------
           for forbidden in '/.npm/' '/.npmrc' '/npm-cache/' '/.yarn/' '/.pnpm-store/'; do
-            hits="$(grep -c -- "${forbidden}" image-files.txt || printf 0)"
+            hits="$(grep -c -- "${forbidden}" image-files.txt)" || hits=0
             if [ "${hits}" -gt 0 ]; then
               echo "::error::package-manager state '${forbidden}' is present in the production image."
               bad=1

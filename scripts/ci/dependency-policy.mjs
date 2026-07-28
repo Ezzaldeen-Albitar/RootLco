@@ -562,7 +562,7 @@ export function evaluate({
 
 export function toMarkdown(result) {
   const lines = ['### Dependency and supply chain', ''];
-  lines.push('| Tree | Blocking advisories | Waived | Policy |');
+  lines.push('| Tree | Advisories found | Of those, waived | Policy |');
   lines.push('| --- | --- | --- | --- |');
   lines.push(`| production | ${result.production.blocking} | 0 | no exceptions permitted |`);
   lines.push(

@@ -141,6 +141,21 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
       fi; \
     done
 
+# apk goes too. It is a package manager, it was still on PATH at /sbin/apk, and
+# the container gate was printing "no package manager resolves in the production
+# image" while it did — a false statement in a security gate, which is the thing
+# this initiative exists to stop.
+#
+# Removed rather than excused: the runtime needs curl (installed above, in an
+# earlier layer) and nothing else, so an OS package manager on a deployed host is
+# an installer for whatever an attacker with RCE wants next.
+RUN rm -rf /sbin/apk /etc/apk /lib/apk /usr/share/apk /var/cache/apk \
+ && for pm in npm npx yarn yarnpkg pnpm corepack apk; do \
+      if command -v "$pm" >/dev/null 2>&1; then \
+        echo "FATAL: $pm still resolves after removal" >&2; exit 1; \
+      fi; \
+    done
+
 # `output: standalone` emits a minimal server plus only the deps it actually uses.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
