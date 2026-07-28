@@ -166,7 +166,196 @@ export function resolveRootAdvisories(auditJson, packageName, seen = new Set()) 
   return roots;
 }
 
-export function evaluate({ prodAudit, devAudit, exceptions, licences, installedPackages, today }) {
+/**
+ * An exception is honoured only when it matches on EVERY axis it claims.
+ *
+ * The identity of a waiver is not "this advisory id". It is: this advisory,
+ * against this package, over this affected range, resolved at these exact
+ * dependency nodes, and not production-reachable. If any of those changes, the
+ * risk decision that was approved is no longer the risk that exists.
+ *
+ * Returns true when the exception is REJECTED.
+ */
+export function validateExactMatch(entry, advisory, devAudit, failures, proofs = {}) {
+  const node = devAudit?.vulnerabilities?.[advisory.package];
+  let rejected = false;
+  const reject = (message) => {
+    failures.push(message);
+    rejected = true;
+  };
+
+  // --- one package -------------------------------------------------------
+  if (entry.package && entry.package !== advisory.package) {
+    reject(
+      `exception \`${entry.id}\` is recorded for package \`${entry.package}\` but matched an advisory on ` +
+        `\`${advisory.package}\`. A waiver is granted for one package, not for an advisory identifier.`
+    );
+  }
+
+  // --- one affected range ------------------------------------------------
+  // Widening the recorded range is how a waiver silently grows to cover
+  // versions nobody assessed.
+  const observedRange = advisory.range ?? node?.range ?? null;
+  if (entry.affectedRange && observedRange && entry.affectedRange !== observedRange) {
+    reject(
+      `exception \`${entry.id}\` records affected range \`${entry.affectedRange}\` but npm reports ` +
+        `\`${observedRange}\`. The advisory's scope changed; re-assess rather than widening the entry.`
+    );
+  }
+
+  // --- one dependency path -----------------------------------------------
+  // `nodes` is npm's own list of the resolved locations. It is the stable
+  // fingerprint: if the dependency path moves, this changes.
+  if (Array.isArray(entry.dependencyNodes)) {
+    const observed = [...(node?.nodes ?? [])].sort();
+    const recorded = [...entry.dependencyNodes].sort();
+    if (JSON.stringify(observed) !== JSON.stringify(recorded)) {
+      reject(
+        `exception \`${entry.id}\` records dependency nodes ${JSON.stringify(recorded)} but the installed ` +
+          `tree resolves ${JSON.stringify(observed)}. The dependency path changed, so the reachability ` +
+          'evidence behind this waiver no longer describes what is installed.'
+      );
+    }
+  } else {
+    reject(
+      `exception \`${entry.id}\` records no \`dependencyNodes\`. Without the exact dependency path there is ` +
+        'nothing to detect when the path changes, and the waiver becomes open-ended.'
+    );
+  }
+
+  // --- production reachability must be claimed AND evidenced -------------
+  if (entry.productionReachable !== false) {
+    reject(
+      `exception \`${entry.id}\` does not assert \`productionReachable: false\`. Only development-tree ` +
+        'advisories may be waived.'
+    );
+  }
+  if (!entry.productionReachableEvidence) {
+    reject(
+      `exception \`${entry.id}\` claims it is not production-reachable but records no evidence. ` +
+        'An unevidenced safety claim is the thing this file exists to prevent.'
+    );
+  }
+  if (entry.finalContainerReachable !== false || !entry.finalContainerReachableEvidence) {
+    reject(
+      `exception \`${entry.id}\` must assert \`finalContainerReachable: false\` WITH evidence taken from ` +
+        'the built image, not from the package.json classification.'
+    );
+  }
+
+  // --- the CLAIM must agree with the mechanically derived PROOF ----------
+  // Everything above validates what the entry SAYS. This checks it against
+  // what dependency-path-proof.mjs actually found, so a waiver cannot go on
+  // asserting "not production reachable" after the package moves into the
+  // production tree.
+  const proof = proofs[entry.package];
+  if (proof) {
+    if (proof.productionReachable === true) {
+      reject(
+        `exception \`${entry.id}\`: \`${entry.package}\` IS production-reachable according to the ` +
+          'dependency-path proof, but the entry claims it is not. The waiver is void.'
+      );
+    }
+    if (proof.inRunnerImage === true) {
+      reject(
+        `exception \`${entry.id}\`: \`${entry.package}\` is present in the built runner image, but the ` +
+          'entry claims the final container does not reach it.'
+      );
+    }
+    if (Array.isArray(proof.directImports) && proof.directImports.length > 0) {
+      reject(
+        `exception \`${entry.id}\`: application source imports \`${entry.package}\` directly ` +
+          `(${proof.directImports.join(', ')}), so it is not development tooling.`
+      );
+    }
+    // The proof's own node list must agree with the recorded one — a second,
+    // independent derivation of the same fingerprint.
+    if (Array.isArray(entry.dependencyNodes) && Array.isArray(proof.instances)) {
+      const proven = proof.instances
+        .filter((i) => entry.installedAffectedVersions?.includes(i.version))
+        .map((i) => i.path)
+        .sort();
+      const recorded = [...entry.dependencyNodes].sort();
+      if (proven.length > 0 && JSON.stringify(proven) !== JSON.stringify(recorded)) {
+        reject(
+          `exception \`${entry.id}\`: the dependency-path proof resolves the affected versions at ` +
+            `${JSON.stringify(proven)}, which disagrees with the recorded ${JSON.stringify(recorded)}.`
+        );
+      }
+    }
+  } else if (entry.requiresReachabilityProof !== false) {
+    reject(
+      `exception \`${entry.id}\` requires a dependency-path proof for \`${entry.package}\` and none was ` +
+        'supplied. Pass --reachability-proof; an unproven reachability claim is not evidence.'
+    );
+  }
+
+  // --- the advisory itself must still be development-only ----------------
+  // npm marks a node `isDirect`/`dev`; if it ever stops being dev-only the
+  // waiver is void whatever the entry says.
+  if (node && node.isDirect === true) {
+    reject(
+      `exception \`${entry.id}\`: \`${advisory.package}\` is now a DIRECT dependency. A waiver granted for a ` +
+        'transitive development tool does not cover a direct one.'
+    );
+  }
+
+  // --- a compatible fix must not already exist ---------------------------
+  // `fixAvailable` is an object when npm can fix it; `isSemVerMajor: false`
+  // means the fix is compatible. An exception that survives a compatible fix
+  // is an exception nobody is acting on.
+  const fix = node?.fixAvailable;
+  if (fix && typeof fix === 'object' && fix.isSemVerMajor === false) {
+    reject(
+      `exception \`${entry.id}\`: a COMPATIBLE fix is now available (\`${fix.name}@${fix.version}\`, ` +
+        'not a semver-major change). Apply it and remove the exception.'
+    );
+  }
+  if (fix === true) {
+    reject(
+      `exception \`${entry.id}\`: npm reports a fix is available without a breaking change. ` +
+        'Apply it and remove the exception.'
+    );
+  }
+
+  // --- the record must carry its evidence --------------------------------
+  for (const field of [
+    'severity',
+    'patchedVersion',
+    'environment',
+    'exploitability',
+    'reasonUpgradeCannotBeApplied',
+    'attemptedRemediation',
+    'attemptedRemediationResult',
+    'owner',
+    'createdOn',
+    'reviewBy',
+    'expiresOn',
+    'removalCondition',
+  ]) {
+    if (!entry[field]) {
+      reject(`exception \`${entry.id}\` is missing the required field \`${field}\`.`);
+    }
+  }
+  if (!Array.isArray(entry.compensatingControls) || entry.compensatingControls.length === 0) {
+    reject(`exception \`${entry.id}\` records no compensating controls.`);
+  }
+  if (!Array.isArray(entry.evidenceLinks) || entry.evidenceLinks.length === 0) {
+    reject(`exception \`${entry.id}\` records no evidence links.`);
+  }
+
+  return rejected;
+}
+
+export function evaluate({
+  prodAudit,
+  devAudit,
+  exceptions,
+  licences,
+  installedPackages,
+  today,
+  proofs = {},
+}) {
   const failures = [];
   const warnings = [];
   const now = today ? new Date(today) : new Date();
@@ -204,6 +393,12 @@ export function evaluate({ prodAudit, devAudit, exceptions, licences, installedP
     // tree.
     let entry = entries.find((e) => e.id && (e.id === advisory.ghsa || e.id === key));
     let matchedEntries = entry ? [entry] : [];
+    // A DIRECT match is the advisory on the package the exception was written
+    // for — that is where the exact package/range/dependency-path checks apply.
+    // An INHERITED match is an ancestor exposed to the same root advisory;
+    // validating the waiver's fingerprint against an ancestor would compare
+    // `brace-expansion`'s recorded nodes with `eslint`'s, which is meaningless.
+    let matchKind = entry ? 'direct' : null;
 
     if (!entry && !advisory.ghsa) {
       const roots = resolveRootAdvisories(devAudit, advisory.package);
@@ -220,6 +415,7 @@ export function evaluate({ prodAudit, devAudit, exceptions, licences, installedP
         if (matched.every(Boolean)) {
           matchedEntries = matched;
           entry = matched[0];
+          matchKind = 'inherited';
           advisory.transitiveVia = rootIds;
         }
       } else if (roots.length > 0) {
@@ -246,31 +442,64 @@ export function evaluate({ prodAudit, devAudit, exceptions, licences, installedP
     let rejected = false;
     for (const matched of matchedEntries) {
       usedExceptions.add(matched.id);
+
+      // Two dates with two different jobs. `reviewBy` is when a human must look
+      // again — missing it is a warning, because the risk has not changed.
+      // `expiresOn` is when the gate goes red, because an open-ended exception
+      // is an accepted risk nobody re-decided.
       const review = new Date(matched.reviewBy);
-      if (Number.isNaN(review.getTime())) {
-        failures.push(`exception \`${matched.id}\` has an unparseable \`reviewBy\` date.`);
+      const expiry = new Date(matched.expiresOn ?? matched.reviewBy);
+      if (Number.isNaN(expiry.getTime())) {
+        failures.push(`exception \`${matched.id}\` has an unparseable expiry date.`);
         rejected = true;
-      } else if (review < now) {
+      } else if (expiry < now) {
         failures.push(
-          `exception \`${matched.id}\` for \`${advisory.package}\` expired on ${matched.reviewBy}. ` +
-            'Re-check whether a patched release now exists; extend the date only with a fresh reason.'
+          `exception \`${matched.id}\` for \`${advisory.package}\` EXPIRED on ` +
+            `${matched.expiresOn ?? matched.reviewBy}. Re-check whether a compatible patched release now ` +
+            'exists; extend the date only with a fresh, written reason.'
         );
         rejected = true;
-      } else if (!matched.reason || !matched.owner) {
-        failures.push(`exception \`${matched.id}\` is missing a reason or an owner.`);
+      } else if (!Number.isNaN(review.getTime()) && review < now) {
+        warnings.push(
+          `exception \`${matched.id}\` passed its review date (${matched.reviewBy}) and expires on ` +
+            `${matched.expiresOn}. Re-check it now rather than on the day it turns the gate red.`
+        );
+      }
+      if (!matched.reason && !matched.reasonUpgradeCannotBeApplied) {
+        failures.push(`exception \`${matched.id}\` records no reason.`);
+        rejected = true;
+      }
+      if (!matched.owner) {
+        failures.push(`exception \`${matched.id}\` records no owner.`);
         rejected = true;
       }
     }
+    // ---- the exception must match EXACTLY, not merely by advisory id ------
+    // One advisory, one package, one affected range, one dependency-path
+    // fingerprint. Applied ONLY to the direct match: an ancestor inherits the
+    // waiver because its root is waived, and comparing the waiver's recorded
+    // package and nodes against an ancestor's would compare two different
+    // things and always disagree.
+    if (matchKind === 'direct') {
+      for (const matched of matchedEntries) {
+        rejected = validateExactMatch(matched, advisory, devAudit, failures, proofs) || rejected;
+      }
+    }
+
     if (rejected) continue;
-    acceptedDev.push({ ...advisory, exception: entry });
+    acceptedDev.push({ ...advisory, exception: entry, matchKind });
   }
 
-  // An exception that matches nothing is dead weight that makes the list look
-  // more permissive than it is.
+  // An exception that matches nothing is not dead weight to be warned about —
+  // it is a FAILURE. Either the advisory was fixed and the entry must go, or
+  // the dependency moved and the entry no longer describes reality. Both make
+  // the list look more permissive than it is.
   for (const entry of entries) {
     if (!usedExceptions.has(entry.id)) {
-      warnings.push(
-        `exception \`${entry.id}\` matched no current advisory — the underlying issue is probably fixed. Remove it.`
+      failures.push(
+        `exception \`${entry.id}\` (${entry.package ?? 'unknown package'}) matched no current advisory. ` +
+          'Either the issue is fixed — remove the entry — or the dependency path changed and the entry no ' +
+          'longer describes what is installed. An exception that outlives its cause is worse than none.'
       );
     }
   }
@@ -412,6 +641,26 @@ function main(argv) {
   );
   const licences = readJson(arg('--licences'), 'licence inventory', []);
 
+  // Dependency-path proofs, keyed by package. Each is the output of
+  // scripts/ci/dependency-path-proof.mjs — a mechanical derivation the gate
+  // cross-checks every reachability CLAIM against, so an exception cannot go on
+  // asserting "development only" after the package moves.
+  const proofs = {};
+  for (const path of (arg('--reachability-proof') ?? '').split(',').filter(Boolean)) {
+    if (!existsSync(path)) {
+      console.error(`::error::reachability proof not found at ${path}`);
+      process.exit(2);
+    }
+    try {
+      const proof = JSON.parse(readFileSync(path, 'utf8'));
+      if (!proof.package) throw new Error('proof has no `package` field');
+      proofs[proof.package] = proof;
+    } catch (error) {
+      console.error(`::error::reachability proof at ${path} is unusable: ${error.message}`);
+      process.exit(2);
+    }
+  }
+
   const installedPackages = new Set();
   if (existsSync('package-lock.json')) {
     const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
@@ -421,7 +670,7 @@ function main(argv) {
     }
   }
 
-  const result = evaluate({ prodAudit, devAudit, exceptions, licences, installedPackages });
+  const result = evaluate({ prodAudit, devAudit, exceptions, licences, installedPackages, proofs });
 
   const md = toMarkdown(result);
   const mdOut = arg('--markdown');

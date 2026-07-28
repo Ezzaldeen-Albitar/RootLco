@@ -102,6 +102,13 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 
 **Production is now at zero.**
 
+### Status
+
+**Production dependency advisories: Resolved through compatible patch upgrades.**
+
+**brace-expansion advisory: Open — upstream-blocked development-tooling exception
+with no proven production or runtime reachability.**
+
 ### The one development exception
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion`, reaching the tree through `minimatch`
@@ -109,17 +116,68 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 
 It has **no consumable fix**. The advisory affects every release up to and
 including 5.0.7; the only patched release is 5.0.8, whose changed export shape
-breaks `minimatch` — verified, not assumed: overriding to `^5.0.8` makes
-`npm run lint` fail with `TypeError: expand is not a function`. There is no
-patched release in the 1.x, 2.x, 3.x or 4.x lines for `minimatch` to consume.
+breaks `minimatch` — verified by execution, not assumed: overriding to `^5.0.8`
+makes `npm run lint` fail with `TypeError: expand is not a function` at
+`Minimatch.braceExpand`. There is no patched release in the 1.x, 2.x, 3.x or 4.x
+lines for `minimatch` to consume, and npm's own `fixAvailable` names
+`eslint@10.8.0` with `isSemVerMajor: true`.
 
-Owner: platform-owner. Review by 2026-10-31. `dependency-policy.mjs` fails on an
-exception that matches nothing, so the file cannot outlive the problem.
+The override was reverted completely and must not be reintroduced. ESLint is not
+weakened, no rule is disabled, and no lint coverage is removed.
 
-Transitive nodes are resolved to their **root** advisory before being matched
-against the exception list. Waiving twelve package names for one problem would
-overstate the damage and, worse, mean a genuinely new advisory in `eslint` landed
-on an already-waived name and passed silently.
+Of the three resolved instances, **one is already patched**: `minimatch@10.2.5`
+requires `^5.0.5`, so `node_modules/brace-expansion` resolves to 5.0.8. Only the
+1.1.16 and 2.1.3 instances are affected, and npm's `nodes` list names exactly
+those two.
+
+Full evidence:
+[`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
+
+| Question                              | Answer                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| Production-tree instances             | **0** — `npm ls brace-expansion --omit=dev --all` returns `(empty)`      |
+| Production audit                      | **0 vulnerabilities**                                                    |
+| Present in the built runner image     | **no** — asserted against the actual image filesystem on a hosted runner |
+| Imported by `src/` or `scripts/`      | **no**                                                                   |
+| Attacker-controlled patterns reach it | **no** — every glob comes from committed configuration                   |
+| Exploitability in RootLco's runtime   | **not reachable based on current evidence**                              |
+
+Owner: platform-owner. Created 2026-07-28, review 2026-09-30, **expires
+2026-10-31**. Approval status: pending owner approval — recorded with full
+evidence, awaiting explicit acceptance as a risk decision.
+
+### What makes it an _exact_ exception
+
+One advisory, one package, one affected range, one dependency-path fingerprint,
+one expiry. The gate fails if any of them stops matching:
+
+| Rule | Fails when                                                                          |
+| ---- | ----------------------------------------------------------------------------------- |
+| 1    | `npm audit` errored or produced malformed output                                    |
+| 2    | — production and development findings are reported separately                       |
+| 3    | any unwaived Critical/High production finding exists                                |
+| 4    | an exception lacks evidence, an owner, or any required field                        |
+| 5    | an exception matches nothing                                                        |
+| 6    | an exception has passed its expiry                                                  |
+| 7    | the package becomes production-reachable, enters the image, or is imported directly |
+| 8    | the resolved dependency nodes stop matching the recorded ones                       |
+| 9    | a **compatible** patched version becomes available while the exception remains      |
+| 10   | — the report separates resolved, blocked, waived, reachability and expiry           |
+
+Every rule has a mutation test in
+[`tests/ci/dependency-gate.test.ts`](../../../tests/ci/dependency-gate.test.ts):
+remove the exception, broaden its range, omit the dependency path, claim
+production-safety without evidence, expire it, add an unwaived High, return an
+audit error object, make the package production-reachable, and land a compatible
+patched version while keeping the exception. Each makes the gate fail. Deleting
+a _rule_ makes its test fail — verified.
+
+Transitive nodes are resolved to their **root** advisory before being matched.
+Waiving twelve package names for one problem would overstate the damage and,
+worse, mean a genuinely new advisory in `eslint` landed on an already-waived name
+and passed silently. The exact-match rules apply to the direct match only —
+comparing the waiver's recorded package and nodes against an _ancestor_ would
+compare two different things.
 
 ### Prohibited packages
 

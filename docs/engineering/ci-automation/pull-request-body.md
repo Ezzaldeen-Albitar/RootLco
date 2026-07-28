@@ -120,10 +120,35 @@ a hosted runner is committed **unset**, with the reason stated in the file:
   (`next` SSRF ×2, unauthenticated Server Function disclosure, proxy bypass,
   cache confusion ×2, DoS ×2, image DoS; `postcss` ×3; `sharp` libvips).
   Closed by `next` 16.2.10 → 16.2.12 plus `overrides` for `postcss` and `sharp`.
-- **Development: one itemised, expiring exception** — `GHSA-mh99-v99m-4gvg`
-  in `brace-expansion`, which has no consumable patched release in any major
-  line. Overriding to the patched 5.0.8 breaks eslint; this was verified, not
-  assumed.
+  **Production dependency advisories: Resolved through compatible patch upgrades.**
+
+**brace-expansion advisory: Open — upstream-blocked development-tooling
+exception with no proven production or runtime reachability.**
+
+- One exact exception — `GHSA-mh99-v99m-4gvg` in `brace-expansion`. It matches
+  one advisory, one package, one affected range (`<=5.0.7`), one dependency-path
+  fingerprint (two resolved nodes) and one expiry (2026-10-31). There is no
+  package-wide or severity-wide waiver.
+- The claim is cross-checked against a **mechanically derived proof**:
+  `npm ls brace-expansion --omit=dev --all` returns `(empty)`; the production
+  audit reports 0 vulnerabilities; the package is absent from the built runner
+  image, asserted by enumerating the actual image filesystem on a hosted runner;
+  nothing under `src/` or `scripts/` imports it; every glob pattern evaluated in
+  this repository comes from committed configuration.
+- Of the three resolved instances, **one is already patched** — `minimatch@10.2.5`
+  requires `^5.0.5`, so the top-level resolution is 5.0.8. Only 1.1.16 and 2.1.3
+  are affected.
+- The attempted override to `^5.0.8` broke ESLint with
+  `TypeError: expand is not a function`. Verified by execution, reverted
+  completely, and recorded in the exception so nobody retries it blindly. ESLint
+  is not weakened and no lint coverage is removed.
+- Ten gate rules, each with a mutation test: remove the exception, broaden its
+  range, omit the dependency path, claim production-safety without evidence,
+  expire it, add an unwaived High, return an audit error object, make the package
+  production-reachable, land a compatible patched version while keeping the
+  exception. Each makes the gate fail; deleting a rule makes its test fail.
+- Full evidence:
+  [`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
 - Every action pinned to a full commit SHA with a version comment, enforced by
   `check-workflow-security.mjs` (10 rules).
 - CodeQL over `javascript-typescript` **and** `actions`, `security-and-quality`

@@ -342,11 +342,16 @@ describe('container policy', () => {
 
 describe('dependency policy', () => {
   const advisory = (name: string, ghsa: string) => ({
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 1, critical: 0, total: 1 } },
     vulnerabilities: {
       [name]: {
         severity: 'high',
-        isDirect: true,
+        // `isDirect: false` — a waiver granted for a transitive development
+        // tool does not cover a direct dependency, and the gate says so.
+        isDirect: false,
         range: '<1.0.0',
+        nodes: [`node_modules/${name}`],
+        fixAvailable: { name, version: '2.0.0', isSemVerMajor: true },
         via: [
           {
             source: 1,
@@ -354,11 +359,56 @@ describe('dependency policy', () => {
             title: 't',
             url: `https://github.com/advisories/${ghsa}`,
             severity: 'high',
+            range: '<1.0.0',
           },
         ],
       },
     },
   });
+
+  /**
+   * A COMPLETE exception, in the shape the gate now demands.
+   *
+   * The gate requires one advisory, one package, one affected range, one
+   * dependency-path fingerprint, evidenced reachability, and every field a
+   * reviewer would need. Building it here once keeps each test focused on the
+   * single thing it is mutating.
+   */
+  const completeException = (overrides: Record<string, unknown> = {}) => ({
+    id: 'GHSA-dddd-eeee-ffff',
+    package: 'eslint',
+    severity: 'high',
+    affectedRange: '<1.0.0',
+    patchedVersion: '2.0.0',
+    dependencyNodes: ['node_modules/eslint'],
+    environment: 'development tooling only',
+    productionReachable: false,
+    productionReachableEvidence: 'npm ls --omit=dev reports it absent',
+    finalContainerReachable: false,
+    finalContainerReachableEvidence: 'absent from the built image inventory',
+    exploitability: 'not reachable based on current evidence',
+    reasonUpgradeCannotBeApplied: 'no consumable fix',
+    attemptedRemediation: 'override to the patched release',
+    attemptedRemediationResult: 'broke the parent tool',
+    compensatingControls: ['repository-controlled patterns only'],
+    owner: 'platform-owner',
+    createdOn: '2026-07-28',
+    reviewBy: '2099-01-01',
+    expiresOn: '2099-06-01',
+    removalCondition: 'the parent chain accepts a patched version',
+    evidenceLinks: ['docs/engineering/ci-automation/security-model.md'],
+    ...overrides,
+  });
+
+  const proofs = {
+    eslint: {
+      package: 'eslint',
+      productionReachable: false,
+      inRunnerImage: false,
+      directImports: [],
+      instances: [{ path: 'node_modules/eslint', version: '0.9.0', devOnly: true }],
+    },
+  };
 
   it('never waives a production advisory, even with a matching exception', () => {
     const result = evaluateDependencies({
@@ -377,24 +427,17 @@ describe('dependency policy', () => {
     expect(result.failures.join('\n')).toMatch(/never waived/);
   });
 
-  it('waives a development advisory with an unexpired, complete exception', () => {
+  it('waives a development advisory with an unexpired, complete, evidenced exception', () => {
     const result = evaluateDependencies({
       prodAudit: { vulnerabilities: {} },
       devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
-      exceptions: {
-        developmentAdvisories: [
-          {
-            id: 'GHSA-dddd-eeee-ffff',
-            reason: 'no consumable fix',
-            owner: 'platform-owner',
-            reviewBy: '2099-01-01',
-          },
-        ],
-      },
+      exceptions: { developmentAdvisories: [completeException()] },
       licences: [],
       installedPackages: new Set(),
       today: '2026-07-28',
+      proofs,
     });
+    expect(result.failures, result.failures.join('\n')).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.development.waived).toBe(1);
   });
@@ -405,46 +448,66 @@ describe('dependency policy', () => {
       devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
       exceptions: {
         developmentAdvisories: [
-          { id: 'GHSA-dddd-eeee-ffff', reason: 'r', owner: 'o', reviewBy: '2020-01-01' },
+          completeException({ reviewBy: '2020-01-01', expiresOn: '2020-06-01' }),
         ],
       },
       licences: [],
       installedPackages: new Set(),
       today: new Date('2026-07-28'),
+      proofs,
     });
     expect(result.ok).toBe(false);
-    expect(result.failures.join('\n')).toMatch(/expired/);
+    expect(result.failures.join('\n')).toMatch(/EXPIRED/);
   });
 
-  it('fails an exception missing a reason or an owner', () => {
+  it('fails an exception missing an owner', () => {
     const result = evaluateDependencies({
       prodAudit: { vulnerabilities: {} },
       devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
-      exceptions: {
-        developmentAdvisories: [{ id: 'GHSA-dddd-eeee-ffff', reviewBy: '2099-01-01' }],
-      },
+      exceptions: { developmentAdvisories: [completeException({ owner: undefined })] },
       licences: [],
       installedPackages: new Set(),
       today: new Date('2026-07-28'),
+      proofs,
     });
     expect(result.ok).toBe(false);
-    expect(result.failures.join('\n')).toMatch(/missing a reason or an owner/);
+    expect(result.failures.join('\n')).toMatch(/owner/);
   });
 
-  it('warns about an exception that matches nothing, so the list cannot outlive the problem', () => {
+  it('fails an exception whose reachability claim has no proof behind it', () => {
+    // The claim is complete and internally consistent; what is missing is the
+    // mechanically derived evidence. An unproven safety claim is exactly what
+    // this file exists to prevent.
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+      exceptions: { developmentAdvisories: [completeException()] },
+      licences: [],
+      installedPackages: new Set(),
+      today: new Date('2026-07-28'),
+      proofs: {},
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/requires a dependency-path proof/);
+  });
+
+  it('FAILS on an exception that matches nothing, so the list cannot outlive the problem', () => {
+    // Previously a warning. Now a failure: either the advisory was fixed and
+    // the entry must go, or the dependency path changed and the entry no longer
+    // describes reality. Both make the list look more permissive than it is.
     const result = evaluateDependencies({
       prodAudit: { vulnerabilities: {} },
       devAudit: { vulnerabilities: {} },
       exceptions: {
-        developmentAdvisories: [
-          { id: 'GHSA-gone', reason: 'r', owner: 'o', reviewBy: '2099-01-01' },
-        ],
+        developmentAdvisories: [completeException({ id: 'GHSA-gone', package: 'gone' })],
       },
       licences: [],
       installedPackages: new Set(),
       today: new Date('2026-07-28'),
+      proofs,
     });
-    expect(result.warnings.join('\n')).toMatch(/matched no current advisory/);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/matched no current advisory/);
   });
 
   it('refuses a prohibited package outright', () => {

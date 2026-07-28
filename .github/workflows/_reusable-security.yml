@@ -232,6 +232,33 @@ jobs:
       - name: Licence inventory
         run: node scripts/ci/licence-inventory.mjs --json licences.json
 
+      - name: Production dependency tree
+        run: |
+          set -euo pipefail
+          # The production tree as npm ACTUALLY resolves it, not as package.json
+          # classifies it. `npm ls` exits non-zero on an extraneous or missing
+          # package, which is information rather than a failure here — the tree
+          # is still written, and the parse below is what must succeed.
+          npm ls --omit=dev --all --json > production-tree.json || printf ''
+          node -e 'JSON.parse(require("node:fs").readFileSync("production-tree.json","utf8"))' \
+            || { echo "::error::npm ls produced unparseable output; the production tree cannot be proven."; exit 1; }
+          printf 'production top-level: %s\n' \
+            "$(node -e 'const t=require("./production-tree.json");process.stdout.write(Object.keys(t.dependencies??{}).join(", "))')"
+
+      - name: Dependency-path and reachability proof
+        run: |
+          set -euo pipefail
+          # Derives, mechanically, the full path from the root package to every
+          # waived package, and whether any instance is production-reachable.
+          # The gate cross-checks each exception's CLAIM against this, so a
+          # waiver cannot go on asserting "development only" after the package
+          # moves. The container job supplies the image half of the proof.
+          node scripts/ci/dependency-path-proof.mjs \
+            --package brace-expansion \
+            --production-tree production-tree.json \
+            --json reachability-brace-expansion.json \
+            --markdown reachability-brace-expansion.md
+
       - name: Dependency policy
         run: |
           set -euo pipefail
@@ -239,6 +266,7 @@ jobs:
             --prod-audit audit-production.json --dev-audit audit-full.json \
             --exceptions .github/ci-baselines/dependency-exceptions.json \
             --licences licences.json \
+            --reachability-proof reachability-brace-expansion.json \
             --json dependency-policy.json --markdown dependency-policy.md
 
       - name: Outdated inventory (reported, never blocking)
@@ -303,6 +331,8 @@ jobs:
             audit-full.json
             outdated.json
             licences.json
+            production-tree.json
+            reachability-brace-expansion.json
             dependency-policy.json
             *.md
 

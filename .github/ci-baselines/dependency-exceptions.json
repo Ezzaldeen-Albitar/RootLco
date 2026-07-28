@@ -1,20 +1,68 @@
 {
-  "description": "Dependency-advisory exceptions. PRODUCTION advisories are NEVER waived and this file is not consulted for them — the production tree is at zero HIGH/CRITICAL and must stay there. Only development-tree advisories may be waived, itemised by advisory identifier, with a reason, an owner and a review date.",
+  "description": "Dependency-advisory exceptions. PRODUCTION advisories are NEVER waived and this file is not consulted for them — the production tree is at zero HIGH/CRITICAL and must stay there. Only development-tree advisories may be waived, and only as an exact, evidence-backed, expiring record.",
   "policy": "docs/engineering/ci-automation/security-model.md",
   "productionPolicy": "zero HIGH or CRITICAL, no exceptions",
-  "developmentPolicy": "zero HIGH or CRITICAL unless itemised below with an unexpired review date",
+  "developmentPolicy": "zero HIGH or CRITICAL unless matched by an exact exception below: one advisory, one package, one affected range, one dependency-path fingerprint, one expiry",
+  "matchingRules": "An exception matches ONLY when the advisory id, the package name, the affected range and the full set of resolved dependency nodes all agree. A different advisory, a different package, a widened range, or a changed dependency path fails the gate rather than being absorbed.",
   "disallowedLicences": ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"],
   "licenceExceptions": [],
   "developmentAdvisories": [
     {
       "id": "GHSA-mh99-v99m-4gvg",
+      "advisorySource": 1124334,
+      "advisoryUrl": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+      "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
       "package": "brace-expansion",
       "severity": "high",
-      "reason": "Denial of service via unbounded expansion. Reaches the tree only through `minimatch`, and from there through eslint, its plugins, and @vitest/coverage-v8 — all development-only, none present in the Dockerfile `runner` stage. THE ADVISORY HAS NO CONSUMABLE FIX: it affects every release up to and including 5.0.7, and the only patched release is 5.0.8, whose changed export shape breaks `minimatch` (verified — overriding to ^5.0.8 makes `npm run lint` fail with `TypeError: expand is not a function`). There is no patched release in the 1.x, 2.x, 3.x or 4.x lines for minimatch to consume. Waiting for the ecosystem is the only available action; the exposure is a CI runner processing this repository's own glob patterns.",
+      "affectedRange": "<=5.0.7",
+      "patchedVersion": "5.0.8",
+      "installedAffectedVersions": ["1.1.16", "2.1.3"],
+      "dependencyNodes": [
+        "node_modules/glob/node_modules/brace-expansion",
+        "node_modules/minimatch/node_modules/brace-expansion"
+      ],
+      "dependencyPaths": [
+        "root → devDependencies → eslint@^9 → minimatch@^3.1.5 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-import@^2.32.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-jsx-a11y@^6.10.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-react@^7.37.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → @vitest/coverage-v8@^3.2.4 → test-exclude@^7.0.1 → glob@^10.4.1 → minimatch@^9.0.4 → brace-expansion@^2.0.2 (resolved 2.1.3)"
+      ],
+      "dependencyPathNote": "70 distinct root-to-target walks exist because eslint is reachable through several plugin peer edges, but they collapse to exactly TWO resolved nodes — the ones listed in dependencyNodes, which is what the gate fingerprints. A third instance, node_modules/brace-expansion@5.0.8, is already PATCHED: minimatch@10.2.5 requires ^5.0.5 and npm therefore does not list it as an affected node.",
+      "environment": "development tooling only",
+      "productionReachable": false,
+      "productionReachableEvidence": "`npm ls brace-expansion --omit=dev --all` returns `(empty)`. The production dependency tree contains no brace-expansion, no minimatch and no eslint. Every one of the 70 root-to-target paths begins on a devDependencies edge; npm marks all three resolved instances `dev: true`. Re-derived mechanically on every run by scripts/ci/dependency-path-proof.mjs.",
+      "finalContainerReachable": false,
+      "finalContainerReachableEvidence": "The Dockerfile `runner` stage copies only `.next/standalone`, `.next/static` and `public` from the build stage — it never copies `node_modules`. `output: standalone` emits only the modules the server actually resolves. Asserted against the ACTUAL BUILT IMAGE on a GitHub-hosted runner by the `container-security` job, which enumerates the image filesystem and fails if brace-expansion, minimatch, eslint or any development toolchain is present.",
+      "runtimeImportEvidence": "No file under src/ or scripts/ imports brace-expansion, minimatch or glob, directly or transitively. Verified by scripts/ci/dependency-path-proof.mjs on every run.",
+      "exploitability": "Not reachable based on current evidence. The vulnerability is a denial of service triggered by an attacker-supplied brace expression. Reaching it requires an attacker-controlled pattern to be passed to brace expansion. In this repository the only consumers are ESLint config matching, vitest coverage include/exclude globs and test-exclude — all of which operate exclusively on patterns written in committed configuration files. No application input path reaches a glob or brace expression; the application does not depend on brace-expansion at all.",
+      "attackerControlledPatterns": false,
+      "attackerControlledPatternsEvidence": "The glob and brace patterns evaluated in this repository come from eslint.config.mjs, the three vitest configs and package.json script arguments — all repository-controlled. GitHub Actions invokes these tools only on repository-controlled file patterns; no workflow passes a pull-request title, branch name, or any other event-supplied value into a glob.",
+      "reasonUpgradeCannotBeApplied": "The parent ESLint and minimatch chain requires the older brace-expansion API. minimatch@3.1.5 requires ^1.1.7 and minimatch@9.0.9 requires ^2.0.2; brace-expansion@5 changed its export shape, so neither can consume the patched release. npm's own `fixAvailable` reports `eslint@10.8.0, isSemVerMajor: true` — there is no non-breaking fix.",
+      "attemptedRemediation": "package.json `overrides` forcing brace-expansion to ^5.0.8 across the tree.",
+      "attemptedRemediationResult": "ESLint broken. `npm run lint` failed with `TypeError: expand is not a function` at Minimatch.braceExpand — minimatch@3 calls the v1/v2 default export, which v5 no longer provides. Verified by execution, not inferred. The override was reverted completely and must not be reintroduced.",
+      "compensatingControls": [
+        "No attacker-controlled brace or glob expressions: every pattern evaluated comes from committed configuration.",
+        "Repository-controlled patterns only: GitHub Actions passes no event-supplied value into a glob.",
+        "No production inclusion: absent from the production dependency tree, proven by `npm ls --omit=dev`.",
+        "No container inclusion: absent from the built runner image, proven by inspecting the image filesystem on a hosted runner.",
+        "Dependency monitoring: Dependabot watches npm weekly; the dependency-security job re-derives the full path proof on every pull request and every protected push.",
+        "The gate fails automatically if the package ever becomes production-reachable, if the dependency path changes, or if a compatible patched version becomes installable."
+      ],
       "owner": "platform-owner",
-      "reviewBy": "2026-10-31",
-      "reviewAction": "Re-check whether eslint and @vitest/coverage-v8 have moved to a minimatch that accepts brace-expansion 5.x. If they have, drop this entry — dependency-policy.mjs fails on an exception that matches nothing, so the file cannot silently outlive the problem."
+      "createdOn": "2026-07-28",
+      "reviewBy": "2026-09-30",
+      "expiresOn": "2026-10-31",
+      "removalCondition": "The parent dependency chain supports a patched compatible brace-expansion version — that is, eslint and @vitest/coverage-v8 resolve a minimatch that accepts brace-expansion >=5.0.8, or npm reports a non-semver-major fixAvailable. When that happens the gate FAILS with a compatible-fix-available finding, because an exception that outlives its cause is worse than none.",
+      "evidenceLinks": [
+        "docs/engineering/ci-automation/evidence/brace-expansion-reachability-proof.md",
+        "docs/engineering/ci-automation/security-model.md",
+        "scripts/ci/dependency-path-proof.mjs",
+        "https://github.com/advisories/GHSA-mh99-v99m-4gvg"
+      ],
+      "approvalStatus": "pending-owner-approval",
+      "approvalNote": "Recorded by the CI automation initiative with full evidence. Requires the platform owner's explicit acceptance before it is treated as an approved risk decision rather than a documented finding. The gate honours it either way; the status records who has actually agreed to it."
     }
   ],
-  "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Closed by bumping next to 16.2.12 and adding `overrides` for postcss ^8.5.24 and sharp ^0.35.3, because Next pins postcss at exactly 8.4.31 and npm's only suggested 'fix' was to downgrade Next to 9.3.3. Production is now at zero."
+  "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Resolved through compatible patch upgrades: next 16.2.10 to 16.2.12, plus overrides pinning postcss to ^8.5.24 and sharp to ^0.35.3 because Next pins postcss at exactly 8.4.31 and npm's only suggested remedy was downgrading Next to 9.3.3. Production is now at zero HIGH/CRITICAL."
 }

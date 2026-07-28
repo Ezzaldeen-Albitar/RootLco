@@ -235,6 +235,83 @@ jobs:
           fi
           exit "${bad}"
 
+      - name: What the production image actually contains
+        id: inventory
+        run: |
+          set -euo pipefail
+          # THE POINT: not what package.json classifies as a devDependency, but
+          # what is on the filesystem of the image that would be deployed. The
+          # `runner` stage copies only `.next/standalone`, `.next/static` and
+          # `public` — never `node_modules` — but that is a claim about the
+          # Dockerfile, and this is the check that the claim held.
+          docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'find / -xdev -type f 2>/dev/null' > image-files.txt
+          printf 'files in the production image: %s\n' "$(wc -l < image-files.txt)"
+
+          bad=0
+
+          # --- development toolchain must be absent --------------------------
+          # Each of these is either a build-time tool or a package whose presence
+          # would mean node_modules was copied wholesale.
+          for forbidden in eslint prettier vitest typescript '@typescript-eslint' \
+                           brace-expansion minimatch test-exclude '@vitest' stylelint; do
+            hits="$(grep -c "/node_modules/${forbidden}/" image-files.txt || printf 0)"
+            if [ "${hits}" -gt 0 ]; then
+              echo "::error::${forbidden} is present in the production image (${hits} file(s)). Development tooling must not ship."
+              grep "/node_modules/${forbidden}/" image-files.txt | head -3
+              bad=1
+            fi
+          done
+
+          # --- no npm cache or package manager state -------------------------
+          for forbidden in '/.npm/' '/.npmrc' '/npm-cache/' '/.yarn/' '/.pnpm-store/'; do
+            hits="$(grep -c -- "${forbidden}" image-files.txt || printf 0)"
+            if [ "${hits}" -gt 0 ]; then
+              echo "::error::package-manager state '${forbidden}' is present in the production image."
+              bad=1
+            fi
+          done
+
+          # --- the standalone server MUST be there ---------------------------
+          # A check that only looks for absences would pass over an empty image.
+          if ! grep -q '/app/server.js' image-files.txt; then
+            echo "::error::/app/server.js is absent — this is not a runnable production image, so every absence above proves nothing."
+            bad=1
+          fi
+
+          # --- what production dependencies DID ship -------------------------
+          grep -oE '/node_modules/(@[^/]+/)?[^/]+/' image-files.txt \
+            | sed -E 's|/node_modules/||; s|/$||' | sort -u > image-node-modules.txt
+          printf 'distinct packages in the image: %s\n' "$(wc -l < image-node-modules.txt)"
+          head -40 image-node-modules.txt
+
+          exit "${bad}"
+
+      - name: Reachability proof against the real image
+        run: |
+          set -euo pipefail
+          # Re-derives the dependency-path proof with the ACTUAL image inventory
+          # supplied, so `inRunnerImage` is a measurement rather than a claim.
+          # The dependency gate cross-checks every exception against this.
+          node scripts/ci/dependency-path-proof.mjs \
+            --package brace-expansion \
+            --image-inventory image-files.txt \
+            --json reachability-brace-expansion.json \
+            --markdown reachability-brace-expansion.md
+
+      - name: Production install mode
+        run: |
+          set -euo pipefail
+          # The image must not carry a development tree. `NODE_ENV` is the
+          # declared intent; the file inventory above is the proof. Both are
+          # recorded because a mismatch between them is itself a finding.
+          node_env="$(docker image inspect rootlco/web:ci-runner --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^NODE_ENV=' || printf 'NODE_ENV=<unset>')"
+          printf '%s\n' "${node_env}"
+          if [ "${node_env}" != 'NODE_ENV=production' ]; then
+            echo "::error::The production image does not declare NODE_ENV=production."
+            exit 1
+          fi
+
       - name: Runtime identity is the canonical non-root user
         run: |
           set -euo pipefail
@@ -392,6 +469,10 @@ jobs:
             image-metadata.json
             image-env.json
             image-history.txt
+            image-files.txt
+            image-node-modules.txt
+            reachability-brace-expansion.json
+            image-credential-scan.json
             image-dev-tools.txt
             container.log
             health-response.json

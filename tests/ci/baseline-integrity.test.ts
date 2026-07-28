@@ -87,12 +87,19 @@ describe('committed baselines', () => {
       for (const entry of entries) {
         expect(entry.id, file).toBeTruthy();
         expect(entry.owner, `${file}:${entry.id}`).toBeTruthy();
-        expect(entry.reason, `${file}:${entry.id}`).toBeTruthy();
-        const reviewBy = new Date(entry.reviewBy);
-        expect(Number.isNaN(reviewBy.getTime()), `${file}:${entry.id}`).toBe(false);
+        // A dependency exception states WHY the upgrade cannot be applied; an
+        // idempotency exception states a plain reason. Either is a reason.
+        expect(
+          entry.reason ?? entry.reasonUpgradeCannotBeApplied,
+          `${file}:${entry.id} records no reason`
+        ).toBeTruthy();
+        // `expiresOn` is the hard deadline where one exists; `reviewBy` is the
+        // deadline otherwise.
+        const expiry = new Date(entry.expiresOn ?? entry.reviewBy);
+        expect(Number.isNaN(expiry.getTime()), `${file}:${entry.id}`).toBe(false);
         // A committed exception that has already expired means the gate is
         // red and nobody looked. Catch it here rather than on a hosted runner.
-        expect(reviewBy.getTime(), `${file}:${entry.id} has already expired`).toBeGreaterThan(now);
+        expect(expiry.getTime(), `${file}:${entry.id} has already expired`).toBeGreaterThan(now);
       }
     }
   });
