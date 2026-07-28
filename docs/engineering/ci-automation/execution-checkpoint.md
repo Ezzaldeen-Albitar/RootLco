@@ -104,6 +104,37 @@ documents under `docs/engineering/ci-automation/`.
 
 ## Cycle 5 — Wave 6: hostile review
 
+Three independent read-only reviewers produced **27 findings**. Full record:
+[`evidence/adversarial-review.md`](evidence/adversarial-review.md).
+
+**The most important one made the whole pipeline inoperable.** Every job's first
+step was `uses: ./.github/actions/setup-project` — a LOCAL action — with no
+prior checkout. `uses: ./…` resolves from the workspace, which is empty when a
+job starts, so all 21 call sites would have failed with _"Can't find
+action.yml"_. Fail-closed, so never a bypass; but it means nothing here had ever
+executed, and the rollout plan's "expected first-run failures" table had not
+anticipated it.
+
+Six further High findings, each a green result that was not earned: an
+unrecognised `task` input skipping every step and reporting success; a falsy
+`needs` entry producing Go; a new advisory absorbed by an existing transitive
+waiver; an `npm audit` error object reading as zero advisories; a worktree
+secret scan running where its target directory did not exist; and a nightly
+mutation gate that was structurally guaranteed to be red every night.
+
+Nineteen Medium findings, including three that the reviewers proved my own tests
+would not catch — one of which was a test that had **enshrined** the bug it was
+supposed to guard (`src/app/api/**` classified as frontend, so a route handler
+skipped the RLS matrix).
+
+Every Critical, High and Medium finding was reproduced and closed. One
+structural finding is documented rather than fixed: on a `pull_request` the
+workflow, the composite action, the gate scripts and the baselines all come from
+the PR head, so a change that weakens a gate and deletes the check that would
+catch it passes. That is inherent to the trigger.
+
+### Hostile mutations
+
 **Twenty-one gate-result mutations unit-proved** against the real evaluator, plus
 a control proving a gate that always said No-Go would not pass them.
 
@@ -115,9 +146,12 @@ each.
 
 Full record: [`evidence/hostile-mutation-results.md`](evidence/hostile-mutation-results.md).
 
-Independent adversarial reviewers were run over Actions security and injection,
-gate correctness and test honesty, and database/container/supply-chain
-assurance.
+Local verification after remediation: format 0, lint 0, typecheck 0, style 0,
+**unit 1034/47**, encoding 0, canonical docs 0, security:all 0, module
+boundaries 0, authorization coverage 0, operation coverage 0, OpenAPI 0, test
+honesty 0, workflow security 0 (now including the composite action), route
+parity 0, environment contract 0, idempotency evidence 0, migration static 0,
+mutation anchors verified, `actionlint` 0 errors across 13 workflow files.
 
 ---
 
