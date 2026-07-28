@@ -1,0 +1,165 @@
+# =============================================================================
+# RootLco — staging deployment FOUNDATION.
+#
+# THIS WORKFLOW DOES NOT DEPLOY. It cannot: no hosting provider has been chosen,
+# no staging environment is provisioned, and ADR-012 records that Local is the
+# only environment that exists. Inventing a provider here would be worse than
+# leaving a gap, because the gap is visible and a wrong guess is not.
+#
+# What it DOES do, today, is real:
+#
+#   - refuse to run unless an immutable image DIGEST is supplied. Staging
+#     deploys an artifact that was already built and tested, never a rebuild;
+#   - refuse a digest that is not a `sha256:` value, so a mutable tag cannot be
+#     smuggled in;
+#   - run the migration PREFLIGHT — the check that would decide whether the
+#     schema this artifact expects can be reached from the one deployed;
+#   - state exactly which decisions remain unmade.
+#
+# The deployment and smoke-test steps are present and commented, with the shape
+# they will take. Making them executable requires a hosting decision, which is
+# the owner's, and OIDC credentials, which do not exist yet (§31).
+# =============================================================================
+
+name: Deploy — staging (foundation, does not deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image-digest:
+        description: 'Immutable image digest to promote, e.g. sha256:… . Never a tag.'
+        required: true
+        type: string
+      source-sha:
+        description: Commit the artifact was built from, for the record.
+        required: true
+        type: string
+
+concurrency:
+  # One staging deployment at a time. Never cancels: a deployment that is
+  # partway through applying changes must finish or fail, not vanish.
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The `staging` environment does not exist yet. When it is created, adding
+    # `environment: staging` here is what binds this job to its protection rules
+    # and its scoped secrets. Declaring it before it exists would fail the run
+    # with a confusing error rather than a clear one.
+    # environment:
+    #   name: staging
+    #   url: ${{ steps.deploy.outputs.url }}
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+
+    steps:
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.source-sha }}
+          fetch-depth: '0'
+
+      - name: The artifact must be immutable
+        env:
+          DIGEST: ${{ inputs.image-digest }}
+        run: |
+          set -euo pipefail
+          # A tag can be repointed after it was tested. A digest cannot. This is
+          # the whole reason the pipeline builds once and promotes a digest.
+          case "${DIGEST}" in
+            sha256:*) : ;;
+            *)
+              echo "::error::'${DIGEST}' is not a sha256 digest. Staging promotes an immutable artifact that was already built and tested — never a tag, and never a rebuild."
+              exit 1
+              ;;
+          esac
+          printf 'promoting digest: %s\n' "${DIGEST}"
+
+      - name: Migration preflight against a clean database
+        run: |
+          set -euo pipefail
+          # Proves the schema this artifact expects can be built from nothing and
+          # matches the frozen baseline. It does NOT prove a forward migration
+          # from whatever staging currently holds — that check needs a real
+          # staging database and is listed as unresolved below.
+          npm run db:apply-migrations
+          npm run validate:seed-state
+          node scripts/ci/migration-replay-checks.mjs --phase post \
+            --baseline .github/ci-baselines/schema-baseline.json \
+            --json staging-migration-preflight.json --markdown staging-migration-preflight.md
+
+      - name: State what is not yet decided
+        env:
+          DIGEST: ${{ inputs.image-digest }}
+          SOURCE: ${{ inputs.source-sha }}
+        run: |
+          set -euo pipefail
+          {
+            printf '## Staging deployment — FOUNDATION ONLY\n\n'
+            printf '| Item | Value |\n| --- | --- |\n'
+            printf '| Image digest | `%s` |\n' "${DIGEST}"
+            printf '| Source commit | `%s` |\n' "${SOURCE}"
+            printf '| Migration preflight | passed against a clean PostgreSQL 17 |\n'
+            printf '| **Deployment performed** | **no** |\n\n'
+            printf '### Unresolved before this can deploy\n\n'
+            printf -- '- **Hosting provider.** Not chosen. ADR-012 records Local as the only environment. No provider is assumed here.\n'
+            printf -- '- **GitHub environment `staging`.** Not created. When it is, uncomment `environment:` on this job to bind its protection rules and scoped secrets.\n'
+            printf -- '- **Credentials.** None. Per §31 this will use OIDC and short-lived credentials; no long-lived cloud secret will be introduced.\n'
+            printf -- '- **Forward-migration check.** The preflight above builds the schema from nothing. Proving a forward migration from the schema staging currently holds needs a real staging database.\n'
+            printf -- '- **Rollback criteria.** Drafted in docs/engineering/ci-automation/deployment-foundations.md; not executable without a provider.\n'
+          } | tee staging-preflight.md >> "${GITHUB_STEP_SUMMARY}"
+
+      # -----------------------------------------------------------------------
+      # The shape the executable steps will take. Deliberately not runnable.
+      #
+      # - name: Authenticate with OIDC
+      #   uses: <provider-action>@<sha>   # id-token: write, no stored secret
+      #
+      # - name: Deploy the digest
+      #   id: deploy
+      #   run: <provider CLI> deploy --image "${{ inputs.image-digest }}"
+      #
+      # - name: Post-deployment smoke tests
+      #   run: curl -fsS "${{ steps.deploy.outputs.url }}/api/health"
+      #
+      # - name: Health verification and rollback on failure
+      #   run: |
+      #     <poll readiness; on failure re-point to the previous digest>
+      # -----------------------------------------------------------------------
+
+      - name: Upload the preflight record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-preflight
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            staging-migration-preflight.json
+            staging-preflight.md
+            *.md

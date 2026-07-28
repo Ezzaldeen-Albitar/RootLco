@@ -1,0 +1,15 @@
+{
+  "description": "Query-family performance baseline, measured nightly on a GitHub-hosted runner against a generated, non-personal dataset.",
+  "policy": "docs/engineering/ci-automation/performance-policy.md",
+  "establishedBy": null,
+  "establishmentNote": "DELIBERATELY UNSET. scripts/db/perf-baseline.mjs has only ever run against a developer machine, and those numbers say nothing about a shared 2-vCPU hosted runner. The first nightly records the measurement; the numbers are then committed and the budget starts from the run after that.",
+  "regressionBudgetRatio": 1.5,
+  "budgetRationale": "p95 rather than p50, because a regression that only moves the median is usually noise and one that moves the tail is usually real. ×1.5 is wide on purpose: a shared CI runner is a noisy instrument, and a budget that cries wolf gets ignored, which is worse than no budget.",
+  "noiseFloorMs": 5,
+  "noiseFloorRationale": "Below about 5 ms the ratio is arithmetic about jitter. A query going from 1 ms to 2 ms is ×2 and means nothing.",
+  "absoluteChecksFromDayOne": [
+    "A sequential scan on a tenant-leading indexed lookup fails immediately, with no baseline needed — that is a missing or unusable index, not a slow machine.",
+    "An empty measurement set fails. Nothing measured must never read as fast."
+  ],
+  "queries": {}
+}

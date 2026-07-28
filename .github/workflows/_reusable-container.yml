@@ -1,0 +1,345 @@
+# =============================================================================
+# RootLco — reusable container security.
+#
+# `ci.yml` built two images and asserted one property (uid ≠ 0). It never
+# scanned them, never measured them, never started one, and never checked what
+# was inside a layer (CSA-09).
+#
+# This builds the exact `dev` and `runner` targets, then interrogates the
+# production image: vulnerabilities, what runs it, what is baked into it, and
+# whether it actually serves a request.
+#
+# NO IMAGE IS PUSHED. There is no registry and no deployment target (ADR-012);
+# `push: false, load: true` keeps everything on the runner.
+# =============================================================================
+
+name: Reusable — container security
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      severity:
+        description: Comma-separated severities that block the merge.
+        required: false
+        type: string
+        default: 'CRITICAL,HIGH'
+      deep:
+        description: Nightly mode — also scan unfixed vulnerabilities and every layer.
+        required: false
+        type: boolean
+        default: false
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+    outputs:
+      digest:
+        description: Digest of the production runner image.
+        value: ${{ jobs.container.outputs.digest }}
+      size-bytes:
+        description: Size of the production runner image in bytes.
+        value: ${{ jobs.container.outputs.size-bytes }}
+      blocking-vulnerabilities:
+        description: Count of blocking-severity findings.
+        value: ${{ jobs.container.outputs.blocking }}
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: container-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+      size-bytes: ${{ steps.inspect.outputs.size }}
+      blocking: ${{ steps.policy.outputs.blocking }}
+
+    steps:
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # The image build installs its own dependencies inside the container;
+          # a host-side `npm ci` would only duplicate that work.
+          install: 'false'
+
+      - name: Dockerfile best practices (hadolint)
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint.sarif
+          # `info` and below are style opinions; `warning` and above are the ones
+          # that describe a real weakness.
+          failure-threshold: warning
+
+      - name: Compose file is valid
+        run: docker compose config --quiet
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the development stage
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: dev
+          push: false
+          load: true
+          tags: rootlco/web:ci-dev
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+      - name: Build the production runner stage
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: runner
+          push: false
+          load: true
+          tags: rootlco/web:ci-runner
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+          build-args: |
+            NEXT_PUBLIC_APP_ENV=local
+            NEXT_PUBLIC_COMMIT_SHA=${{ steps.setup.outputs.sha }}
+
+      - name: Image identity and size
+        id: inspect
+        run: |
+          set -euo pipefail
+          digest="$(docker image inspect rootlco/web:ci-runner --format '{{.Id}}')"
+          size="$(docker image inspect rootlco/web:ci-runner --format '{{.Size}}')"
+          layers="$(docker image inspect rootlco/web:ci-runner --format '{{len .RootFS.Layers}}')"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "size=${size}" >> "${GITHUB_OUTPUT}"
+          printf 'digest: %s\nsize: %s bytes\nlayers: %s\n' "${digest}" "${size}" "${layers}"
+          node -e '
+            const fs = require("node:fs");
+            const bytes = Number(process.argv[2]);
+            const human = `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+            fs.writeFileSync("image-metadata.json", JSON.stringify({
+              digest: process.argv[1], sizeBytes: bytes, sizeHuman: human, layers: Number(process.argv[3]),
+            }, null, 2) + "\n");
+          ' "${digest}" "${size}" "${layers}"
+
+      - name: Image size ratchet
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const meta = JSON.parse(fs.readFileSync("image-metadata.json", "utf8"));
+            const path = ".github/ci-baselines/container-baseline.json";
+            const base = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : {};
+            const recorded = base.imageSizeBytes;
+            if (typeof recorded !== "number" || recorded <= 0) {
+              console.log("::notice::No image-size baseline recorded yet. Measured " + meta.sizeHuman + "; commit it to start the ratchet.");
+              process.exit(0);
+            }
+            const ratio = Number((meta.sizeBytes / recorded).toFixed(4));
+            const warn = base.warnGrowthRatio ?? 1.1;
+            const fail = base.failGrowthRatio ?? 1.5;
+            console.log(`image ${meta.sizeHuman}, baseline ${(recorded/1024/1024).toFixed(1)} MiB, ratio x${ratio}`);
+            if (ratio > fail) {
+              console.error(`::error::Production image grew x${ratio} against the recorded baseline; the hard ceiling is x${fail}. Re-baseline in a reviewable commit if the growth is justified.`);
+              process.exit(1);
+            }
+            if (ratio > warn) console.log(`::warning::Production image grew x${ratio} (warning band starts at x${warn}).`);
+          '
+
+      - name: Nothing sensitive is baked into the image
+        run: |
+          set -euo pipefail
+          bad=0
+
+          # --- environment ---------------------------------------------------
+          # Only NEXT_PUBLIC_* values are public by definition. Anything that
+          # looks like a credential in the image environment ships to every host
+          # that pulls it.
+          env_json="$(docker image inspect rootlco/web:ci-runner --format '{{json .Config.Env}}')"
+          printf '%s\n' "${env_json}" > image-env.json
+          if printf '%s' "${env_json}" | grep -qiE '"[^"]*(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY)[^"]*=[^"]{6,}'; then
+            echo "::error::The production image environment contains a credential-shaped value."
+            # The NAMES are printed; the values deliberately are not.
+            printf '%s' "${env_json}" | tr ',' '\n' | sed -E 's/=.*/=<redacted>/' | grep -iE 'SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY'
+            bad=1
+          fi
+
+          # --- filesystem ----------------------------------------------------
+          # An `.env` or a key that reached a layer is readable by anyone with
+          # the image, whatever the running container shows.
+          leaked="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'find / -xdev \( -name ".env" -o -name ".env.*" -o -name "*.pem" -o -name "*.key" -o -name "id_rsa" -o -name ".npmrc" -o -name ".git" \) -not -path "*/node_modules/*" 2>/dev/null | head -40')"
+          if [ -n "${leaked}" ]; then
+            echo "::error::Sensitive paths present in the production image:"
+            echo "${leaked}"
+            bad=1
+          fi
+
+          # --- build history --------------------------------------------------
+          # A build arg is recorded in the image history and is readable by
+          # anyone who can pull the image.
+          docker history --no-trunc --format '{{.CreatedBy}}' rootlco/web:ci-runner > image-history.txt
+          if grep -qiE '(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z_]*=[^ ]{6,}' image-history.txt; then
+            echo "::error::A credential-shaped value appears in the image build history."
+            bad=1
+          fi
+
+          # --- development tooling --------------------------------------------
+          # A production image that carries a compiler or a package manager gives
+          # an attacker a build environment inside the container.
+          tools="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c \
+            'for t in gcc make git npx python3 apk; do command -v "$t" >/dev/null 2>&1 && echo "$t"; done' || printf '')"
+          if [ -n "${tools}" ]; then
+            echo "::warning::Development tooling present in the production image: $(echo "${tools}" | tr '\n' ' ')"
+            echo "${tools}" > image-dev-tools.txt
+          fi
+          exit "${bad}"
+
+      - name: Runtime identity is the canonical non-root user
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c 'id -u')"
+          gid="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c 'id -g')"
+          user="$(docker image inspect rootlco/web:ci-runner --format '{{.Config.User}}')"
+          printf 'runtime uid=%s gid=%s configured user=%s\n' "${uid}" "${gid}" "${user}"
+          # ADR-007 requires non-root; the Dockerfile creates nextjs:nodejs as
+          # 1001:1001. Asserting the exact value catches a silent change to a
+          # different — possibly shared — account, which `uid != 0` would not.
+          if [ "${uid}" != "1001" ] || [ "${gid}" != "1001" ]; then
+            echo "::error::Production runtime is ${uid}:${gid}; ADR-007 and the Dockerfile specify 1001:1001."
+            exit 1
+          fi
+
+      - name: HEALTHCHECK is declared
+        run: |
+          set -euo pipefail
+          hc="$(docker image inspect rootlco/web:ci-runner --format '{{json .Config.Healthcheck}}')"
+          echo "healthcheck: ${hc}"
+          if [ "${hc}" = "null" ] || [ -z "${hc}" ]; then
+            echo "::error::The production image declares no HEALTHCHECK, so an orchestrator cannot tell a wedged container from a healthy one."
+            exit 1
+          fi
+
+      - name: The container starts and serves its health endpoint
+        run: |
+          set -euo pipefail
+          # Starting a container is not the same as it working. A build that
+          # produces an image which exits immediately is a green build and a
+          # broken deployment.
+          docker run -d --name rootlco-smoke -p 3000:3000 \
+            -e NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
+            -e NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key-not-a-secret \
+            -e NEXT_PUBLIC_APP_ENV=local \
+            rootlco/web:ci-runner
+          ok=0
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > health-response.json 2>/dev/null; then
+              ok=1
+              echo "healthy after ${attempt} attempt(s)"
+              break
+            fi
+            # A container that has already exited will never become healthy;
+            # detect that instead of waiting out the full timeout.
+            if [ "$(docker inspect -f '{{.State.Running}}' rootlco-smoke)" != "true" ]; then
+              echo "::error::The container exited before serving a request."
+              break
+            fi
+            sleep 2
+          done
+          docker logs rootlco-smoke > container.log 2>&1
+          docker rm -f rootlco-smoke > /dev/null
+          if [ "${ok}" != "1" ]; then
+            echo "::error::The production image never served /api/health. Container termination is not a passing test."
+            tail -50 container.log
+            exit 1
+          fi
+          cat health-response.json
+
+      - name: Vulnerability scan (image, OS packages, production dependencies)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rootlco/web:ci-runner
+          format: json
+          output: trivy-image.json
+          scanners: vuln,secret,misconfig
+          # PR mode reports only what a patched release exists for; the nightly
+          # deep scan drops that filter and reports everything.
+          ignore-unfixed: ${{ !inputs.deep }}
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Vulnerability scan (SARIF for the Security tab)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rootlco/web:ci-runner
+          format: sarif
+          output: trivy-image.sarif
+          scanners: vuln,secret
+          ignore-unfixed: ${{ !inputs.deep }}
+          severity: ${{ inputs.severity }}
+          exit-code: '0'
+
+      - name: Container vulnerability policy
+        id: policy
+        env:
+          BLOCKING_SEVERITIES: ${{ inputs.severity }}
+        run: |
+          set -euo pipefail
+          # The scan is run with `exit-code: 0` deliberately: the POLICY decides
+          # what blocks, and the full report is captured either way. A scanner
+          # that aborts the job on its own terms leaves no artifact to diagnose.
+          node scripts/ci/container-policy.mjs \
+            --report trivy-image.json \
+            --severities "${BLOCKING_SEVERITIES}" \
+            --json container-policy.json --markdown container.md
+          node -e '
+            const fs = require("node:fs");
+            const p = JSON.parse(fs.readFileSync("container-policy.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `blocking=${p.blocking}\n`);
+          '
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f container.md ]; then
+            cat container.md >> "${GITHUB_STEP_SUMMARY}"
+            printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f image-metadata.json ]; then
+            printf '```json\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat image-metadata.json >> "${GITHUB_STEP_SUMMARY}"
+            printf '```\n' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-container-security
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # image-env.json holds the image's environment. It is uploaded because
+          # the whole point is that it contains no credential — and the step
+          # above fails the job if it ever does.
+          path: |
+            hadolint.sarif
+            trivy-image.json
+            trivy-image.sarif
+            container-policy.json
+            image-metadata.json
+            image-env.json
+            image-history.txt
+            image-dev-tools.txt
+            container.log
+            health-response.json
+            *.md

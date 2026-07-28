@@ -1,0 +1,14 @@
+{
+  "description": "Production container baseline. The image was never measured or scanned by any workflow before this initiative.",
+  "policy": "docs/engineering/ci-automation/security-model.md",
+  "establishedBy": null,
+  "establishmentNote": "DELIBERATELY UNSET, for the same reason as the build-size baseline: the first GitHub-hosted container job measures it, the number is committed, and the ratchet starts from the run after that.",
+  "imageSizeBytes": null,
+  "warnGrowthRatio": 1.1,
+  "failGrowthRatio": 1.5,
+  "expectedRuntimeUid": 1001,
+  "expectedRuntimeGid": 1001,
+  "runtimeIdentityNote": "The Dockerfile creates a dedicated `nextjs:nodejs` account at 1001:1001 rather than reusing the image's built-in `node` user (uid 1000), so the application owns nothing it does not need (ADR-007). Asserting the exact value — not merely `uid != 0` — catches a silent change to a different, possibly shared, account.",
+  "blockingSeverities": ["CRITICAL", "HIGH"],
+  "unfixablePolicy": "Findings at a blocking severity with no fixed version available are REPORTED, not blocking. The action for them is to change or rebuild the base image, which is a different decision from bumping a package; conflating the two teaches everyone to ignore the gate. The nightly deep scan drops the `ignore-unfixed` filter so the full picture is always visible."
+}

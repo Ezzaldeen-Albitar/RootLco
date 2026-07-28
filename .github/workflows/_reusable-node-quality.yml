@@ -1,0 +1,414 @@
+# =============================================================================
+# RootLco — reusable Node quality workflow.
+#
+# One workflow, three complete jobs selected by `task`:
+#
+#   static-quality  formatting, types, lint, every repository gate, generated-file
+#                   drift, workflow security, test honesty. No database, no build.
+#   unit-coverage   the unit tier plus its coverage ratchet.
+#   build           the production build, its integrity, and the size ratchet.
+#
+# They are separate CALLS rather than one job because they are independent and
+# should run in parallel, and because `ci-gate` has to reason about them
+# separately — a build failure and a lint failure are different conversations.
+#
+# NO SECRETS. Everything below is a non-secret placeholder; CI must never require
+# a real credential to pass.
+# =============================================================================
+
+name: Reusable — Node quality
+
+on:
+  workflow_call:
+    inputs:
+      task:
+        description: One of `static-quality`, `unit-coverage`, `build`.
+        required: true
+        type: string
+      ref:
+        description: Commit to check out. Defaults to the exact head.
+        required: false
+        type: string
+        default: ''
+      base-ref:
+        description: Base branch name, used for the touched-file coverage floor.
+        required: false
+        type: string
+        default: ''
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+    outputs:
+      unit-tests:
+        description: Number of unit tests executed.
+        value: ${{ jobs.node-quality.outputs.unit-tests }}
+      coverage-lines:
+        description: Unit-tier line coverage percentage.
+        value: ${{ jobs.node-quality.outputs.coverage-lines }}
+      openapi-paths:
+        description: Paths in the committed OpenAPI document.
+        value: ${{ jobs.node-quality.outputs.openapi-paths }}
+      openapi-operations:
+        description: Operations in the committed OpenAPI document.
+        value: ${{ jobs.node-quality.outputs.openapi-operations }}
+      standalone-bytes:
+        description: Size of `.next/standalone` in bytes.
+        value: ${{ jobs.node-quality.outputs.standalone-bytes }}
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+  NEXT_PUBLIC_APP_ENV: 'local'
+
+jobs:
+  node-quality:
+    name: ${{ inputs.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      unit-tests: ${{ steps.unit.outputs.total }}
+      coverage-lines: ${{ steps.coverage.outputs.lines }}
+      openapi-paths: ${{ steps.contract.outputs.paths }}
+      openapi-operations: ${{ steps.contract.outputs.operations }}
+      standalone-bytes: ${{ steps.size.outputs.bytes }}
+
+    steps:
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # Change detection and the touched-file coverage floor both need the
+          # base branch, so history is required for every task except the build.
+          fetch-depth: ${{ inputs.task == 'build' && '1' || '0' }}
+
+      # =======================================================================
+      # static-quality
+      # =======================================================================
+      - name: Formatting, types and lint
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm run style:check
+
+      - name: YAML and JSON are parseable
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          # Every tracked JSON must parse. A malformed catalog would otherwise
+          # only surface at runtime, in the module that reads it.
+          bad=0
+          while IFS= read -r file; do
+            node -e "JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'))" "${file}" \
+              || { echo "::error file=${file}::not valid JSON"; bad=1; }
+          done < <(git ls-files '*.json' ':!:package-lock.json')
+          # YAML: workflows, compose, and the Supabase config.
+          while IFS= read -r file; do
+            python3 -c "import sys,yaml;yaml.safe_load(open(sys.argv[1],encoding='utf-8'))" "${file}" \
+              || { echo "::error file=${file}::not valid YAML"; bad=1; }
+          done < <(git ls-files '*.yml' '*.yaml')
+          exit "${bad}"
+
+      - name: GitHub Actions workflow syntax (actionlint)
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          # Pinned by version AND verified by checksum: a linter fetched over the
+          # network is itself a supply-chain input.
+          version=1.7.7
+          url="https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output /tmp/actionlint.tgz "${url}"
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  /tmp/actionlint.tgz" | sha256sum --check --status \
+            || { echo "::error::actionlint checksum mismatch — refusing to execute the download."; exit 1; }
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          /tmp/actionlint -color -shellcheck=
+
+      - name: Workflow security policy
+        if: inputs.task == 'static-quality'
+        run: node scripts/ci/check-workflow-security.mjs --json workflow-security.json --markdown workflow-security.md
+
+      - name: Shell script lint (shellcheck)
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          # shellcheck ships on the GitHub-hosted image; no download to verify.
+          mapfile -t scripts < <(git ls-files '*.sh')
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "::error::no shell scripts found — this check would report clean over an empty set."
+            exit 1
+          fi
+          printf 'linting %d shell script(s)\n' "${#scripts[@]}"
+          shellcheck --severity=warning "${scripts[@]}"
+
+      - name: Repository gates
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          npm run validate:encoding
+          npm run validate:canonical-docs
+          npm run validate:no-fake-data
+          npm run security:scope-exclusions
+          npm run validate:module-boundaries
+          npm run validate:authorization-coverage
+          npm run validate:operation-coverage
+          npm run validate:openapi
+          npm run validate:p1-19-inventory
+          npm run validate:p1-20-inventory
+          npm run validate:p1-21-inventory
+
+      - name: Route ↔ OpenAPI registry parity
+        if: inputs.task == 'static-quality'
+        run: node scripts/ci/check-route-registry-parity.mjs --json route-parity.json --markdown route-parity.md
+
+      - name: Test honesty
+        if: inputs.task == 'static-quality'
+        run: node scripts/ci/check-test-honesty.mjs --json test-honesty.json --markdown test-honesty.md
+
+      - name: Forbidden files and merge-conflict markers
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          bad=0
+          # Build output, coverage reports, editor state and OS debris must never
+          # be tracked: they make every diff noisy and can carry local paths.
+          forbidden="$(git ls-files | grep -E '^(\.next/|coverage/|node_modules/|dist/|build/)|(^|/)(\.DS_Store|Thumbs\.db|npm-debug\.log|\.idea/|\.vscode/settings\.json)$' || true)"
+          if [ -n "${forbidden}" ]; then
+            echo "::error::tracked files that must not be committed:"; echo "${forbidden}"; bad=1
+          fi
+          # A conflict marker that reaches a branch compiles in some languages and
+          # is invisible in a rendered document.
+          markers="$(git grep -In -E '^(<{7}|={7}|>{7})( |$)' -- . ':!:*.md' ':!:scripts/ci/*' || true)"
+          if [ -n "${markers}" ]; then
+            echo "::error::merge-conflict markers found:"; echo "${markers}"; bad=1
+          fi
+          exit "${bad}"
+
+      - name: Lockfile and manifest consistency
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          # `npm ci` in the setup step already fails when the two disagree. This
+          # asserts the two further properties it does not check.
+          node -e '
+            const fs = require("node:fs");
+            const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const problems = [];
+            if (lock.lockfileVersion < 3) problems.push(`lockfileVersion ${lock.lockfileVersion} predates npm 7`);
+            if (lock.name !== pkg.name) problems.push(`lockfile name ${lock.name} != package name ${pkg.name}`);
+            if (lock.version !== pkg.version) problems.push(`lockfile version ${lock.version} != package version ${pkg.version}`);
+            const root = lock.packages?.[""] ?? {};
+            for (const field of ["dependencies", "devDependencies"]) {
+              const a = JSON.stringify(pkg[field] ?? {});
+              const b = JSON.stringify(root[field] ?? {});
+              if (a !== b) problems.push(`${field} in package.json does not match the lockfile root entry`);
+            }
+            if (problems.length) { for (const p of problems) console.error(`::error::${p}`); process.exit(1); }
+            console.log("OK: lockfile and manifest agree");
+          '
+
+      - name: Generated evidence must be regenerable, not hand-maintained
+        if: inputs.task == 'static-quality'
+        env:
+          UPDATE_OPENAPI: '1'
+        run: |
+          set -euo pipefail
+          # Regenerate everything that is generated, then require an empty diff.
+          # Validating the committed artefact is weaker: a hand-edit that happens
+          # to be well-formed passes a structural check.
+          npx vitest run tests/openapi-contract.test.ts --reporter=dot
+          npx prettier --write docs/api/openapi.v1.json --log-level warn
+          node scripts/p1-19-endpoint-inventory.mjs
+          node scripts/p1-20-endpoint-inventory.mjs
+          node scripts/p1-21-endpoint-inventory.mjs
+          if ! git diff --exit-code; then
+            echo "::error::Generated evidence is stale. Run the generators locally and commit the result — do not hand-edit generated files."
+            exit 1
+          fi
+          echo "OK: every generated document matches its generator"
+
+      - name: OpenAPI totals
+        id: contract
+        if: inputs.task == 'static-quality'
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const doc = JSON.parse(fs.readFileSync("docs/api/openapi.v1.json", "utf8"));
+            const methods = ["get","put","post","delete","patch","head","options","trace"];
+            const paths = Object.keys(doc.paths ?? {}).length;
+            let operations = 0;
+            for (const item of Object.values(doc.paths ?? {})) {
+              for (const m of methods) if (item[m]) operations += 1;
+            }
+            fs.writeFileSync("openapi-totals.json", JSON.stringify({ paths, operations }, null, 2) + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `paths=${paths}\noperations=${operations}\n`);
+            console.log(`OpenAPI: ${paths} paths, ${operations} operations`);
+          '
+
+      # =======================================================================
+      # unit-coverage
+      # =======================================================================
+      - name: Unit tier with coverage
+        if: inputs.task == 'unit-coverage'
+        run: |
+          set -euo pipefail
+          # The exit status of THIS command is the verdict. The JSON report below
+          # is evidence, and summarise-vitest.mjs independently re-derives the
+          # verdict from it — so a green shell and a red report cannot coexist.
+          npm run test -- --coverage \
+            --reporter=default --reporter=json --outputFile=vitest-unit.json \
+            --coverage.reportsDirectory=coverage/unit \
+            --coverage.reporter=json-summary --coverage.reporter=json \
+            --coverage.reporter=html --coverage.reporter=text-summary
+
+      - name: Summarise the unit tier
+        id: unit
+        if: inputs.task == 'unit-coverage' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs \
+            --input vitest-unit.json --label unit \
+            --json test-totals-unit.json --markdown tests-unit.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-unit.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Changed files, for the touched-file coverage floor
+        if: inputs.task == 'unit-coverage' && !cancelled()
+        env:
+          BASE_REF: ${{ inputs.base-ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
+            git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" > changed-files.txt
+          else
+            : > changed-files.txt
+          fi
+          wc -l < changed-files.txt
+
+      - name: Coverage ratchet
+        id: coverage
+        if: inputs.task == 'unit-coverage' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/coverage-gate.mjs \
+            --summary coverage/unit/coverage-summary.json \
+            --baseline .github/ci-baselines/coverage-baseline.unit.json \
+            --changed changed-files.txt \
+            --json coverage-gate.json --markdown coverage.md
+          node -e '
+            const fs = require("node:fs");
+            const g = JSON.parse(fs.readFileSync("coverage-gate.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `lines=${g.totals.lines.measured}\n`);
+          '
+
+      # =======================================================================
+      # build
+      # =======================================================================
+      - name: Environment contract for the production build
+        if: inputs.task == 'build'
+        run: node scripts/ci/check-env-contract.mjs --json env-contract.json --markdown env-contract.md
+
+      - name: Production build
+        if: inputs.task == 'build'
+        run: |
+          set -euo pipefail
+          # `set -o pipefail` above is what makes `tee` safe here: without it the
+          # pipeline would report tee's exit status and a failing build would
+          # look green. Do not remove it, and do not add a `|| true`.
+          npm run build 2>&1 | tee build.log
+
+      - name: Build warning inventory
+        if: inputs.task == 'build' && !cancelled()
+        run: |
+          set -euo pipefail
+          # `grep -c` exits 1 when it matches nothing, which is the GOOD case, so
+          # the count is computed without letting that status fail the step or be
+          # discarded with a blanket `|| true`.
+          count="$(grep -icE '(^|[^a-z])warn(ing)?([^a-z]|$)' build.log || printf 0)"
+          printf '%s\n' "${count}" > warning-count.txt
+          echo "build warnings: ${count}"
+          if [ "${count}" -gt 0 ]; then
+            grep -iE '(^|[^a-z])warn(ing)?([^a-z]|$)' build.log | head -50 > build-warnings.txt
+          else
+            : > build-warnings.txt
+          fi
+
+      - name: Build output integrity and size ratchet
+        id: size
+        if: inputs.task == 'build'
+        run: |
+          set -euo pipefail
+          node scripts/ci/build-size-report.mjs \
+            --dir .next \
+            --baseline .github/ci-baselines/build-size-baseline.json \
+            --json build-size.json --markdown build.md
+          node -e '
+            const fs = require("node:fs");
+            const b = JSON.parse(fs.readFileSync("build-size.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `bytes=${b.sizes.standaloneBytes}\n`);
+          '
+
+      # =======================================================================
+      # evidence — uploaded even when a step above failed
+      # =======================================================================
+      - name: Job summary
+        if: always()
+        env:
+          TASK: ${{ inputs.task }}
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+          CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Task `%s` at `%s` · npm cache hit: `%s`_\n' \
+            "${TASK}" "${RESOLVED_SHA}" "${CACHE_HIT}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ inputs.task }}
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: |
+            workflow-security.json
+            route-parity.json
+            test-honesty.json
+            openapi-totals.json
+            vitest-unit.json
+            test-totals-unit.json
+            coverage-gate.json
+            coverage/unit/coverage-summary.json
+            coverage/unit/coverage-final.json
+            build-size.json
+            env-contract.json
+            build.log
+            build-warnings.txt
+            changed-files.txt
+            *.md
+
+      - name: Upload the HTML coverage report
+        if: always() && inputs.task == 'unit-coverage'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-html-unit
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: coverage/unit/**

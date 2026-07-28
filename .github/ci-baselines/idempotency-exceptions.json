@@ -1,0 +1,69 @@
+{
+  "description": "Operations that declare `idempotent: true` with no replay evidence. Every entry is ONE operation with an owner and a review date — there is no wildcard and no module-wide waiver, because a class-wide suppression would hide the next one silently, which is exactly what this check exists to prevent. A NEW unproven promise fails the gate immediately.",
+  "policy": "docs/engineering/ci-automation/automated-testing-strategy.md",
+  "finding": "CSA-22",
+  "context": "Found by scripts/ci/check-idempotency-evidence.mjs on its first run against the P1-21 baseline. All ten predate this initiative: they are IAM and organisation-settings operations delivered in P1-14, and the operation-test matrix confirms none of them has a derived `idempotency` evidence category. `idempotent: true` is a promise to the caller that a retry will not double-write state, audit or outbox. Whether the CODE honours that promise is a P1-14 question and cannot be settled by a CI initiative — writing the tests blind would either pass vacuously or turn into unscoped business-logic remediation. They are therefore recorded by name, surfaced in the closure report, and time-boxed.",
+  "reviewByRationale": "2026-10-31 is the end of the quarter following this initiative, which is enough time for a dedicated remediation change and short enough that the list cannot quietly become permanent.",
+  "operations": [
+    {
+      "id": "iam.approval-limit-create",
+      "reason": "P1-14 operation; no replay assertion exists. A duplicate approval limit would widen someone's spending authority.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.grant-issue",
+      "reason": "P1-14 operation; no replay assertion exists. Highest severity on this list — a double-write issues a second role grant.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.grant-scope-add",
+      "reason": "P1-14 operation; no replay assertion exists. A duplicate scope row widens an existing grant.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.invitation-create",
+      "reason": "P1-14 operation; no replay assertion exists. A duplicate invitation could produce two pending identities for one person.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.invitation-activate",
+      "reason": "P1-14 operation; no replay assertion exists. Activation is state-changing and audited; a replay must not audit twice.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.role-create",
+      "reason": "P1-14 operation; no replay assertion exists. A duplicate role fragments permission administration.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.role-permission-add",
+      "reason": "P1-14 operation; no replay assertion exists. Second highest severity — a double-write attaches a permission twice.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.user-status-change",
+      "reason": "P1-14 operation; no replay assertion exists. Suspension and reinstatement are audited transitions.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.branch-settings-write",
+      "reason": "P1-14 operation; no replay assertion exists. Settings writes are last-write-wins, so a replay is probably harmless — but 'probably' is not evidence.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    },
+    {
+      "id": "iam.company-settings-write",
+      "reason": "P1-14 operation; no replay assertion exists. Same shape as the branch settings write above.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31"
+    }
+  ]
+}

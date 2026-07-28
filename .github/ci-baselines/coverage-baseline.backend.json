@@ -1,0 +1,50 @@
+{
+  "tier": "backend",
+  "description": "Backend-tier coverage baseline. Scope is src/modules/** and src/server/** — the code whose behaviour only exists with a real PostgreSQL attached. Measured by `npm run test:backend -- --coverage` inside the integration-tests job.",
+  "policy": "docs/engineering/ci-automation/coverage-policy.md",
+  "establishedBy": null,
+  "establishmentNote": "DELIBERATELY UNSET. The initiative requires measure-first: this tier has never been measured, so inventing a number here would be a guess dressed as a baseline. The first GitHub-hosted run records the measurement, the numbers are committed in a reviewable change, and the ratchet starts from the run after that. Until `global` is populated the gate reports the measurement and passes.",
+  "tolerancePercentagePoints": 1,
+  "touchedFileMinimum": 0,
+  "touchedFileExemptPrefixes": [],
+  "global": {},
+  "criticalModules": [],
+  "plannedCriticalModules": [
+    {
+      "id": "iam-authorization",
+      "pathPrefix": "src/modules/iam",
+      "why": "every scope decision in the product"
+    },
+    {
+      "id": "inventory",
+      "pathPrefix": "src/modules/inventory",
+      "why": "negative stock, reservation locks, exact quantities"
+    },
+    {
+      "id": "work-order",
+      "pathPrefix": "src/modules/work-order",
+      "why": "lifecycle guards and closure eligibility"
+    },
+    {
+      "id": "quotation",
+      "pathPrefix": "src/modules/quotation",
+      "why": "approval and revision races"
+    },
+    {
+      "id": "pricing",
+      "pathPrefix": "src/modules/pricing",
+      "why": "exact money arithmetic and discount authorization"
+    },
+    {
+      "id": "audit-and-outbox",
+      "pathPrefix": "src/server/audit",
+      "why": "append-only audit and at-least-once delivery"
+    },
+    {
+      "id": "idempotency",
+      "pathPrefix": "src/server/idempotency",
+      "why": "replay must not duplicate state, audit or events"
+    }
+  ],
+  "plannedCriticalModulesNote": "These become enforced `criticalModules` entries once the first hosted measurement proves each prefix matches real files. coverage-gate.mjs FAILS a rule whose prefix matches nothing, so a floor cannot be added blind — that is the intended safeguard, not an obstacle to work around."
+}

@@ -1,0 +1,15 @@
+{
+  "description": "Frozen database baseline. Every value here is a claim the migration-replay job re-proves from an empty PostgreSQL 17 on every run. A value that changes legitimately must be raised in the SAME commit that changes the schema, so the diff shows both.",
+  "policy": "docs/engineering/ci-automation/pr-gate.md",
+  "establishedBy": "P1-21 Inventory Backend, hosted clean room at 96c93cadcba573e34f97f8f6ea7814c2f707abeb",
+  "migrationCount": 119,
+  "forbiddenMigrationPrefix": "120",
+  "forbiddenMigrationPrefixNote": "Migration 120 belongs to the next authorised phase. Its presence on this branch means phase work has leaked into an unrelated change.",
+  "schemaHash": "a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c",
+  "schemaHashNote": "Produced by `npm run validate:schema-inventory -- --hash-only`. Unchanged from P1-18 through P1-21; the inventory backend added no migration.",
+  "permissionCount": 100,
+  "structuralTotals": {},
+  "structuralTotalsNote": "DELIBERATELY EMPTY. The counts recorded in earlier phase gates came from scripts/db/schema-inventory.mjs, which counts differently from the catalog queries in scripts/ci/migration-replay-checks.mjs. Copying those numbers across would compare two things that were never the same measurement. The first GitHub-hosted run records this script's own totals; they are then committed and enforced.",
+  "seededStructuralTables": null,
+  "seededStructuralTablesNote": "DELIBERATELY NULL. Structural catalogs inside business schemas (work-order states, units of measure, payment methods) are legitimately seeded, but the exact list has never been enumerated from a clean database. Until it is recorded here the check reports the measurement and passes; once recorded, a NEW populated business table becomes a failure."
+}

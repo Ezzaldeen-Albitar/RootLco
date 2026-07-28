@@ -96,7 +96,19 @@ describe('iam.role_grants — creation, isolation, and self-grant denial', () =>
         [TENANT_A, ACC_A, R_A, GRANTER]
       );
       await c.query('SET CONSTRAINTS ALL IMMEDIATE'); // must not throw
-      expect(true).toBe(true);
+      // Assert the row, not merely the absence of a throw: an INSERT that
+      // silently matched nothing would also "not throw".
+      const { rows } = await c.query<{ scope_mode: string; scopes: string }>(
+        `SELECT g.scope_mode, count(s.id)::text AS scopes
+           FROM iam.role_grants g
+           LEFT JOIN iam.grant_scopes s ON s.grant_id = g.id
+          WHERE g.tenant_id = $1 AND g.user_id = $2 AND g.role_id = $3
+          GROUP BY g.id, g.scope_mode`,
+        [TENANT_A, ACC_A, R_A]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.scope_mode).toBe('unrestricted');
+      expect(rows[0]?.scopes).toBe('0');
     });
   });
 
@@ -199,7 +211,15 @@ describe('iam.grant_scopes — scoping and cross-tenant/company safety', () => {
         [TENANT_A, gid, COMPANY_A1, BRANCH_A1, DEPT_A1, GRANTER]
       );
       await c.query('SET CONSTRAINTS ALL IMMEDIATE'); // all valid → no throw
-      expect(true).toBe(true);
+      // Assert all three scopes landed. "No throw" alone would still pass if
+      // one of the inserts had quietly written nothing.
+      const { rows } = await c.query<{ scope_type: string }>(
+        `SELECT scope_type FROM iam.grant_scopes
+          WHERE tenant_id = $1 AND grant_id = $2
+          ORDER BY scope_type`,
+        [TENANT_A, gid]
+      );
+      expect(rows.map((r) => r.scope_type)).toEqual(['branch', 'company', 'department']);
     });
   });
 

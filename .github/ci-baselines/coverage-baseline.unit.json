@@ -1,0 +1,80 @@
+{
+  "tier": "unit",
+  "description": "Unit-tier coverage baseline. Scope is the `include` allow-list in vitest.config.ts — the pure-logic modules the unit tier genuinely exercises. Database-bound modules are measured separately in coverage-baseline.backend.json; merging the two would overstate both.",
+  "policy": "docs/engineering/ci-automation/coverage-policy.md",
+  "establishedBy": "local measurement at the Wave 0 audit; corrected from the first GitHub-hosted run",
+  "tolerancePercentagePoints": 0.5,
+  "touchedFileMinimum": 60,
+  "touchedFileExemptPrefixes": ["src/app/", "src/styles/"],
+  "global": {
+    "lines": 91.06,
+    "statements": 91.06,
+    "functions": 84.87,
+    "branches": 93.62
+  },
+  "knownGaps": [
+    {
+      "path": "src/shared/errors/app-error.ts",
+      "measured": 0,
+      "note": "Dead code: a Phase 1-1 error class superseded by src/server/errors/**, with zero references anywhere in the repository. Deliberately NOT removed from the coverage include set — excluding it would raise the number by hiding code rather than by testing it. Tracked for deletion in a separate change; when it goes, the baseline rises and the commit must say why."
+    }
+  ],
+  "criticalModules": [
+    {
+      "id": "error-mapping",
+      "pathPrefix": "src/server/errors",
+      "metric": "lines",
+      "minimum": 95,
+      "why": "decides which text reaches a caller; a leak here discloses SQL, paths or tenant data"
+    },
+    {
+      "id": "http-validation-and-limits",
+      "pathPrefix": "src/server/http",
+      "metric": "lines",
+      "minimum": 88,
+      "why": "input validation, rate limiting and trusted-proxy handling are the outermost guard"
+    },
+    {
+      "id": "db-concurrency-and-pagination",
+      "pathPrefix": "src/server/db",
+      "metric": "lines",
+      "minimum": 90,
+      "why": "optimistic-concurrency and pagination bugs corrupt data or truncate results silently"
+    },
+    {
+      "id": "cache",
+      "pathPrefix": "src/server/cache",
+      "metric": "lines",
+      "minimum": 92,
+      "why": "a cache that ignores tenant scope is a cross-tenant disclosure"
+    },
+    {
+      "id": "observability",
+      "pathPrefix": "src/server/observability",
+      "metric": "lines",
+      "minimum": 86,
+      "why": "correlation identifiers are how a workflow is reconstructed after an incident"
+    },
+    {
+      "id": "worker-backoff",
+      "pathPrefix": "src/server/worker",
+      "metric": "lines",
+      "minimum": 95,
+      "why": "outbox retry behaviour decides whether an event is delivered once, never, or forever"
+    },
+    {
+      "id": "log-redaction",
+      "pathPrefix": "src/lib/logging",
+      "metric": "lines",
+      "minimum": 72,
+      "why": "the redaction path is the last thing between a credential and a public Actions log"
+    },
+    {
+      "id": "environment-validation",
+      "pathPrefix": "src/config",
+      "metric": "lines",
+      "minimum": 50,
+      "why": "a missing or malformed environment value must fail at start, not at first request"
+    }
+  ]
+}

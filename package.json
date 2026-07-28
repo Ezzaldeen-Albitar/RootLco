@@ -66,10 +66,16 @@
     "validate:p1-20-inventory": "node scripts/p1-20-endpoint-inventory.mjs --check",
     "validate:p1-21-inventory": "node scripts/p1-21-endpoint-inventory.mjs --check"
   },
+  "comment:overrides": "Security overrides. Each entry forces a PATCHED version of a transitive dependency whose direct parent still pins a vulnerable range, so `npm audit` reports zero HIGH/CRITICAL rather than a permanently ignored baseline. Remove an entry only when the parent's own pin has caught up. See docs/engineering/ci-automation/security-model.md.",
+  "overrides": {
+    "postcss": "^8.5.24",
+    "sharp": "^0.35.3",
+    "fast-uri": "^4.1.1"
+  },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.97.0",
-    "next": "16.2.10",
+    "next": "16.2.12",
     "pg": "^8.22.0",
     "pino": "^9.14.0",
     "react": "19.2.4",
@@ -83,7 +89,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.12",
     "prettier": "^3.6.2",
     "sass": "^1.101.0",
     "stylelint": "^17.14.0",

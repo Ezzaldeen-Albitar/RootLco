@@ -1,0 +1,112 @@
+# =============================================================================
+# RootLco — project checkout and dependency installation.
+#
+# Exists to close CSA-11: the identical five-line setup block appeared four times
+# across two workflows, with the Node version written out four times. Drift
+# between them was a matter of when, not whether.
+#
+# It also makes the exact-SHA rule the DEFAULT rather than something each caller
+# has to remember. `actions/checkout` resolves a `pull_request` event to
+# `refs/pull/N/merge` — a synthetic commit that exists nowhere in branch history
+# (CSA-05). Proving that tree says nothing about the commit being merged, so
+# every job here checks out the real head and asserts it.
+#
+# NO SECRETS. This action consumes none and must never begin to.
+# =============================================================================
+
+name: Set up the RootLco project
+description: Checks out the exact head commit, installs Node and the locked dependency tree.
+
+inputs:
+  node-version:
+    description: Node major version. Must match the Dockerfile runtime (ADR-007).
+    required: false
+    default: '22'
+  fetch-depth:
+    description: >-
+      Git history depth. Use 0 where a diff against the base branch is needed
+      (migration immutability, secret history, change detection).
+    required: false
+    default: '1'
+  install:
+    description: Whether to run `npm ci`. Set to 'false' for dependency-free scanners.
+    required: false
+    default: 'true'
+  ref:
+    description: >-
+      Commit to check out. Defaults to the exact pull-request head, falling back
+      to the pushed SHA. Overriding this is almost always a mistake.
+    required: false
+    default: ''
+
+outputs:
+  sha:
+    description: The commit actually checked out.
+    value: ${{ steps.resolve.outputs.sha }}
+  cache-hit:
+    description: Whether the npm cache was restored.
+    value: ${{ steps.node.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the commit to check out
+      id: resolve
+      shell: bash
+      env:
+        REQUESTED_REF: ${{ inputs.ref }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        EVENT_SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        # Precedence: explicit input, then the real PR head, then the pushed SHA.
+        # Never the merge ref.
+        if [ -n "${REQUESTED_REF}" ]; then
+          resolved="${REQUESTED_REF}"
+        elif [ -n "${PR_HEAD_SHA}" ]; then
+          resolved="${PR_HEAD_SHA}"
+        else
+          resolved="${EVENT_SHA}"
+        fi
+        echo "sha=${resolved}" >> "${GITHUB_OUTPUT}"
+        echo "resolved checkout ref: ${resolved}"
+
+    - name: Checkout
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        ref: ${{ steps.resolve.outputs.sha }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: false
+
+    - name: Assert the checked-out commit is the one we asked for
+      shell: bash
+      env:
+        EXPECTED: ${{ steps.resolve.outputs.sha }}
+      run: |
+        set -euo pipefail
+        actual="$(git rev-parse HEAD)"
+        echo "expected: ${EXPECTED}"
+        echo "actual:   ${actual}"
+        if [ "${EXPECTED}" != "${actual}" ]; then
+          echo "::error::Checked out ${actual} but expected ${EXPECTED}. Every result below would describe a different tree."
+          exit 1
+        fi
+        echo "OK: at the exact commit"
+
+    - name: Set up Node
+      id: node
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+
+    - name: Install dependencies (locked)
+      if: inputs.install == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # `npm ci` fails if package.json and package-lock.json disagree, which is
+        # the lockfile-integrity check. `npm install` would silently resolve a
+        # different tree, so it must never appear in a workflow.
+        npm ci
+        echo "npm cache hit: ${{ steps.node.outputs.cache-hit }}"

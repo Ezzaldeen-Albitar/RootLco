@@ -1,0 +1,308 @@
+# =============================================================================
+# RootLco — reusable security workflow.
+#
+# Three jobs, exactly one of which runs per call:
+#
+#   secret-scan          repository scanners, plus git history in `deep` mode.
+#   dependency-security  npm audit split by tree, licence inventory, prohibited
+#                        packages, and GitHub dependency review on pull requests.
+#   code-security        CodeQL over JavaScript/TypeScript and Actions workflows.
+#
+# They are three JOBS rather than one job with three branches because job-level
+# `permissions:` cannot be an expression. CodeQL needs `security-events: write`
+# to upload SARIF, and granting that to the secret scan as well would hand
+# write scope to the job whose whole purpose is to run untrusted-adjacent
+# pattern matching. One job, one fixed permission set (initiative §7).
+#
+# NO SECRETS are consumed. Nothing here reads a repository secret, so a forked
+# pull request loses no capability and gains no exposure.
+# =============================================================================
+
+name: Reusable — security
+
+on:
+  workflow_call:
+    inputs:
+      task:
+        description: One of `secret-scan`, `dependency-security`, `code-security`.
+        required: true
+        type: string
+      ref:
+        required: false
+        type: string
+        default: ''
+      depth:
+        description: '`standard` on pull requests, `deep` nightly (adds git history).'
+        required: false
+        type: string
+        default: standard
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+jobs:
+  # ===========================================================================
+  secret-scan:
+    name: secret-scan
+    if: inputs.task == 'secret-scan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+
+    steps:
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: '0'
+          # The repository scanners are dependency-free by design (node: builtins
+          # only), so this job never runs `npm ci`: fewer third-party bytes
+          # execute before the scan that looks for secrets.
+          install: 'false'
+
+      - name: Tracked environment files and key material
+        run: |
+          set -euo pipefail
+          bad=0
+          if git ls-files --error-unmatch .env .env.local .env.production >/dev/null 2>&1; then
+            echo "::error::A real environment file is tracked. Remove it, ROTATE the exposed values, then purge history."
+            bad=1
+          fi
+          keys="$(git ls-files | grep -Ei '\.(pem|key|p12|pfx|jks|keystore|ppk|asc|gpg)$' || printf '')"
+          if [ -n "${keys}" ]; then
+            echo "::error::Tracked key material found:"
+            echo "${keys}"
+            bad=1
+          fi
+          exit "${bad}"
+
+      - name: Repository secret scanners
+        run: |
+          set -euo pipefail
+          # These print file:line only, never the matching text — a scanner that
+          # echoes what it found turns a public Actions log into the disclosure.
+          npm run security:tracked-secrets
+          npm run security:browser-secrets
+          npm run security:scope-exclusions
+          npm run validate:no-fake-data
+
+      - name: Workflow security policy
+        run: node scripts/ci/check-workflow-security.mjs --json workflow-security.json --markdown workflow-security.md
+
+      - name: Generated and build output carries no credential
+        run: |
+          set -euo pipefail
+          # A secret can reach a public artifact without ever being tracked: an
+          # env value inlined into a bundle, or echoed into a generated document.
+          # Scans whatever build output happens to be present; the container job
+          # covers image layers separately.
+          node scripts/ci/scan-history.mjs --mode worktree \
+            --json worktree-scan.json --markdown worktree-scan.md
+
+      - name: Git history (deep mode only)
+        if: inputs.depth == 'deep'
+        run: |
+          set -euo pipefail
+          # Every commit reachable from any ref, scanned for credential SHAPES.
+          # Deliberately nightly: it is O(history) and would dominate a PR.
+          # Output is file plus pattern class only — never a matched value.
+          node scripts/ci/scan-history.mjs --mode history \
+            --json history-scan.json --markdown history-scan.md
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for file in workflow-security.md worktree-scan.md history-scan.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Secret scan at `%s` (depth: `%s`)_\n' "${RESOLVED_SHA}" "${{ inputs.depth }}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-secret-scan
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # Findings are file + pattern class only. No matched value is written
+          # to any artifact, by construction in scan-history.mjs.
+          path: |
+            workflow-security.json
+            worktree-scan.json
+            history-scan.json
+            *.md
+
+  # ===========================================================================
+  dependency-security:
+    name: dependency-security
+    if: inputs.task == 'dependency-security'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # `dependency-review-action` reads the pull request's dependency graph.
+      pull-requests: read
+
+    steps:
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Audit the production and full dependency trees
+        run: |
+          set -euo pipefail
+          # `npm audit` exits non-zero whenever it finds anything, and the POLICY
+          # — not the exit code — decides what blocks. The reports are captured
+          # with an explicit fallback, then PARSED, so a finding can never be
+          # confused with a tooling failure and an empty file can never pass.
+          npm audit --omit=dev --json > audit-production.json || printf ''
+          npm audit --json > audit-full.json || printf ''
+          for file in audit-production.json audit-full.json; do
+            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "${file}" \
+              || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
+          done
+
+      - name: Licence inventory
+        run: node scripts/ci/licence-inventory.mjs --json licences.json
+
+      - name: Dependency policy
+        run: |
+          set -euo pipefail
+          node scripts/ci/dependency-policy.mjs \
+            --prod-audit audit-production.json --dev-audit audit-full.json \
+            --exceptions .github/ci-baselines/dependency-exceptions.json \
+            --licences licences.json \
+            --json dependency-policy.json --markdown dependency-policy.md
+
+      - name: Outdated inventory (reported, never blocking)
+        if: '!cancelled()'
+        run: |
+          set -euo pipefail
+          # `npm outdated` exits 1 whenever anything is behind, which is almost
+          # always true. It is evidence for the nightly dependency conversation,
+          # not a merge gate, so its status is captured rather than propagated.
+          npm outdated --json > outdated.json || printf ''
+          node -e '
+            const fs = require("node:fs");
+            let data = {};
+            try { data = JSON.parse(fs.readFileSync("outdated.json", "utf8") || "{}"); } catch { data = {}; }
+            const rows = Object.entries(data);
+            console.log(`packages behind latest: ${rows.length}`);
+            const md = ["### Outdated dependencies", "", `**${rows.length}** package(s) behind latest. Reported only — never blocking.`, ""];
+            if (rows.length) {
+              md.push("| Package | Current | Wanted | Latest |", "| --- | --- | --- | --- |");
+              for (const [name, v] of rows.slice(0, 40)) md.push(`| \`${name}\` | ${v.current ?? "—"} | ${v.wanted ?? "—"} | ${v.latest ?? "—"} |`);
+            }
+            fs.writeFileSync("outdated.md", md.join("\n") + "\n");
+          '
+
+      - name: GitHub dependency review
+        # Only meaningful on a pull request: it diffs the base and head manifests.
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+          # AGPL and SSPL are incompatible with a proprietary product. The same
+          # list is enforced offline by dependency-policy.mjs, so an outage of
+          # this action cannot silently drop the control.
+          deny-licenses: AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for file in dependency-policy.md outdated.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Dependency security at `%s`_\n' "${RESOLVED_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-dependency-security
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # These describe package NAMES and VERSIONS only. No source, no
+          # environment and no credential leaves the runner.
+          path: |
+            audit-production.json
+            audit-full.json
+            outdated.json
+            licences.json
+            dependency-policy.json
+            *.md
+
+  # ===========================================================================
+  code-security:
+    name: code-security
+    if: inputs.task == 'code-security'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      # The ONLY job in the repository that holds a write scope, and it holds
+      # exactly one: SARIF upload.
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+
+    steps:
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # CodeQL analyses source; it does not need the dependency tree for
+          # JavaScript/TypeScript, and installing it would only widen what runs.
+          install: 'false'
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          languages: ${{ matrix.language }}
+          # The widest first-party suite: SQL and command injection, path
+          # traversal, unsafe deserialization, hardcoded credentials, weak
+          # cryptography, SSRF, and unsafe workflow expressions.
+          queries: security-and-quality
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          category: /language:${{ matrix.language }}
+          upload: always
+          # The SARIF is also written to disk so it can be attached as evidence
+          # even when the Security tab is unavailable on this plan.
+          output: sarif-results
+
+      - name: Upload SARIF as evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-code-security-${{ matrix.language }}
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: sarif-results/**

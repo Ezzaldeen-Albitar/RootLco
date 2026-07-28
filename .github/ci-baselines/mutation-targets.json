@@ -1,0 +1,39 @@
+{
+  "description": "Guards whose failure would be a security or data-integrity incident, each paired with the test that is supposed to notice its removal. Not a whole-repository mutation run: those take hours and produce a score nobody acts on. This is the short list that has to hold.",
+  "policy": "docs/engineering/ci-automation/automated-testing-strategy.md",
+  "howItFails": "A target whose anchor text is no longer present ERRORS rather than passing. A mutation target that silently stops mutating anything is the same failure mode as a vacuous assertion, and it is the one this file is most at risk of.",
+  "growthNote": "The list is expected to grow with each phase. Adding a target costs one entry; the value is that a guard added today cannot be quietly deleted next quarter.",
+  "targets": [
+    {
+      "id": "inventory-read-company-scope",
+      "category": "RLS scope",
+      "file": "src/modules/inventory/data/inventory-repository.ts",
+      "find": "'b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3'",
+      "replace": "'b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3' /* mutation: scope predicate under test */",
+      "expectOccurrences": 2,
+      "test": "npm run test:backend -- --config vitest.config.backend.ts tests/backend/p1-21-inventory-reads.test.ts",
+      "why": "This is finding H6 from P1-21. `iam.has_permission_in_scope` matches company OR branch, so a company-scoped grant passes while naming a branch of a DIFFERENT company; RLS is permission-blind. Only the SQL `company_id` predicate refuses it. The mutation is a no-op comment rather than a deletion because deleting the clause leaves `$2` unbound and produces 500s — a different failure from the original defect, which would make the mutant look killed for the wrong reason.",
+      "mutationNote": "PLACEHOLDER MUTATION. This target currently only proves the anchor still exists and the suite still passes with it present. Replacing it with a faithful predicate removal requires renumbering the bound parameters, which is exactly the work P1-21 did by hand. Recorded as a known limitation rather than presented as a kill."
+    },
+    {
+      "id": "deferred-scope-target-required",
+      "category": "authorization",
+      "file": "src/server/auth/authorization.ts",
+      "find": "if (!operation.public && target.companyId === undefined && target.branchId === undefined) {",
+      "replace": "if (false && !operation.public && target.companyId === undefined && target.branchId === undefined) {",
+      "expectOccurrences": 1,
+      "test": "npm run test:backend -- --config vitest.config.backend.ts tests/backend/authorization.test.ts tests/backend/context-spoofing.test.ts",
+      "why": "P1-18-A-01. A deferred authorizer handed an empty target silently evaluates scope-blind `iam.has_permission` and answers yes. Disabling this guard restores that hole exactly. If the suite stays green, nothing is asserting the fail-closed behaviour."
+    },
+    {
+      "id": "idempotency-fingerprint-comparison",
+      "category": "idempotency",
+      "file": "src/server/http/idempotency.ts",
+      "find": "if (existing.request_fingerprint !== input.fingerprint) {",
+      "replace": "if (false && existing.request_fingerprint !== input.fingerprint) {",
+      "expectOccurrences": 1,
+      "test": "npm run test:backend -- --config vitest.config.backend.ts tests/backend/idempotency.test.ts",
+      "why": "The fingerprint carries the principal. Without this comparison, the same idempotency key with a DIFFERENT payload — or from a different user of the same tenant — returns the first caller's stored response instead of a conflict. That is a cross-user disclosure wearing the shape of a retry."
+    }
+  ]
+}

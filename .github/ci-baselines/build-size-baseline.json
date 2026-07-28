@@ -1,0 +1,12 @@
+{
+  "description": "Production build size. Measured first, ratcheted second — no byte count here was invented. `standaloneBytes` is what the Dockerfile `runner` stage actually copies, so it is the number that governs the deployed artifact.",
+  "policy": "docs/engineering/ci-automation/pr-gate.md",
+  "establishedBy": null,
+  "establishmentNote": "DELIBERATELY UNSET. `.next` was never measured by any workflow, and a local Windows measurement is not the number a Linux runner produces. The first GitHub-hosted build records it; the numbers are then committed and the ratchet starts.",
+  "warnGrowthRatio": 1.1,
+  "failGrowthRatio": 1.5,
+  "ratioRationale": "Expressed as a MULTIPLE of the recorded baseline rather than an absolute ceiling, because an absolute ceiling would be a guess. 1.1 flags a 10% jump for a human to look at; 1.5 refuses a 50% jump outright — at that size change something structural happened and it should be deliberate.",
+  "standaloneBytes": null,
+  "staticBytes": null,
+  "totalBytes": null
+}

@@ -1,0 +1,20 @@
+{
+  "description": "Dependency-advisory exceptions. PRODUCTION advisories are NEVER waived and this file is not consulted for them — the production tree is at zero HIGH/CRITICAL and must stay there. Only development-tree advisories may be waived, itemised by advisory identifier, with a reason, an owner and a review date.",
+  "policy": "docs/engineering/ci-automation/security-model.md",
+  "productionPolicy": "zero HIGH or CRITICAL, no exceptions",
+  "developmentPolicy": "zero HIGH or CRITICAL unless itemised below with an unexpired review date",
+  "disallowedLicences": ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"],
+  "licenceExceptions": [],
+  "developmentAdvisories": [
+    {
+      "id": "GHSA-mh99-v99m-4gvg",
+      "package": "brace-expansion",
+      "severity": "high",
+      "reason": "Denial of service via unbounded expansion. Reaches the tree only through `minimatch`, and from there through eslint, its plugins, and @vitest/coverage-v8 — all development-only, none present in the Dockerfile `runner` stage. THE ADVISORY HAS NO CONSUMABLE FIX: it affects every release up to and including 5.0.7, and the only patched release is 5.0.8, whose changed export shape breaks `minimatch` (verified — overriding to ^5.0.8 makes `npm run lint` fail with `TypeError: expand is not a function`). There is no patched release in the 1.x, 2.x, 3.x or 4.x lines for minimatch to consume. Waiting for the ecosystem is the only available action; the exposure is a CI runner processing this repository's own glob patterns.",
+      "owner": "platform-owner",
+      "reviewBy": "2026-10-31",
+      "reviewAction": "Re-check whether eslint and @vitest/coverage-v8 have moved to a minimatch that accepts brace-expansion 5.x. If they have, drop this entry — dependency-policy.mjs fails on an exception that matches nothing, so the file cannot silently outlive the problem."
+    }
+  ],
+  "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Closed by bumping next to 16.2.12 and adding `overrides` for postcss ^8.5.24 and sharp ^0.35.3, because Next pins postcss at exactly 8.4.31 and npm's only suggested 'fix' was to downgrade Next to 9.3.3. Production is now at zero."
+}

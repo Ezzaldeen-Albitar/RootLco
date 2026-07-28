@@ -46,10 +46,10 @@ jobs:
       # Commit-SHA pinning is stronger and is recorded as an open hardening item
       # in docs/phase-1/phase-1-1/security-readiness.md.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # Matches the container runtime pinned in the Dockerfile (Node 22 LTS),
           # not the developer host. See ADR-007.
@@ -144,10 +144,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Validate compose file
         run: docker compose config --quiet
@@ -156,7 +156,7 @@ jobs:
       # runner stage (proves the multi-stage path is not broken). No image is
       # pushed anywhere: Phase 1-1 has no registry and no deployment target.
       - name: Build dev stage
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           target: dev
@@ -167,7 +167,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build production runner stage
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           target: runner
@@ -181,6 +181,7 @@ jobs:
       # trusting the Dockerfile to stay correct.
       - name: Assert the production image does not run as root
         run: |
+          set -euo pipefail
           uid="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c 'id -u')"
           echo "runtime uid=${uid}"
           if [ "${uid}" = "0" ]; then
@@ -228,12 +229,12 @@ jobs:
       DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value as above
     steps:
       - name: Checkout (full history — needed for the immutability diff)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -336,20 +337,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       # Needed only to execute the dependency-free scanner below. No `npm ci`:
       # the scanner imports node: builtins only, so `npm run` needs no node_modules.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
       # Blocks the mistake that matters most: a real .env reaching the repository.
       - name: Fail if a committed environment file is tracked
         run: |
+          set -euo pipefail
           if git ls-files --error-unmatch .env .env.local .env.production 2>/dev/null; then
             echo "::error::A real environment file is tracked. Remove it, ROTATE the exposed values, then purge history."
             exit 1
@@ -358,7 +360,8 @@ jobs:
 
       - name: Fail on tracked key material
         run: |
-          hits="$(git ls-files | grep -Ei '\.(pem|key|p12|pfx)$' || true)"
+          set -euo pipefail
+          hits="$(git ls-files | grep -Ei '\.(pem|key|p12|pfx)$' || printf '')"
           if [ -n "${hits}" ]; then
             echo "::error::Tracked key material found:"; echo "${hits}"; exit 1
           fi

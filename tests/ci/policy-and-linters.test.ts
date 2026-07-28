@@ -1,0 +1,606 @@
+/**
+ * Tests for the linters and policies that decide whether a change is safe.
+ *
+ * Each of these was written because the audit found something the pipeline could
+ * not see. The tests below assert the DETECTION, not the current state of the
+ * repository — a linter that only passes because the repository happens to be
+ * clean would keep passing after the repository stopped being clean.
+ */
+import { describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  lintWorkflow,
+  extractRunBlocks,
+  isLocalReference,
+} from '../../scripts/ci/check-workflow-security.mjs';
+import {
+  lintTestFile,
+  lintVitestConfig,
+  lintScript,
+  stripComments,
+} from '../../scripts/ci/check-test-honesty.mjs';
+import { evaluate as evaluateContainer } from '../../scripts/ci/container-policy.mjs';
+import {
+  evaluate as evaluateDependencies,
+  PROHIBITED_PACKAGES,
+} from '../../scripts/ci/dependency-policy.mjs';
+import {
+  checkFilenames,
+  checkNoDeveloperData,
+  stripSqlBodies,
+} from '../../scripts/ci/migration-replay-checks.mjs';
+import {
+  compare as compareRoutes,
+  discoverImports,
+} from '../../scripts/ci/check-route-registry-parity.mjs';
+import { classify as classifySecret, isAllowed } from '../../scripts/ci/scan-history.mjs';
+
+const rules = (findings: Array<{ rule: string }>) => findings.map((f) => f.rule);
+
+const MINIMAL_WORKFLOW = `name: X
+on: push
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: |
+          set -euo pipefail
+          echo hello
+`;
+
+describe('workflow security linter', () => {
+  it('accepts a workflow that follows every rule', () => {
+    expect(lintWorkflow('ok.yml', MINIMAL_WORKFLOW)).toEqual([]);
+  });
+
+  it('WFS-001 catches an action pinned to a mutable tag', () => {
+    const source = MINIMAL_WORKFLOW.replace(
+      'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0',
+      'actions/checkout@v4'
+    );
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-001');
+  });
+
+  it('WFS-002 catches a SHA pin with no version comment', () => {
+    const source = MINIMAL_WORKFLOW.replace(' # v4.4.0', '');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-002');
+  });
+
+  it('does not demand a SHA pin for a workflow-local action', () => {
+    expect(isLocalReference('./.github/actions/setup-project')).toBe(true);
+    expect(isLocalReference('actions/checkout@v4')).toBe(false);
+  });
+
+  it('WFS-003 catches a workflow with no permissions block', () => {
+    const source = MINIMAL_WORKFLOW.replace('permissions:\n  contents: read\n', '');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-003');
+  });
+
+  it('WFS-004 catches write scope granted at workflow level', () => {
+    const source = MINIMAL_WORKFLOW.replace('  contents: read', '  contents: write');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-004');
+  });
+
+  it('WFS-005 catches pull_request_target, at critical severity', () => {
+    const source = MINIMAL_WORKFLOW.replace('on: push', 'on:\n  pull_request_target:');
+    const findings = lintWorkflow('x.yml', source);
+    expect(rules(findings)).toContain('WFS-005');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-005').severity).toBe('critical');
+  });
+
+  it('WFS-006 catches an attacker-controlled value interpolated into a shell block', () => {
+    const source = MINIMAL_WORKFLOW.replace(
+      '          echo hello',
+      '          echo "${{ github.event.pull_request.title }}"'
+    );
+    const findings = lintWorkflow('x.yml', source);
+    expect(rules(findings)).toContain('WFS-006');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-006').severity).toBe('critical');
+  });
+
+  it('WFS-007 catches a multi-line run block that does not fail fast', () => {
+    const source = MINIMAL_WORKFLOW.replace('          set -euo pipefail\n', '');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-007');
+  });
+
+  it('WFS-008 catches a swallowed exit status', () => {
+    const source = MINIMAL_WORKFLOW.replace('          echo hello', '          npm test || true');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-008');
+  });
+
+  it('WFS-009 catches continue-on-error, and accepts a reasoned suppression above it', () => {
+    // Realistic shape: `continue-on-error` is a key on a step, not a list item.
+    const bad = MINIMAL_WORKFLOW.replace(
+      '      - uses: actions/checkout',
+      '      - continue-on-error: true\n        uses: actions/checkout'
+    );
+    expect(rules(lintWorkflow('x.yml', bad))).toContain('WFS-009');
+
+    const suppressed = MINIMAL_WORKFLOW.replace(
+      '      - uses: actions/checkout',
+      '      # workflow-security-allow: WFS-009 -- reason recorded here\n      - continue-on-error: true\n        uses: actions/checkout'
+    );
+    expect(rules(lintWorkflow('x.yml', suppressed))).not.toContain('WFS-009');
+  });
+
+  it('WFS-010 catches a job with no timeout', () => {
+    const source = MINIMAL_WORKFLOW.replace('    timeout-minutes: 5\n', '');
+    expect(rules(lintWorkflow('x.yml', source))).toContain('WFS-010');
+  });
+
+  it('extracts a run block by indentation, not by guessing where it ends', () => {
+    const blocks = extractRunBlocks(MINIMAL_WORKFLOW.split('\n'));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.multiline).toBe(true);
+    expect(blocks[0]?.body).toContain('echo hello');
+  });
+});
+
+describe('test honesty', () => {
+  /**
+   * Every fixture below is ASSEMBLED AT RUNTIME rather than written as a
+   * literal, and that is not a stylistic choice.
+   *
+   * This file tests a scanner that searches every tracked test file for `.only`,
+   * undocumented `.skip`, and vacuous assertions. Written literally, those
+   * fixtures would make the scanner match its own test suite and fail every run
+   * — the identical trap `scripts/check-browser-exposed-secrets.mjs` was
+   * rewritten in Node to escape, and the reason `shared-processed-errors.test.ts`
+   * builds its AWS prefix with `String.fromCharCode`.
+   *
+   * The alternative — excluding this path from the scan — would leave a hole in
+   * the one file most likely to contain the patterns. Assembling keeps the whole
+   * repository in scope.
+   */
+  const ONLY = `.${'on'}${'ly'}`;
+  const SKIP = `.${'sk'}${'ip'}`;
+  const EXPECT = `exp${'ect'}`;
+  const vacuous = (inner: string) => `${EXPECT}(${inner})`;
+
+  const OK = `import { describe, it, expect } from 'vitest';
+describe('x', () => {
+  it('asserts something real', () => {
+    ${EXPECT}(compute(2)).toBe(4);
+  });
+});
+`;
+
+  it('accepts an honest test file', () => {
+    expect(lintTestFile('tests/x.test.ts', OK)).toEqual([]);
+  });
+
+  it('TH-001 catches .only', () => {
+    expect(rules(lintTestFile('tests/x.test.ts', OK.replace('it(', `it${ONLY}(`)))).toContain(
+      'TH-001'
+    );
+  });
+
+  it('TH-002 catches an undocumented .skip, and accepts a documented one', () => {
+    expect(rules(lintTestFile('tests/x.test.ts', OK.replace('it(', `it${SKIP}(`)))).toContain(
+      'TH-002'
+    );
+    const documented = OK.replace(
+      '  it(',
+      `  // test-honesty-allow: TH-002 -- upstream driver bug, tracked in ISSUE-1\n  it${SKIP}(`
+    );
+    expect(rules(lintTestFile('tests/x.test.ts', documented))).not.toContain('TH-002');
+  });
+
+  it('TH-003 catches a test file with no test', () => {
+    expect(rules(lintTestFile('tests/x.test.ts', 'const a = 1;\n'))).toContain('TH-003');
+  });
+
+  it('TH-004 catches a test file with tests but no assertion', () => {
+    const noAssertion = `describe('x', () => { it('does nothing', () => { const a = 1; }); });`;
+    expect(rules(lintTestFile('tests/x.test.ts', noAssertion))).toContain('TH-004');
+  });
+
+  it('TH-005 catches vacuous assertions in every shape the codebase used', () => {
+    for (const assertion of [
+      `${vacuous('true')}.toBe(true)`,
+      `${vacuous('false')}.toBe(false)`,
+      `${vacuous('1')}.toBe(1)`,
+      `${vacuous("'a'")}.toBe('a')`,
+      `${EXPECT}.assertions(0)`,
+    ]) {
+      const source = OK.replace(`${EXPECT}(compute(2)).toBe(4);`, `${assertion};`);
+      expect(rules(lintTestFile('tests/x.test.ts', source)), assertion).toContain('TH-005');
+    }
+  });
+
+  it('a comment cannot satisfy a structural requirement', () => {
+    expect(stripComments(`// ${vacuous('true')}.toBe(true)\nconst a = 1;`)).not.toContain(EXPECT);
+    const commentedOnly = `describe('x', () => { it('a', () => { /* ${EXPECT}(x).toBe(1) */ }); });`;
+    expect(rules(lintTestFile('tests/x.test.ts', commentedOnly))).toContain('TH-004');
+  });
+
+  it('TH-008 catches an isolation claim made against an identifier that never existed', () => {
+    const bogus = `import { randomUUID } from 'node:crypto';
+describe('tenant isolation', () => {
+  it('returns nothing for another tenant', async () => {
+    const other = randomUUID();
+    expect(await read(other)).toEqual([]);
+  });
+});`;
+    expect(rules(lintTestFile('tests/db/tenant-isolation.test.ts', bogus))).toContain('TH-008');
+  });
+
+  it('TH-008 accepts an isolation test that creates a real row first', () => {
+    const real = `import { randomUUID } from 'node:crypto';
+describe('tenant isolation', () => {
+  it('returns nothing for another tenant', async () => {
+    const other = randomUUID();
+    await client.query('INSERT INTO crm.partners (tenant_id) VALUES ($1)', [other]);
+    expect(await read(other)).toEqual([]);
+  });
+});`;
+    expect(rules(lintTestFile('tests/db/tenant-isolation.test.ts', real))).not.toContain('TH-008');
+  });
+
+  it('TH-006 catches a runner-level retry that would hide a deterministic failure', () => {
+    expect(
+      rules(lintVitestConfig('vitest.config.ts', 'export default { test: { retry: 2 } };'))
+    ).toContain('TH-006');
+    expect(
+      rules(lintVitestConfig('vitest.config.ts', 'export default { test: { retry: 0 } };'))
+    ).not.toContain('TH-006');
+  });
+
+  it('TH-007 requires database-bound projects to stay serial', () => {
+    expect(
+      rules(lintVitestConfig('vitest.config.db.ts', 'export default { test: {} };'))
+    ).toContain('TH-007');
+    expect(
+      rules(
+        lintVitestConfig(
+          'vitest.config.db.ts',
+          'export default { test: { fileParallelism: false } };'
+        )
+      )
+    ).not.toContain('TH-007');
+  });
+
+  it('TH-009 catches a script that discards a failure', () => {
+    expect(rules(lintScript('scripts/x.sh', 'npm test || true\n'))).toContain('TH-009');
+    expect(rules(lintScript('scripts/x.sh', 'set +e\n'))).toContain('TH-009');
+    expect(rules(lintScript('scripts/x.sh', 'npm test; exit 0\n'))).toContain('TH-009');
+    expect(rules(lintScript('scripts/x.sh', 'set -euo pipefail\nnpm test\n'))).toEqual([]);
+  });
+});
+
+describe('container policy', () => {
+  const report = (vulns: unknown[], secrets: unknown[] = []) => ({
+    Results: [
+      { Target: 'rootlco/web:ci-runner (alpine)', Vulnerabilities: vulns, Secrets: secrets },
+    ],
+  });
+
+  it('blocks a fixable HIGH', () => {
+    const result = evaluateContainer(
+      report([
+        {
+          VulnerabilityID: 'CVE-1',
+          PkgName: 'p',
+          InstalledVersion: '1',
+          FixedVersion: '2',
+          Severity: 'HIGH',
+        },
+      ]),
+      ['CRITICAL', 'HIGH']
+    );
+    expect(result.ok).toBe(false);
+    expect(result.counts.fixable).toBe(1);
+  });
+
+  it('reports but does not block an unfixable HIGH, because the action is a base-image change', () => {
+    const result = evaluateContainer(
+      report([{ VulnerabilityID: 'CVE-2', PkgName: 'p', InstalledVersion: '1', Severity: 'HIGH' }]),
+      ['CRITICAL', 'HIGH']
+    );
+    expect(result.ok).toBe(true);
+    expect(result.counts.unfixable).toBe(1);
+  });
+
+  it('ignores a severity below the blocking set', () => {
+    const result = evaluateContainer(
+      report([
+        {
+          VulnerabilityID: 'CVE-3',
+          PkgName: 'p',
+          InstalledVersion: '1',
+          FixedVersion: '2',
+          Severity: 'LOW',
+        },
+      ]),
+      ['CRITICAL', 'HIGH']
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('ALWAYS blocks a secret in a layer, whatever its severity or fixability', () => {
+    const result = evaluateContainer(report([], [{ RuleID: 'aws-access-key', Severity: 'LOW' }]), [
+      'CRITICAL',
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/aws-access-key/);
+  });
+
+  it('never carries the matched secret text into the result', () => {
+    const result = evaluateContainer(
+      report([], [{ RuleID: 'r', Match: 'SUPER_SECRET_VALUE', Severity: 'HIGH' }]),
+      ['HIGH']
+    );
+    expect(JSON.stringify(result)).not.toContain('SUPER_SECRET_VALUE');
+  });
+});
+
+describe('dependency policy', () => {
+  const advisory = (name: string, ghsa: string) => ({
+    vulnerabilities: {
+      [name]: {
+        severity: 'high',
+        isDirect: true,
+        range: '<1.0.0',
+        via: [
+          {
+            source: 1,
+            name,
+            title: 't',
+            url: `https://github.com/advisories/${ghsa}`,
+            severity: 'high',
+          },
+        ],
+      },
+    },
+  });
+
+  it('never waives a production advisory, even with a matching exception', () => {
+    const result = evaluateDependencies({
+      prodAudit: advisory('next', 'GHSA-aaaa-bbbb-cccc'),
+      devAudit: { vulnerabilities: {} },
+      exceptions: {
+        developmentAdvisories: [
+          { id: 'GHSA-aaaa-bbbb-cccc', reason: 'r', owner: 'o', reviewBy: '2099-01-01' },
+        ],
+      },
+      licences: [],
+      installedPackages: new Set(),
+      today: '2026-07-28',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/never waived/);
+  });
+
+  it('waives a development advisory with an unexpired, complete exception', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+      exceptions: {
+        developmentAdvisories: [
+          {
+            id: 'GHSA-dddd-eeee-ffff',
+            reason: 'no consumable fix',
+            owner: 'platform-owner',
+            reviewBy: '2099-01-01',
+          },
+        ],
+      },
+      licences: [],
+      installedPackages: new Set(),
+      today: '2026-07-28',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.development.waived).toBe(1);
+  });
+
+  it('fails an EXPIRED development exception', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+      exceptions: {
+        developmentAdvisories: [
+          { id: 'GHSA-dddd-eeee-ffff', reason: 'r', owner: 'o', reviewBy: '2020-01-01' },
+        ],
+      },
+      licences: [],
+      installedPackages: new Set(),
+      today: new Date('2026-07-28'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/expired/);
+  });
+
+  it('fails an exception missing a reason or an owner', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+      exceptions: {
+        developmentAdvisories: [{ id: 'GHSA-dddd-eeee-ffff', reviewBy: '2099-01-01' }],
+      },
+      licences: [],
+      installedPackages: new Set(),
+      today: new Date('2026-07-28'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/missing a reason or an owner/);
+  });
+
+  it('warns about an exception that matches nothing, so the list cannot outlive the problem', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: { vulnerabilities: {} },
+      exceptions: {
+        developmentAdvisories: [
+          { id: 'GHSA-gone', reason: 'r', owner: 'o', reviewBy: '2099-01-01' },
+        ],
+      },
+      licences: [],
+      installedPackages: new Set(),
+      today: new Date('2026-07-28'),
+    });
+    expect(result.warnings.join('\n')).toMatch(/matched no current advisory/);
+  });
+
+  it('refuses a prohibited package outright', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: { vulnerabilities: {} },
+      exceptions: { developmentAdvisories: [] },
+      licences: [],
+      installedPackages: new Set(['event-stream']),
+      today: new Date('2026-07-28'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/event-stream/);
+    expect(
+      (PROHIBITED_PACKAGES as Array<{ reason: string }>).every((p) => p.reason.length > 10)
+    ).toBe(true);
+  });
+
+  it('refuses a copyleft licence incompatible with a proprietary product', () => {
+    const result = evaluateDependencies({
+      prodAudit: { vulnerabilities: {} },
+      devAudit: { vulnerabilities: {} },
+      exceptions: { developmentAdvisories: [] },
+      licences: [{ name: 'some-lib', license: 'AGPL-3.0' }],
+      installedPackages: new Set(),
+      today: new Date('2026-07-28'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toMatch(/AGPL-3.0/);
+  });
+});
+
+describe('migration replay checks', () => {
+  it('accepts both filename conventions in the repository', () => {
+    expect(
+      checkFilenames(['0001_extensions.sql', '0002_base.sql', '20260717100000_org.sql'])
+    ).toEqual([]);
+  });
+
+  it('refuses a duplicate or out-of-order timestamp, because apply order is lexical', () => {
+    expect(checkFilenames(['20260717100000_a.sql', '20260717100000_b.sql']).join('\n')).toMatch(
+      /does not come after/
+    );
+    expect(checkFilenames(['20260718100000_a.sql', '20260717100000_b.sql']).join('\n')).toMatch(
+      /does not come after/
+    );
+  });
+
+  it('refuses a bootstrap-style name once the timestamped block has begun', () => {
+    expect(checkFilenames(['20260717100000_a.sql', '0004_late.sql']).join('\n')).toMatch(
+      /bootstrap block is closed/
+    );
+  });
+
+  it('refuses a filename that matches no convention', () => {
+    expect(checkFilenames(['add_thing.sql']).join('\n')).toMatch(/matches neither/);
+  });
+
+  it('strips dollar-quoted bodies so a history trigger is not mistaken for a data seed', () => {
+    const trigger = `CREATE FUNCTION f() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO wo.work_order_status_history (id) VALUES (1);
+END;
+$$;`;
+    expect(stripSqlBodies(trigger)).not.toContain('INSERT INTO wo.');
+  });
+
+  it('still catches a genuine top-level business INSERT', (ctx) => {
+    // Written to a throwaway directory so the REAL filesystem path is exercised
+    // — the stripping logic and the file walk are separate ways to be wrong.
+    const dir = mkdtempSync(join(tmpdir(), 'rootlco-migration-'));
+    ctx.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(
+      join(dir, 'seed.sql'),
+      "INSERT INTO crm.partners (id, name) VALUES (1, 'Demo Customer');\n"
+    );
+    expect(checkNoDeveloperData(dir, ['seed.sql']).join('\n')).toMatch(/crm\.partners/);
+  });
+
+  it('does not flag a history trigger written to disk', (ctx) => {
+    const dir = mkdtempSync(join(tmpdir(), 'rootlco-migration-'));
+    ctx.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(
+      join(dir, 'trigger.sql'),
+      `CREATE FUNCTION f() RETURNS trigger AS $$\nBEGIN\n  INSERT INTO wo.work_order_status_history (id) VALUES (1);\nEND;\n$$;\n`
+    );
+    expect(checkNoDeveloperData(dir, ['trigger.sql'])).toEqual([]);
+  });
+});
+
+describe('route ↔ registry parity', () => {
+  it('finds a route module that no import registers', () => {
+    const result = compareRoutes(
+      ['@/app/api/v1/a/route', '@/app/api/v1/b/route'],
+      ['@/app/api/v1/a/route'],
+      []
+    );
+    expect(result.missingImports).toEqual(['@/app/api/v1/b/route']);
+  });
+
+  it('finds an import that resolves to no route module', () => {
+    const result = compareRoutes(
+      ['@/app/api/v1/a/route'],
+      ['@/app/api/v1/a/route', '@/app/api/v1/gone/route'],
+      []
+    );
+    expect(result.staleImports).toEqual(['@/app/api/v1/gone/route']);
+  });
+
+  it('flags an unversioned route with no recorded justification', () => {
+    const result = compareRoutes(
+      ['@/app/api/v1/a/route'],
+      ['@/app/api/v1/a/route'],
+      ['@/app/api/rogue/route']
+    );
+    expect(result.unexpectedUnversioned).toEqual(['@/app/api/rogue/route']);
+  });
+
+  it('accepts the documented unversioned health probe', () => {
+    const result = compareRoutes(
+      ['@/app/api/v1/a/route'],
+      ['@/app/api/v1/a/route'],
+      ['@/app/api/health/route']
+    );
+    expect(result.unexpectedUnversioned).toEqual([]);
+  });
+
+  it('reads only side-effect imports of route modules', () => {
+    const source = `import '@/app/api/v1/a/route';
+import { thing } from '@/lib/thing';
+import '@/app/api/v1/b/route';`;
+    expect(discoverImports(source)).toEqual(['@/app/api/v1/a/route', '@/app/api/v1/b/route']);
+  });
+});
+
+describe('credential-shape scanner', () => {
+  it('recognises each shape it claims to', () => {
+    expect(classifySecret('-----BEGIN RSA PRIVATE KEY-----')).toContain('private-key-header');
+    expect(classifySecret(`AKIA${'A1B2C3D4E5F6G7H8'}`)).toContain('aws-access-key');
+    expect(classifySecret(`gh${'p'}_${'a'.repeat(40)}`)).toContain('github-token');
+    expect(classifySecret('postgres://user:hunter2@host/db')).toContain(
+      'postgres-url-with-password'
+    );
+    expect(classifySecret(`sb_${'secret'}_${'x'.repeat(30)}`)).toContain('supabase-secret-key');
+  });
+
+  it('does not fire on ordinary text', () => {
+    expect(classifySecret('const greeting = "hello world";')).toEqual([]);
+    expect(classifySecret('postgres://user@host/db')).toEqual([]);
+  });
+
+  it('allows a fixture only for the exact file AND pattern class recorded', () => {
+    expect(isAllowed('tests/logger.test.ts', 'postgres-url-with-password')).toBe(true);
+    // The same file must NOT be allowed to carry a different class of secret.
+    expect(isAllowed('tests/logger.test.ts', 'aws-access-key')).toBe(false);
+    // Nor may an unrelated file inherit the allowance.
+    expect(isAllowed('src/server/db/pool.ts', 'postgres-url-with-password')).toBe(false);
+  });
+});
