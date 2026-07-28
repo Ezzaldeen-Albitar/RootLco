@@ -38,6 +38,12 @@ What remains genuinely owner-only is unchanged — steps 5, 9 and 10 below.
 | 7       | `0e492bb` | 12/13; `dependency-security` only — AR-42                     |
 | 8       | `d166449` | **14/14 green, `ci-gate` Go** — and carrying every review fix |
 | 9       | `c95e8d9` | **14/14 green, `ci-gate` Go** — documentation on top          |
+| 10      | `a243295` | **14/14 green, `ci-gate` Go** — AR-43/AR-44 corrected         |
+
+The most recent CONFIRMED green run at the time of writing is **`a243295`**.
+Like the execution checkpoint, this table cannot contain the result of the run
+triggered by the commit that carries it — a document that reports its own
+verification is asserting something it has not seen.
 
 The legacy `ci.yml` has passed 4/4 on every one of these commits, which is what
 gives independent confidence that the dependency remediation itself is sound —
