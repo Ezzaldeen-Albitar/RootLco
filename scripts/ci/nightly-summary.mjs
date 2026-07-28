@@ -68,7 +68,23 @@ export function evaluate(needs) {
           'Decide whether its failure is blocking or informational.'
       );
     }
-    if (result === 'success' || result === 'skipped') continue;
+    if (result === 'success') continue;
+    if (result === 'skipped') {
+      // A skipped BLOCKING job is not a pass. `backup-restore-drill` carries
+      // `if: !inputs.skip-slow`, so dispatching with `skip-slow: true` would
+      // otherwise produce a green nightly gate with no restore drill ever run —
+      // the exact "skipped ≠ passed" hole the PR gate goes to length to close.
+      // Nightly performs no change detection, so no skip is justifiable.
+      if (tier === 'blocking') {
+        failures.push(
+          `blocking nightly job \`${id}\` was SKIPPED. Nightly performs no change detection, so there is ` +
+            'no recorded reason that could justify it. A skipped drill is not a passed drill.'
+        );
+      } else {
+        informational.push(`\`${id}\` was skipped — ${TIER_REASONS[id] ?? 'informational tier'}`);
+      }
+      continue;
+    }
     if (tier === 'blocking') {
       failures.push(`blocking nightly job \`${id}\` reported \`${result}\`.`);
     } else {

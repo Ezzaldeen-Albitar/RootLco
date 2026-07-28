@@ -71,8 +71,31 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
     };
   }
 
-  // ---- 1. global ratchet -------------------------------------------------
+  // ---- 0. the baseline document must itself be usable --------------------
+  // A one-token edit to the baseline could otherwise silence the whole gate.
+  // `Number('n/a')` is NaN, and `delta < -NaN` is always false, so every metric
+  // would pass at any coverage. Refuse the document instead.
   const tolerance = Number(baseline.tolerancePercentagePoints ?? 0.5);
+  if (!Number.isFinite(tolerance) || tolerance < 0 || tolerance > 2) {
+    failures.push(
+      `\`tolerancePercentagePoints\` is \`${JSON.stringify(baseline.tolerancePercentagePoints)}\`, ` +
+        'which is not a number between 0 and 2. A non-numeric tolerance disables the ratchet entirely.'
+    );
+  }
+
+  // A baseline that WAS established and has since been emptied is a silenced
+  // gate. A baseline that was never established is measure-first and legitimate
+  // — the difference is `establishedBy`, so the two cases are distinguished
+  // rather than both being waved through.
+  const globalIsEmpty = !baseline.global || Object.keys(baseline.global).length === 0;
+  if (globalIsEmpty && baseline.establishedBy) {
+    failures.push(
+      `the baseline records \`establishedBy: ${JSON.stringify(baseline.establishedBy)}\` but its ` +
+        '`global` block is empty. A baseline that was established and then emptied is a disabled ratchet, ' +
+        'not a measure-first placeholder.'
+    );
+  }
+
   const totals = {};
   for (const metric of METRICS) {
     const measured = pct(summary.total[metric]);
@@ -103,7 +126,24 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
 
   const criticalModules = [];
   for (const rule of baseline.criticalModules ?? []) {
-    const matched = fileEntries.filter(([key]) => key.startsWith(rule.pathPrefix));
+    const metric = rule.metric ?? 'lines';
+    if (!METRICS.includes(metric)) {
+      // A mistyped metric makes every lookup `undefined`, so the aggregate is
+      // {covered: 0, total: 0}, `pct` returns 100 by its "nothing to cover"
+      // rule, and the floor passes at any real coverage.
+      failures.push(
+        `critical-module rule \`${rule.id}\` names metric \`${metric}\`, which is not one of ` +
+          `${METRICS.join(', ')}. The rule would score 100% whatever the module's coverage is.`
+      );
+      criticalModules.push({ ...rule, matchedFiles: 0, measured: null, ok: false });
+      continue;
+    }
+    // A trailing separator, so `src/server/errors` cannot match
+    // `src/server/errors-legacy/`.
+    const prefix = rule.pathPrefix.endsWith('/') ? rule.pathPrefix : `${rule.pathPrefix}/`;
+    const matched = fileEntries.filter(
+      ([key]) => key === rule.pathPrefix || key.startsWith(prefix)
+    );
     if (matched.length === 0) {
       // A floor that matches nothing is a silently dead rule. Refuse it.
       failures.push(
@@ -115,16 +155,40 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
     }
     const aggregate = { covered: 0, total: 0 };
     for (const [, value] of matched) {
-      const entry = value[rule.metric ?? 'lines'];
+      const entry = value[metric];
       aggregate.covered += entry?.covered ?? 0;
       aggregate.total += entry?.total ?? 0;
     }
+
+    // Files matched but nothing measurable in them: `pct` would return 100 by
+    // its "nothing to cover" rule and the floor would pass. That is the same
+    // vacuity as a rule matching no file at all.
+    if (aggregate.total === 0) {
+      failures.push(
+        `critical-module rule \`${rule.id}\` matched ${matched.length} file(s) under ` +
+          `\`${rule.pathPrefix}\` but none carries a measurable \`${metric}\` count, so the floor is vacuous.`
+      );
+      criticalModules.push({ ...rule, matchedFiles: matched.length, measured: null, ok: false });
+      continue;
+    }
+
+    // A rule may declare how many files it expects to govern. Coverage
+    // `include` lists narrow silently; without this, removing files from the
+    // instrumented set shrinks what the floor actually protects while the
+    // percentage stays reassuring.
+    if (typeof rule.minMatchedFiles === 'number' && matched.length < rule.minMatchedFiles) {
+      failures.push(
+        `critical-module rule \`${rule.id}\` matched ${matched.length} file(s) but expects at least ` +
+          `${rule.minMatchedFiles}. The instrumented set narrowed, so this floor now protects less than it did.`
+      );
+    }
+
     const measured = pct(aggregate);
     const ok = measured >= rule.minimum;
     if (!ok) {
       failures.push(
         `critical module \`${rule.id}\` (${rule.pathPrefix}) is at ${measured}% ` +
-          `${rule.metric ?? 'lines'} coverage, below its ${rule.minimum}% floor`
+          `${metric} coverage, below its ${rule.minimum}% floor`
       );
     }
     criticalModules.push({ ...rule, matchedFiles: matched.length, measured, ok });

@@ -206,7 +206,9 @@ export function lintScript(rel, source) {
     if (line.trim().startsWith('#') || line.trim().startsWith('*') || line.trim().startsWith('//'))
       return;
     if (/test-honesty-allow:\s*TH-009/.test(line)) return;
-    if (/\|\|\s*(true|:)\s*$/.test(line)) {
+    // Same widening as WFS-008: end-of-line anchoring missed `$(cmd || true)`
+    // and `cmd || true; next`.
+    if (/\|\|\s*(true|:)\s*($|[);&|#])/.test(line)) {
       add('TH-009', index + 1, '`|| true` discards the exit status of the preceding command.');
     }
     if (/^\s*set\s+\+e\s*$/.test(line)) {

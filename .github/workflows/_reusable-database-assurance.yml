@@ -96,6 +96,35 @@ jobs:
       NEXT_PUBLIC_APP_ENV: 'local'
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Without this, an unrecognised task still applies the migrations but
+      # silently skips BOTH the database suite and the replay evidence, then
+      # reports success. See the same guard in _reusable-node-quality.yml.
+      - name: The task must be one this workflow implements
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          case "${TASK}" in
+            migration-replay | security-matrix) printf 'task: %s\n' "${TASK}" ;;
+            *)
+              echo "::error::unknown task '${TASK}'. Expected one of: migration-replay, security-matrix."
+              exit 1
+              ;;
+          esac
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project
@@ -115,21 +144,39 @@ jobs:
             --json migration-static.json --markdown migration-static.md
 
       - name: Applied migrations are immutable
-        if: inputs.base-ref != ''
         env:
+          # On a `push` there is no base ref in the event, so the comparison is
+          # made against the previous commit on the same branch. Skipping the
+          # check entirely on the protected push — the run a gate record cites —
+          # would mean a rewritten historical migration is never detected there.
           BASE_REF: ${{ inputs.base-ref }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          # Fail CLOSED: an unresolvable base ref must fail loudly rather than
-          # pass silently over an empty diff.
-          git rev-parse --verify "origin/${BASE_REF}" >/dev/null
-          changed="$(git diff --name-status --diff-filter=MDR "origin/${BASE_REF}...HEAD" -- supabase/migrations/)"
+          if [ -n "${BASE_REF}" ]; then
+            comparison="origin/${BASE_REF}...HEAD"
+            label="${BASE_REF}"
+            # Fail CLOSED: an unresolvable base ref must fail loudly rather than
+            # pass silently over an empty diff.
+            git rev-parse --verify "origin/${BASE_REF}" >/dev/null
+          elif [ "${EVENT}" = 'push' ] && [ -n "${BEFORE}" ] && [ "${BEFORE}" != '0000000000000000000000000000000000000000' ]; then
+            comparison="${BEFORE}...HEAD"
+            label="the previous commit on this branch"
+            git rev-parse --verify "${BEFORE}" >/dev/null
+          else
+            # No base to compare against and no way to derive one. Say so rather
+            # than passing over a comparison that never happened.
+            echo "::error::No base reference is available (event '${EVENT}'), so migration immutability cannot be checked. A check that cannot run must not report success."
+            exit 1
+          fi
+          changed="$(git diff --name-status --diff-filter=MDR "${comparison}" -- supabase/migrations/)"
           if [ -n "${changed}" ]; then
-            echo "::error::Migrations already on ${BASE_REF} were modified, renamed or deleted. Migrations are immutable once merged — write a new forward migration."
+            echo "::error::Migrations already on ${label} were modified, renamed or deleted. Migrations are immutable once merged — write a new forward migration."
             echo "${changed}"
             exit 1
           fi
-          echo "OK: no existing migration was modified"
+          printf 'OK: no existing migration was modified (compared against %s)\n' "${label}"
 
       - name: The database holds zero application tables
         run: |
@@ -165,7 +212,18 @@ jobs:
           echo "measured: ${measured}"
           echo "expected: ${expected}"
           echo "hash=${measured}" >> "${GITHUB_OUTPUT}"
-          if [ -n "${expected}" ] && [ "${measured}" != "${expected}" ]; then
+          # Both sides must be a real hash. Comparing two empty strings, or two
+          # copies of the word "undefined", succeeds while proving nothing —
+          # and this is the assertion the whole replay rests on.
+          if ! printf '%s' "${measured}" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::the measured schema hash is not a 64-character hex digest. The hash step did not produce a hash, so the comparison below would be meaningless."
+            exit 1
+          fi
+          if ! printf '%s' "${expected}" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::the baseline schema hash is not a 64-character hex digest. A missing or malformed baseline would otherwise let this step print OK while comparing nothing."
+            exit 1
+          fi
+          if [ "${measured}" != "${expected}" ]; then
             echo "::error::Schema hash drifted from the frozen baseline. If a migration in this change is responsible, raise schemaHash in .github/ci-baselines/schema-baseline.json in the SAME commit so the diff shows both."
             exit 1
           fi
@@ -264,9 +322,14 @@ jobs:
 
       - name: Role × table × action matrix
         if: inputs.task == 'security-matrix' && !cancelled()
+        env:
+          # Through `env:` rather than interpolated into the shell. On a
+          # `pull_request` the caller workflow comes from the PR head, so an
+          # input reaches this block from a file the contributor controls.
+          RLS_LEVEL: ${{ inputs.rls-level }}
         run: |
           set -euo pipefail
-          node scripts/ci/rls-matrix.mjs --level "${{ inputs.rls-level }}" \
+          node scripts/ci/rls-matrix.mjs --level "${RLS_LEVEL}" \
             --json rls-matrix.json --markdown rls-matrix.md
 
       # =======================================================================
@@ -278,7 +341,7 @@ jobs:
           set -euo pipefail
           # A suite that writes a tracked file is a defect, not a nuisance: the
           # next job would then be testing a different tree.
-          if [ -n "$(git status --porcelain -- ':!:*.json' ':!:*.md' ':!:*.log' ':!:*.txt')" ]; then
+          if [ -n "$(git status --porcelain -- ':!:/*.json' ':!:/*.md' ':!:/*.log' ':!:/*.txt' ':!:coverage/')" ]; then
             echo "::error::A step modified a tracked file. The database jobs must leave the tree untouched."
             git status --porcelain
             git --no-pager diff --stat

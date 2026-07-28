@@ -34,6 +34,34 @@ export const MIGRATION_DIR = join('supabase', 'migrations');
  */
 export const REFERENCE_SCHEMAS = ['shared', 'meta'];
 
+/**
+ * Every module schema a migration could seed rows into.
+ *
+ * Kept as ONE list rather than repeated inline: the previous hand-maintained
+ * alternation omitted `org`, `iam`, `svc`, `rpt` and `shared`, so a top-level
+ * `INSERT INTO iam.users` or `INSERT INTO svc.services` was never flagged while
+ * the failure message claimed the check covered business rows.
+ */
+export const MODULE_SCHEMAS = [
+  'org',
+  'iam',
+  'crm',
+  'veh',
+  'apt',
+  'rec',
+  'wo',
+  'tech',
+  'dia',
+  'qms',
+  'svc',
+  'quo',
+  'inv',
+  'sal',
+  'wty',
+  'rpt',
+  'shared',
+];
+
 export function listMigrations(dir = MIGRATION_DIR) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -108,8 +136,10 @@ export function stripSqlBodies(source) {
 /** No migration may seed business records at the top level. */
 export function checkNoDeveloperData(dir, files) {
   const failures = [];
-  const businessInsert =
-    /INSERT\s+INTO\s+(crm|veh|wo|apt|rec|inv|quo|sal|tech|dia|qms|wty)\.(\w+)/gi;
+  const businessInsert = new RegExp(
+    `INSERT\\s+INTO\\s+(${MODULE_SCHEMAS.join('|')})\\.(\\w+)`,
+    'gi'
+  );
   for (const file of files) {
     const stripped = stripSqlBodies(readFileSync(join(dir, file), 'utf8'));
     const hits = [...stripped.matchAll(businessInsert)].map((m) => `${m[1]}.${m[2]}`);
@@ -132,8 +162,14 @@ export async function preChecks(client) {
   const failures = [];
   const [{ count }] = await q(
     client,
-    `SELECT count(*)::int AS count FROM information_schema.tables
-      WHERE table_schema NOT IN ('pg_catalog','information_schema')`
+    // pg_class rather than information_schema: the latter lists only objects the
+    // CONNECTING ROLE holds a privilege on, so a pre-populated database read by a
+    // restricted role would report zero. postChecks already uses the catalog.
+    `SELECT count(*)::int AS count
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind IN ('r','p','v','m')
+        AND n.nspname NOT LIKE 'pg\_%'
+        AND n.nspname NOT IN ('information_schema')`
   );
   if (count !== 0) {
     failures.push(
@@ -173,7 +209,7 @@ export async function postChecks(client, baseline, files) {
     client,
     `SELECT
        (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-         WHERE c.relkind='r' AND n.nspname NOT IN ('pg_catalog','information_schema','supabase_migrations')) AS tables,
+         WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema','supabase_migrations')) AS tables,
        (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
          WHERE n.nspname NOT IN ('pg_catalog','information_schema')) AS functions,
        (SELECT count(*)::int FROM pg_policy) AS policies,
@@ -236,7 +272,7 @@ export async function postChecks(client, baseline, files) {
     client,
     `SELECT n.nspname AS schema_name, c.relname AS table_name
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind = 'r'
+      WHERE c.relkind IN ('r', 'p')
         AND n.nspname NOT IN ('pg_catalog','information_schema','supabase_migrations', ${REFERENCE_SCHEMAS.map((s) => `'${s}'`).join(',')})
       ORDER BY 1, 2`
   );

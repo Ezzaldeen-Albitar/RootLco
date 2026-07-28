@@ -274,7 +274,20 @@ function main(argv) {
     return i === -1 ? undefined : argv[i + 1];
   };
   const mode = arg('--mode') ?? 'worktree';
-  const result = mode === 'history' ? scanHistory() : scanWorktree();
+  const roots = arg('--roots')?.split(',').filter(Boolean);
+  const result = mode === 'history' ? scanHistory() : scanWorktree(roots);
+
+  // A scan over zero files is not a clean scan. The worktree mode previously
+  // ran in a job with no build step, so `.next` did not exist and it reported
+  // "no findings" over two files. Every other gate script in this pipeline
+  // refuses to report clean over an empty set; this one now does too.
+  if (mode === 'worktree' && result.filesScanned < Number(arg('--min-files') ?? 1)) {
+    console.error(
+      `::error::the worktree scan examined ${result.filesScanned} file(s), which is not enough to be ` +
+        'evidence of anything. Point --roots at output that exists, or run this after the build.'
+    );
+    process.exit(2);
+  }
 
   const jsonOut = arg('--json');
   if (jsonOut) writeFileSync(jsonOut, `${JSON.stringify({ mode, ...result }, null, 2)}\n`);

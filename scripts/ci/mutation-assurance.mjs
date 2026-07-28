@@ -73,7 +73,21 @@ export function testOneTarget(target, { timeoutMs = 900_000, dryRun = false } = 
     };
   }
 
-  if (dryRun) return { ...target, outcome: 'anchored', occurrences };
+  // A target may declare that it only verifies its anchor. That is a WEAKER
+  // claim than a kill and is reported as such — but a target whose faithful
+  // mutation has not been written yet must not fail the nightly gate every
+  // night, because a permanently-red blocking job devalues every other signal
+  // in the same report.
+  if (dryRun || target.anchorOnly === true) {
+    return {
+      ...target,
+      outcome: 'anchored',
+      occurrences,
+      detail: dryRun
+        ? 'dry run — anchor verified only'
+        : 'anchorOnly: the anchor is present, but this target does not yet prove the guard is load-bearing',
+    };
+  }
 
   let result;
   try {
@@ -93,8 +107,24 @@ export function testOneTarget(target, { timeoutMs = 900_000, dryRun = false } = 
           'the guard was removed and the suite still passed. Either nothing asserts this behaviour, ' +
           'or the assertion that does is vacuous in the direction that matters.',
       };
+    } else if (
+      target.expectFailureMatching &&
+      !new RegExp(target.expectFailureMatching).test(verdict.output)
+    ) {
+      // A non-zero exit is not by itself proof the guard was missed. A compile
+      // error, a connection failure or a crash in the mutated path all exit
+      // non-zero and would otherwise read as "the guard is load-bearing".
+      result = {
+        ...target,
+        outcome: 'error',
+        occurrences,
+        detail:
+          `the suite failed, but its output does not match \`${target.expectFailureMatching}\`, so the ` +
+          'failure cannot be attributed to the removed guard. Last output:\n' +
+          verdict.output.slice(-1200),
+      };
     } else {
-      result = { ...target, outcome: 'killed', occurrences };
+      result = { ...target, outcome: 'killed', occurrences, evidence: verdict.output.slice(-800) };
     }
   } finally {
     writeFileSync(target.file, original, 'utf8');
@@ -106,9 +136,20 @@ export function toMarkdown(results) {
   const killed = results.filter((r) => r.outcome === 'killed');
   const survived = results.filter((r) => r.outcome === 'survived');
   const errors = results.filter((r) => r.outcome === 'error');
+  const anchored = results.filter((r) => r.outcome === 'anchored');
   const lines = ['### Mutation assurance', ''];
+  if (anchored.length) {
+    lines.push(
+      `> ⚠️ ${anchored.length} target(s) verify their anchor only and do NOT prove the guard is ` +
+        'load-bearing. They are counted separately below rather than reported as kills.'
+    );
+    lines.push('');
+  }
   lines.push('| Outcome | Count | Meaning |');
   lines.push('| --- | --- | --- |');
+  lines.push(
+    `| anchored | ${anchored.length} | the anchor exists — a weaker claim than a kill, and recorded as one |`
+  );
   lines.push(
     `| killed | ${killed.length} | the guard is load-bearing — removing it turns the suite red |`
   );

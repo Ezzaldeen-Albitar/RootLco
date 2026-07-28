@@ -24,6 +24,7 @@
  * Exit codes: 0 pass · 1 the report itself says something is wrong · 2 IO error.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Flattens the vitest JSON reporter shape into a stable summary. */
@@ -156,7 +157,34 @@ function main(argv) {
   }
 
   const summary = summarise(report, label);
-  const minTests = arg('--min-tests') ? Number(arg('--min-tests')) : undefined;
+
+  // The floor comes from a committed baseline unless overridden. Leaving
+  // `--min-tests` implemented but never passed made the anti-shrink guard
+  // dormant: a broken include glob would drop the tier to a handful of tests
+  // and every other check would still pass.
+  let minTests = arg('--min-tests') ? Number(arg('--min-tests')) : undefined;
+  if (minTests === undefined) {
+    const baselinePath =
+      arg('--counts') ?? join('.github', 'ci-baselines', 'test-count-baseline.json');
+    if (existsSync(baselinePath)) {
+      try {
+        const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+        const tier = baseline.tiers?.[label];
+        if (tier && typeof tier.minTests === 'number') minTests = tier.minTests;
+      } catch (error) {
+        console.error(
+          `::error::test-count baseline at ${baselinePath} does not parse: ${error.message}`
+        );
+        process.exit(2);
+      }
+    }
+  }
+  if (minTests === undefined) {
+    console.log(
+      `::warning::no minimum test count is recorded for tier \`${label}\`, so a shrinking suite would not be detected. Add it to .github/ci-baselines/test-count-baseline.json.`
+    );
+  }
+
   const problems = verdict(summary, minTests);
 
   const md = toMarkdown(summary, problems);

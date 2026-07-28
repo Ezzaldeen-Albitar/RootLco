@@ -113,11 +113,24 @@ function suppressed(lines, index, rule) {
   return false;
 }
 
-export function lintWorkflow(name, source) {
+/**
+ * @param {string} name  path shown in findings
+ * @param {string} source
+ * @param {{ isCompositeAction?: boolean }} options
+ *   A composite action has no `permissions:`, no `timeout-minutes:` and no
+ *   `jobs:` — WFS-003, WFS-004 and WFS-010 do not apply to it. Every other rule
+ *   does, and until this existed the composite action that performs the
+ *   exact-SHA checkout every other assertion rests on was exempt from all of
+ *   them, including SHA pinning.
+ */
+export function lintWorkflow(name, source, options = {}) {
   const findings = [];
   const lines = source.split(/\r?\n/);
-  const add = (rule, line, message, severity = 'high') =>
+  const isAction = options.isCompositeAction === true;
+  const add = (rule, line, message, severity = 'high') => {
+    if (isAction && (rule === 'WFS-003' || rule === 'WFS-004' || rule === 'WFS-010')) return;
     findings.push({ workflow: name, rule, line, message, severity });
+  };
 
   // ---- WFS-001 / WFS-002: action pinning --------------------------------
   lines.forEach((line, index) => {
@@ -214,8 +227,15 @@ export function lintWorkflow(name, source) {
       }
     }
     for (const [offset, line] of block.body.split(/\r?\n/).entries()) {
+      // A shell comment is prose, not a command. Without this the rule fires on
+      // the comments that forbid the pattern, which is both wrong and the kind
+      // of noise that gets a rule switched off.
+      if (/^\s*#/.test(line)) continue;
+      // Anchoring at end-of-line missed `$(cmd || true)` and `cmd || true; next`
+      // — and this repository contained two of the first form. The terminator
+      // set now covers the command-substitution and statement-separator cases.
       if (
-        /(\|\|\s*(true|:))\s*(#.*)?$/.test(line) &&
+        /\|\|\s*(true|:)\s*($|[);&|#"'`])/.test(line) &&
         !line.includes('workflow-security-allow: WFS-008')
       ) {
         add(
@@ -295,28 +315,67 @@ function main(argv) {
     console.error(`workflow directory not found: ${dir}`);
     process.exit(2);
   }
-  const files = readdirSync(dir)
+
+  /** @type {Array<{ path: string, label: string, isCompositeAction: boolean }>} */
+  const targets = readdirSync(dir)
     .filter((f) => /\.ya?ml$/.test(f))
-    .sort();
-  if (files.length === 0) {
-    console.error(`no workflow files in ${dir} — refusing to report "clean" over an empty set`);
+    .sort()
+    .map((f) => ({ path: join(dir, f), label: f, isCompositeAction: false }));
+
+  // Composite actions were previously exempt from EVERY rule, including SHA
+  // pinning — and `setup-project` is the action that performs the exact-SHA
+  // checkout the rest of the pipeline depends on. Scanning them is not
+  // optional; `--dir` overrides only where the workflows live.
+  const actionsRoot = arg('--actions-dir') ?? '.github/actions';
+  if (existsSync(actionsRoot)) {
+    for (const entry of readdirSync(actionsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      for (const candidate of ['action.yml', 'action.yaml']) {
+        const full = join(actionsRoot, entry.name, candidate);
+        if (existsSync(full)) {
+          targets.push({
+            path: full,
+            label: `${entry.name}/${candidate}`,
+            isCompositeAction: true,
+          });
+        }
+      }
+    }
+  }
+
+  if (targets.length === 0) {
+    console.error(`nothing to scan under ${dir} — refusing to report "clean" over an empty set`);
+    process.exit(2);
+  }
+  if (!targets.some((t) => t.isCompositeAction) && existsSync(actionsRoot)) {
+    console.error(
+      `${actionsRoot} exists but contains no action.yml — a composite action that is never scanned is exempt from every rule here.`
+    );
     process.exit(2);
   }
 
   const findings = [];
-  for (const file of files) {
-    findings.push(...lintWorkflow(file, readFileSync(join(dir, file), 'utf8')));
+  for (const target of targets) {
+    findings.push(
+      ...lintWorkflow(target.label, readFileSync(target.path, 'utf8'), {
+        isCompositeAction: target.isCompositeAction,
+      })
+    );
   }
 
+  const labels = targets.map((t) => t.label);
   const jsonOut = arg('--json');
   if (jsonOut)
-    writeFileSync(jsonOut, `${JSON.stringify({ workflows: files, findings }, null, 2)}\n`);
+    writeFileSync(jsonOut, `${JSON.stringify({ scanned: labels, findings }, null, 2)}\n`);
   const mdOut = arg('--markdown');
-  if (mdOut) writeFileSync(mdOut, `${toMarkdown(findings, files.length)}\n`);
+  if (mdOut) writeFileSync(mdOut, `${toMarkdown(findings, targets.length)}\n`);
 
-  console.log(toMarkdown(findings, files.length));
+  console.log(toMarkdown(findings, targets.length));
+  const pathFor = new Map(targets.map((t) => [t.label, t.path]));
   for (const f of findings) {
-    console.log(`::error file=${dir}/${f.workflow},line=${f.line}::${f.rule}: ${f.message}`);
+    console.log(
+      `::error file=${pathFor.get(f.workflow) ?? f.workflow},line=${f.line}::${f.rule}: ${f.message}`
+    );
   }
   process.exit(findings.length ? 1 : 0);
 }

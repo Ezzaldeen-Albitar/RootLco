@@ -32,6 +32,11 @@ import { pathToFileURL } from 'node:url';
  */
 export const CATEGORY_RULES = [
   { category: 'workflows', test: (p) => p.startsWith('.github/') },
+  // BEFORE `frontend`. `src/app/api/**` is the HTTP surface of the backend, not
+  // a page: an authorization-bearing route handler classified as `frontend`
+  // would skip `database-security`, which is the job that runs the RLS matrix —
+  // exactly the H6 class from P1-21.
+  { category: 'backend', test: (p) => p.startsWith('src/app/api/') },
   { category: 'dependencies', test: (p) => p === 'package.json' || p === 'package-lock.json' },
   {
     category: 'docker',
@@ -194,6 +199,17 @@ export function classify(files) {
       jobs[job] = {
         required: true,
         reason: 'empty change set — cannot prove a skip is safe, running everything',
+      };
+    } else if (counts.other > 0) {
+      // A path that matches no rule is a path nobody classified. Skipping on
+      // that basis would mean a new root-level `middleware.ts`, `.npmrc`, or
+      // config file silently disables six jobs including CodeQL. The same
+      // fail-safe as an empty diff, for the same reason.
+      jobs[job] = {
+        required: true,
+        reason: `unclassified path touched (${byCategory.other.slice(0, 3).join(', ')}${
+          byCategory.other.length > 3 ? ', …' : ''
+        }) — cannot prove a skip is safe`,
       };
     } else if (hits.length > 0) {
       jobs[job] = { required: true, reason: `touched: ${hits.join(', ')}` };

@@ -67,7 +67,7 @@ export function collect(report) {
   return { vulnerabilities, secrets, misconfigurations };
 }
 
-export function evaluate(report, severities) {
+export function evaluate(report, severities, options = {}) {
   const blocking = new Set(severities.map((s) => s.trim().toUpperCase()).filter(Boolean));
   const { vulnerabilities, secrets, misconfigurations } = collect(report);
 
@@ -99,6 +99,11 @@ export function evaluate(report, severities) {
   return {
     ok: failures.length === 0,
     blocking: failures.length,
+    // On a pull request the scan runs with `ignore-unfixed`, so unfixable
+    // findings are stripped BEFORE this script sees them and the count is
+    // always zero. Reporting "0 unfixable" would read as "there are none",
+    // which is a filter artifact presented as a measurement.
+    unfixedWereFiltered: options.unfixedWereFiltered === true,
     severities: [...blocking],
     counts: {
       vulnerabilities: vulnerabilities.length,
@@ -123,7 +128,11 @@ export function toMarkdown(result) {
   lines.push(`| Vulnerabilities (all severities) | ${result.counts.vulnerabilities} |`);
   lines.push(`| …at a blocking severity | ${result.counts.atBlockingSeverity} |`);
   lines.push(`| …of those, fixable → **blocking** | ${result.counts.fixable} |`);
-  lines.push(`| …of those, no fix available → reported | ${result.counts.unfixable} |`);
+  lines.push(
+    result.unfixedWereFiltered
+      ? '| …of those, no fix available | **not measured** — the scan ran with `ignore-unfixed`, so these were stripped before the report was written. The nightly deep scan reports them. |'
+      : `| …of those, no fix available → reported | ${result.counts.unfixable} |`
+  );
   lines.push(`| Secrets in layers | ${result.counts.secrets} |`);
   lines.push(`| Failed misconfigurations | ${result.counts.misconfigurations} |`);
   lines.push('');
@@ -184,8 +193,26 @@ function main(argv) {
     process.exit(2);
   }
 
+  // An EMPTY `Results` array is the same failure wearing a different shape.
+  // Switch to a distroless or scratch base and the scanner finds no package
+  // manifest at all: zero vulnerabilities, zero secrets, "policy: pass" — over
+  // an image that was never analysed. Require at least one result that
+  // describes packages.
+  const analysed = report.Results.filter(
+    (r) => r.Class === 'os-pkgs' || r.Class === 'lang-pkgs' || Array.isArray(r.Packages)
+  );
+  if (analysed.length === 0) {
+    console.error(
+      `::error::the scan report has ${report.Results.length} result(s) and none of them analysed packages ` +
+        '(no `os-pkgs` or `lang-pkgs` class). The image was not inspected, which must not be read as clean.'
+    );
+    process.exit(2);
+  }
+
   const severities = (arg('--severities') ?? 'CRITICAL,HIGH').split(',');
-  const result = evaluate(report, severities);
+  const result = evaluate(report, severities, {
+    unfixedWereFiltered: argv.includes('--unfixed-filtered'),
+  });
 
   const md = toMarkdown(result);
   const mdOut = arg('--markdown');

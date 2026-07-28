@@ -18,6 +18,8 @@
  * exactly what this gate replaces.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { evaluate, DECLARED_JOBS, toMarkdown } from '../../scripts/ci/evaluate-ci-gate.mjs';
 
 type JobResult = 'success' | 'failure' | 'cancelled' | 'skipped';
@@ -234,21 +236,50 @@ describe('ci-gate', () => {
   });
 
   // --- the gate must govern exactly the PR jobs ----------------------------
-  it('governs the twelve jobs pr-ci.yml declares, and the clean room is unconditional', () => {
-    const ids = (DECLARED_JOBS as Array<{ id: string; alwaysRequired: boolean }>).map((j) => j.id);
-    expect(ids).toEqual([
-      'change-detection',
-      'static-quality',
-      'unit-tests-coverage',
+  it('governs exactly the jobs pr-ci.yml declares, read from the workflow itself', () => {
+    // Asserting against a hardcoded list cannot see the one drift direction the
+    // gate is blind to: a job ADDED to pr-ci.yml and omitted from
+    // `ci-gate.needs:`. Nothing at runtime would notice, because the gate only
+    // reasons about what `needs` hands it. So this reads the YAML.
+    const workflow = readFileSync(join(__dirname, '../../.github/workflows/pr-ci.yml'), 'utf8');
+
+    // Top-level job ids: two-space indentation directly under `jobs:`.
+    const jobsBlock = workflow.slice(workflow.indexOf('\njobs:'));
+    const declaredInYaml = [...jobsBlock.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
+
+    // The `needs:` list of the ci-gate job.
+    const gateNeedsBlock = /^ {2}ci-gate:$[\s\S]*?^ {4}needs:$\n((?:^ {6}- .+$\n)+)/m.exec(
+      workflow
+    );
+    expect(gateNeedsBlock, 'ci-gate must declare an explicit needs list').not.toBeNull();
+    const gateNeeds = [...(gateNeedsBlock?.[1] ?? '').matchAll(/^ {6}- (.+)$/gm)]
+      .map((m) => m[1]?.trim())
+      .filter((id): id is string => Boolean(id));
+    expect(gateNeeds.length, 'ci-gate needs at least one job').toBeGreaterThan(0);
+
+    const governed = (DECLARED_JOBS as Array<{ id: string }>).map((j) => j.id).sort();
+    const inYaml = declaredInYaml.filter((id) => id !== 'ci-gate').sort();
+
+    // All three lists must agree. Any one of them drifting is a hole:
+    //   YAML ⊄ needs      → a job runs that ci-gate never waits for
+    //   needs ⊄ DECLARED  → the gate is blind to a job it depends on
+    //   DECLARED ⊄ YAML   → the gate expects a job that no longer exists
+    expect(inYaml, 'pr-ci.yml jobs vs ci-gate needs').toEqual([...gateNeeds].sort());
+    expect(governed, 'DECLARED_JOBS vs pr-ci.yml jobs').toEqual(inYaml);
+
+    expect(governed).toEqual([
       'application-build',
-      'database-migration-replay',
-      'database-security',
-      'integration-tests',
-      'dependency-security',
+      'change-detection',
       'code-security',
       'container-security',
-      'secret-scan',
+      'database-migration-replay',
+      'database-security',
+      'dependency-security',
       'hosted-clean-room',
+      'integration-tests',
+      'secret-scan',
+      'static-quality',
+      'unit-tests-coverage',
     ]);
     const unconditional = (DECLARED_JOBS as Array<{ id: string; alwaysRequired: boolean }>)
       .filter((j) => j.alwaysRequired)

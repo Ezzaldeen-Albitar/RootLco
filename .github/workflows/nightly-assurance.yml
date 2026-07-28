@@ -132,6 +132,19 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
       NEXT_PUBLIC_APP_ENV: 'local'
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
         with:
@@ -200,6 +213,19 @@ jobs:
       PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container
       PGDATABASE: postgres
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
 
@@ -264,6 +290,19 @@ jobs:
       DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
       PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
 
@@ -348,6 +387,19 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
       NEXT_PUBLIC_APP_ENV: 'local'
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
         with:
@@ -395,6 +447,19 @@ jobs:
       - backup-restore-drill
       - compatibility-matrix
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
         with:

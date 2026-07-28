@@ -78,6 +78,36 @@ jobs:
       standalone-bytes: ${{ steps.size.outputs.bytes }}
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      # EVERY substantive step below is gated on `inputs.task`. Without this,
+      # a typo in a caller ("unit_coverage") would skip all of them, upload an
+      # empty artifact, and report SUCCESS — and `ci-gate` would read that
+      # success and say Go over a job that ran nothing.
+      - name: The task must be one this workflow implements
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          case "${TASK}" in
+            static-quality | unit-coverage | build) printf 'task: %s\n' "${TASK}" ;;
+            *)
+              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build. A job that recognises no task would skip every step and report success."
+              exit 1
+              ;;
+          esac
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project
@@ -110,7 +140,13 @@ jobs:
             node -e "JSON.parse(require('node:fs').readFileSync(process.argv[1],'utf8'))" "${file}" \
               || { echo "::error file=${file}::not valid JSON"; bad=1; }
           done < <(git ls-files '*.json' ':!:package-lock.json')
-          # YAML: workflows, compose, and the Supabase config.
+          # YAML. A check that cannot run must not report success, so the parser's
+          # availability is asserted first rather than discovered as a cryptic
+          # ImportError inside the loop.
+          if ! python3 -c 'import yaml' 2>/dev/null; then
+            echo "::error::PyYAML is unavailable on this runner, so the YAML validity check cannot run. It must not be silently skipped — install it or replace the parser."
+            exit 1
+          fi
           while IFS= read -r file; do
             python3 -c "import sys,yaml;yaml.safe_load(open(sys.argv[1],encoding='utf-8'))" "${file}" \
               || { echo "::error file=${file}::not valid YAML"; bad=1; }
@@ -179,13 +215,18 @@ jobs:
           bad=0
           # Build output, coverage reports, editor state and OS debris must never
           # be tracked: they make every diff noisy and can carry local paths.
-          forbidden="$(git ls-files | grep -E '^(\.next/|coverage/|node_modules/|dist/|build/)|(^|/)(\.DS_Store|Thumbs\.db|npm-debug\.log|\.idea/|\.vscode/settings\.json)$' || true)"
+          # `|| printf ''` rather than `|| true`: grep exits 1 on no match, which
+          # is the GOOD case here, but `|| true` would ALSO swallow a genuine
+          # `git ls-files` failure and report "no forbidden files" over an empty
+          # result. This substitutes an empty string without masking a crash,
+          # because `set -o pipefail` still catches a failing left-hand side.
+          forbidden="$(git ls-files | grep -E '^(\.next/|coverage/|node_modules/|dist/|build/)|(^|/)(\.DS_Store|Thumbs\.db|npm-debug\.log|\.idea/|\.vscode/settings\.json)$' || printf '')"
           if [ -n "${forbidden}" ]; then
             echo "::error::tracked files that must not be committed:"; echo "${forbidden}"; bad=1
           fi
           # A conflict marker that reaches a branch compiles in some languages and
           # is invisible in a rendered document.
-          markers="$(git grep -In -E '^(<{7}|={7}|>{7})( |$)' -- . ':!:*.md' ':!:scripts/ci/*' || true)"
+          markers="$(git grep -In -E '^(<{7}|={7}|>{7})( |$)' -- . ':!:*.md' ':!:scripts/ci/*' || printf '')"
           if [ -n "${markers}" ]; then
             echo "::error::merge-conflict markers found:"; echo "${markers}"; bad=1
           fi
@@ -344,6 +385,18 @@ jobs:
           else
             : > build-warnings.txt
           fi
+
+      - name: The build output carries no credential
+        if: inputs.task == 'build'
+        run: |
+          set -euo pipefail
+          # THE place this check belongs: a value inlined into a bundle by the
+          # build reaches every browser that loads the page, and it never
+          # existed as a tracked file so no tracked-file scanner could see it.
+          # The secret-scan job cannot do this — it does not build.
+          node scripts/ci/scan-history.mjs --mode worktree \
+            --roots .next,public --min-files 20 \
+            --json build-output-scan.json --markdown build-output-scan.md
 
       - name: Build output integrity and size ratchet
         id: size

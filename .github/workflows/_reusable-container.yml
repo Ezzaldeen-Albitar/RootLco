@@ -61,6 +61,19 @@ jobs:
       blocking: ${{ steps.policy.outputs.blocking }}
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project
@@ -186,12 +199,30 @@ jobs:
 
           # --- build history --------------------------------------------------
           # A build arg is recorded in the image history and is readable by
-          # anyone who can pull the image.
+          # anyone who can pull the image. The pattern set is IDENTICAL to the
+          # environment check above plus a URL-embedded-credential class —
+          # previously it omitted `_TOKEN`, so the standard `ARG NPM_TOKEN`
+          # pattern passed here while failing there.
           docker history --no-trunc --format '{{.CreatedBy}}' rootlco/web:ci-runner > image-history.txt
-          if grep -qiE '(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z_]*=[^ ]{6,}' image-history.txt; then
+          if grep -qiE '(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY)[A-Z_]*=[^ ]{6,}|://[^:/@ ]+:[^@ ]{4,}@' image-history.txt; then
             echo "::error::A credential-shaped value appears in the image build history."
             bad=1
           fi
+
+          # --- value-shaped, not only name-shaped -----------------------------
+          # Both checks above are NAME-based. A credential under an innocuous
+          # name — DATABASE_URL, SENTRY_DSN, REDIS_URL — passes both. The
+          # repository's own scanner matches SHAPES, so it is run over the two
+          # captured files in an isolated directory.
+          mkdir -p image-surface
+          cp image-env.json image-history.txt image-surface/
+          if ! node scripts/ci/scan-history.mjs --mode worktree \
+                 --roots image-surface --min-files 2 \
+                 --json image-credential-scan.json > /dev/null 2>&1; then
+            echo "::error::A credential SHAPE was found in the image environment or build history. See image-credential-scan.json — it records the pattern class, never the value."
+            bad=1
+          fi
+          rm -rf image-surface
 
           # --- development tooling --------------------------------------------
           # A production image that carries a compiler or a package manager gives
@@ -292,6 +323,11 @@ jobs:
         id: policy
         env:
           BLOCKING_SEVERITIES: ${{ inputs.severity }}
+          # Tells the policy whether unfixable findings were stripped by the
+          # scanner before it saw the report. Without this it would print
+          # "0 unfixable", which reads as "there are none" when it actually
+          # means "they were filtered out".
+          UNFIXED_FILTERED: ${{ inputs.deep && '' || 'yes' }}
         run: |
           set -euo pipefail
           # The scan is run with `exit-code: 0` deliberately: the POLICY decides
@@ -300,12 +336,29 @@ jobs:
           node scripts/ci/container-policy.mjs \
             --report trivy-image.json \
             --severities "${BLOCKING_SEVERITIES}" \
+            ${UNFIXED_FILTERED:+--unfixed-filtered} \
             --json container-policy.json --markdown container.md
           node -e '
             const fs = require("node:fs");
             const p = JSON.parse(fs.readFileSync("container-policy.json", "utf8"));
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `blocking=${p.blocking}\n`);
           '
+
+      - name: Redact values before anything is published
+        if: always()
+        run: |
+          set -euo pipefail
+          # This is a PUBLIC repository and these artifacts are downloadable by
+          # anyone. The checks above assert no credential is present — but an
+          # artifact that would leak the value if they were ever wrong is a bad
+          # trade for evidence that only needs the SHAPES. Names and structure
+          # are kept; values longer than five characters are removed.
+          for file in image-env.json image-history.txt; do
+            if [ -f "${file}" ]; then
+              sed -E -i 's/(=|": ?")[^",[:space:]]{6,}/\1<redacted>/g; s#(://[^:/@[:space:]]+:)[^@[:space:]]+@#\1<redacted>@#g' "${file}"
+            fi
+          done
+          echo "OK: values redacted; names and structure retained as evidence"
 
       - name: Job summary
         if: always()

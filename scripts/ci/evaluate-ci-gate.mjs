@@ -33,7 +33,7 @@
  * Exit codes: 0 Go · 1 No-Go · 2 IO/shape error.
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -96,11 +96,22 @@ export function evaluate(needs, classification, shas = {}) {
   for (const declared of DECLARED_JOBS) {
     const need = needs?.[declared.id];
     if (!need) {
+      // A key present with a falsy value (`null`, `0`, `""`) is NOT the same as
+      // a missing key — the missing-key case is already reported above — so
+      // this branch must push a failure of its own. Without it the job is
+      // recorded as unaccepted while `failures` stays empty, and the decision,
+      // derived from `failures.length`, comes out Go. Reachable through any
+      // writer that rewrites the needs document, such as
+      // protected-classification.mjs.
+      failures.push(
+        `job \`${declared.id}\` has no usable entry in \`needs\` (value was ` +
+          `\`${JSON.stringify(need)}\`), so nothing is known about whether it ran.`
+      );
       jobs.push({
         id: declared.id,
         result: 'absent',
         accepted: false,
-        reason: 'not present in needs',
+        reason: 'no usable entry in needs',
       });
       continue;
     }
@@ -164,9 +175,24 @@ export function evaluate(needs, classification, shas = {}) {
     );
   }
 
+  // Belt and braces: the decision is Go only if nothing was recorded as a
+  // failure AND every governed job was positively accepted. Deriving it from
+  // `failures.length` alone means any future branch that marks a job
+  // unaccepted without also pushing a failure silently produces a Go.
+  const unaccepted = jobs.filter((job) => !job.accepted);
+  for (const job of unaccepted) {
+    if (!failures.some((f) => f.includes(`\`${job.id}\``))) {
+      failures.push(
+        `job \`${job.id}\` was not accepted (${job.reason}) but recorded no failure of its own. ` +
+          'Treating an unaccounted-for job as a failure.'
+      );
+    }
+  }
+
+  const ok = failures.length === 0 && unaccepted.length === 0;
   return {
-    decision: failures.length === 0 ? 'Go' : 'No-Go',
-    ok: failures.length === 0,
+    decision: ok ? 'Go' : 'No-Go',
+    ok,
     failures,
     notes,
     jobs,
@@ -187,12 +213,24 @@ export function collectEvidence(dir) {
         continue;
       }
       if (!entry.name.endsWith('.json')) continue;
+      const key = entry.name.replace(/\.json$/, '');
+      // Flattening by basename across artifact directories silently overwrites:
+      // two jobs uploading the same filename means the gate summary — which a
+      // gate record then cites — can carry the wrong job's numbers. Keep the
+      // first and record the collision rather than losing it.
+      if (key in evidence) {
+        evidence[`${key}__collision`] = [
+          ...(evidence[`${key}__collision`] ?? []),
+          relative(dir, full).replace(/\\/g, '/'),
+        ];
+        continue;
+      }
       try {
-        evidence[entry.name.replace(/\.json$/, '')] = JSON.parse(readFileSync(full, 'utf8'));
+        evidence[key] = JSON.parse(readFileSync(full, 'utf8'));
       } catch {
         // A malformed evidence file is reported, not fatal: the job that produced
         // it already passed or failed on its own merits.
-        evidence[entry.name.replace(/\.json$/, '')] = { error: 'unparseable' };
+        evidence[key] = { error: 'unparseable' };
       }
     }
   };

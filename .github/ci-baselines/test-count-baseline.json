@@ -1,0 +1,23 @@
+{
+  "description": "Minimum test count per tier. A suite that shrinks without explanation is a silently disabled suite — a broken include glob drops the unit tier from 1024 tests to 3 and every other gate still passes, because total > 0, failed === 0 and success === true.",
+  "policy": "docs/engineering/ci-automation/automated-testing-strategy.md",
+  "howToRaise": "Raise a floor in the same commit that adds the tests. Lowering one is also a reviewable diff — state why in the commit message.",
+  "establishedBy": "unit measured locally at 1024; database and backend carried from the P1-21 hosted run and re-confirmed on the first hosted run of this pipeline",
+  "tiers": {
+    "unit": {
+      "minTests": 1000,
+      "measured": 1024,
+      "note": "floor set below the measurement so ordinary churn does not trip it"
+    },
+    "database": {
+      "minTests": 1550,
+      "measured": 1624,
+      "note": "P1-21 hosted figure"
+    },
+    "backend": {
+      "minTests": 1300,
+      "measured": 1380,
+      "note": "P1-21 hosted figure, including the four H6 regression tests"
+    }
+  }
+}

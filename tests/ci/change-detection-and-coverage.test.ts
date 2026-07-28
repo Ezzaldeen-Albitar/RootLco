@@ -26,7 +26,11 @@ describe('change classification', () => {
     expect(classifyPath('docs/api/openapi.v1.json')).toBe('openapi');
     expect(classifyPath('tests/backend/x.test.ts')).toBe('tests');
     expect(classifyPath('scripts/ci/classify-changes.mjs')).toBe('ciScripts');
-    expect(classifyPath('src/app/api/v1/x/route.ts')).toBe('frontend');
+    // `src/app/api/**` is the HTTP surface of the BACKEND, not a page. Classing
+    // it as `frontend` meant an authorization-bearing route handler skipped
+    // `database-security` — the job that runs the RLS matrix.
+    expect(classifyPath('src/app/api/v1/x/route.ts')).toBe('backend');
+    expect(classifyPath('src/app/page.tsx')).toBe('frontend');
     expect(classifyPath('src/modules/inventory/x.ts')).toBe('backend');
     expect(classifyPath('src/lib/logging/logger.ts')).toBe('appSource');
     expect(classifyPath('docs/engineering/ci-automation/README.md')).toBe('docs');
@@ -97,6 +101,37 @@ describe('change classification', () => {
   it('requires the container job when the Dockerfile or a dependency changes', () => {
     expect(classify(['Dockerfile']).jobs['container-security']?.required).toBe(true);
     expect(classify(['package-lock.json']).jobs['container-security']?.required).toBe(true);
+  });
+
+  it('requires the security jobs when an API route handler changes', () => {
+    // Without this, deleting `frontend`/`backend` from the CONDITIONAL_JOBS
+    // trigger lists would skip every heavy job for a route-only change and no
+    // test would notice.
+    const result = classify(['src/app/api/v1/inventory/items/route.ts']);
+    for (const job of [
+      'database-security',
+      'integration-tests',
+      'code-security',
+      'application-build',
+      'container-security',
+    ]) {
+      expect(result.jobs[job]?.required, job).toBe(true);
+    }
+  });
+
+  it('requires everything when an unclassified path is touched', () => {
+    // A path matching no rule is a path nobody classified. Skipping on that
+    // basis would let a new root-level middleware.ts or config file disable six
+    // jobs, including CodeQL.
+    const result = classify(['middleware.ts']);
+    expect(result.categories).toContain('other');
+    for (const decision of Object.values(result.jobs) as Array<{
+      required: boolean;
+      reason: string;
+    }>) {
+      expect(decision.required).toBe(true);
+    }
+    expect(JSON.stringify(result.jobs)).toContain('unclassified path touched');
   });
 
   it('requires everything when a workflow changes, because the pipeline is what changed', () => {

@@ -80,11 +80,17 @@ export const ACTIONS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
  * reference data owned by the migration role and readable by everyone is not a
  * tenant-scoped resource, so forcing RLS on it would be theatre.
  */
-export const FORCE_RLS_EXEMPT = {
-  'shared.currencies': 'global reference data, identical for every tenant',
-  'shared.timezones': 'global reference data, identical for every tenant',
-  'shared.countries': 'global reference data, identical for every tenant',
-};
+// DELIBERATELY EMPTY. The three tables previously listed here were all wrong in
+// one direction or the other: `shared.currencies` and `shared.timezones` both
+// DO force row-level security, so the exemption was never consulted, and
+// `shared.countries` does not exist at all. An exemption nobody has needed and
+// nobody has re-checked is exactly the kind of rationale that gets waved
+// through the day it starts to matter.
+//
+// Every application table currently forces RLS. If a genuine exemption is ever
+// needed, add it here with the reason and the reviewer — and the matrix will
+// then be asserting something real rather than carrying dead weight.
+export const FORCE_RLS_EXEMPT = {};
 
 async function query(client, sql, params = []) {
   const { rows } = await client.query(sql, params);
@@ -152,7 +158,7 @@ export async function buildMatrix(client, schemas, options = {}) {
             (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policy_count
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind = 'r'
+      WHERE c.relkind IN ('r', 'p')
         AND n.nspname = ANY($1)
       ORDER BY n.nspname, c.relname`,
     [schemas]

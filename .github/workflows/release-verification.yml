@@ -55,6 +55,19 @@ jobs:
     outputs:
       sha: ${{ steps.check.outputs.sha }}
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
         with:
@@ -101,7 +114,12 @@ jobs:
     uses: ./.github/workflows/_reusable-release-artifact.yml
     with:
       ref: ${{ needs.verify-source.outputs.sha }}
-      attest: ${{ inputs.attest != false }}
+      # On a TAG PUSH there is no `inputs` context, so `inputs.attest` is null —
+      # and `null != false` evaluates FALSE under GitHub's loose comparison.
+      # Written the obvious way, every tag-triggered release would silently
+      # request no attestation on the one path that matters. Default to true
+      # unless a dispatch explicitly said otherwise.
+      attest: ${{ github.event_name != 'workflow_dispatch' || inputs.attest }}
       artifact-retention-days: 365
 
   # ===========================================================================
@@ -112,6 +130,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         uses: ./.github/actions/setup-project
         with:

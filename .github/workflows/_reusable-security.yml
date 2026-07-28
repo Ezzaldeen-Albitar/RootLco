@@ -46,6 +46,30 @@ permissions:
 
 jobs:
   # ===========================================================================
+  # Deliberately UNGATED. The three jobs below are each `if:`-gated on `task`,
+  # so an unrecognised value would skip all three and leave the caller's result
+  # to skip semantics rather than to an assertion. This fails loudly instead.
+  validate-task:
+    name: validate-task
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: The task must be one this workflow implements
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          case "${TASK}" in
+            secret-scan | dependency-security | code-security) printf 'task: %s\n' "${TASK}" ;;
+            *)
+              echo "::error::unknown task '${TASK}'. Expected one of: secret-scan, dependency-security, code-security."
+              exit 1
+              ;;
+          esac
+
+  # ===========================================================================
   secret-scan:
     name: secret-scan
     if: inputs.task == 'secret-scan'
@@ -55,6 +79,19 @@ jobs:
       contents: read
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project
@@ -95,14 +132,16 @@ jobs:
       - name: Workflow security policy
         run: node scripts/ci/check-workflow-security.mjs --json workflow-security.json --markdown workflow-security.md
 
-      - name: Generated and build output carries no credential
+      - name: Generated documents carry no credential
         run: |
           set -euo pipefail
-          # A secret can reach a public artifact without ever being tracked: an
-          # env value inlined into a bundle, or echoed into a generated document.
-          # Scans whatever build output happens to be present; the container job
-          # covers image layers separately.
+          # This job deliberately does not build (it runs no `npm ci`), so there
+          # is no `.next` here to scan — the BUILD job scans its own output, and
+          # the container job covers image layers. What this covers is the
+          # generated and public documents, which are large enough to be
+          # meaningful and are what this job can actually see.
           node scripts/ci/scan-history.mjs --mode worktree \
+            --roots docs,public,supabase --min-files 50 \
             --json worktree-scan.json --markdown worktree-scan.md
 
       - name: Git history (deep mode only)
@@ -119,6 +158,7 @@ jobs:
         if: always()
         env:
           RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+          DEPTH: ${{ inputs.depth }}
         run: |
           set -euo pipefail
           for file in workflow-security.md worktree-scan.md history-scan.md; do
@@ -127,7 +167,7 @@ jobs:
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
             fi
           done
-          printf '_Secret scan at `%s` (depth: `%s`)_\n' "${RESOLVED_SHA}" "${{ inputs.depth }}" >> "${GITHUB_STEP_SUMMARY}"
+          printf '_Secret scan at `%s` (depth: `%s`)_\n' "${RESOLVED_SHA}" "${DEPTH}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload evidence
         if: always()
@@ -156,6 +196,19 @@ jobs:
       pull-requests: read
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project
@@ -271,6 +324,19 @@ jobs:
         language: [javascript-typescript, actions]
 
     steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up the project
         id: setup
         uses: ./.github/actions/setup-project

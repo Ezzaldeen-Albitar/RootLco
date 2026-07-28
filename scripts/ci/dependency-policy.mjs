@@ -62,6 +62,31 @@ export const PROHIBITED_PACKAGES = [
   { name: 'ua-parser-js', reason: 'compromised releases published to npm in 2021' },
 ];
 
+/**
+ * Rejects an audit document that is not actually an audit result.
+ *
+ * `npm audit --json` writes `{"error":{"code":"ENETUNREACH",…}}` and exits 1 on
+ * a registry or proxy failure. The workflow captures the file with a fallback
+ * so a finding cannot be mistaken for a tooling failure — which means an ERROR
+ * object parses cleanly, yields `vulnerabilities: {}`, and reports zero
+ * advisories on both trees. A network outage would silently pass the gate.
+ */
+export function assertUsableAudit(auditJson, label) {
+  if (!auditJson || typeof auditJson !== 'object') {
+    return `${label} audit produced no object.`;
+  }
+  if (auditJson.error) {
+    return `${label} audit failed: ${auditJson.error.code ?? 'unknown error'}. An audit that did not run is not an audit that found nothing.`;
+  }
+  if (typeof auditJson.vulnerabilities !== 'object' || auditJson.vulnerabilities === null) {
+    return `${label} audit has no \`vulnerabilities\` object.`;
+  }
+  if (typeof auditJson.metadata?.vulnerabilities !== 'object') {
+    return `${label} audit has no \`metadata.vulnerabilities\` summary, so it is not an npm audit result.`;
+  }
+  return null;
+}
+
 /** Normalises `npm audit --json` (npm 7+) into a flat advisory list. */
 export function extractAdvisories(auditJson) {
   const out = [];
@@ -172,16 +197,38 @@ export function evaluate({ prodAudit, devAudit, exceptions, licences, installedP
     const key = advisoryKey(advisory);
 
     // Direct match on this node, or — for a purely transitive node — a match on
-    // EVERY root advisory it is exposed to. "Every" matters: a package exposed
-    // to one waived and one new advisory must still fail.
-    let entry = entries.find((e) => e.id === advisory.ghsa || e.id === key);
+    // EVERY root advisory it is exposed to.
+    //
+    // `e.id &&` matters: without it, an exception entry that omits `id` matches
+    // `undefined === undefined` and waives every unidentified advisory in the
+    // tree.
+    let entry = entries.find((e) => e.id && (e.id === advisory.ghsa || e.id === key));
+    let matchedEntries = entry ? [entry] : [];
+
     if (!entry && !advisory.ghsa) {
       const roots = resolveRootAdvisories(devAudit, advisory.package);
-      const rootIds = [...new Set(roots.map((r) => r.ghsa).filter(Boolean))];
-      const matched = rootIds.map((id) => entries.find((e) => e.id === id));
-      if (rootIds.length > 0 && matched.every(Boolean)) {
-        entry = matched[0];
-        advisory.transitiveVia = rootIds;
+      // EVERY root must carry an identifier. Previously the identifiers were
+      // filtered with `.filter(Boolean)`, so a root advisory with no GHSA in
+      // its URL was dropped from the set and the remaining — already waived —
+      // roots satisfied `every`. A genuinely new advisory reaching the tree
+      // through an already-waived package was therefore absorbed silently, and
+      // the artifact recorded an affirmative but false `transitiveVia`.
+      const allIdentified = roots.length > 0 && roots.every((r) => r.ghsa);
+      if (allIdentified) {
+        const rootIds = [...new Set(roots.map((r) => r.ghsa))];
+        const matched = rootIds.map((id) => entries.find((e) => e.id && e.id === id));
+        if (matched.every(Boolean)) {
+          matchedEntries = matched;
+          entry = matched[0];
+          advisory.transitiveVia = rootIds;
+        }
+      } else if (roots.length > 0) {
+        failures.push(
+          `development dependency \`${advisory.package}\` is exposed to a ${advisory.severity} advisory ` +
+            'that carries no GHSA identifier, so it cannot be matched against the exception list. ' +
+            'It is treated as unwaived.'
+        );
+        continue;
       }
     }
 
@@ -193,23 +240,28 @@ export function evaluate({ prodAudit, devAudit, exceptions, licences, installedP
       );
       continue;
     }
-    usedExceptions.add(entry.id);
-    const review = new Date(entry.reviewBy);
-    if (Number.isNaN(review.getTime())) {
-      failures.push(`exception \`${entry.id}\` has an unparseable \`reviewBy\` date.`);
-      continue;
+    // EVERY matched exception is validated, not just the first. A transitive
+    // node exposed to two waived roots is only waived if both waivers are
+    // complete and unexpired.
+    let rejected = false;
+    for (const matched of matchedEntries) {
+      usedExceptions.add(matched.id);
+      const review = new Date(matched.reviewBy);
+      if (Number.isNaN(review.getTime())) {
+        failures.push(`exception \`${matched.id}\` has an unparseable \`reviewBy\` date.`);
+        rejected = true;
+      } else if (review < now) {
+        failures.push(
+          `exception \`${matched.id}\` for \`${advisory.package}\` expired on ${matched.reviewBy}. ` +
+            'Re-check whether a patched release now exists; extend the date only with a fresh reason.'
+        );
+        rejected = true;
+      } else if (!matched.reason || !matched.owner) {
+        failures.push(`exception \`${matched.id}\` is missing a reason or an owner.`);
+        rejected = true;
+      }
     }
-    if (review < now) {
-      failures.push(
-        `exception \`${entry.id}\` for \`${advisory.package}\` expired on ${entry.reviewBy}. ` +
-          'Re-check whether a patched release now exists; extend the date only with a fresh reason.'
-      );
-      continue;
-    }
-    if (!entry.reason || !entry.owner) {
-      failures.push(`exception \`${entry.id}\` is missing a reason or an owner.`);
-      continue;
-    }
+    if (rejected) continue;
     acceptedDev.push({ ...advisory, exception: entry });
   }
 
@@ -339,6 +391,20 @@ function main(argv) {
 
   const prodAudit = readJson(arg('--prod-audit'), 'production audit');
   const devAudit = readJson(arg('--dev-audit'), 'full audit');
+
+  // A registry outage makes npm write an error object and exit 1. The workflow
+  // captures the file either way, so without this the error object parses
+  // cleanly and both trees report zero advisories.
+  for (const [doc, label] of [
+    [prodAudit, 'production'],
+    [devAudit, 'full'],
+  ]) {
+    const problem = assertUsableAudit(doc, label);
+    if (problem) {
+      console.error(`::error::${problem}`);
+      process.exit(2);
+    }
+  }
   const exceptions = readJson(
     arg('--exceptions') ?? '.github/ci-baselines/dependency-exceptions.json',
     'exceptions',

@@ -33,6 +33,14 @@
 # Security-sensitive surfaces.
 /SECURITY.md                    @Ezzaldeen-Albitar
 /.github/workflows/             @Ezzaldeen-Albitar
+# On a `pull_request` the workflow file, the composite action, the gate scripts
+# AND the baselines all come from the PR head — so a change that weakens a gate
+# and the check that would catch it, in the same commit, is self-certifying.
+# Review is the only control over that, which makes these paths as sensitive as
+# the workflows themselves.
+/.github/actions/               @Ezzaldeen-Albitar
+/.github/ci-baselines/          @Ezzaldeen-Albitar
+/scripts/ci/                    @Ezzaldeen-Albitar
 /Dockerfile                     @Ezzaldeen-Albitar
 /docker-compose.yml             @Ezzaldeen-Albitar
 /.env.example                   @Ezzaldeen-Albitar
