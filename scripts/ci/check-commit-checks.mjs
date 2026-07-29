@@ -32,6 +32,31 @@ import { pathToFileURL } from 'node:url';
 export const ACCEPTABLE = Object.freeze(['success', 'skipped', 'neutral']);
 
 /**
+ * Bounds a string that arrived over HTTP before it is written to a report.
+ *
+ * Check names, titles and app slugs come from the GitHub API, and this script's
+ * output is a build artifact a human reads and a later job may parse. CodeQL
+ * flagged the write as `js/http-to-file-access` on this gate's very first run —
+ * the gate catching a finding in the gate — and it was right to: nothing bounded
+ * the length, and a control character or an ANSI escape in a check name would
+ * have gone straight into a Markdown table and a terminal.
+ *
+ * Not a claim that GitHub is hostile. It is that a report should be a report
+ * whatever the API returns, and "the source is trusted" is the reasoning this
+ * repository has already been wrong about twice.
+ */
+export function safeText(value, max = 200) {
+  if (value === null || value === undefined) return '';
+  const text = String(value)
+    // Control characters, including the ESC that starts an ANSI sequence.
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    // Pipes would break out of the Markdown table cell they are rendered into.
+    .replace(/\|/g, '\\|')
+    .trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
  * Classifies the complete check-run list.
  *
  * `skipped` and `neutral` are acceptable; `null` (still running) is NOT, because
@@ -66,12 +91,15 @@ export function evaluate(checkRuns, { required = [] } = {}) {
 
   const checks = checkRuns
     .map((run) => ({
-      name: run.name,
-      status: run.status,
-      conclusion: run.conclusion ?? null,
-      app: run.app?.slug ?? null,
-      title: run.output?.title ?? null,
-      url: run.html_url ?? null,
+      name: safeText(run.name, 200),
+      status: safeText(run.status, 40),
+      conclusion:
+        run.conclusion === null || run.conclusion === undefined
+          ? null
+          : safeText(run.conclusion, 40),
+      app: run.app?.slug === undefined ? null : safeText(run.app?.slug, 100),
+      title: run.output?.title === undefined ? null : safeText(run.output?.title, 300),
+      url: safeText(run.html_url, 500),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

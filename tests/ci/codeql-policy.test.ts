@@ -22,6 +22,7 @@ import {
 } from '../../scripts/ci/codeql-policy.mjs';
 import {
   evaluate as evaluateChecks,
+  safeText,
   toMarkdown as checksMarkdown,
 } from '../../scripts/ci/check-commit-checks.mjs';
 
@@ -103,6 +104,42 @@ describe('the gate refuses to report clean when it cannot see', () => {
     });
     expect(verdict.ok).toBe(false);
     expect(verdict.failures.join('\n')).toMatch(/no SARIF for actions/);
+  });
+
+  it('accepts the filename CodeQL actually writes for a multi-part pack', () => {
+    // Analysing `javascript-typescript` produces `javascript.sarif` — the file
+    // is named after the LANGUAGE, not the pack. An exact-substring match
+    // reported "no SARIF for javascript-typescript" on the hosted runner while
+    // the document was sitting right there. This gate's first real finding was
+    // in this gate.
+    const verdict = evaluate({
+      documents: docs(sarif([]), 'sarif-results/javascript.sarif'),
+      languages: ['javascript-typescript'],
+      baseline: BASE,
+    });
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('still fails when the language genuinely produced nothing', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([]), 'sarif-results/javascript.sarif'),
+      languages: ['actions'],
+      baseline: BASE,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/no SARIF for actions/);
+  });
+
+  it('lets the caller name its own language, overriding the baseline list', () => {
+    // Each matrix leg only has its own SARIF, so a baseline-wide list would fail
+    // every leg for the language it is not running.
+    const verdict = evaluate({
+      documents: docs(sarif([]), 'sarif-results/actions.sarif'),
+      languages: ['actions'],
+      baseline: { ...BASE, expectedLanguages: ['javascript-typescript', 'actions'] },
+    });
+    expect(verdict.ok).toBe(true);
   });
 
   it('fails when the analysis reported zero files', () => {
@@ -356,6 +393,37 @@ describe('commit check-run enumeration', () => {
 
   it('accepts skipped and neutral, which are real outcomes', () => {
     expect(evaluateChecks([check('a', 'skipped'), check('b', 'neutral')]).ok).toBe(true);
+  });
+
+  it('bounds a check name that arrived over HTTP before it reaches a report', () => {
+    // `js/http-to-file-access`, found by this repository's own new gate on its
+    // very first hosted run: GitHub API strings were written into a build
+    // artifact unbounded and unsanitised. Not a claim that GitHub is hostile —
+    // a report should be a report whatever the API returns.
+    expect(safeText('a|b'), 'a pipe would break out of its table cell').toBe('a\\|b');
+    expect(safeText('x'.repeat(300), 20)).toHaveLength(21);
+    expect(safeText(null)).toBe('');
+    expect(safeText(undefined)).toBe('');
+
+    const withEscape = safeText(`a${String.fromCharCode(27)}[31mred${String.fromCharCode(0)}b`);
+    expect(withEscape, 'no control character may survive').not.toMatch(/[\u0000-\u001f]/);
+    expect(withEscape).toContain('red');
+  });
+
+  it('sanitises through the real evaluate path, not only in isolation', () => {
+    const hostile = [
+      {
+        name: `evil${String.fromCharCode(27)}[31m|name`,
+        status: 'completed',
+        conclusion: 'success',
+        app: { slug: 'github-actions' },
+        output: { title: null },
+        html_url: null,
+      },
+    ];
+    const verdict = evaluateChecks(hostile);
+    expect(verdict.checks[0]?.name).not.toMatch(/[\u0000-\u001f]/);
+    expect(verdict.checks[0]?.name).toContain('\\|');
   });
 
   it('reports how many checks came from apps other than Actions', () => {

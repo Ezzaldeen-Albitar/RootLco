@@ -258,9 +258,18 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   }
   if (seenTools.size === 0) failures.push('no analysis tool identified itself in any run');
 
-  const missingLanguages = expectedLanguages.filter(
-    (language) => !documents.some(({ label }) => label.includes(language))
-  );
+  // CodeQL names the file after the LANGUAGE, not the pack: analysing
+  // `javascript-typescript` writes `javascript.sarif`. Measured on the hosted
+  // runner, where an exact-substring match reported "no SARIF for
+  // javascript-typescript" while the document sat right there — this gate's
+  // first real finding was in this gate. A pack matches if the label contains
+  // the whole name or any hyphen-separated part of it.
+  const missingLanguages = expectedLanguages.filter((language) => {
+    const candidates = [language, ...language.split('-')];
+    return !documents.some(({ label }) =>
+      candidates.some((candidate) => label.toLowerCase().includes(candidate.toLowerCase()))
+    );
+  });
   if (missingLanguages.length > 0) {
     failures.push(
       `no SARIF for ${missingLanguages.join(', ')} — a language that was not analysed cannot be reported clean.`
