@@ -52,6 +52,7 @@ not what the dismissal is buying.
 | [`execution-checkpoint.md`](execution-checkpoint.md)                             | What happened, in order, including the mistakes              |
 | [`evidence/hostile-mutations.md`](evidence/hostile-mutations.md)                 | 27 mutations, 27 caught, and the ones that survived first    |
 | [`correction-diff-informed-analysis.md`](correction-diff-informed-analysis.md)   | Why "0 open" was wrong, and what a partial scan proves       |
+| [`gate-record.md`](gate-record.md)                                               | The owner gate decision, with the final protected evidence   |
 
 ## The three things worth carrying out of this
 

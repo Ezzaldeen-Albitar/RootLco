@@ -1,7 +1,7 @@
 # Execution checkpoint
 
 What happened, in order, including the mistakes. The mistakes are the useful
-part: **eight** of the defects this initiative fixed were introduced by this
+part: **fourteen** of the defects this initiative fixed were introduced by this
 initiative, in files it had just edited, after it had already demonstrated it
 knew how to find that exact class. The table at the end is the whole point.
 
@@ -147,24 +147,38 @@ hiding place for a genuinely dead entry.
 
 ## The pattern
 
-| #   | Defect                         | Introduced            | Found by                |
-| --- | ------------------------------ | --------------------- | ----------------------- |
-| 1   | portable `__proto__` key       | the prototype fix     | review                  |
-| 2   | caller-triggerable 500         | the idempotency guard | review                  |
-| 3   | `Dirent` compared as a string  | the race fixes        | running the gate        |
-| 4   | `http-to-file-access`          | the new gate          | **the new gate**        |
-| 5   | backslash-before-pipe          | the fix for #4        | **the new gate**        |
-| 6   | unhandled 500 on eight routes  | the prototype fix     | review                  |
-| 7   | vacuous regression pin         | the prototype tests   | review                  |
-| 8   | unpinned backslash-before-pipe | the fix for #5        | **the mutation matrix** |
-| 9   | staleness judged out of scope  | the new gate          | **a hosted run**        |
+| #   | Defect                                     | Introduced                 | Found by                            |
+| --- | ------------------------------------------ | -------------------------- | ----------------------------------- |
+| 1   | portable `__proto__` key                   | the prototype fix          | review                              |
+| 2   | caller-triggerable 500                     | the idempotency guard      | review                              |
+| 3   | `Dirent` compared as a string              | the race fixes             | running the gate                    |
+| 4   | `http-to-file-access`                      | the new gate               | **the new gate**                    |
+| 5   | backslash-before-pipe                      | the fix for #4             | **the new gate**                    |
+| 6   | unhandled 500 on eight routes              | the prototype fix          | review                              |
+| 7   | vacuous regression pin                     | the prototype tests        | review                              |
+| 8   | unpinned backslash-before-pipe             | the fix for #5             | **the mutation matrix**             |
+| 9   | staleness scoped by artifact list          | the scoping fix            | **a hosted run**                    |
+| 10  | **"0 open" from a partial scan**           | this initiative's evidence | **a hosted run, after merge**       |
+| 11  | route-template regex from the wrong source | the fingerprint fix        | **the backend tier (857 failures)** |
+| 12  | a regex guard that was not a barrier       | the fingerprint fix        | **a full-tree analysis**            |
+| 13  | vacuous identity assertion                 | the interning tests        | **the mutation matrix**             |
+| 14  | staleness judged on a partial run          | the scoping fix            | **a hosted run**                    |
 
-Nine defects, every one in code written by this initiative, every one in a class
-it had already fixed elsewhere. Three were vacuous assertions — written by the
-initiative chartered to fix vacuous assertions, including one written to pin the
-fix for #5. The last one had been **reported to me and refuted**.
+Fourteen defects, every one in code written by this initiative, every one in a
+class it had already fixed elsewhere. **Four** were vacuous assertions — written
+by the work chartered to fix vacuous assertions — and the last of those went
+into the very file whose purpose was the property it claimed to test.
+
+Defect 10 is the one that matters. It is not a bug in a script; it is a **false
+claim that was merged**: "21 fixed, 0 open", measured on pull-request runs that
+CodeQL analyses `diff-informed`. Two Highs were on `develop` the whole time, and
+the gate this initiative built is what found them — ninety minutes after the
+merge, on the first full-tree analysis.
+
+Defects 9 and 14 are the same error twice, in opposite directions: a partial
+scan's silence read first as "nothing is there" and then as "it is gone".
 
 Nothing here was found by being careful. All of it was found by running the code,
 by letting somebody else attack it, by breaking it on purpose to see whether
-anything noticed, and — for the last one — by a hosted runner declining to accept
-a claim I had already talked myself out of.
+anything noticed, and — three times — by a hosted runner declining to accept a
+claim that had already been written down.
