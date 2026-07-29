@@ -177,7 +177,7 @@ describe('the fingerprint refuses secret material', () => {
   });
 
   it('still produces a stable digest for a request with no secret', () => {
-    const request = { method: 'POST', path: '/v1/things', body: { amount: 10 } } as const;
+    const request = { method: 'POST', path: '/things', body: { amount: 10 } } as const;
     const a = requestFingerprint(context(), request);
     const b = requestFingerprint(context(), request);
     expect(a).toBe(b);
@@ -212,7 +212,7 @@ describe('the fingerprint refuses secret material', () => {
     const failure = capture(() =>
       requestFingerprint(context(), {
         method: 'POST',
-        path: '/v1/things',
+        path: '/things',
         body: { amount: 10, password: SECRET },
       })
     );

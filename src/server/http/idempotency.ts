@@ -108,6 +108,93 @@ function framed(parts: readonly string[]): string {
 const FINGERPRINT_SCHEME = 'rootlco.idempotency.v3.principal-and-target-bound';
 
 /**
+ * The HTTP verbs this platform routes. Frozen, and literal on purpose.
+ */
+const HTTP_METHODS = Object.freeze([
+  'GET',
+  'HEAD',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'OPTIONS',
+] as const);
+
+/**
+ * A registered route template, in the form the operation registry declares it:
+ * `/additional-work/{requestId}/approval` — kebab-case segments and `{param}`
+ * placeholders, with no `/api/v1` prefix.
+ *
+ * Verified against all **169** registered templates, which is not a detail. The
+ * first version of this pattern was written from `docs/api/openapi.v1.json`,
+ * where paths carry the `/api/v1` prefix and use `[param]`; it matched all 169
+ * OpenAPI paths and **none** of the registry's, so it refused every real
+ * request. The unit tier passed — its fixtures were synthetic — and the backend
+ * tier failed 857 tests against a real database. Two representations of "the
+ * path", and the one the code actually receives is the one that mattered.
+ *
+ * Deliberately strict. The template is server-owned, so anything failing this is
+ * a programming error, and hashing it would bind an idempotency key to a target
+ * nobody registered.
+ */
+const ROUTE_TEMPLATE = /^(?:\/(?:[a-z0-9-]+|\{[a-zA-Z][a-zA-Z0-9]*\}))+$/;
+
+/**
+ * Returns the verb as one of `HTTP_METHODS` — the LITERAL from the array above,
+ * never the caller's string.
+ *
+ * This is the shape that removes the `js/insufficient-password-hash` dataflow,
+ * and the reason is worth stating because the alert was not what it looked like.
+ * CodeQL reported "Password from an access to `PASSWORD_RESET_COMPLETION_OPERATION`
+ * is hashed insecurely", and the dataflow it printed was:
+ *
+ *   PASSWORD_RESET_COMPLETION_OPERATION → operation → operation.method
+ *     → input.method → framed([…]) → createHash('sha256')
+ *
+ * **No password is in that path.** The query's source heuristic fires on the
+ * IDENTIFIER NAME of a route descriptor, and the value that actually reaches
+ * SHA-256 is the string `POST`. The alert was a false positive in substance —
+ * and a real one about form, because the function was hashing pass-through
+ * strings it had never checked.
+ *
+ * So this is not a way to quiet the scanner. `find` over a frozen literal array
+ * returns one of seven compile-time constants, which means the digest now
+ * provably contains a verb this platform actually routes, and an unroutable one
+ * is refused rather than hashed. The taint ends because the value genuinely
+ * stops being derived from the input.
+ */
+function canonicalMethod(method: string): (typeof HTTP_METHODS)[number] {
+  const upper = String(method).toUpperCase();
+  const known = HTTP_METHODS.find((candidate) => candidate === upper);
+  if (!known) {
+    throw new AppFailure('ERR-INT-002', {
+      message: `Cannot fingerprint an unroutable method`,
+    });
+  }
+  return known;
+}
+
+/**
+ * Returns the route template after proving it is one.
+ *
+ * Same reasoning as `canonicalMethod`, one step weaker and honestly so: the set
+ * of templates is 169 and lives in the operation registry, so this validates
+ * the shape rather than matching a literal. What it buys is real — a fingerprint
+ * can only ever be bound to a well-formed registered target, so a malformed or
+ * caller-influenced path is refused before it can be hashed — but it is a guard,
+ * not an interning step, and the difference is why it is documented as one.
+ */
+function assertRouteTemplate(path: string): string {
+  const match = ROUTE_TEMPLATE.exec(String(path));
+  if (!match) {
+    throw new AppFailure('ERR-INT-002', {
+      message: `Cannot fingerprint an unregistered route template`,
+    });
+  }
+  return match[0];
+}
+
+/**
  * Field names whose VALUES must never be hashed into a persisted fingerprint.
  *
  * Matched against every key at every depth of the canonicalised body and route
@@ -328,8 +415,10 @@ export function requestFingerprint(
         FINGERPRINT_SCHEME,
         tenantId,
         userId,
-        input.method.toUpperCase(),
-        input.path,
+        // Server-owned literals, not the caller's strings. See `canonicalMethod`
+        // and `assertRouteTemplate`.
+        canonicalMethod(input.method),
+        assertRouteTemplate(input.path),
         // Canonicalised the same way as the body, so key order cannot change
         // the fingerprint and an absent parameter set hashes as `{}`.
         canonicalize(input.params ?? {}),

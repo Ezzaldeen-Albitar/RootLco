@@ -31,7 +31,7 @@ function contextFor(tenantId: string, userId: string): RequestContext {
   });
 }
 
-const REQUEST = { method: 'POST', path: '/v1/things', body: { amount: 10 } } as const;
+const REQUEST = { method: 'POST', path: '/things', body: { amount: 10 } } as const;
 
 describe('the fingerprint binds the principal', () => {
   it('differs for two principals in the same tenant, same request', () => {
@@ -71,16 +71,72 @@ describe('the preimage is unambiguous', () => {
     expect(a).not.toBe(b);
   });
 
-  it('does not collide when a newline is embedded in the path', () => {
-    const a = requestFingerprint(context, { method: 'POST', path: '/a\nPOST\n/b', body: null });
-    const b = requestFingerprint(context, { method: 'POST', path: '/a', body: null });
+  it('does not collide when a separator is moved between params and body', () => {
+    // The same property, on the two components that are still free-form. The
+    // path and method are now drawn from a validated/literal set, so framing is
+    // no longer their only defence — but it is still the ONLY defence params and
+    // body have, which is why the property keeps a test of its own.
+    const a = requestFingerprint(context, {
+      method: 'POST',
+      path: '/things',
+      params: { id: 'a' },
+      body: 'b|c',
+    });
+    const b = requestFingerprint(context, {
+      method: 'POST',
+      path: '/things',
+      params: { id: 'a|b' },
+      body: 'c',
+    });
     expect(a).not.toBe(b);
   });
 
-  it('does not collide when the method absorbs part of the path', () => {
-    const a = requestFingerprint(context, { method: 'POST', path: '/x', body: null });
-    const b = requestFingerprint(context, { method: 'POST/x', path: '', body: null });
-    expect(a).not.toBe(b);
+  // The two cases below used to assert that framing SURVIVED a hostile path.
+  // They now assert something stronger: such a path never reaches the digest at
+  // all. A newline cannot occur in a registered route template, and a template
+  // that is not registered is a programming error, so hashing it would bind an
+  // idempotency key to a target nobody declared.
+  it('refuses to fingerprint a path with an embedded newline', () => {
+    expect(() =>
+      requestFingerprint(context, { method: 'POST', path: '/a\nPOST\n/b', body: null })
+    ).toThrowError(/unregistered route template/);
+  });
+
+  it('refuses an empty path and a method that absorbed part of one', () => {
+    // The method is checked first, so `POST/x` is refused as a verb before the
+    // empty path is ever considered. Both halves are asserted separately rather
+    // than assuming which guard fires.
+    expect(() =>
+      requestFingerprint(context, { method: 'POST/x', path: '', body: null })
+    ).toThrowError(/unroutable method/);
+    expect(() =>
+      requestFingerprint(context, { method: 'POST', path: '', body: null })
+    ).toThrowError(/unregistered route template/);
+    expect(() =>
+      requestFingerprint(context, { method: 'POST/x', path: '/x', body: null })
+    ).toThrowError(/unroutable method/);
+  });
+
+  it('refuses a verb outside the routed set rather than hashing it', () => {
+    // `find` over a frozen literal array is what ends the CodeQL dataflow, and
+    // it is only sound because a miss is refused instead of falling through.
+    for (const verb of ['TRACE', 'CONNECT', 'PROPFIND', '', 'POST ']) {
+      expect(() => requestFingerprint(context, { ...REQUEST, method: verb })).toThrowError(
+        /unroutable method/
+      );
+    }
+  });
+
+  it('accepts every verb this platform actually routes, and a parameterised template', () => {
+    for (const verb of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+      expect(() => requestFingerprint(context, { ...REQUEST, method: verb })).not.toThrow();
+    }
+    expect(() =>
+      requestFingerprint(context, {
+        ...REQUEST,
+        path: '/work-orders/{workOrderId}/history',
+      })
+    ).not.toThrow();
   });
 
   it('separates a missing key from an explicitly null one', () => {
@@ -103,12 +159,16 @@ describe('the preimage is unambiguous', () => {
     expect(ordered).not.toBe(changed);
   });
 
-  it('normalises the method case but not the path case', () => {
+  it('normalises the method case, and refuses an upper-case template', () => {
     expect(requestFingerprint(context, { ...REQUEST, method: 'post' })).toBe(
       requestFingerprint(context, { ...REQUEST, method: 'POST' })
     );
-    expect(requestFingerprint(context, { ...REQUEST, path: '/V1/Things' })).not.toBe(
-      requestFingerprint(context, { ...REQUEST, path: '/v1/things' })
+    // Registered templates are lower-case by construction, so a differently
+    // cased one is not a different route — it is an unregistered one. This
+    // previously produced a DIFFERENT fingerprint, silently splitting one route
+    // into two idempotency identities; it is now refused.
+    expect(() => requestFingerprint(context, { ...REQUEST, path: '/API/Things' })).toThrowError(
+      /unregistered route template/
     );
   });
 });

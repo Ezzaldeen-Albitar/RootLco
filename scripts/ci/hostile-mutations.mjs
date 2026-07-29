@@ -27,6 +27,7 @@ import { execSync } from 'node:child_process';
 const VALIDATION = 'npx vitest run tests/foundation/validation.test.ts';
 const SECRETS = 'npx vitest run tests/foundation/idempotency-secret-material.test.ts';
 const POLICY = 'npx vitest run tests/ci/codeql-policy.test.ts';
+const FINGERPRINT = 'npx vitest run tests/foundation/idempotency-fingerprint.test.ts';
 
 /**
  * Every `verify` command is a literal from this frozen table. Nothing here is
@@ -38,9 +39,9 @@ const MUTATIONS = Object.freeze([
   {
     id: 'M-01',
     target: 'src/server/http/validation.ts',
-    claim: 'the accumulator has a null prototype, so Zod cannot read an inherited field',
-    from: 'const out = Object.create(null) as Record<string, string | string[]>;',
-    to: 'const out = {} as Record<string, string | string[]>;',
+    claim: 'the result has a null prototype, so Zod cannot read an inherited field',
+    from: '  return Object.setPrototypeOf(Object.fromEntries(entries), null) as Record<',
+    to: '  return Object.fromEntries(entries) as Record<',
     verify: VALIDATION,
   },
   {
@@ -71,8 +72,8 @@ const MUTATIONS = Object.freeze([
     id: 'M-05',
     target: 'src/server/http/validation.ts',
     claim: 'a repeated parameter still arrives as an array',
-    from: "    out[key] = values.length > 1 ? values : (values[0] ?? '');",
-    to: "    out[key] = values[0] ?? '';",
+    from: "    entries.push([key, values.length > 1 ? values : (values[0] ?? '')]);",
+    to: "    entries.push([key, values[0] ?? '']);",
     verify: VALIDATION,
   },
 
@@ -163,26 +164,77 @@ const MUTATIONS = Object.freeze([
   {
     id: 'M-19',
     target: 'scripts/ci/codeql-policy.mjs',
-    claim: 'a dismissal outside this leg’s analysed files is not called stale',
-    from: '    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {',
+    claim: 'a rule this pack cannot report is not judged stale here',
+    from: '    if (reportableRules.size > 0 && !reportableRules.has(entry.ruleId)) {',
     to: '    if (false) {',
     verify: POLICY,
   },
   {
     id: 'M-20',
     target: 'scripts/ci/codeql-policy.mjs',
-    claim: 'scoping does NOT let a genuinely dead dismissal survive where the file WAS read',
-    from: '    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {',
+    claim: 'scoping does NOT let a dead dismissal survive where the pack OWNS the rule',
+    from: '    if (reportableRules.size > 0 && !reportableRules.has(entry.ruleId)) {',
     to: '    if (true) {',
     verify: POLICY,
   },
   {
     id: 'M-21',
     target: 'scripts/ci/codeql-policy.mjs',
-    claim: 'the analysed-file set really comes from run.artifacts',
-    from: '      for (const artifact of run.artifacts ?? []) {',
-    to: '      for (const artifact of []) {',
+    claim: 'the rule set is read from tool.extensions, where CodeQL actually puts it',
+    from: '        for (const rule of extension?.rules ?? []) {',
+    to: '        for (const rule of []) {',
     verify: POLICY,
+  },
+
+  {
+    id: 'M-22',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'the rule set is read from tool.driver.rules as well',
+    from: '      for (const rule of run?.tool?.driver?.rules ?? []) {',
+    to: '      for (const rule of []) {',
+    verify: POLICY,
+  },
+  {
+    id: 'M-23',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'scoping is by RULE, not by analysed path — the artifact list lies',
+    from: '    if (reportableRules.size > 0 && !reportableRules.has(entry.ruleId)) {',
+    to: '    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {',
+    verify: POLICY,
+  },
+
+  // ---- src/server/http/idempotency.ts — the hashed-literal fix -------------
+  {
+    id: 'M-24',
+    target: 'src/server/http/idempotency.ts',
+    claim: 'the hashed verb is a LITERAL from the frozen array, not the caller string',
+    from: '        canonicalMethod(input.method),',
+    to: '        input.method.toUpperCase(),',
+    verify: FINGERPRINT,
+  },
+  {
+    id: 'M-25',
+    target: 'src/server/http/idempotency.ts',
+    claim: 'the hashed path is proven to be a registered route template',
+    from: '        assertRouteTemplate(input.path),',
+    to: '        input.path,',
+    verify: FINGERPRINT,
+  },
+  {
+    id: 'M-26',
+    target: 'src/server/http/idempotency.ts',
+    claim: 'an unroutable verb is refused rather than falling through',
+    from: '  if (!known) {',
+    to: '  if (false) {',
+    verify: FINGERPRINT,
+  },
+  {
+    id: 'M-27',
+    target: 'src/server/http/idempotency.ts',
+    claim: 'the route-template pattern rejects a newline (it is not a . match)',
+    from: 'const ROUTE_TEMPLATE = /^(?:\\/(?:[a-z0-9-]+|\\{[a-zA-Z][a-zA-Z0-9]*\\}))+$/;',
+    to: 'const ROUTE_TEMPLATE = /[\\s\\S]*/;',
+    verify: FINGERPRINT,
   },
 
   // ---- scripts/ci/check-commit-checks.mjs — the AR-52 instrument -----------

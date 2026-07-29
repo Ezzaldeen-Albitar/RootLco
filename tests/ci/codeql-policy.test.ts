@@ -261,30 +261,40 @@ describe('dismissal governance', () => {
     expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
   });
 
-  // `code-security` is a MATRIX. The `actions` leg analyses workflow YAML and no
-  // JavaScript at all, so a `.mjs` dismissal is outside anything that leg can
-  // observe. This gate called such an entry "stale" on a real hosted run against
-  // a live and correct dismissal — an adversarial reviewer filed exactly that and
-  // I refuted it, because the reproduction was against a dirty tree. A flawed
-  // reproduction is not a refuted finding.
+  // `code-security` is a MATRIX. A leg running the `actions` pack can never emit
+  // a `js/…` result, so its silence about a `js/…` dismissal is not evidence the
+  // entry is dead. An adversarial reviewer filed exactly this and I refuted it,
+  // because their reproduction was against a dirty tree. A flawed reproduction is
+  // not a refuted finding, and a hosted run then reded the leg.
   //
-  // `run.artifacts` is CodeQL's own record of what it looked at, and it is the
-  // honest scope of anything the leg is entitled to say.
-  const withArtifacts = (document: ReturnType<typeof sarif>, uris: string[]) => ({
+  // Scoped by the RULE SET the analysis declares. `run.artifacts` was the first
+  // fix and it was wrong: CodeQL listed 17 files for the `actions` leg on a pull
+  // request (`diff-informed`) and 712 on the push to `develop` — same leg, same
+  // language — so path scoping agreed once by luck and then reproduced the same
+  // false failure on a protected branch. Measured on the real SARIFs; both
+  // artifact shapes are pinned below.
+  const withRules = (
+    document: ReturnType<typeof sarif>,
+    ruleIds: string[],
+    uris: string[] = []
+  ) => ({
     ...document,
     runs: document.runs.map((run) => ({
       ...run,
+      tool: { driver: { name: 'CodeQL' }, extensions: [{ rules: ruleIds.map((id) => ({ id })) }] },
       artifacts: uris.map((uri) => ({ location: { uri } })),
     })),
   });
 
-  it('does NOT call a dismissal stale when its path was never analysed here', () => {
+  // The 27 `actions` rules are all `actions/…`; none can produce `js/…`.
+  const ACTIONS_RULES = [
+    'actions/missing-workflow-permissions',
+    'actions/unversioned-immutable-action',
+  ];
+
+  it('does NOT call a dismissal stale when this pack cannot report that rule', () => {
     const verdict = evaluate({
-      // The `actions` leg: 2 workflow files analysed, zero JavaScript.
-      documents: docs(
-        withArtifacts(sarif([]), ['.github/workflows/pr-ci.yml', '.github/workflows/ci.yml']),
-        'actions.sarif'
-      ),
+      documents: docs(withRules(sarif([]), ACTIONS_RULES), 'actions.sarif'),
       baseline: { ...BASE, dismissals: [good] },
     });
     expect(verdict.failures.join('\n')).not.toMatch(/matches nothing/);
@@ -294,29 +304,86 @@ describe('dismissal governance', () => {
     expect(verdict.counts.dismissalsOutOfScope).toBe(1);
   });
 
-  it('STILL calls it stale when the path WAS analysed and produced nothing', () => {
-    // The other half. Scoping must not become a way for a genuinely dead entry
-    // to survive: this is the same empty result set as the test above, and the
-    // only difference is that the analysis actually read the file.
+  it('is NOT fooled by the artifact list — the develop-push shape', () => {
+    // THE REGRESSION. On the push to `develop` the `actions` leg listed 712
+    // artifacts including 55 `.mjs` files it cannot analyse. Path scoping called
+    // the dismissal stale and reded a protected branch. The rule set is identical
+    // between the two shapes, so the verdict must be too.
     const verdict = evaluate({
-      documents: docs(withArtifacts(sarif([]), ['scripts/legacy.mjs', 'scripts/other.mjs'])),
+      documents: docs(
+        withRules(sarif([]), ACTIONS_RULES, [
+          'scripts/legacy.mjs',
+          'scripts/ci/check-commit-checks.mjs',
+          '.github/workflows/pr-ci.yml',
+        ]),
+        'actions.sarif'
+      ),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(
+      verdict.failures.join('\n'),
+      'listing a .mjs artifact does not make the actions pack able to analyse it'
+    ).not.toMatch(/matches nothing/);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('reads the rule set from tool.driver.rules too, not only from extensions', () => {
+    // Real CodeQL puts its rules in `tool.extensions[].rules` — measured at 0
+    // driver rules and 27/201 extension rules across three hosted SARIFs. The
+    // SARIF spec's primary home is `tool.driver.rules`, so both are read.
+    //
+    // This case is the one that can tell the difference: if driver rules were
+    // ignored the set would be EMPTY, the gate would fall back to judging blind,
+    // and it would wrongly report this entry stale — the same failure by another
+    // route. A mutation deleting that branch survived the whole suite until this
+    // test existed.
+    const verdict = evaluate({
+      documents: docs(
+        {
+          version: '2.1.0',
+          runs: [
+            {
+              tool: { driver: { name: 'CodeQL', rules: ACTIONS_RULES.map((id) => ({ id })) } },
+              results: [],
+            },
+          ],
+        },
+        'actions.sarif'
+      ),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.failures.join('\n')).not.toMatch(/matches nothing/);
+    expect(verdict.warnings.join('\n')).not.toMatch(/no run declared its rule set/);
+    expect(verdict.warnings.join('\n')).toMatch(/was NOT judged here/);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('STILL calls it stale when this pack OWNS the rule and found nothing', () => {
+    // The other half. Scoping must not become a way for a genuinely dead entry
+    // to survive: same empty result set, and the only difference is that this
+    // analysis could have reported the rule.
+    const verdict = evaluate({
+      documents: docs(withRules(sarif([]), ['js/file-system-race', 'js/http-to-file-access'])),
       baseline: { ...BASE, dismissals: [good] },
     });
     expect(verdict.ok).toBe(false);
     expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
   });
 
-  it('judges anyway, and says so, when no run reports what it analysed', () => {
+  it('judges anyway, and says so, when no run declares a rule set', () => {
     // Old CodeQL, or a hand-built SARIF. Losing the staleness check silently is
     // worse than an occasional false stale report, because the first is
     // invisible — so the gate keeps judging and warns that it is doing so blind.
     const verdict = evaluate({
-      documents: docs(sarif([])),
+      documents: docs({
+        version: '2.1.0',
+        runs: [{ tool: { driver: { name: 'CodeQL' } }, results: [] }],
+      }),
       baseline: { ...BASE, dismissals: [good] },
     });
     expect(verdict.ok).toBe(false);
     expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
-    expect(verdict.warnings.join('\n')).toMatch(/without knowing whether its path was in scope/);
+    expect(verdict.warnings.join('\n')).toMatch(/no run declared its rule set/);
   });
 
   it('fails when the dismissed rule appears at a DIFFERENT path', () => {

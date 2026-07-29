@@ -101,16 +101,30 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
  * form — and a test pins it.
  */
 export function searchParamsToObject(params: URLSearchParams): Record<string, string | string[]> {
-  const out = Object.create(null) as Record<string, string | string[]>;
+  // Entries, not a dynamic property write. `out[key] = …` with an
+  // attacker-chosen `key` is the sink itself, and no accumulator prototype
+  // removes it: `Object.create(null)` fixes the IMPACT while leaving the
+  // dangerous write in the code, which is exactly what CodeQL kept reporting
+  // and exactly what a future reader would copy.
+  const entries: Array<[string, string | string[]]> = [];
   for (const key of new Set(params.keys())) {
     // Not copied, and not thrown on. See the note above: this function is
     // called outside the route pipeline's error boundary, so throwing here
     // produces an unhandled 500 instead of a validation failure.
     if (key === '__proto__') continue;
     const values = params.getAll(key);
-    out[key] = values.length > 1 ? values : (values[0] ?? '');
+    entries.push([key, values.length > 1 ? values : (values[0] ?? '')]);
   }
-  return out;
+
+  // `Object.fromEntries` defines each key with CreateDataProperty semantics, so
+  // no setter can run whatever the name is — there is no assignment for a
+  // property name to be injected into. `setPrototypeOf(…, null)` then restores
+  // the property that actually mattered: Zod reads INHERITED properties, so a
+  // polluted `Object.prototype.role` would otherwise parse as a validated field.
+  return Object.setPrototypeOf(Object.fromEntries(entries), null) as Record<
+    string,
+    string | string[]
+  >;
 }
 
 /**

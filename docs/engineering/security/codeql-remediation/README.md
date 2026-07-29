@@ -18,8 +18,14 @@ pipeline that found them.
 | `js/incomplete-sanitization`           | high    | 6     | two inventory scripts            | **fixed**                                                               |
 | `js/template-syntax-in-string-literal` | warning | 4     | one backend test                 | **fixed** — they were vacuous                                           |
 
-**Of the 21-alert backlog: fixed 21, refuted 0, dismissed 0, open 0, unreviewed 0.**
-Nothing pre-existing was waived.
+> **Correction.** An earlier version of this page said "fixed 21 … open 0". That
+> was measured on **pull-request** runs, where CodeQL analyses `diff-informed` —
+> changed regions only. The first full-tree analysis found **19 of 21 closed and
+> the two application alerts still open**. Full retraction and root cause:
+> [`correction-diff-informed-analysis.md`](correction-diff-informed-analysis.md).
+
+**Of the 21-alert backlog: 19 closed outright; the two application findings
+needed a second round.** Nothing pre-existing was waived.
 
 `.github/ci-baselines/codeql-baseline.json` carries **one** dismissal, and it is
 not from that backlog — it is `js/http-to-file-access` in
@@ -44,7 +50,8 @@ not what the dismissal is buying.
 | [`review-adjudication.md`](review-adjudication.md)                               | Ten adversarial lenses and every verdict                     |
 | [`accepted-dismissals.md`](accepted-dismissals.md)                               | The one dismissal, in full, with its reproduction            |
 | [`execution-checkpoint.md`](execution-checkpoint.md)                             | What happened, in order, including the mistakes              |
-| [`evidence/hostile-mutations.md`](evidence/hostile-mutations.md)                 | 18 mutations, 18 caught, and the one that survived first     |
+| [`evidence/hostile-mutations.md`](evidence/hostile-mutations.md)                 | 27 mutations, 27 caught, and the ones that survived first    |
+| [`correction-diff-informed-analysis.md`](correction-diff-informed-analysis.md)   | Why "0 open" was wrong, and what a partial scan proves       |
 
 ## The three things worth carrying out of this
 
