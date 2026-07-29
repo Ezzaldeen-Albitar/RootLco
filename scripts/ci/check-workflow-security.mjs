@@ -20,6 +20,7 @@
  *   WFS-010  every job declares `timeout-minutes`
  *   WFS-011  a reusable workflow declares exactly ONE job
  *   WFS-012  a bootstrap sparse checkout of `.github/actions` stays in cone mode
+ *   WFS-013  a Trivy `scanners:` list includes `vuln`
  *
  * Deliberately implemented WITHOUT a YAML dependency: this runs in the
  * `secret-scan` job, which does not `npm ci`, and adding a parser to read our own
@@ -327,6 +328,49 @@ export function lintWorkflow(name, source, options = {}) {
         'restores nothing and the job runs against a one-file workspace. Remove this line — cone mode is the default.',
       'critical'
     );
+  });
+
+  // ---- WFS-013: a Trivy scan must include the `vuln` scanner ------------
+  //
+  // Dropping `vuln` from a `scanners:` list disables vulnerability detection
+  // while leaving the report looking healthy. Trivy's package enumeration is
+  // done by the ARTIFACT ANALYZERS, so `--scanners misconfig` alone still
+  // reports 27 OS and 48 language packages — a byte-identical document — with
+  // zero findings. The container job's "did the scan enumerate anything" check
+  // cannot see the difference, and the report carries no record of which
+  // scanners ran, so nothing downstream can either.
+  //
+  // Measured on node:22-alpine: `vuln,secret,misconfig` -> 216 packages, 14
+  // findings; `misconfig` alone -> 216 packages, 0 findings.
+  lines.forEach((line, index) => {
+    const match = /^\s*scanners:\s*(.+?)\s*$/.exec(line);
+    if (!match) return;
+    if (suppressed(lines, index, 'WFS-013')) return;
+    // Only Trivy uses a `scanners:` input; make sure this belongs to one.
+    let ownedByTrivy = false;
+    for (let i = index; i >= 0 && i >= index - 12; i -= 1) {
+      if (/aquasecurity\/trivy-action/.test(lines[i])) {
+        ownedByTrivy = true;
+        break;
+      }
+      if (/^\s*-\s+(name|uses):/.test(lines[i]) && i !== index) break;
+    }
+    if (!ownedByTrivy) return;
+    const list = match[1].replace(/['"]/g, '');
+    if (
+      !list
+        .split(',')
+        .map((s) => s.trim())
+        .includes('vuln')
+    ) {
+      add(
+        'WFS-013',
+        index + 1,
+        `Trivy \`scanners: ${list}\` omits \`vuln\`, which silently disables vulnerability detection. ` +
+          'The report still enumerates packages and still reports zero findings, so no downstream check can tell.',
+        'critical'
+      );
+    }
   });
 
   // ---- WFS-010: every job has a timeout ---------------------------------

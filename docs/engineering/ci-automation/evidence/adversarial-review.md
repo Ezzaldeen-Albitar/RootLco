@@ -717,6 +717,50 @@ principle already governs the secret scanners, which refuse to report clean
 below a declared file count, and the private-key scan, which plants a canary it
 must find. The container scan was the one place it had not been applied.
 
+### AR-46 · the fix for AR-45 certified something it could not know
+
+A fourth review, aimed at the AR-45 correction, found that the new assertion
+proves less than its own closing sentence claimed.
+
+`Results[].Packages` is populated by Trivy's **artifact analyzers**, not by the
+`vuln` scanner. Measured on `node:22-alpine`:
+
+| scanners                | packages | findings |
+| ----------------------- | -------- | -------- |
+| `vuln,secret,misconfig` | 216      | **14**   |
+| `misconfig`             | 216      | **0**    |
+
+The two reports are byte-identical apart from `ReportID` and `CreatedAt`. So the
+step could not distinguish _"the vulnerability scanner found nothing"_ from
+_"the vulnerability scanner never ran"_ — and it ended by printing
+_"a zero-finding result is a measurement rather than a blind spot"_, certifying
+exactly the thing it could not check. AR-45's own lesson, repeated inside AR-45's
+own fix.
+
+**Fixed** in two parts. The message now states precisely what package
+enumeration proves and says outright that the report carries no record of which
+scanners ran. And **WFS-013**, at _critical_, requires any Trivy `scanners:` list
+to include `vuln` — mutation-tested by removing it and watching the linter fire.
+Operational failure is already covered separately: `exit-code: 0` suppresses
+findings, not errors, so Trivy still fails the step when it cannot run at all.
+
+A canary image was considered and rejected: any positive control tied to a real
+image's advisory count decays the moment that image is patched, turning into a
+false block. The residual risk is specifically _someone edits the scanner list_,
+and a lint rule addresses that exactly.
+
+### AR-47 · `list-all-pkgs: true` was documented as load-bearing and is not
+
+The same review measured the pinned toolchain. `trivy-action@ed142fd` defaults to
+Trivy **v0.70.0**, where `--list-all-pkgs` is already `true`; with and without
+the flag the reports differ only in `ReportID` and `CreatedAt`. The comment
+calling it required was unearned — the identical defect corrected eleven lines
+above it, one commit earlier.
+
+It was **not** the default at v0.66.0 and earlier, where omitting it yields zero
+packages. So the line stays, with an accurate comment: explicit rather than
+required, costing nothing and surviving a default flipping back.
+
 ### Recorded but not fixed
 
 Four findings reproduced mechanically and were then **refuted as defects** by

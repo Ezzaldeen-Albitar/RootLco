@@ -32,6 +32,7 @@ Enforced by `scripts/ci/check-workflow-security.mjs` on every pull request.
 | WFS-010 | Every job declares `timeout-minutes`                                                        |
 | WFS-011 | A reusable workflow declares exactly ONE job — _critical_                                   |
 | WFS-012 | A bootstrap sparse checkout of `.github/actions` stays in cone mode — _critical_            |
+| WFS-013 | A Trivy `scanners:` list includes `vuln` — _critical_                                       |
 
 **WFS-012 exists because the second hosted run failed in every job.** The
 bootstrap checkout that makes a local `uses: ./…` resolvable was written in

@@ -224,6 +224,58 @@ jobs:
     expect(rules(lintWorkflow('pr-ci.yml', unrelated))).not.toContain('WFS-012');
   });
 
+  it('WFS-013 catches a Trivy scanner list that omits `vuln`', () => {
+    // Dropping `vuln` disables vulnerability detection while leaving the report
+    // looking healthy: package enumeration is done by the ARTIFACT ANALYZERS, so
+    // `--scanners misconfig` alone still reports the same packages with zero
+    // findings. Measured on node:22-alpine — `vuln,secret,misconfig` gives 216
+    // packages / 14 findings; `misconfig` alone gives 216 packages / 0 findings,
+    // a byte-identical document. Nothing downstream can tell the difference,
+    // because the report carries no record of which scanners ran.
+    const workflow = (scanners: string) => `name: C
+on:
+  push:
+permissions:
+  contents: read
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: app:ci
+          format: json
+          scanners: ${scanners}
+`;
+    const findings = lintWorkflow('_reusable-container.yml', workflow('secret,misconfig'));
+    expect(rules(findings)).toContain('WFS-013');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-013').severity).toBe('critical');
+
+    // The shipped form, and a quoted variant, must both stay silent.
+    expect(rules(lintWorkflow('x.yml', workflow('vuln,secret,misconfig')))).not.toContain(
+      'WFS-013'
+    );
+    expect(rules(lintWorkflow('x.yml', workflow("'vuln,secret'")))).not.toContain('WFS-013');
+
+    // `scanners:` on some OTHER action is not Trivy's and must not be flagged.
+    const other = `name: C
+on:
+  push:
+permissions:
+  contents: read
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: some/other-action@11d5960a326750d5838078e36cf38b85af677262 # v1.0.0
+        with:
+          scanners: secret
+`;
+    expect(rules(lintWorkflow('x.yml', other))).not.toContain('WFS-013');
+  });
+
   it('extracts a run block by indentation, not by guessing where it ends', () => {
     const blocks = extractRunBlocks(MINIMAL_WORKFLOW.split('\n'));
     expect(blocks).toHaveLength(1);

@@ -497,9 +497,13 @@ jobs:
           format: json
           output: trivy-image.json
           scanners: vuln,secret,misconfig
-          # Needed so the report carries `Packages`. Without it the enumeration
-          # assertion below has nothing to check, and a blind scan is exactly what
-          # it exists to catch.
+          # Explicit rather than load-bearing, and the difference matters. At the
+          # pinned trivy-action default (v0.70.0) `--list-all-pkgs` is ALREADY
+          # true, so removing this line changes nothing today — measured: the two
+          # reports differ only in ReportID and CreatedAt. It was NOT the default
+          # at v0.66.0 and earlier, where omitting it yields 0 packages. Pinning
+          # the behaviour costs nothing and survives a default flipping back.
+          # An earlier comment here called it required; that was unearned.
           list-all-pkgs: true
           # PR mode reports only what a patched release exists for; the nightly
           # deep scan drops that filter and reports everything.
@@ -550,7 +554,21 @@ jobs:
               for (const f of fail) console.error(`::error::${f}`);
               process.exit(1);
             }
-            console.log("Both scanners enumerated packages, so a zero-finding result is a measurement rather than a blind spot.");
+            // Precisely what this proves, and no more. Package enumeration is
+            // done by Trivy's ARTIFACT ANALYZERS, not by the `vuln` scanner:
+            // running with `--scanners misconfig` alone produces a BYTE-IDENTICAL
+            // report, 27 OS and 48 language packages, zero findings. So this step
+            // cannot distinguish "the vulnerability scanner found nothing" from
+            // "the vulnerability scanner never ran", and an earlier version of
+            // this message certified exactly that — the same unearned assurance
+            // the step above was added to stop.
+            //
+            // What keeps `vuln` in the scanner list is WFS-013, checked on every
+            // pull request. An operational failure (DB download, registry) is
+            // covered separately: `exit-code: 0` suppresses FINDINGS, not errors,
+            // so Trivy still fails the step if it cannot run.
+            console.log("Package enumeration succeeded, so a zero-FINDING result is not a blind artifact scan.");
+            console.log("That the vulnerability scanner itself was enabled is enforced by WFS-013, not by this report — it carries no record of which scanners ran.");
           '
 
       - name: Container vulnerability policy
