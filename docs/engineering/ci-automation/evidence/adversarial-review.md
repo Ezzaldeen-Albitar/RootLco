@@ -921,13 +921,76 @@ resolved:
 
 ---
 
+## The closing review — checking the claims, not the code
+
+The last pass before merge re-read only what had changed since the previous
+review: the committed baselines, the approval record, and the pull-request
+record itself. It found one thing, in the least interesting-looking place.
+
+### AR-51 · the documented inventory did not match the repository — **Low**
+
+The pull-request record describes the pipeline with a set of round numbers.
+Checked against the filesystem, several were wrong:
+
+| Claim                                       | Actual                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `pr-ci.yml` — "13 jobs, one stable ci-gate" | **12** governed jobs **+** `ci-gate` = 13 declared, **14** checks reported |
+| `nightly-assurance.yml` — "10 jobs"         | **11** jobs + `nightly-gate`                                               |
+| "22 gate scripts"                           | **23** in `scripts/ci`                                                     |
+| "22 documents"                              | **24** under `docs/engineering/ci-automation`                              |
+
+The `pr-ci` one is the instructive one, because "13 jobs + ci-gate = 14" arrives
+at a number that _is_ correct — 14 checks do report — while being wrong twice on
+the way there. The three figures are genuinely different: the gate governs 12,
+the file declares 13, and 14 report because `code-security` is a two-language
+matrix. Conflating them produced an answer that survived several readings.
+
+None of this broke a gate, which is precisely why it survived. But a reviewer
+who spot-checks one number, finds it wrong, and has no way to tell which of the
+others were also written by hand has been given a reason to discount all of
+them — and this record's only value is that its claims can be trusted.
+
+Fixed by correcting the prose and then removing the class:
+`tests/ci/documented-counts.test.ts` derives every count from the filesystem —
+workflows, reusable workflows, composite actions, `scripts/ci`, baselines,
+documents, both gate job counts, the `code-security` matrix width, and the
+workflow-security registry — and reconciles each against the sentence that
+claims it. Adding a workflow or a script now fails the build until the record is
+updated in the same commit. Mutation-tested: understating the script count by
+one, and overstating the governed-job count by one, each fail; both mutations
+were restored byte-identically.
+
+### Deliberately not changed
+
+- **The unit-coverage floors**, which the final measurement sits 0.32 pp below
+  on functions. Inside tolerance, and lowering them is the move this whole
+  document exists to argue against.
+- **`touchedFileMinimum: 0` on the backend tier**, where the unit tier uses 60.
+  A per-file floor on touched files is a real strengthening, but choosing its
+  value needs a measured distribution across the backend tier, and inventing one
+  now would be exactly the guessed threshold the baselines were held back to
+  avoid. Recorded as work, not smuggled in as a fix.
+- **AR-27**, the self-certification property of `pull_request`. Unchanged and
+  unfixable here; the post-merge protected run is what closes it.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**
 
-Fifty findings, AR-01 through AR-50. Nine of them were defects inside this
-initiative's own remediations — including AR-49, where a fix's published
-evidence overstated what the fix had proven.
+Fifty-one findings, AR-01 through AR-51, across five review passes. **Ten of
+them were defects inside this initiative's own remediations** — including AR-49,
+where a fix's published evidence overstated what the fix had proven, and AR-46,
+where the fix for AR-45 certified something it could not know.
+
+That ratio is the most useful thing in this document. Every pass that reviewed
+the previous pass's fixes found something, including the pass that reviewed
+nothing but documentation. The two most expensive findings were invisible to
+every reviewer, every linter and every green run: AR-45, where the pipeline was
+14/14 while one of its own scanners enumerated zero packages, and AR-49, which
+was found by reading the artifacts of a run that passed. A green tick reports
+that the checks did not object, and that is a weaker claim than it looks.
 
 One structural finding (AR-27) is documented rather than fixed, because it
 cannot be fixed here. Everything else on the Critical, High and Medium lists was

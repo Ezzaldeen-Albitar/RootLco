@@ -40,9 +40,9 @@ shaped the design:
 │                                    performance, dependency and idempotency baselines
 ├── dependabot.yml                   npm · docker · github-actions
 └── workflows/
-    ├── pr-ci.yml                    13 jobs, one stable ci-gate
+    ├── pr-ci.yml                    12 governed jobs + one stable ci-gate
     ├── protected-develop-verification.yml   never cancels
-    ├── nightly-assurance.yml        10 jobs
+    ├── nightly-assurance.yml        11 jobs + nightly-gate
     ├── release-verification.yml     build once, SBOM, provenance
     ├── deploy-staging.yml           foundation — checks preconditions, does not deploy
     ├── deploy-production.yml        foundation — checks preconditions, does not deploy
@@ -56,6 +56,19 @@ shaped the design:
     ├── _reusable-clean-room.yml
     └── _reusable-release-artifact.yml
 ```
+
+Counted precisely, because these numbers drifted once already and are now
+reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
+**9 reusable workflows**, **7 top-level workflows** (the six above plus the
+retained `ci.yml`), **1 composite action**, **23 scripts in `scripts/ci`**,
+**10 baselines**, **24 documents** under `docs/engineering/ci-automation`, and
+**14 workflow-security rules**.
+
+`pr-ci.yml` declares **12 governed jobs plus `ci-gate` = 13**, which appear as
+**14 checks** on a pull request because `code-security` is a two-language matrix
+(`javascript-typescript` and `actions`). All three numbers are correct and they
+are not interchangeable — `ci-gate` governs 12, the file declares 13, and 14
+report.
 
 `ci.yml` is retained and still runs. Its four job names are the current required
 checks, and §24 requires them to stay until `ci-gate` is proven on a real pull
