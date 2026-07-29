@@ -26,6 +26,8 @@
  * operation registry is populated.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   ERROR_CODES,
   allErrorDefinitions,
@@ -92,6 +94,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-IAM-002',
   'ERR-INT-001',
   'ERR-INT-002',
+  'ERR-INT-003',
   'ERR-NTF-001',
   'ERR-PAG-001',
   'ERR-QMS-001',
@@ -128,6 +131,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-IAM-002', status: 401, owner: 'authorization', class: 'security', retryable: false },
   { code: 'ERR-INT-001', status: 409, owner: 'idempotency', class: 'conflict', retryable: false },
   { code: 'ERR-INT-002', status: 400, owner: 'idempotency', class: 'client', retryable: false },
+  { code: 'ERR-INT-003', status: 400, owner: 'idempotency', class: 'client', retryable: false },
   { code: 'ERR-NTF-001', status: 409, owner: 'notification', class: 'conflict', retryable: false },
   { code: 'ERR-PAG-001', status: 400, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-QMS-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
@@ -887,5 +891,48 @@ describe('status-transition graph', () => {
       expect(entry, `${transition.eventType} is not in the event catalog`).toBeDefined();
       expect(entry?.owner, `${transition.eventType} owner`).toBe('shared');
     }
+  });
+});
+
+/**
+ * The published standards document must list the same codes the runtime does.
+ *
+ * Nothing reconciled `docs/standards/error-catalog-v0.1.md` against
+ * `ERROR_CODES` before this, so `ERR-INT-003` went stale there the moment it
+ * was added. A document that describes a contract while silently omitting part
+ * of it is worse than no document, because readers trust it.
+ */
+describe('the standards error catalog matches the runtime catalog', () => {
+  const markdown = readFileSync(
+    join(__dirname, '../../docs/standards/error-catalog-v0.1.md'),
+    'utf8'
+  );
+
+  it('documents every runtime code', () => {
+    const missing = ERROR_CODES.filter((code) => !markdown.includes(`**${code}**`));
+    expect(missing, 'codes in ERROR_CODES with no row in the standards document').toEqual([]);
+  });
+
+  it('documents no code the runtime does not define', () => {
+    const documented = [...markdown.matchAll(/\*\*(ERR-[A-Z]{3}-\d{3})\*\*/g)].map((m) => m[1]);
+    const phantom = [...new Set(documented)].filter(
+      (code) => !(ERROR_CODES as readonly string[]).includes(code as string)
+    );
+    expect(phantom, 'rows in the standards document with no runtime code').toEqual([]);
+  });
+
+  it('agrees with the runtime on the HTTP status of every documented code', () => {
+    const rows = [
+      ...markdown.matchAll(/\|\s*\*\*(ERR-[A-Z]{3}-\d{3})\*\*\s*\|[^|]*\|\s*(\d{3})\s*\|/g),
+    ];
+    // Guards the guard: a table-shape change must not silently yield zero rows.
+    expect(rows.length, 'no parseable rows — the table shape changed').toBeGreaterThan(10);
+    const disagreements = rows
+      .filter(([, code, status]) => errorDefinition(code as ErrorCode).status !== Number(status))
+      .map(
+        ([, code, status]) =>
+          `${code}: document says ${status}, runtime says ${errorDefinition(code as ErrorCode).status}`
+      );
+    expect(disagreements).toEqual([]);
   });
 });

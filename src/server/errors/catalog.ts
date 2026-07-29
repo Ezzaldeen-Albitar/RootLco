@@ -30,6 +30,7 @@ export const ERROR_CODES = [
   'ERR-DEP-001',
   'ERR-INT-001',
   'ERR-INT-002',
+  'ERR-INT-003',
   'ERR-CON-001',
   'ERR-CON-002',
   'ERR-RTE-001',
@@ -211,6 +212,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'client',
     description:
       'The operation is declared idempotency-critical and the Idempotency-Key header was absent or violated its format contract.',
+  },
+  'ERR-INT-003': {
+    code: 'ERR-INT-003',
+    title: 'Idempotent request carries secret material',
+    status: 400,
+    owner: 'idempotency',
+    retryable: false,
+    class: 'client',
+    description:
+      'The request is for an idempotency-critical operation and its body or route parameters carry a field whose name marks it as secret material — a password, PIN, OTP, recovery code, private key or bearer credential. The idempotency fingerprint is a persisted SHA-256, and a fast unkeyed hash of a low-entropy secret is an offline guessing target (CWE-916), so the request is refused before anything is hashed. Classified as a CLIENT error deliberately: the fingerprint is computed over the raw pre-validation body, so any caller can put such a field there, and answering 500 would let any authenticated caller manufacture a server error on any idempotent endpoint. A field the ROUTE genuinely declares is prevented earlier and differently — the build fails, via the registration gate in tests/foundation/idempotency-secret-material.test.ts. The offending field NAME appears in the message; its value is never read, logged or returned.',
   },
   'ERR-CON-001': {
     code: 'ERR-CON-001',

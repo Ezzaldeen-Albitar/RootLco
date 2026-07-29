@@ -4,8 +4,8 @@
     "registered": 199,
     "publicApi": 199,
     "internal": 0,
-    "withRequiredEvidence": 184,
-    "invocationOnly": 15,
+    "withRequiredEvidence": 185,
+    "invocationOnly": 14,
     "p1_15": {
       "registered": 21,
       "publicApi": 21,
@@ -1574,12 +1574,15 @@
       "method": "POST",
       "path": "/iam/approval-limits",
       "public": false,
-      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "files": [
+        "tests/backend/iam-access-administration.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial"],
-      "required": ["success", "denial"],
-      "provided": ["denial", "success"],
+      "required": ["idempotency", "success", "denial"],
+      "provided": ["audit", "denial", "idempotency", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1750,12 +1753,15 @@
       "method": "POST",
       "path": "/org/branches/{branchId}/settings",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "audit", "isolation"],
-      "required": ["success", "audit", "isolation"],
-      "provided": ["audit", "isolation", "success"],
+      "required": ["idempotency", "success", "audit", "isolation"],
+      "provided": ["audit", "idempotency", "isolation", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1782,12 +1788,15 @@
       "method": "POST",
       "path": "/org/companies/{companyId}/settings",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "audit", "isolation"],
-      "required": ["success", "audit", "isolation"],
-      "provided": ["audit", "isolation", "success"],
+      "required": ["idempotency", "success", "audit", "isolation"],
+      "provided": ["audit", "idempotency", "isolation", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1798,12 +1807,15 @@
       "method": "POST",
       "path": "/iam/grants",
       "public": false,
-      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "files": [
+        "tests/backend/iam-access-administration.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "required": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "provided": ["audit", "cross-tenant", "denial", "outbox", "success"],
+      "required": ["idempotency", "success", "denial", "cross-tenant", "audit", "outbox"],
+      "provided": ["audit", "cross-tenant", "denial", "idempotency", "outbox", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1830,12 +1842,15 @@
       "method": "POST",
       "path": "/iam/grants/{grantId}/scopes",
       "public": false,
-      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "files": [
+        "tests/backend/iam-access-administration.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "isolation"],
-      "required": ["success", "isolation"],
-      "provided": ["isolation", "success"],
+      "required": ["idempotency", "success", "isolation"],
+      "provided": ["audit", "idempotency", "isolation", "outbox", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1878,12 +1893,15 @@
       "method": "POST",
       "path": "/iam/invitations/{userId}/activation",
       "public": false,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial", "audit", "outbox"],
-      "required": ["success", "denial", "audit", "outbox"],
-      "provided": ["audit", "denial", "outbox", "success"],
+      "required": ["idempotency", "success", "denial", "audit", "outbox"],
+      "provided": ["audit", "denial", "idempotency", "outbox", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1910,12 +1928,15 @@
       "method": "POST",
       "path": "/iam/invitations",
       "public": false,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "required": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "provided": ["audit", "cross-tenant", "denial", "outbox", "success"],
+      "required": ["idempotency", "success", "denial", "cross-tenant", "audit", "outbox"],
+      "provided": ["audit", "cross-tenant", "denial", "idempotency", "outbox", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1942,12 +1963,15 @@
       "method": "POST",
       "path": "/iam/roles",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["idempotency"],
+      "provided": ["audit", "idempotency", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1974,12 +1998,15 @@
       "method": "POST",
       "path": "/iam/roles/{roleId}/permissions",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial", "audit"],
-      "required": ["success", "denial", "audit"],
-      "provided": ["audit", "denial", "success"],
+      "required": ["idempotency", "success", "denial", "audit"],
+      "provided": ["audit", "denial", "idempotency", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2150,12 +2177,15 @@
       "method": "POST",
       "path": "/iam/users/{userId}/status",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-14-idempotency-replay.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["idempotency"],
       "declared": ["success", "denial", "audit", "outbox"],
-      "required": ["success", "denial", "audit", "outbox"],
-      "provided": ["audit", "denial", "outbox", "success"],
+      "required": ["idempotency", "success", "denial", "audit", "outbox"],
+      "provided": ["audit", "denial", "idempotency", "outbox", "route", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

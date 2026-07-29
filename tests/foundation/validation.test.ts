@@ -192,3 +192,206 @@ describe('searchParamsToObject', () => {
     expect(searchParamsToObject(params)).toEqual({ limit: '25', tag: ['a', 'b'], empty: '' });
   });
 });
+
+/**
+ * CodeQL `js/remote-property-injection` — src/server/http/validation.ts.
+ *
+ * Query-string names are attacker-chosen and were written into a plain `{}`.
+ * Each test below pins one measured consequence of that, and the first is the
+ * one that matters most: **Zod reads inherited properties**, so against a plain
+ * object a polluted `Object.prototype` satisfies schema fields the client never
+ * sent — silently, with `success: true`.
+ */
+describe('searchParamsToObject — prototype safety', () => {
+  const Query = z.object({
+    limit: z.string().optional(),
+    role: z.string().optional(),
+  });
+
+  /** Pollutes `Object.prototype` for one assertion and always cleans up. */
+  const withPollutedPrototype = <T>(key: string, value: unknown, body: () => T): T => {
+    Object.defineProperty(Object.prototype, key, {
+      value,
+      configurable: true,
+      enumerable: false,
+      writable: true,
+    });
+    try {
+      return body();
+    } finally {
+      delete (Object.prototype as Record<string, unknown>)[key];
+    }
+  };
+
+  it('a polluted Object.prototype cannot inject a validated field', () => {
+    // The defect this fix exists for. With a plain `{}` accumulator Zod parsed
+    // `role: 'admin-via-prototype'` out of thin air and reported success.
+    const result = withPollutedPrototype('role', 'admin-via-prototype', () =>
+      Query.safeParse(searchParamsToObject(new URLSearchParams('limit=25')))
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.limit).toBe('25');
+    expect(result.data.role, 'an inherited value must not become validated input').toBeUndefined();
+  });
+
+  it('returns an object that inherits nothing at all', () => {
+    const out = searchParamsToObject(new URLSearchParams('limit=25'));
+    expect(Object.getPrototypeOf(out)).toBeNull();
+    // Not merely "no prototype today": nothing on Object.prototype is visible.
+    expect(
+      withPollutedPrototype('anything', 'x', () => (out as Record<string, unknown>).anything)
+    ).toBeUndefined();
+  });
+
+  it('never throws — eight routes call it outside the pipeline error boundary', () => {
+    // An earlier version of this fix threw an AppFailure on `__proto__`. Eight
+    // routes call this function lexically BEFORE `handleOperation`, so the throw
+    // escaped the try/catch that renders every failure as a problem document and
+    // became an unhandled 500 — a caller-triggerable server error, which is the
+    // same defect class this initiative fixed in `idempotency.ts`. The function
+    // must stay total.
+    for (const query of [
+      '__proto__=sent-by-client',
+      '__proto__=a&__proto__=b',
+      'limit=25&__proto__=x',
+      'constructor=x&prototype=y&__proto__=z',
+    ]) {
+      expect(() => searchParamsToObject(new URLSearchParams(query)), query).not.toThrow();
+    }
+  });
+
+  it('omits __proto__ entirely rather than storing it', () => {
+    const out = searchParamsToObject(new URLSearchParams('limit=25&__proto__=sent-by-client'));
+    expect(Object.keys(out)).toEqual(['limit']);
+    expect(Object.getOwnPropertyNames(out)).not.toContain('__proto__');
+    expect(Object.getPrototypeOf(out)).toBeNull();
+  });
+
+  it('never hands back an object whose __proto__ key can travel into a copy', () => {
+    // The regression an adversarial review caught in the FIRST version of this
+    // fix. `Object.create(null)` alone turned `__proto__` into a live own key,
+    // and the value travelled: `Object.assign({}, query)` wrote it into a target
+    // that does have Object.prototype, re-arming the setter and reshaping THAT
+    // object — measured, and it survived a JSON round trip.
+    //
+    // A second review then caught that the list below did NOT include a
+    // `__proto__` parameter, so it could not distinguish any implementation and
+    // pinned nothing. The hostile inputs are first now.
+    for (const query of [
+      '__proto__=a&__proto__=b',
+      '__proto__=single',
+      'limit=25&__proto__=a&__proto__=b',
+      'limit=25',
+      'constructor=x&prototype=y',
+      'a.b=1&c[d]=2',
+    ]) {
+      const out = searchParamsToObject(new URLSearchParams(query));
+      expect(Object.getOwnPropertyNames(out), query).not.toContain('__proto__');
+      expect(Object.getPrototypeOf(out), query).toBeNull();
+
+      const assigned = Object.assign({}, out);
+      expect(Array.isArray(Object.getPrototypeOf(assigned)), query).toBe(false);
+      expect(Object.getPrototypeOf(assigned), query).toBe(Object.prototype);
+
+      const copied: Record<string, unknown> = {};
+      for (const key in out) copied[key] = out[key];
+      expect(Object.getPrototypeOf(copied), query).toBe(Object.prototype);
+    }
+  });
+
+  it('leaves Object.prototype untouched for every dangerous key', () => {
+    const before = Object.getOwnPropertyNames(Object.prototype).sort();
+    for (const key of ['constructor', 'prototype', 'toString', 'valueOf']) {
+      searchParamsToObject(new URLSearchParams(`${key}=x&${key}=y`));
+      searchParamsToObject(new URLSearchParams(`${encodeURIComponent(key)}=x`));
+    }
+    expect(Object.getOwnPropertyNames(Object.prototype).sort()).toEqual(before);
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
+    expect([].length).toBe(0);
+  });
+
+  it('keeps constructor and prototype as plain data, not as callables', () => {
+    const out = searchParamsToObject(
+      new URLSearchParams('constructor=evil&prototype=evil&toString=evil')
+    );
+    expect(out['constructor']).toBe('evil');
+    expect(out['prototype']).toBe('evil');
+    expect(out['toString']).toBe('evil');
+    // Nothing here is invocable, so no downstream call site can be hijacked.
+    for (const value of Object.values(out)) expect(typeof value).not.toBe('function');
+  });
+
+  it('is unaffected by dotted, bracketed and percent-encoded spellings', () => {
+    // This function performs ONE flat assignment — it never walks a path — so a
+    // dotted or bracketed name is just a key with an odd character in it. The
+    // test pins that: these must not be interpreted, merely stored.
+    const out = searchParamsToObject(
+      new URLSearchParams('a.b=1&c%5Bd%5D=2&constructor.prototype.polluted=4')
+    );
+    expect(Object.getPrototypeOf(out)).toBeNull();
+    expect(out['a.b']).toBe('1');
+    expect(out['c[d]']).toBe('2');
+    expect(out['constructor.prototype.polluted']).toBe('4');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('survives a generated sweep of dangerous key shapes', () => {
+    // '__proto__' itself is excluded: it is refused outright, and its own
+    // tests above cover that. Everything else must be stored inertly.
+    const bases = ['constructor', 'prototype', '__defineGetter__', '__lookupGetter__'];
+    const shapes = bases.flatMap((base) => [
+      base,
+      `${base}.x`,
+      `${base}[x]`,
+      `a.${base}`,
+      `${base}${base}`,
+      base.toUpperCase(),
+    ]);
+    for (const key of shapes) {
+      const single = searchParamsToObject(new URLSearchParams([[key, 'v']]));
+      const repeated = searchParamsToObject(
+        new URLSearchParams([
+          [key, 'v1'],
+          [key, 'v2'],
+        ])
+      );
+      expect(Object.getPrototypeOf(single), key).toBeNull();
+      expect(Object.getPrototypeOf(repeated), key).toBeNull();
+      expect(Object.keys(single), key).toEqual([key]);
+    }
+    expect(({} as Record<string, unknown>).v).toBeUndefined();
+  });
+
+  it('still parses normally through Zod, including unknown-field stripping', () => {
+    const result = Query.safeParse(
+      searchParamsToObject(new URLSearchParams('limit=25&role=viewer&unknown=y'))
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data).toEqual({ limit: '25', role: 'viewer' });
+  });
+
+  it('one request cannot observe state injected by another', () => {
+    // Object-local by construction: each call builds its own accumulator, so a
+    // hostile first request leaves the second with nothing.
+    searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b&constructor=evil'));
+    const second = searchParamsToObject(new URLSearchParams('limit=1'));
+    expect(Object.keys(second)).toEqual(['limit']);
+    expect(second['constructor']).toBeUndefined();
+    expect(Object.getPrototypeOf(second)).toBeNull();
+    // And nothing global was touched on the way through.
+    expect(({} as Record<string, unknown>).a).toBeUndefined();
+  });
+
+  it('remains spreadable, serialisable and enumerable for its callers', () => {
+    // Every caller hands the result straight to `parseOrFail`. These are the
+    // operations that path performs, pinned so the null prototype cannot break
+    // them unnoticed.
+    const out = searchParamsToObject(new URLSearchParams('limit=25&tag=a&tag=b'));
+    expect({ ...out }).toEqual({ limit: '25', tag: ['a', 'b'] });
+    expect(JSON.parse(JSON.stringify(out))).toEqual({ limit: '25', tag: ['a', 'b'] });
+    expect(Object.entries(out)).toHaveLength(2);
+  });
+});

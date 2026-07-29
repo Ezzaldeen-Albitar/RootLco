@@ -67,7 +67,7 @@
  * Exit codes: 0 clean · 1 coverage failure · 2 IO error.
  * Usage: node scripts/check-operation-test-coverage.mjs [--json]
  */
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -165,6 +165,13 @@ export const isDerivedId = (id) =>
  *   stale-version    a wrong If-Match is refused with a conflict
  *   provider         a provider fake is driven and its behaviour asserted
  */
+/**
+ * The replay-evidence kind. Named once because `derivedRequirements` applies it
+ * across every namespace and `scripts/ci/check-idempotency-evidence.mjs` joins on
+ * the same string — a literal in two places is a typo away from a silent pass.
+ */
+export const EVIDENCE_KEY_IDEMPOTENCY = 'idempotency';
+
 export const EVIDENCE_KINDS = Object.freeze([
   'route',
   'service',
@@ -1003,7 +1010,10 @@ export const MANIFEST = {
   },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'issued within/at/beyond authority; audit + event once; rollback leaves nothing',
   },
@@ -1013,7 +1023,10 @@ export const MANIFEST = {
     note: 'revocation immediate effect + stale-version conflict',
   },
   'iam.grant-scope-add': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'isolation'],
     note: 'within-authority scope added; foreign-company widening refused',
   },
@@ -1028,7 +1041,10 @@ export const MANIFEST = {
     note: 'lists the scopes of a scoped grant',
   },
   'iam.approval-limit-create': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial'],
     note: 'no self-limit; malformed money rejected',
   },
@@ -1044,7 +1060,10 @@ export const MANIFEST = {
   },
   // --- Role / permission administration.
   'iam.role-create': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: [
+      'tests/backend/iam-operations.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: [],
     note: 'created and found in the list',
   },
@@ -1059,7 +1078,10 @@ export const MANIFEST = {
     note: 'listed, tenant-scoped',
   },
   'iam.role-permission-add': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
   },
@@ -1100,7 +1122,10 @@ export const MANIFEST = {
     note: 'profile updated; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.user-status-change': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'lock revokes sessions + audits + one event; permission-denied; self refused',
   },
@@ -1131,7 +1156,10 @@ export const MANIFEST = {
     note: 'read in scope',
   },
   'iam.company-settings-write': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'audit', 'isolation'],
     note: 'append-only version written + audit; out-of-scope company refused',
   },
@@ -1141,7 +1169,10 @@ export const MANIFEST = {
     note: 'read in scope',
   },
   'iam.branch-settings-write': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'audit', 'isolation'],
     note: 'version written + audit; out-of-scope branch invisible and refused',
   },
@@ -1158,7 +1189,10 @@ export const MANIFEST = {
   },
   // --- Invitation / activation (provider-fake harness).
   'iam.invitation-create': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
   },
@@ -1168,7 +1202,10 @@ export const MANIFEST = {
     note: 'invited → archived + audit + event; non-invitation refused',
   },
   'iam.invitation-activate': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'accepted invitation activated + audit + event; unconfirmed refused',
   },
@@ -1585,15 +1622,16 @@ export function scanRegisteredOperations(root) {
   const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      const st = statSync(full);
-      if (st.isDirectory()) {
-        if (entry === 'node_modules' || entry === '.next') continue;
+    // `withFileTypes` answers "directory?" from the directory read itself, so
+    // there is no second lookup that could disagree with the first.
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.next') continue;
         walk(full);
         continue;
       }
-      if (!/\.tsx?$/.test(entry)) continue;
+      if (!/\.tsx?$/.test(entry.name)) continue;
       const rel = toPosix(relative(root, full));
       if (rel.endsWith('server/auth/operation-registry.ts')) continue;
       const source = readFileSync(full, 'utf8');
@@ -1640,7 +1678,24 @@ export function scanRegisteredOperationIds(root) {
  */
 export function derivedRequirements(operation) {
   if (!operation || typeof operation.id !== 'string') return [];
-  if (!isDerivedId(operation.id)) return [];
+  if (!isDerivedId(operation.id)) {
+    // The ONE derived obligation that is not namespace-scoped.
+    //
+    // `idempotent: true` is a promise made to the CALLER — retry this and you
+    // will not double-write, double-audit or double-publish — and the caller
+    // cannot see which phase delivered the route. A promise that creates an
+    // obligation in `shared.` but not in `iam.` is not a weaker gate, it is an
+    // inconsistent one, and CSA-22 is what that inconsistency looked like in
+    // practice: ten P1-14 operations declared idempotency, `derived` came back
+    // empty for every one of them, and nothing ever exercised a replay.
+    //
+    // The rest of the derived floor deliberately stays namespace-scoped. This is
+    // not a general re-interpretation of P1-14's evidence model — it adds the
+    // single obligation the operation created for itself by declaring the flag,
+    // and only to operations that declare it. An operation that says nothing
+    // about idempotency is unaffected, so the gate can only get stricter.
+    return operation.idempotent ? [EVIDENCE_KEY_IDEMPOTENCY] : [];
+  }
 
   const required = ['route', 'service', 'success'];
   required.push(operation.public ? 'unauthenticated' : 'authorization');
@@ -2099,8 +2154,14 @@ async function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
-    const abs = join(ROOT, rel);
-    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+    // Read first, interpret the failure: absent is legitimate here, unreadable
+    // is not, and the two-step form could not tell them apart.
+    try {
+      return readFileSync(join(ROOT, rel), 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
   };
 
   let registered;
