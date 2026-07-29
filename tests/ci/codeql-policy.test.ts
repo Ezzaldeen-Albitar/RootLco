@@ -479,6 +479,32 @@ describe('commit check-run enumeration', () => {
     expect(withEscape).toContain('red');
   });
 
+  it('escapes the backslash BEFORE the pipe, which is the whole defect', () => {
+    // `js/incomplete-sanitization`, HIGH — reported against the FIX for the
+    // finding above. Escaping `|` without escaping `\` first turns the input
+    // `\|` into `\\|`: an escaped backslash followed by a LIVE cell separator,
+    // so the escaper hands back exactly the injection it was added to prevent.
+    //
+    // The `a|b` assertion above cannot see this. Both orderings map `a|b` to
+    // `a\|b`, so it passes against the defect — a hostile mutation dropping the
+    // backslash rule survived the entire suite, which is how this test came to
+    // exist. An input containing BOTH characters is the only one that
+    // distinguishes them.
+    expect(safeText('evil\\|name')).toBe('evil\\\\\\|name');
+
+    // Stated as the property as well as the string, because the property is
+    // what matters: after escaping, every `|` must be preceded by an ODD number
+    // of backslashes — an even number means the last one is itself escaped and
+    // the pipe still separates cells once Markdown consumes them.
+    const escaped = safeText('a\\|b\\\\|c|d');
+    for (let index = 0; index < escaped.length; index += 1) {
+      if (escaped[index] !== '|') continue;
+      let backslashes = 0;
+      for (let back = index - 1; back >= 0 && escaped[back] === '\\'; back -= 1) backslashes += 1;
+      expect(backslashes % 2, `the pipe at ${index} of \`${escaped}\` is still live`).toBe(1);
+    }
+  });
+
   it('sanitises through the real evaluate path, not only in isolation', () => {
     const hostile = [
       {

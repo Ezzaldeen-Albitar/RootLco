@@ -1,9 +1,9 @@
 # Execution checkpoint
 
 What happened, in order, including the mistakes. The mistakes are the useful
-part: five of the defects this initiative fixed were introduced by this
+part: **eight** of the defects this initiative fixed were introduced by this
 initiative, in files it had just edited, after it had already demonstrated it
-knew how to find that exact class.
+knew how to find that exact class. The table at the end is the whole point.
 
 ## Baseline
 
@@ -106,18 +106,38 @@ and was then reported as stale.
 Full adjudication, including what was refuted and what was recorded but not
 acted on, in [`review-adjudication.md`](review-adjudication.md).
 
+## 7 — Eighteen hostile mutations
+
+`node scripts/ci/hostile-mutations.mjs` — each breaks one property in one place
+and must make the guarding suite fail.
+
+**17/18 on the first run.** The survivor was M-16: `safeText`'s only pipe
+assertion was `expect(safeText('a|b')).toBe('a\\|b')`, and both escaping orders
+satisfy it — so deleting the backslash rule, the exact high-severity finding
+step 5 had fixed, changed nothing any test could see.
+
+The third vacuous assertion found in this initiative's own work. Fixed, and
+**18/18** now. Detail in
+[`evidence/hostile-mutations.md`](evidence/hostile-mutations.md).
+
 ## The pattern
 
-| #   | Defect                        | Introduced            | Found by         |
-| --- | ----------------------------- | --------------------- | ---------------- |
-| 1   | portable `__proto__` key      | the prototype fix     | review           |
-| 2   | caller-triggerable 500        | the idempotency guard | review           |
-| 3   | `Dirent` compared as a string | the race fixes        | running the gate |
-| 4   | `http-to-file-access`         | the new gate          | **the new gate** |
-| 5   | backslash-before-pipe         | the fix for #4        | **the new gate** |
-| 6   | unhandled 500 on eight routes | the prototype fix     | review           |
-| 7   | vacuous regression pin        | the prototype tests   | review           |
+| #   | Defect                         | Introduced            | Found by                |
+| --- | ------------------------------ | --------------------- | ----------------------- |
+| 1   | portable `__proto__` key       | the prototype fix     | review                  |
+| 2   | caller-triggerable 500         | the idempotency guard | review                  |
+| 3   | `Dirent` compared as a string  | the race fixes        | running the gate        |
+| 4   | `http-to-file-access`          | the new gate          | **the new gate**        |
+| 5   | backslash-before-pipe          | the fix for #4        | **the new gate**        |
+| 6   | unhandled 500 on eight routes  | the prototype fix     | review                  |
+| 7   | vacuous regression pin         | the prototype tests   | review                  |
+| 8   | unpinned backslash-before-pipe | the fix for #5        | **the mutation matrix** |
 
-Seven defects, every one in code written by this initiative, every one in a class
-it had already fixed elsewhere. Nothing here was found by being careful; all of
-it was found by running the code and by letting somebody else attack it.
+Eight defects, every one in code written by this initiative, every one in a class
+it had already fixed elsewhere. Three were vacuous assertions — written by the
+initiative chartered to fix vacuous assertions, including one written to pin the
+fix for #5.
+
+Nothing here was found by being careful. All of it was found by running the code,
+by letting somebody else attack it, and by breaking it on purpose to see whether
+anything noticed.

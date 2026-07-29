@@ -9,6 +9,15 @@ which no test can honestly claim to catch. Both are listed.
 A mutation test is only evidence if the mutation **fails**. Each of these was
 applied, observed to fail, and restored **byte-identically**.
 
+The whole matrix is reproducible — `node scripts/ci/hostile-mutations.mjs`,
+**18/18 caught**, results and reasoning in
+[`evidence/hostile-mutations.md`](evidence/hostile-mutations.md). It was 17/18
+on the first run, and the survivor is recorded there rather than quietly fixed:
+`safeText`'s only pipe assertion passed against the very defect it was written
+for, because both escaping orders map `a|b` to `a\|b`. The tables below predate
+the harness and are the mutations run by hand while each fix was written; the
+harness supersedes them as evidence.
+
 ### `validation.ts` — prototype safety
 
 | Mutation                           | Result                 |
@@ -54,7 +63,10 @@ documents:
   this initiative, and invisible to CodeQL.
 - `Object.create(null)` alone makes `__proto__` **portable** through
   `Object.assign` and `for…in`, and it survives a JSON round trip.
-- `evil\|name` yields exactly one Markdown table cell after `safeText`.
+- `evil\|name` yields exactly one Markdown table cell after `safeText` — and
+  **this is now mutation-proven too**, which it was not when this line was first
+  written. The reproduction was real; the test backing it was not able to
+  distinguish the defect. See M-16.
 - The idempotency gate fails with **ten** `matches nothing` errors when the
   evidence lands without the exception removal.
 - `encodeUploadToken` is `base64url(JSON.stringify(claim))` — the "token" in the
