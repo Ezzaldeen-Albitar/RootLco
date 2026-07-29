@@ -761,6 +761,52 @@ It was **not** the default at v0.66.0 and earlier, where omitting it yields zero
 packages. So the line stays, with an accurate comment: explicit rather than
 required, costing nothing and surviving a default flipping back.
 
+### AR-48 · an apostrophe in a comment killed a security gate
+
+Immediately after declaring the review cycle finished, run 15 failed with
+**exit code 126** on _"The scan must have enumerated packages"_. The cause was
+the comment added to that step one commit earlier — the comment explaining that
+the step over-claimed:
+
+```js
+// done by Trivy's ARTIFACT ANALYZERS, not by the `vuln` scanner
+```
+
+`node -e '…'` is a **single-quoted shell string**. The apostrophe in `Trivy's`
+closes the quote, and the remainder is parsed as shell words. Exit 126 means
+"command found but not executable" and names nothing at all.
+
+**Nothing caught it locally, and the reason is structural.** `actionlint` passes
+— the YAML is valid. `check-workflow-security.mjs` passes — it pattern-matches
+text and never executes it. The local replay of the container assertions passes
+— it reimplements each step's _logic_ rather than running its literal bytes.
+**No local check had ever executed a `run:` block.**
+
+Fixed at three levels:
+
+1. The prose moved to a YAML comment above the step, where an apostrophe is
+   harmless.
+2. **WFS-014** — no apostrophe inside a single-quoted inline script. This
+   repository uses `node -e '…'` in a dozen places, so the hazard is permanent.
+3. **`check-run-block-syntax.mjs`** — the general form. Every multi-line `run:`
+   block is handed to `bash -n`, which parses without executing, catching
+   unbalanced quotes, unterminated heredocs, `if` without `fi`. 125 blocks
+   checked, 0 invalid; verified to catch the AR-48 apostrophe, an unterminated
+   `if`, and an unterminated string.
+
+WFS-014 was itself wrong on its first attempt, instructively: it treated the
+closing quote as a line containing _only_ a quote, but the real shape is
+`' "${digest}" "${size}"` — quote plus arguments. So it never closed the block
+and fired on eight innocent lines. That form is now explicit in its test,
+because a linter that cries wolf gets suppressed and then catches nothing.
+
+The honest reading of this one: the conclusion drawn two sections earlier —
+_"severity is declining, this is a reasonable place to stop"_ — was falsified by
+the very next run. **Every new gate is new code, and new code can be wrong.** The
+only thing that has reliably caught that in this initiative is execution on a
+real runner, which is exactly why the last fix was to make a whole class of it
+catchable locally instead.
+
 ### Recorded but not fixed
 
 Four findings reproduced mechanically and were then **refuted as defects** by
