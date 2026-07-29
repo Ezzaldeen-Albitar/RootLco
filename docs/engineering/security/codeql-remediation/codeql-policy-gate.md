@@ -53,6 +53,30 @@ A dismissed finding is **adjudicated, not open**: it does not count toward
 `maximumOpenFindings`. Otherwise "dismiss it" and "raise the ceiling" would be
 the same action, which is precisely the laxity the ceiling exists to prevent.
 
+#### Staleness is scoped to what the leg actually read
+
+`code-security` is a **matrix**, one language per leg, so each leg has only its
+own SARIF. The `actions` leg analyses workflow YAML — 17 files — and no
+JavaScript at all. Judging a `.mjs` dismissal there is a claim that leg has no
+evidence for, and the gate made exactly that claim on a real hosted run against a
+live entry.
+
+So staleness is now judged only for dismissals whose path appears in
+`run.artifacts` — CodeQL's own record of the files it read. Anything else is
+reported as **not judged here**, with a count in the summary table, because
+silence about an unjudged entry is how a stale one survives.
+
+Two guards keep this from becoming a loophole:
+
+- a dismissal whose path **was** analysed and matched nothing still **fails**;
+- when no run reports artifacts at all, the gate judges everything anyway and
+  **warns that it is doing so blind** — losing the check silently is worse than
+  an occasional false stale report, because the first is invisible.
+
+Both directions are mutation-pinned (M-19, M-20, M-21). This was filed by an
+adversarial reviewer, refuted on a technicality about their reproduction, and
+then proved by a red check on the final head.
+
 ## `scripts/ci/check-commit-checks.mjs` — the half that cannot run inside the run
 
 A run cannot enumerate the checks of the commit it is still producing, so this is

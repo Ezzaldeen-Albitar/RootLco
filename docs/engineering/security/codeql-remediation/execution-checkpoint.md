@@ -120,6 +120,31 @@ The third vacuous assertion found in this initiative's own work. Fixed, and
 **18/18** now. Detail in
 [`evidence/hostile-mutations.md`](evidence/hostile-mutations.md).
 
+## 8 — The hosted run reded a check, on a finding I had refuted
+
+The final head went out with every local gate green and came back with
+`code-security (actions)` **red**. One failure, and it was mine twice over:
+
+```
+dismissal for `js/http-to-file-access` at `scripts/ci/check-commit-checks.mjs`
+matches nothing. The finding was fixed, or it moved — either way this entry is
+stale. Remove it.
+```
+
+`code-security` is a matrix. The `actions` leg reads **17 workflow YAML files
+and no JavaScript**, so it judged a dismissal naming a file it had never opened.
+The entry is live: replaying the same run's `javascript-typescript` SARIF —
+**717 files** — finds it present and covered.
+
+**Reviewer 10 filed exactly this and I refuted it**, because their reproduction
+was against a dirty working tree. The reproduction was flawed; the claim was not.
+I dismissed the second along with the first, and both SARIFs were downloadable
+the whole time.
+
+Fixed by scoping staleness to `run.artifacts` — CodeQL's own record of what it
+read — with the reverse mutation (M-20) pinning that scoping cannot become a
+hiding place for a genuinely dead entry.
+
 ## The pattern
 
 | #   | Defect                         | Introduced            | Found by                |
@@ -132,12 +157,14 @@ The third vacuous assertion found in this initiative's own work. Fixed, and
 | 6   | unhandled 500 on eight routes  | the prototype fix     | review                  |
 | 7   | vacuous regression pin         | the prototype tests   | review                  |
 | 8   | unpinned backslash-before-pipe | the fix for #5        | **the mutation matrix** |
+| 9   | staleness judged out of scope  | the new gate          | **a hosted run**        |
 
-Eight defects, every one in code written by this initiative, every one in a class
+Nine defects, every one in code written by this initiative, every one in a class
 it had already fixed elsewhere. Three were vacuous assertions — written by the
 initiative chartered to fix vacuous assertions, including one written to pin the
-fix for #5.
+fix for #5. The last one had been **reported to me and refuted**.
 
 Nothing here was found by being careful. All of it was found by running the code,
-by letting somebody else attack it, and by breaking it on purpose to see whether
-anything noticed.
+by letting somebody else attack it, by breaking it on purpose to see whether
+anything noticed, and — for the last one — by a hosted runner declining to accept
+a claim I had already talked myself out of.

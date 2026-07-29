@@ -77,17 +77,59 @@ Calling `process.exit()` with a fetch keep-alive handle still closing trips
 `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` on Windows and prints an
 alarming line after a perfectly good verdict. `process.exitCode` instead.
 
+## A refutation I got wrong
+
+**Reviewer 10 filed: "the one dismissal reds the `actions` matrix leg." I
+refuted it. A hosted run then reded the `actions` matrix leg.**
+
+The refutation reasoned that the reviewer had filed against a working tree they
+could see was dirty, and that their reproduction therefore did not demonstrate
+the claim. Both of those observations were true. **Neither was an answer to the
+finding.** I dismissed the claim along with its reproduction, and the claim was
+correct.
+
+What actually happens: `code-security` is a matrix, each leg analyses one
+language, and the `actions` leg reads **17 workflow YAML files and no JavaScript
+at all**. The stale-dismissal check ran on that leg against a dismissal naming
+`scripts/ci/check-commit-checks.mjs` — a file that leg had never opened — and
+declared it stale. Verbatim from run `30453031381`:
+
+```
+dismissal for `js/http-to-file-access` at `scripts/ci/check-commit-checks.mjs`
+matches nothing. The finding was fixed, or it moved — either way this entry is
+stale. Remove it.
+```
+
+The entry is not stale. Replaying the same run's `javascript-typescript` SARIF
+through the gate — **717 files analysed** — finds it live and covered, exactly as
+recorded.
+
+**The fix:** `run.artifacts` is CodeQL's own record of what it read, so a
+dismissal outside that set is now reported as _not judged here_ rather than
+asserted stale. When no run reports artifacts the gate judges anyway and warns
+that it is doing so blind, because losing the check silently is worse than an
+occasional false stale report. Both halves are pinned by tests, including the
+one that matters most: a dismissal whose path **was** analysed and matched
+nothing is still a failure. Scoping must not become a way for a dead entry to
+survive.
+
+**What I should have done differently.** A finding filed with a flawed
+reproduction is a finding whose reproduction is flawed. The correct response was
+to reproduce it properly — the two SARIFs were downloadable the whole time — not
+to treat the defect in the evidence as a verdict on the claim. This cost a red
+check on the final head, which is the cheapest possible way to learn it.
+
 ## Refuted, with the reasoning kept
 
-| Lens | Finding                                                | Verdict                                                                                                                                                                           |
-| ---- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | a key other than `__proto__` reaches a dangerous write | **refuted** — `Object.create(null)` has no inherited accessors; every name lands as inert own data                                                                                |
-| 1    | the null prototype breaks a downstream caller          | **refuted** — all 24 call sites hand the result straight to `parseOrFail`; zero `Object.assign`, zero `for…in`, zero `hasOwnProperty` in `src/`                                   |
-| 10   | the one dismissal reds the `actions` matrix leg        | **refuted** — filed against a working tree the reviewer could see was dirty; the stale-dismissal check is global but the finding's own reproduction did not demonstrate the claim |
-| 10   | dismissal fields are unenforced                        | **refuted** — every documented field is validated; reproduced                                                                                                                     |
-| 10   | expiry uses an unsafe date comparison                  | **refuted** — ISO dates compare lexicographically                                                                                                                                 |
-| 4    | `suppressions` presence-only, not status-aware         | downgraded low — a suppressed result is adjudicated by GitHub either way                                                                                                          |
-| 2    | `canonicalize` robustness                              | downgraded low — robustness, not security                                                                                                                                         |
+| Lens | Finding                                                | Verdict                                                                                                                                         |
+| ---- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | a key other than `__proto__` reaches a dangerous write | **refuted** — `Object.create(null)` has no inherited accessors; every name lands as inert own data                                              |
+| 1    | the null prototype breaks a downstream caller          | **refuted** — all 24 call sites hand the result straight to `parseOrFail`; zero `Object.assign`, zero `for…in`, zero `hasOwnProperty` in `src/` |
+| 10   | the one dismissal reds the `actions` matrix leg        | **NOT refuted — I was wrong. See below.**                                                                                                       |
+| 10   | dismissal fields are unenforced                        | **refuted** — every documented field is validated; reproduced                                                                                   |
+| 10   | expiry uses an unsafe date comparison                  | **refuted** — ISO dates compare lexicographically                                                                                               |
+| 4    | `suppressions` presence-only, not status-aware         | downgraded low — a suppressed result is adjudicated by GitHub either way                                                                        |
+| 2    | `canonicalize` robustness                              | downgraded low — robustness, not security                                                                                                       |
 
 ## Findings recorded and deliberately not acted on
 

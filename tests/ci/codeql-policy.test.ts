@@ -261,6 +261,64 @@ describe('dismissal governance', () => {
     expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
   });
 
+  // `code-security` is a MATRIX. The `actions` leg analyses workflow YAML and no
+  // JavaScript at all, so a `.mjs` dismissal is outside anything that leg can
+  // observe. This gate called such an entry "stale" on a real hosted run against
+  // a live and correct dismissal — an adversarial reviewer filed exactly that and
+  // I refuted it, because the reproduction was against a dirty tree. A flawed
+  // reproduction is not a refuted finding.
+  //
+  // `run.artifacts` is CodeQL's own record of what it looked at, and it is the
+  // honest scope of anything the leg is entitled to say.
+  const withArtifacts = (document: ReturnType<typeof sarif>, uris: string[]) => ({
+    ...document,
+    runs: document.runs.map((run) => ({
+      ...run,
+      artifacts: uris.map((uri) => ({ location: { uri } })),
+    })),
+  });
+
+  it('does NOT call a dismissal stale when its path was never analysed here', () => {
+    const verdict = evaluate({
+      // The `actions` leg: 2 workflow files analysed, zero JavaScript.
+      documents: docs(
+        withArtifacts(sarif([]), ['.github/workflows/pr-ci.yml', '.github/workflows/ci.yml']),
+        'actions.sarif'
+      ),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.failures.join('\n')).not.toMatch(/matches nothing/);
+    expect(verdict.ok).toBe(true);
+    // Silence would be the wrong outcome too — not judging must be visible.
+    expect(verdict.warnings.join('\n')).toMatch(/was NOT judged here/);
+    expect(verdict.counts.dismissalsOutOfScope).toBe(1);
+  });
+
+  it('STILL calls it stale when the path WAS analysed and produced nothing', () => {
+    // The other half. Scoping must not become a way for a genuinely dead entry
+    // to survive: this is the same empty result set as the test above, and the
+    // only difference is that the analysis actually read the file.
+    const verdict = evaluate({
+      documents: docs(withArtifacts(sarif([]), ['scripts/legacy.mjs', 'scripts/other.mjs'])),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
+  });
+
+  it('judges anyway, and says so, when no run reports what it analysed', () => {
+    // Old CodeQL, or a hand-built SARIF. Losing the staleness check silently is
+    // worse than an occasional false stale report, because the first is
+    // invisible — so the gate keeps judging and warns that it is doing so blind.
+    const verdict = evaluate({
+      documents: docs(sarif([])),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
+    expect(verdict.warnings.join('\n')).toMatch(/without knowing whether its path was in scope/);
+  });
+
   it('fails when the dismissed rule appears at a DIFFERENT path', () => {
     const verdict = evaluate({
       documents: docs(

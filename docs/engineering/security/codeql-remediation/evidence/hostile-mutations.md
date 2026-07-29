@@ -6,12 +6,13 @@ Reproduce with:
 node scripts/ci/hostile-mutations.mjs
 ```
 
-Eighteen mutations, each breaking exactly one property in exactly one place.
+Twenty-one mutations, each breaking exactly one property in exactly one place.
 Every one must make the suite that guards it **fail**. A mutation that survives
 means the property is unpinned, whatever the test titles say.
 
-**Result: 18/18 caught.** On the first run it was 17/18, and the survivor is the
-reason this file exists.
+**Result: 21/21 caught.** On the first run it was 17/18, and the survivor is the
+reason this file exists. M-19…M-21 were added later, for the dismissal-scoping
+fix a hosted run forced.
 
 ## The survivor
 
@@ -39,31 +40,40 @@ tends to assert the fix's _happy path_, which the defect also satisfies.
 
 ## Full matrix
 
-| ID   | Target                    | Property broken                                                         | Caught by                                    |
-| ---- | ------------------------- | ----------------------------------------------------------------------- | -------------------------------------------- |
-| M-01 | `validation.ts`           | the accumulator has a null prototype                                    | `validation.test.ts`                         |
-| M-02 | `validation.ts`           | `__proto__` is not copied into the result                               | `validation.test.ts`                         |
-| M-03 | `validation.ts`           | the key comparison is exact, not case-folded                            | `validation.test.ts`                         |
-| M-04 | `validation.ts`           | the function is **total** — 8 routes call it outside the error boundary | `validation.test.ts`                         |
-| M-05 | `validation.ts`           | a repeated parameter still arrives as an array                          | `validation.test.ts`                         |
-| M-06 | `idempotency.ts`          | the body is screened **before** `createHash`                            | `idempotency-secret-material.test.ts`        |
-| M-07 | `idempotency.ts`          | route params are screened too                                           | `idempotency-secret-material.test.ts`        |
-| M-08 | `idempotency.ts`          | the word list contains `password`                                       | `idempotency-secret-material.test.ts`        |
-| M-09 | `idempotency.ts`          | camelCase is split, so `newPassword` is seen                            | `idempotency-secret-material.test.ts`        |
-| M-10 | `idempotency.ts`          | nesting is walked                                                       | `idempotency-secret-material.test.ts`        |
-| M-11 | `codeql-policy.mjs`       | a dismissal matches on rule **and** path                                | `codeql-policy.test.ts`                      |
-| M-12 | `codeql-policy.mjs`       | the high band starts at 7.0                                             | `codeql-policy.test.ts`                      |
-| M-13 | `codeql-policy.mjs`       | a missing SARIF is reported, not assumed clean                          | `codeql-policy.test.ts`                      |
-| M-14 | `codeql-policy.mjs`       | `javascript-typescript` matches `javascript.sarif`                      | `codeql-policy.test.ts`                      |
-| M-15 | `codeql-policy.mjs`       | the open-finding ceiling is enforced                                    | `codeql-policy.test.ts`                      |
-| M-16 | `check-commit-checks.mjs` | backslash escaped **before** pipe                                       | `codeql-policy.test.ts` — **added for this** |
-| M-17 | `check-commit-checks.mjs` | `failure` is not an acceptable conclusion                               | `codeql-policy.test.ts`                      |
-| M-18 | `check-commit-checks.mjs` | a check still running is not counted as passed                          | `codeql-policy.test.ts`                      |
+| ID   | Target                    | Property broken                                                           | Caught by                                    |
+| ---- | ------------------------- | ------------------------------------------------------------------------- | -------------------------------------------- |
+| M-01 | `validation.ts`           | the accumulator has a null prototype                                      | `validation.test.ts`                         |
+| M-02 | `validation.ts`           | `__proto__` is not copied into the result                                 | `validation.test.ts`                         |
+| M-03 | `validation.ts`           | the key comparison is exact, not case-folded                              | `validation.test.ts`                         |
+| M-04 | `validation.ts`           | the function is **total** — 8 routes call it outside the error boundary   | `validation.test.ts`                         |
+| M-05 | `validation.ts`           | a repeated parameter still arrives as an array                            | `validation.test.ts`                         |
+| M-06 | `idempotency.ts`          | the body is screened **before** `createHash`                              | `idempotency-secret-material.test.ts`        |
+| M-07 | `idempotency.ts`          | route params are screened too                                             | `idempotency-secret-material.test.ts`        |
+| M-08 | `idempotency.ts`          | the word list contains `password`                                         | `idempotency-secret-material.test.ts`        |
+| M-09 | `idempotency.ts`          | camelCase is split, so `newPassword` is seen                              | `idempotency-secret-material.test.ts`        |
+| M-10 | `idempotency.ts`          | nesting is walked                                                         | `idempotency-secret-material.test.ts`        |
+| M-11 | `codeql-policy.mjs`       | a dismissal matches on rule **and** path                                  | `codeql-policy.test.ts`                      |
+| M-12 | `codeql-policy.mjs`       | the high band starts at 7.0                                               | `codeql-policy.test.ts`                      |
+| M-13 | `codeql-policy.mjs`       | a missing SARIF is reported, not assumed clean                            | `codeql-policy.test.ts`                      |
+| M-14 | `codeql-policy.mjs`       | `javascript-typescript` matches `javascript.sarif`                        | `codeql-policy.test.ts`                      |
+| M-15 | `codeql-policy.mjs`       | the open-finding ceiling is enforced                                      | `codeql-policy.test.ts`                      |
+| M-19 | `codeql-policy.mjs`       | a dismissal outside this leg's analysed files is not called stale         | `codeql-policy.test.ts`                      |
+| M-20 | `codeql-policy.mjs`       | scoping does **not** let a dead dismissal survive where the file was read | `codeql-policy.test.ts`                      |
+| M-21 | `codeql-policy.mjs`       | the analysed-file set really comes from `run.artifacts`                   | `codeql-policy.test.ts`                      |
+| M-16 | `check-commit-checks.mjs` | backslash escaped **before** pipe                                         | `codeql-policy.test.ts` — **added for this** |
+| M-17 | `check-commit-checks.mjs` | `failure` is not an acceptable conclusion                                 | `codeql-policy.test.ts`                      |
+| M-18 | `check-commit-checks.mjs` | a check still running is not counted as passed                            | `codeql-policy.test.ts`                      |
 
 M-12 deserves a note: it is the _"do not lower CodeQL sensitivity to make alerts
 disappear"_ constraint expressed as a test. Moving the high band from 7.0 to 8.5
 would silently reclassify real highs as mediums, and the gate would keep
 reporting a ceiling of zero while the alerts sat there. It fails.
+
+**M-19 and M-20 are a pair, and the pair is the point.** M-19 breaks the scoping
+so an out-of-scope dismissal is wrongly called stale — the defect a hosted run
+actually produced. M-20 breaks it the other way, so _every_ unmatched dismissal
+is excused. A fix that only satisfies M-19 would turn "not judged here" into a
+hiding place for genuinely dead entries. Either mutation alone fails.
 
 ## What the harness deliberately does not do
 

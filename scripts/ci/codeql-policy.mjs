@@ -141,6 +141,38 @@ export function severityOf(rule, result) {
   return { level: 'low', score };
 }
 
+/**
+ * The set of files these SARIF documents actually analysed.
+ *
+ * CodeQL records every file it looked at in `run.artifacts`, and that set is the
+ * honest scope of anything this invocation can say. It matters because
+ * `code-security` is a MATRIX: the `actions` leg analyses 17 workflow YAML files
+ * and no JavaScript at all, so a dismissal naming a `.mjs` path is not something
+ * that leg is in any position to judge.
+ *
+ * This gate got that wrong on a real run. It declared a perfectly live dismissal
+ * "stale" on the `actions` leg purely because the file it names was not in that
+ * leg's language. An adversarial reviewer filed exactly this and I refuted it —
+ * the reviewer's reproduction was against a dirty tree, so I dismissed the
+ * claim along with the reproduction. The claim was right. A flawed reproduction
+ * is not a refuted finding, and it took a hosted run to settle it.
+ *
+ * Returns an empty set when no run reports artifacts, which the caller must
+ * treat as "cannot scope" rather than "analysed nothing".
+ */
+export function analysedPaths(documents) {
+  const paths = new Set();
+  for (const { document } of documents) {
+    for (const run of document.runs ?? []) {
+      for (const artifact of run.artifacts ?? []) {
+        const path = normalisePath(artifact?.location?.uri ?? '');
+        if (path) paths.add(path);
+      }
+    }
+  }
+  return paths;
+}
+
 /** Flattens every result across every SARIF document into one finding list. */
 export function extractFindings(documents) {
   const findings = [];
@@ -180,6 +212,8 @@ const EMPTY_COUNTS = () => ({
   suppressed: 0,
   application: 0,
   tooling: 0,
+  filesAnalysed: 0,
+  dismissalsOutOfScope: 0,
   bySeverity: {},
   byRule: {},
 });
@@ -202,6 +236,7 @@ function dismissalMatches(entry, finding) {
  *   warnings: string[],
  *   counts: { total: number, open: number, dismissed: number, suppressed: number,
  *             application: number, tooling: number,
+ *             filesAnalysed: number, dismissalsOutOfScope: number,
  *             bySeverity: Record<string, number>, byRule: Record<string, number> },
  *   findings: any[],
  *   tools: string[],
@@ -336,6 +371,19 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   }
 
   // ---- 4. a dismissal that matches nothing is a lie about the tree ---------
+  //
+  // But ONLY where this invocation actually looked. `code-security` is a matrix
+  // and each leg carries one language, so the `actions` leg sees 17 workflow
+  // YAML files and no JavaScript — a `.mjs` dismissal is outside its scope
+  // entirely, and calling it stale is a claim the leg has no evidence for. This
+  // gate did exactly that on a real run, against a live and correct entry.
+  //
+  // When no run reports artifacts the scope is UNKNOWN, and the gate judges
+  // anyway rather than going quiet: an unscopeable run losing the staleness
+  // check silently is worse than an occasional false stale report, because the
+  // first is invisible.
+  const analysed = analysedPaths(documents);
+  const unjudged = [];
   dismissals.forEach((entry, index) => {
     if (usedDismissals.has(index)) return;
     // It may match a SUPPRESSED finding instead — still evidence it is live.
@@ -343,11 +391,28 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
       (finding) => finding.suppressed && dismissalMatches(entry, finding)
     );
     if (suppressedMatch) return;
+    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {
+      unjudged.push(entry);
+      return;
+    }
     failures.push(
       `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` matches nothing. ` +
         'The finding was fixed, or it moved — either way this entry is stale. Remove it.'
     );
   });
+  if (analysed.size === 0 && dismissals.length > 0) {
+    warnings.push(
+      'no run reported the files it analysed, so every dismissal was judged for staleness ' +
+        'without knowing whether its path was in scope. Reported rather than assumed.'
+    );
+  }
+  for (const entry of unjudged) {
+    warnings.push(
+      `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged here — ` +
+        `that path is not among the ${analysed.size} file(s) this analysis covered. ` +
+        'Another language leg owns it.'
+    );
+  }
 
   // ---- 5. a dismissed rule appearing at a NEW path is a new finding --------
   for (const entry of dismissals) {
@@ -381,6 +446,8 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
     suppressed: findings.length - live.length,
     application: live.filter((finding) => finding.scope === 'application').length,
     tooling: live.filter((finding) => finding.scope === 'tooling').length,
+    filesAnalysed: analysed.size,
+    dismissalsOutOfScope: unjudged.length,
     bySeverity: {},
     byRule: {},
   };
@@ -422,6 +489,10 @@ export function toMarkdown(result) {
   lines.push(`| …in application source | ${result.counts?.application ?? 0} |`);
   lines.push(`| …in tooling | ${result.counts?.tooling ?? 0} |`);
   lines.push(`| Dismissed by GitHub | ${result.counts?.suppressed ?? 0} |`);
+  lines.push(`| Files analysed | ${result.counts?.filesAnalysed ?? 0} |`);
+  lines.push(
+    `| Dismissals out of this leg's scope | ${result.counts?.dismissalsOutOfScope ?? 0} |`
+  );
   for (const severity of ['critical', 'high', 'medium', 'low']) {
     lines.push(`| ${severity} | ${result.counts?.bySeverity?.[severity] ?? 0} |`);
   }

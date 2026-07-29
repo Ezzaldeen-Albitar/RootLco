@@ -160,6 +160,31 @@ const MUTATIONS = Object.freeze([
     verify: POLICY,
   },
 
+  {
+    id: 'M-19',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'a dismissal outside this leg’s analysed files is not called stale',
+    from: '    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {',
+    to: '    if (false) {',
+    verify: POLICY,
+  },
+  {
+    id: 'M-20',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'scoping does NOT let a genuinely dead dismissal survive where the file WAS read',
+    from: '    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {',
+    to: '    if (true) {',
+    verify: POLICY,
+  },
+  {
+    id: 'M-21',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'the analysed-file set really comes from run.artifacts',
+    from: '      for (const artifact of run.artifacts ?? []) {',
+    to: '      for (const artifact of []) {',
+    verify: POLICY,
+  },
+
   // ---- scripts/ci/check-commit-checks.mjs — the AR-52 instrument -----------
   {
     id: 'M-16',
