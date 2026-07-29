@@ -266,8 +266,9 @@ and neither was reachable by reading the files: three adversarial reviewers,
 `actionlint` and this repository's own workflow linter all passed the first.
 Each now has a linter rule at _critical_ — WFS-011 and WFS-012.
 
-Nine of the fifty findings were defects inside this initiative's own
-remediations. The two most instructive:
+Eleven of the fifty-two findings were defects inside this initiative's own
+remediations. The three worth carrying all arrived **after** a run had already
+reported success:
 
 - **AR-45** — run 12 was **14/14 green while one of its own scanners was
   blind.** Removing `/lib/apk/db` from the image left Trivy enumerating zero
@@ -278,6 +279,18 @@ remediations. The two most instructive:
   produced. The published reachability proof asserted the vulnerable code was
   absent from the image, which is false and which the owner's approval
   explicitly forbids stating. Fixed by narrowing the claim to the measurement.
+- **AR-52** — found at the merge gate, by listing the commit's **check-runs**
+  rather than its **workflow runs**. A `CodeQL` check produced by GitHub
+  Advanced Security from this pipeline's own SARIF had been **red on every
+  head** while the workflow reported 14/14, because the endpoint that reports
+  run conclusions does not mention it. It was objecting to nine alerts in the
+  gate scripts, two of them real: a vacuous-assertion rule with an unbound back
+  reference that had **never fired**, and a CRITICAL workflow rule one
+  list-entry away from silently matching the wrong text.
+
+Each was accurate about the question it was asked. A green tick reports that the
+checks which ran did not object — not that the right checks ran, nor that
+anything else was watching.
 
 None of them was fixed by weakening a gate; each was reproduced first, because
 GitHub requires a signed-in session to read Actions logs even on a public

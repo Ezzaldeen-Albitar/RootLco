@@ -215,7 +215,12 @@ export async function buildMatrix(client, schemas, options = {}) {
         const covering = tablePolicies.filter((p) => p.command === action || p.command === 'ALL');
 
         let verdict;
-        let skipReason = null;
+        // Every cell carries a `skipReason`, and this one is always null: the
+        // branch below is exhaustive, so no cell here is ever left unasserted.
+        // It stays in the record because the schema is shared with cells that
+        // ARE skipped, and a field that appears only sometimes is worse to read
+        // than one that is explicitly null.
+        const skipReason = null;
 
         if (!granted) {
           verdict = 'denied-by-grant';
@@ -239,10 +244,12 @@ export async function buildMatrix(client, schemas, options = {}) {
           failures.push(`read-only role \`${role}\` holds ${action} on \`${qualified}\`.`);
         }
 
-        if (verdict === undefined) {
-          skipReason = 'no verdict computed';
-          failures.push(`\`${role}\` × ${action} × \`${qualified}\` produced no verdict.`);
-        }
+        // The "no verdict computed" guard that used to sit here could never
+        // fire — the branch above ends in a plain `else`, so `verdict` is
+        // assigned on every path. A safety net that cannot catch anything is
+        // worse than none: it reads as though an unhandled combination is
+        // covered. If that final `else` is ever narrowed to an `else if`, this
+        // is where the missing case would need handling again.
 
         cells.push({
           schema: table.schema_name,

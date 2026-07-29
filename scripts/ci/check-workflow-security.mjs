@@ -34,6 +34,21 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+/**
+ * Escapes every regular-expression metacharacter, not merely the dot.
+ *
+ * WFS-006 built its pattern with `expression.replace(/\./g, '\\.')`, which
+ * handles the dots in `github.event.issue.title` and nothing else. Every entry
+ * below happens to contain only dots and word characters, so the shortcut was
+ * correct for exactly today's list — and silently wrong for the first entry
+ * anybody adds containing `[`, `(`, `*`, `+` or `$`. Such an entry would either
+ * throw at `new RegExp` or, worse, compile into a pattern that matches
+ * something else, disabling a rule rated CRITICAL without any signal.
+ */
+export function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Interpolations an attacker can influence through a pull request or issue. */
 export const UNTRUSTED_EXPRESSIONS = [
   'github.event.pull_request.title',
@@ -238,7 +253,7 @@ export function lintWorkflow(name, source, options = {}) {
   // ---- WFS-006 / WFS-007 / WFS-008: run blocks --------------------------
   for (const block of extractRunBlocks(lines)) {
     for (const expression of UNTRUSTED_EXPRESSIONS) {
-      const pattern = new RegExp(`\\$\\{\\{[^}]*${expression.replace(/\./g, '\\.')}`);
+      const pattern = new RegExp(`\\$\\{\\{[^}]*${escapeRegExp(expression)}`);
       if (pattern.test(block.body)) {
         add(
           'WFS-006',

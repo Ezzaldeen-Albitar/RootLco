@@ -148,7 +148,18 @@ function main(argv) {
     process.exit(2);
   }
   const baselinePath = arg('--baseline') ?? '.github/ci-baselines/performance-baseline.json';
-  const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, 'utf8')) : {};
+  // Read and interpret, rather than ask-then-read: the two-step form races, and
+  // it silently turned an unreadable or malformed baseline into an empty one —
+  // which is the shape that reports "no budget recorded" and passes.
+  let baseline = {};
+  try {
+    baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`performance baseline at ${baselinePath} could not be read: ${error.message}`);
+      process.exit(2);
+    }
+  }
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
 
   const result = evaluate(report, baseline);

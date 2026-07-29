@@ -48,10 +48,15 @@ export function run(command, timeoutMs) {
  * when the test still passes, which means the guard is not actually protected.
  */
 export function testOneTarget(target, { timeoutMs = 900_000, dryRun = false } = {}) {
-  if (!existsSync(target.file)) {
-    return { ...target, outcome: 'error', detail: `file not found: ${target.file}` };
+  // Read first. This function then WRITES the file it just read and restores it
+  // afterwards, so an existence check followed by a read is the exact pattern
+  // that leaves a mutated source on disk if the file moves in between.
+  let original;
+  try {
+    original = readFileSync(target.file, 'utf8');
+  } catch (error) {
+    return { ...target, outcome: 'error', detail: `cannot read ${target.file}: ${error.message}` };
   }
-  const original = readFileSync(target.file, 'utf8');
 
   const occurrences = original.split(target.find).length - 1;
   if (occurrences === 0) {

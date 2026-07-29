@@ -975,22 +975,127 @@ were restored byte-identically.
 
 ---
 
+## AR-52 · the check I never read — **High**
+
+Found at the merge gate, by listing the check-runs on the commit instead of the
+conclusions of its workflow runs.
+
+There is a check called **`CodeQL`** on this pull request. It is not one of my
+jobs. GitHub Advanced Security produces it by evaluating the SARIF that my own
+`code-security` job uploads, and it had been **failing at every head**:
+`5cb7347`, `8d7bfff`, `af72920`, `5faaf85`, `8fabdbe`. Every one of those is a
+commit I described as green.
+
+**That report was wrong, and the mistake was mine.** I read
+`/actions/runs?head_sha=…` and reported its conclusions. `PR CI 14/14` was true —
+the workflow ran fourteen jobs and all fourteen succeeded, including the CodeQL
+job, because uploading SARIF successfully is what that job is for. The alerts it
+uploaded are then judged by a separate check-run that the runs endpoint does not
+mention. The correct query is `/commits/{sha}/check-runs`, which lists **19**
+checks, one of them red.
+
+This is the same shape as AR-45 wearing different clothes. There, a scanner
+reported clean because it had enumerated nothing. Here, a pipeline reported
+green because the thing that objected was not in the list I was reading. Both
+times the failure was in what the evidence did not cover, and both times the
+green tick was accurate about a smaller question than the one being asked.
+
+### What it was objecting to
+
+Nine alerts, all in `scripts/ci/*.mjs` — the gate scripts themselves. Two are
+real defects, and neither is what CodeQL calls them.
+
+**A vacuous-assertion rule that had never once fired.** `check-test-honesty.mjs`
+lists seven patterns for assertions that assert nothing. The seventh:
+
+```js
+/expect\(\s*[A-Za-z_$][\w$]*\s*\)\s*\.\s*toBe\(\s*\1\s*\)/;
+```
+
+There is no capture group, so `\1` is an unbound back reference — and JavaScript
+does not reject that. In a non-unicode pattern it is read as the **octal escape
+for U+0001**. So the rule intended to catch `expect(total).toBe(total)` was
+actually looking for `expect(x).toBe(<control character>)`, and matched nothing,
+ever. Measured directly: the old pattern returns `false` on
+`expect(total).toBe(total)`; the fixed one returns `true`.
+
+The suite's own TH-005 test covered five of the seven shapes. The sixth it did
+not exercise was this one. **Five covered shapes and one never tried is how a
+dead rule survives inside a suite that looks exhaustive** — and it is the third
+time in this initiative that the untested case was the broken one.
+
+Both are now covered, plus a negative case, because a repaired rule that fires
+on every `toBe` between two identifiers would be a different kind of useless.
+
+**A CRITICAL linter rule one list-entry away from silently switching off.**
+WFS-006 builds its pattern by interpolating an untrusted-expression name:
+
+```js
+new RegExp(`\\$\\{\\{[^}]*${expression.replace(/\./g, '\\.')}`);
+```
+
+It escapes dots. Every entry in today's list contains only dots and word
+characters, so it is correct — for today's list. The first entry anybody adds
+with another metacharacter breaks it, and the interesting failure is not the
+loud one. `github.event.client_payload[0].body` compiles **without error**,
+because `[0]` is a valid character class; the pattern then matches
+`client_payload0.body` and stops seeing the real expression. WFS-006 is rated
+_critical_, and it would have gone quiet with no signal at all. Now escaped
+properly, with tests covering both the silent mismatch and the throwing case.
+
+### The other seven
+
+Honest about severity: these are **not** vulnerabilities in this context. They
+run on an ephemeral single-tenant runner against repository-relative paths with
+no concurrent writer. But each fix is a genuine improvement, so none was
+dismissed and none was suppressed:
+
+| Alert                                                 | Fix                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Insecure temporary file, `check-run-block-syntax.mjs` | `mkdtempSync` per call instead of a predictable `${tmpdir}/rootlco-run-block-${pid}.sh`, removed after. The old name was also the SAME for all 126 blocks, so two concurrent callers would have checked each other's script |
+| Four `existsSync`-then-use races                      | replaced by read-and-interpret. This also fixed a real conflation: an unreadable baseline was being treated as an absent one, which is the shape that reports "no budget recorded" and passes                               |
+| `statSync`-then-`readFileSync` in the history scanner | one `openSync` + `fstatSync` on the same handle — in a scanner, the bytes examined must be the bytes that passed the size check                                                                                             |
+| "Guard always evaluates to false" in `rls-matrix.mjs` | removed. The branch above ends in a plain `else`, so `verdict` is always assigned and the net could never catch anything. A safety net that cannot fire is worse than none, because it reads as coverage                    |
+
+### What this changes about everything above
+
+Every "14/14 green" in this document and in the pull-request record described
+the workflow run, and that is a narrower claim than it appeared to be. It is now
+stated as such. The gate record queries `check-runs`, not `runs`.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**
 
-Fifty-one findings, AR-01 through AR-51, across five review passes. **Ten of
+Fifty-two findings, AR-01 through AR-52, across six review passes. **Eleven of
 them were defects inside this initiative's own remediations** — including AR-49,
 where a fix's published evidence overstated what the fix had proven, and AR-46,
 where the fix for AR-45 certified something it could not know.
 
 That ratio is the most useful thing in this document. Every pass that reviewed
-the previous pass's fixes found something, including the pass that reviewed
-nothing but documentation. The two most expensive findings were invisible to
-every reviewer, every linter and every green run: AR-45, where the pipeline was
-14/14 while one of its own scanners enumerated zero packages, and AR-49, which
-was found by reading the artifacts of a run that passed. A green tick reports
-that the checks did not object, and that is a weaker claim than it looks.
+the previous pass's work found something — including the pass that reviewed
+nothing but documentation, and the pass that was only supposed to press merge.
+
+Three findings arrived after a run had already reported success, and they are
+the ones worth carrying:
+
+- **AR-45** — the pipeline was 14/14 while one of its own scanners enumerated
+  zero packages and reported zero vulnerabilities.
+- **AR-49** — found by reading the artifacts of a run that passed. The published
+  proof claimed something broader than it had measured.
+- **AR-52** — found by listing the commit's **check-runs** rather than its
+  **workflow runs**. A red check had been sitting on every head for five
+  commits, invisible to the endpoint I was reading, and it was objecting to a
+  rule in this repository that had never worked.
+
+The common thread is not that the gates were wrong. Each was accurate about the
+question it was asked. **A green tick reports that the checks which ran did not
+object** — it does not report that the right checks ran, that they could see
+what they were looking at, or that nothing else was watching. Every one of these
+three cost a full pipeline re-run to establish, and every one was cheaper than
+shipping the claim would have been.
 
 One structural finding (AR-27) is documented rather than fixed, because it
 cannot be fixed here. Everything else on the Critical, High and Medium lists was

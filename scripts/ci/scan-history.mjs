@@ -22,7 +22,15 @@
  * Exit codes: 0 clean · 1 unallowed finding · 2 IO error.
  */
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import {
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  openSync,
+  fstatSync,
+  closeSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -166,23 +174,26 @@ export function scanWorktree(roots = ['.next', 'public', 'docs/api']) {
         continue;
       }
       if (BINARY.test(entry.name)) continue;
-      let size;
-      try {
-        size = statSync(full).size;
-      } catch {
-        continue;
-      }
-      // A 20 MiB source map is not where a credential hides, and reading it
-      // would dominate the job.
-      if (size > 20 * 1024 * 1024) continue;
-      filesScanned += 1;
-      const rel = relative(process.cwd(), full).replace(/\\/g, '/');
+      // Open ONCE and take the size from that handle, rather than stat-then-
+      // read. The two-call form asks about one file and reads another if the
+      // path is replaced in between — and in a scanner the consequence is that
+      // the bytes actually examined are not the bytes that passed the size
+      // check, which is a scanner reporting clean on something it never saw.
+      let handle;
       let content;
       try {
-        content = readFileSync(full, 'utf8');
+        handle = openSync(full, 'r');
+        // A 20 MiB source map is not where a credential hides, and reading it
+        // would dominate the job.
+        if (fstatSync(handle).size > 20 * 1024 * 1024) continue;
+        content = readFileSync(handle, 'utf8');
       } catch {
         continue;
+      } finally {
+        if (handle !== undefined) closeSync(handle);
       }
+      filesScanned += 1;
+      const rel = relative(process.cwd(), full).replace(/\\/g, '/');
       for (const [index, line] of content.split('\n').entries()) {
         for (const pattern of classify(line)) {
           if (isAllowed(rel, pattern)) continue;

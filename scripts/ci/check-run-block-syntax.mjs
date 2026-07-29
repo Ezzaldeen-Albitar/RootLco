@@ -25,7 +25,7 @@
  * Usage: node scripts/ci/check-run-block-syntax.mjs [--dir .github/workflows]
  * Exit codes: 0 clean · 1 a block is not valid shell · 2 the check could not run.
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -40,19 +40,31 @@ export function neutraliseExpressions(body) {
 }
 
 export function checkBlock(body, bash = 'bash') {
-  const file = join(tmpdir(), `rootlco-run-block-${process.pid}.sh`);
-  writeFileSync(file, neutraliseExpressions(body));
-  const result = spawnSync(bash, ['-n', file], { encoding: 'utf8' });
-  if (result.error) return { ok: false, unavailable: true, message: result.error.message };
-  return {
-    ok: result.status === 0,
-    unavailable: false,
-    message: String(result.stderr ?? '')
-      .split('\n')
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(' | '),
-  };
+  // A fresh 0700 directory per call, rather than a predictable
+  // `${tmpdir}/rootlco-run-block-${pid}.sh`. The old name was guessable, so on a
+  // shared machine another process could pre-create it as a symlink and have
+  // this function write through it; and because the path was the same for every
+  // block, two concurrent callers would have overwritten each other's script
+  // and checked the wrong text. Removed afterwards so 126 blocks do not leave
+  // 126 directories behind.
+  const dir = mkdtempSync(join(tmpdir(), 'rootlco-run-block-'));
+  const file = join(dir, 'block.sh');
+  try {
+    writeFileSync(file, neutraliseExpressions(body));
+    const result = spawnSync(bash, ['-n', file], { encoding: 'utf8' });
+    if (result.error) return { ok: false, unavailable: true, message: result.error.message };
+    return {
+      ok: result.status === 0,
+      unavailable: false,
+      message: String(result.stderr ?? '')
+        .split('\n')
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(' | '),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function main() {

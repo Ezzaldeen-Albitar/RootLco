@@ -15,6 +15,7 @@ import {
   extractRunBlocks,
   isLocalReference,
   RULE_IDS,
+  escapeRegExp,
   toMarkdown as workflowSecurityMarkdown,
 } from '../../scripts/ci/check-workflow-security.mjs';
 import {
@@ -388,6 +389,67 @@ describe('workflow-security rule registry', () => {
   });
 });
 
+/**
+ * AR-52. WFS-006 builds its pattern by interpolating an untrusted-expression
+ * name into a regular expression. It escaped dots and nothing else — correct for
+ * exactly today's list, and silently wrong for the first entry anybody adds
+ * containing another metacharacter. A `[` would throw at `new RegExp`; a `*` or
+ * `$` would compile into a pattern matching something else entirely, disabling a
+ * rule rated CRITICAL with no signal at all.
+ */
+describe('workflow-security regex escaping', () => {
+  it('escapes every metacharacter, not merely the dot', () => {
+    expect(escapeRegExp('github.event.issue.title')).toBe('github\\.event\\.issue\\.title');
+    for (const char of ['.', '*', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\']) {
+      const escaped = escapeRegExp(`a${char}b`);
+      // The escaped form must match the literal text and nothing cleverer.
+      expect(new RegExp(escaped).test(`a${char}b`), char).toBe(true);
+      expect(new RegExp(`^${escaped}$`).test('axb'), char).toBe(false);
+    }
+  });
+
+  it('matches the literal expression where the old dot-only escape silently did not', () => {
+    // The realistic next entry: an indexed payload field. Dot-only escaping
+    // leaves `[0]` intact, and `[0]` is a VALID character class — so the regex
+    // compiles without complaint and then matches `client_payload0.body`
+    // instead of `client_payload[0].body`. Nothing throws, nothing warns, and
+    // WFS-006 simply stops seeing that expression. Silent is the bad case here;
+    // an exception would at least have been noticed.
+    const indexed = 'github.event.client_payload[0].body';
+    const dotOnly = new RegExp(indexed.replace(/\./g, '\\.'));
+    expect(dotOnly.test(indexed), 'the old escape fails to match the real text').toBe(false);
+    expect(dotOnly.test('github.event.client_payload0.body')).toBe(true);
+    expect(new RegExp(escapeRegExp(indexed)).test(indexed), 'the fix matches it').toBe(true);
+  });
+
+  it('does not throw on an expression the old escape could not even compile', () => {
+    // And where the metacharacter is unbalanced, the old form threw outright,
+    // which would have taken the whole linter down rather than one rule.
+    const unbalanced = 'github.event.inputs.name(';
+    expect(() => new RegExp(unbalanced.replace(/\./g, '\\.'))).toThrow();
+    expect(() => new RegExp(escapeRegExp(unbalanced))).not.toThrow();
+    expect(new RegExp(escapeRegExp(unbalanced)).test(unbalanced)).toBe(true);
+  });
+
+  it('still detects an untrusted interpolation in a real run block', () => {
+    const workflow = [
+      'name: x',
+      'on: [push]',
+      'permissions:',
+      '  contents: read',
+      'jobs:',
+      '  a:',
+      '    runs-on: ubuntu-latest',
+      '    timeout-minutes: 5',
+      '    steps:',
+      '      - name: greet',
+      '        run: |',
+      '          echo "${{ github.event.pull_request.title }}"',
+    ].join('\n');
+    expect(rules(lintWorkflow('x.yml', workflow))).toContain('WFS-006');
+  });
+});
+
 describe('test honesty', () => {
   /**
    * Every fixture below is ASSEMBLED AT RUNTIME rather than written as a
@@ -454,10 +516,28 @@ describe('x', () => {
       `${vacuous('1')}.toBe(1)`,
       `${vacuous("'a'")}.toBe('a')`,
       `${EXPECT}.assertions(0)`,
+      // AR-52. This shape — an identifier compared with itself — was in the
+      // rule list from the beginning and was the ONE case this loop did not
+      // exercise. It was also the one that did not work: the pattern used `\1`
+      // with no capture group, which JavaScript reads as the octal escape for
+      // U+0001 rather than rejecting, so it silently matched nothing. Five
+      // covered shapes and a sixth that was never tried is how a dead rule
+      // reaches production inside a suite that looks exhaustive.
+      `${vacuous('total')}.toBe(total)`,
     ]) {
       const source = OK.replace(`${EXPECT}(compute(2)).toBe(4);`, `${assertion};`);
       expect(rules(lintTestFile('tests/x.test.ts', source)), assertion).toContain('TH-005');
     }
+  });
+
+  it('TH-005 still passes an honest comparison between two different identifiers', () => {
+    // The repaired pattern must not become the opposite problem: a rule that
+    // fires on every `toBe` between identifiers would make the gate useless.
+    const source = OK.replace(
+      `${EXPECT}(compute(2)).toBe(4);`,
+      `${vacuous('actual')}.toBe(expected);`
+    );
+    expect(rules(lintTestFile('tests/x.test.ts', source))).not.toContain('TH-005');
   });
 
   it('a comment cannot satisfy a structural requirement', () => {

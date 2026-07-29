@@ -52,7 +52,13 @@ export const VACUOUS_ASSERTIONS = [
   /expect\(\s*(['"`])(.*?)\1\s*\)\s*\.\s*(toBe|toEqual|toStrictEqual)\(\s*\1\2\1\s*\)/,
   /expect\(\s*\)\s*\./,
   /expect\.assertions\(\s*0\s*\)/,
-  /expect\(\s*[A-Za-z_$][\w$]*\s*\)\s*\.\s*toBe\(\s*\1\s*\)/,
+  // The identifier MUST be captured. Without the parentheses the `\1` here was
+  // an unbound back reference, which JavaScript reads as the octal escape for
+  // U+0001 rather than as an error — so this pattern only ever matched the
+  // literal text `expect(x).toBe(<control-character>)` and never once fired on
+  // the thing it was written to catch. A rule that cannot match is a rule that
+  // reports clean for the wrong reason; CodeQL found it, no test did.
+  /expect\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\.\s*toBe\(\s*\1\s*\)/,
 ];
 
 function walk(dir, predicate, out = []) {

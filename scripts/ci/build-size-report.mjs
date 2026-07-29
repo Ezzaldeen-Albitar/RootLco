@@ -237,12 +237,17 @@ function main(argv) {
   };
   const dir = arg('--dir') ?? '.next';
   const baselinePath = arg('--baseline') ?? '.github/ci-baselines/build-size-baseline.json';
+  // Read first and interpret the failure, rather than asking whether the file
+  // exists and then reading it. The two-step form is a race — the file can go
+  // between the question and the answer — and it also conflates "absent", which
+  // is legitimate before a baseline is established, with "unreadable", which is
+  // not. ENOENT means no baseline yet; anything else is a real problem.
   let baseline = {};
-  if (existsSync(baselinePath)) {
-    try {
-      baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-    } catch (error) {
-      console.error(`build-size baseline is not valid JSON: ${error.message}`);
+  try {
+    baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`build-size baseline at ${baselinePath} could not be read: ${error.message}`);
       process.exit(2);
     }
   }
