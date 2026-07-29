@@ -5,9 +5,21 @@
   "expectedLanguages": ["javascript-typescript", "actions"],
   "expectedLanguagesNote": "A language that was not analysed cannot be reported clean. If a SARIF for either is missing the gate fails rather than judging the languages it happens to have — the AR-45 shape, where a scan that enumerated nothing read as a scan that found nothing.",
   "maximumOpenFindings": 0,
-  "maximumOpenFindingsNote": "Zero, because this initiative closed the entire backlog: the two application findings are fixed structurally, the fifteen script findings are fixed, and the four vacuous assertions are repaired. Nothing is waived. A ceiling above zero would be a budget for the next one.",
-  "dismissals": [],
-  "dismissalsNote": "EMPTY, and empty is the finished state. Every alert in the 21-alert baseline was fixed or repaired; none was dismissed. The machinery is retained and tested because the next finding may genuinely be a false positive — but a dismissal must name the exact rule, the exact path, a reproduction of why the source cannot be attacker-controlled AND why the sink is safe, a reviewer, a review date, and an expiry. An entry matching nothing fails the gate, and the same rule appearing at a different path is treated as a new finding rather than as covered.",
+  "maximumOpenFindingsNote": "Zero OPEN findings — where open means neither dismissed by GitHub nor covered by an approved dismissal below. Every alert in the 21-alert baseline was fixed: the two application findings structurally, the fifteen script findings directly, the four vacuous assertions repaired. A ceiling above zero would be a budget for the next one. The count deliberately includes medium and low, which is how the one dismissal below was caught at all — GitHub's own CodeQL check reported that run as SUCCESS, because it blocks only on high and critical.",
+  "dismissals": [
+    {
+      "ruleId": "js/http-to-file-access",
+      "path": "scripts/ci/check-commit-checks.mjs",
+      "source": "The JSON body of an authenticated `GET /repos/{owner}/{repo}/commits/{sha}/check-runs` response from api.github.com over TLS. It is not attacker-controlled in any reachable sense: the request is made by a maintainer, with that maintainer's own token, against this repository, and the only fields read are `name`, `status`, `conclusion`, `app.slug`, `output.title` and `html_url`. A party able to forge that response already controls the repository the gate is protecting.",
+      "sink": "`writeFileSync` to a path the OPERATOR names on the command line via `--json`, in an ephemeral working directory. The path is never derived from the response. Nothing consumes the file automatically — it is evidence a human attaches to a gate record.",
+      "reason": "CodeQL tracks HTTP-response data reaching a filesystem write and does not model `safeText` as a sanitiser, so the flow persists no matter how the content is cleaned. The content IS cleaned: every field passes through `safeText`, which strips C0/C1 control characters, escapes backslashes and then pipes, and caps length. Verified by reproduction — the hostile input `evil\\|name` yields exactly one Markdown table cell, so it cannot break out of the cell it is rendered into. What remains is the flow itself, which is the script's entire purpose: a report about an API response necessarily contains data from that API response. Dismissed as a false positive in impact, not in existence.",
+      "reviewer": "platform-owner",
+      "reviewedOn": "2026-07-29",
+      "expiresOn": "2027-01-31",
+      "expiryRationale": "Two quarters. Long enough that it is not busywork, short enough that it cannot become permanent without somebody looking at `safeText` and this justification again."
+    }
+  ],
+  "dismissalsNote": "ONE entry, and it is in a script this initiative wrote — which is uncomfortable and is the reason it carries a full reproduction rather than an assertion. Every other alert in the 21-alert baseline was FIXED; none of the pre-existing ones was waived. A dismissal must name the exact rule, the exact path, a reproduction of why the source cannot be attacker-controlled AND why the sink is safe, a reviewer, a review date and an expiry. An entry matching nothing fails the gate; the same rule at a different path is a new finding, not a covered one; and nothing under src/ may be dismissed here at all.",
   "dismissalSchema": {
     "ruleId": "the exact CodeQL rule, e.g. js/incomplete-sanitization",
     "path": "the exact repo-relative path — dismissals are per-path on purpose",

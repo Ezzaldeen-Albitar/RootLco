@@ -175,6 +175,8 @@ export function extractFindings(documents) {
 
 const EMPTY_COUNTS = () => ({
   total: 0,
+  open: 0,
+  dismissed: 0,
   suppressed: 0,
   application: 0,
   tooling: 0,
@@ -198,7 +200,8 @@ function dismissalMatches(entry, finding) {
  *   decision: string,
  *   failures: string[],
  *   warnings: string[],
- *   counts: { total: number, suppressed: number, application: number, tooling: number,
+ *   counts: { total: number, open: number, dismissed: number, suppressed: number,
+ *             application: number, tooling: number,
  *             bySeverity: Record<string, number>, byRule: Record<string, number> },
  *   findings: any[],
  *   tools: string[],
@@ -288,11 +291,14 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   const usedDismissals = new Set();
 
   const blocking = [];
+  // Every live finding is checked against the dismissal list, at ANY severity.
+  // An earlier version only consulted the list for blocking severities, so a
+  // medium-severity dismissal was never validated and never marked used — it
+  // would then be reported as "matches nothing" while sitting on a real finding.
   for (const finding of live) {
-    if (!BLOCKING_SEVERITIES.includes(finding.severity)) continue;
     const match = dismissals.findIndex((entry) => dismissalMatches(entry, finding));
     if (match === -1) {
-      blocking.push(finding);
+      if (BLOCKING_SEVERITIES.includes(finding.severity)) blocking.push(finding);
       continue;
     }
     usedDismissals.add(match);
@@ -360,8 +366,18 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   }
 
   // ---- 6. the total may not grow ------------------------------------------
+  // A finding covered by an approved dismissal is ADJUDICATED, not open. The
+  // ceiling counts what nobody has answered for; counting dismissed findings
+  // too would make "dismiss it" and "raise the ceiling" the same action, which
+  // is precisely the laxity the ceiling exists to prevent.
+  const open = live.filter(
+    (finding) => !dismissals.some((entry) => dismissalMatches(entry, finding))
+  );
+
   const counts = {
     total: live.length,
+    open: open.length,
+    dismissed: live.length - open.length,
     suppressed: findings.length - live.length,
     application: live.filter((finding) => finding.scope === 'application').length,
     tooling: live.filter((finding) => finding.scope === 'tooling').length,
@@ -374,14 +390,14 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   }
 
   const ceiling = baseline.maximumOpenFindings;
-  if (typeof ceiling === 'number' && live.length > ceiling) {
+  if (typeof ceiling === 'number' && open.length > ceiling) {
     failures.push(
-      `open findings rose to ${live.length}, above the recorded ceiling of ${ceiling}. ` +
+      `open findings rose to ${open.length}, above the recorded ceiling of ${ceiling}. ` +
         'Raise the ceiling in the same commit that justifies it, or fix the new finding.'
     );
-  } else if (typeof ceiling === 'number' && live.length < ceiling) {
+  } else if (typeof ceiling === 'number' && open.length < ceiling) {
     warnings.push(
-      `open findings fell to ${live.length} from a ceiling of ${ceiling} — lower the ceiling to lock the gain in.`
+      `open findings fell to ${open.length} from a ceiling of ${ceiling} — lower the ceiling to lock the gain in.`
     );
   }
 
@@ -401,7 +417,8 @@ export function toMarkdown(result) {
   lines.push('| Measure | Value |');
   lines.push('| --- | --- |');
   lines.push(`| Tools | ${result.tools?.join(', ') || '—'} |`);
-  lines.push(`| Open findings | ${result.counts?.total ?? 0} |`);
+  lines.push(`| Open findings | ${result.counts?.open ?? 0} |`);
+  lines.push(`| …covered by an approved dismissal | ${result.counts?.dismissed ?? 0} |`);
   lines.push(`| …in application source | ${result.counts?.application ?? 0} |`);
   lines.push(`| …in tooling | ${result.counts?.tooling ?? 0} |`);
   lines.push(`| Dismissed by GitHub | ${result.counts?.suppressed ?? 0} |`);

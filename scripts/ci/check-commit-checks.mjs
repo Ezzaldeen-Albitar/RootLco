@@ -50,7 +50,14 @@ export function safeText(value, max = 200) {
   const text = String(value)
     // Control characters, including the ESC that starts an ANSI sequence.
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    // Pipes would break out of the Markdown table cell they are rendered into.
+    // BACKSLASH FIRST, then pipe. The other order is the defect CodeQL
+    // reported as `js/incomplete-sanitization` the first time this function
+    // ran: escaping `|` as `\|` without escaping `\` first means the input
+    // `\|` becomes `\\|`, which Markdown renders as a literal backslash
+    // followed by a LIVE cell separator — so the escaper hands back exactly
+    // what it was added to prevent. An escaper that runs in the wrong order
+    // is worse than none, because it looks handled.
+    .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .trim();
   return text.length > max ? `${text.slice(0, max)}…` : text;

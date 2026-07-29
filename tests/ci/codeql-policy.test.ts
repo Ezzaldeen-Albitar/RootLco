@@ -285,6 +285,17 @@ describe('dismissal governance', () => {
 });
 
 describe('the alert-count ratchet', () => {
+  const dismissal = (ruleId: string, path: string) => ({
+    ruleId,
+    path,
+    source: 'an authenticated API response',
+    sink: 'a file the operator named',
+    reason: 'reproduced: the flow is the script’s purpose and the content is sanitised',
+    reviewer: 'platform-owner',
+    reviewedOn: '2026-07-29',
+    expiresOn: '2099-01-01',
+  });
+
   it('fails when the open count rises above the recorded ceiling', () => {
     const verdict = evaluate({
       documents: docs(sarif([result('js/file-system-race', 'scripts/a.mjs')])),
@@ -292,6 +303,64 @@ describe('the alert-count ratchet', () => {
     });
     expect(verdict.ok).toBe(false);
     expect(verdict.failures.join('\n')).toMatch(/rose to 1, above the recorded ceiling of 0/);
+  });
+
+  it('does not count a dismissed finding as open — it is adjudicated', () => {
+    // Otherwise "dismiss it" and "raise the ceiling" would be the same action,
+    // which is exactly the laxity the ceiling exists to prevent.
+    const verdict = evaluate({
+      documents: docs(sarif([result('js/file-system-race', 'scripts/a.mjs')])),
+      baseline: {
+        ...BASE,
+        maximumOpenFindings: 0,
+        dismissals: [dismissal('js/file-system-race', 'scripts/a.mjs')],
+      },
+    });
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.counts.open).toBe(0);
+    expect(verdict.counts.dismissed).toBe(1);
+    expect(verdict.counts.total).toBe(1);
+  });
+
+  it('validates a dismissal at ANY severity, not only blocking ones', () => {
+    // A medium-severity dismissal used to skip its own evidence checks and was
+    // never marked used — so it was then reported as matching nothing while
+    // sitting on a real finding.
+    const incomplete = { ...dismissal('js/file-system-race', 'scripts/a.mjs') } as Record<
+      string,
+      unknown
+    >;
+    delete incomplete.reviewer;
+    const medium = {
+      version: '2.1.0',
+      runs: [
+        {
+          tool: {
+            driver: {
+              name: 'CodeQL',
+              rules: [
+                {
+                  id: 'js/file-system-race',
+                  properties: { 'security-severity': '5.0' },
+                },
+              ],
+            },
+          },
+          results: [result('js/file-system-race', 'scripts/a.mjs')],
+        },
+      ],
+    };
+    const verdict = evaluate({
+      documents: docs(medium),
+      baseline: { ...BASE, dismissals: [incomplete] },
+    });
+    expect(verdict.counts.bySeverity.medium).toBe(1);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toContain('`reviewer`');
+    expect(verdict.failures.join('\n'), 'and it must NOT also be called stale').not.toMatch(
+      /matches nothing/
+    );
   });
 
   it('warns rather than fails when the count falls, so the gain can be locked in', () => {
