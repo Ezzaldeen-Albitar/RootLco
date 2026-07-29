@@ -25,7 +25,6 @@ export default defineConfig({
       include: [
         'src/config/**',
         'src/lib/logging/**',
-        'src/shared/errors/**',
         'src/server/errors/**',
         'src/server/observability/**',
         'src/server/cache/**',

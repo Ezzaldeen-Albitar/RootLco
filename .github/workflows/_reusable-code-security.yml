@@ -1,0 +1,90 @@
+# =============================================================================
+# RootLco — reusable code security (CodeQL).
+#
+# ONE job, ONE fixed permission set. This is the ONLY workflow in the repository
+# that requests a write scope, and it requests exactly one: `security-events:
+# write`, to upload SARIF.
+#
+# It is its own file precisely because of that. A caller's permissions are the
+# ceiling for every job in the file it calls, so keeping this job alongside the
+# secret scan forced every caller of either to grant SARIF write — which is how
+# least privilege quietly becomes a comment. See `_reusable-secret-scan.yml`.
+# =============================================================================
+
+name: Reusable — code security
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+jobs:
+  code-security:
+    name: code-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      # The single write scope in the whole pipeline.
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # CodeQL analyses source; it does not need the dependency tree for
+          # JavaScript/TypeScript, and installing it would only widen what runs.
+          install: 'false'
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          languages: ${{ matrix.language }}
+          # The widest first-party suite: SQL and command injection, path
+          # traversal, unsafe deserialization, hardcoded credentials, weak
+          # cryptography, SSRF, and unsafe workflow expressions.
+          queries: security-and-quality
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          category: /language:${{ matrix.language }}
+          upload: always
+          # The SARIF is also written to disk so it can be attached as evidence
+          # even when the Security tab is unavailable on this plan.
+          output: sarif-results
+
+      - name: Upload SARIF as evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-code-security-${{ matrix.language }}
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: sarif-results/**

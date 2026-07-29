@@ -1,0 +1,662 @@
+# =============================================================================
+# RootLco — reusable container security.
+#
+# `ci.yml` built two images and asserted one property (uid ≠ 0). It never
+# scanned them, never measured them, never started one, and never checked what
+# was inside a layer (CSA-09).
+#
+# This builds the exact `dev` and `runner` targets, then interrogates the
+# production image: vulnerabilities, what runs it, what is baked into it, and
+# whether it actually serves a request.
+#
+# NO IMAGE IS PUSHED. There is no registry and no deployment target (ADR-012);
+# `push: false, load: true` keeps everything on the runner.
+# =============================================================================
+
+name: Reusable — container security
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      severity:
+        description: Comma-separated severities that block the merge.
+        required: false
+        type: string
+        default: 'CRITICAL,HIGH'
+      deep:
+        description: Nightly mode — also scan unfixed vulnerabilities and every layer.
+        required: false
+        type: boolean
+        default: false
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+    outputs:
+      digest:
+        description: Digest of the production runner image.
+        value: ${{ jobs.container.outputs.digest }}
+      size-bytes:
+        description: Size of the production runner image in bytes.
+        value: ${{ jobs.container.outputs.size-bytes }}
+      blocking-vulnerabilities:
+        description: Count of blocking-severity findings.
+        value: ${{ jobs.container.outputs.blocking }}
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: container-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+      size-bytes: ${{ steps.inspect.outputs.size }}
+      blocking: ${{ steps.policy.outputs.blocking }}
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # The image build installs its own dependencies inside the container;
+          # a host-side `npm ci` would only duplicate that work.
+          install: 'false'
+
+      - name: Dockerfile best practices (hadolint)
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint.sarif
+          # `info` and below are style opinions; `warning` and above are the ones
+          # that describe a real weakness.
+          failure-threshold: warning
+
+      - name: Compose file is valid
+        run: docker compose config --quiet
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the development stage
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: dev
+          push: false
+          load: true
+          tags: rootlco/web:ci-dev
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+      - name: Build the production runner stage
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: runner
+          push: false
+          load: true
+          tags: rootlco/web:ci-runner
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+          build-args: |
+            NEXT_PUBLIC_APP_ENV=local
+            NEXT_PUBLIC_COMMIT_SHA=${{ steps.setup.outputs.sha }}
+
+      - name: Image identity and size
+        id: inspect
+        run: |
+          set -euo pipefail
+          digest="$(docker image inspect rootlco/web:ci-runner --format '{{.Id}}')"
+          size="$(docker image inspect rootlco/web:ci-runner --format '{{.Size}}')"
+          layers="$(docker image inspect rootlco/web:ci-runner --format '{{len .RootFS.Layers}}')"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "size=${size}" >> "${GITHUB_OUTPUT}"
+          printf 'digest: %s\nsize: %s bytes\nlayers: %s\n' "${digest}" "${size}" "${layers}"
+          node -e '
+            const fs = require("node:fs");
+            const bytes = Number(process.argv[2]);
+            const human = `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+            fs.writeFileSync("image-metadata.json", JSON.stringify({
+              digest: process.argv[1], sizeBytes: bytes, sizeHuman: human, layers: Number(process.argv[3]),
+            }, null, 2) + "\n");
+          ' "${digest}" "${size}" "${layers}"
+
+      - name: Image size ratchet
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const meta = JSON.parse(fs.readFileSync("image-metadata.json", "utf8"));
+            const path = ".github/ci-baselines/container-baseline.json";
+            const base = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : {};
+            const recorded = base.imageSizeBytes;
+            if (typeof recorded !== "number" || recorded <= 0) {
+              console.log("::notice::No image-size baseline recorded yet. Measured " + meta.sizeHuman + "; commit it to start the ratchet.");
+              process.exit(0);
+            }
+            const ratio = Number((meta.sizeBytes / recorded).toFixed(4));
+            const warn = base.warnGrowthRatio ?? 1.1;
+            const fail = base.failGrowthRatio ?? 1.5;
+            console.log(`image ${meta.sizeHuman}, baseline ${(recorded/1024/1024).toFixed(1)} MiB, ratio x${ratio}`);
+            if (ratio > fail) {
+              console.error(`::error::Production image grew x${ratio} against the recorded baseline; the hard ceiling is x${fail}. Re-baseline in a reviewable commit if the growth is justified.`);
+              process.exit(1);
+            }
+            if (ratio > warn) console.log(`::warning::Production image grew x${ratio} (warning band starts at x${warn}).`);
+          '
+
+      - name: Nothing sensitive is baked into the image
+        run: |
+          set -euo pipefail
+          bad=0
+
+          # --- environment ---------------------------------------------------
+          # Only NEXT_PUBLIC_* values are public by definition. Anything that
+          # looks like a credential in the image environment ships to every host
+          # that pulls it.
+          env_json="$(docker image inspect rootlco/web:ci-runner --format '{{json .Config.Env}}')"
+          printf '%s\n' "${env_json}" > image-env.json
+          if printf '%s' "${env_json}" | grep -qiE '"[^"]*(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY)[^"]*=[^"]{6,}'; then
+            echo "::error::The production image environment contains a credential-shaped value."
+            # The NAMES are printed; the values deliberately are not.
+            printf '%s' "${env_json}" | tr ',' '\n' | sed -E 's/=.*/=<redacted>/' | grep -iE 'SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY'
+            bad=1
+          fi
+
+          # --- filesystem ----------------------------------------------------
+          # An `.env` or a key that reached a layer is readable by anyone with
+          # the image, whatever the running container shows.
+          #
+          # `*.pem` is NOT in this list, and that is deliberate. It used to be,
+          # and it failed on `/etc/ssl/cert.pem` and `/etc/ssl1.1/cert.pem` —
+          # the Alpine base image's PUBLIC CA trust store, which every image
+          # carries and which TLS needs. Excluding those two paths would have
+          # been a name-based patch to a name-based check, and would still have
+          # missed a private key called `server.crt`. The content check below
+          # replaces it and is strictly stronger.
+          leaked="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'find / -xdev \( -name ".env" -o -name ".env.*" -o -name "id_rsa" -o -name "id_ed25519" -o -name ".npmrc" -o -name ".git" \) -not -path "*/node_modules/*" 2>/dev/null | head -40')"
+          if [ -n "${leaked}" ]; then
+            echo "::error::Sensitive paths present in the production image:"
+            echo "${leaked}"
+            bad=1
+          fi
+
+          # --- private key MATERIAL, whatever the file is called --------------
+          # Names prove nothing: a key named `server.crt` ships happily past any
+          # extension rule, and a public certificate named `key.pem` trips one
+          # for no reason. This looks for the PEM private-key header itself, in
+          # every file in the image.
+          # The image is Alpine, so the grep inside it is BUSYBOX grep, which has
+          # no `--exclude-dir`. The first version of this used it: busybox
+          # printed its usage message, matched nothing, and exited 0 — a check
+          # that could never fail. Hence `find … -exec grep` (POSIX), and hence
+          # the file count, which makes the scan prove it actually ran.
+          # TWO signals, and only one of them is load-bearing.
+          #
+          # The CANARY is the control: a planted key the scan must find. A scan
+          # that cannot find a key it just wrote proves nothing about the keys it
+          # did NOT find, whatever else it reports. This is what catches the
+          # busybox-grep failure (AR-36), and unlike a file count it fails for
+          # every reason the search could be broken.
+          #
+          # The count is a COVERAGE indicator, not proof of execution: it is a
+          # separate `find … -exec grep -cH ""` enumeration and would survive a
+          # failure of the key search. An earlier comment here claimed it came
+          # from the same invocation as the search. It did not, and saying so was
+          # the same kind of unearned assurance this job exists to catch.
+          #
+          # The canary header is assembled at runtime so this file does not
+          # itself contain a credential shape.
+          scan="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'kw="PRIV""ATE KEY"; printf -- "-----BEGIN CANARY %s-----\n" "${kw}" > /tmp/.keyscan-canary
+             find / -xdev -type f -exec grep -lE "BEGIN ([A-Z ]+ )?PRIVATE KEY" {} + 2>/dev/null | head -20
+             printf "__SCANNED__%s\n" "$(find / -xdev -type f -exec grep -cH "" {} + 2>/dev/null | wc -l)"')"
+          if ! printf '%s\n' "${scan}" | grep -q 'keyscan-canary'; then
+            echo "::error::The private-key scan did not find its own planted canary, so it is not working (busybox grep rejects GNU flags silently). Its silence about the rest of the image proves nothing."
+            printf '%s\n' "${scan}" | head -5
+            bad=1
+          fi
+          scanned="$(printf '%s\n' "${scan}" | sed -n 's/^__SCANNED__//p')"
+          keys="$(printf '%s\n' "${scan}" | grep -v '^__SCANNED__' | grep -v 'keyscan-canary' | grep -v '^$')" || keys=''
+          if [ -z "${scanned}" ] || [ "${scanned}" -lt 500 ]; then
+            echo "::error::The private-key scan examined ${scanned:-no} files. It did not run, so its silence proves nothing."
+            bad=1
+          elif [ -n "${keys}" ]; then
+            echo "::error::Private key material is present in the production image:"
+            echo "${keys}"
+            bad=1
+          else
+            printf 'private-key scan: %s files examined, none carry a PEM private-key header\n' "${scanned}"
+          fi
+
+          # --- build history --------------------------------------------------
+          # A build arg is recorded in the image history and is readable by
+          # anyone who can pull the image. The pattern set is IDENTICAL to the
+          # environment check above plus a URL-embedded-credential class —
+          # previously it omitted `_TOKEN`, so the standard `ARG NPM_TOKEN`
+          # pattern passed here while failing there.
+          docker history --no-trunc --format '{{.CreatedBy}}' rootlco/web:ci-runner > image-history.txt
+          if grep -qiE '(SERVICE_ROLE|SECRET|PASSWORD|PRIVATE_KEY|_TOKEN|API_KEY)[A-Z_]*=[^ ]{6,}|://[^:/@ ]+:[^@ ]{4,}@' image-history.txt; then
+            echo "::error::A credential-shaped value appears in the image build history."
+            bad=1
+          fi
+
+          # --- value-shaped, not only name-shaped -----------------------------
+          # Both checks above are NAME-based. A credential under an innocuous
+          # name — DATABASE_URL, SENTRY_DSN, REDIS_URL — passes both. The
+          # repository's own scanner matches SHAPES, so it is run over the two
+          # captured files in an isolated directory.
+          mkdir -p image-surface
+          cp image-env.json image-history.txt image-surface/
+          if ! node scripts/ci/scan-history.mjs --mode worktree \
+                 --roots image-surface --min-files 2 \
+                 --json image-credential-scan.json > /dev/null 2>&1; then
+            echo "::error::A credential SHAPE was found in the image environment or build history. See image-credential-scan.json — it records the pattern class, never the value."
+            bad=1
+          fi
+          rm -rf image-surface
+
+          # --- development tooling --------------------------------------------
+          # A production image that carries a compiler or a package manager gives
+          # an attacker a build environment inside the container.
+          tools="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c \
+            'for t in gcc make git npx python3 apk; do command -v "$t" >/dev/null 2>&1 && echo "$t"; done' || printf '')"
+          if [ -n "${tools}" ]; then
+            echo "::warning::Development tooling present in the production image: $(echo "${tools}" | tr '\n' ' ')"
+            echo "${tools}" > image-dev-tools.txt
+          fi
+          exit "${bad}"
+
+      - name: What the production image actually contains
+        id: inventory
+        run: |
+          set -euo pipefail
+          # THE POINT: not what package.json classifies as a devDependency, but
+          # what is on the filesystem of the image that would be deployed. The
+          # `runner` stage copies only `.next/standalone`, `.next/static` and
+          # `public` — never `node_modules` — but that is a claim about the
+          # Dockerfile, and this is the check that the claim held.
+          docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'find / -xdev -type f 2>/dev/null' > image-files.txt
+          printf 'files in the production image: %s\n' "$(wc -l < image-files.txt)"
+
+          bad=0
+
+          # --- development toolchain must be absent --------------------------
+          # Each of these is either a build-time tool or a package whose presence
+          # would mean node_modules was copied wholesale.
+          #
+          # TWO assertions, deliberately separate, because the first version of
+          # this check conflated them and reported "development tooling must not
+          # ship" for packages that came from the BASE IMAGE. `/app` was clean;
+          # the hits were npm's own bundled dependencies under
+          # /usr/local/lib/node_modules/npm. Same verdict, wrong reason — and a
+          # wrong reason sends the next person to fix the wrong file.
+          FORBIDDEN="eslint prettier vitest typescript @typescript-eslint
+                     brace-expansion minimatch test-exclude @vitest stylelint"
+
+          # `grep -c` PRINTS `0` and EXITS 1 when nothing matches, so the obvious
+          # `hits="$(grep -c … || printf 0)"` produces the two-line string "0\n0"
+          # and `[ "0\n0" -gt 0 ]` is not a comparison at all — bash reports
+          # "integer expected", returns 2, and `if` reads that as false. Every
+          # clean run took that path for every package: the verdict was right by
+          # accident. `x="$(…)" || x=0` keeps the count grep already printed and
+          # NAMES the fallback, rather than swallowing a status like `|| :` does.
+
+          # 1. Nothing from OUR dependency tree. This is the "node_modules was
+          #    copied wholesale" check, and it is scoped to the application.
+          for forbidden in ${FORBIDDEN}; do
+            app_hits="$(grep -- "/node_modules/${forbidden}/" image-files.txt | grep -c '^/app/')" || app_hits=0
+            if [ "${app_hits}" -gt 0 ]; then
+              echo "::error::${forbidden} ships inside /app (${app_hits} file(s)). Development tooling from this repository's dependency tree must not reach the runtime image."
+              grep -- "/node_modules/${forbidden}/" image-files.txt | grep '^/app/' | head -3
+              bad=1
+            fi
+
+            # 2. Nothing outside /app either. The location is MEASURED, not
+            #    asserted: the previous version counted ALL hits while claiming
+            #    they were "base-image surface … do not fix this in
+            #    package.json", so a wholesale /app leak was reported twice, the
+            #    second time pointing at the wrong file — exactly the
+            #    misdirection this split was introduced to remove.
+            other="$(grep -- "/node_modules/${forbidden}/" image-files.txt | grep -v '^/app/')" || other=''
+            other_hits="$(printf '%s' "${other}" | grep -c .)" || other_hits=0
+            if [ "${other_hits}" -gt 0 ]; then
+              echo "::error::${forbidden} is present in the production image OUTSIDE /app (${other_hits} file(s)) — base-image surface, not a repository dependency. Do not 'fix' this in package.json."
+              printf '%s\n' "${other}" | head -3
+              bad=1
+            fi
+          done
+
+          # --- no package manager may ship ----------------------------------
+          # The container runs `node server.js`. A package manager on a deployed
+          # host is surface with no purpose, and its dependency tree is what put
+          # an affected brace-expansion in this image in the first place.
+          #
+          # Checked by RESOLVING THE BINARY, not by grepping the inventory. Both
+          # reasons were learned the hard way:
+          #   - `find -type f` never lists symlinks, and /usr/local/bin/npm and
+          #     /usr/local/bin/yarn ARE symlinks — so an inventory grep for them
+          #     matched nothing even with the package manager fully installed;
+          #   - yarn is a single bundled cli.js under /opt/yarn-v1.22.22 with
+          #     brace-expansion INLINED. There is no `/node_modules/<name>/` path,
+          #     so no path-based rule above can ever see it.
+          # A path inventory cannot prove the absence of vendored code. It can
+          # prove no package manager is installed, so that is what is asserted.
+          pm_found="$(docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
+            'for pm in npm npx yarn yarnpkg pnpm corepack bun apk; do
+               p="$(command -v "${pm}" 2>/dev/null)" || p=""
+               [ -n "${p}" ] && printf "%s -> %s\n" "${pm}" "${p}"
+             done
+             exit 0')"
+          if [ -n "${pm_found}" ]; then
+            echo "::error::A package manager is present in the production image:"
+            printf '%s\n' "${pm_found}"
+            echo "::error::Its dependency tree becomes deployed surface, and a bundled copy is invisible to every path-based check here."
+            bad=1
+          else
+            echo 'no package manager resolves in the production image'
+          fi
+
+          # --- no npm cache or package manager state -------------------------
+          for forbidden in '/.npm/' '/.npmrc' '/npm-cache/' '/.yarn/' '/.pnpm-store/'; do
+            hits="$(grep -c -- "${forbidden}" image-files.txt)" || hits=0
+            if [ "${hits}" -gt 0 ]; then
+              echo "::error::package-manager state '${forbidden}' is present in the production image."
+              bad=1
+            fi
+          done
+
+          # --- the standalone server MUST be there ---------------------------
+          # A check that only looks for absences would pass over an empty image.
+          if ! grep -q '/app/server.js' image-files.txt; then
+            echo "::error::/app/server.js is absent — this is not a runnable production image, so every absence above proves nothing."
+            bad=1
+          fi
+
+          # --- what production dependencies DID ship -------------------------
+          grep -oE '/node_modules/(@[^/]+/)?[^/]+/' image-files.txt \
+            | sed -E 's|/node_modules/||; s|/$||' | sort -u > image-node-modules.txt
+          printf 'distinct packages in the image: %s\n' "$(wc -l < image-node-modules.txt)"
+          head -40 image-node-modules.txt
+
+          exit "${bad}"
+
+      - name: Reachability proof against the real image
+        run: |
+          set -euo pipefail
+          # Re-derives the dependency-path proof with the ACTUAL image inventory
+          # supplied, so `packageDirInRunnerImage` is a measurement rather than a
+          # claim. It measures whether the image RESOLVES the package, not
+          # whether the code is absent — absence is not achievable, since Node
+          # vendors brace-expansion into the `node` binary itself.
+          # The dependency gate cross-checks every exception against this.
+          node scripts/ci/dependency-path-proof.mjs \
+            --package brace-expansion \
+            --image-inventory image-files.txt \
+            --json reachability-brace-expansion.json \
+            --markdown reachability-brace-expansion.md
+
+      - name: Production install mode
+        run: |
+          set -euo pipefail
+          # The image must not carry a development tree. `NODE_ENV` is the
+          # declared intent; the file inventory above is the proof. Both are
+          # recorded because a mismatch between them is itself a finding.
+          node_env="$(docker image inspect rootlco/web:ci-runner --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^NODE_ENV=' || printf 'NODE_ENV=<unset>')"
+          printf '%s\n' "${node_env}"
+          if [ "${node_env}" != 'NODE_ENV=production' ]; then
+            echo "::error::The production image does not declare NODE_ENV=production."
+            exit 1
+          fi
+
+      - name: Runtime identity is the canonical non-root user
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c 'id -u')"
+          gid="$(docker run --rm --entrypoint sh rootlco/web:ci-runner -c 'id -g')"
+          user="$(docker image inspect rootlco/web:ci-runner --format '{{.Config.User}}')"
+          printf 'runtime uid=%s gid=%s configured user=%s\n' "${uid}" "${gid}" "${user}"
+          # ADR-007 requires non-root; the Dockerfile creates nextjs:nodejs as
+          # 1001:1001. Asserting the exact value catches a silent change to a
+          # different — possibly shared — account, which `uid != 0` would not.
+          if [ "${uid}" != "1001" ] || [ "${gid}" != "1001" ]; then
+            echo "::error::Production runtime is ${uid}:${gid}; ADR-007 and the Dockerfile specify 1001:1001."
+            exit 1
+          fi
+
+      - name: HEALTHCHECK is declared
+        run: |
+          set -euo pipefail
+          hc="$(docker image inspect rootlco/web:ci-runner --format '{{json .Config.Healthcheck}}')"
+          echo "healthcheck: ${hc}"
+          if [ "${hc}" = "null" ] || [ -z "${hc}" ]; then
+            echo "::error::The production image declares no HEALTHCHECK, so an orchestrator cannot tell a wedged container from a healthy one."
+            exit 1
+          fi
+
+      - name: The container starts and serves its health endpoint
+        run: |
+          set -euo pipefail
+          # Starting a container is not the same as it working. A build that
+          # produces an image which exits immediately is a green build and a
+          # broken deployment.
+          docker run -d --name rootlco-smoke -p 3000:3000 \
+            -e NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
+            -e NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key-not-a-secret \
+            -e NEXT_PUBLIC_APP_ENV=local \
+            rootlco/web:ci-runner
+          ok=0
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > health-response.json 2>/dev/null; then
+              ok=1
+              echo "healthy after ${attempt} attempt(s)"
+              break
+            fi
+            # A container that has already exited will never become healthy;
+            # detect that instead of waiting out the full timeout.
+            if [ "$(docker inspect -f '{{.State.Running}}' rootlco-smoke)" != "true" ]; then
+              echo "::error::The container exited before serving a request."
+              break
+            fi
+            sleep 2
+          done
+          docker logs rootlco-smoke > container.log 2>&1
+          docker rm -f rootlco-smoke > /dev/null
+          if [ "${ok}" != "1" ]; then
+            echo "::error::The production image never served /api/health. Container termination is not a passing test."
+            tail -50 container.log
+            exit 1
+          fi
+          cat health-response.json
+
+      - name: Vulnerability scan (image, OS packages, production dependencies)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rootlco/web:ci-runner
+          format: json
+          output: trivy-image.json
+          scanners: vuln,secret,misconfig
+          # Explicit rather than load-bearing, and the difference matters. At the
+          # pinned trivy-action default (v0.70.0) `--list-all-pkgs` is ALREADY
+          # true, so removing this line changes nothing today — measured: the two
+          # reports differ only in ReportID and CreatedAt. It was NOT the default
+          # at v0.66.0 and earlier, where omitting it yields 0 packages. Pinning
+          # the behaviour costs nothing and survives a default flipping back.
+          # An earlier comment here called it required; that was unearned.
+          list-all-pkgs: true
+          # PR mode reports only what a patched release exists for; the nightly
+          # deep scan drops that filter and reports everything.
+          ignore-unfixed: ${{ !inputs.deep }}
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Vulnerability scan (SARIF for the Security tab)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rootlco/web:ci-runner
+          format: sarif
+          output: trivy-image.sarif
+          scanners: vuln,secret
+          ignore-unfixed: ${{ !inputs.deep }}
+          severity: ${{ inputs.severity }}
+          exit-code: '0'
+
+      # A scan that enumerated NOTHING reports zero vulnerabilities, and zero
+      # looks identical to clean. This happened here: deleting `/lib/apk/db`
+      # alongside the apk binary left Trivy still recognising "alpine 3.24.1"
+      # from /etc/alpine-release while listing 0 OS packages — so the OS scan was
+      # blind and said "0 findings". Measured, both ways:
+      #
+      #   /lib/apk/db present : os-pkgs packages=18  vulns=0
+      #   /lib/apk/db removed : os-pkgs packages=0   vulns=0
+      #
+      # So the report must prove it looked at something before its silence counts.
+      #
+      # PRECISELY what this proves, and no more. Package enumeration is done by
+      # the Trivy ARTIFACT ANALYZERS, not by the `vuln` scanner: running with
+      # `--scanners misconfig` alone produces a BYTE-IDENTICAL report — 216
+      # packages on node:22-alpine — with zero findings. So this step cannot
+      # distinguish "the vulnerability scanner found nothing" from "the
+      # vulnerability scanner never ran", and an earlier version of its closing
+      # message certified exactly that.
+      #
+      # What keeps `vuln` in the scanner list is WFS-013, checked on every pull
+      # request. An operational failure (DB download, registry) is covered
+      # separately: `exit-code: 0` suppresses FINDINGS, not errors, so Trivy
+      # still fails the step when it cannot run at all.
+      #
+      # This explanation lives in a YAML comment, not inside the `node -e '…'`
+      # script, because that script is a SINGLE-QUOTED shell string: one
+      # apostrophe in a JS comment closes the quote and the step dies with exit
+      # 126. That is exactly how it failed once. WFS-014 now catches it.
+      - name: The scan must have enumerated packages
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync("trivy-image.json", "utf8"));
+            const results = report.Results ?? [];
+            const counts = results.map((r) => ({
+              target: r.Target, cls: r.Class, packages: (r.Packages ?? []).length,
+            }));
+            for (const c of counts) console.log(`${c.cls} ${c.target}: ${c.packages} package(s)`);
+            const os = counts.find((c) => c.cls === "os-pkgs");
+            const lang = counts.find((c) => c.cls === "lang-pkgs");
+            const fail = [];
+            if (!os) fail.push("no os-pkgs result at all — the OS was not identified");
+            else if (os.packages < 5) fail.push(`os-pkgs enumerated ${os.packages} package(s); an Alpine image has ~18. The package database was probably removed, so a zero-vulnerability result means the scanner saw nothing.`);
+            if (!lang) fail.push("no lang-pkgs result — the application dependency scan did not run");
+            else if (lang.packages < 5) fail.push(`lang-pkgs enumerated ${lang.packages} package(s); the standalone bundle has far more.`);
+            if (fail.length) {
+              for (const f of fail) console.error(`::error::${f}`);
+              process.exit(1);
+            }
+            console.log("Package enumeration succeeded, so a zero-FINDING result is not a blind artifact scan.");
+            console.log("That the vulnerability scanner itself was enabled is enforced by WFS-013, not by this report, which carries no record of which scanners ran.");
+          '
+
+      - name: Container vulnerability policy
+        id: policy
+        env:
+          BLOCKING_SEVERITIES: ${{ inputs.severity }}
+          # Tells the policy whether unfixable findings were stripped by the
+          # scanner before it saw the report. Without this it would print
+          # "0 unfixable", which reads as "there are none" when it actually
+          # means "they were filtered out".
+          UNFIXED_FILTERED: ${{ inputs.deep && '' || 'yes' }}
+        run: |
+          set -euo pipefail
+          # The scan is run with `exit-code: 0` deliberately: the POLICY decides
+          # what blocks, and the full report is captured either way. A scanner
+          # that aborts the job on its own terms leaves no artifact to diagnose.
+          node scripts/ci/container-policy.mjs \
+            --report trivy-image.json \
+            --severities "${BLOCKING_SEVERITIES}" \
+            ${UNFIXED_FILTERED:+--unfixed-filtered} \
+            --json container-policy.json --markdown container.md
+          node -e '
+            const fs = require("node:fs");
+            const p = JSON.parse(fs.readFileSync("container-policy.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `blocking=${p.blocking}\n`);
+          '
+
+      - name: Redact values before anything is published
+        if: always()
+        run: |
+          set -euo pipefail
+          # This is a PUBLIC repository and these artifacts are downloadable by
+          # anyone. The checks above assert no credential is present — but an
+          # artifact that would leak the value if they were ever wrong is a bad
+          # trade for evidence that only needs the SHAPES. Names and structure
+          # are kept; values longer than five characters are removed.
+          for file in image-env.json image-history.txt; do
+            if [ -f "${file}" ]; then
+              sed -E -i 's/(=|": ?")[^",[:space:]]{6,}/\1<redacted>/g; s#(://[^:/@[:space:]]+:)[^@[:space:]]+@#\1<redacted>@#g' "${file}"
+            fi
+          done
+          echo "OK: values redacted; names and structure retained as evidence"
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f container.md ]; then
+            cat container.md >> "${GITHUB_STEP_SUMMARY}"
+            printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [ -f image-metadata.json ]; then
+            printf '```json\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat image-metadata.json >> "${GITHUB_STEP_SUMMARY}"
+            printf '```\n' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-container-security
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # image-env.json holds the image's environment. It is uploaded because
+          # the whole point is that it contains no credential — and the step
+          # above fails the job if it ever does.
+          path: |
+            hadolint.sarif
+            trivy-image.json
+            trivy-image.sarif
+            container-policy.json
+            image-metadata.json
+            image-env.json
+            image-history.txt
+            image-files.txt
+            image-node-modules.txt
+            reachability-brace-expansion.json
+            image-credential-scan.json
+            image-dev-tools.txt
+            container.log
+            health-response.json
+            *.md

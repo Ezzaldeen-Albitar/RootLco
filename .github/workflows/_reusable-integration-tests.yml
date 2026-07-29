@@ -1,0 +1,273 @@
+# =============================================================================
+# RootLco — reusable integration and backend end-to-end assurance.
+#
+# Drives real paths through
+#
+#   Route Handler → authentication → authorization → PostgreSQL → RLS
+#                 → business function → audit → outbox → response mapping
+#
+# against a fresh PostgreSQL 17 with every migration and seed applied. Nothing
+# below mocks the database layer: the point of this tier is that the layer is
+# real (initiative §16).
+#
+# There is no browser end-to-end tier and this workflow does not pretend
+# otherwise. The frontend phases are not implemented, so a Playwright suite here
+# would assert against a UI that does not exist. The activation plan lives in
+# docs/engineering/ci-automation/automated-testing-strategy.md.
+# =============================================================================
+
+name: Reusable — integration tests
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      base-ref:
+        required: false
+        type: string
+        default: ''
+      collect-coverage:
+        description: Measure backend-tier coverage. Adds several minutes.
+        required: false
+        type: boolean
+        default: true
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+    outputs:
+      backend-tests:
+        description: Tests executed by the backend tier.
+        value: ${{ jobs.integration.outputs.backend-tests }}
+      coverage-lines:
+        description: Backend-tier line coverage percentage.
+        value: ${{ jobs.integration.outputs.coverage-lines }}
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: integration-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      backend-tests: ${{ steps.backend.outputs.total }}
+      coverage-lines: ${{ steps.coverage.outputs.lines }}
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container, not a credential
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+      WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+      NEXT_PUBLIC_APP_ENV: 'local'
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: '0'
+
+      - name: Build the schema
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations
+          npm run validate:seed-state
+
+      - name: Idempotency declarations must be backed by replay evidence
+        run: |
+          set -euo pipefail
+          # Structural, so it runs before the suite: an unproven retry promise is
+          # a defect whether or not the rest of the tier passes.
+          node scripts/ci/check-idempotency-evidence.mjs \
+            --exceptions .github/ci-baselines/idempotency-exceptions.json \
+            --json idempotency-evidence.json --markdown idempotency-evidence.md
+
+      - name: Backend tier with coverage
+        if: inputs.collect-coverage
+        run: |
+          set -euo pipefail
+          # `fileParallelism: false` in vitest.config.backend.ts is what keeps
+          # these files serial against one mutable database. check-test-honesty
+          # (TH-007) fails the build if that setting is ever removed.
+          npm run test:backend -- --coverage \
+            --reporter=default --reporter=json --outputFile=vitest-backend.json
+
+      - name: Backend tier
+        if: '!inputs.collect-coverage'
+        run: |
+          set -euo pipefail
+          npm run test:backend -- --reporter=default --reporter=json --outputFile=vitest-backend.json
+
+      - name: Summarise the backend tier
+        id: backend
+        if: '!cancelled()'
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs --input vitest-backend.json --label backend \
+            --json test-totals-backend.json --markdown tests-backend.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-backend.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Changed files, for the touched-file coverage floor
+        if: inputs.collect-coverage && !cancelled()
+        env:
+          BASE_REF: ${{ inputs.base-ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
+            git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" > changed-files.txt
+          else
+            : > changed-files.txt
+          fi
+
+      - name: Backend coverage ratchet
+        id: coverage
+        if: inputs.collect-coverage && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/coverage-gate.mjs \
+            --summary coverage/backend/coverage-summary.json \
+            --baseline .github/ci-baselines/coverage-baseline.backend.json \
+            --changed changed-files.txt \
+            --json coverage-gate-backend.json --markdown coverage-backend.md
+          node -e '
+            const fs = require("node:fs");
+            const g = JSON.parse(fs.readFileSync("coverage-gate-backend.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `lines=${g.totals.lines?.measured ?? ""}\n`);
+          '
+
+      - name: Audit and outbox rows are correlated, not merely present
+        if: '!cancelled()'
+        run: |
+          set -euo pipefail
+          # The suites above write audit and outbox rows as a side effect of the
+          # workflows they drive. This asserts the property that makes an
+          # incident reconstructable: every outbox event carries a correlation
+          # identifier that also appears on an audit row.
+          #
+          # It runs AFTER the suite, against the state the suite left behind, so
+          # it cannot be satisfied by a fixture written for its benefit.
+          node -e '
+            const pg = require("pg");
+            (async () => {
+              const c = new pg.Client({
+                host: process.env.DB_HOST, port: Number(process.env.DB_PORT),
+                database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD,
+              });
+              await c.connect();
+              // Fail CLOSED if the tables are not where they are expected: a
+              // renamed table must break this assertion loudly rather than turn
+              // it into a silent no-op that reports success forever.
+              for (const t of ["shared.event_outbox", "iam.audit_records"]) {
+                const ok = (await c.query("SELECT to_regclass($1) IS NOT NULL AS ok", [t])).rows[0].ok;
+                if (!ok) {
+                  console.error(`::error::${t} does not exist. The correlation assertion cannot run, and a check that cannot run must not report success.`);
+                  process.exit(1);
+                }
+              }
+              const { rows: [r] } = await c.query(`
+                SELECT
+                  (SELECT count(*)::int FROM shared.event_outbox)  AS events,
+                  (SELECT count(*)::int FROM iam.audit_records)    AS audits,
+                  (SELECT count(*)::int FROM shared.event_outbox WHERE correlation_id IS NULL) AS uncorrelated
+              `);
+              console.log(JSON.stringify(r));
+              // Be explicit when there is nothing to assert. The backend suites
+              // clean up their own fixtures, so an empty outbox is the normal
+              // outcome — and an assertion over an empty set is not evidence.
+              // Recording that plainly is better than a green tick that implies
+              // a check happened.
+              r.vacuous = r.events === 0;
+              if (r.vacuous) {
+                console.log("::notice::No outbox events survived suite cleanup, so the correlation assertion had nothing to check. Recorded as vacuous rather than reported as a pass.");
+              }
+              require("node:fs").writeFileSync("correlation.json", JSON.stringify(r, null, 2) + "\n");
+              if (r.events > 0 && r.uncorrelated > 0) {
+                console.error(`::error::${r.uncorrelated} of ${r.events} outbox event(s) carry no correlation identifier; the workflow that produced them cannot be reconstructed.`);
+                process.exit(1);
+              }
+              await c.end();
+            })().catch((e) => { console.error(e.message); process.exit(1); });
+          '
+
+      - name: The working tree is clean
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- ':!:/*.json' ':!:/*.md' ':!:/*.log' ':!:/*.txt' ':!:coverage/')" ]; then
+            echo "::error::A suite modified a tracked file."
+            git status --porcelain
+            exit 1
+          fi
+          echo "OK: working tree clean"
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for file in idempotency-evidence.md tests-backend.md coverage-backend.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Integration tier at `%s`_\n' "${RESOLVED_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-integration-tests
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: |
+            vitest-backend.json
+            test-totals-backend.json
+            idempotency-evidence.json
+            coverage-gate-backend.json
+            coverage/backend/coverage-summary.json
+            correlation.json
+            *.md

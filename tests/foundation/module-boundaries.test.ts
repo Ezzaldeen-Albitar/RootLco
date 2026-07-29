@@ -167,11 +167,14 @@ describe('fail-closed behaviour', () => {
 
     try {
       symlinkSync(join(root, 'server', 'db'), join(root, 'app', 'api', 'shortcut'), 'dir');
-    } catch {
-      // Unprivileged Windows without developer mode cannot create symlinks.
-      // Skipping silently would turn this into a test that proves nothing, so
-      // it is asserted as skipped rather than passed.
-      expect(true).toBe(true);
+    } catch (error) {
+      // Unprivileged Windows without developer mode cannot create symlinks. The
+      // authoritative run is the Linux CI runner, where this never fires.
+      // Assert the escape hatch is taken for the ONE reason it is allowed:
+      // otherwise it would silently swallow an unrelated failure and the test
+      // would report success while proving nothing.
+      expect(process.platform).toBe('win32');
+      expect((error as NodeJS.ErrnoException).code).toBe('EPERM');
       return;
     }
 

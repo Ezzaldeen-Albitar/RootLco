@@ -1,0 +1,168 @@
+# =============================================================================
+# RootLco — production deployment FOUNDATION.
+#
+# THIS WORKFLOW DOES NOT DEPLOY, AND MUST NOT BE MADE TO WITHOUT OWNER APPROVAL.
+#
+# Production approval is reserved to the authorised founders / production owner.
+# There is no automatic trigger here and there must never be one: the only entry
+# point is `workflow_dispatch`, and the deployment steps are inert.
+#
+# Three properties are enforced by construction rather than by policy:
+#
+#   1. NO REBUILD. The only input is a digest that a release-verification run
+#      already produced, scanned and inventoried. Rebuilding for production
+#      would produce a different artifact from the same source and silently
+#      discard every result that referred to the first one.
+#   2. NO PATH FROM A PULL REQUEST. Only `workflow_dispatch`, only `main`.
+#   3. NO STANDING CREDENTIAL. Per §31, when this becomes executable it will use
+#      OIDC and short-lived credentials. No long-lived cloud secret is
+#      introduced by this initiative.
+# =============================================================================
+
+name: Deploy — production (foundation, does not deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image-digest:
+        description: 'Immutable digest ALREADY verified in staging. Never a tag, never a rebuild.'
+        required: true
+        type: string
+      source-sha:
+        description: Commit on `main` the artifact was built from.
+        required: true
+        type: string
+      staging-verified:
+        description: Confirm this exact digest was deployed to staging and verified.
+        required: true
+        type: boolean
+        default: false
+      change-record:
+        description: Change record or approval reference.
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  # A production deployment mid-apply must never be cancelled by a newer run.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: production-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The `production` environment does not exist yet. When it is created,
+    # uncommenting this is what binds required reviewers and the wait timer —
+    # THE approval control. It must be added before any deployment step is made
+    # executable, never after.
+    # environment:
+    #   name: production
+    #   url: https://<to-be-decided>
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.source-sha }}
+          fetch-depth: '0'
+          install: 'false'
+
+      - name: The commit must be on `main`
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          sha="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "${sha}" origin/main; then
+            echo "::error::${sha} is not an ancestor of origin/main. Production deploys only from the protected branch."
+            exit 1
+          fi
+          printf 'source commit %s is on main\n' "${sha}"
+
+      - name: The artifact must be immutable and staging-verified
+        env:
+          DIGEST: ${{ inputs.image-digest }}
+          STAGING_VERIFIED: ${{ inputs.staging-verified }}
+          CHANGE_RECORD: ${{ inputs.change-record }}
+        run: |
+          set -euo pipefail
+          case "${DIGEST}" in
+            sha256:*) : ;;
+            *)
+              echo "::error::'${DIGEST}' is not a sha256 digest. Production promotes the exact artifact staging verified — never a tag, never a rebuild."
+              exit 1
+              ;;
+          esac
+          if [ "${STAGING_VERIFIED}" != 'true' ]; then
+            echo "::error::The digest has not been confirmed as verified in staging. Production is not the place to find out."
+            exit 1
+          fi
+          if [ -z "${CHANGE_RECORD}" ]; then
+            echo "::error::A change record is required. A production deployment with no record is one nobody can reconstruct."
+            exit 1
+          fi
+          printf 'digest %s, change record %s\n' "${DIGEST}" "${CHANGE_RECORD}"
+
+      - name: Refuse to deploy
+        env:
+          DIGEST: ${{ inputs.image-digest }}
+          SOURCE: ${{ inputs.source-sha }}
+          CHANGE_RECORD: ${{ inputs.change-record }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          {
+            printf '## Production deployment — FOUNDATION ONLY\n\n'
+            printf '| Item | Value |\n| --- | --- |\n'
+            printf '| Image digest | `%s` |\n' "${DIGEST}"
+            printf '| Source commit | `%s` |\n' "${SOURCE}"
+            printf '| Change record | %s |\n' "${CHANGE_RECORD}"
+            printf '| Dispatched by | @%s |\n' "${ACTOR}"
+            printf '| **Deployment performed** | **no** |\n\n'
+            printf '### Why this stops here\n\n'
+            printf -- '- **No hosting decision.** ADR-012 records Local as the only environment. This workflow does not assume a provider.\n'
+            printf -- '- **No `production` GitHub environment.** Until it exists there is no required-reviewer gate, and the approval control would be a comment rather than a mechanism.\n'
+            printf -- '- **No credentials, by design.** §31: OIDC and short-lived credentials only. This initiative introduces no long-lived cloud secret.\n'
+            printf -- '- **Approval authority.** Production approval is reserved to the authorised founders / production owner (ADR-006). No automation may assume it.\n\n'
+            printf 'The preconditions above (on `main`, immutable digest, staging-verified, change record) were CHECKED and passed.\n'
+            printf 'The deployment itself is deliberately inert.\n'
+          } | tee production-gate.md >> "${GITHUB_STEP_SUMMARY}"
+          echo "::notice::Preconditions passed. No deployment was performed — this workflow is a foundation."
+
+      # -----------------------------------------------------------------------
+      # The shape the executable steps will take. Deliberately not runnable.
+      # Do not make these live without: the `production` environment with
+      # required reviewers, an approved hosting decision, and an OIDC trust
+      # policy scoped to this repository and this workflow.
+      #
+      # - name: Authenticate with OIDC          # id-token: write, no stored secret
+      # - name: Apply approved migrations       # separate approval from the deploy
+      # - name: Promote the digest              # no build step, ever
+      # - name: Health verification             # readiness before traffic
+      # - name: Roll back on failure            # re-point to the previous digest
+      # - name: Record the release              # digest, SBOM, approver, timestamp
+      # -----------------------------------------------------------------------
+
+      - name: Upload the gate record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-gate
+          retention-days: 365
+          if-no-files-found: ignore
+          path: production-gate.md

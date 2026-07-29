@@ -1,0 +1,136 @@
+# =============================================================================
+# RootLco — Dependabot.
+#
+# The repository had no dependabot.yml at all, on a PUBLIC repository whose
+# production dependency tree carried three HIGH advisories at the audit
+# baseline (CSA-08). Nothing was watching.
+#
+# Grouped deliberately. Ungrouped Dependabot on a tree this size opens a dozen
+# pull requests a week, each burning a full CI gate, and the result is that
+# people stop reading them — which is worse than not having it.
+#
+# Every Dependabot pull request runs the SAME `pr-ci.yml` gate as a human one.
+# There is no auto-merge anywhere in this configuration: not for majors, and not
+# for security fixes either, because a security fix that breaks the build is
+# still a broken build.
+# =============================================================================
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: Asia/Amman
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+      include: scope
+    # Security updates target the working branch, never `main`. Promotion to
+    # `main` is a founders' reserved decision (ADR-006) and Dependabot may not
+    # make it.
+    target-branch: develop
+    groups:
+      # One pull request for the framework, because Next, React and the eslint
+      # config move together and splitting them produces PRs that cannot pass
+      # on their own.
+      next-and-react:
+        patterns:
+          - next
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+          - 'eslint-config-next'
+        update-types:
+          - minor
+          - patch
+      # Test and lint tooling: low blast radius, high volume.
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+          - 'eslint'
+          - 'eslint-*'
+          - 'prettier'
+          - 'stylelint*'
+          - 'typescript'
+          - '@types/*'
+        update-types:
+          - minor
+          - patch
+      # Everything else compatible, in one weekly pull request.
+      production-patches:
+        dependency-type: production
+        update-types:
+          - patch
+    ignore:
+      # A major of the framework is a migration, not a dependency bump. It is
+      # raised deliberately, with its own plan.
+      - dependency-name: next
+        update-types: ['version-update:semver-major']
+      - dependency-name: react
+        update-types: ['version-update:semver-major']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major']
+      # Pinned to the Supabase local stack's major and the Dockerfile runtime.
+      - dependency-name: '@supabase/supabase-js'
+        update-types: ['version-update:semver-major']
+
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:30'
+      timezone: Asia/Amman
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+      - security
+    commit-message:
+      prefix: 'chore(docker)'
+    target-branch: develop
+    ignore:
+      # The Node major in the base image is pinned to the runtime the
+      # application targets (ADR-007). Changing it is a platform decision, and
+      # the nightly compatibility matrix is where the next major is evaluated.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Asia/Amman
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+      - security
+    commit-message:
+      prefix: 'ci(deps)'
+    target-branch: develop
+    groups:
+      # Dependabot understands SHA pins and updates both the pin and the trailing
+      # version comment, which is exactly the maintenance burden that makes teams
+      # abandon SHA pinning. Grouping keeps it to one reviewable pull request.
+      actions:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch

@@ -21,6 +21,19 @@ ARG NODE_VERSION=22-alpine
 FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
 # libc6-compat: some native deps expect glibc symbols on Alpine.
+#
+# DL3018 (hadolint, warning) wants `pkg=version` here. Not applied, for a
+# recorded reason rather than a silenced one: an exact Alpine package version
+# disappears from the repository on the next `node:22-alpine` patch, so pinning
+# turns every base-image update into a build failure and pressures whoever hits
+# it into an unreviewed bump. The composition of the image is instead known
+# from evidence that describes what was ACTUALLY built — the SPDX SBOM, the
+# Trivy scan of the real image, and the recorded image digest — rather than
+# from a version string asserted in advance.
+#
+# The suppression is per line, so a NEW unpinned `apk add` anywhere in this file
+# is still reported. It is not a repository-wide `.hadolint.yaml` ignore.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 # Copy only the manifests first so this layer is reused unless deps change.
 COPY package.json package-lock.json ./
@@ -30,6 +43,8 @@ RUN npm ci
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS dev
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat curl
 ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -55,6 +70,8 @@ CMD ["npm", "run", "dev:container"]
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
@@ -76,6 +93,8 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
+# Same recorded reason as the first `apk add` in this file.
+# hadolint ignore=DL3018
 RUN apk add --no-cache curl
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -86,6 +105,68 @@ ENV HOSTNAME=0.0.0.0
 # it does not need.
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 --ingroup nodejs nextjs
+
+# Remove EVERY package manager from the RUNTIME image.
+#
+# The container starts `node server.js`; nothing at runtime invokes a package
+# manager. Keeping one leaves its dependency tree on a deployed host for no
+# purpose — and that tree is not hypothetical surface: `node:22-alpine` ships
+# npm bundling `brace-expansion@2.0.2`, inside the GHSA-mh99-v99m-4gvg range
+# (`<=5.0.7`, patched only in 5.0.8).
+#
+# This list was WRONG ONCE. It deleted npm/npx only, and the image still
+# carried Yarn Classic 1.22.22 at /opt/yarn-v1.22.22 plus corepack — and
+# yarn's single 5.3 MB `lib/cli.js` has brace-expansion's implementation
+# INLINED (escSlash/escOpen sentinels, expandTop, isAlphaSequence) together
+# with `"minimatch":"^3.0.4"`. Every check written to catch this greps for a
+# literal `/node_modules/<name>/` path segment, and a bundled copy has no such
+# path, so all of them stayed silent. Corepack is worse than what was removed:
+# it downloads and executes package managers from the network at runtime.
+#
+# The lesson, and the reason this deletes by BINARY rather than by package
+# path: a path-based inventory cannot see vendored code. The only claim it can
+# support is "no package manager is present", so that is the claim the gate
+# makes and the one the risk record now states.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg \
+           /opt/yarn-v* \
+ && for pm in npm npx yarn yarnpkg pnpm corepack; do \
+      if command -v "$pm" >/dev/null 2>&1; then \
+        echo "FATAL: $pm still resolves after removal" >&2; exit 1; \
+      fi; \
+    done
+
+# apk goes too. It is a package manager, it was still on PATH at /sbin/apk, and
+# the container gate was printing "no package manager resolves in the production
+# image" while it did — a false statement in a security gate, which is the thing
+# this initiative exists to stop.
+#
+# Removed rather than excused: the runtime needs curl (installed above, in an
+# earlier layer) and nothing else, so an OS package manager on a deployed host is
+# an installer for whatever an attacker with RCE wants next.
+#
+# ONLY THE BINARY. `/lib/apk/db` stays, and that is not an oversight — it is the
+# installed-package database Trivy reads to enumerate OS packages. Deleting it
+# alongside the binary (the first attempt) left Trivy still recognising
+# "alpine 3.24.1" from /etc/alpine-release while enumerating ZERO packages, so
+# the OS scan reported "0 vulnerabilities" because it could see nothing:
+#
+#   with    /lib/apk/db : os-pkgs packages=18  vulns=0
+#   without /lib/apk/db : os-pkgs packages=0   vulns=0   <- blind, looks identical
+#
+# A hardening step that silently disables a scanner is a net loss. The container
+# job now asserts the enumerated package count is non-zero so this cannot recur.
+RUN rm -f /sbin/apk \
+ && for pm in npm npx yarn yarnpkg pnpm corepack apk; do \
+      if command -v "$pm" >/dev/null 2>&1; then \
+        echo "FATAL: $pm still resolves after removal" >&2; exit 1; \
+      fi; \
+    done
 
 # `output: standalone` emits a minimal server plus only the deps it actually uses.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./

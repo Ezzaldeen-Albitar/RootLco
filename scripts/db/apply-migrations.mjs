@@ -49,6 +49,24 @@ const MODULE_SCHEMAS = [
 ];
 const NAME_RULE = /^(\d{4}|\d{14})_[a-z0-9_]+\.sql$/;
 
+// The ledger Supabase itself maintains. This runner used not to write it, which
+// meant the resulting database could not say which migrations produced it — and
+// the CI check that asked (`SELECT count(*) FROM supabase_migrations.schema_migrations`)
+// failed with "relation does not exist" on every hosted run.
+//
+// Safe to create here precisely because this runner refuses to touch a database
+// that already holds module schemas: it only ever sees a clean one, so it can
+// never disagree with a ledger the Supabase CLI is managing.
+const LEDGER_SCHEMA = 'supabase_migrations';
+const LEDGER_TABLE = `${LEDGER_SCHEMA}.schema_migrations`;
+
+/** The version is the numeric prefix, which is what the Supabase CLI records. */
+export function versionOf(filename) {
+  const m = /^(\d{4}|\d{14})_/.exec(filename);
+  if (!m) throw new Error(`Cannot derive a migration version from ${filename}`);
+  return m[1];
+}
+
 export function listMigrations(dir = MIGRATIONS_DIR) {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
@@ -86,12 +104,46 @@ async function main() {
     const files = listMigrations();
     if (files.length === 0) throw new Error('No migrations found.');
 
+    // The ledger's PRIMARY KEY is the version, so two files sharing a numeric
+    // prefix would abort the SECOND one — and because the INSERT sits inside
+    // that migration's transaction, the failure would be reported as a failure
+    // of its SQL. Nothing in NAME_RULE prevents the collision:
+    // `0001_extensions.sql` and `0001_extensions_fix.sql` both pass it and both
+    // map to `0001`. Checked here so the diagnosis is the real one.
+    const byVersion = new Map();
+    for (const file of files) {
+      const v = versionOf(file);
+      if (byVersion.has(v)) {
+        throw new Error(
+          `Two migrations share the version prefix ${v}: ${byVersion.get(v)} and ${file}. ` +
+            'Migration versions must be unique — rename one with a distinct prefix.'
+        );
+      }
+      byVersion.set(v, file);
+    }
+
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${LEDGER_SCHEMA}`);
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (
+         version text PRIMARY KEY,
+         name    text,
+         applied_at timestamptz NOT NULL DEFAULT now()
+       )`
+    );
+
     for (const file of files) {
       const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
       process.stdout.write(`Applying ${file} ... `);
       try {
         await client.query('BEGIN');
         await client.query(sql);
+        // Recorded INSIDE the migration's own transaction, so a rollback takes
+        // the ledger row with it. A ledger written afterwards could claim a
+        // migration that did not survive.
+        await client.query(`INSERT INTO ${LEDGER_TABLE} (version, name) VALUES ($1, $2)`, [
+          versionOf(file),
+          file,
+        ]);
         await client.query('COMMIT');
         console.log('OK');
       } catch (err) {

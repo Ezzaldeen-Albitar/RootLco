@@ -1,0 +1,269 @@
+# =============================================================================
+# RootLco — reusable exact-SHA clean room.
+#
+# Generalised from `p1-21-clean-room.yml`, which proved the right things but was
+# named and scoped to one phase. Nothing about a clean room is phase-specific.
+#
+# It answers a question no other job answers: can this EXACT commit be built
+# from nothing, on a machine that has never seen this repository, and does doing
+# so leave the tree untouched?
+#
+# Three assertions distinguish it from the parallel PR jobs, and each fails
+# SILENTLY if absent (CSA-04):
+#
+#   1. the database held zero application tables before the first migration;
+#   2. the schema hash is identical before AND after every suite — a suite that
+#      mutated the schema would otherwise leave no trace and every result above
+#      it would be unsound;
+#   3. the working tree is clean afterwards.
+#
+# And one that distinguishes it from `ci.yml` (CSA-05): it checks out the exact
+# pull-request head rather than the merge ref, and asserts the SHA. Proving the
+# merge ref says nothing about the commit being merged.
+#
+# Everything runs in ONE job against ONE database, so the suites are serial by
+# construction and share state the way a real deployment would.
+# =============================================================================
+
+name: Reusable — exact-SHA clean room
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      expected-sha:
+        description: >-
+          The SHA this clean room is supposed to be proving. When set, the job
+          fails unless the checkout matches it exactly.
+        required: false
+        type: string
+        default: ''
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 30
+    outputs:
+      sha:
+        description: The commit the clean room actually proved.
+        value: ${{ jobs.clean-room.outputs.sha }}
+      schema-hash:
+        description: Schema hash, identical before and after the suites.
+        value: ${{ jobs.clean-room.outputs.schema-hash }}
+
+permissions:
+  contents: read
+
+jobs:
+  clean-room:
+    name: hosted-clean-room
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      sha: ${{ steps.setup.outputs.sha }}
+      schema-hash: ${{ steps.hash-before.outputs.hash }}
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container, not a credential
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+      WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+      NEXT_PUBLIC_APP_ENV: 'local'
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project at the exact head
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # Full history: migration immutability needs a diff against the base.
+          fetch-depth: '0'
+
+      - name: The clean room is proving the SHA it was asked about
+        if: inputs.expected-sha != ''
+        env:
+          EXPECTED: ${{ inputs.expected-sha }}
+          ACTUAL: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          echo "asked about: ${EXPECTED}"
+          echo "proving:     ${ACTUAL}"
+          if [ "${EXPECTED}" != "${ACTUAL}" ]; then
+            echo "::error::Clean-room SHA disagreement. The evidence below would describe a different tree than the one under review."
+            exit 1
+          fi
+
+      - name: The database holds zero application tables
+        run: |
+          set -euo pipefail
+          psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc 'SELECT version();'
+          node scripts/ci/migration-replay-checks.mjs --phase pre --json clean-room-pre.json
+
+      - name: Apply every migration, then the seeds twice
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations 2>&1 | tee clean-room-migration.log
+          npm run validate:seed-state 2>&1 | tee clean-room-seed.log
+
+      - name: Schema hash BEFORE the suites
+        id: hash-before
+        run: |
+          set -euo pipefail
+          npm run --silent validate:schema-inventory -- --hash-only | tail -1 > schema-hash-before.txt
+          hash="$(cat schema-hash-before.txt)"
+          echo "hash=${hash}" >> "${GITHUB_OUTPUT}"
+          echo "schema hash before: ${hash}"
+
+      - name: Structural review
+        run: node scripts/db/structural-review.mjs --json clean-room-structural.json
+
+      # Serial by construction: one job, one database, one step after another.
+      - name: Unit and foundation suite
+        run: npm run test
+
+      - name: Database suite
+        run: npm run test:db
+
+      - name: Backend and integration suite
+        run: npm run test:backend
+
+      - name: Critical RLS matrix
+        run: node scripts/ci/rls-matrix.mjs --level critical --json clean-room-rls.json --markdown clean-room-rls.md
+
+      - name: Schema hash AFTER the suites must be identical
+        run: |
+          set -euo pipefail
+          npm run --silent validate:schema-inventory -- --hash-only | tail -1 > schema-hash-after.txt
+          before="$(cat schema-hash-before.txt)"
+          after="$(cat schema-hash-after.txt)"
+          printf 'before: %s\nafter:  %s\n' "${before}" "${after}"
+          if [ "${before}" != "${after}" ]; then
+            echo "::error::A test suite changed the schema. Every result above this step is unsound."
+            exit 1
+          fi
+          echo "OK: schema hash unchanged across every suite"
+
+      - name: Contract, coverage and repository gates
+        run: |
+          set -euo pipefail
+          npm run validate:openapi
+          npm run validate:authorization-coverage
+          npm run validate:operation-coverage
+          npm run validate:module-boundaries
+          npm run validate:p1-19-inventory
+          npm run validate:p1-20-inventory
+          npm run validate:p1-21-inventory
+          npm run validate:encoding
+          # See _reusable-node-quality.yml: the canonical documents are external
+          # by design, so a runner can only verify the reference record.
+          npm run validate:canonical-docs -- --record-only
+          node scripts/ci/check-route-registry-parity.mjs
+          node scripts/ci/check-test-honesty.mjs
+          node scripts/ci/check-workflow-security.mjs
+
+      - name: Security scans
+        run: |
+          set -euo pipefail
+          npm run security:tracked-secrets
+          npm run security:browser-secrets
+          npm run security:scope-exclusions
+          npm run validate:no-fake-data
+
+      - name: Production build
+        run: npm run build
+
+      - name: Docker configuration and production image
+        run: |
+          set -euo pipefail
+          docker compose config --quiet
+          docker build --target runner -t rootlco/web:clean-room .
+
+      - name: The production image runs as the canonical non-root user
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint sh rootlco/web:clean-room -c 'id -u')"
+          echo "runtime uid=${uid}"
+          if [ "${uid}" != "1001" ]; then
+            echo "::error::Production image runs as uid ${uid}; ADR-007 and the Dockerfile specify 1001."
+            exit 1
+          fi
+
+      - name: The working tree is clean
+        run: |
+          set -euo pipefail
+          # A suite that writes a tracked file is a defect, not a nuisance:
+          # everything proved above would have been proved about a different tree.
+          if [ -n "$(git status --porcelain -- ':!:clean-room-*' ':!:schema-hash-*')" ]; then
+            echo "::error::A step modified a tracked file. The clean room must leave the tree untouched."
+            git status --porcelain
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "OK: working tree clean"
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          {
+            printf '### Exact-SHA clean room\n\n'
+            printf '| Item | Value |\n| --- | --- |\n'
+            printf '| Commit proved | `%s` |\n' "${RESOLVED_SHA}"
+            if [ -f schema-hash-before.txt ]; then printf '| Schema hash before | `%s` |\n' "$(cat schema-hash-before.txt)"; fi
+            if [ -f schema-hash-after.txt ]; then printf '| Schema hash after | `%s` |\n' "$(cat schema-hash-after.txt)"; fi
+            printf '\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ -f clean-room-rls.md ]; then cat clean-room-rls.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-hosted-clean-room
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: |
+            clean-room-pre.json
+            clean-room-migration.log
+            clean-room-seed.log
+            clean-room-structural.json
+            clean-room-rls.json
+            schema-hash-before.txt
+            schema-hash-after.txt
+            *.md
