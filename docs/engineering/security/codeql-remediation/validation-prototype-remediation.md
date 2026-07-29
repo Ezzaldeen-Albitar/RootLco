@@ -89,14 +89,37 @@ fresh target. Nothing in `src/` does `Object.assign` or `for…in` over a query
 object today — but "no caller does this today" is reasoning this repository has
 already been wrong about.
 
-So `__proto__` is refused outright: `ERR-VAL-001`, rule `forbidden_key`. No
-schema can declare a field by that name, so nothing legitimate is turned away,
-and refusing is not silent — silent dropping was defect 3.
+So `__proto__` is **omitted**, not stored.
 
-`constructor` and `prototype` are deliberately **not** refused. They are
-ordinary own keys with no setter behaviour, they shadow nothing on a
-null-prototype object, and rejecting them would break generic form serialisers
-for no benefit.
+### The throw that was worse than the silence
+
+An earlier version threw `ERR-VAL-001` instead, so the drop would not be silent.
+A later review showed that was the wrong trade: **eight routes call this function
+lexically before `handleOperation`** —
+
+```
+inspections/[inspectionId]/history   inventory-reconciliations
+jobs/[jobId]/history                 jobs/[jobId]/labor-sessions
+stock-availability                   stock-movements
+technicians/available                work-orders
+work-orders/[workOrderId]/history
+```
+
+— so the `AppFailure` escaped the try/catch that renders every failure as a
+problem document, and `?__proto__=x` produced an **unhandled 500**.
+
+That is the same caller-triggerable-500 class this initiative had fixed in
+`idempotency.ts` two commits earlier, reintroduced in a different file.
+
+The function stays **total**. The omission is a deliberate trade and is stated
+as one: defect 3 (silence) was the weakest of the three, and buying a server
+error to fix it is a bad exchange. Zod discards a `__proto__` key from its
+parsed output anyway, so no schema could ever have consumed the parameter.
+
+`constructor` and `prototype` are deliberately **not** omitted. They are ordinary
+own keys with no setter behaviour, they shadow nothing on a null-prototype
+object, and dropping them would silently discard fields a generic form serialiser
+may legitimately send.
 
 ## Caller contract
 

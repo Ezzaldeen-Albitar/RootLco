@@ -61,7 +61,7 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
  * object. `Object.create(null)` keeps that contract exactly: spread,
  * `JSON.stringify`, `Object.entries` and `safeParse` all behave identically.
  *
- * ## Why `__proto__` is refused rather than stored
+ * ## Why `__proto__` is omitted rather than stored — or thrown on
  *
  * A null prototype alone would have RELOCATED defect 2 rather than removed it.
  * On a null-prototype object `__proto__` becomes a live own enumerable key, and
@@ -70,17 +70,30 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
  * reshaping **that** object instead. Measured — the copied target's prototype
  * becomes the array, and it survives a `JSON.parse(JSON.stringify(…))` round
  * trip. Before the change no `__proto__` key existed at all, so the anomaly
- * died with the object. Storing it would have turned a self-contained problem
- * into a portable one, which is a worse trade even though no caller copies this
- * object today.
+ * died with the object. Storing it would turn a self-contained problem into a
+ * portable one, even though no caller copies this object today.
  *
- * So the parameter is refused. Silently dropping it is what the old code did by
- * accident and is defect 3; a client naming this field gets a real error
- * instead. No schema can declare a field called `__proto__` anyway, so nothing
- * legitimate is being turned away. `constructor` and `prototype` are NOT
- * refused: they are ordinary own keys with no setter behaviour, they shadow
- * nothing that matters on a null-prototype object, and refusing them would
- * reject requests from generic form serialisers for no benefit.
+ * An earlier version of this fix **threw** instead, so a client naming the field
+ * got a real error rather than silence. That was wrong, and an adversarial
+ * review caught it: **eight routes call this function lexically BEFORE
+ * `handleOperation`**, so the `AppFailure` escaped the pipeline's try/catch and
+ * became an unhandled 500 rather than a 422 problem document — reachable by any
+ * caller, on endpoints that are otherwise unauthenticated-safe. Turning a
+ * dropped parameter into a caller-triggerable server error is a worse trade
+ * than the silence it was meant to fix, and it is the same defect class this
+ * initiative fixed in `idempotency.ts` a few commits earlier.
+ *
+ * So the key is simply not copied. This function stays **total** — it is called
+ * outside an error boundary and must never throw. The omission is deliberate
+ * and is the weakest of the three defects: `__proto__` is not a field any
+ * schema can consume (Zod accepts the key in a shape but silently discards it
+ * from the parsed output), so a caller naming it gets the same outcome an
+ * unknown parameter gets everywhere else.
+ *
+ * `constructor` and `prototype` are NOT omitted: they are ordinary own keys with
+ * no setter behaviour, they shadow nothing that matters on a null-prototype
+ * object, and dropping them would silently discard fields a generic form
+ * serialiser may legitimately send.
  *
  * The one behaviour that does change: the result has no `Object.prototype`
  * methods, so `result.hasOwnProperty(...)` would throw. No caller does that —
@@ -90,12 +103,10 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
 export function searchParamsToObject(params: URLSearchParams): Record<string, string | string[]> {
   const out = Object.create(null) as Record<string, string | string[]>;
   for (const key of new Set(params.keys())) {
-    if (key === '__proto__') {
-      throw new AppFailure('ERR-VAL-001', {
-        message: 'Validation failed for query',
-        safeDetails: { violations: [{ path: 'query.__proto__', rule: 'forbidden_key' }] },
-      });
-    }
+    // Not copied, and not thrown on. See the note above: this function is
+    // called outside the route pipeline's error boundary, so throwing here
+    // produces an unhandled 500 instead of a validation failure.
+    if (key === '__proto__') continue;
     const values = params.getAll(key);
     out[key] = values.length > 1 ? values : (values[0] ?? '');
   }

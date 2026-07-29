@@ -245,26 +245,28 @@ describe('searchParamsToObject — prototype safety', () => {
     ).toBeUndefined();
   });
 
-  it('refuses a __proto__ parameter instead of silently dropping it', () => {
-    // On a plain `{}` this hit the setter: Object.keys() was empty and the field
-    // never reached Zod — no value, no error, nothing to debug.
-    const failure = captureFailure(() =>
-      searchParamsToObject(new URLSearchParams('__proto__=sent-by-client'))
-    );
-    expect(failure.code).toBe('ERR-VAL-001');
-    expect(failure.safeDetails.violations?.[0]).toEqual({
-      path: 'query.__proto__',
-      rule: 'forbidden_key',
-    });
+  it('never throws — eight routes call it outside the pipeline error boundary', () => {
+    // An earlier version of this fix threw an AppFailure on `__proto__`. Eight
+    // routes call this function lexically BEFORE `handleOperation`, so the throw
+    // escaped the try/catch that renders every failure as a problem document and
+    // became an unhandled 500 — a caller-triggerable server error, which is the
+    // same defect class this initiative fixed in `idempotency.ts`. The function
+    // must stay total.
+    for (const query of [
+      '__proto__=sent-by-client',
+      '__proto__=a&__proto__=b',
+      'limit=25&__proto__=x',
+      'constructor=x&prototype=y&__proto__=z',
+    ]) {
+      expect(() => searchParamsToObject(new URLSearchParams(query)), query).not.toThrow();
+    }
   });
 
-  it('refuses the repeated form too — the one that actually reshaped anything', () => {
-    // The array form is what made this reachable: the `__proto__` setter ignores
-    // a string but accepts an object, and repeated params produce an array.
-    expect(
-      captureFailure(() => searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b')))
-        .code
-    ).toBe('ERR-VAL-001');
+  it('omits __proto__ entirely rather than storing it', () => {
+    const out = searchParamsToObject(new URLSearchParams('limit=25&__proto__=sent-by-client'));
+    expect(Object.keys(out)).toEqual(['limit']);
+    expect(Object.getOwnPropertyNames(out)).not.toContain('__proto__');
+    expect(Object.getPrototypeOf(out)).toBeNull();
   });
 
   it('never hands back an object whose __proto__ key can travel into a copy', () => {
@@ -272,12 +274,22 @@ describe('searchParamsToObject — prototype safety', () => {
     // fix. `Object.create(null)` alone turned `__proto__` into a live own key,
     // and the value travelled: `Object.assign({}, query)` wrote it into a target
     // that does have Object.prototype, re-arming the setter and reshaping THAT
-    // object — measured, and it survived a JSON round trip. The old plain-`{}`
-    // code never produced such a key, so storing it would have converted a
-    // self-contained anomaly into a portable one.
-    for (const query of ['limit=25', 'constructor=x&prototype=y', 'a.b=1&c[d]=2']) {
+    // object — measured, and it survived a JSON round trip.
+    //
+    // A second review then caught that the list below did NOT include a
+    // `__proto__` parameter, so it could not distinguish any implementation and
+    // pinned nothing. The hostile inputs are first now.
+    for (const query of [
+      '__proto__=a&__proto__=b',
+      '__proto__=single',
+      'limit=25&__proto__=a&__proto__=b',
+      'limit=25',
+      'constructor=x&prototype=y',
+      'a.b=1&c[d]=2',
+    ]) {
       const out = searchParamsToObject(new URLSearchParams(query));
       expect(Object.getOwnPropertyNames(out), query).not.toContain('__proto__');
+      expect(Object.getPrototypeOf(out), query).toBeNull();
 
       const assigned = Object.assign({}, out);
       expect(Array.isArray(Object.getPrototypeOf(assigned)), query).toBe(false);
@@ -364,13 +376,13 @@ describe('searchParamsToObject — prototype safety', () => {
   it('one request cannot observe state injected by another', () => {
     // Object-local by construction: each call builds its own accumulator, so a
     // hostile first request leaves the second with nothing.
-    // A hostile first request is refused outright; a benign one leaves nothing.
-    expect(() => searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b'))).toThrow();
-    searchParamsToObject(new URLSearchParams('constructor=evil'));
+    searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b&constructor=evil'));
     const second = searchParamsToObject(new URLSearchParams('limit=1'));
     expect(Object.keys(second)).toEqual(['limit']);
     expect(second['constructor']).toBeUndefined();
     expect(Object.getPrototypeOf(second)).toBeNull();
+    // And nothing global was touched on the way through.
+    expect(({} as Record<string, unknown>).a).toBeUndefined();
   });
 
   it('remains spreadable, serialisable and enumerable for its callers', () => {

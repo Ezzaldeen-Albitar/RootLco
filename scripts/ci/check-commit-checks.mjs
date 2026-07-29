@@ -196,33 +196,54 @@ async function main(argv) {
     process.exit(2);
   }
 
-  let payload;
+  // PAGINATE. A single `per_page=100` request silently truncates at 100, and a
+  // truncated listing is precisely the failure this script exists to prevent:
+  // the missing page would look exactly like a commit with nothing else
+  // watching it. The commit this was written against already carried 19 checks.
+  const checkRuns = [];
+  let expectedTotal = null;
   try {
-    const response = await fetch(
-      `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      }
-    );
-    if (!response.ok) {
-      // Print enough sanitized context to diagnose, never the token.
-      const body = await response.text();
-      console.error(
-        `check-run listing failed: HTTP ${response.status} ${response.statusText} — ${body.slice(0, 300)}`
+    for (let page = 1; page <= 20; page += 1) {
+      const response = await fetch(
+        `https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        }
       );
-      process.exit(2);
+      if (!response.ok) {
+        // Print enough sanitized context to diagnose, never the token.
+        const body = await response.text();
+        console.error(
+          `check-run listing failed on page ${page}: HTTP ${response.status} ${response.statusText} — ${body.slice(0, 300)}`
+        );
+        process.exit(2);
+      }
+      const payload = await response.json();
+      const batch = payload.check_runs ?? [];
+      if (page === 1) expectedTotal = payload.total_count ?? null;
+      checkRuns.push(...batch);
+      if (batch.length < 100) break;
     }
-    payload = await response.json();
   } catch (error) {
     console.error(`check-run listing could not be fetched: ${error.message}`);
     process.exit(2);
   }
 
-  const result = evaluate(payload.check_runs, { required: values('--require') });
+  // The API tells us how many there are. If we did not collect that many, the
+  // listing is incomplete and no verdict from it is trustworthy.
+  if (typeof expectedTotal === 'number' && checkRuns.length !== expectedTotal) {
+    console.error(
+      `check-run listing is incomplete: the API reports ${expectedTotal} check(s) and ` +
+        `${checkRuns.length} were collected. Refusing to judge a partial list.`
+    );
+    process.exit(2);
+  }
+
+  const result = evaluate(checkRuns, { required: values('--require') });
   const markdown = toMarkdown(result, sha);
 
   const jsonOut = one('--json');
@@ -232,7 +253,10 @@ async function main(argv) {
   console.log(markdown);
 
   for (const failure of result.failures) console.log(`::error::${failure}`);
-  process.exit(result.ok ? 0 : 1);
+  // `exitCode` rather than `exit()`: calling exit() while a fetch keep-alive
+  // handle is still closing trips a libuv assertion on Windows and prints an
+  // alarming line after a perfectly good verdict.
+  process.exitCode = result.ok ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
