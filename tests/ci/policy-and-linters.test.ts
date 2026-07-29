@@ -408,25 +408,41 @@ describe('workflow-security regex escaping', () => {
     }
   });
 
+  /**
+   * The old escape is expressed as the STRING IT PRODUCED, not by re-running
+   * `.replace(/\./g, '\\.')` here.
+   *
+   * Writing the defective sanitiser literally is itself an incomplete-
+   * sanitization pattern, and CodeQL was right to flag it — these two tests
+   * were the only new high-severity alerts this whole initiative introduced.
+   * Suppressing that would have taught exactly the habit AR-45 and AR-52 were
+   * about: a scanner people learn to wave through. Naming the produced string
+   * instead keeps the demonstration exact and leaves the scanner nothing to be
+   * wrong about.
+   */
   it('matches the literal expression where the old dot-only escape silently did not', () => {
-    // The realistic next entry: an indexed payload field. Dot-only escaping
-    // leaves `[0]` intact, and `[0]` is a VALID character class — so the regex
-    // compiles without complaint and then matches `client_payload0.body`
-    // instead of `client_payload[0].body`. Nothing throws, nothing warns, and
-    // WFS-006 simply stops seeing that expression. Silent is the bad case here;
-    // an exception would at least have been noticed.
+    // A realistic next entry: an indexed payload field. Dot-only escaping leaves
+    // `[0]` intact, and `[0]` is a VALID character class — so the regex compiles
+    // without complaint and then matches `client_payload0.body` instead of
+    // `client_payload[0].body`. Nothing throws and nothing warns; WFS-006 simply
+    // stops seeing that expression. Silent is the bad case. An exception would
+    // at least have been noticed.
     const indexed = 'github.event.client_payload[0].body';
-    const dotOnly = new RegExp(indexed.replace(/\./g, '\\.'));
+    const whatDotOnlyEscapingProduced = 'github\\.event\\.client_payload[0]\\.body';
+    const dotOnly = new RegExp(whatDotOnlyEscapingProduced);
+
     expect(dotOnly.test(indexed), 'the old escape fails to match the real text').toBe(false);
     expect(dotOnly.test('github.event.client_payload0.body')).toBe(true);
     expect(new RegExp(escapeRegExp(indexed)).test(indexed), 'the fix matches it').toBe(true);
   });
 
   it('does not throw on an expression the old escape could not even compile', () => {
-    // And where the metacharacter is unbalanced, the old form threw outright,
-    // which would have taken the whole linter down rather than one rule.
+    // Where the metacharacter is unbalanced, the old form threw outright, taking
+    // the whole linter down rather than one rule.
     const unbalanced = 'github.event.inputs.name(';
-    expect(() => new RegExp(unbalanced.replace(/\./g, '\\.'))).toThrow();
+    const whatDotOnlyEscapingProduced = 'github\\.event\\.inputs\\.name(';
+
+    expect(() => new RegExp(whatDotOnlyEscapingProduced)).toThrow();
     expect(() => new RegExp(escapeRegExp(unbalanced))).not.toThrow();
     expect(new RegExp(escapeRegExp(unbalanced)).test(unbalanced)).toBe(true);
   });

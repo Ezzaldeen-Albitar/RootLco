@@ -207,40 +207,104 @@ this gate record exists.
 - **`apk` versions unpinned** (hadolint DL3018, four sites), suppressed per line
   with the reason recorded.
 
+### The CodeQL backlog this initiative surfaced — 19 high-severity alerts
+
+This needs stating plainly, because two different numbers could otherwise be
+confused for each other.
+
+**Adversarial-review findings: Critical 0, High 0 unresolved.** That is the §40
+requirement and it is met.
+
+**CodeQL alerts open on `develop`: 23, of which 19 are high security severity.**
+That is a different register, and it is not zero.
+
+Before this initiative there was **no SAST at all** (CSA-09). The first branch
+analysis therefore reported a backlog rather than a delta, and every one of
+these alerts existed, unseen, before this change:
+
+| Origin                                                     | High alerts                           |
+| ---------------------------------------------------------- | ------------------------------------- |
+| Files that already existed at the protected base `0f8268e` | **17**                                |
+| Files introduced by this initiative                        | **2** — both since removed, see below |
+
+Of the 17 pre-existing, **two are in application source** and are genuine
+findings that deserve a real decision:
+
+- **`js/remote-property-injection` — `src/server/http/validation.ts:39`.**
+  `searchParamsToObject` writes `out[key]` where `key` is a query-string name.
+  The object is a plain `{}`, so a request carrying `__proto__` as a repeated
+  parameter can reach the prototype setter with an array value. It does not
+  reach `Object.prototype`, and Zod validates the result immediately afterwards,
+  so the practical blast radius looks small — but "looks small" is not an
+  analysis, and `Object.create(null)` or an explicit key deny-list would close
+  it outright.
+- **`js/insufficient-password-hash` — `src/server/http/idempotency.ts:169`.**
+  The idempotency fingerprint is a SHA-256 over the request body, and for
+  password-reset operations that body contains a password. The digest is
+  persisted. It is not a password store and was never meant to be one, but a
+  fast unkeyed hash of credential material sitting in a table is worth removing:
+  exclude password fields from the canonicalised body, or key the digest.
+
+**Neither is fixed here, deliberately.** Both are application-code changes to
+P1-14/P1-15 surfaces, and the idempotency one alters what a replayed request
+fingerprints to — which is a behavioural change to a correctness guarantee, not
+a CI change. This initiative was instructed not to implement business
+functionality, and quietly editing the idempotency fingerprint under a CI/CD
+banner would be exactly the kind of scope drift the gate records exist to catch.
+They are recorded here, with owners, for a decision that is not this change's to
+make.
+
+The **two alerts this initiative did introduce** were in its own AR-52 test,
+which demonstrated the defective dot-only escaping by writing it out literally —
+itself an incomplete-sanitization pattern, and CodeQL was right about it. The
+test now names the string that escaping _produced_ instead of re-deriving it, so
+the demonstration is unchanged and the alert is gone. Suppressing it would have
+taught the habit AR-45 and AR-52 were both about.
+
 ## Gate matrix
 
-| #   | Condition                                                             | Result |
-| --- | --------------------------------------------------------------------- | ------ |
-| 1   | Feature PR open against `develop`, no conflicts                       | Met    |
-| 2   | Final reviewed SHA identical across local, remote and PR head         | Met    |
-| 3   | PR CI 14/14 at the exact head                                         | Met    |
-| 4   | `ci-gate` Go with `expectedSha === actualSha`                         | Met    |
-| 5   | All 19 check-runs on the commit successful                            | Met    |
-| 6   | Hosted clean room executed and succeeded                              | Met    |
-| 7   | Legacy CI 4/4 retained and green                                      | Met    |
-| 8   | Merged with a merge commit, not squash or rebase                      | Met    |
-| 9   | Merge tree byte-identical to the reviewed tree, 0 file drift          | Met    |
-| 10  | Second parent is the reviewed head; first is protected `develop`      | Met    |
-| 11  | Protected push verification 13/13, `protected-gate` success           | Met    |
-| 12  | Baselines established from hosted artifacts with full provenance      | Met    |
-| 13  | Owner approval of the brace-expansion exception recorded and enforced | Met    |
-| 14  | Production dependency advisories 0                                    | Met    |
-| 15  | Critical unresolved 0, High unresolved 0                              | Met    |
-| 16  | `origin/main` unchanged                                               | Met    |
-| 17  | No direct push to a protected branch                                  | Met    |
-| 18  | No deployment to staging or production                                | Met    |
-| 19  | No P1-22 work, no migration 120                                       | Met    |
-| 20  | Ruleset migrated with legacy checks retained                          | Met    |
-| 21  | `main` promotion rules unaltered                                      | Met    |
+| #   | Condition                                                             | Result                                                         |
+| --- | --------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | Feature PR open against `develop`, no conflicts                       | Met                                                            |
+| 2   | Final reviewed SHA identical across local, remote and PR head         | Met                                                            |
+| 3   | PR CI 14/14 at the exact head                                         | Met                                                            |
+| 4   | `ci-gate` Go with `expectedSha === actualSha`                         | Met                                                            |
+| 5   | All 19 check-runs on the commit successful                            | Met                                                            |
+| 6   | Hosted clean room executed and succeeded                              | Met                                                            |
+| 7   | Legacy CI 4/4 retained and green                                      | Met                                                            |
+| 8   | Merged with a merge commit, not squash or rebase                      | Met                                                            |
+| 9   | Merge tree byte-identical to the reviewed tree, 0 file drift          | Met                                                            |
+| 10  | Second parent is the reviewed head; first is protected `develop`      | Met                                                            |
+| 11  | Protected push verification 13/13, `protected-gate` success           | Met                                                            |
+| 12  | Baselines established from hosted artifacts with full provenance      | Met                                                            |
+| 13  | Owner approval of the brace-expansion exception recorded and enforced | Met                                                            |
+| 14  | Production dependency advisories 0                                    | Met                                                            |
+| 15  | Adversarial review: Critical unresolved 0, High unresolved 0          | Met                                                            |
+| 15b | CodeQL: no NEW alerts introduced by this change                       | Met                                                            |
+| 15c | CodeQL: pre-existing branch backlog is zero                           | **Not met — 17 high, recorded above, 2 in application source** |
+| 16  | `origin/main` unchanged                                               | Met                                                            |
+| 17  | No direct push to a protected branch                                  | Met                                                            |
+| 18  | No deployment to staging or production                                | Met                                                            |
+| 19  | No P1-22 work, no migration 120                                       | Met                                                            |
+| 20  | Ruleset migrated with legacy checks retained                          | Met                                                            |
+| 21  | `main` promotion rules unaltered                                      | Met                                                            |
 
 ## Pending
 
 Recorded here rather than resolved, because each is a decision or a measurement
 this change cannot make:
 
-1. **Removal of the four legacy `ci.yml` required checks**, and deletion of
+1. **The two application-source CodeQL findings** —
+   `js/remote-property-injection` in `src/server/http/validation.ts` and
+   `js/insufficient-password-hash` in `src/server/http/idempotency.ts`. Both
+   pre-date this change; both are real; neither is a CI change. **This is the
+   highest-value item on the list.**
+2. **The remaining 15 pre-existing high CodeQL alerts** in `scripts/` and
+   `tests/` — file-system races and incomplete sanitisation in phase-inventory
+   tooling. Lower impact, same backlog.
+3. **Removal of the four legacy `ci.yml` required checks**, and deletion of
    `ci.yml` — rollout step 10, its own pull request.
-2. **The performance baseline**, which the first nightly after this merge
+4. **The performance baseline**, which the first nightly after this merge
    records.
-3. **The GitHub-native security features** in P1-21-A-01.
-4. **Promotion to `main`**, a founders' reserved decision (ADR-006).
+5. **The GitHub-native security features** in P1-21-A-01.
+6. **Promotion to `main`**, a founders' reserved decision (ADR-006).
