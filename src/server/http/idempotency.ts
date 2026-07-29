@@ -35,6 +35,7 @@ import type { DbHandle } from '../db/transaction';
 import { isSqlState, SQLSTATE } from '../db/repository';
 import type { RequestContext } from '../context/request-context';
 import { log } from '../observability/logger';
+import { internRouteTemplate } from './route-templates';
 
 /** Header carrying the client's idempotency key. */
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -175,23 +176,29 @@ function canonicalMethod(method: string): (typeof HTTP_METHODS)[number] {
 }
 
 /**
- * Returns the route template after proving it is one.
+ * Returns the route template as the matching LITERAL from `ROUTE_TEMPLATES`.
  *
- * Same reasoning as `canonicalMethod`, one step weaker and honestly so: the set
- * of templates is 169 and lives in the operation registry, so this validates
- * the shape rather than matching a literal. What it buys is real — a fingerprint
- * can only ever be bound to a well-formed registered target, so a malformed or
- * caller-influenced path is refused before it can be hashed — but it is a guard,
- * not an interning step, and the difference is why it is documented as one.
+ * The first version of this validated the shape with a regex and returned
+ * `match[0]`. It read like the same thing and was not: `RE.exec(path)[0]` is
+ * still derived from `path`, so the dataflow ran straight through the guard. A
+ * full-tree analysis said so — the `method` flow had ended at `canonicalMethod`
+ * and this one had not, which is as clear a statement of the difference as
+ * could be asked for.
+ *
+ * Interning against literals ends it, and buys the stronger property anyway: a
+ * fingerprint can only bind a template this platform actually serves, so a key
+ * can never be bound to a target nobody declared. The shape check remains as a
+ * second assertion, because a template that somehow passed membership while
+ * being malformed would mean the generated list itself was wrong.
  */
 function assertRouteTemplate(path: string): string {
-  const match = ROUTE_TEMPLATE.exec(String(path));
-  if (!match) {
+  const interned = internRouteTemplate(String(path));
+  if (interned === null || !ROUTE_TEMPLATE.test(interned)) {
     throw new AppFailure('ERR-INT-002', {
       message: `Cannot fingerprint an unregistered route template`,
     });
   }
-  return match[0];
+  return interned;
 }
 
 /**

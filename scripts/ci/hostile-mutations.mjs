@@ -28,6 +28,7 @@ const VALIDATION = 'npx vitest run tests/foundation/validation.test.ts';
 const SECRETS = 'npx vitest run tests/foundation/idempotency-secret-material.test.ts';
 const POLICY = 'npx vitest run tests/ci/codeql-policy.test.ts';
 const FINGERPRINT = 'npx vitest run tests/foundation/idempotency-fingerprint.test.ts';
+const TEMPLATES = 'npx vitest run tests/foundation/route-templates.test.ts';
 
 /**
  * Every `verify` command is a literal from this frozen table. Nothing here is
@@ -215,7 +216,7 @@ const MUTATIONS = Object.freeze([
   {
     id: 'M-25',
     target: 'src/server/http/idempotency.ts',
-    claim: 'the hashed path is proven to be a registered route template',
+    claim: 'the hashed path is the INTERNED literal, not the caller string',
     from: '        assertRouteTemplate(input.path),',
     to: '        input.path,',
     verify: FINGERPRINT,
@@ -230,11 +231,11 @@ const MUTATIONS = Object.freeze([
   },
   {
     id: 'M-27',
-    target: 'src/server/http/idempotency.ts',
-    claim: 'the route-template pattern rejects a newline (it is not a . match)',
-    from: 'const ROUTE_TEMPLATE = /^(?:\\/(?:[a-z0-9-]+|\\{[a-zA-Z][a-zA-Z0-9]*\\}))+$/;',
-    to: 'const ROUTE_TEMPLATE = /[\\s\\S]*/;',
-    verify: FINGERPRINT,
+    target: 'src/server/http/route-templates.ts',
+    claim: 'the list is reconciled against the route modules, so it cannot drift',
+    from: "  '/appointments',",
+    to: '',
+    verify: TEMPLATES,
   },
 
   // ---- scripts/ci/check-commit-checks.mjs — the AR-52 instrument -----------

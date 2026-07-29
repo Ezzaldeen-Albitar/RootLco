@@ -31,7 +31,10 @@ function contextFor(tenantId: string, userId: string): RequestContext {
   });
 }
 
-const REQUEST = { method: 'POST', path: '/things', body: { amount: 10 } } as const;
+// Real registered templates, not invented ones. `internRouteTemplate` now
+// matches against the literal list, so a synthetic path is refused — which is
+// the point, and which means these fixtures have to be routes that exist.
+const REQUEST = { method: 'POST', path: '/appointments', body: { amount: 10 } } as const;
 
 describe('the fingerprint binds the principal', () => {
   it('differs for two principals in the same tenant, same request', () => {
@@ -66,8 +69,16 @@ describe('the preimage is unambiguous', () => {
   it('does not collide when a separator is moved between path and body', () => {
     // The classic concatenation collision: if the preimage were joined on a
     // separator, these two would produce identical bytes.
-    const a = requestFingerprint(context, { method: 'POST', path: '/a', body: 'b/c' });
-    const b = requestFingerprint(context, { method: 'POST', path: '/a/b', body: 'c' });
+    const a = requestFingerprint(context, {
+      method: 'POST',
+      path: '/work-orders',
+      body: '{workOrderId}/history',
+    });
+    const b = requestFingerprint(context, {
+      method: 'POST',
+      path: '/work-orders/{workOrderId}/history',
+      body: '',
+    });
     expect(a).not.toBe(b);
   });
 
@@ -78,13 +89,13 @@ describe('the preimage is unambiguous', () => {
     // body have, which is why the property keeps a test of its own.
     const a = requestFingerprint(context, {
       method: 'POST',
-      path: '/things',
+      path: '/work-orders',
       params: { id: 'a' },
       body: 'b|c',
     });
     const b = requestFingerprint(context, {
       method: 'POST',
-      path: '/things',
+      path: '/work-orders',
       params: { id: 'a|b' },
       body: 'c',
     });
@@ -98,7 +109,7 @@ describe('the preimage is unambiguous', () => {
   // idempotency key to a target nobody declared.
   it('refuses to fingerprint a path with an embedded newline', () => {
     expect(() =>
-      requestFingerprint(context, { method: 'POST', path: '/a\nPOST\n/b', body: null })
+      requestFingerprint(context, { method: 'POST', path: '/work-orders\nPOST\n/x', body: null })
     ).toThrowError(/unregistered route template/);
   });
 
@@ -113,7 +124,7 @@ describe('the preimage is unambiguous', () => {
       requestFingerprint(context, { method: 'POST', path: '', body: null })
     ).toThrowError(/unregistered route template/);
     expect(() =>
-      requestFingerprint(context, { method: 'POST/x', path: '/x', body: null })
+      requestFingerprint(context, { method: 'POST/x', path: '/work-orders', body: null })
     ).toThrowError(/unroutable method/);
   });
 
@@ -167,7 +178,7 @@ describe('the preimage is unambiguous', () => {
     // cased one is not a different route — it is an unregistered one. This
     // previously produced a DIFFERENT fingerprint, silently splitting one route
     // into two idempotency identities; it is now refused.
-    expect(() => requestFingerprint(context, { ...REQUEST, path: '/API/Things' })).toThrowError(
+    expect(() => requestFingerprint(context, { ...REQUEST, path: '/APPOINTMENTS' })).toThrowError(
       /unregistered route template/
     );
   });

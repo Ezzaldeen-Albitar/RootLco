@@ -117,7 +117,7 @@ describe('replay with the same key and fingerprint', () => {
     const context = contextFor({});
     const fingerprint = requestFingerprint(context, {
       method: 'POST',
-      path: '/test/command',
+      path: '/appointments',
       body: { a: 1 },
     });
     const tag = `fx_p1_13_replay_${randomUUID()}`;
@@ -151,8 +151,16 @@ describe('replay with the same key and fingerprint', () => {
 
   it('canonicalises the request so key order cannot change the fingerprint', () => {
     const context = contextFor({});
-    const a = requestFingerprint(context, { method: 'post', path: '/x', body: { b: 2, a: 1 } });
-    const b = requestFingerprint(context, { method: 'POST', path: '/x', body: { a: 1, b: 2 } });
+    const a = requestFingerprint(context, {
+      method: 'post',
+      path: '/work-orders',
+      body: { b: 2, a: 1 },
+    });
+    const b = requestFingerprint(context, {
+      method: 'POST',
+      path: '/work-orders',
+      body: { a: 1, b: 2 },
+    });
     expect(a).toBe(b);
   });
 });
@@ -163,12 +171,12 @@ describe('replay with the same key and a different fingerprint', () => {
     const context = contextFor({});
     const original = requestFingerprint(context, {
       method: 'POST',
-      path: '/test/command',
+      path: '/appointments',
       body: { a: 1 },
     });
     const different = requestFingerprint(context, {
       method: 'POST',
-      path: '/test/command',
+      path: '/appointments',
       body: { a: 2 },
     });
     const tag = `fx_p1_13_conflict_${randomUUID()}`;
@@ -202,7 +210,7 @@ describe('concurrent first use of one key', () => {
     const context = contextFor({});
     const fingerprint = requestFingerprint(context, {
       method: 'POST',
-      path: '/test/command',
+      path: '/appointments',
       body: {},
     });
     const prefix = `fx_p1_13_race_${randomUUID()}`;
@@ -251,7 +259,7 @@ describe('a key is durable only if its command committed', () => {
     const context = contextFor({});
     const fingerprint = requestFingerprint(context, {
       method: 'POST',
-      path: '/test/command',
+      path: '/appointments',
       body: {},
     });
     const tag = `fx_p1_13_rollback_${randomUUID()}`;
@@ -294,7 +302,7 @@ describe('a key is durable only if its command committed', () => {
  * supply an identity.
  */
 describe('ADV-04: replay ownership is bound to the authenticated principal', () => {
-  const REQUEST = { method: 'POST', path: '/test/command', body: { amount: 10 } } as const;
+  const REQUEST = { method: 'POST', path: '/appointments', body: { amount: 10 } } as const;
 
   it('1. same principal, same key, same payload replays the stored response', async () => {
     const key = keyFor('same-principal');
@@ -517,7 +525,7 @@ describe('ADV-04: concurrency between two principals', () => {
     const owner = contextFor({ userId: USER_PERMITTED });
     const rival = contextFor({ userId: USER_SCOPED });
     const prefix = `fx_p1_13_adv04_race_${randomUUID()}`;
-    const request = { method: 'POST', path: '/test/command', body: {} } as const;
+    const request = { method: 'POST', path: '/appointments', body: {} } as const;
 
     let arrived = 0;
     let release = (): void => undefined;
