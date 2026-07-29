@@ -445,7 +445,7 @@ describe('inv.stock-movement-list — the immutable ledger', () => {
       (
         await call(
           MOVEMENTS,
-          '/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&occurredFrom=2026-01-01'
+          `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&occurredFrom=2026-01-01`
         )
       ).status
     ).toBe(422);
@@ -453,7 +453,7 @@ describe('inv.stock-movement-list — the immutable ledger', () => {
       (
         await call(
           MOVEMENTS,
-          '/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&movementType=transfer'
+          `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&movementType=transfer`
         )
       ).status
     ).toBe(422);
@@ -544,7 +544,7 @@ describe('inv.inventory-reconciliation-read — the audit evidence', () => {
       (
         await call(
           RECONCILE,
-          '/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&repair=true'
+          `/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&repair=true`
         )
       ).status
     ).toBe(422);
@@ -567,10 +567,21 @@ describe('inv.inventory-reconciliation-read — the audit evidence', () => {
       [TENANT_A]
     );
     authAs(INV_FULL);
-    await call(
+    const response = await call(
       RECONCILE,
-      '/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100'
+      `/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100`
     );
+
+    // The reconciliation MUST have run, or "the ledger is untouched" is a claim
+    // about nothing. This assertion is the whole reason the test is not vacuous:
+    // the URL was a single-quoted literal containing `${COMPANY_A1}`, so the
+    // request 422'd on a malformed UUID, the read never happened, and the row
+    // count was trivially unchanged. It reported a safety property it had never
+    // exercised (CodeQL js/template-syntax-in-string-literal, alert #32).
+    expect(response.status, 'the read must succeed before its side effects mean anything').toBe(
+      200
+    );
+
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM inv.stock_movements WHERE tenant_id = $1`,

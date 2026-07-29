@@ -67,7 +67,7 @@
  * Exit codes: 0 clean · 1 coverage failure · 2 IO error.
  * Usage: node scripts/check-operation-test-coverage.mjs [--json]
  */
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1622,15 +1622,16 @@ export function scanRegisteredOperations(root) {
   const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      const st = statSync(full);
-      if (st.isDirectory()) {
-        if (entry === 'node_modules' || entry === '.next') continue;
+    // `withFileTypes` answers "directory?" from the directory read itself, so
+    // there is no second lookup that could disagree with the first.
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.next') continue;
         walk(full);
         continue;
       }
-      if (!/\.tsx?$/.test(entry)) continue;
+      if (!/\.tsx?$/.test(entry.name)) continue;
       const rel = toPosix(relative(root, full));
       if (rel.endsWith('server/auth/operation-registry.ts')) continue;
       const source = readFileSync(full, 'utf8');
@@ -2153,8 +2154,14 @@ async function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
-    const abs = join(ROOT, rel);
-    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+    // Read first, interpret the failure: absent is legitimate here, unreadable
+    // is not, and the two-step form could not tell them apart.
+    try {
+      return readFileSync(join(ROOT, rel), 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
   };
 
   let registered;

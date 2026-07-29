@@ -33,10 +33,11 @@
  * removed before the handler is searched, so a claim in prose cannot satisfy a
  * structural check.
  */
-import { readFileSync, readdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prettier from 'prettier';
+import { escapeRegExp } from './ci/check-workflow-security.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
@@ -442,10 +443,10 @@ const TASKS = Object.freeze([
 function walk(dir) {
   const out = [];
   if (!existsSync(dir)) return out;
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walk(full));
-    else if (entry === 'route.ts') out.push(full);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(full));
+    else if (entry.name === 'route.ts') out.push(full);
   }
   return out;
 }
@@ -598,10 +599,13 @@ function main() {
     const stack = [join(ROOT, 'src', 'modules')];
     while (stack.length > 0) {
       const current = stack.pop();
-      for (const entry of readdirSync(current)) {
-        const full = join(current, entry);
-        if (statSync(full).isDirectory()) stack.push(full);
-        else if (entry.endsWith('.ts')) allModuleSources.push([full, readFileSync(full, 'utf8')]);
+      // `withFileTypes` answers "directory?" from the directory read itself,
+      // so there is no second lookup that could disagree with the first.
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const full = join(current, entry.name);
+        if (entry.isDirectory()) stack.push(full);
+        else if (entry.name.endsWith('.ts'))
+          allModuleSources.push([full, readFileSync(full, 'utf8')]);
       }
     }
   }
@@ -613,10 +617,10 @@ function main() {
     const stack = [dir];
     while (stack.length > 0) {
       const current = stack.pop();
-      for (const entry of readdirSync(current)) {
-        const full = join(current, entry);
-        if (statSync(full).isDirectory()) stack.push(full);
-        else if (entry.endsWith('.ts')) moduleSources.push([full, readFileSync(full, 'utf8')]);
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const full = join(current, entry.name);
+        if (entry.isDirectory()) stack.push(full);
+        else if (entry.name.endsWith('.ts')) moduleSources.push([full, readFileSync(full, 'utf8')]);
       }
     }
   }
@@ -673,7 +677,7 @@ function main() {
       continue;
     }
     const entry = new RegExp(
-      `code:\\s*'${op.auditAction.replace(/\./g, '\\.')}',\\s*\\n\\s*class:\\s*'([a-z]+)'`
+      `code:\\s*'${escapeRegExp(op.auditAction)}',\\s*\\n\\s*class:\\s*'([a-z]+)'`
     ).exec(auditCatalog);
     if (entry === null) {
       failures.push(`${op.id}: audit action "${op.auditAction}" is not in the audit catalog`);
@@ -699,7 +703,7 @@ function main() {
   const published = parsePublishedEvents(moduleSources);
   for (const event of published) {
     const owner = new RegExp(
-      `eventType:\\s*'${event.eventType.replace(/\./g, '\\.')}',[\\s\\S]{0,400}?owner:\\s*'([^']+)'`
+      `eventType:\\s*'${escapeRegExp(event.eventType)}',[\\s\\S]{0,400}?owner:\\s*'([^']+)'`
     ).exec(eventCatalog);
     if (owner === null) {
       failures.push(`${event.file}: publishes "${event.eventType}", which is not in EVENT_CATALOG`);
@@ -713,7 +717,7 @@ function main() {
       );
     }
     const implemented = new RegExp(
-      `eventType:\\s*'${event.eventType.replace(/\./g, '\\.')}',[\\s\\S]{0,400}?implementedIn:\\s*(null|'[^']+')`
+      `eventType:\\s*'${escapeRegExp(event.eventType)}',[\\s\\S]{0,400}?implementedIn:\\s*(null|'[^']+')`
     ).exec(eventCatalog);
     if (implemented !== null && implemented[1] === 'null') {
       failures.push(
@@ -959,7 +963,15 @@ async function write(path, body) {
   } catch {
     /* prettier unavailable: write the raw shape rather than failing the gate */
   }
-  const existing = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  // Read first and interpret the failure. Asking whether the file exists and
+  // then reading it is a race, and it also conflated "absent" (legitimate on a
+  // first generation) with "unreadable" (never legitimate).
+  let existing = null;
+  try {
+    existing = readFileSync(path, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   writeFileSync(path, formatted);
   return existing !== formatted;
 }

@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { types as pgTypes } from 'pg';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   Decimal,
@@ -249,10 +249,12 @@ const SRC = join(process.cwd(), 'src');
 /** Every .ts file's text under a directory, for a structural source assertion. */
 function collectSql(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...collectSql(full));
-    else if (entry.endsWith('.ts')) out.push(readFileSync(full, 'utf8'));
+  // `withFileTypes` answers "directory?" from the directory read itself, so
+  // there is no second lookup that could disagree with the first.
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectSql(full));
+    else if (entry.name.endsWith('.ts')) out.push(readFileSync(full, 'utf8'));
   }
   return out;
 }
