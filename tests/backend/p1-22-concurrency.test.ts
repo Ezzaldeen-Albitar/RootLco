@@ -915,13 +915,25 @@ describe('sal.invoice-issue under concurrent callers', () => {
     // already-issued short-circuit. So the pair is coherent in the strongest of the
     // three ways the contract allows: one success, and the other told to re-read rather
     // than handed a silent success for a document it had a stale view of.
-    const statuses = outcomes.map((response) => response.status);
+    //
+    // SORTED, and that is a correction rather than a convenience. This assertion was
+    // originally `toEqual([200, 409])` against the arrival order, which passed locally
+    // and on Node 24 and FAILED on Node 22 with `[409, 200]` — the production runtime.
+    // WHICH caller wins a forced race is not a property of the code; it is the
+    // scheduler's. Pinning the order asserted something the contract does not promise,
+    // and the multiset is the whole of the real claim: exactly one 200 and exactly one
+    // 409, never two of either.
+    const statuses = outcomes.map((response) => response.status).sort((x, y) => x - y);
     expect(statuses).toEqual([200, 409]);
 
-    const winner = outcomes[0];
-    const loser = outcomes[1];
+    // Found BY STATUS, not by position. `race()` returns `Promise.all(...)`, which
+    // preserves INPUT order — so `outcomes[0]` identifies the first THUNK, and when both
+    // thunks do the same thing the first one is as likely to be the loser as the winner.
+    // That is what made the sibling delivery race fail on Node 22 and pass on Node 24.
+    const winner = outcomes.find((response) => response.status === 200);
+    const loser = outcomes.find((response) => response.status === 409);
     if (winner === undefined || loser === undefined) {
-      throw new Error('the race did not return both responses');
+      throw new Error('the race did not return exactly one success and one conflict');
     }
     const issuedBody = await bodyOf<IssuedInvoiceBody>(winner);
     expect(issuedBody.replayed).toBe(false);
@@ -1286,13 +1298,22 @@ describe('sal.delivery-complete and wty.warranty-generate under concurrent calle
     // winner's completion advances `record_version` on the flip to `delivered`, so the
     // loser's `If-Match` is stale by the time it gets the row lock and
     // `completeDelivery` refuses it with `ERR-CON-001` — before the already-delivered
-    // replay short-circuit. That is the right order: a caller acting on a stale view of
-    // a handover is told so rather than being handed a success for a record that moved.
-    expect(outcomes.map((response) => response.status)).toEqual([200, 409]);
-    const winner = outcomes[0];
-    const loser = outcomes[1];
+    // replay short-circuit. A caller acting on a stale view of a handover is told so
+    // rather than being handed a success for a record that moved.
+    //
+    // The pair is asserted as a MULTISET, and the winner is found BY ITS STATUS rather
+    // than by its position. The original form asserted `[200, 409]` in arrival order and
+    // took `outcomes[0]` as the winner; it passed locally and on Node 24 and FAILED on
+    // Node 22 — the production runtime — with `[409, 200]`. Which caller wins a forced
+    // race is the scheduler's business, not the contract's, so position was never a fact
+    // this test could rely on. Two 200s or two 409s would still fail, which is the real
+    // claim.
+    const statuses = outcomes.map((response) => response.status).sort((x, y) => x - y);
+    expect(statuses).toEqual([200, 409]);
+    const winner = outcomes.find((response) => response.status === 200);
+    const loser = outcomes.find((response) => response.status === 409);
     if (winner === undefined || loser === undefined) {
-      throw new Error('the race did not return both responses');
+      throw new Error('the race did not return exactly one success and one conflict');
     }
     const completion = await bodyOf<CompletionBody>(winner);
     expect(completion.status).toBe('delivered');
