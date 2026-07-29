@@ -52,7 +52,11 @@ report about an API response necessarily contains data from that API response.
 - It cannot outlive its expiry.
 - It cannot omit `source`, `sink`, `reason`, `reviewer` or `reviewedOn`.
 - It cannot survive the finding being fixed: a dismissal matching nothing fails
-  the gate, so this entry must be removed when the flow is.
+  the gate, so this entry must be removed when the flow is. That check is scoped
+  to the files the analysis actually read — the `actions` matrix leg never opens
+  a `.mjs` file and so reports this entry as _not judged here_ rather than stale.
+  The `javascript-typescript` leg, which reads 717 files including this one, is
+  the leg that owns it.
 - It does not raise the ceiling. A dismissed finding is adjudicated rather than
   open, and `maximumOpenFindings` stays at **0**.
 

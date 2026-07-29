@@ -18,10 +18,17 @@ pipeline that found them.
 | `js/incomplete-sanitization`           | high    | 6     | two inventory scripts            | **fixed**                                                               |
 | `js/template-syntax-in-string-literal` | warning | 4     | one backend test                 | **fixed** — they were vacuous                                           |
 
-**Fixed: 21. Refuted: 0. Dismissed: 0. Open: 0. Unreviewed: 0.**
+**Of the 21-alert backlog: fixed 21, refuted 0, dismissed 0, open 0, unreviewed 0.**
+Nothing pre-existing was waived.
 
-Nothing was waived. `.github/ci-baselines/codeql-baseline.json` carries an empty
-dismissal list and a `maximumOpenFindings` ceiling of zero.
+`.github/ci-baselines/codeql-baseline.json` carries **one** dismissal, and it is
+not from that backlog — it is `js/http-to-file-access` in
+`check-commit-checks.mjs`, a **new** script this initiative wrote, flagged by the
+new gate on its own first run. It is a false positive in impact and not in
+existence, and it carries a reproduction rather than an assertion:
+[`accepted-dismissals.md`](accepted-dismissals.md). `maximumOpenFindings` is
+zero, and a dismissed finding is adjudicated rather than open, so the ceiling is
+not what the dismissal is buying.
 
 ## The documents
 
@@ -35,7 +42,7 @@ dismissal list and a `maximumOpenFindings` ceiling of zero.
 | [`test-strategy.md`](test-strategy.md)                                           | What is proven, how, and what is only asserted               |
 | [`compatibility-and-rollout.md`](compatibility-and-rollout.md)                   | What changed for a caller, and what did not                  |
 | [`review-adjudication.md`](review-adjudication.md)                               | Ten adversarial lenses and every verdict                     |
-| [`accepted-dismissals.md`](accepted-dismissals.md)                               | Empty, and why that is the finished state                    |
+| [`accepted-dismissals.md`](accepted-dismissals.md)                               | The one dismissal, in full, with its reproduction            |
 | [`execution-checkpoint.md`](execution-checkpoint.md)                             | What happened, in order, including the mistakes              |
 | [`evidence/hostile-mutations.md`](evidence/hostile-mutations.md)                 | 18 mutations, 18 caught, and the one that survived first     |
 
