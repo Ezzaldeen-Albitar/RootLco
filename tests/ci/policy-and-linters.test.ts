@@ -591,6 +591,13 @@ describe('dependency policy', () => {
     expiresOn: '2099-06-01',
     removalCondition: 'the parent chain accepts a patched version',
     evidenceLinks: ['docs/engineering/ci-automation/security-model.md'],
+    // "Complete" now includes the risk having actually been ACCEPTED. An
+    // exception suppresses a blocking advisory, so an unapproved one waives
+    // nothing — approval is a control rather than a note, and this fixture has
+    // to satisfy it like any real entry.
+    approvalStatus: 'approved',
+    approvedBy: 'platform-owner',
+    approvedOn: '2026-07-28',
     ...overrides,
   });
 
@@ -634,6 +641,47 @@ describe('dependency policy', () => {
     expect(result.failures, result.failures.join('\n')).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.development.waived).toBe(1);
+  });
+
+  it('waives nothing until the risk has actually been ACCEPTED', () => {
+    // Approval used to be documentation: an entry marked
+    // `pending-owner-approval` suppressed advisories exactly as an approved one
+    // did, so the owner's decision changed nothing at all.
+    for (const status of ['pending-owner-approval', 'rejected', undefined]) {
+      const result = evaluateDependencies({
+        prodAudit: { vulnerabilities: {} },
+        devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+        exceptions: {
+          developmentAdvisories: [completeException({ approvalStatus: status })],
+        },
+        licences: [],
+        installedPackages: new Set(),
+        today: '2026-07-28',
+        proofs,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.failures.join('\n')).toMatch(/not `approved`/);
+    }
+  });
+
+  it('rejects an approval that nobody signed or dated', () => {
+    for (const overrides of [
+      { approvedBy: undefined },
+      { approvedOn: 'soon' },
+      { approvedOn: undefined },
+    ]) {
+      const result = evaluateDependencies({
+        prodAudit: { vulnerabilities: {} },
+        devAudit: advisory('eslint', 'GHSA-dddd-eeee-ffff'),
+        exceptions: { developmentAdvisories: [completeException(overrides)] },
+        licences: [],
+        installedPackages: new Set(),
+        today: '2026-07-28',
+        proofs,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.failures.join('\n')).toMatch(/reviewed or revoked/);
+    }
   });
 
   it('fails an EXPIRED development exception', () => {

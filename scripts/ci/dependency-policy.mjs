@@ -257,6 +257,31 @@ export function validateExactMatch(entry, advisory, devAudit, failures, proofs =
     );
   }
 
+  // --- an unapproved exception must not waive anything -------------------
+  //
+  // Until this existed, `approvalStatus` was documentation: an entry marked
+  // `pending-owner-approval` still suppressed advisories exactly as an approved
+  // one did. That makes the approval step theatre — anyone adding an entry gets
+  // the waiver immediately and the owner's decision changes nothing.
+  //
+  // A risk acceptance is a DECISION, and a decision that the machine ignores is
+  // not a control. So the waiver now requires the decision to have been made,
+  // by someone, on a date.
+  // One message per entry: an unapproved exception is not ALSO an unsigned one,
+  // and reporting both makes the real problem harder to see.
+  if (entry.approvalStatus !== 'approved') {
+    reject(
+      `exception \`${entry.id}\` is \`${entry.approvalStatus ?? 'unset'}\`, not \`approved\`. ` +
+        'An exception waives a blocking advisory, so it takes effect only once the risk has ' +
+        'actually been accepted — recording it is not the same as approving it.'
+    );
+  } else if (!entry.approvedBy || !/^\d{4}-\d{2}-\d{2}$/.test(entry.approvedOn ?? '')) {
+    reject(
+      `exception \`${entry.id}\` is approved but records no \`approvedBy\` and dated \`approvedOn\`. ` +
+        'An approval nobody signed and nobody dated cannot be reviewed or revoked.'
+    );
+  }
+
   // --- the CLAIM must agree with the mechanically derived PROOF ----------
   // Everything above validates what the entry SAYS. This checks it against
   // what dependency-path-proof.mjs actually found, so a waiver cannot go on

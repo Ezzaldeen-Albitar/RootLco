@@ -179,7 +179,11 @@ Full evidence:
 | Exploitability in RootLco's runtime   | **not reachable based on current evidence**                              |
 
 Owner: platform-owner. Created 2026-07-28, review 2026-09-30, **expires
-2026-10-31**. Approval status: pending owner approval — recorded with full
+2026-10-31**. Approval status: **APPROVED by the platform owner on 2026-07-29**,
+with the basis and the explicit scope limits recorded in the entry. The gate now
+REQUIRES an approved, signed and dated entry: an unapproved exception waives
+nothing, because a risk acceptance the machine ignores is not a control.
+Recorded with full
 evidence, awaiting explicit acceptance as a risk decision.
 
 ### What makes it an _exact_ exception

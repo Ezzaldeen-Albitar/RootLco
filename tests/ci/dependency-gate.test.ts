@@ -164,6 +164,41 @@ describe('dependency gate — mutations, each must fail', () => {
     expect(result.failures.join('\n')).toMatch(/finalContainerReachable/);
   });
 
+  it('MUTATION 4c — an UNAPPROVED exception must not waive anything', () => {
+    // Until this rule existed, `approvalStatus` was documentation: an entry
+    // marked `pending-owner-approval` suppressed advisories exactly as an
+    // approved one did, so the owner's decision changed nothing. A risk
+    // acceptance the machine ignores is not a control.
+    for (const status of ['pending-owner-approval', 'rejected', undefined]) {
+      const exceptions = committedExceptions() as {
+        developmentAdvisories: Array<Record<string, unknown>>;
+      };
+      if (status === undefined) delete exceptions.developmentAdvisories[0]!.approvalStatus;
+      else exceptions.developmentAdvisories[0]!.approvalStatus = status;
+      const result = run({ exceptions });
+      expect(result.ok).toBe(false);
+      expect(result.failures.join('\n')).toMatch(/approved/);
+    }
+  });
+
+  it('MUTATION 4d — an approval nobody signed or dated is not an approval', () => {
+    for (const mutate of [
+      (e: Record<string, unknown>) => delete e.approvedBy,
+      (e: Record<string, unknown>) => {
+        e.approvedOn = 'soon';
+      },
+      (e: Record<string, unknown>) => delete e.approvedOn,
+    ]) {
+      const exceptions = committedExceptions() as {
+        developmentAdvisories: Array<Record<string, unknown>>;
+      };
+      mutate(exceptions.developmentAdvisories[0]!);
+      const result = run({ exceptions });
+      expect(result.ok).toBe(false);
+      expect(result.failures.join('\n')).toMatch(/approvedBy|approvedOn|reviewed or revoked/);
+    }
+  });
+
   it('MUTATION 5 — expire the exception', () => {
     // The committed entry expires 2026-10-31. Evaluate a day later.
     const result = run({ today: new Date('2026-11-01') });

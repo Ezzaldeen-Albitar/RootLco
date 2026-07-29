@@ -526,7 +526,8 @@ Severity was reported `high` and corrected to `medium` by the verifier, which is
 right: the entrypoint is `node server.js`, nothing invokes yarn, the advisory is
 a DoS needing an attacker-supplied brace pattern, and ADR-012 means there is no
 deployment target yet. It is an evidence-accuracy and incomplete-hardening
-defect in a record still pending owner approval — not an exploitable hole.
+defect in a risk record — not an exploitable hole. (The record was pending owner
+approval at the time; it was approved on 2026-07-29, after the correction.)
 
 ### AR-38 · a status code is not a diagnosis
 

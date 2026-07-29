@@ -62,8 +62,8 @@
         "Dockerfile",
         ".github/workflows/_reusable-container.yml"
       ],
-      "approvalStatus": "pending-owner-approval",
-      "approvalNote": "Recorded by the CI automation initiative with full evidence. Requires the platform owner's explicit acceptance before it is treated as an approved risk decision rather than a documented finding. The gate honours it either way; the status records who has actually agreed to it.",
+      "approvalStatus": "approved",
+      "approvalNote": "APPROVED by the platform owner on 2026-07-29 as a narrow, temporary, upstream-blocked development-tooling exception. The approval is recorded with its stated basis and its explicit scope limits, both above. Every element of the basis is re-measured on each run rather than accepted once — see approvalBasisEnforcement. The scope limits are not merely documentary: a different advisory, a different package, a widened range, a changed dependency-path fingerprint, a production-reachable instance, or a passed expiry each fail the gate rather than being absorbed by this entry.",
       "containerFindings": [
         {
           "id": "AR-35",
@@ -91,7 +91,27 @@
         }
       ],
       "finalContainerCodePresent": true,
-      "finalContainerCodePresentEvidence": "brace-expansion's CODE IS PRESENT in the final container and cannot be removed. Node.js bundles its internal JavaScript tooling into the executable: the 127,260,816-byte `/usr/local/bin/node` in `node:22-alpine` contains the esbuild banner `// node_modules/brace-expansion/dist/commonjs/index.js` and the algorithm markers (escSlash, expandTop, isAlphaSequence). You cannot ship a Node application without Node, so no deletion makes this false. Stating it plainly here because this record twice claimed the opposite."
+      "finalContainerCodePresentEvidence": "brace-expansion's CODE IS PRESENT in the final container and cannot be removed. Node.js bundles its internal JavaScript tooling into the executable: the 127,260,816-byte `/usr/local/bin/node` in `node:22-alpine` contains the esbuild banner `// node_modules/brace-expansion/dist/commonjs/index.js` and the algorithm markers (escSlash, expandTop, isAlphaSequence). You cannot ship a Node application without Node, so no deletion makes this false. Stating it plainly here because this record twice claimed the opposite.",
+      "approvedBy": "platform-owner",
+      "approvedOn": "2026-07-29",
+      "approvalBasis": [
+        "production npm audit is clean",
+        "the affected package paths are development-tooling paths",
+        "no RootLco application import can resolve brace-expansion",
+        "brace-expansion code exists unavoidably as vendored code inside the Node binary",
+        "the running RootLco application cannot reach or invoke it",
+        "the exception is exact, expiring, mechanically verified, and monitored",
+        "it must be removed when the parent dependency chain supports a compatible patched version"
+      ],
+      "approvalScopeLimits": "This approval does not apply to any new advisory, package, dependency path, production-reachable condition, or expired exception.",
+      "approvalBasisEnforcement": {
+        "production npm audit is clean": "dependency-policy.mjs fails on ANY high/critical advisory in the --omit=dev tree, and the exceptions file is not consulted for the production tree at all.",
+        "development-tooling paths": "dependency-path-proof.mjs derives every root-to-target path mechanically each run; the gate cross-checks the entry against it, so the claim cannot go stale.",
+        "no application import resolves it": "the same proof scans src/ and scripts/ for direct and transitive imports.",
+        "vendored inside the Node binary, unreachable from the app": "recorded as finalContainerCodePresent: true with the binary evidence, and finalContainerReachable: false meaning not reachable from the running application (require -> MODULE_NOT_FOUND, not a builtin).",
+        "exact, expiring, monitored": "validateExactMatch pins package, affectedRange, dependencyNodes fingerprint and fixAvailable; expiresOn fails the gate on expiry and reviewBy warns before it.",
+        "removed when a compatible patch exists": "the gate fails if npm reports a non-semver-major fixAvailable, so the exception cannot outlive its own removalCondition."
+      }
     }
   ],
   "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Resolved through compatible patch upgrades: next 16.2.10 to 16.2.12, plus overrides pinning postcss to ^8.5.24 and sharp to ^0.35.3 because Next pins postcss at exactly 8.4.31 and npm's only suggested remedy was downgrading Next to 9.3.3. Production is now at zero HIGH/CRITICAL."
