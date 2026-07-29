@@ -108,6 +108,142 @@ function framed(parts: readonly string[]): string {
 const FINGERPRINT_SCHEME = 'rootlco.idempotency.v3.principal-and-target-bound';
 
 /**
+ * Field names whose VALUES must never be hashed into a persisted fingerprint.
+ *
+ * Matched against every key at every depth of the canonicalised body and route
+ * parameters, case-insensitively. The list is deliberately about names rather
+ * than about detected entropy: a value's secrecy is a property of what it means,
+ * which only the schema author knows, and a runtime entropy heuristic would
+ * approve a weak password that happened to look random.
+ */
+const SENSITIVE_WORDS = [
+  'password',
+  'passwd',
+  'pwd',
+  'passphrase',
+  'secret',
+  'credential',
+  'credentials',
+  'otp',
+  'totp',
+  'pin',
+  // NOT bare `mfa`. `iam/invitations` declares `mfaRequired: z.boolean()`, a
+  // policy flag carrying no credential, and an early version of this list
+  // refused that route outright. A guard that refuses correct code is a guard
+  // somebody deletes, so the words below name the CODE, not the feature.
+  'mfa code',
+  'mfa secret',
+  'recovery code',
+  'security answer',
+  'private key',
+  'signing key',
+  'client secret',
+  'refresh token',
+  'access token',
+  'session token',
+  'bearer token',
+  'api key',
+  'auth token',
+] as const;
+
+/**
+ * Normalises a field name to space-separated lower-case words, so one word list
+ * covers every spelling a schema might use.
+ *
+ * `newPassword`, `new_password`, `NEW-PASSWORD` and `newPassword2` all become
+ * `new password …`. Without this the word list matched `password` and
+ * `client_secret` but **not** `newPassword` or `oldPassword` — the two most
+ * likely field names on a password-change endpoint, and the exact gap this
+ * function exists to close. The guard's own tests caught it.
+ */
+function toWords(key: string): string {
+  return ` ${key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/(\d+)/g, ' $1 ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()} `;
+}
+
+/** True when any declared secret word appears as a whole word in the key. */
+function isSensitiveKey(key: string): boolean {
+  const words = toWords(key);
+  return SENSITIVE_WORDS.some((word) => words.includes(` ${word} `));
+}
+
+/** Every key at every depth, so a secret nested inside an object is still seen. */
+function* everyKey(value: unknown, depth = 0): Generator<string> {
+  if (depth > 32 || value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) yield* everyKey(item, depth + 1);
+    return;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    yield key;
+    yield* everyKey(nested, depth + 1);
+  }
+}
+
+/**
+ * Refuses to fingerprint a request carrying secret material (CWE-916).
+ *
+ * `request_fingerprint` is a SHA-256 that is **persisted** in
+ * `shared.idempotency_keys` and retained for the lifetime of the row. SHA-256 is
+ * a fast unkeyed hash, so for any input drawn from a small space — a password, a
+ * PIN, a six-digit OTP — a digest sitting in a table is an offline guessing
+ * target, and the other framed components (tenant, principal, method, path) are
+ * all knowable to anyone holding that table.
+ *
+ * ## Why this throws instead of redacting
+ *
+ * Silently dropping the field would keep the request working and destroy the
+ * guarantee the fingerprint exists to provide: two requests under one key that
+ * differ **only** in the secret would produce the same digest, so the second
+ * would be served the first's stored response and the caller would be told an
+ * operation succeeded that never ran. That is exactly the defect P1-15-SR-002
+ * fixed for parameterised routes, and re-introducing it on the credential path
+ * would be worse — a password change reported as done, with the old password
+ * still live.
+ *
+ * So the combination is refused outright. An operation that genuinely needs both
+ * idempotency and a secret field needs a dedicated one-time-operation contract,
+ * which is a design decision with its own review, not something a fingerprint
+ * should improvise at request time.
+ *
+ * ## Reachability at the time of writing
+ *
+ * Nothing hits this today, and it is not dead code. `route-handler.ts` computes
+ * a fingerprint only when `operation.idempotent === true`; the two password
+ * routes are `public: true` and declare no idempotency, and `requestFingerprint`
+ * already refuses an unauthenticated principal. The one idempotent operation
+ * carrying a token-shaped field, `attachments/versions`, carries an
+ * `uploadToken` that is `base64url(JSON.stringify(claim))` — unsigned,
+ * unencrypted, and not secret at all, which `attachment-policy.ts` states
+ * plainly. The guard exists because none of that is enforced by anything: a
+ * single `idempotent: true` added to a future credential route would have made
+ * it true, quietly, with no test failing.
+ */
+export function assertNoSecretMaterial(
+  value: unknown,
+  where: 'body' | 'params',
+  operationId?: string
+): void {
+  for (const key of everyKey(value)) {
+    if (!isSensitiveKey(key)) continue;
+    // The offending NAME is safe to report and is what a developer needs. The
+    // value is never read, never logged and never placed in the error.
+    throw new AppFailure('ERR-INT-003', {
+      message:
+        `Idempotent operation${operationId ? ` "${operationId}"` : ''} cannot be fingerprinted: ` +
+        `${where} field "${key}" is secret material, and the fingerprint is persisted. ` +
+        'Use a dedicated one-time-operation contract for this endpoint instead.',
+    });
+  }
+}
+
+/**
  * SHA-256 over the **principal- and target-bound** canonical request (ADV-04).
  *
  * The fingerprint binds tenant, principal, method, path **template**, resolved
@@ -163,6 +299,13 @@ export function requestFingerprint(
       message: 'Idempotent operations require an authenticated principal',
     });
   }
+
+  // Refuse before hashing, never after: the digest is persisted, and a fast
+  // unkeyed hash of low-entropy secret material is an offline guessing target
+  // (CWE-916). See `assertNoSecretMaterial` for why this throws rather than
+  // redacting the field.
+  assertNoSecretMaterial(input.body, 'body');
+  assertNoSecretMaterial(input.params ?? {}, 'params');
 
   return createHash('sha256')
     .update(

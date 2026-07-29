@@ -31,9 +31,43 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
   });
 }
 
-/** Parses `URLSearchParams` into a plain object before validation. */
+/**
+ * Parses `URLSearchParams` into a **null-prototype** object before validation.
+ *
+ * The accumulator is `Object.create(null)`, not `{}`, and the difference is not
+ * stylistic. Query-string names are attacker-chosen and are written straight
+ * into this object, which put three distinct defects in one line
+ * (`js/remote-property-injection`). All three are measured, not theorised:
+ *
+ *  1. **Zod reads inherited properties.** Against a plain `{}`, a polluted
+ *     `Object.prototype.role` parses as a *validated* `role` field — the schema
+ *     reports success and the route receives a value no client ever sent.
+ *     Twenty-plus list endpoints build their query object here, and several
+ *     validate authorization-shaped fields, so a single prototype write
+ *     anywhere in the process would inject them everywhere at once. A
+ *     null-prototype object inherits nothing and is immune by construction.
+ *  2. **The object's own prototype was writable.** `?__proto__=a&__proto__=b`
+ *     yields an array value, and the `__proto__` setter accepts objects, so the
+ *     accumulator's prototype became that array. `Object.prototype` itself was
+ *     never reachable this way — the honest scope is object-local — but a
+ *     request should not be able to reshape the object validating it.
+ *  3. **A parameter named `__proto__` was silently dropped.** On a plain `{}`
+ *     the assignment hits the setter instead of creating a key, so
+ *     `Object.keys()` is empty and the field never reaches Zod: no value, no
+ *     error, nothing to debug. It is now an ordinary own key.
+ *
+ * A `Map` would be safer still but would change the public contract — every
+ * caller passes this result directly to `parseOrFail`, and Zod expects an
+ * object. `Object.create(null)` keeps that contract exactly: spread,
+ * `JSON.stringify`, `Object.entries` and `safeParse` all behave identically.
+ *
+ * The one behaviour that does change: the result has no `Object.prototype`
+ * methods, so `result.hasOwnProperty(...)` would throw. No caller does that —
+ * every use in `src/` is the safe `Object.prototype.hasOwnProperty.call(…)`
+ * form — and a test pins it.
+ */
 export function searchParamsToObject(params: URLSearchParams): Record<string, string | string[]> {
-  const out: Record<string, string | string[]> = {};
+  const out = Object.create(null) as Record<string, string | string[]>;
   for (const key of new Set(params.keys())) {
     const values = params.getAll(key);
     out[key] = values.length > 1 ? values : (values[0] ?? '');

@@ -30,6 +30,7 @@ export const ERROR_CODES = [
   'ERR-DEP-001',
   'ERR-INT-001',
   'ERR-INT-002',
+  'ERR-INT-003',
   'ERR-CON-001',
   'ERR-CON-002',
   'ERR-RTE-001',
@@ -211,6 +212,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'client',
     description:
       'The operation is declared idempotency-critical and the Idempotency-Key header was absent or violated its format contract.',
+  },
+  'ERR-INT-003': {
+    code: 'ERR-INT-003',
+    title: 'Idempotent operation carries secret material',
+    status: 500,
+    owner: 'idempotency',
+    retryable: false,
+    class: 'server',
+    description:
+      'The operation is declared idempotency-critical and its request carries a field whose name marks it as secret material — a password, PIN, OTP, recovery code, private key or bearer credential. The idempotency fingerprint is a persisted SHA-256, and a fast unkeyed hash of a low-entropy secret is an offline guessing target (CWE-916), so the request is refused before anything is hashed. This is a server-side configuration defect rather than anything the caller did: the endpoint needs a dedicated one-time-operation contract, not a content fingerprint. The offending field NAME appears in server-side diagnostics; its value is never read, logged or returned.',
   },
   'ERR-CON-001': {
     code: 'ERR-CON-001',
