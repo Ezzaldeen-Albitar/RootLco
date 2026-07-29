@@ -532,6 +532,24 @@ jobs:
       #   /lib/apk/db removed : os-pkgs packages=0   vulns=0
       #
       # So the report must prove it looked at something before its silence counts.
+      #
+      # PRECISELY what this proves, and no more. Package enumeration is done by
+      # the Trivy ARTIFACT ANALYZERS, not by the `vuln` scanner: running with
+      # `--scanners misconfig` alone produces a BYTE-IDENTICAL report — 216
+      # packages on node:22-alpine — with zero findings. So this step cannot
+      # distinguish "the vulnerability scanner found nothing" from "the
+      # vulnerability scanner never ran", and an earlier version of its closing
+      # message certified exactly that.
+      #
+      # What keeps `vuln` in the scanner list is WFS-013, checked on every pull
+      # request. An operational failure (DB download, registry) is covered
+      # separately: `exit-code: 0` suppresses FINDINGS, not errors, so Trivy
+      # still fails the step when it cannot run at all.
+      #
+      # This explanation lives in a YAML comment, not inside the `node -e '…'`
+      # script, because that script is a SINGLE-QUOTED shell string: one
+      # apostrophe in a JS comment closes the quote and the step dies with exit
+      # 126. That is exactly how it failed once. WFS-014 now catches it.
       - name: The scan must have enumerated packages
         run: |
           set -euo pipefail
@@ -554,21 +572,8 @@ jobs:
               for (const f of fail) console.error(`::error::${f}`);
               process.exit(1);
             }
-            // Precisely what this proves, and no more. Package enumeration is
-            // done by Trivy's ARTIFACT ANALYZERS, not by the `vuln` scanner:
-            // running with `--scanners misconfig` alone produces a BYTE-IDENTICAL
-            // report, 27 OS and 48 language packages, zero findings. So this step
-            // cannot distinguish "the vulnerability scanner found nothing" from
-            // "the vulnerability scanner never ran", and an earlier version of
-            // this message certified exactly that — the same unearned assurance
-            // the step above was added to stop.
-            //
-            // What keeps `vuln` in the scanner list is WFS-013, checked on every
-            // pull request. An operational failure (DB download, registry) is
-            // covered separately: `exit-code: 0` suppresses FINDINGS, not errors,
-            // so Trivy still fails the step if it cannot run.
             console.log("Package enumeration succeeded, so a zero-FINDING result is not a blind artifact scan.");
-            console.log("That the vulnerability scanner itself was enabled is enforced by WFS-013, not by this report — it carries no record of which scanners ran.");
+            console.log("That the vulnerability scanner itself was enabled is enforced by WFS-013, not by this report, which carries no record of which scanners ran.");
           '
 
       - name: Container vulnerability policy

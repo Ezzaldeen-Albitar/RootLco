@@ -276,6 +276,58 @@ jobs:
     expect(rules(lintWorkflow('x.yml', other))).not.toContain('WFS-013');
   });
 
+  it('WFS-014 catches an apostrophe inside a single-quoted inline script', () => {
+    // This killed a hosted run. `node -e '…'` is a single-quoted SHELL string,
+    // so an apostrophe in a JavaScript comment closes the quote and the step
+    // dies with exit 126 — a status that names nothing. `actionlint` does not
+    // see it, because the YAML is valid.
+    const apostrophe = String.fromCharCode(39);
+    const script = (comment: string) => `name: X
+on: push
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          set -euo pipefail
+          node -e '
+${comment}            const x = 1;
+            console.log(x);
+          '
+`;
+    const bad = script(`            // done by Trivy${apostrophe}s analyzers\n`);
+    const findings = lintWorkflow('x.yml', bad);
+    expect(rules(findings)).toContain('WFS-014');
+    expect(findings.find((f: { rule: string }) => f.rule === 'WFS-014').severity).toBe('high');
+
+    // The same script without the apostrophe is fine.
+    expect(rules(lintWorkflow('x.yml', script('')))).not.toContain('WFS-014');
+
+    // The block must CLOSE on `' "$args"`, or every later line is flagged. This
+    // is the real shape used throughout the repository, and getting it wrong
+    // made the rule fire on eight innocent lines the first time.
+    const closesWithArgs = `name: X
+on: push
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          set -euo pipefail
+          node -e '
+            console.log(process.argv[1]);
+          ' "\${VALUE}"
+          echo "it${apostrophe}s fine out here"
+`;
+    expect(rules(lintWorkflow('x.yml', closesWithArgs))).not.toContain('WFS-014');
+  });
+
   it('extracts a run block by indentation, not by guessing where it ends', () => {
     const blocks = extractRunBlocks(MINIMAL_WORKFLOW.split('\n'));
     expect(blocks).toHaveLength(1);

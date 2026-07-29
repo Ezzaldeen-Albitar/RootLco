@@ -21,6 +21,7 @@
  *   WFS-011  a reusable workflow declares exactly ONE job
  *   WFS-012  a bootstrap sparse checkout of `.github/actions` stays in cone mode
  *   WFS-013  a Trivy `scanners:` list includes `vuln`
+ *   WFS-014  no apostrophe inside a single-quoted inline script (node -e ...)
  *
  * Deliberately implemented WITHOUT a YAML dependency: this runs in the
  * `secret-scan` job, which does not `npm ci`, and adding a parser to read our own
@@ -372,6 +373,46 @@ export function lintWorkflow(name, source, options = {}) {
       );
     }
   });
+
+  // ---- WFS-014: no apostrophe inside a single-quoted inline script ------
+  //
+  // `node -e '…'` is a SINGLE-QUOTED shell string. A bare apostrophe anywhere
+  // inside it — including in a JavaScript comment — closes the quote, and the
+  // remainder is parsed as shell words. The step dies with exit 126, which
+  // names nothing.
+  //
+  // This is not hypothetical: a comment containing the word `Trivy's` killed
+  // the container job's package-enumeration assertion, and neither `actionlint`
+  // nor any other rule here noticed. The repository uses this idiom in a dozen
+  // places, so the hazard is permanent rather than incidental. Prose belongs in
+  // a YAML comment above the step, where an apostrophe is harmless.
+  {
+    let open = -1;
+    lines.forEach((line, index) => {
+      if (open === -1) {
+        // Opening: a `run:` line whose script starts with a lone `'`.
+        if (/(?:^|\s)(?:node|python3?|ruby|perl)\s+-[ecm]?\s*'\s*$/.test(line)) open = index;
+        return;
+      }
+      // Closing: a line whose first non-space character is the quote. It may be
+      // followed by arguments — `' "${digest}" "${size}"` is the common form —
+      // so anchoring on end-of-line would never close the block and every later
+      // line would be flagged.
+      if (/^\s*'(\s|$)/.test(line)) {
+        open = -1;
+        return;
+      }
+      if (line.includes("'") && !suppressed(lines, index, 'WFS-014')) {
+        add(
+          'WFS-014',
+          index + 1,
+          'apostrophe inside a single-quoted inline script — it closes the shell quote and the step fails with exit 126, naming nothing. ' +
+            'Reword it, or move the prose to a YAML comment above the step.',
+          'high'
+        );
+      }
+    });
+  }
 
   // ---- WFS-010: every job has a timeout ---------------------------------
   const jobsIndex = lines.findIndex((l) => /^jobs:\s*$/.test(l));
