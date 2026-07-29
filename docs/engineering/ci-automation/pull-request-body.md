@@ -104,17 +104,36 @@ exist. The activation plan is in
 
 ## Baselines
 
-Measured first, ratcheted second. Every baseline that has never been measured on
-a hosted runner is committed **unset**, with the reason stated in the file:
+Measured first, ratcheted second. Every baseline was committed **unset** until a
+GitHub-hosted runner had produced the number. All but one are now recorded, from
+the artifacts of **PR CI run 19** (`30431556718`) at `8d7bfff`. Per-number
+provenance — workflow, run, job, artifact, file, SHA — is in
+[`evidence/hosted-baselines.md`](evidence/hosted-baselines.md).
 
-| Baseline         | State                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| Unit coverage    | 91.06 / 93.62 / 84.87 / 91.06, from local measurement; corrected by the first hosted run |
-| Backend coverage | unset — never measured; first hosted run records it                                      |
-| Build size       | unset — `.next` was never measured by any workflow                                       |
-| Image size       | unset — the image was never measured by any workflow                                     |
-| Performance      | unset — only ever measured on a developer machine                                        |
-| Schema hash      | `a677eb05…`, migrations 119, permissions 100 — from the P1-21 hosted clean room          |
+| Baseline         | State                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| Unit coverage    | 93.26 / 93.26 / 84.75 / 93.61 — hosted-confirmed, **not** lowered to the 84.43 / 93.41 the run measured |
+| Backend coverage | **86.38 / 86.38 / 86.73 / 80.08**, plus six critical-module floors promoted from planned to enforced    |
+| Build size       | **34,367,299** standalone bytes (ratcheted) · 632,213 static · 66,333,419 total across 4954 files       |
+| Image size       | **202,909,674** bytes, uncompressed, 12 layers — no compressed figure exists, the image is never pushed |
+| Structural       | 242 tables / 514 functions / 631 policies / 541 triggers / 0 SECURITY DEFINER, and 7 seeded catalogs    |
+| Test counts      | hosted 1082 / 1624 / 1380; unit floor raised 1000 → 1050                                                |
+| Schema hash      | `a677eb05…`, migrations 119, permissions 100 — reproduced three times in run 19                         |
+| Performance      | **still unset** — its job lives in nightly, and `schedule:` fires only from the default branch          |
+
+Two figures are recorded with their disagreement rather than without it. The
+same run reports **514** functions and **212** functions for the same database:
+`migration-replay-checks.mjs` filters only `pg_catalog`/`information_schema`,
+while `schema-inventory.mjs` restricts to the 17 RootLco schemas, whose
+per-schema breakdown sums to exactly 212. The 302-function difference is
+extension-owned code. 514 is committed because this baseline is enforced by the
+script that produces 514; 212 remains the number that describes RootLco's own
+schema. The explanation ships in the baseline so nobody later "reconciles" them.
+
+The unit baseline was deliberately **not** re-recorded downward. Run 19 measured
+functions 0.32 pp and branches 0.20 pp below the recorded floor, inside the
+0.5 pp tolerance. Lowering a floor to match the last measurement converts a real
+decline into the new normal.
 
 ## Security
 
@@ -131,12 +150,26 @@ exception with no proven production or runtime reachability.**
   one advisory, one package, one affected range (`<=5.0.7`), one dependency-path
   fingerprint (two resolved nodes) and one expiry (2026-10-31). There is no
   package-wide or severity-wide waiver.
+- **Owner-approved on 2026-07-29** by the platform owner, with the seven-point
+  basis and the explicit scope limits recorded verbatim in the entry. Approval is
+  a **control**, not a note: `dependency-policy.mjs` requires
+  `approvalStatus: "approved"` with a named approver and an ISO date, and an
+  unapproved entry waives nothing.
 - The claim is cross-checked against a **mechanically derived proof**:
   `npm ls brace-expansion --omit=dev --all` returns `(empty)`; the production
-  audit reports 0 vulnerabilities; the package is absent from the built runner
-  image, asserted by enumerating the actual image filesystem on a hosted runner;
-  nothing under `src/` or `scripts/` imports it; every glob pattern evaluated in
-  this repository comes from committed configuration.
+  audit reports 0 vulnerabilities; nothing under `src/` or `scripts/` imports it;
+  every glob pattern evaluated in this repository comes from committed
+  configuration; and the built runner image contains **no resolvable
+  `node_modules/brace-expansion/`**, asserted by enumerating the actual image
+  filesystem on a hosted runner.
+- **The code is NOT absent from the image, and this PR does not claim it is.**
+  Node vendors brace-expansion into the `node` binary via esbuild, so a copy
+  ships inside any image containing a Node runtime and no build step removes it.
+  Absence was never achievable. The claim that is both true and sufficient is
+  narrower: the running application cannot **resolve or invoke** it. The
+  exception record keeps `finalContainerCodePresent: true` and
+  `finalContainerReachable: false` as separate fields so the two cannot be
+  collapsed, and AR-49 fixed the one place that had collapsed them.
 - Of the three resolved instances, **one is already patched** — `minimatch@10.2.5`
   requires `^5.0.5`, so the top-level resolution is 5.0.8. Only 1.1.16 and 2.1.3
   are affected.
@@ -152,7 +185,8 @@ exception with no proven production or runtime reachability.**
 - Full evidence:
   [`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
 - Every action pinned to a full commit SHA with a version comment, enforced by
-  `check-workflow-security.mjs` (10 rules).
+  `check-workflow-security.mjs` — **14 rules** (WFS-001…WFS-014), a count the
+  report now carries so that "0 findings" cannot be mistaken for "0 rules ran".
 - CodeQL over `javascript-typescript` **and** `actions`, `security-and-quality`
   suite, SARIF uploaded. `security-events: write` is granted to that job alone.
 - Trivy over the production image: vulnerabilities, secrets, misconfigurations.
@@ -193,30 +227,48 @@ exception with no proven production or runtime reachability.**
 
 ## What the hosted runs actually found
 
-Nine runs, and the first two could not execute at all. Recorded in full in
+Nineteen runs, and the first two could not execute at all. Recorded in full in
 [`adversarial-review.md`](evidence/adversarial-review.md).
 
-| Run | Head      | Outcome                                                 |
-| --- | --------- | ------------------------------------------------------- |
-| 1   | `8740531` | `startup_failure`, **zero jobs** — AR-28                |
-| 2   | `67014fc` | every job failed in `Set up the project` — AR-29        |
-| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures — AR-30 … AR-33  |
-| 4   | `9088013` | 11 of 13 green — AR-34, AR-35, AR-36                    |
-| 5   | `ca4c594` | 14/14 green — but latent AR-37 not yet found            |
-| 6   | `f741d2f` | 12/13 — AR-41                                           |
-| 7   | `0e492bb` | 12/13 — AR-42                                           |
-| 8   | `d166449` | **14/14 green, `ci-gate` Go**                           |
-| 9   | `c95e8d9` | **14/14 green, `ci-gate` Go** — then AR-43, AR-44 found |
+| Run | Head      | Outcome                                                  |
+| --- | --------- | -------------------------------------------------------- |
+| 1   | `8740531` | `startup_failure`, **zero jobs** — AR-28                 |
+| 2   | `67014fc` | every job failed in `Set up the project` — AR-29         |
+| 3   | `2654f23` | **ran**: 7 green, 6 real gate failures — AR-30 … AR-33   |
+| 4   | `9088013` | 11 of 13 green — AR-34, AR-35, AR-36                     |
+| 5   | `ca4c594` | 14/14 green — but latent AR-37 not yet found             |
+| 6   | `f741d2f` | 12/13 — AR-41                                            |
+| 7   | `0e492bb` | 12/13 — AR-42                                            |
+| 8   | `d166449` | **14/14 green, `ci-gate` Go**                            |
+| 9   | `c95e8d9` | **14/14 green, `ci-gate` Go** — then AR-43, AR-44 found  |
+| 10  | `a243295` | **14/14 green** — reachability reworded, AR-43/44 closed |
+| 12  | `4520b36` | **14/14 green** — while a scanner was blind (AR-45)      |
+| 15  | `8bbe263` | failed — WFS-013 caught its own gap                      |
+| 16  | `c766ea0` | **14/14 green** — AR-48, an apostrophe, fixed            |
+| 18  | `5cb7347` | **14/14 green, `ci-gate` Go**                            |
+| 19  | `8d7bfff` | **14/14 green, `ci-gate` Go** — the baselines below      |
 
 AR-28 and AR-29 were both defects in the _remediation_ for an earlier finding,
 and neither was reachable by reading the files: three adversarial reviewers,
 `actionlint` and this repository's own workflow linter all passed the first.
 Each now has a linter rule at _critical_ — WFS-011 and WFS-012.
 
-The four findings from run 3 were gates working. None of them was fixed by
-weakening a gate; each was reproduced locally first, because GitHub requires a
-signed-in session to read Actions logs even on a public repository and this
-environment has none.
+Nine of the fifty findings were defects inside this initiative's own
+remediations. The two most instructive:
+
+- **AR-45** — run 12 was **14/14 green while one of its own scanners was
+  blind.** Removing `/lib/apk/db` from the image left Trivy enumerating zero
+  packages and reporting zero vulnerabilities, and nothing noticed, because a
+  scan that found nothing and a scan that scanned nothing produce the same
+  green tick. Every scanner now has to prove it was armed.
+- **AR-49** — found not by a run but by reading the artifacts a green run
+  produced. The published reachability proof asserted the vulnerable code was
+  absent from the image, which is false and which the owner's approval
+  explicitly forbids stating. Fixed by narrowing the claim to the measurement.
+
+None of them was fixed by weakening a gate; each was reproduced first, because
+GitHub requires a signed-in session to read Actions logs even on a public
+repository, and only check-run annotations are public.
 
 ## Deferred
 

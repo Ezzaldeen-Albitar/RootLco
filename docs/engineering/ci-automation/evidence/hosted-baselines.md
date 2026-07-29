@@ -135,6 +135,23 @@ Two distinctions are load-bearing and are written into the baseline itself:
   is stored as `imageIdAtEstablishment`, explicitly provenance and explicitly
   not a pin. Only `imageSizeBytes` is read by the job.
 
+The second point was an argument when it was written. **Run 20 turned it into a
+measurement**, and the result is worth keeping:
+
+|          | Run 19 (`8d7bfff`)        | Run 20 (`af72920`)        |
+| -------- | ------------------------- | ------------------------- |
+| Image ID | `sha256:a87716d5…fd9117e` | `sha256:74129552…ab0a348` |
+| Size     | 202,909,674               | **202,909,674**           |
+| Layers   | 12                        | 12                        |
+
+Two builds of a source tree whose `src/` did not change produced a **different
+image ID and a byte-identical size**. Had the ID been recorded as a pin, the
+gate would have failed on the very next commit for a reason that has nothing to
+do with the image's contents. `standaloneBytes` reproduced exactly as well
+(34,367,299 both times, ratio 1.0000), which is the reassuring half: the parts
+that should be stable are stable, and the part that cannot be is correctly
+labelled as such.
+
 ### Database structure — _established_
 
 From `database-migration-replay / migration-replay`, artifact
@@ -266,3 +283,23 @@ on a Windows workstation produces garbage. Re-running with the hosted root
 passed as the `root` argument reproduced the hosted result exactly. A local
 replay that disagrees with a hosted run is a claim about the replay until proven
 otherwise.
+
+## Confirmed on a hosted runner — run 20 (`30434464507`, `af72920`)
+
+Committing a baseline arms a ratchet, and an armed ratchet that has never fired
+in anger is still only a claim. The run carrying these baselines went **14/14
+with `ci-gate` Go**, and its artifacts show the gates enforcing rather than
+merely passing:
+
+| Gate                     | Before (run 19)                              | After (run 20)                                        |
+| ------------------------ | -------------------------------------------- | ----------------------------------------------------- |
+| Backend coverage         | 4 warnings, `baseline: null` on every metric | **0 warnings**, baseline present, delta 0 on all four |
+| Backend critical modules | none — `criticalModules: []`                 | **6 rules**, each matching real files, all pass       |
+| Build size               | `no build-size baseline recorded yet`        | `baselineBytes 34,367,299`, **ratio 1.0**             |
+| Structural totals        | not compared                                 | 242 / 514 / 631 / 541 / 0 compared and equal          |
+| Seeded tables            | `seededStructuralTables is unset` warning    | allow-list enforced, no unexpected populated table    |
+| Workflow security        | `{scanned, findings}` only                   | `ruleCount: 14`, `ruleIds` listed, armed-check passes |
+
+`ci-gate.json` records `expectedSha === actualSha ===
+af729201aae578be3ee9a5a308027e0bcf83ef01` with all 12 governed jobs positively
+accepted, so this is the gate agreeing about the exact commit under review.
