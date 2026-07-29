@@ -1,0 +1,18 @@
+{
+  "description": "Operations that declare `idempotent: true` with no replay evidence. Every entry is ONE operation with an owner and a review date — there is no wildcard and no module-wide waiver, because a class-wide suppression would hide the next one silently, which is exactly what this check exists to prevent. A NEW unproven promise fails the gate immediately.",
+  "policy": "docs/engineering/ci-automation/automated-testing-strategy.md",
+  "finding": "CSA-22 — CLOSED",
+  "context": "EMPTY, and empty is the finished state rather than a disabled one. CSA-22 recorded ten P1-14 IAM and organisation-settings operations that promised idempotency with nothing exercising the promise. All ten now have real replay evidence: tests/backend/p1-14-idempotency-replay.test.ts drives each through its exported route handler and proves the retry writes no second row, no second audit record and no second outbox event, and that the same key with a different payload is refused rather than silently replayed. `check-idempotency-evidence.mjs` reports 107 of 107 idempotent operations proven and 0 waived.",
+  "closure": {
+    "finding": "CSA-22",
+    "closedBy": "RootLco CodeQL Application Remediation and Security Hardening",
+    "closedOn": "2026-07-29",
+    "evidence": "tests/backend/p1-14-idempotency-replay.test.ts",
+    "provenance": "Imported by cherry-pick from fix/p1-14-idempotency-replay-evidence@c27b2a06680b1325a76b08c0f7f6ff51e2174711, authored 2026-07-28, with authorship preserved.",
+    "whyNotMergedSeparately": "Merging that branch on its own would have made all ten entries below stale, and a stale exception is a HARD FAILURE in check-idempotency-evidence.mjs — the stale-exception loop marks an entry `used` only inside `consider()`, which runs for unproven operations only. Measured on the reconciled tree before this file was emptied: 107/107 proven, 0 unproven, and ten `matches nothing` failures, exit 1. That gate is called unconditionally by _reusable-integration-tests.yml under `set -euo pipefail` and is a `ci-gate` dependency, so develop would have gone red on the push. The evidence and the removal therefore had to land together.",
+    "before": { "idempotentOperations": 107, "withEvidence": 97, "waived": 10 },
+    "after": { "idempotentOperations": 107, "withEvidence": 107, "waived": 0 }
+  },
+  "reviewByRationale": "No longer applicable. It read: 2026-10-31 is the end of the quarter following this initiative, which is enough time for a dedicated remediation change and short enough that the list cannot quietly become permanent. The list did not become permanent; it was closed in the quarter it was opened.",
+  "operations": []
+}

@@ -1,0 +1,480 @@
+# =============================================================================
+# RootLco — nightly assurance.
+#
+# Everything too slow, too broad, or too unstable-by-nature to sit on a pull
+# request. Deliberately NOT required for a merge: a nightly suite that blocks
+# merges becomes a nightly suite people disable.
+#
+# The distinction that matters is not "less important" but "different question".
+# A pull request asks *did this change break something*. Nightly asks *is the
+# system still what we think it is* — the full role × table × action matrix, the
+# whole git history, a restore that actually restores, a performance number with
+# nothing else competing for the runner.
+#
+# Cost-conscious: one run a day, on standard runners, with the heaviest jobs
+# independent so a failure in one does not waste the others.
+# =============================================================================
+
+name: Nightly assurance
+
+on:
+  schedule:
+    # 02:30 UTC — after the working day in Asia/Amman (UTC+3) and before the
+    # next one starts, so a failure is waiting rather than interrupting.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      skip-slow:
+        description: Skip the performance and backup drills for a quick nightly.
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: nightly-assurance
+  # Never cancel a nightly that is mid-restore or mid-measurement; a partial
+  # drill is worse than no drill because it looks like one.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  full-backend-e2e:
+    name: full-backend-e2e
+    uses: ./.github/workflows/_reusable-integration-tests.yml
+    with:
+      collect-coverage: true
+      artifact-retention-days: 60
+
+  full-rls-matrix:
+    name: full-rls-matrix
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: security-matrix
+      # Every application schema, not just the security-critical ones.
+      rls-level: full
+      artifact-retention-days: 60
+
+  migration-replay:
+    name: migration-replay
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: migration-replay
+      artifact-retention-days: 60
+
+  historical-secret-scan:
+    name: historical-secret-scan
+    uses: ./.github/workflows/_reusable-secret-scan.yml
+    with:
+      # The whole reachable history, which is O(history) and would dominate a PR.
+      depth: deep
+      artifact-retention-days: 60
+
+  dependency-deep-scan:
+    name: dependency-deep-scan
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/_reusable-dependency-security.yml
+    with:
+      artifact-retention-days: 60
+
+  container-deep-scan:
+    name: container-deep-scan
+    uses: ./.github/workflows/_reusable-container.yml
+    with:
+      severity: 'CRITICAL,HIGH,MEDIUM'
+      # Drops the `ignore-unfixed` filter: the nightly picture is the complete
+      # one, including findings with no patched release, so the base-image
+      # decision is made on evidence rather than on what the PR gate hides.
+      deep: true
+      artifact-retention-days: 60
+
+  code-security:
+    name: code-security
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/_reusable-code-security.yml
+    with:
+      artifact-retention-days: 60
+
+  # ===========================================================================
+  mutation-assurance:
+    name: mutation-assurance
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+      WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+      NEXT_PUBLIC_APP_ENV: 'local'
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          fetch-depth: '0'
+
+      - name: Build the schema
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations
+          npm run validate:seed-state
+
+      - name: Targeted mutation assurance
+        run: |
+          set -euo pipefail
+          # Removes ONE security or integrity guard at a time and requires the
+          # suite to notice. A guard whose removal changes nothing is either
+          # dead code or untested — both are findings.
+          node scripts/ci/mutation-assurance.mjs \
+            --manifest .github/ci-baselines/mutation-targets.json \
+            --json mutation-report.json --markdown mutation-report.md
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f mutation-report.md ]; then cat mutation-report.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-mutation-assurance
+          retention-days: 60
+          if-no-files-found: ignore
+          path: |
+            mutation-report.json
+            mutation-report.md
+
+  # ===========================================================================
+  performance-baseline:
+    name: performance-baseline
+    if: ${{ !inputs.skip-slow }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+      PGHOST: 127.0.0.1
+      PGPORT: '54322'
+      PGUSER: postgres
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+      PGDATABASE: postgres
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+
+      - name: Build the schema
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations
+          npm run validate:seed-state
+
+      - name: Measure
+        run: |
+          set -euo pipefail
+          # A GENERATED, non-personal dataset. No customer or pilot data is ever
+          # loaded, here or anywhere else in this pipeline.
+          node scripts/db/perf-baseline.mjs --scale 20000 --json performance.json
+          node scripts/ci/performance-gate.mjs \
+            --report performance.json \
+            --baseline .github/ci-baselines/performance-baseline.json \
+            --json performance-gate.json --markdown performance.md
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f performance.md ]; then cat performance.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-performance
+          retention-days: 90
+          if-no-files-found: ignore
+          path: |
+            performance.json
+            performance-gate.json
+            performance.md
+
+  # ===========================================================================
+  backup-restore-drill:
+    name: backup-restore-drill
+    if: ${{ !inputs.skip-slow }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+
+      - name: Build the source database
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations
+          npm run validate:seed-state
+
+      - name: Dump, destroy, restore, and prove equivalence
+        run: |
+          set -euo pipefail
+          # An EPHEMERAL database only. Production is never touched by any
+          # workflow in this repository, and no production connection exists.
+          node scripts/ci/backup-restore-drill.mjs \
+            --json backup-restore.json --markdown backup-restore.md
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f backup-restore.md ]; then cat backup-restore.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-backup-restore
+          retention-days: 60
+          if-no-files-found: ignore
+          # The dump itself is NOT uploaded. Retaining database contents in an
+          # artifact would defeat the point of the exercise.
+          path: |
+            backup-restore.json
+            backup-restore.md
+
+  # ===========================================================================
+  compatibility-matrix:
+    name: compatibility (node ${{ matrix.node }}, postgres ${{ matrix.postgres }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # An experimental combination must never turn the nightly red: the point is
+    # early warning about the NEXT version, not a veto from an unsupported one.
+    continue-on-error: ${{ matrix.experimental }} # workflow-security-allow: WFS-009 -- scoped to the experimental combinations only; the supported pair (node 22 / postgres 17) has `experimental: false`, so its failure still fails the job. Removing this would let an unsupported future version block a merge.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Supported today: the Dockerfile runtime and the Supabase major.
+          - node: '22'
+            postgres: '17'
+            experimental: false
+          # Next Node LTS under evaluation.
+          - node: '24'
+            postgres: '17'
+            experimental: true
+          # Next PostgreSQL major under evaluation.
+          - node: '22'
+            postgres: '18'
+            experimental: true
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- ephemeral CI service container
+      WORKER_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres # pragma: allowlist secret -- same throwaway container
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+      NEXT_PUBLIC_APP_ENV: 'local'
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Label the combination
+        env:
+          NODE_VERSION: ${{ matrix.node }}
+          POSTGRES_VERSION: ${{ matrix.postgres }}
+          EXPERIMENTAL: ${{ matrix.experimental }}
+        run: |
+          set -euo pipefail
+          if [ "${EXPERIMENTAL}" = 'true' ]; then
+            status='EXPERIMENTAL: informational only, a failure here is early warning'
+          else
+            status='SUPPORTED: a failure here is a real failure'
+          fi
+          printf 'node %s / postgres %s — %s\n' "${NODE_VERSION}" "${POSTGRES_VERSION}" "${status}"
+
+      - name: Migrations and suites
+        run: |
+          set -euo pipefail
+          npm run db:apply-migrations
+          npm run validate:seed-state
+          npm run test
+          npm run test:db
+          npm run test:backend
+
+  # ===========================================================================
+  nightly-gate:
+    name: nightly-gate
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - full-backend-e2e
+      - full-rls-matrix
+      - migration-replay
+      - historical-secret-scan
+      - dependency-deep-scan
+      - container-deep-scan
+      - code-security
+      - mutation-assurance
+      - performance-baseline
+      - backup-restore-drill
+      - compatibility-matrix
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          install: 'false'
+
+      - name: Summarise the night
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${NEEDS_JSON}" > nightly-needs.json
+          node scripts/ci/nightly-summary.mjs \
+            --needs nightly-needs.json --json nightly.json --markdown nightly.md
+          cat nightly.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the nightly record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-nightly-gate
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            nightly.json
+            nightly.md
+            nightly-needs.json

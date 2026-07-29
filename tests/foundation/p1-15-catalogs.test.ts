@@ -26,6 +26,8 @@
  * operation registry is populated.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   ERROR_CODES,
   allErrorDefinitions,
@@ -85,14 +87,17 @@ const EXPECTED_ERROR_CODES = [
   'ERR-CON-002',
   'ERR-CTX-001',
   'ERR-DEP-001',
+  'ERR-DIA-001',
   'ERR-DOC-001',
   'ERR-EXP-001',
   'ERR-IAM-001',
   'ERR-IAM-002',
   'ERR-INT-001',
   'ERR-INT-002',
+  'ERR-INT-003',
   'ERR-NTF-001',
   'ERR-PAG-001',
+  'ERR-QMS-001',
   'ERR-REQ-001',
   'ERR-REQ-002',
   'ERR-RES-001',
@@ -100,9 +105,12 @@ const EXPECTED_ERROR_CODES = [
   'ERR-RTE-001',
   'ERR-STB-001',
   'ERR-SYS-001',
+  'ERR-TECH-001',
   'ERR-TEN-001',
   'ERR-TRN-001',
   'ERR-VAL-001',
+  'ERR-WO-001',
+  'ERR-WO-002',
 ];
 
 /**
@@ -116,14 +124,17 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-CON-002', status: 428, owner: 'concurrency', class: 'client', retryable: false },
   { code: 'ERR-CTX-001', status: 500, owner: 'context', class: 'server', retryable: false },
   { code: 'ERR-DEP-001', status: 503, owner: 'platform', class: 'server', retryable: true },
+  { code: 'ERR-DIA-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-DOC-001', status: 409, owner: 'attachment', class: 'conflict', retryable: false },
   { code: 'ERR-EXP-001', status: 422, owner: 'export', class: 'client', retryable: false },
   { code: 'ERR-IAM-001', status: 403, owner: 'authorization', class: 'security', retryable: false },
   { code: 'ERR-IAM-002', status: 401, owner: 'authorization', class: 'security', retryable: false },
   { code: 'ERR-INT-001', status: 409, owner: 'idempotency', class: 'conflict', retryable: false },
   { code: 'ERR-INT-002', status: 400, owner: 'idempotency', class: 'client', retryable: false },
+  { code: 'ERR-INT-003', status: 400, owner: 'idempotency', class: 'client', retryable: false },
   { code: 'ERR-NTF-001', status: 409, owner: 'notification', class: 'conflict', retryable: false },
   { code: 'ERR-PAG-001', status: 400, owner: 'validation', class: 'client', retryable: false },
+  { code: 'ERR-QMS-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-REQ-001', status: 400, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-REQ-002', status: 404, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-RES-001', status: 404, owner: 'resource', class: 'client', retryable: false },
@@ -131,9 +142,17 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-RTE-001', status: 429, owner: 'throttling', class: 'throttle', retryable: true },
   { code: 'ERR-STB-001', status: 501, owner: 'stub', class: 'client', retryable: false },
   { code: 'ERR-SYS-001', status: 500, owner: 'platform', class: 'server', retryable: true },
+  { code: 'ERR-TECH-001', status: 422, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-TEN-001', status: 403, owner: 'entitlement', class: 'security', retryable: false },
   { code: 'ERR-TRN-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-VAL-001', status: 422, owner: 'validation', class: 'client', retryable: false },
+  { code: 'ERR-WO-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
+  // Wave 6's unapproved-work execution gate. Same status/owner/class as ERR-WO-001
+  // and deliberately a separate code: ERR-WO-001 is the whole-order B1..B6 closure
+  // gate, this refuses ONE job movement while additional work it discovered awaits a
+  // customer decision. Sharing the code would make the catalog's own description of
+  // ERR-WO-001 false.
+  { code: 'ERR-WO-002', status: 409, owner: 'transition', class: 'conflict', retryable: false },
 ];
 
 /** The codes P1-15 introduced, with the status each promises a client. */
@@ -189,7 +208,6 @@ describe('error catalog', () => {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_AUDIT_ACTIONS = [
-  // Phase 1-18 (apt / rec) — appointment lifecycle and vehicle reception.
   'apt.appointment.cancelled',
   'apt.appointment.created',
   'apt.appointment.no_show_recorded',
@@ -208,6 +226,15 @@ const EXPECTED_AUDIT_ACTIONS = [
   'crm.customer.status_changed',
   'crm.customer.tag_assigned',
   'crm.customer.vehicle_linked',
+  // Wave 7. `dia.diagnostic.entry_recorded` is one action across six entry tables,
+  // each record naming its `entry_kind`: they are the same fact — something was added
+  // to this report — and splitting them would make "what went into this report" six
+  // audit queries instead of one.
+  'dia.diagnostic.completed',
+  'dia.diagnostic.created',
+  'dia.diagnostic.entry_recorded',
+  'dia.diagnostic.reviewed',
+  'dia.diagnostic.state_changed',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',
@@ -231,10 +258,43 @@ const EXPECTED_AUDIT_ACTIONS = [
   'iam.user.locked',
   'iam.user.unlocked',
   'iam.user.updated',
+  // Phase 1-21 inventory. Quantity movements are `privileged` rather than
+  // `financial`: Phase 1-10 put valuation out of scope, so `inv.stock_movements`
+  // carries a quantity and no amount. `inv.external_purchase.recorded` IS financial,
+  // because it carries a unit cost.
+  'inv.customer_supplied_part.recorded',
+  'inv.external_purchase.recorded',
+  'inv.movement_history.read',
+  'inv.opening_batch.approved',
+  'inv.opening_batch.created',
+  'inv.part.issued',
+  'inv.part.returned',
+  'inv.reconciliation.performed',
+  'inv.stock.damaged',
+  'inv.stock.reservation_released',
+  'inv.stock.reserved',
   'org.branch.settings_updated',
   'org.branch.status_changed',
   'org.company.settings_updated',
   'org.tenant.settings_updated',
+  // Wave 8. `qms.*` sorts after `org.*` and before `rec.*`.
+  'qms.quality_control.check_recorded',
+  'qms.quality_control.finalized',
+  'qms.quality_control.opened',
+  'qms.rework.cost_read',
+  'qms.rework.cost_recorded',
+  'qms.rework.created',
+  'qms.rework.signed_off',
+  'qms.work_order.reopen_refused',
+  'quo.additional_work.quotation_linked',
+  'quo.quotation.accepted',
+  'quo.quotation.created',
+  'quo.quotation.expired',
+  'quo.quotation.rejected',
+  'quo.quotation_item.decided',
+  'quo.quotation_revision.created',
+  'quo.quotation_revision.decided',
+  'quo.quotation_revision.issued',
   'rec.reception.approved',
   'rec.reception.authorization_recorded',
   'rec.reception.converted_to_work_order',
@@ -256,6 +316,17 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.template.version_approved',
   'shared.template.version_created',
   'shared.template.version_retired',
+  'svc.branch_availability.changed',
+  'svc.discount.authorized',
+  'svc.price_list.created',
+  'svc.price_list_version.created',
+  'svc.price_list_version.published',
+  'svc.price_rule.recorded',
+  'svc.service.updated',
+  'svc.service_version.published',
+  'tech.labor.session_corrected',
+  'tech.labor.session_started',
+  'tech.labor.session_stopped',
   'veh.vehicle.authorized_party_added',
   'veh.vehicle.authorized_party_retired',
   'veh.vehicle.created',
@@ -268,6 +339,24 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.plate_assigned',
   'veh.vehicle.status_changed',
   'veh.vehicle.updated',
+  // Wave 6. `wo.additional_work.*` sorts before `wo.customer_approval.*` and both
+  // before `wo.job.*`, because the pin is sorted by the FULL code.
+  'wo.additional_work.detail_read',
+  'wo.additional_work.detail_recorded',
+  'wo.additional_work.fulfillment_changed',
+  'wo.additional_work.requested',
+  'wo.additional_work.state_changed',
+  'wo.customer_approval.recorded',
+  'wo.job.assigned',
+  'wo.job.assignment_ended',
+  'wo.job.created',
+  'wo.job.state_changed',
+  'wo.job.updated',
+  'wo.work_order.closed',
+  'wo.work_order.required_part_recorded',
+  'wo.work_order.rework_opened',
+  'wo.work_order.service_line_recorded',
+  'wo.work_order.state_changed',
 ];
 
 /**
@@ -480,27 +569,50 @@ describe('registered operations against the audit-action catalog', () => {
 
 const EXPECTED_EVENT_TYPES = [
   'access.grant.changed',
+  'additional-work.requested',
   'appointment.changed',
   'business-partner.created',
   'business-partner.merged',
   'consent.changed',
+  'customer-approval.recorded',
+  'diagnostic-report.completed',
   'document.accepted',
   'document.link.changed',
   'document.version.registered',
+  'job.assigned',
+  'job.state-changed',
+  'labor.session-changed',
   'message-template.version.changed',
   'message.delivery.changed',
   'message.enqueued',
   'organization.branch.status.changed',
-  // Registered by P1-18: reception approval had no reserved name, because
-  // Chapter 4 Table 4.5 allocates only the check-in fact for the `rec` domain.
+  'price-list.published',
+  'quality-control.finalized',
+  'quotation.accepted',
+  'quotation.created',
+  'quotation.expired',
+  'quotation.item-decided',
+  'quotation.rejected',
+  'quotation.revision-issued',
   'reception.approved',
+  'rework.linked',
+  'service.published',
   'session.revoked',
+  // Phase 1-21 inventory. One `stock.movement.posted` carries movementType,
+  // direction and the business reference, so it describes every posting kind
+  // without a consumer subscribing to four names for one fact.
+  'stock.movement.posted',
+  'stock.reservation.released',
+  'stock.reserved',
   'user.invited',
   'user.status.changed',
   'vehicle.checked-in',
   'vehicle.created',
   'vehicle.merged',
   'vehicle.relationship.changed',
+  'work-order.closed',
+  'work-order.created',
+  'work-order.state-changed',
 ];
 
 /**
@@ -779,5 +891,48 @@ describe('status-transition graph', () => {
       expect(entry, `${transition.eventType} is not in the event catalog`).toBeDefined();
       expect(entry?.owner, `${transition.eventType} owner`).toBe('shared');
     }
+  });
+});
+
+/**
+ * The published standards document must list the same codes the runtime does.
+ *
+ * Nothing reconciled `docs/standards/error-catalog-v0.1.md` against
+ * `ERROR_CODES` before this, so `ERR-INT-003` went stale there the moment it
+ * was added. A document that describes a contract while silently omitting part
+ * of it is worse than no document, because readers trust it.
+ */
+describe('the standards error catalog matches the runtime catalog', () => {
+  const markdown = readFileSync(
+    join(__dirname, '../../docs/standards/error-catalog-v0.1.md'),
+    'utf8'
+  );
+
+  it('documents every runtime code', () => {
+    const missing = ERROR_CODES.filter((code) => !markdown.includes(`**${code}**`));
+    expect(missing, 'codes in ERROR_CODES with no row in the standards document').toEqual([]);
+  });
+
+  it('documents no code the runtime does not define', () => {
+    const documented = [...markdown.matchAll(/\*\*(ERR-[A-Z]{3}-\d{3})\*\*/g)].map((m) => m[1]);
+    const phantom = [...new Set(documented)].filter(
+      (code) => !(ERROR_CODES as readonly string[]).includes(code as string)
+    );
+    expect(phantom, 'rows in the standards document with no runtime code').toEqual([]);
+  });
+
+  it('agrees with the runtime on the HTTP status of every documented code', () => {
+    const rows = [
+      ...markdown.matchAll(/\|\s*\*\*(ERR-[A-Z]{3}-\d{3})\*\*\s*\|[^|]*\|\s*(\d{3})\s*\|/g),
+    ];
+    // Guards the guard: a table-shape change must not silently yield zero rows.
+    expect(rows.length, 'no parseable rows — the table shape changed').toBeGreaterThan(10);
+    const disagreements = rows
+      .filter(([, code, status]) => errorDefinition(code as ErrorCode).status !== Number(status))
+      .map(
+        ([, code, status]) =>
+          `${code}: document says ${status}, runtime says ${errorDefinition(code as ErrorCode).status}`
+      );
+    expect(disagreements).toEqual([]);
   });
 });

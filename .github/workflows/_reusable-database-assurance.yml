@@ -1,0 +1,387 @@
+# =============================================================================
+# RootLco — reusable database assurance.
+#
+# Two complete jobs against a FRESH PostgreSQL 17 service container, selected by
+# `task`:
+#
+#   migration-replay  can this schema be built from nothing? Zero tables before,
+#                     every migration, seeds twice, catalog totals, schema hash
+#                     against the frozen baseline, structural review, clean tree.
+#   security-matrix   is the result actually guarded? The database suite (RLS,
+#                     constraints, concurrency, negative stock) plus a
+#                     catalog-derived role × table × action matrix.
+#
+# They are separate jobs with separate containers deliberately: a replay that
+# runs after a security suite has written fixtures is no longer a replay, and
+# the two answer different questions (CSA-13).
+#
+# The service-container password below is a throwaway for a container that lives
+# for one job. It is not a credential and must never be replaced with one.
+# =============================================================================
+
+name: Reusable — database assurance
+
+on:
+  workflow_call:
+    inputs:
+      task:
+        description: One of `migration-replay`, `security-matrix`.
+        required: true
+        type: string
+      ref:
+        required: false
+        type: string
+        default: ''
+      base-ref:
+        description: Base branch, for the migration-immutability diff.
+        required: false
+        type: string
+        default: ''
+      rls-level:
+        description: '`critical` on pull requests, `full` nightly.'
+        required: false
+        type: string
+        default: critical
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 14
+    outputs:
+      migrations:
+        description: Migrations applied from zero.
+        value: ${{ jobs.database.outputs.migrations }}
+      schema-hash:
+        description: Schema hash after migration and seeding.
+        value: ${{ jobs.database.outputs.schema-hash }}
+      database-tests:
+        description: Tests executed by the database tier.
+        value: ${{ jobs.database.outputs.database-tests }}
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: ${{ inputs.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      migrations: ${{ steps.replay.outputs.migrations }}
+      schema-hash: ${{ steps.hash.outputs.hash }}
+      database-tests: ${{ steps.dbtests.outputs.total }}
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres # pragma: allowlist secret -- ephemeral CI service container, not a credential
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      PGPASSWORD: postgres # pragma: allowlist secret -- same throwaway container value
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
+      NEXT_PUBLIC_APP_ENV: 'local'
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Without this, an unrecognised task still applies the migrations but
+      # silently skips BOTH the database suite and the replay evidence, then
+      # reports success. See the same guard in _reusable-node-quality.yml.
+      - name: The task must be one this workflow implements
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          case "${TASK}" in
+            migration-replay | security-matrix) printf 'task: %s\n' "${TASK}" ;;
+            *)
+              echo "::error::unknown task '${TASK}'. Expected one of: migration-replay, security-matrix."
+              exit 1
+              ;;
+          esac
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          # The immutability diff needs the base branch, so full history.
+          fetch-depth: '0'
+
+      # =======================================================================
+      # shared: build the schema from nothing
+      # =======================================================================
+      - name: Migration set is well-formed (filesystem only)
+        run: |
+          set -euo pipefail
+          node scripts/ci/migration-replay-checks.mjs --phase static \
+            --baseline .github/ci-baselines/schema-baseline.json \
+            --json migration-static.json --markdown migration-static.md
+
+      - name: Applied migrations are immutable
+        env:
+          # On a `push` there is no base ref in the event, so the comparison is
+          # made against the previous commit on the same branch. Skipping the
+          # check entirely on the protected push — the run a gate record cites —
+          # would mean a rewritten historical migration is never detected there.
+          BASE_REF: ${{ inputs.base-ref }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_REF}" ]; then
+            comparison="origin/${BASE_REF}...HEAD"
+            label="${BASE_REF}"
+            # Fail CLOSED: an unresolvable base ref must fail loudly rather than
+            # pass silently over an empty diff.
+            git rev-parse --verify "origin/${BASE_REF}" >/dev/null
+          elif [ "${EVENT}" = 'push' ] && [ -n "${BEFORE}" ] && [ "${BEFORE}" != '0000000000000000000000000000000000000000' ]; then
+            comparison="${BEFORE}...HEAD"
+            label="the previous commit on this branch"
+            git rev-parse --verify "${BEFORE}" >/dev/null
+          else
+            # No base to compare against and no way to derive one. Say so rather
+            # than passing over a comparison that never happened.
+            echo "::error::No base reference is available (event '${EVENT}'), so migration immutability cannot be checked. A check that cannot run must not report success."
+            exit 1
+          fi
+          changed="$(git diff --name-status --diff-filter=MDR "${comparison}" -- supabase/migrations/)"
+          if [ -n "${changed}" ]; then
+            echo "::error::Migrations already on ${label} were modified, renamed or deleted. Migrations are immutable once merged — write a new forward migration."
+            echo "${changed}"
+            exit 1
+          fi
+          printf 'OK: no existing migration was modified (compared against %s)\n' "${label}"
+
+      - name: The database holds zero application tables
+        run: |
+          set -euo pipefail
+          psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc 'SELECT version();'
+          node scripts/ci/migration-replay-checks.mjs --phase pre \
+            --json migration-pre.json --markdown migration-pre.md
+
+      - name: Apply every migration from zero
+        id: replay
+        run: |
+          set -euo pipefail
+          files="$(find supabase/migrations -name '*.sql' -type f | wc -l)"
+          echo "migration files in tree: ${files}"
+          npm run db:apply-migrations 2>&1 | tee migration.log
+          applied="$(psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc \
+            'SELECT count(*) FROM supabase_migrations.schema_migrations')"
+          echo "migrations recorded as applied: ${applied}"
+          echo "migrations=${applied}" >> "${GITHUB_OUTPUT}"
+
+      - name: Apply declared seeds twice and prove idempotency
+        run: |
+          set -euo pipefail
+          npm run validate:seed-state 2>&1 | tee seed.log
+
+      - name: Schema hash against the frozen baseline
+        id: hash
+        run: |
+          set -euo pipefail
+          npm run --silent validate:schema-inventory -- --hash-only | tail -1 > schema-hash.txt
+          measured="$(cat schema-hash.txt)"
+          expected="$(node -e 'process.stdout.write(require("./.github/ci-baselines/schema-baseline.json").schemaHash ?? "")')"
+          echo "measured: ${measured}"
+          echo "expected: ${expected}"
+          echo "hash=${measured}" >> "${GITHUB_OUTPUT}"
+          # Both sides must be a real hash. Comparing two empty strings, or two
+          # copies of the word "undefined", succeeds while proving nothing —
+          # and this is the assertion the whole replay rests on.
+          if ! printf '%s' "${measured}" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::the measured schema hash is not a 64-character hex digest. The hash step did not produce a hash, so the comparison below would be meaningless."
+            exit 1
+          fi
+          if ! printf '%s' "${expected}" | grep -qE '^[0-9a-f]{64}$'; then
+            echo "::error::the baseline schema hash is not a 64-character hex digest. A missing or malformed baseline would otherwise let this step print OK while comparing nothing."
+            exit 1
+          fi
+          if [ "${measured}" != "${expected}" ]; then
+            echo "::error::Schema hash drifted from the frozen baseline. If a migration in this change is responsible, raise schemaHash in .github/ci-baselines/schema-baseline.json in the SAME commit so the diff shows both."
+            exit 1
+          fi
+          echo "OK: schema matches the frozen baseline"
+
+      # =======================================================================
+      # migration-replay
+      # =======================================================================
+      - name: Schema inventory
+        if: inputs.task == 'migration-replay'
+        run: npm run --silent validate:schema-inventory -- --json schema-inventory.json
+
+      - name: Structural review
+        if: inputs.task == 'migration-replay'
+        run: |
+          set -euo pipefail
+          node scripts/db/structural-review.mjs --json structural-review.json 2>&1 | tee structural-review.log
+
+      - name: Catalog totals, retention classes, empty business tables, smoke reads
+        if: inputs.task == 'migration-replay'
+        run: |
+          set -euo pipefail
+          node scripts/ci/migration-replay-checks.mjs --phase post \
+            --baseline .github/ci-baselines/schema-baseline.json \
+            --json migration-post.json --markdown migration-post.md
+
+      - name: Compose the migration-replay evidence record
+        if: inputs.task == 'migration-replay' && !cancelled()
+        env:
+          MIGRATIONS: ${{ steps.replay.outputs.migrations }}
+          SCHEMA_HASH: ${{ steps.hash.outputs.hash }}
+        run: |
+          set -euo pipefail
+          # One flat record the gate can read without knowing this job's internals.
+          node -e '
+            const fs = require("node:fs");
+            const read = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return {}; } };
+            const pre = read("migration-pre.json");
+            const post = read("migration-post.json");
+            fs.writeFileSync("migration-replay.json", JSON.stringify({
+              migrations: Number(process.env.MIGRATIONS ?? 0),
+              schemaHash: process.env.SCHEMA_HASH ?? null,
+              tablesBefore: pre.tablesBefore ?? null,
+              tables: post.tables ?? null,
+              functions: post.functions ?? null,
+              policies: post.policies ?? null,
+              triggers: post.triggers ?? null,
+              securityDefiner: post.security_definer ?? null,
+              permissions: post.permissions ?? null,
+              populatedTables: post.populatedTables ?? [],
+            }, null, 2) + "\n");
+          '
+          cat migration-replay.json
+
+      - name: Rollback policy
+        if: inputs.task == 'migration-replay'
+        run: |
+          set -euo pipefail
+          # Rollback is tested only where a migration declares support for it.
+          # Inventing a down-migration for an irreversible change (a dropped
+          # column, a rewritten row) would prove a rollback that cannot happen.
+          # `grep -c` exits 1 on no match, which is the expected state here, so
+          # the count is taken with an explicit fallback rather than by
+          # discarding the status.
+          count="$(grep -rl -- '-- rootlco:reversible' supabase/migrations/ | grep -c . || printf 0)"
+          declared="$(grep -rl -- '-- rootlco:reversible' supabase/migrations/ || printf '')"
+          echo "migrations declaring reversibility: ${count}"
+          if [ "${count}" -eq 0 ]; then
+            echo "No migration declares \`-- rootlco:reversible\`. Every migration in this repository is forward-only by policy; see docs/engineering/ci-automation/pr-gate.md."
+          else
+            echo "${declared}"
+            echo "::notice::Reversible migrations are declared but no rollback harness exists yet. This is a recorded gap, not a silent pass."
+          fi
+
+      # =======================================================================
+      # security-matrix
+      # =======================================================================
+      - name: Database tier (RLS, constraints, concurrency, negative stock)
+        if: inputs.task == 'security-matrix'
+        run: |
+          set -euo pipefail
+          npm run test:db -- --reporter=default --reporter=json --outputFile=vitest-db.json
+
+      - name: Summarise the database tier
+        id: dbtests
+        if: inputs.task == 'security-matrix' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs --input vitest-db.json --label database \
+            --json test-totals-database.json --markdown tests-database.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-database.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Role × table × action matrix
+        if: inputs.task == 'security-matrix' && !cancelled()
+        env:
+          # Through `env:` rather than interpolated into the shell. On a
+          # `pull_request` the caller workflow comes from the PR head, so an
+          # input reaches this block from a file the contributor controls.
+          RLS_LEVEL: ${{ inputs.rls-level }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/rls-matrix.mjs --level "${RLS_LEVEL}" \
+            --json rls-matrix.json --markdown rls-matrix.md
+
+      # =======================================================================
+      # shared: the tree must be untouched
+      # =======================================================================
+      - name: The working tree is clean
+        if: always()
+        run: |
+          set -euo pipefail
+          # A suite that writes a tracked file is a defect, not a nuisance: the
+          # next job would then be testing a different tree.
+          if [ -n "$(git status --porcelain -- ':!:/*.json' ':!:/*.md' ':!:/*.log' ':!:/*.txt' ':!:coverage/')" ]; then
+            echo "::error::A step modified a tracked file. The database jobs must leave the tree untouched."
+            git status --porcelain
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "OK: working tree clean"
+
+      - name: Job summary
+        if: always()
+        env:
+          TASK: ${{ inputs.task }}
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for file in migration-static.md migration-pre.md migration-post.md tests-database.md rls-matrix.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
+          printf '_Task `%s` at `%s`_\n' "${TASK}" "${RESOLVED_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ inputs.task }}
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: |
+            migration-static.json
+            migration-pre.json
+            migration-post.json
+            migration-replay.json
+            migration.log
+            seed.log
+            schema-hash.txt
+            schema-inventory.json
+            structural-review.json
+            structural-review.log
+            vitest-db.json
+            test-totals-database.json
+            rls-matrix.json
+            *.md

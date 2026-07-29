@@ -45,6 +45,17 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('inv.stock.operate',        'inv', 'Post movements, reserve, issue, return',   'medium', '00000000-0000-4000-8000-000000000001'),
   ('inv.adjustment.approve',   'inv', 'Approve stock adjustments/opening batches','high',   '00000000-0000-4000-8000-000000000001'),
   ('inv.cost.view',            'inv', 'View item/purchase/adjustment cost',       'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-21 — Inventory backend. Four codes only: inv.stock.operate already
+  -- covers reserve/release/issue/return/damage by its own description, and
+  -- inv.adjustment.approve already covers opening-batch approval, so neither is
+  -- duplicated. The four below name authorities no existing code carries — reading
+  -- the item catalog is not reading stock, custody of a customer's property is not
+  -- operating stock, an external purchase reference is not a movement, and a
+  -- reconciliation read is a privileged audit act.
+  ('inv.item.read',            'inv', 'Search and read the item catalog',        'low',    '00000000-0000-4000-8000-000000000001'),
+  ('inv.custody.manage',       'inv', 'Record custody of customer-supplied parts','medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.external_purchase.record','inv','Record ad-hoc external purchase references','medium','00000000-0000-4000-8000-000000000001'),
+  ('inv.audit.read',           'inv', 'Read inventory reconciliation evidence',  'high',   '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Billing & Payment (sal)
   ('sal.invoice.manage',       'sal', 'Create and manage draft invoices',         'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),
@@ -154,7 +165,78 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('rec.reception.approve',    'rec', 'Approve a reception visit for work',           'high',  '00000000-0000-4000-8000-000000000001'),
   -- Conversion creates the work order that all downstream cost attaches to. Its own
   -- high-risk code, never implied by approval.
-  ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001')
+  ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (wo) - Work Order Backend. Reading a work order is separated from
+  -- changing one because the board, the customer-facing status and the reception
+  -- desk all need to see an order without any authority to move it.
+  ('wo.work_order.read',       'wo', 'Read work orders, their jobs and their history',  'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Creating a work order commits the workshop to the job and is what all downstream
+  -- cost attaches to, so it is its own capability and never implied by reading.
+  ('wo.work_order.create',     'wo', 'Convert a reception visit into a work order',     'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Moving an order through its graph. Separate from closure: a service advisor who
+  -- may park an order awaiting parts must not thereby be able to close it.
+  ('wo.work_order.transition', 'wo', 'Move a work order through its configured states', 'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Closure is the one transition that ends the workshop's liability and freezes the
+  -- record, and B1-B6 gate it. Its own high-risk code, never implied by transition.
+  ('wo.work_order.close',      'wo', 'Close a work order once every closure condition is met', 'high', '00000000-0000-4000-8000-000000000001'),
+  -- Jobs are the unit of work assigned to a technician. Managing them is distinct
+  -- from moving the order that contains them.
+  ('wo.job.manage',            'wo', 'Create and update jobs on a work order',          'medium', '00000000-0000-4000-8000-000000000001'),
+  ('wo.job.transition',        'wo', 'Move a job through its configured states',        'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Service lines and required parts record demand. Deliberately NOT a stock
+  -- capability: Phase 1-19 records what is needed and never reserves or issues it.
+  ('wo.work_order.line.manage','wo', 'Record service lines and required-part demand',   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Raising additional work is separated from approving it, because the person who
+  -- finds more work is never automatically the person who commits the customer to it.
+  ('wo.additional_work.request','wo','Raise an additional-work request',                'medium', '00000000-0000-4000-8000-000000000001'),
+  ('wo.additional_work.approve','wo','Record a customer decision on additional work',   'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (tech) - Technician Execution. Assignment decides who may touch the
+  -- vehicle and is gated on skill, certification and availability.
+  ('tech.assignment.manage',   'tech','Assign and reassign technicians to jobs',        'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Recording one's own labor. Low risk and widely held: every technician needs it.
+  ('tech.labor.record',        'tech','Start, pause, resume and stop labor sessions',   'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Correcting a labor record rewrites the timesheet a payroll or warranty claim may
+  -- rest on. It never edits the original - it writes a linked correction - but the
+  -- authority to do it is separate from the authority to record labor.
+  ('tech.labor.correct',       'tech','Record a linked correction to a labor session',  'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Reading technician skills, certifications and availability. Employment-derived
+  -- data, so it is its own code rather than part of a general read.
+  ('tech.technician.read',     'tech','Read technician profiles, eligibility and queues','low',   '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (dia) - Diagnostics. Recording findings is distinct from completing a
+  -- report, and completing is distinct from reviewing it.
+  ('dia.diagnostic.record',    'dia', 'Create diagnostic reports and record their entries','medium','00000000-0000-4000-8000-000000000001'),
+  ('dia.diagnostic.complete',  'dia', 'Complete a diagnostic report',                   'medium', '00000000-0000-4000-8000-000000000001'),
+  -- Review is the independent check on a completed report. Separate code so the
+  -- reviewer-separation policy has something to enforce against.
+  ('dia.diagnostic.review',    'dia', 'Review a completed diagnostic report',           'high',   '00000000-0000-4000-8000-000000000001'),
+  ('dia.diagnostic.read',      'dia', 'Read diagnostic reports and their evidence',     'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-19 (qms) - Quality. Recording individual check results is separated from
+  -- finalizing the record, for the same reason transition is separated from close and
+  -- request from approve above: finalizing as passed is the act that clears closure
+  -- blocker B5 and releases the vehicle to the customer, and a clerk who may record
+  -- what they observed must not thereby be able to sign the vehicle out. The schema
+  -- already treats them as two acts - ck_quality_control_records_finalized couples a
+  -- passed/failed result to finalized_at and checker_id, and qms.guard_qc_finalize
+  -- freezes the record afterwards.
+  ('qms.quality_control.record', 'qms', 'Record individual quality-control check results','medium','00000000-0000-4000-8000-000000000001'),
+  ('qms.quality_control.finalize','qms','Finalize a quality-control record as passed or failed','high','00000000-0000-4000-8000-000000000001'),
+  -- Rework records that the workshop got something wrong. Creating the linkage and
+  -- independently signing it off are deliberately two codes: BR-QMS-001 requires the
+  -- sign-off to come from someone other than whoever did the work.
+  ('qms.rework.manage',        'qms', 'Create and resolve rework cases',                'high',   '00000000-0000-4000-8000-000000000001'),
+  ('qms.rework.sign_off',      'qms', 'Independently sign off safety-critical rework',  'high',   '00000000-0000-4000-8000-000000000001'),
+  ('qms.quality_control.read', 'qms', 'Read quality-control records and rework links',  'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-20 (svc, quo) - Service catalog, pricing and quotation READ codes.
+  -- P1-10 seeded only the manage/publish/record codes for these domains, so the
+  -- commercial read surface had nothing to authorize against. Reads are separated
+  -- from writes for the same reason everywhere else in this catalog: a service
+  -- advisor who must see the catalog and a customer's quotation must not thereby
+  -- be able to change a price. svc.price.read is 'medium' rather than 'low'
+  -- because a price list is commercially sensitive - it exposes what the business
+  -- charges every customer segment, not just the one in front of you.
+  ('svc.service.read',         'svc', 'Read the service catalog and branch availability', 'low',    '00000000-0000-4000-8000-000000000001'),
+  ('svc.price.read',           'svc', 'Read price lists, rules and resolved prices',      'medium', '00000000-0000-4000-8000-000000000001'),
+  ('quo.quotation.read',       'quo', 'Read quotations, revisions and decisions',         'low',    '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

@@ -157,6 +157,159 @@ export async function requirePermissions(
 }
 
 /**
+ * Whether the CALLER holds one permission code in a company and branch
+ * (P1-20-BE-006).
+ *
+ * Every other function in this file evaluates an *operation's* declared codes.
+ * This one takes a bare code, because the commercial layer must evaluate a value
+ * an operator configured — `svc.pricing_approval_policies.required_permission_code`
+ * — which by construction appears in no `defineOperation` declaration.
+ *
+ * It lives in the foundation, beside `requirePermissions`, rather than on a module
+ * surface, for two reasons. Authorization evaluation is already this file's job and
+ * `iam.has_permission_in_scope` is already called here, so nothing new crosses a
+ * boundary. And routing it through `@/modules/iam` would force that module's
+ * composition root — including its Supabase client configuration — to boot on any
+ * request that prices a discounted line, which is a coupling a permission check has
+ * no business creating.
+ *
+ * The company and branch are REQUIRED. A scope-blind variant would be a second way
+ * to answer an authorization question without consulting grant scope, which is the
+ * P1-18-A-01 shape exactly. It answers only about the caller — there is no
+ * parameter for whose permissions to read — so it cannot become a probe for another
+ * user's authority.
+ */
+export async function callerHoldsPermission(
+  db: DbHandle,
+  permissionCode: string,
+  scope: { companyId: string; branchId: string }
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, $2, $3, NULL) AS allowed',
+    [permissionCode, scope.companyId, scope.branchId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
+ * Whether the caller holds a permission TENANT-WIDE, i.e. through an unrestricted grant.
+ *
+ * Some writes are not scoped to a company or branch because the row they produce is not
+ * either — a wildcard `svc.price_rules` row (both selectors NULL) is applied by
+ * `svc.resolve_price` to every company and every branch in the tenant. Those writes
+ * cannot be authorized with `authorizeScope`, because there is no target to name, and
+ * leaving them to the pre-handler tenant check is worse than it looks:
+ * `requiresScopedEvaluation` returns false on an empty target *whatever* the declared
+ * scope, so the check degrades to the scope-blind `iam.has_permission` and an actor
+ * granted the permission in ONE branch can write a row that prices every branch.
+ *
+ * This asks the deployed protected function the honest question instead. An all-NULL
+ * target can only be satisfied by `scope_mode = 'unrestricted'`: the scoped-grant branch
+ * of `iam.has_permission_in_scope` compares `s.company_id = p_company`, which is NULL
+ * rather than true when no company is supplied. So no new SQL and no second definition of
+ * scope — the same function every other check uses, asked with no narrowing.
+ *
+ * Use this ONLY where the written row genuinely has tenant-wide effect. A row with a
+ * concrete company or branch must go through `authorizeScope` against that target.
+ */
+export async function callerHoldsPermissionTenantWide(
+  db: DbHandle,
+  permissionCode: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, NULL, NULL, NULL) AS allowed',
+    [permissionCode]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
+ * The CALLER's own effective approval ceiling for a limit type (P1-20-BE-006).
+ *
+ * An approval limit is an authorization fact — how much this actor may approve —
+ * so it belongs beside the permission checks rather than on a module surface. That
+ * placement is also what keeps a priced quotation line from booting
+ * `@/modules/iam`'s composition root, Supabase client configuration and all, on
+ * every discounted line.
+ *
+ * A ceiling reaches the caller two ways: assigned directly (`user_id`), or through
+ * a role they hold (`role_id`). A direct limit wins over a role limit; among role
+ * limits the LARGEST applies, because holding two roles grants the union of their
+ * authority rather than the intersection.
+ *
+ * ## A role-derived ceiling only counts where the GRANT reaches
+ *
+ * `iam.approval_limits` rows are per `(role, company)`, and a role grant may be
+ * confined to particular companies or branches. Matching on tenant and user alone —
+ * which this query did — credits the caller with a role's ceiling in a company their
+ * grant of that role does not cover: hold role R scoped to company A and role S scoped
+ * to company B, and acting in company B you inherited R's *company-B* limit. That is
+ * over-granting approval authority through a scope the actor was never given, the same
+ * shape as P1-18-A-01 one level up.
+ *
+ * The predicate below is `scope_mode = 'unrestricted'` OR a `grant_scopes` row naming
+ * the company. It is deliberately WIDER than `iam.has_permission_in_scope`, which matches
+ * a `branch`-type scope row on `branch_id` only and never on `company_id`. So the two are
+ * not equivalent and this comment does not claim they are: a residual case remains, where
+ * an actor holding role R in branch B1 of company C1 and role S in branch B2 of the same
+ * company inherits R's company-C1 ceiling while acting in B2.
+ *
+ * That widening is deliberate rather than overlooked. `iam.approval_limits` has no branch
+ * column, so a company is the only granularity a limit can be matched at, and matching a
+ * branch-scoped grant only when the limit named its exact branch would deny every
+ * branch-scoped approver the ceiling their company grants them. The narrowing that matters
+ * — not crossing into a company the grant never reached — is enforced.
+ *
+ * It matches on `grant_scopes.company_id` alone, and that is exact rather than
+ * approximate: `ck_grant_scopes_shape` requires `company_id IS NOT NULL` for ALL three
+ * scope types, so a branch- or department-scoped row already names its company. An
+ * earlier version derived the company by joining `org.branches`, which was both
+ * unnecessary and fragile — that join runs under RLS, so a grant whose branch fell
+ * outside the caller's own `app.branch_ids` would silently lose its ceiling. An
+ * approval limit is per company and has no branch column, so the company is the only
+ * granularity there is to match, and a branch-scoped approver keeps the ceiling their
+ * company grants them.
+ *
+ * `null` means the actor has **no** ceiling, which callers must treat as no
+ * authority and never as unlimited.
+ */
+export async function callerApprovalCeiling(
+  db: DbHandle,
+  companyId: string,
+  limitType: string,
+  asOf: string
+): Promise<{ amount: string; currencyCode: string } | null> {
+  const result = await db.query<{ amount: string; currency_code: string }>(
+    `SELECT al.amount::text AS amount, al.currency_code
+       FROM iam.approval_limits al
+      WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+        AND al.effective_from <= $5::date
+        AND (al.effective_to IS NULL OR al.effective_to > $5::date)
+        AND (al.user_id = $4
+             OR (al.user_id IS NULL AND al.role_id IN (
+                   SELECT g.role_id
+                     FROM iam.role_grants g
+                    WHERE g.tenant_id = $1 AND g.user_id = $4
+                      AND g.status = 'active'
+                      AND g.valid_from <= now()
+                      AND (g.valid_to IS NULL OR g.valid_to > now())
+                      AND (
+                        g.scope_mode = 'unrestricted'
+                        OR EXISTS (
+                          SELECT 1 FROM iam.grant_scopes s
+                           WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                             AND s.company_id = $2
+                        )
+                      ))))
+      ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
+      LIMIT 1`,
+    [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
+  );
+  const row = result.rows[0];
+  return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
+}
+
+/**
  * Enforces authorization against a scope discovered INSIDE the transaction,
  * failing closed when the caller names no scope to narrow by.
  *

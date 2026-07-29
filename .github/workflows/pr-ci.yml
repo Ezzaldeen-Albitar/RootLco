@@ -1,0 +1,335 @@
+# =============================================================================
+# RootLco — pull-request gate.
+#
+# ONE workflow that ALWAYS runs, with change detection inside it. Top-level
+# `paths:` filters are deliberately absent: a required status check that never
+# runs stays **Pending** forever and blocks the merge with no failure to
+# diagnose (CSA-06, CSA-12). The workflow always starts; the jobs decide.
+#
+# `ci-gate` is the single stable check. It understands the difference between a
+# job that succeeded, a job that was skipped for a recorded reason, and a job
+# that was skipped for no reason at all — and only the first two are acceptable.
+#
+# NO SECRETS. Nothing here reads a repository secret, so a forked pull request
+# neither loses capability nor gains exposure. There is no `pull_request_target`
+# anywhere in this repository.
+# =============================================================================
+
+name: PR CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# A newer push to the same pull request supersedes the older run. Safe here
+# because a pull-request run is not authoritative evidence for anything — the
+# protected-push workflow is, and it never cancels (CSA-01).
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ===========================================================================
+  change-detection:
+    name: change-detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run-application-build: ${{ steps.classify.outputs.run-application-build }}
+      run-database-migration-replay: ${{ steps.classify.outputs.run-database-migration-replay }}
+      run-database-security: ${{ steps.classify.outputs.run-database-security }}
+      run-integration-tests: ${{ steps.classify.outputs.run-integration-tests }}
+      run-code-security: ${{ steps.classify.outputs.run-code-security }}
+      run-container-security: ${{ steps.classify.outputs.run-container-security }}
+      documentation-only: ${{ steps.classify.outputs.documentation-only }}
+      head-sha: ${{ steps.resolve.outputs.head }}
+      base-sha: ${{ steps.resolve.outputs.base }}
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          fetch-depth: '0'
+          install: 'false'
+
+      - name: Resolve the commits under comparison
+        id: resolve
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          head="${PR_HEAD:-${GITHUB_SHA}}"
+          base="${PR_BASE:-}"
+          if [ -z "${base}" ] && [ -n "${BASE_REF:-}" ]; then
+            base="$(git rev-parse "origin/${BASE_REF}")"
+          fi
+          printf 'head=%s\n' "${head}" >> "${GITHUB_OUTPUT}"
+          printf 'base=%s\n' "${base}" >> "${GITHUB_OUTPUT}"
+          printf 'head: %s\nbase: %s\n' "${head}" "${base}"
+
+      - name: Classify the change
+        id: classify
+        env:
+          HEAD_SHA: ${{ steps.resolve.outputs.head }}
+          BASE_SHA: ${{ steps.resolve.outputs.base }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA}" ]; then
+            git diff --name-only "${BASE_SHA}...${HEAD_SHA}" > changed-files.txt
+          else
+            # A manual dispatch has no base. Classifying against nothing would
+            # produce an empty change set, which classify-changes.mjs treats as
+            # "cannot prove a skip is safe" and runs everything. That is the
+            # correct behaviour, so it is left to happen rather than faked.
+            : > changed-files.txt
+          fi
+          wc -l < changed-files.txt
+          node scripts/ci/classify-changes.mjs \
+            --files changed-files.txt \
+            --json classification.json --markdown classification.md
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f classification.md ]; then cat classification.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload the classification
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-change-detection
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            classification.json
+            classification.md
+            changed-files.txt
+
+  # ===========================================================================
+  # Always required. These four run whatever changed.
+  # ===========================================================================
+  static-quality:
+    name: static-quality
+    needs: change-detection
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: static-quality
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      base-ref: ${{ github.event.pull_request.base.ref }}
+
+  unit-tests-coverage:
+    name: unit-tests-coverage
+    needs: change-detection
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: unit-coverage
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      base-ref: ${{ github.event.pull_request.base.ref }}
+
+  dependency-security:
+    name: dependency-security
+    needs: change-detection
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/_reusable-dependency-security.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+
+  secret-scan:
+    name: secret-scan
+    needs: change-detection
+    uses: ./.github/workflows/_reusable-secret-scan.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      depth: standard
+
+  # The exact-SHA clean room is UNCONDITIONAL. It is the single proof the
+  # acceptance criteria rest on, and a documentation-only gate pull request is
+  # required to demonstrate it. A clean room that can be skipped is not one.
+  hosted-clean-room:
+    name: hosted-clean-room
+    needs: change-detection
+    uses: ./.github/workflows/_reusable-clean-room.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      expected-sha: ${{ needs.change-detection.outputs.head-sha }}
+
+  # ===========================================================================
+  # Conditional. Each skip is a recorded decision that ci-gate re-checks.
+  # ===========================================================================
+  application-build:
+    name: application-build
+    needs: change-detection
+    if: needs.change-detection.outputs.run-application-build == 'true'
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: build
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+
+  database-migration-replay:
+    name: database-migration-replay
+    needs: change-detection
+    if: needs.change-detection.outputs.run-database-migration-replay == 'true'
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: migration-replay
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      base-ref: ${{ github.event.pull_request.base.ref }}
+
+  database-security:
+    name: database-security
+    needs: change-detection
+    if: needs.change-detection.outputs.run-database-security == 'true'
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: security-matrix
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      base-ref: ${{ github.event.pull_request.base.ref }}
+      rls-level: critical
+
+  integration-tests:
+    name: integration-tests
+    needs: change-detection
+    if: needs.change-detection.outputs.run-integration-tests == 'true'
+    uses: ./.github/workflows/_reusable-integration-tests.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      base-ref: ${{ github.event.pull_request.base.ref }}
+      collect-coverage: true
+
+  code-security:
+    name: code-security
+    needs: change-detection
+    if: needs.change-detection.outputs.run-code-security == 'true'
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/_reusable-code-security.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+
+  container-security:
+    name: container-security
+    needs: change-detection
+    if: needs.change-detection.outputs.run-container-security == 'true'
+    uses: ./.github/workflows/_reusable-container.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      severity: 'CRITICAL,HIGH'
+
+  # ===========================================================================
+  # The single stable required check.
+  # ===========================================================================
+  ci-gate:
+    name: ci-gate
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - change-detection
+      - static-quality
+      - unit-tests-coverage
+      - application-build
+      - database-migration-replay
+      - database-security
+      - integration-tests
+      - dependency-security
+      - code-security
+      - container-security
+      - secret-scan
+      - hosted-clean-room
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ needs.change-detection.outputs.head-sha }}
+          install: 'false'
+
+      - name: Collect every job's evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: evidence
+          pattern: evidence-*
+          merge-multiple: false
+
+      - name: Record the job results verbatim
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${NEEDS_JSON}" > needs.json
+          cat needs.json
+
+      - name: Evaluate the gate
+        env:
+          EXPECTED_SHA: ${{ needs.change-detection.outputs.head-sha }}
+          BASE_SHA: ${{ needs.change-detection.outputs.base-sha }}
+        run: |
+          set -euo pipefail
+          # The classification is read back from the artifact rather than from a
+          # job output: the gate must reason about the same document the jobs
+          # were given, not a re-derivation that could disagree with it.
+          classification=evidence/evidence-change-detection/classification.json
+          if [ ! -f "${classification}" ]; then
+            echo "::error::change-detection produced no classification artifact, so no skip below can be justified."
+            exit 1
+          fi
+          node scripts/ci/evaluate-ci-gate.mjs \
+            --needs needs.json \
+            --classification "${classification}" \
+            --evidence evidence \
+            --expected-sha "${EXPECTED_SHA}" \
+            --actual-sha "$(git rev-parse HEAD)" \
+            --base-sha "${BASE_SHA}" \
+            --markdown ci-gate.md --json ci-gate.json
+
+      - name: Publish the gate summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f ci-gate.md ]; then cat ci-gate.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload the gate decision
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-ci-gate
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            ci-gate.json
+            ci-gate.md
+            needs.json

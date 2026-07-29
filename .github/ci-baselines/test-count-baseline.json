@@ -1,0 +1,28 @@
+{
+  "description": "Minimum test count per tier. A suite that shrinks without explanation is a silently disabled suite — a broken include glob drops the unit tier from 1024 tests to 3 and every other gate still passes, because total > 0, failed === 0 and success === true.",
+  "policy": "docs/engineering/ci-automation/automated-testing-strategy.md",
+  "howToRaise": "Raise a floor in the same commit that adds the tests. Lowering one is also a reviewable diff — state why in the commit message.",
+  "establishedBy": "PR CI run 19 (run id 30431556718), artifacts `evidence-unit-coverage` / `evidence-security-matrix` / `evidence-integration-tests`, files `test-totals-unit.json`, `test-totals-database.json`, `test-totals-backend.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. All three tiers now carry a hosted measurement; none is a local or carried-over figure.",
+  "enforcementNote": "Only `minTests` is enforced — summarise-vitest.mjs fails a tier that runs fewer. `measured` is provenance: it records what the named run actually observed, so a later reader can see how much headroom a floor had when it was set.",
+  "tiers": {
+    "unit": {
+      "minTests": 1050,
+      "measured": 1082,
+      "measuredFiles": 249,
+      "note": "Raised from 1000 to 1050. Run 19 measured 1082 on a hosted runner, replacing the local 1024 that established the old floor. The floor keeps roughly 30 tests of headroom for ordinary churn while no longer sitting 82 below the real count, where it could have absorbed an entire deleted test file without complaint."
+    },
+    "database": {
+      "minTests": 1550,
+      "measured": 1624,
+      "measuredFiles": 540,
+      "note": "Unchanged. Run 19 re-measured 1624, identical to the P1-21 hosted figure the floor was set against, so there is nothing to correct."
+    },
+    "backend": {
+      "minTests": 1300,
+      "measured": 1380,
+      "measuredFiles": 393,
+      "note": "Unchanged. Run 19 re-measured 1380, identical to the P1-21 hosted figure, including the four H6 regression tests."
+    }
+  },
+  "unitFloorCaveat": "The unit floor is deliberately NOT set to the measurement of the run that carries this commit. This change adds twenty tests — eight in tests/ci/dependency-path-proof.test.ts (AR-49), four in the workflow-security rule-registry suite (AR-50), four in tests/ci/baseline-integrity.test.ts covering the baselines established here, and four in tests/ci/documented-counts.test.ts (AR-51) — so the final head measures 1102, not the 1082 recorded above. Setting 1102 as the floor would make it a transcript of the last run rather than a guard, and every future commit would have to move it. 1050 is the guard; 1082 stays as the provenance of run 19. Note that this sentence is itself the kind of hand-written count AR-51 was about, which is why the floor and the provenance figure — the two values anything actually reads — are measured rather than narrated."
+}

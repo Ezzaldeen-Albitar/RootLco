@@ -167,9 +167,26 @@ describe('operation coverage gate — P1-14 evidence model, unchanged', () => {
     expect(matrix.map((m: { files: readonly string[] }) => m.files)).toEqual([['demo.test.ts']]);
   });
 
-  it('derives NOTHING for an iam operation — P1-14 obligations stay declared', () => {
+  it('derives ONLY idempotency for an iam operation — every other P1-14 obligation stays declared', () => {
+    // `idempotent: true` is a promise to the caller and creates its obligation in
+    // every namespace (CSA-22): ten P1-14 operations declared it while `derived`
+    // came back empty, so nothing ever exercised a replay. Everything else about
+    // P1-14's evidence model is unchanged — note `versionGuarded` below derives
+    // nothing here, where it would derive `stale-version` in a derived namespace.
     expect(
       derivedRequirements({ id: 'iam.demo-op', idempotent: true, versionGuarded: true })
+    ).toEqual(['idempotency']);
+  });
+
+  it('derives nothing at all for an iam operation that promises no idempotency', () => {
+    expect(
+      derivedRequirements({
+        id: 'iam.demo-op',
+        versionGuarded: true,
+        auditClass: 'privileged',
+        scope: 'branch',
+        path: '/demo/{thingId}',
+      })
     ).toEqual([]);
   });
 

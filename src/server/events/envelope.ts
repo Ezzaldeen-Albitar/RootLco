@@ -270,6 +270,278 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     implementedIn: 'P1-15',
     description: 'A branch was activated or deactivated through the status-transition engine.',
   },
+  // ---------------------------------------------------------------------------
+  // P1-19 allocation (wo / tech / dia / qms). See
+  // docs/phase-1/phase-1-19/change-requests/ECR-P1-19-001-event-catalog.md.
+  //
+  // No reserved entry covered these: EVT-WO-*, EVT-TECH-*, EVT-DIA-* and EVT-QMS-*
+  // did not exist anywhere in the repository. Two conflicting name sets were
+  // proposed for them — one in the P1-19 execution brief, one in the P1-09 handoff
+  // — and both suffixed the wire name `.v1`. Neither is followed literally here:
+  //
+  //   * The type strings stay UNSUFFIXED, matching all twenty entries above.
+  //     Version is carried by `schemaVersion`, which is what that field is for;
+  //     encoding it twice would let the two disagree.
+  //   * Granularity follows the P1-09 handoff, because it was written by the phase
+  //     that owns the schema, and because `wo.work_order_status_history` already
+  //     records created / changed / closed as distinct facts.
+  //
+  // `implementedIn` stays null until the wave that actually publishes each event
+  // lands — a reserved name is not an implementation, and claiming otherwise is
+  // how a catalog stops being trustworthy.
+  // ---------------------------------------------------------------------------
+  {
+    code: 'EVT-WOR-001',
+    eventType: 'work-order.created',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: null,
+    description: 'A work order was created from a reception visit.',
+  },
+  {
+    code: 'EVT-WOR-002',
+    eventType: 'work-order.state-changed',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'A work order moved between states in its configured graph.',
+  },
+  {
+    // Separate from state-changed even though closure IS a state change, because
+    // closure is the fact downstream consumers (billing, warranty, reporting) wait
+    // for, and making them filter every transition to find it would put the
+    // definition of "closed" in each consumer instead of here.
+    code: 'EVT-WOR-003',
+    eventType: 'work-order.closed',
+    schemaVersion: 1,
+    aggregateType: 'wo.work_order',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'A work order reached a terminal, non-cancellation state.',
+  },
+  {
+    // Owner is 'wo', not 'tech', and the aggregate is why: the assignment row
+    // lives in wo.job_assignments and is written by the work-order module.
+    // buildEventEnvelope refuses a producer whose leading segment differs from the
+    // owner, so 'tech' here would have made Wave 5's own write path throw.
+    code: 'EVT-TEC-001',
+    eventType: 'job.assigned',
+    schemaVersion: 1,
+    aggregateType: 'wo.job',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'A technician was assigned to a job.',
+  },
+  {
+    code: 'EVT-TEC-002',
+    eventType: 'job.state-changed',
+    schemaVersion: 1,
+    aggregateType: 'wo.job',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'A job moved between states in its configured graph.',
+  },
+  {
+    code: 'EVT-TEC-003',
+    eventType: 'labor.session-changed',
+    schemaVersion: 1,
+    aggregateType: 'tech.labor_session',
+    owner: 'tech',
+    implementedIn: 'P1-19',
+    description: 'A labor session was started, paused, resumed or stopped.',
+  },
+  {
+    code: 'EVT-WOR-004',
+    eventType: 'additional-work.requested',
+    schemaVersion: 1,
+    aggregateType: 'wo.additional_work_request',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'Additional work was raised against a work order.',
+  },
+  {
+    code: 'EVT-WOR-005',
+    eventType: 'customer-approval.recorded',
+    schemaVersion: 1,
+    aggregateType: 'wo.customer_approval',
+    owner: 'wo',
+    implementedIn: 'P1-19',
+    description: 'A customer decision on additional work was recorded.',
+  },
+  {
+    code: 'EVT-DIA-001',
+    eventType: 'diagnostic-report.completed',
+    schemaVersion: 1,
+    aggregateType: 'dia.diagnostic_report',
+    owner: 'dia',
+    implementedIn: 'P1-19',
+    description: 'A diagnostic report was completed against its pinned template version.',
+  },
+  {
+    code: 'EVT-QMS-001',
+    eventType: 'quality-control.finalized',
+    schemaVersion: 1,
+    aggregateType: 'qms.quality_control_record',
+    owner: 'qms',
+    implementedIn: 'P1-19',
+    description: 'A quality-control record was finalized as passed or failed.',
+  },
+  {
+    code: 'EVT-QMS-002',
+    eventType: 'rework.linked',
+    schemaVersion: 1,
+    aggregateType: 'qms.rework_link',
+    owner: 'qms',
+    implementedIn: 'P1-19',
+    description: 'A rework case was linked to the work order it corrects, or signed off.',
+  },
+  // ---- Phase 1-20 — service catalog, pricing, quotation ---------------------
+  //
+  // The P1-10 backend contract anticipated these as `service.published.v1`,
+  // `price-list.published.v1`, `quotation.created.v1` and so on. The `.v1`
+  // suffix is NOT used: every shipped name in this catalog is unsuffixed and
+  // carries its version in `schemaVersion`, which is also what
+  // `shared.event_outbox.schema_version` stores. Encoding the version twice, in
+  // two places that can disagree, is exactly the drift this registry exists to
+  // prevent. The mapping from the planned names to these is recorded in
+  // docs/phase-1/phase-1-20/evidence/wave-1-contract-archaeology.md.
+  {
+    code: 'EVT-SVC-001',
+    eventType: 'service.published',
+    schemaVersion: 1,
+    aggregateType: 'svc.service_version',
+    owner: 'service-catalog',
+    // Published by `ServiceCatalogWriteService.publishVersion`, from
+    // `POST /services/{serviceId}/versions/{versionId}/publication`.
+    //
+    // This entry was marked RESERVED for most of the phase, justified by the claim
+    // that "the protected requirements mandate no public service-version publication".
+    // That claim was false — `docs/phase-1/phase-1-10/p1-20-backend-contract.md` lists
+    // `svc.publish_service_version(...)` as a P1-20 deliverable — and the entry was
+    // reserved because the operation had not been built, not because the contract
+    // excluded it. See P1-20-G-01 in `evidence/open-decisions.md`.
+    implementedIn: 'P1-20',
+    description:
+      'A service version was published and became the effective definition of that service for a date range.',
+  },
+  {
+    code: 'EVT-SVC-002',
+    eventType: 'price-list.published',
+    schemaVersion: 1,
+    aggregateType: 'svc.price_list_version',
+    owner: 'pricing',
+    implementedIn: 'P1-20',
+    description:
+      'A price-list version was published and became immutable. Carries no amounts: a consumer that may see prices reads them under its own authorization.',
+  },
+  {
+    code: 'EVT-QUO-001',
+    eventType: 'quotation.created',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description: 'A quotation was created in draft against a work order.',
+  },
+  {
+    code: 'EVT-QUO-002',
+    eventType: 'quotation.revision-issued',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation_revision',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'A quotation revision was issued to the customer, superseding any previously issued revision. The payload carries totals and currency because a delivery consumer needs them to render the document.',
+  },
+  {
+    code: 'EVT-QUO-003',
+    eventType: 'quotation.item-decided',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation_item',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'A customer approved or rejected one quotation line. The aggregate is the ITEM because the database records a decision per item, not per revision.',
+  },
+  {
+    code: 'EVT-QUO-004',
+    eventType: 'quotation.accepted',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'Every line of the current issued revision was approved, so the quotation as a whole is accepted.',
+  },
+  {
+    code: 'EVT-QUO-005',
+    eventType: 'quotation.rejected',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description:
+      'At least one line of the current issued revision was rejected, so the quotation as presented was not accepted.',
+  },
+  {
+    code: 'EVT-QUO-006',
+    eventType: 'quotation.expired',
+    schemaVersion: 1,
+    aggregateType: 'quo.quotation',
+    owner: 'quotation',
+    implementedIn: 'P1-20',
+    description: 'An issued quotation revision passed its expiry without a complete decision.',
+  },
+
+  // ---- Inventory (P1-21) ---------------------------------------------------
+  //
+  // The phase plan proposed `inventory.stock-reserved.v1`,
+  // `inventory.stock-moved.v1`, and `inventory.reservation-released.v1`. None of
+  // those names is expressible here: `event_type` carries no version segment
+  // because `schema_version` is its own column, and the established namespace for
+  // this domain is `stock.*` rather than `inventory.*`. The mapping is recorded in
+  // docs/phase-1/phase-1-21/wave-1-contract-archaeology.md.
+  //
+  // Phase 1-10's handoff note anticipated nine event names, including
+  // `part.issued`, `part.returned`, `stock.damaged`, and
+  // `opening-inventory.approved`. Those are all movement postings, and
+  // `stock.movement.posted` carries `movementType`, `direction`, and the business
+  // reference in its payload — so one event describes them without four consumers
+  // having to subscribe to four names for the same fact. The reservation-expired
+  // name is deliberately NOT registered: no producer exists for it, because the
+  // scheduled `inv.expire_reservations` caller is a carried-forward obligation and
+  // reserving a name for an unbuilt producer is how a catalog fills with fiction.
+  {
+    code: 'EVT-INV-001',
+    eventType: 'stock.reserved',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_reservation',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description:
+      'Stock was reserved against an item and location, reducing available quantity without moving anything.',
+  },
+  {
+    code: 'EVT-INV-002',
+    eventType: 'stock.reservation.released',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_reservation',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description: 'An active stock reservation was released and its quantity returned to available.',
+  },
+  {
+    code: 'EVT-INV-003',
+    eventType: 'stock.movement.posted',
+    schemaVersion: 1,
+    aggregateType: 'inv.stock_movement',
+    owner: 'inventory',
+    implementedIn: 'P1-21',
+    description:
+      'An immutable stock movement was appended to the ledger, carrying its type, direction, and validated business reference.',
+  },
 ]);
 
 export function findEvent(eventType: string): EventCatalogEntry | undefined {

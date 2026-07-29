@@ -1,0 +1,194 @@
+# =============================================================================
+# RootLco — protected-branch verification.
+#
+# Separated from the pull-request gate because of CSA-01: `ci.yml` used ONE
+# concurrency group for both `pull_request` and `push` with
+# `cancel-in-progress: true`, so two merges landing close together silently
+# cancelled the older protected-push run. Every phase gate record cites a
+# protected push run as proof, and a cancelled run is not proof.
+#
+# Here `cancel-in-progress` is FALSE and the group is keyed on the branch. A
+# protected run always finishes. Two runs may overlap; that is the correct
+# trade, because the alternative is discarding authoritative evidence.
+#
+# This is the run whose result is quoted in a gate record.
+# =============================================================================
+
+name: Protected branch verification
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: protected-${{ github.workflow }}-${{ github.ref }}
+  # NEVER cancel. See above.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The push event gives no base to diff against, so nothing is conditional
+  # here: on a protected branch everything runs, every time.
+  static-quality:
+    name: static-quality
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: static-quality
+      artifact-retention-days: 30
+
+  unit-tests-coverage:
+    name: unit-tests-coverage
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: unit-coverage
+      artifact-retention-days: 30
+
+  application-build:
+    name: application-build
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: build
+      artifact-retention-days: 30
+
+  database-migration-replay:
+    name: database-migration-replay
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: migration-replay
+      artifact-retention-days: 30
+
+  database-security:
+    name: database-security
+    uses: ./.github/workflows/_reusable-database-assurance.yml
+    with:
+      task: security-matrix
+      rls-level: critical
+      artifact-retention-days: 30
+
+  integration-tests:
+    name: integration-tests
+    uses: ./.github/workflows/_reusable-integration-tests.yml
+    with:
+      collect-coverage: true
+      artifact-retention-days: 30
+
+  dependency-security:
+    name: dependency-security
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/_reusable-dependency-security.yml
+    with:
+      artifact-retention-days: 30
+
+  code-security:
+    name: code-security
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/_reusable-code-security.yml
+    with:
+      artifact-retention-days: 30
+
+  secret-scan:
+    name: secret-scan
+    uses: ./.github/workflows/_reusable-secret-scan.yml
+    with:
+      depth: standard
+      artifact-retention-days: 30
+
+  container-security:
+    name: container-security
+    uses: ./.github/workflows/_reusable-container.yml
+    with:
+      severity: 'CRITICAL,HIGH'
+      artifact-retention-days: 30
+
+  hosted-clean-room:
+    name: hosted-clean-room
+    uses: ./.github/workflows/_reusable-clean-room.yml
+    with:
+      expected-sha: ${{ github.sha }}
+      artifact-retention-days: 90
+
+  protected-gate:
+    name: protected-gate
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - static-quality
+      - unit-tests-coverage
+      - application-build
+      - database-migration-replay
+      - database-security
+      - integration-tests
+      - dependency-security
+      - code-security
+      - container-security
+      - secret-scan
+      - hosted-clean-room
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          install: 'false'
+
+      - name: Collect every job's evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: evidence
+          pattern: evidence-*
+
+      - name: Evaluate
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${NEEDS_JSON}" > needs.json
+          # On a protected branch there is no change detection and therefore no
+          # legitimate skip. The synthetic classification requires EVERY job, so
+          # a skip here is always a failure.
+          node scripts/ci/protected-classification.mjs \
+            --needs needs.json --out-classification classification.json --out-needs needs.json
+          node scripts/ci/evaluate-ci-gate.mjs \
+            --needs needs.json --classification classification.json --evidence evidence \
+            --expected-sha "${COMMIT}" --actual-sha "$(git rev-parse HEAD)" \
+            --markdown protected-gate.md --json protected-gate.json
+
+      - name: Publish the summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f protected-gate.md ]; then cat protected-gate.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload the protected-branch decision
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-protected-gate
+          # Longest PR-tier retention: this artifact is what a gate record cites.
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            protected-gate.json
+            protected-gate.md
+            needs.json
+            classification.json

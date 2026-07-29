@@ -36,7 +36,7 @@
  * Usage: node scripts/check-encoding.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** Extensions whose bytes are text and are therefore in scope. */
@@ -102,7 +102,11 @@ function main() {
   for (const file of files) {
     let bytes;
     try {
-      if (!statSync(file).isFile()) continue;
+      // Read directly and let the failure classify the path. The old
+      // `statSync().isFile()` pre-check asked about one file and read another if
+      // the path changed in between; `readFileSync` on a directory raises
+      // EISDIR, which the existing catch already treats as "not this gate's
+      // business" — the same outcome, one syscall, no window.
       bytes = readFileSync(file);
     } catch {
       // A tracked path that is not readable in this checkout (a submodule, a

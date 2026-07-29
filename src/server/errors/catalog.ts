@@ -30,6 +30,7 @@ export const ERROR_CODES = [
   'ERR-DEP-001',
   'ERR-INT-001',
   'ERR-INT-002',
+  'ERR-INT-003',
   'ERR-CON-001',
   'ERR-CON-002',
   'ERR-RTE-001',
@@ -38,6 +39,11 @@ export const ERROR_CODES = [
   'ERR-NTF-001',
   'ERR-EXP-001',
   'ERR-TRN-001',
+  'ERR-WO-001',
+  'ERR-WO-002',
+  'ERR-TECH-001',
+  'ERR-DIA-001',
+  'ERR-QMS-001',
   'ERR-SYS-001',
 ] as const;
 
@@ -207,6 +213,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     description:
       'The operation is declared idempotency-critical and the Idempotency-Key header was absent or violated its format contract.',
   },
+  'ERR-INT-003': {
+    code: 'ERR-INT-003',
+    title: 'Idempotent request carries secret material',
+    status: 400,
+    owner: 'idempotency',
+    retryable: false,
+    class: 'client',
+    description:
+      'The request is for an idempotency-critical operation and its body or route parameters carry a field whose name marks it as secret material — a password, PIN, OTP, recovery code, private key or bearer credential. The idempotency fingerprint is a persisted SHA-256, and a fast unkeyed hash of a low-entropy secret is an offline guessing target (CWE-916), so the request is refused before anything is hashed. Classified as a CLIENT error deliberately: the fingerprint is computed over the raw pre-validation body, so any caller can put such a field there, and answering 500 would let any authenticated caller manufacture a server error on any idempotent endpoint. A field the ROUTE genuinely declares is prevented earlier and differently — the build fails, via the registration gate in tests/foundation/idempotency-secret-material.test.ts. The offending field NAME appears in the message; its value is never read, logged or returned.',
+  },
   'ERR-CON-001': {
     code: 'ERR-CON-001',
     title: 'Record version conflict',
@@ -286,6 +302,56 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'The requested target state is registered for this aggregate, but the aggregate is not in a state the transition may start from — including the case where it is already in the target state. Distinct from ERR-CON-001, which means the caller held a stale record version: re-reading and retrying fixes a version conflict and cannot fix this one.',
+  },
+  'ERR-WO-001': {
+    code: 'ERR-WO-001',
+    title: 'Work order cannot be closed yet',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Closure was refused by wo.guard_work_order_closure (blockers B1..B6): a non-terminal job, a running labor session, an unresolved required additional-work request, a missing completed diagnostic, failed or missing mandatory quality control, or safety-critical rework without independent sign-off. Deliberately NOT ERR-TRN-001: the ready_to_close→closed edge exists in the graph and the aggregate is in a legal starting state, so this is not a graph refusal. The caller must clear a condition, not re-read a version or pick a different target.',
+  },
+  'ERR-WO-002': {
+    code: 'ERR-WO-002',
+    title: 'Additional work awaits a customer decision',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'A job may not enter a state whose wo.job_states.labor_allowed is true while a REQUIRED additional-work request originating from it is still pending — work the customer has not yet authorised must not be started or resumed. Distinct from ERR-WO-001, which is the B1..B6 closure gate on the whole work order: this refuses one job movement, and only for requests naming that job as their origin. Deliberately NOT ERR-TRN-001, because the edge exists in the graph and the job is in a legal starting state; what blocks it is a sibling row. Pausing is never refused, so the job can wait in a state where labour is not allowed while the customer is asked. Approved-but-unfulfilled does NOT refuse execution: that is authorised work waiting to be done, and gating it would make it undoable.',
+  },
+  'ERR-TECH-001': {
+    code: 'ERR-TECH-001',
+    title: 'Technician is not eligible for this assignment',
+    status: 422,
+    owner: 'validation',
+    retryable: false,
+    class: 'client',
+    description:
+      'The named technician does not satisfy the job’s eligibility requirements: a missing or insufficient skill level, a missing or expired certification, no covering availability interval, an inactive profile, or an out-of-scope company/branch. A client error rather than a conflict because the request named the wrong technician; the same request will keep failing until a different technician is chosen or the underlying eligibility record changes.',
+  },
+  'ERR-DIA-001': {
+    code: 'ERR-DIA-001',
+    title: 'Diagnostic report has unresolved mandatory items',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Completion was refused because at least one mandatory item of the pinned template version has neither a recorded result nor a documented not-applicable reason. A conflict rather than a validation failure: the completion request itself is well-formed, and what blocks it is the accumulated state of the report.',
+  },
+  'ERR-QMS-001': {
+    code: 'ERR-QMS-001',
+    title: 'Quality or rework precondition not satisfied',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'Covers the QMS refusals that are not closure blockers: an attempt to reopen a closed work order (BR-WO-002 — recorded as a rejected attempt in qms.reopen_attempts and never mutating the order), and a rework resolution lacking the independent sign-off BR-QMS-001 requires for safety-critical work. Distinct from ERR-WO-001, which is specifically the B1..B6 closure gate.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

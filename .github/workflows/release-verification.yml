@@ -1,0 +1,220 @@
+# =============================================================================
+# RootLco — release verification.
+#
+# NO RELEASE IS PERFORMED. This is the gate a future release would pass through,
+# built now so it is reviewed in calm conditions rather than written under
+# pressure on the day. It builds, scans, inventories and records — and stops.
+#
+# `main` only. Promotion of `develop` to `main` is a founders' reserved decision
+# (ADR-006) and NO workflow in this repository performs it.
+#
+# The chain it establishes:
+#
+#   verify main → clean build → immutable artifact → SBOM → vulnerability scan
+#              → provenance → digest → release evidence → staging ELIGIBILITY
+#
+# "Eligibility" is the last word deliberately. Deciding an artifact is fit to
+# deploy and deploying it are different acts with different authorities.
+# =============================================================================
+
+name: Release verification
+
+on:
+  push:
+    tags:
+      - 'release-*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit or tag on `main` to verify. Defaults to the current `main`.
+        required: false
+        type: string
+        default: ''
+      attest:
+        description: Attempt a GitHub build-provenance attestation.
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-verification-${{ github.ref }}
+  # Never cancel: a half-produced release record is worse than none, because it
+  # looks like a complete one.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ===========================================================================
+  verify-source:
+    name: verify-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: '0'
+          install: 'false'
+
+      - name: The commit must be on `main`
+        id: check
+        env:
+          REQUESTED: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          # A release must describe a commit that is actually on the protected
+          # branch. A tag can be pushed anywhere; being reachable from `main` is
+          # the property that matters, so it is checked rather than assumed.
+          if ! git merge-base --is-ancestor "${sha}" origin/main; then
+            echo "::error::${sha} is not an ancestor of origin/main. A release may only describe a commit on the protected branch."
+            exit 1
+          fi
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          printf 'releasing from %s (on main)\n' "${sha}"
+
+  # ===========================================================================
+  full-verification:
+    name: full-verification
+    needs: verify-source
+    uses: ./.github/workflows/_reusable-clean-room.yml
+    with:
+      ref: ${{ needs.verify-source.outputs.sha }}
+      expected-sha: ${{ needs.verify-source.outputs.sha }}
+      artifact-retention-days: 365
+
+  # ===========================================================================
+  artifact:
+    name: artifact
+    needs: [verify-source, full-verification]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/_reusable-release-artifact.yml
+    with:
+      ref: ${{ needs.verify-source.outputs.sha }}
+      # On a TAG PUSH there is no `inputs` context, so `inputs.attest` is null —
+      # and `null != false` evaluates FALSE under GitHub's loose comparison.
+      # Written the obvious way, every tag-triggered release would silently
+      # request no attestation on the one path that matters. Default to true
+      # unless a dispatch explicitly said otherwise.
+      attest: ${{ github.event_name != 'workflow_dispatch' || inputs.attest }}
+      artifact-retention-days: 365
+
+  # ===========================================================================
+  staging-eligibility:
+    name: staging-eligibility
+    if: always()
+    needs: [verify-source, full-verification, artifact]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ needs.verify-source.outputs.sha }}
+          install: 'false'
+
+      - name: Record the eligibility decision
+        env:
+          SOURCE_SHA: ${{ needs.verify-source.outputs.sha }}
+          CLEAN_ROOM: ${{ needs.full-verification.result }}
+          ARTIFACT: ${{ needs.artifact.result }}
+          DIGEST: ${{ needs.artifact.outputs.digest }}
+          SBOM_DIGEST: ${{ needs.artifact.outputs.sbom-digest }}
+          PROVENANCE: ${{ needs.artifact.outputs.provenance }}
+          SCHEMA_HASH: ${{ needs.full-verification.outputs.schema-hash }}
+        run: |
+          set -euo pipefail
+          eligible=true
+          reasons=''
+          if [ "${CLEAN_ROOM}" != 'success' ]; then
+            eligible=false
+            reasons="${reasons}the exact-SHA clean room did not succeed (${CLEAN_ROOM}); "
+          fi
+          if [ "${ARTIFACT}" != 'success' ]; then
+            eligible=false
+            reasons="${reasons}the release artifact job did not succeed (${ARTIFACT}); "
+          fi
+          if [ -z "${DIGEST}" ]; then
+            eligible=false
+            reasons="${reasons}no image digest was produced, so there is nothing immutable to promote; "
+          fi
+
+          {
+            printf '## Release verification\n\n'
+            printf '| Item | Value |\n| --- | --- |\n'
+            printf '| Source commit | `%s` |\n' "${SOURCE_SHA}"
+            printf '| Clean room | %s |\n' "${CLEAN_ROOM}"
+            printf '| Schema hash | `%s` |\n' "${SCHEMA_HASH:-—}"
+            printf '| Image digest | `%s` |\n' "${DIGEST:-—}"
+            printf '| SBOM digest | `%s` |\n' "${SBOM_DIGEST:-—}"
+            printf '| Provenance | %s |\n' "${PROVENANCE:-unavailable}"
+            printf '| **Staging eligibility** | **%s** |\n\n' "${eligible}"
+            if [ "${eligible}" = 'false' ]; then printf 'Not eligible: %s\n\n' "${reasons}"; fi
+            printf 'NO DEPLOYMENT WAS PERFORMED. This workflow decides whether an artifact is FIT to deploy.\n'
+            printf 'Deploying it is a separate act with a separate authority: staging requires the protected\n'
+            printf '`staging` environment, and production approval is reserved to the founders (ADR-006).\n'
+          } | tee release-eligibility.md >> "${GITHUB_STEP_SUMMARY}"
+
+          node -e '
+            const fs = require("node:fs");
+            fs.writeFileSync("release-eligibility.json", JSON.stringify({
+              sourceCommit: process.env.SOURCE_SHA,
+              cleanRoom: process.env.CLEAN_ROOM,
+              artifact: process.env.ARTIFACT,
+              imageDigest: process.env.DIGEST || null,
+              sbomDigest: process.env.SBOM_DIGEST || null,
+              provenance: process.env.PROVENANCE || "unavailable",
+              schemaHash: process.env.SCHEMA_HASH || null,
+              stagingEligible: process.argv[1] === "true",
+              deploymentPerformed: false,
+            }, null, 2) + "\n");
+          ' "${eligible}"
+
+          if [ "${eligible}" != 'true' ]; then exit 1; fi
+
+      - name: Upload the release record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-eligibility
+          # Longest retention in the pipeline: a release record is the thing you
+          # need a year later, when nobody remembers what shipped.
+          retention-days: 365
+          if-no-files-found: warn
+          path: |
+            release-eligibility.json
+            release-eligibility.md

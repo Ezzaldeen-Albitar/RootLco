@@ -1,0 +1,281 @@
+# =============================================================================
+# RootLco — reusable release artifact.
+#
+# BUILD ONCE. The same image digest that is scanned here is the digest that
+# would later be promoted to staging and then to production. Rebuilding for each
+# environment produces a different artifact from the same source and quietly
+# discards every test result that referred to the first one.
+#
+# NOTHING IS PUSHED and nothing is deployed. There is no approved hosting
+# decision and no environment beyond Local (ADR-012), so this produces the
+# evidence a future promotion would need and stops there. Promotion to `main` is
+# a founders' reserved decision (ADR-006) and no workflow performs it.
+#
+# Provenance is only claimed when it is actually generated and verified. If
+# artifact attestation is unavailable on this plan, a hashed manifest is
+# produced instead and the limitation is stated rather than papered over.
+# =============================================================================
+
+name: Reusable — release artifact
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: false
+        type: string
+        default: ''
+      attest:
+        description: >-
+          Generate and VERIFY a GitHub build-provenance attestation. Requires
+          `id-token: write` and `attestations: write` from the caller.
+        required: false
+        type: boolean
+        default: false
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 90
+    outputs:
+      digest:
+        value: ${{ jobs.artifact.outputs.digest }}
+      sbom-digest:
+        value: ${{ jobs.artifact.outputs.sbom-digest }}
+      provenance:
+        description: '`attested`, `manifest-only`, or `unavailable`.'
+        value: ${{ jobs.artifact.outputs.provenance }}
+
+permissions:
+  contents: read
+
+jobs:
+  artifact:
+    name: release-artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # Only what attestation needs, and only because the caller asked for it.
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      sbom-digest: ${{ steps.sbom.outputs.digest }}
+      provenance: ${{ steps.provenance.outputs.state }}
+
+    steps:
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: '0'
+          install: 'false'
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the production image ONCE
+        id: build
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          docker build --target runner \
+            --build-arg "NEXT_PUBLIC_COMMIT_SHA=${RESOLVED_SHA}" \
+            --build-arg 'NEXT_PUBLIC_APP_ENV=local' \
+            -t rootlco/web:release .
+          digest="$(docker image inspect rootlco/web:release --format '{{.Id}}')"
+          size="$(docker image inspect rootlco/web:release --format '{{.Size}}')"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          printf 'image digest: %s\nimage size: %s bytes\n' "${digest}" "${size}"
+          docker save rootlco/web:release -o release-image.tar
+          tar_digest="sha256:$(sha256sum release-image.tar | cut -d' ' -f1)"
+          echo "tarball digest: ${tar_digest}"
+          printf '%s\n' "${tar_digest}" > image-tar-digest.txt
+
+      - name: Generate the SBOM
+        id: sbom
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: rootlco/web:release
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: SBOM integrity
+        run: |
+          set -euo pipefail
+          if [ ! -s sbom.spdx.json ]; then
+            echo "::error::The SBOM is empty. An empty bill of materials is not a bill of materials."
+            exit 1
+          fi
+          packages="$(node -e 'process.stdout.write(String((JSON.parse(require("node:fs").readFileSync("sbom.spdx.json","utf8")).packages ?? []).length))')"
+          echo "SBOM packages: ${packages}"
+          if [ "${packages}" -lt 10 ]; then
+            echo "::error::The SBOM lists only ${packages} package(s), which cannot be right for this image."
+            exit 1
+          fi
+          sbom_digest="sha256:$(sha256sum sbom.spdx.json | cut -d' ' -f1)"
+          printf '%s\n' "${sbom_digest}" > sbom-digest.txt
+          echo "digest=${sbom_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Vulnerability scan of the release artifact
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: rootlco/web:release
+          format: json
+          output: trivy-release.json
+          scanners: vuln,secret
+          ignore-unfixed: false
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Release vulnerability policy
+        run: |
+          set -euo pipefail
+          # A release artifact is held to the stricter standard: unfixable
+          # findings are reported on a pull request, but a release is the moment
+          # to decide whether to rebuild on a newer base image.
+          node scripts/ci/container-policy.mjs \
+            --report trivy-release.json --severities CRITICAL,HIGH \
+            --json release-vulnerabilities.json --markdown release-vulnerabilities.md
+
+      - name: Build-provenance attestation
+        id: attest
+        if: inputs.attest
+        # workflow-security-allow: WFS-009 -- Artifact attestation depends on a
+        # repository/plan capability this project has never exercised. The next
+        # step INSPECTS the outcome and the bundle on disk, and downgrades the
+        # recorded provenance to `manifest-only` when either is missing — so a
+        # failure here changes the CLAIM rather than being ignored. Removing this
+        # would make an unavailable capability fail a release that is otherwise
+        # sound, which is the opposite of the honest outcome.
+        continue-on-error: true
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: release-image.tar
+
+      - name: Provenance record
+        id: provenance
+        env:
+          REQUESTED: ${{ inputs.attest }}
+          ATTEST_OUTCOME: ${{ steps.attest.outcome }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          SBOM_DIGEST: ${{ steps.sbom.outputs.digest }}
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          state='unavailable'
+          if [ "${REQUESTED}" = 'true' ] && [ "${ATTEST_OUTCOME}" = 'success' ] && [ -n "${BUNDLE:-}" ] && [ -s "${BUNDLE}" ]; then
+            # Only claim attestation when a bundle actually exists on disk. A
+            # green step with no bundle is not cryptographic provenance, and
+            # saying otherwise would be the exact overclaim the policy forbids.
+            cp "${BUNDLE}" provenance-bundle.jsonl
+            state='attested'
+          elif [ "${REQUESTED}" = 'true' ]; then
+            echo "::warning::Attestation was requested but produced no bundle (outcome: ${ATTEST_OUTCOME:-none}). Falling back to a hashed manifest and recording the limitation."
+            state='manifest-only'
+          else
+            state='manifest-only'
+          fi
+          echo "state=${state}" >> "${GITHUB_OUTPUT}"
+
+          # The manifest is produced either way: it is the human-readable record
+          # of what was built, from what, by which run.
+          node -e '
+            const fs = require("node:fs");
+            fs.writeFileSync("release-manifest.json", JSON.stringify({
+              sourceCommit: process.env.RESOLVED_SHA,
+              imageDigest: process.env.IMAGE_DIGEST,
+              imageTarDigest: fs.readFileSync("image-tar-digest.txt", "utf8").trim(),
+              sbomDigest: process.env.SBOM_DIGEST,
+              provenance: process.argv[1],
+              provenanceNote: process.argv[1] === "attested"
+                ? "A GitHub build-provenance attestation was generated and its bundle is attached. Verify with: gh attestation verify release-image.tar --repo <owner>/<repo>"
+                : "NO cryptographic attestation was produced. This manifest records digests only; it proves what this run observed, not that this run is the only thing that could have produced the artifact.",
+              workflowRun: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              runner: `${process.env.RUNNER_OS}/${process.env.RUNNER_ARCH}`,
+              buildTimestamp: new Date().toISOString(),
+            }, null, 2) + "\n");
+          ' "${state}"
+          cat release-manifest.json
+
+      - name: Verify the attestation we just made
+        if: steps.provenance.outputs.state == 'attested'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Generating an attestation and never verifying it proves the action
+          # ran, not that the attestation is valid. Claiming provenance without
+          # a verification step is exactly the overclaim §29 forbids.
+          gh attestation verify release-image.tar --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/_reusable-release-artifact.yml" \
+            | tee provenance-verification.txt
+
+      - name: Record the schema and migration state of this release
+        run: |
+          set -euo pipefail
+          count="$(find supabase/migrations -name '*.sql' -type f | wc -l | tr -d ' ')"
+          node -e '
+            const fs = require("node:fs");
+            const base = JSON.parse(fs.readFileSync(".github/ci-baselines/schema-baseline.json", "utf8"));
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            fs.writeFileSync("release-state.json", JSON.stringify({
+              migrationCount: Number(process.argv[1]),
+              expectedSchemaHash: base.schemaHash,
+              dependencies: pkg.dependencies,
+              node: process.version,
+            }, null, 2) + "\n");
+          ' "${count}"
+          cat release-state.json
+
+      - name: Job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            printf '### Release artifact\n\n'
+            if [ -f release-manifest.json ]; then
+              printf '```json\n'
+              cat release-manifest.json
+              printf '```\n\n'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ -f release-vulnerabilities.md ]; then cat release-vulnerabilities.md >> "${GITHUB_STEP_SUMMARY}"; fi
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          # The image tarball itself is NOT uploaded: it is hundreds of megabytes
+          # and can be reproduced from the recorded source commit. Its digest is.
+          path: |
+            sbom.spdx.json
+            sbom-digest.txt
+            image-tar-digest.txt
+            trivy-release.json
+            release-vulnerabilities.json
+            release-manifest.json
+            release-state.json
+            provenance-bundle.jsonl
+            provenance-verification.txt
+            *.md

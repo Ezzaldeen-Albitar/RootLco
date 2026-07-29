@@ -1,0 +1,118 @@
+{
+  "description": "Dependency-advisory exceptions. PRODUCTION advisories are NEVER waived and this file is not consulted for them — the production tree is at zero HIGH/CRITICAL and must stay there. Only development-tree advisories may be waived, and only as an exact, evidence-backed, expiring record.",
+  "policy": "docs/engineering/ci-automation/security-model.md",
+  "productionPolicy": "zero HIGH or CRITICAL, no exceptions",
+  "developmentPolicy": "zero HIGH or CRITICAL unless matched by an exact exception below: one advisory, one package, one affected range, one dependency-path fingerprint, one expiry",
+  "matchingRules": "An exception matches ONLY when the advisory id, the package name, the affected range and the full set of resolved dependency nodes all agree. A different advisory, a different package, a widened range, or a changed dependency path fails the gate rather than being absorbed.",
+  "disallowedLicences": ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"],
+  "licenceExceptions": [],
+  "developmentAdvisories": [
+    {
+      "id": "GHSA-mh99-v99m-4gvg",
+      "advisorySource": 1124334,
+      "advisoryUrl": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+      "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+      "package": "brace-expansion",
+      "severity": "high",
+      "affectedRange": "<=5.0.7",
+      "patchedVersion": "5.0.8",
+      "installedAffectedVersions": ["1.1.16", "2.1.3"],
+      "dependencyNodes": [
+        "node_modules/glob/node_modules/brace-expansion",
+        "node_modules/minimatch/node_modules/brace-expansion"
+      ],
+      "dependencyPaths": [
+        "root → devDependencies → eslint@^9 → minimatch@^3.1.5 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-import@^2.32.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-jsx-a11y@^6.10.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → eslint-config-next@16.2.12 → eslint-plugin-react@^7.37.0 → minimatch@^3.1.2 → brace-expansion@^1.1.7 (resolved 1.1.16)",
+        "root → devDependencies → @vitest/coverage-v8@^3.2.4 → test-exclude@^7.0.1 → glob@^10.4.1 → minimatch@^9.0.4 → brace-expansion@^2.0.2 (resolved 2.1.3)"
+      ],
+      "dependencyPathNote": "70 distinct root-to-target walks exist because eslint is reachable through several plugin peer edges, but they collapse to exactly TWO resolved nodes — the ones listed in dependencyNodes, which is what the gate fingerprints. A third instance, node_modules/brace-expansion@5.0.8, is already PATCHED: minimatch@10.2.5 requires ^5.0.5 and npm therefore does not list it as an affected node.",
+      "environment": "development tooling only",
+      "productionReachable": false,
+      "productionReachableEvidence": "`npm ls brace-expansion --omit=dev --all` returns `(empty)`. The production dependency tree contains no brace-expansion, no minimatch and no eslint. Every one of the 70 root-to-target paths begins on a devDependencies edge; npm marks all three resolved instances `dev: true`. Re-derived mechanically on every run by scripts/ci/dependency-path-proof.mjs.",
+      "finalContainerReachable": false,
+      "finalContainerReachableEvidence": "READ THIS AS REACHABILITY, NOT ABSENCE. See `finalContainerCodePresent`: the code IS in the image, vendored inside the `node` binary itself. What is asserted here is that the running application cannot reach it.\n\nMeasured in the built image: `require(\"brace-expansion\")` fails with MODULE_NOT_FOUND, and the name is not in `module.builtinModules`. No module-resolution path exposes node's internal bundle to application code. The container entrypoint is `node server.js` serving HTTP through Next.js standalone; nothing on the request path performs brace expansion, and the advisory requires an attacker-supplied brace pattern to be passed to it.\n\nSupporting facts about this repository, still true: the runner stage copies only `.next/standalone`, `.next/static` and `public` — never `node_modules`; an inventory of the built image lists 0 paths matching `/node_modules/brace-expansion/` or `/node_modules/minimatch/`; and NO package manager resolves in the image (npm, npx, yarn, yarnpkg, pnpm, corepack, bun all removed and asserted absent in the same Docker layer).\n\nTHIS FIELD HAS BEEN WRONG THREE TIMES, each time in the same way: it asserted ABSENCE, which was never achievable, instead of asserting NON-REACHABILITY, which is both true and the security-relevant question. The history is in `containerFindings`. A path-based inventory cannot see vendored code at all — not in yarn, not in the node binary — which is why the claim is no longer built on one.",
+      "runtimeImportEvidence": "No file under src/ or scripts/ imports brace-expansion, minimatch or glob, directly or transitively. Verified by scripts/ci/dependency-path-proof.mjs on every run.",
+      "exploitability": "Not reachable based on current evidence. The vulnerability is a denial of service triggered by an attacker-supplied brace expression. Reaching it requires an attacker-controlled pattern to be passed to brace expansion. In this repository the only consumers are ESLint config matching, vitest coverage include/exclude globs and test-exclude — all of which operate exclusively on patterns written in committed configuration files. No application input path reaches a glob or brace expression; the application does not depend on brace-expansion at all.",
+      "attackerControlledPatterns": false,
+      "attackerControlledPatternsEvidence": "The glob and brace patterns evaluated in this repository come from eslint.config.mjs, the three vitest configs and package.json script arguments — all repository-controlled. GitHub Actions invokes these tools only on repository-controlled file patterns; no workflow passes a pull-request title, branch name, or any other event-supplied value into a glob.",
+      "reasonUpgradeCannotBeApplied": "The parent ESLint and minimatch chain requires the older brace-expansion API. minimatch@3.1.5 requires ^1.1.7 and minimatch@9.0.9 requires ^2.0.2; brace-expansion@5 changed its export shape, so neither can consume the patched release. npm's own `fixAvailable` reports `eslint@10.8.0, isSemVerMajor: true` — there is no non-breaking fix.",
+      "attemptedRemediation": "package.json `overrides` forcing brace-expansion to ^5.0.8 across the tree.",
+      "attemptedRemediationResult": "ESLint broken. `npm run lint` failed with `TypeError: expand is not a function` at Minimatch.braceExpand — minimatch@3 calls the v1/v2 default export, which v5 no longer provides. Verified by execution, not inferred. The override was reverted completely and must not be reintroduced.",
+      "compensatingControls": [
+        "No attacker-controlled brace or glob expressions: every pattern evaluated comes from committed configuration.",
+        "Repository-controlled patterns only: GitHub Actions passes no event-supplied value into a glob.",
+        "No production inclusion: absent from the production dependency tree, proven by `npm ls --omit=dev`.",
+        "Not reachable from the running application: `require(\"brace-expansion\")` fails with MODULE_NOT_FOUND in the built image and the name is not a Node builtin, so the copy vendored inside the `node` binary is not exposed to application code. Independently, no package manager is installed in the image and no `/node_modules/brace-expansion/` path exists — both asserted every run against the BUILT image. Absence of the code itself is NOT claimed and is not achievable.",
+        "Dependency monitoring: Dependabot watches npm weekly; the dependency-security job re-derives the full path proof on every pull request and every protected push.",
+        "The gate fails automatically if the package ever becomes production-reachable, if the dependency path changes, or if a compatible patched version becomes installable."
+      ],
+      "owner": "platform-owner",
+      "createdOn": "2026-07-28",
+      "reviewBy": "2026-09-30",
+      "expiresOn": "2026-10-31",
+      "removalCondition": "The parent dependency chain supports a patched compatible brace-expansion version — that is, eslint and @vitest/coverage-v8 resolve a minimatch that accepts brace-expansion >=5.0.8, or npm reports a non-semver-major fixAvailable. When that happens the gate FAILS with a compatible-fix-available finding, because an exception that outlives its cause is worse than none.",
+      "evidenceLinks": [
+        "docs/engineering/ci-automation/evidence/brace-expansion-reachability-proof.md",
+        "docs/engineering/ci-automation/security-model.md",
+        "scripts/ci/dependency-path-proof.mjs",
+        "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+        "Dockerfile",
+        ".github/workflows/_reusable-container.yml"
+      ],
+      "approvalStatus": "approved",
+      "approvalNote": "APPROVED by the platform owner on 2026-07-29 as a narrow, temporary, upstream-blocked development-tooling exception. The approval is recorded with its stated basis and its explicit scope limits, both above. Every element of the basis is re-measured on each run rather than accepted once — see approvalBasisEnforcement. The scope limits are not merely documentary: a different advisory, a different package, a widened range, a changed dependency-path fingerprint, a production-reachable instance, or a passed expiry each fail the gate rather than being absorbed by this entry.",
+      "containerFindings": [
+        {
+          "id": "AR-35",
+          "discoveredOn": "2026-07-28",
+          "discoveredBy": "container-security image inventory, run locally before pushing",
+          "finding": "node:22-alpine bundles npm, whose dependency tree includes brace-expansion@2.0.2 (within GHSA-mh99-v99m-4gvg, <=5.0.7) and minimatch@9.0.9. Present in the production image while this repository’s /app tree was clean, so `finalContainerReachable: false` was false as literally stated — it had been reasoned about this repository’s dependency tree only.",
+          "resolution": "npm, npx and /usr/local/lib/node_modules/npm removed in the runner stage.",
+          "status": "superseded-by-AR-37"
+        },
+        {
+          "id": "AR-37",
+          "discoveredOn": "2026-07-28",
+          "discoveredBy": "independent adversarial review of the AR-35 fix (three reviewers, confirmed)",
+          "finding": "The AR-35 fix deleted exactly the three paths its new assertion grepped for, and grepped for exactly the three paths it deleted. node:22-alpine ALSO ships Yarn Classic 1.22.22 at /opt/yarn-v1.22.22 (symlinks /usr/local/bin/yarn and yarnpkg) and corepack 0.34.6, both of which survived and both of which ran as uid 1001 in the built image. Yarn’s bundled cli.js contains brace-expansion’s implementation verbatim — proven live, offline, by running `yarn workspaces info` against a `packages/{a,b}` glob inside the image and watching the brace expand. Every detector was blind to it because all of them key on a literal `/node_modules/<name>/` path segment, which a bundled copy does not have. Corepack is worse than what was removed: it downloads and executes package managers from the network. So the restated claim \"no copy of brace-expansion exists in the deployed image at all\" was FALSE AGAIN, for the same reason it was false the first time.",
+          "resolution": "The runner stage now removes npm, npx, corepack, yarn, yarnpkg and /opt/yarn-* and then asserts in the same layer that none of them still resolves, failing the build if one does. The container gate additionally checks for package managers by RESOLVING THE BINARY rather than grepping the inventory — `find -type f` never lists symlinks, so the previous /usr/local/bin/(npm|npx) arm could not match even with npm fully installed. Verified: a reintroduced yarn is caught by the new check and was missed by the old one.",
+          "status": "resolved"
+        },
+        {
+          "id": "AR-43",
+          "discoveredOn": "2026-07-29",
+          "discoveredBy": "independent adversarial review of the AR-37 fix (confirmed after five refutation attempts)",
+          "finding": "Removing every package manager still did not make `finalContainerReachable: false` true as an ABSENCE claim, because the `node` binary itself vendors brace-expansion — Node bundles its internal tooling dependencies into the executable. Verified: the esbuild banner `// node_modules/brace-expansion/dist/commonjs/index.js` and 7 algorithm markers appear in `strings /usr/local/bin/node`. Since a Node application image must contain Node, absence was never achievable, and two previous corrections were fixing the wrong claim.",
+          "resolution": "Stopped asserting absence. The record now states BOTH facts: the code is present (`finalContainerCodePresent: true`, unavoidable) and the application cannot reach it (`require(\"brace-expansion\")` -> MODULE_NOT_FOUND, not a builtin, nothing on the request path performs brace expansion). The package-manager removal is retained as real hardening on its own merits, but is no longer the basis of the claim.",
+          "status": "resolved"
+        }
+      ],
+      "finalContainerCodePresent": true,
+      "finalContainerCodePresentEvidence": "brace-expansion's CODE IS PRESENT in the final container and cannot be removed. Node.js bundles its internal JavaScript tooling into the executable: the 127,260,816-byte `/usr/local/bin/node` in `node:22-alpine` contains the esbuild banner `// node_modules/brace-expansion/dist/commonjs/index.js` and the algorithm markers (escSlash, expandTop, isAlphaSequence). You cannot ship a Node application without Node, so no deletion makes this false. Stating it plainly here because this record twice claimed the opposite.",
+      "approvedBy": "platform-owner",
+      "approvedOn": "2026-07-29",
+      "approvalBasis": [
+        "production npm audit is clean",
+        "the affected package paths are development-tooling paths",
+        "no RootLco application import can resolve brace-expansion",
+        "brace-expansion code exists unavoidably as vendored code inside the Node binary",
+        "the running RootLco application cannot reach or invoke it",
+        "the exception is exact, expiring, mechanically verified, and monitored",
+        "it must be removed when the parent dependency chain supports a compatible patched version"
+      ],
+      "approvalScopeLimits": "This approval does not apply to any new advisory, package, dependency path, production-reachable condition, or expired exception.",
+      "approvalBasisEnforcement": {
+        "production npm audit is clean": "dependency-policy.mjs fails on ANY high/critical advisory in the --omit=dev tree, and the exceptions file is not consulted for the production tree at all.",
+        "development-tooling paths": "dependency-path-proof.mjs derives every root-to-target path mechanically each run; the gate cross-checks the entry against it, so the claim cannot go stale.",
+        "no application import resolves it": "the same proof scans src/ and scripts/ for direct and transitive imports.",
+        "vendored inside the Node binary, unreachable from the app": "recorded as finalContainerCodePresent: true with the binary evidence, and finalContainerReachable: false meaning not reachable from the running application (require -> MODULE_NOT_FOUND, not a builtin).",
+        "exact, expiring, monitored": "validateExactMatch pins package, affectedRange, dependencyNodes fingerprint and fixAvailable; expiresOn fails the gate on expiry and reviewBy warns before it.",
+        "removed when a compatible patch exists": "the gate fails if npm reports a non-semver-major fixAvailable, so the exception cannot outlive its own removalCondition."
+      }
+    }
+  ],
+  "remediationRecord": "At the audit baseline the PRODUCTION tree carried 3 HIGH findings covering 13 advisories: next@16.2.10 (proxy bypass, two SSRF, unauthenticated Server Function disclosure, two cache-confusion, DoS, unbounded payload, image DoS), postcss@8.4.31 (three) and sharp@0.34.5 (libvips CVEs). Resolved through compatible patch upgrades: next 16.2.10 to 16.2.12, plus overrides pinning postcss to ^8.5.24 and sharp to ^0.35.3 because Next pins postcss at exactly 8.4.31 and npm's only suggested remedy was downgrading Next to 9.3.3. Production is now at zero HIGH/CRITICAL."
+}

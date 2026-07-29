@@ -1,0 +1,33 @@
+{
+  "description": "Frozen database baseline. Every value here is a claim the migration-replay job re-proves from an empty PostgreSQL 17 on every run. A value that changes legitimately must be raised in the SAME commit that changes the schema, so the diff shows both.",
+  "policy": "docs/engineering/ci-automation/pr-gate.md",
+  "establishedBy": "P1-21 Inventory Backend, hosted clean room at 96c93cadcba573e34f97f8f6ea7814c2f707abeb",
+  "structuralTotalsEstablishedBy": "PR CI run 19 (run id 30431556718), job `database-migration-replay / migration-replay`, artifact `evidence-migration-replay`, file `migration-replay.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest, PostgreSQL 17 service container replayed from empty.",
+  "migrationCount": 119,
+  "forbiddenMigrationPrefix": "120",
+  "forbiddenMigrationPrefixNote": "Migration 120 belongs to the next authorised phase. Its presence on this branch means phase work has leaked into an unrelated change.",
+  "schemaHash": "a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c",
+  "schemaHashNote": "Produced by `npm run validate:schema-inventory -- --hash-only`. Unchanged from P1-18 through P1-21; the inventory backend added no migration. Run 19 reproduced it identically in three independent places: the migration-replay job, and the hosted clean room both before and after seeding.",
+  "permissionCount": 100,
+  "structuralTotals": {
+    "tables": 242,
+    "functions": 514,
+    "policies": 631,
+    "triggers": 541,
+    "security_definer": 0
+  },
+  "structuralTotalsNote": "Recorded from the first GitHub-hosted run, using migration-replay-checks.mjs's OWN catalog queries. The earlier note warned that copying earlier phase-gate numbers across would compare two things that were never the same measurement, and run 19 proved that warning exact: `functions` here is 514, while scripts/db/schema-inventory.mjs reported 212 for the same database in the same run.",
+  "functionCountDiscrepancyNote": "514 and 212 are both correct; they count different populations, and the difference is entirely in the WHERE clause. migration-replay-checks.mjs counts `pg_proc` filtered only by `n.nspname NOT IN ('pg_catalog','information_schema')`, so it includes extension and public-namespace functions. schema-inventory.mjs counts `WHERE n.nspname = ANY($1)`, restricted to the 17 RootLco business schemas — and the per-schema breakdown in that same artifact sums to exactly 212 (org, iam, shared, crm, veh, apt, rec, wo, tech, dia, qms, svc, quo, inv, sal, wty, rpt). The 302-function difference is therefore extension-owned code, not RootLco code. Neither figure was chosen for convenience: 514 belongs HERE because this file is enforced by the script that produces 514, and 212 remains the number to quote for RootLco's own schema and the one comparable with every prior phase gate. Do not 'reconcile' them by editing either.",
+  "structuralTotalsCrossChecks": "tables 242, triggers 541 and policies 631 are identical under both scripts, and the hosted clean room independently reported 242 live tables, 999 indexes and 537 foreign keys. Only `functions` diverges.",
+  "seededStructuralTables": [
+    "iam.permissions",
+    "inv.units_of_measure",
+    "sal.payment_methods",
+    "wo.job_states",
+    "wo.job_transitions",
+    "wo.work_order_states",
+    "wo.work_order_transitions"
+  ],
+  "seededStructuralTablesNote": "Enumerated from an empty PostgreSQL 17 in run 19 after migrations and seeding: iam.permissions (100 rows), inv.units_of_measure (12), sal.payment_methods (3), wo.job_states (6), wo.job_transitions (10), wo.work_order_states (9), wo.work_order_transitions (15). Every one is a structural catalog — permissions, units, payment methods and the work-order state machine — and none is business data, so the no-fake-data policy holds: a freshly provisioned database still starts with no customers, vehicles, orders or invoices. Now that the list is recorded, migration-replay-checks.mjs FAILS on any populated business table outside it, which is the point of recording it. Row counts are deliberately not pinned; the check matches table names only, so seeding one more permission is not a build break.",
+  "seededStructuralTablesAsymmetryNote": "The check flags UNEXPECTED populated tables, not missing ones. A seed that silently stops running therefore still passes this particular gate — it is caught elsewhere, by the smoke reads and by permissionCount 100."
+}

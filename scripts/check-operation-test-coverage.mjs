@@ -67,7 +67,7 @@
  * Exit codes: 0 clean · 1 coverage failure · 2 IO error.
  * Usage: node scripts/check-operation-test-coverage.mjs [--json]
  */
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -97,7 +97,50 @@ export const P1_17_PREFIX = 'veh.';
  * failure P1-17 had to remediate three times.
  */
 export const P1_18_PREFIXES = ['apt.', 'rec.'];
-const DERIVED_PREFIXES = [DERIVED_PREFIX, P1_16_PREFIX, P1_17_PREFIX, ...P1_18_PREFIXES];
+/**
+ * P1-19 spans FOUR id namespaces — `wo.`, `tech.`, `dia.` and `qms.` — because the
+ * frozen Phase 1-9 database splits work orders, technician execution, diagnostics
+ * and quality into four schemas. All four are listed for the same reason both
+ * P1-18 namespaces are: a namespace absent from this array gets no derived floor at
+ * all, silently, and its operations pass on whatever the manifest happens to
+ * declare.
+ */
+export const P1_19_PREFIXES = ['wo.', 'tech.', 'dia.', 'qms.'];
+/**
+ * P1-20 spans TWO id namespaces — `svc.` (service catalog and pricing, which share
+ * the frozen Phase 1-10 `svc` schema) and `quo.` (quotation).
+ *
+ * Listed here for the reason stated above P1-19, and it was earned again: the first
+ * P1-20 commit extended the visible hook — the `parseProvidedFlags` alternation
+ * accepts `svc|quo` — but not this array, so `derivedRequirements()` returned `[]`
+ * for all thirteen P1-20 operations and the required floor was whatever the manifest
+ * volunteered. An independent review measured it from this script's own `--json`
+ * output: `route`, `service` and `authorization` were *provided but not required*
+ * for every one of the thirteen, and deleting those assertions would have kept the
+ * gate green. Extending the alternation without extending the prefixes is the exact
+ * shape of a gate that looks stricter than it is.
+ */
+export const P1_20_PREFIXES = ['svc.', 'quo.'];
+/**
+ * P1-21 spans ONE id namespace — `inv.` — because the frozen Phase 1-10 `inv`
+ * schema holds the item catalog, the ledger, and every operation table together.
+ *
+ * Listed here *and* in the `parseProvidedFlags` alternation below, because P1-20
+ * proved that extending only one of the two produces a gate that looks stricter
+ * than it is: the operations parse their declarations, provide `route`, `service`
+ * and `authorization`, and none of it is REQUIRED, so deleting those assertions
+ * keeps the gate green. Both hooks or neither.
+ */
+export const P1_21_PREFIXES = ['inv.'];
+const DERIVED_PREFIXES = [
+  DERIVED_PREFIX,
+  P1_16_PREFIX,
+  P1_17_PREFIX,
+  ...P1_18_PREFIXES,
+  ...P1_19_PREFIXES,
+  ...P1_20_PREFIXES,
+  ...P1_21_PREFIXES,
+];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
   typeof id === 'string' && DERIVED_PREFIXES.some((prefix) => id.startsWith(prefix));
@@ -122,6 +165,13 @@ export const isDerivedId = (id) =>
  *   stale-version    a wrong If-Match is refused with a conflict
  *   provider         a provider fake is driven and its behaviour asserted
  */
+/**
+ * The replay-evidence kind. Named once because `derivedRequirements` applies it
+ * across every namespace and `scripts/ci/check-idempotency-evidence.mjs` joins on
+ * the same string — a literal in two places is a typo away from a silent pass.
+ */
+export const EVIDENCE_KEY_IDEMPOTENCY = 'idempotency';
+
 export const EVIDENCE_KINDS = Object.freeze([
   'route',
   'service',
@@ -412,6 +462,454 @@ export const MANIFEST = {
     note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
   // ========================================================================
+  // Phase 1-19 (wo. / tech. / dia. / qms.) — Work Order, Diagnostics and
+  // Technician Backend. Same derived-evidence model, and the same strict
+  // comment-stripping ratchet P1-18 introduced: an operation counts as invoked
+  // only if its id appears in executable code, never in prose about a test.
+  //
+  // Wave 4 (work-order core) below. Waves 5–8 append their own entries.
+  // ========================================================================
+  'wo.work-order-list': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset board of ONE branch, newest opened first; company and branch are required query parameters BECAUSE they are the authorizationTarget — the isolation case proves a caller granted only in branch A2 is refused for A1 rather than served it through the permission-blind app.branch_ids union (P1-18-A-01); a tenant-B work order never appears (cross-tenant); a bad cursor, an oversized page, an unknown parameter and a timezone-less date bound are refused (denial); an unknown state code returns an empty page rather than a 422, because wo.work_order_states is tenant-extensible',
+  },
+  'wo.work-order-detail': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'work order + live jobs + reachable next states resolved from the live catalog, in a fixed number of round trips; a terminal order reports NO next states because the guard freezes it whatever the graph says (BR-WO-002); the ETag carries the record_version a transition must send back; an unknown id and a tenant-B id answer the same 404 (cross-tenant/denial)',
+  },
+  'wo.work-order-history': {
+    files: ['tests/backend/p1-19-work-order-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only ledger newest-first, plus an origin block; the origin block is the honest answer to "what state did this open in" — wo.emit_work_order_status_history is AFTER UPDATE only so no genesis row exists, and shared.stamp_status_history would stamp a backfilled one with now(); a bad cursor is refused (denial) and a tenant-B work order yields nothing (cross-tenant)',
+  },
+  'wo.work-order-closure-eligibility': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'reports EVERY unmet blocker rather than the guard’s first: two unmet conditions come back as two, in CLOSURE_BLOCKER_REGISTRY order, and an already-terminal order returns alreadyTerminal with an empty list because the guard evaluates nothing; the Phase 1-21 conditions are reported as deferred rather than omitted, so a snapshot can never read them as checks that ran and passed',
+  },
+  'wo.work-order-transition': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+      'rollback',
+    ],
+    note: 'state + trigger-emitted history row + one audit record + one outbox event in ONE transaction, and an injected failure leaves none of them (rollback); the reason travels through the app.status_reason GUC, which both the guard and the ledger emitter read — without it every reason-required edge fails as a raw 23514 and every ledger reason is NULL; three refusals stay distinct (ERR-TRN-001 absent edge, ERR-VAL-001 missing reason, ERR-VAL-001 closing state asks for the closure command); a wrong If-Match is refused (stale-version) and two concurrent transitions leave exactly one winner (concurrency)',
+  },
+  'wo.work-order-closure': {
+    files: ['tests/backend/p1-19-work-order-core.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'concurrency',
+    ],
+    note: 'the second permission is real, not documentary: a caller holding wo.work_order.transition but not wo.work_order.close is refused (denial), and the transition endpoint refuses a closing target so the split cannot be bypassed by choosing the other URL; closure runs the SAME eligibility service as the read endpoint and reports every blocker (ERR-WO-001) before the write; emits wo.work_order.closed and work-order.closed exactly once each',
+  },
+  'wo.job-create': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the initial state is resolved from wo.job_states, never defaulted to a literal, because ck_jobs_state_format checks only the FORMAT and the vocabulary is the catalog table; wo.guard_job_refs is the enforcement point and refuses a terminal parent or one whose allows_jobs is false (denial); a replay under one Idempotency-Key adds one job, not two (idempotency); no event, because the approved catalog reserves none for job creation',
+  },
+  'wo.service-line-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'quantity crosses as a decimal STRING because the column is numeric(12,3) and IEEE-754 cannot represent every value it holds — the test proves 2.500 survives unrounded; an optional jobId must belong to THIS order, and the test uses a job under a DIFFERENT order in the same branch, which satisfies the composite foreign key and is caught only by the explicit ownership check; a non-positive or over-scaled quantity, a blank description and a terminal work order are each refused with nothing written',
+  },
+  'wo.service-line-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live lines; asserted not to bleed into the required-parts list, because they are different tables and different facts and a caller reading labour must not be shown parts as labour',
+  },
+  'wo.required-part-record': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the NEGATIVE claim is the point and it is asserted, not described: recording demand leaves wo.work_orders.parts_forward_state at its frozen default and leaves every inv table empty, because item_ref is foreign-keyed to the item CATALOG (inv.item_master, via migration 20260723097000 — the Phase 1-9 table comment calling it an unconstrained forward reference is stale) and never to stock, and reservation/issue are Phase 1-21; that is also why the closure-eligibility endpoint reports the two Phase 1-21 conditions as deferred rather than clear',
+  },
+  'wo.required-part-list': {
+    files: ['tests/backend/p1-19-work-order-lines.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'oldest-first list of live demand rows; separate from the service-line list and proved separate',
+  },
+  'wo.job-assignment-create': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'eligibility is complete and pre-write: three failures come back as three reasons in one response (denial), and a window crossing a SPLIT-SHIFT boundary is accepted while the same test proves no single tech.technician_availability row spans it — so the acceptance can only have come from the union check; an inactive profile, an out-of-branch profile and an uncovered window are each refused; uq_job_assignments_active_primary is a PARTIAL unique index so a second live primary is a 409 while assist is unconstrained, and a forced race leaves exactly one primary; assignment is what unblocks planned→assigned, proved by walking the job to completed afterwards',
+  },
+  'wo.job-assignment-list': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the append-only history, ended rows included — ending stamps valid_to and the row SURVIVES, which is what makes "who worked this vehicle in March" answerable; requires tech.technician.read rather than wo.work_order.read, because an assignment names a member of staff and a caller who may read the board is not entitled to the roster (denial: the reader principal is refused)',
+  },
+  'wo.job-assignment-end': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'valid_to is SERVER-stamped and the reason is mandatory in the schema too (ck_job_assignments_end_reason), because removing a technician from work is accountable; a blank reason, a stale version, a missing If-Match and an already-ended assignment are four distinct refusals; ending frees the primary slot, proved by assigning again',
+  },
+  'wo.job-reassignment': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'ONE transaction, because two client calls would leave a window with no active assignment during which wo.guard_job_transition refuses every assignment_required state; the rollback case is the sharp one — the end is written BEFORE the incoming technician is evaluated, so an ineligible incoming profile must leave the outgoing assignment open with no reason and no audit row; a handover to the incumbent is refused rather than churning the history, and with no incumbent it degenerates to an assignment and reports ended: null',
+  },
+  'tech.labor-session-start': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'NO timestamp is accepted — started_at is the column default and the test asserts the recorded start falls inside the request’s own window; a startedAt in the body is a 422; one open session per technician is the partial gist EXCLUDE over tstzrange(started_at, COALESCE(ended_at, infinity)) so a second open session is 23P01 mapped to ERR-TECH-001, proved across two DIFFERENT jobs and shown not to affect another technician; a planned job (labor_allowed false) and an inactive profile are refused; a forced race leaves exactly one open session',
+  },
+  'tech.labor-session-list': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of a job’s labour log newest-first, corrections included; needs tech.technician.read because a session says who worked and for how long — timesheets are employee-derived and reading the board does not entitle a caller to them (the reader principal is refused); a tenant-B caller gets an EMPTY log rather than a 404, which discloses less than confirming the job exists',
+  },
+  'tech.labor-session-stop': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'ended_at is server-stamped and WRITE-ONCE in tech.guard_labor_session, so a second stop is refused here rather than reaching the trigger as a rewrite (denial); stopping frees the technician for another job; the pause/resume cycle is driven end to end — stop plus a job transition into paused, whose reason lands in wo.job_status_history because tech.labor_sessions has no pause column — and the resumed job carries TWO sessions, the first untouched',
+  },
+  'tech.labor-session-correct': {
+    files: ['tests/backend/p1-19-labor-sessions.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+    ],
+    note: 'never an edit: tech.correct_labor_session soft-deletes the original and inserts a linked replacement, and the test reads the ORIGINAL back to prove its window survived unchanged; the only path in this phase that accepts caller timestamps, behind tech.labor.correct (high risk) rather than tech.labor.record (low) because it rewrites what a technician was paid for; an inverted window, a blank reason and a timezone-less bound are each refused with nothing written',
+  },
+  'tech.technician-available': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'isolation'],
+    note: 'reports EVERY active candidate with its verdict, not only the eligible ones — an assigner facing an empty list learns nothing — with eligible first; the inactive profile is excluded at the QUERY rather than evaluated and discarded, and another branch’s technician is never a candidate; company and branch are required because they ARE the authorization target, so the scoped principal is refused BRANCH_A1 and served BRANCH_A2 (isolation) rather than handed an empty roster; the candidate cap is REPORTED as truncatedAt, because a silently truncated roster that looked complete would make an assigner conclude nobody is free; no cross-tenant case, because the operation names no resource id — a foreign branch simply fails the scoped permission check',
+  },
+  'tech.technician-queue': {
+    files: ['tests/backend/p1-19-job-assignments.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
+  },
+  // --- Wave 6: additional work, customer approvals, the execution gate. ----
+  'wo.additional-work-request': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'idempotency'],
+    note: 'provenance is REQUIRED and is this layer’s rule, because both origin columns are nullable and work whose provenance is unrecorded cannot be traced to what discovered it; the job-ownership case uses a job under a DIFFERENT work order in the same branch, which satisfies the composite foreign key and is caught only by the explicit check; originating_finding_id has NO foreign key at all, so an arbitrary uuid would have been stored happily and the refusal comes from a read through the diagnostics module — the only possible check and one the database cannot make, and it is proved POSITIVELY against a real seeded dia.findings row as well as by refusal, because a suite of refusals alone would pass an implementation that rejected every finding; a finding-only request DERIVES its originating job from the finding’s report, so the execution gate applies uniformly — otherwise work found by a diagnostic would let the very job that found it carry on unapproved while the same work found by hand stopped it — and a caller-named job that disagrees with the finding’s own job is refused rather than reconciled; the state check reads allows_additional_work and not just terminality, so qc_pending (non-terminal, flag false) is refused; is_required defaults to true because the safe reading of silence is that a vehicle should not leave with discovered work undone, and the column is immutable after insert, which is what makes B3 non-evadable',
+  },
+  'wo.additional-work-list': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the SAFE projection, and the test asserts the negative: even read by the principal holding iam.sensitive.view, the response body does not contain the restricted description, because that has its own operation and nothing can reach it by listing',
+  },
+  'wo.additional-work-detail-record': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the sensitive-data control, tested in BOTH directions with two principals one permission apart — FULL is refused and SENSITIVE is served — because iam.sensitive.view is declared alongside the functional permission and permissions are a conjunction; RLS (ins_additional_work_request_details_gated) is defence in depth behind that and is why folding the description into the request creation would have failed at the second INSERT after the request had already been written; the audit record carries the FACT and the length and never the text, and a query for the text in iam.audit_details proves it, because iam.audit_records is NOT gated by iam.sensitive.view; replacement is legitimate (UPDATE is granted, only the description is unfrozen) and stays 1:1 through the partial unique index',
+  },
+  'wo.additional-work-detail-read': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none — the only read in this module that is — because who looked at restricted data is itself the fact worth keeping; a 404 here genuinely means "no detail" rather than "hidden from you", precisely because the operation demands iam.sensitive.view so a caller who reaches the service holds it; both narrowed principals hold the sensitive permission scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
+  'wo.additional-work-withdraw': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the exit that keeps a mistaken request from becoming permanent: a required pending request blocks BOTH closure (B3) and its originating job’s entry into any labour state, so without this the only escape would be to ask a customer to decide on work that was never needed; sits behind wo.additional_work.request and not the approve permission, because retracting a question is not deciding the answer; withdrawn is terminal so a second withdrawal is ERR-TRN-001, and the reason is mandatory here even though the row has no column for it — it lives in the audit record',
+  },
+  'wo.additional-work-fulfillment': {
+    files: ['tests/backend/p1-19-additional-work.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'the ONLY way B3’s second limb can clear: nothing else in the phase writes fulfillment_state, so without this an approved required request would block its work order’s closure permanently; unfulfilled is in the CHECK vocabulary and deliberately not settable, because moving back to it would un-record a completion nobody retracted and no trigger freezes the column; only an approved request may move — fulfilling a pending one would record work the customer has not authorised; a waiver needs a reason because declining agreed work is accountable; a TERMINAL work order is refused like every other command on this aggregate, and the case is reachable only through an OPTIONAL approved-unfulfilled request, because B3 ignores is_required=false so such an order closes — an earlier draft used the non-checking lock helper and left a released vehicle’s record writable, since fulfillment_state is frozen by no trigger and the state guard fires only on UPDATE OF state',
+  },
+  'wo.additional-work-approval': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+      'concurrency',
+    ],
+    note: 'the forgery-resistance control is proved rather than described: wo.guard_additional_work_state refuses state=approved with no approval row, and because no route can express that order the DEPLOYED guard is probed directly — a control nobody can reach through the API still has to be shown to work; the decision and the state change are ONE call because split in two there would be a window in which a decision exists and the request does not reflect it; the deciding party is refused when it belongs to another reception visit (23514 from wo.guard_customer_approval_coherence, mapped) and when it resolves to nothing (23503), and the composite party-role FK is satisfied in the first case so only the coherence guard catches it; evidence binds an exact document VERSION and the route has no storage-key field at all (a strict-schema 422 proves it); a rejected version is refused with ERR-DOC-001 while accepted is NOT required, because P1-15 documented acceptance as unreachable; the rollback is proved by a GENUINE failure at the LAST statement of the transaction — a pre-taken outbox key — after the approval row, the evidence row, the state change and both audit records have all been written, and all six are gone afterwards; reaching that point is why the event is keyed by the REQUEST and not by the approval, whose id the database generates mid-transaction where no test could pre-empt it. An earlier version of this suite credited rollback on the evidence pre-check, which refuses BEFORE any write and therefore proved nothing; that case survives under its own name as the pre-check it is. Two raced decisions leave exactly one',
+  },
+  'wo.additional-work-approval-read': {
+    files: ['tests/backend/p1-19-customer-approvals.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the decision plus its evidence, which is the only way an append-only wo.customer_approval_evidence row is readable at all; an undecided request is a 404 rather than an empty decision, because "no decision" and "a decision with no content" are different facts',
+  },
+  'wo.job-transition': {
+    files: [
+      'tests/backend/p1-19-job-lifecycle.test.ts',
+      'tests/backend/p1-19-customer-approvals.test.ts',
+    ],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'concurrency',
+    ],
+    note: 'the ONLY path a job state changes, so the graph has no bypass; the assignment precondition the assignments migration added to wo.guard_job_transition is invisible in the graph — planned→assigned is a configured, reason-free edge that still fails without an active assignment — and is refused as ERR-TECH-001 rather than a bare 23514 (denial); the reason reaches the ledger through app.status_reason, which is also what the guard reads to decide it was supplied; terminal freeze, absent edge and missing reason stay three distinct refusals; a forced race leaves exactly one winner and exactly one audit row and one event. Wave 6 adds the unapproved-work execution gate INSIDE this operation rather than beside it, so it cannot be bypassed by choosing another URL: it keys on wo.job_states.labor_allowed rather than a state name, blocks entry while a REQUIRED request originating from this job is pending, and deliberately uses only B3’s FIRST limb — including approved-and-unfulfilled would have deadlocked the job, since it could then never enter a labour state, so the approved work could never be done and B3 could never clear. A pause is never gated, an optional request never gates, and a request from a sibling job or another work order never gates',
+  },
+  'wo.job-history': {
+    files: ['tests/backend/p1-19-job-lifecycle.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset page of the append-only job ledger newest-first plus an origin block, because wo.emit_job_status_history is AFTER UPDATE only and a job creation emits no row; the pause REASON lives here rather than on a labour session, since tech.labor_sessions has only started_at/ended_at; a bad cursor is ERR-PAG-001 (denial) and a tenant-B job answers the same 404 as an unknown id',
+  },
+  // --- Wave 7: diagnostics. --------------------------------------------------
+  'dia.diagnostic-create': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the pin is the point: dia.guard_diagnostic_report_refs refuses anything but a PUBLISHED template version, and the pre-check tells draft from retired from missing where the guard raises one check_violation for all three; the diagnostic TYPE is joined from the template rather than accepted, so a report’s type cannot disagree with what it pins; revision numbers are monotonic per job and are asserted SEQUENTIALLY rather than under a forced race, because revision_number has NO unique index behind it (accepted item P1-19-A-02) and a race would prove nothing a constraint could back',
+  },
+  'dia.diagnostic-list': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'a job’s revisions newest first, so the current report is the first row rather than something a caller has to compute',
+  },
+  'dia.diagnostic-detail': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'report plus every entry, plus two derived blocks: the OUTSTANDING mandatory items — the same list the completion refusal returns, computed against the PINNED version so a newer template cannot change what this report owes — and the reachable statuses, taken from the mirrored graph so the reconciliation test pins this projection too; a terminal report reports no reachable status at all',
+  },
+  'dia.diagnostic-history': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the append-only ledger plus an origin block, because dia.emit_diagnostic_report_status_history is AFTER UPDATE only and creation emits nothing — and a backfilled genesis row would carry now(), since shared.stamp_status_history forces it; a bad cursor is ERR-PAG-001',
+  },
+  'dia.diagnostic-transition': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'this graph is a FIXED PL/pgSQL IF chain with no catalog table and no tenant override, so the module mirrors it — unlike the wo graphs, which are tenant-overridable rows and must be read; tests/db/p1-19-diagnostic-graph-reconciliation.test.ts pins the mirror against the deployed function. Asking THIS endpoint for `completed` is refused, so the dia.diagnostic.complete permission cannot be bypassed by choosing the other URL. Every flag here is backed by a case driving THIS operation and not the completion one: an earlier revision declared cross-tenant, isolation, stale-version and idempotency in the header while asserting them only for completion, which the gate could not catch because it checks that an operation id appears in executable code and not that an assertion backs each claimed flag. The reason reaches the ledger through app.status_reason and is read back from wo-style history, because a service that validated a reason and never published it would leave every ledger row NULL — the Wave 4 defect, one schema over',
+  },
+  'dia.diagnostic-complete': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'every outstanding mandatory item comes back at once — the guard can only say "not yet", and a technician told that without being told WHICH of forty items is missing has been told nothing; a documented not-applicable reason counts as an answer, so skipping is possible and never silent; completion FREEZES the report against further entries, which the database does not do (none of the five entry tables consults the report’s status) and which is asserted rather than described; rollback is proved by a pre-taken outbox key so publishEvent raises after the status change and the audit record are both written',
+  },
+  'dia.diagnostic-item-result': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the item must belong to the report’s PINNED version — fk_report_item_results_item is (tenant_id, template_item_id) and names no version, so an item from ANOTHER version satisfies it and the test uses exactly that, which without the read would let a report be answered with questions it was never asked; the value is checked against the item’s response_type, which the database does not do since result_value is text: a boolean item would accept "maybe" and a select item any string; an ANSWER carries no range verdict at ALL, unlike a measurement: report_item_results.result_value is text, nothing on this path reads validation_rule, and the table has no within_range column to record one in — the asserted asymmetry is the frozen schema’s, and refusing an out-of-range answer would contradict the module’s own rule that an out-of-spec observation is recorded rather than rejected',
+  },
+  'dia.diagnostic-measurement-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the range comparison happens in the DATABASE as numeric, and the test uses a value a double cannot hold exactly (25.100001) to prove both the round trip and the verdict; bounds are inclusive, asserted at the boundary; within_range is THREE-valued and the null case is asserted, because flattening it to false would claim a check that never ran; an out-of-range reading is RECORDED rather than refused, since a diagnostic exists to record what is wrong; a unit disagreeing with the item and a measurement against a non-numeric item are both refused, and neither is a schema rule',
+  },
+  'dia.diagnostic-dtc-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'ck_dtc_records_code_format is ^[PBCU][0-9][0-9A-F]{3}$ and the shape is exact rather than approximate — the SECOND character is decimal and only the last three are hex, all upper case — so six malformed codes are refused as 422s naming the field, and the valid hex boundary U0FFF is accepted; every dtc_status value is exercised and one outside the vocabulary refused',
+  },
+  'dia.diagnostic-finding-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'severity and disposition answer different questions and nothing ties them, so a critical finding with no_action is accepted deliberately — a fault outside this workshop’s remit is a legitimate record; a finding is the anchor of the phase’s real provenance chain, since wo.additional_work_requests.originating_finding_id points here and Wave 6 resolves it through this module',
+  },
+  'dia.diagnostic-evidence-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'identical contract to wo.customer_approval_evidence: append-only, an exact document VERSION rather than a document, and no storage key — which the strict schema proves by refusing one; accepted is NOT required because P1-15 documented acceptance as unreachable while no application role may write shared.file_scan_results, and a rejected version IS refused',
+  },
+  'dia.diagnostic-recommendation-record': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the finding link the phase brief asks for DOES NOT EXIST — dia.recommendations carries only diagnostic_report_id — so naming a finding is refused rather than silently dropped, and the test queries information_schema to prove no finding_id column exists rather than asserting the absence in prose; the chain the schema does support runs the other way and Wave 6 enforces it',
+  },
+  'dia.diagnostic-review': {
+    files: ['tests/backend/p1-19-diagnostics.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
+  },
+  // --- Wave 8: quality control, reopen refusal and rework. -------------------
+  'qms.qc-record-open': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'a work order carries a SET of QC records rather than a current one — there is NO unique index on (work_order_id) — because a re-check after a failure must be a new record, and the suite opens a second one to prove it; a pending record has neither checker nor finalization time, which ck_quality_control_records_finalized pins; a terminal work order is refused, which the database does not check since qms.quality_control_records references the order and never reads its state',
+  },
+  'qms.qc-record-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'OLDEST first, so a failure and the passing re-check that cleared it read in the order they happened — the note said newest first for one revision while both the query (ORDER BY created_at, id) and the test that pins items[0] as the failure said otherwise',
+  },
+  'qms.qc-record-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'reports which MANDATORY checks have no result yet — reported and not enforced, because B5b asks only whether a passed record exists when any mandatory check is configured and never looks at per-check results, so refusing finalization on an unticked one would be inventing a rule the closure gate does not apply',
+  },
+  'qms.qc-check-result': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'na is a first-class outcome and not a gap (ck_qc_check_results_result is pass|fail|na, never not_applicable); replacement is 1:1 through the partial unique index and STOPS at finalization, which is an application rule because qms.guard_qc_finalize freezes the RECORD and qms.qc_check_results never reads its overall_result; a check belonging to ANOTHER tenant satisfies fk_qc_check_results_check, which names no tenant column, so the catalog read is the only thing that refuses it and the test uses a real tenant-B check',
+  },
+  'qms.qc-record-finalize': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'checker_id and finalized_at are stamped by qms.guard_qc_finalize from the session and are never sent, and the test asserts the STAMPED id; the freeze is proved twice — the service refuses a re-judgement readably, and the deployed guard refuses it when probed directly, because no route can express that request; pending is not a settable target; B5 is walked end to end, a failure blocking closure and a NEW passing record clearing it while the failure stays in the ledger',
+  },
+  'qms.reopen-attempt': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'returns 201 with the recorded attempt and its refusal, NOT a 409 — and that is load-bearing rather than a softening: an earlier draft threw, which aborts the request’s transaction and rolled the ledger row back with it, so the refusal was real and the record was not. The work order is asserted BYTE-FOR-BYTE unchanged afterwards, because "we refused" and "we refused and changed nothing" are different claims; outcome is CHECK-fixed to rejected so the vocabulary has one value; requested_by is stamped by qms.stamp_reopen_attempt and the test asserts the stamped id; an order that is not closed is ERR-TRN-001, a different fact from "you may not reopen it"',
+  },
+  'qms.reopen-attempt-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the ledger an auditor reads to answer "did anyone try to reopen this after the vehicle was released"; append-only, SELECT+INSERT only',
+  },
+  'qms.rework-create': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'outbox',
+      'idempotency',
+      'rollback',
+    ],
+    note: 'the SECOND and last path that inserts wo.work_orders, and the reason it had to exist: before this wave nothing could produce kind=rework — reception’s conversion writes seven columns and leaves kind to its default — so qms.rework_links was unreachable and B6 could never fire. Not a contradiction of Wave 4’s boundary: that was the ORDINARY path, which originates from an authorized visit, and uq_work_orders_ordinary_origin is PARTIAL on kind=ordinary precisely so a rework against a converted visit is legal. The test asserts the new order is kind=rework AND shares the original’s reception visit and vehicle. The original must be CLOSED and NOT a cancellation: qms.guard_rework_link_coherence reads is_closed, which is the floor, but the seeded cancelled row carries is_closed=true AND is_cancellation=true — so the database alone would accept a rework against an abandoned order, and the service refuses it because rework corrects work that was DONE badly. An earlier revision asserted the opposite in five places and was wrong about the seed. Rollback is proved by removing the accepted custody event so wo.guard_work_order_refs refuses the INSERT after the display number has been allocated: no order, no link, and the sequence advance rolled back too',
+  },
+  'qms.rework-list': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the rework cases raised against an ORIGINAL — the direction a service advisor asks about, since uq_rework_links_rework_wo constrains the other side',
+  },
+  'qms.rework-detail': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the case without its restricted cost, which has its own gated surface — folding the cost in would make this read silently return an incomplete case for every caller lacking iam.sensitive.view',
+  },
+  'qms.rework-sign-off': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'BR-QMS-001 is a CHECK here — ck_rework_links_signoff_distinct — unlike diagnostic reviewer separation, which the schema cannot express at all; the test drives the refusal end to end rather than only asserting the readable pre-check, and confirms nothing was signed. B6 is walked whole: the rework order’s own closure is blocked until the sign-off exists and succeeds afterwards. The signer is a technician PROFILE and not a user, sign_off_at is stamped by qms.guard_rework_signoff, and the signature is write-once. FULL creates rework cases and does NOT hold qms.rework.sign_off, so the permission split is proved in both directions',
+  },
+  'qms.rework-cost-record': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the same gate as the additional-work description and tested the same way: FULL holds the functional permission and not iam.sensitive.view, SENSITIVE holds both, and they differ by exactly that one permission; the figure crosses as a decimal STRING because numeric(14,4) holds values IEEE-754 cannot, and 1234.5678 survives the round trip; the audit records the classification, the currency and the fact and NEVER the figure, which a query over iam.audit_record_details proves — that table is not gated by iam.sensitive.view',
+  },
+  'qms.rework-cost-read': {
+    files: ['tests/backend/p1-19-quality-rework.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'audit class SECURITY rather than none, like the additional-work description read: who looked at a cost-of-quality figure is itself worth keeping; both narrowed principals hold iam.sensitive.view scoped to the OTHER branch, so their refusal is the scope check and not a missing permission',
+  },
+  'wo.job-update': {
+    files: ['tests/backend/p1-19-work-order-jobs.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'state is not accepted and cannot be written — the strict schema makes naming it a 422 and the UPDATE does not carry the column, so the graph has no bypass; addressed by job id alone, so the branch scope is re-decided against the LOCKED job’s own company and branch (P1-18-A-01) and a caller granted only in another branch is refused (isolation); a wrong If-Match is refused (stale-version) and the audit records only the columns that moved',
+  },
+
+  // ========================================================================
   // Phase 1-16 (crm.) — CRM Backend. Same derived-evidence model as P1-15:
   // the floor (route, service, success, authorization) is derived from the
   // registration; `required` below adds the extra obligations this operation
@@ -512,7 +1010,10 @@ export const MANIFEST = {
   },
   // --- Grant / scope / approval administration — the confirmed-High surface.
   'iam.grant-issue': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'issued within/at/beyond authority; audit + event once; rollback leaves nothing',
   },
@@ -522,7 +1023,10 @@ export const MANIFEST = {
     note: 'revocation immediate effect + stale-version conflict',
   },
   'iam.grant-scope-add': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'isolation'],
     note: 'within-authority scope added; foreign-company widening refused',
   },
@@ -537,7 +1041,10 @@ export const MANIFEST = {
     note: 'lists the scopes of a scoped grant',
   },
   'iam.approval-limit-create': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial'],
     note: 'no self-limit; malformed money rejected',
   },
@@ -553,7 +1060,10 @@ export const MANIFEST = {
   },
   // --- Role / permission administration.
   'iam.role-create': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: [
+      'tests/backend/iam-operations.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: [],
     note: 'created and found in the list',
   },
@@ -568,7 +1078,10 @@ export const MANIFEST = {
     note: 'listed, tenant-scoped',
   },
   'iam.role-permission-add': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
   },
@@ -609,7 +1122,10 @@ export const MANIFEST = {
     note: 'profile updated; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.user-status-change': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'lock revokes sessions + audits + one event; permission-denied; self refused',
   },
@@ -640,7 +1156,10 @@ export const MANIFEST = {
     note: 'read in scope',
   },
   'iam.company-settings-write': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'audit', 'isolation'],
     note: 'append-only version written + audit; out-of-scope company refused',
   },
@@ -650,7 +1169,10 @@ export const MANIFEST = {
     note: 'read in scope',
   },
   'iam.branch-settings-write': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'audit', 'isolation'],
     note: 'version written + audit; out-of-scope branch invisible and refused',
   },
@@ -667,7 +1189,10 @@ export const MANIFEST = {
   },
   // --- Invitation / activation (provider-fake harness).
   'iam.invitation-create': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
   },
@@ -677,7 +1202,10 @@ export const MANIFEST = {
     note: 'invited → archived + audit + event; non-invitation refused',
   },
   'iam.invitation-activate': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-14-idempotency-replay.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'accepted invitation activated + audit + event; unconfirmed refused',
   },
@@ -895,6 +1423,165 @@ export const MANIFEST = {
     required: [],
     note: 'bounded probe; names and booleans only, no role or driver detail',
   },
+
+  // ---- Phase 1-20 — service catalog, pricing, quotation --------------------
+  'svc.service-list': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'keyset page of the catalog ordered by (service_code, id), a total order backed by uq_services_code so a page is stable when two services share a name; returns NO price, because resolution depends on company/branch/class/date and is gated on svc.price.read — bolting one on would leak the price book to every catalog reader; availableAtBranchId is a scope TARGET, authorized before it is used, so the difference between an empty and a non-empty page cannot be used to probe which branches stock a service (isolation) — without that the declared branch scope would be inert (P1-18-A-01); a tenant-B service never appears (cross-tenant); an unknown parameter, a bad cursor, an oversized page and a timezone-carrying effectiveOn are refused (denial)',
+  },
+  'svc.service-create': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'the mutation surface the protected contract requires and the phase originally shipped without (P1-20-G-01); service_code is frozen by tg_services_immutable from this moment, so the code chosen here identifies the service for life and a duplicate collides on uq_services_code; a service is created active and lifecycleStatus is not a settable field, because ck_services_archived_at ties archived to an archived_at only svc.guard_service_lifecycle writes; svc.services carries NO company_id or branch_id, so creating one is a tenant-wide act and the handler demands svc.service.manage granted tenant-wide — a declared tenant scope alone degrades to the scope-blind iam.has_permission (P1-18-A-01) and a branch-scoped holder could seed the catalog of every branch; cross-tenant is proved with a tenant-B principal holding svc.service.manage unrestricted, so its refusal is the tenant boundary and not a missing permission',
+  },
+  'svc.service-update': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
+    note: 'service_code is IMMUTABLE and the body schema is .strict(), so naming it is a 422 rather than a silently discarded field — a permissive schema would let a caller believe the code changed; archived is TERMINAL and the service refuses every write to an archived row, which is strictly stronger than svc.guard_service_lifecycle (that trigger refuses only the transition out of archived, so a rename of an archived service would pass it); reactivation is expressible at the boundary on purpose, so the ERR-TRN-001 refusal is the applications and not an enum error; description distinguishes absent from null because ck_services_desc_not_blank accepts NULL and refuses the empty string; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.service-version-publish': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'stale-version'],
+    note: 'svc.publish_service_version is CALLED, never reimplemented: it locks the service, refuses a version belonging to another service, refuses a non-draft version, refuses an effective_from at or before the currently open published version’s start, and closes that version’s effective_to — so forward-only succession and the ex_service_versions_no_published_overlap gist backstop are the database’s and a second definition cannot drift from them; If-Match guards the SERVICE, which is the row a concurrent editor moves and the row the function locks first; publication emits service.published, whose catalog entry said implementedIn: null for most of the phase on the false premise that the protected contract mandated no public publication',
+  },
+  'svc.branch-availability-set': {
+    files: ['tests/backend/p1-20-service-catalog.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the ONE catalog write with real scope columns — svc.branch_service_availability carries company_id and branch_id, so scope:branch is genuine here and the pair from the body is the concrete authorizeScope target; the isolation case uses a principal holding svc.service.manage IN FULL scoped to branch A2 plus a widening grant that puts A1 in its permission-blind iam.allowed_branch_ids() union, so the A1 row is readable and only the scoped permission check can refuse it (P1-18-A-01); the company/branch pair is also checked for coherence, because iam.has_permission_in_scope is disjunctive across grant rows and a caller pairing their own branch with another company’s id passes on the branch row alone; exactly one live row per (company, branch, service) means this is a state change and the transition survives only in the audit detail’s previousValue',
+  },
+  'svc.price-list-list': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'bounded tenant read; svc.price_lists carries no company_id or branch_id so a list is tenant-wide reference data and there is no branch to target — what makes it privileged is svc.price.read, which is medium risk because a price list exposes what the business charges every segment; a holder of svc.service.read alone is refused (denial) and a tenant-B list never appears (cross-tenant)',
+  },
+  'svc.price-list-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'currency_code is frozen by tg_price_lists_immutable from this moment, so the code supplied here denominates every amount ever attached and the audit record captures it; validated as an ISO-4217 SHAPE only, because the platform ships no currency table and no jurisdiction default — no currency is hard-coded; svc.price.read is not sufficient (denial); a duplicate price_list_code collides on uq_price_lists_code',
+  },
+  'svc.price-list-version-create': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'version_no is MAX+1 computed under the price list’s FOR UPDATE lock with uq_price_list_versions_no as the backstop; effectiveFrom here is PROVISIONAL and svc.publish_price_list_version overwrites it, which is why forward-only succession is the database’s decision and not a value a caller can pre-set; If-Match is required and a stale record_version is ERR-CON-001',
+  },
+  'svc.price-rule-record': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit'],
+    note: 'the amount crosses as a decimal STRING and is bound with a ::numeric(18,4) cast, so the stored figure is exactly what the caller sent and never a value that passed through a double — an over-scale amount, a negative one and exponential notation are all refused (denial); svc.guard_price_rule_parent_frozen refuses a rule on a published parent, which is what makes published prices immutable, so there is deliberately no update or delete route; a tax class on a rule that is not company-scoped is refused, mirroring ck_price_rules_tax_needs_company',
+  },
+  'svc.price-list-version-publish': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version', 'concurrency'],
+    note: 'a SECOND permission (svc.price.publish) because drafting a price is not making it real, and publication is effectively irreversible — the freeze guard allows only published→archived; svc.publish_price_list_version closes the currently open published version at the new effective_from and refuses a date at or before its start, so succession is the database’s; the one precondition the function does NOT enforce is asserted here — a version with no active rules must not be published, or every later quotation line fails far away with what looks like missing data; a forced concurrent publication leaves exactly one published version and one event',
+  },
+  'quo.quotation-create': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'outbox', 'idempotency'],
+    note: 'quo.quotations.work_order_id is NOT NULL, so the WORK ORDER is the scope authority — requireWorkOrder defers the scoped check to the row’s own company and branch, and nothing reads a company or branch from the request, because a client-supplied branch would be an authorization bypass; the client says WHAT to quote and never what it costs, and .strict() REJECTS unitPrice/lineTotal rather than ignoring them so a caller cannot believe it set a price; every amount is computed by PostgreSQL in the same expression shape the CHECK constraints validate, and the currency comes from the first line’s resolved price list with a later mismatch a hard failure and never a conversion',
+  },
+  'quo.quotation-detail': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'the path names no branch, so the scope is re-decided against the row’s own company and branch after it is read — otherwise the declared branch scope is inert and the permission-blind app.branch_ids union is the only narrowing (P1-18-A-01); every money field crosses as a decimal STRING; the ETag carries the record_version an issue or revise must send back',
+  },
+  'quo.quotation-revision-create': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit', 'concurrency'],
+    note: 'a new revision is how a commercial change reaches a customer, because quo.guard_quotation_item refuses item writes on a non-draft parent and that is what makes an issued revision an immutable snapshot — the test republishes the price list and proves the ISSUED revision’s captured amounts do not move; revision_number is MAX+1 under the quotation’s FOR UPDATE lock with uq_quotation_revisions_number as the backstop, and a forced concurrent pair yields distinct numbers',
+  },
+  'quo.quotation-issue': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'stale-version', 'concurrency', 'rollback'],
+    note: 'quo.issue_revision recomputes all four totals by SUM, refuses zero items, supersedes the prior issued revision and repoints current_revision_id, with uq_quotation_revisions_one_issued as the backstop so two issued revisions cannot coexist; the totals are frozen afterwards by quo.guard_quotation_revision_freeze; NO irreversible delivery happens in the transaction — the event goes to shared.event_outbox, so a rolled-back issue cannot leave a customer holding a quotation the database never issued, and a duplicate issue publishes exactly one event',
+  },
+  'quo.quotation-item-decide': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'concurrency'],
+    note: 'the ITEM is the resource because that is what the schema stores — quo.record_item_decision is item-keyed and uq_approval_decisions_item makes the first decision on a line final, so a conflicting second decision is refused rather than overwriting a recorded customer choice; presentedRevisionId is REQUIRED and is the control that stops approval of revision N approving revision N+1; a claimed decidingPartyRef must match the quotation’s own payer_partner_ref (forged party); evidence is a document_versions id — a storage key is unexpressible — and must be linked to THIS quotation, or any visible document could be attached as evidence for any quotation',
+  },
+  'quo.quotation-revision-decide': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'rollback'],
+    note: 'an ORCHESTRATION over the per-item function, not a second store — there is no revision-level decision row in quo and this creates none; all-or-nothing in one transaction, so a line already carrying the OPPOSITE decision aborts the whole command rather than discarding a recorded choice; the quotation-level outcome is recomputed from the item rows every time, and any rejected line means rejected because treating a partial rejection as acceptance would authorize work the customer declined',
+  },
+  'svc.price-resolve': {
+    files: ['tests/backend/p1-20-pricing.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'companyId and branchId are REQUIRED and are the authorizationTarget, so scope:branch is real rather than inert — a caller granted svc.price.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (isolation, P1-18-A-01); three answers are refusals rather than defaults, each with its own message: no configured price is not zero, a tax class with no effective rate is not an untaxed line, and a rule-level specificity+priority tie is structurally IMPOSSIBLE while uq_price_rules_signature exists (NULLS NOT DISTINCT, and a specificity score determines which columns are non-null, so a tie implies an identical signature) - the test asserts that structural guarantee directly rather than pretending the defensive ERR-CON-001 branch has a positive case',
+  },
+
+  // ---- Phase 1-21 — inventory ---------------------------------------------
+  'inv.item-search': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'inv.item_master carries NO company_id and NO branch_id, so an item is tenant-wide reference data and the operation is scope:tenant with no branch filter at all — a branch filter here would narrow nothing, and declaring scope:branch would 403 every unfiltered listing because requireScopedPermissions fails closed on an empty target; the keyset order is (sku, id), a total order backed by uq_item_master_sku; archived items are excluded by default because inv.guard_item_lifecycle makes archived terminal; NO cost is returned, because inv.item_cost_details is gated by inv.cost.view inside its own RLS policy; a tenant-B item never appears (cross-tenant); a LIKE metacharacter in the search term is escaped, so a search for % returns the items whose sku literally contains % rather than the whole catalog (denial)',
+  },
+  'inv.stock-availability-read': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'isolation'],
+    note: 'returns exactly the four concepts the schema stores — on_hand, reserved, the GENERATED available, and the location type — and invents no damagedQty or customerSuppliedQty field, because no column holds them; quarantine is excluded by default, which is what keeps available honest, since damage moves units to a quarantine LOCATION rather than setting a flag; branchId and locationId are scope TARGETS authorized before use, so the difference between an empty and a non-empty page cannot probe which branches stock an item (isolation) — a caller holding inv.stock.read only in A2 is refused A1 even though an unrelated A1 grant puts A1 in its permission-blind app.branch_ids union (P1-18-A-01); a locationId whose branch contradicts an explicit branchId is refused rather than silently preferring one (denial)',
+  },
+  'inv.stock-movement-list': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'read-only by construction: inv.stock_movements grants SELECT + INSERT only, so there is no update or delete route to write and a correction is a new movement; ordered by seq DESC because seq is GENERATED ALWAYS AS IDENTITY and occurred_at is NOT a total order — damage posts two rows in one transaction sharing now() to the microsecond, so a timestamp cursor would skip or repeat across a page boundary; the workOrderId filter resolves THROUGH the reference because the ledger has no work_order_id column, joining part_issues for an issue and part_returns to its issue for a return; reading is audited (audit) because the ledger is the complete record of what a branch holds and an unlogged bulk read is reconnaissance, and the audit row names the filter and the row COUNT, never the rows themselves',
+  },
+  'inv.inventory-reconciliation-read': {
+    files: ['tests/backend/p1-21-inventory-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 're-derives every stored balance from the ledger rather than trusting the cache being audited, so a coherent=false row would mean inv.guard_stock_balance_coherence had been bypassed — a security finding, not routine drift, which is why the result is reported and never silently repaired; checkedAt comes from the DATABASE clock, not the process clock, because the reconciliation is a statement about a transaction snapshot and a host with a skewed clock must not be able to misdate the evidence; uses the existing iam.audit_records append path and creates no second audit subsystem; a caller without inv.audit.read is refused even when it holds inv.stock.read, so the reconciliation is not reachable by the ordinary stock reader',
+  },
+  'inv.opening-batch-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'isolation'],
+    note: 'creates a DRAFT and no parameter offers anything else, so this operation cannot create a balance — it creates a counted intention that a second person must approve; that shape is why the API has no set-stock-level endpoint at all: app_runtime does hold UPDATE on inv.stock_balances, but inv.guard_stock_balance_coherence requires on_hand to equal the movement sum, so stock without a movement behind it is unrepresentable; companyId and branchId are in the body and are the authorizationTarget, so scope:branch is real rather than inert (isolation, P1-18-A-01)',
+  },
+  'inv.opening-batch-line-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the line location is checked against the BATCH branch, because inv.approve_opening_batch posts each movement from the LINE location and not the batch — so a batch opened for B1 carrying a line in B2 would mint stock in B2 while only B1 was ever authorized, and the batch scope check alone cannot catch it; a quarantine destination is refused, because an opening count is a statement about sellable stock and counting straight into quarantine would create damaged stock that was never damaged; an approved batch is frozen and refuses a new line with a stated reason rather than letting inv.guard_opening_batch_approval raise (denial); the path names a batch and not a branch, so the service loads the batch company/branch and re-authorizes inside the transaction (isolation)',
+  },
+  'inv.opening-batch-approve': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the ONLY operation that creates stock from nothing, so it takes inv.adjustment.approve and not inv.stock.operate — counting and approving a count are separate authorities, and ck_opening_inventory_batches_maker_checker enforces approver <> counter in the database so the rule cannot depend on which endpoint someone called; each posted movement is bound by inv.guard_stock_movement_provenance to its own line quantity, item and location, so the movements cannot say anything the count did not; an EMPTY batch is refused, because approving nothing records an approval attesting to no count and that is worse than an error since it looks like evidence; a second approval is refused because the batch is no longer draft',
+  },
+  'inv.stock-reservation-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation)',
+  },
+  'inv.stock-reservation-release': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'isolation'],
+    note: 'a subresource and not a colon-action, because the registry PATH_PATTERN accepts only lower-case literals and {camelCase} parameters; inv.release_reservation is a no-op on an already terminal reservation — inv.guard_stock_reservation_status makes every non-active status terminal — so a duplicate release is idempotent rather than an error, and the audit row and outbox event are written ONLY when the call actually changed state, because recording a change that did not happen would make the trail lie and would let a retry loop inflate the outbox; releasing a CONSUMED reservation does not return issued units to available, since those left through an out movement and can only come back through a return; the path names a reservation and not a branch, so the reservation own company/branch are the deferred authorizationTarget (isolation, P1-18-A-01)',
+  },
+  'inv.stock-issue-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posts the out movement BEFORE consuming the reservation, so on_hand falls while reserved is still held and ck_stock_balances_available rejects the write whenever the reservation covers the stock being issued — the natural reserve-exactly-then-issue flow FAILS inside the protected function, and the fix is ordering rather than privilege, inserting part_issues then consuming then posting; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
+  },
+  'inv.stock-return-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'addressed by the ISSUE it reverses, which makes returning another work order issue unrepresentable rather than merely refused: there is no parameter in which to name a different work order, item or location, because all three are read off the issue, so stock cannot be moved sideways under cover of a return; the over-return ceiling is enforced three times — the service pre-checks for a readable message, inv.return_part re-checks under a row lock on the parent issue so two concurrent returns cannot each see room for the last unit, and inv.guard_part_return_ceiling checks again on the part_returns insert itself, which is what closes the phantom-stock path a raw insert bypassing the function would open; the ordering problem of D-01 does not arise because a return is an in movement, so on_hand rises and the available invariant cannot dip',
+  },
+  'inv.damaged-stock-create': {
+    files: ['tests/backend/p1-21-inventory-stock.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'damaged units leave sellable availability STRUCTURALLY, by a paired out/in movement into a quarantine location, rather than by a flag a later query might forget to filter on — and the two legs are distinguishable to uq_stock_movements_source only by direction, which is why damage is the one reference kind that legitimately posts two ledger rows; ck_damaged_stock_locations requires only that the two locations DIFFER, which is not enough, so the service additionally requires location_type = quarantine and refuses damaging stock already in quarantine — otherwise a damaged unit could be moved to another sellable location and stay available, the exact availability inflation this task must prevent; inv.record_damage calls inv.free_reservations_for_loss first so reducing on_hand cannot breach ck_stock_balances_available, and the reservations that lose out are recorded as stock_loss rather than silently vanishing; both locations must be in one branch, since no transfer primitive exists to move stock across one',
+  },
+  'inv.customer-supplied-part-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'posts NO movement and touches NO balance, and that is structural rather than conventional: the table is documented as custody-tracked never valued stock, ck_customer_supplied_parts_owned CHECK (customer_owned) makes company ownership unrepresentable, inv.item_master own comment states customer-supplied parts are not item_master rows, and there is no customer_supplied value in ck_stock_movements_reference_kind so a movement citing one could not be inserted even by mistake; the test asserts the balance and the ledger are UNCHANGED across the call rather than merely asserting a 201, because the failure being guarded against is a customer alternator appearing in company on-hand; affectsStock:false and customerOwned:true are in the response so a client never has to infer non-ownership from the absence of a movement id; takes inv.custody.manage and not inv.stock.operate, whose stated meaning is post/reserve/issue/return — none of which this does',
+  },
+  'inv.external-purchase-part-create': {
+    files: ['tests/backend/p1-21-inventory-intake.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'a reference and not procurement: ck_external_purchase_parts_not_procurement CHECK (is_procurement = false) is the schema refusing to become a PO/goods-receipt workflow, so this creates no purchase order, runs no approval chain and adds no stock — a part that physically arrives becomes company stock only through an opening batch or an adjustment, both of which need inv.adjustment.approve and a second person, because letting a purchase record raise on_hand directly would be an unapproved path to minting stock; the test asserts the ledger and balances are unchanged; unitCost is written to inv.external_purchase_part_details whose every RLS policy is gated by iam.has_permission(inv.cost.view), so a caller without it gets a refusal rather than a silently dropped cost, and the amount is NEVER echoed back — costRecorded is a boolean; ck_external_purchase_parts_supplier requires a partner or a name and the absence of both is a field-level refusal rather than a constraint name (denial)',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -935,15 +1622,16 @@ export function scanRegisteredOperations(root) {
   const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      const st = statSync(full);
-      if (st.isDirectory()) {
-        if (entry === 'node_modules' || entry === '.next') continue;
+    // `withFileTypes` answers "directory?" from the directory read itself, so
+    // there is no second lookup that could disagree with the first.
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.next') continue;
         walk(full);
         continue;
       }
-      if (!/\.tsx?$/.test(entry)) continue;
+      if (!/\.tsx?$/.test(entry.name)) continue;
       const rel = toPosix(relative(root, full));
       if (rel.endsWith('server/auth/operation-registry.ts')) continue;
       const source = readFileSync(full, 'utf8');
@@ -990,7 +1678,24 @@ export function scanRegisteredOperationIds(root) {
  */
 export function derivedRequirements(operation) {
   if (!operation || typeof operation.id !== 'string') return [];
-  if (!isDerivedId(operation.id)) return [];
+  if (!isDerivedId(operation.id)) {
+    // The ONE derived obligation that is not namespace-scoped.
+    //
+    // `idempotent: true` is a promise made to the CALLER — retry this and you
+    // will not double-write, double-audit or double-publish — and the caller
+    // cannot see which phase delivered the route. A promise that creates an
+    // obligation in `shared.` but not in `iam.` is not a weaker gate, it is an
+    // inconsistent one, and CSA-22 is what that inconsistency looked like in
+    // practice: ten P1-14 operations declared idempotency, `derived` came back
+    // empty for every one of them, and nothing ever exercised a replay.
+    //
+    // The rest of the derived floor deliberately stays namespace-scoped. This is
+    // not a general re-interpretation of P1-14's evidence model — it adds the
+    // single obligation the operation created for itself by declaring the flag,
+    // and only to operations that declare it. An operation that says nothing
+    // about idempotency is unaffected, so the gate can only get stricter.
+    return operation.idempotent ? [EVIDENCE_KEY_IDEMPOTENCY] : [];
+  }
 
   const required = ['route', 'service', 'success'];
   required.push(operation.public ? 'unauthenticated' : 'authorization');
@@ -1026,13 +1731,14 @@ export function parseProvidedFlags(source) {
       continue;
     }
     // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
-    // with P1-17, and `apt`/`rec` with P1-18. The prefix list is explicit rather
+    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19, and
+    // `svc`/`quo` with P1-20. The prefix list is explicit rather
     // than a wildcard so a typo in a declaration is a missing flag — which fails
     // the gate — instead of a silently accepted new namespace. Forgetting to add a
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1272,7 +1978,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = P1_18_PREFIXES.some((prefix) => id.startsWith(prefix));
+      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((prefix) =>
+        id.startsWith(prefix)
+      );
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -1301,7 +2009,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
     // gate over a merged phase belongs in that phase's own remediation, not in a
     // later phase's feature branch.
-    const isDerived = id.startsWith(DERIVED_PREFIX) || P1_18_PREFIXES.some((p) => id.startsWith(p));
+    const isDerived =
+      id.startsWith(DERIVED_PREFIX) ||
+      [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -1362,6 +2072,10 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const vehRows = phaseRows(P1_17_PREFIX);
   // P1-18 spans two namespaces, so its phase row set is their union.
   const aptRecRows = matrix.filter((m) => P1_18_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-19 spans four namespaces, so its phase row set is their union.
+  const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-20 spans two namespaces, so its phase row set is their union.
+  const p1_20Rows = matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -1390,6 +2104,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_16: phaseCounts(crmRows),
     p1_17: phaseCounts(vehRows),
     p1_18: phaseCounts(aptRecRows),
+    p1_19: phaseCounts(p1_19Rows),
+    p1_20: phaseCounts(p1_20Rows),
   };
   return { failures, matrix, counts };
 }
@@ -1438,8 +2154,14 @@ async function runCli() {
   const ROOT = process.cwd();
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
-    const abs = join(ROOT, rel);
-    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+    // Read first, interpret the failure: absent is legitimate here, unreadable
+    // is not, and the two-step form could not tell them apart.
+    try {
+      return readFileSync(join(ROOT, rel), 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
   };
 
   let registered;
@@ -1498,6 +2220,24 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-19', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_19,
+      operations: matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-20', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_20,
+      operations: matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -1550,6 +2290,24 @@ async function runCli() {
     console.log(`P1-18 unit-only: ${s.unitOnly}`);
     console.log(`P1-18 unreferenced: ${s.unreferenced}`);
     console.log(`P1-18 metadata-only: ${s.metadataOnly}`);
+    const t = counts.p1_19;
+    console.log('');
+    console.log(`P1-19 registered public operations: ${t.registered}`);
+    console.log(`P1-19 operation-depth: ${t.operationDepth}`);
+    console.log(`P1-19 invocation-only: ${t.invocationOnly}`);
+    console.log(`P1-19 pending: ${t.pending}`);
+    console.log(`P1-19 unit-only: ${t.unitOnly}`);
+    console.log(`P1-19 unreferenced: ${t.unreferenced}`);
+    console.log(`P1-19 metadata-only: ${t.metadataOnly}`);
+    const u = counts.p1_20;
+    console.log('');
+    console.log(`P1-20 registered public operations: ${u.registered}`);
+    console.log(`P1-20 operation-depth: ${u.operationDepth}`);
+    console.log(`P1-20 invocation-only: ${u.invocationOnly}`);
+    console.log(`P1-20 pending: ${u.pending}`);
+    console.log(`P1-20 unit-only: ${u.unitOnly}`);
+    console.log(`P1-20 unreferenced: ${u.unreferenced}`);
+    console.log(`P1-20 metadata-only: ${u.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

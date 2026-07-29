@@ -128,6 +128,90 @@ import '@/app/api/v1/receptions/[receptionId]/signatures/route';
 import '@/app/api/v1/receptions/[receptionId]/refusals/route';
 import '@/app/api/v1/receptions/[receptionId]/approve/route';
 import '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
+// --- Phase 1-19 work order, diagnostics and technician backend -------------
+// There is deliberately no `POST /work-orders`: reception's conversion above is
+// the only creation path (see the header of `work-orders/route.ts`).
+import '@/app/api/v1/work-orders/route';
+import '@/app/api/v1/work-orders/[workOrderId]/route';
+import '@/app/api/v1/work-orders/[workOrderId]/history/route';
+import '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
+import '@/app/api/v1/work-orders/[workOrderId]/transition/route';
+import '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
+import '@/app/api/v1/jobs/[jobId]/route';
+import '@/app/api/v1/jobs/[jobId]/transition/route';
+import '@/app/api/v1/jobs/[jobId]/history/route';
+import '@/app/api/v1/jobs/[jobId]/assignments/route';
+import '@/app/api/v1/jobs/[jobId]/reassignments/route';
+import '@/app/api/v1/assignments/[assignmentId]/end/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
+import '@/app/api/v1/technicians/available/route';
+import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
+import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
+import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';
+import '@/app/api/v1/work-orders/[workOrderId]/service-lines/route';
+import '@/app/api/v1/work-orders/[workOrderId]/required-parts/route';
+import '@/app/api/v1/work-orders/[workOrderId]/additional-work/route';
+import '@/app/api/v1/additional-work/[requestId]/detail/route';
+import '@/app/api/v1/additional-work/[requestId]/withdrawal/route';
+import '@/app/api/v1/additional-work/[requestId]/approval/route';
+import '@/app/api/v1/additional-work/[requestId]/fulfillment/route';
+// The path vocabulary is `inspections`; the model is `dia.diagnostic_reports`. Both
+// are kept deliberately — see the header of `jobs/[jobId]/inspections/route.ts`.
+import '@/app/api/v1/jobs/[jobId]/inspections/route';
+import '@/app/api/v1/inspections/[inspectionId]/route';
+import '@/app/api/v1/inspections/[inspectionId]/history/route';
+import '@/app/api/v1/inspections/[inspectionId]/transition/route';
+import '@/app/api/v1/inspections/[inspectionId]/completion/route';
+import '@/app/api/v1/inspections/[inspectionId]/items/[templateItemId]/route';
+import '@/app/api/v1/inspections/[inspectionId]/measurements/route';
+import '@/app/api/v1/inspections/[inspectionId]/dtcs/route';
+import '@/app/api/v1/inspections/[inspectionId]/findings/route';
+import '@/app/api/v1/inspections/[inspectionId]/evidence/route';
+import '@/app/api/v1/inspections/[inspectionId]/recommendations/route';
+import '@/app/api/v1/inspections/[inspectionId]/reviews/route';
+// --- Wave 8: quality control, reopen refusal and rework ---------------------
+import '@/app/api/v1/work-orders/[workOrderId]/quality-controls/route';
+import '@/app/api/v1/quality-controls/[recordId]/route';
+import '@/app/api/v1/quality-controls/[recordId]/checks/[qcCheckId]/route';
+import '@/app/api/v1/quality-controls/[recordId]/finalization/route';
+import '@/app/api/v1/work-orders/[workOrderId]/reopen-attempts/route';
+import '@/app/api/v1/work-orders/[workOrderId]/rework/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/sign-off/route';
+import '@/app/api/v1/rework-links/[reworkLinkId]/cost/route';
+// Phase 1-20 — service catalog, pricing, quotation.
+import '@/app/api/v1/services/route';
+import '@/app/api/v1/services/[serviceId]/route';
+import '@/app/api/v1/services/[serviceId]/branch-availability/route';
+import '@/app/api/v1/services/[serviceId]/versions/[versionId]/publication/route';
+import '@/app/api/v1/price-lists/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
+import '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
+import '@/app/api/v1/prices/route';
+import '@/app/api/v1/quotations/route';
+import '@/app/api/v1/quotations/[quotationId]/route';
+import '@/app/api/v1/quotations/[quotationId]/revisions/route';
+import '@/app/api/v1/quotations/[quotationId]/issue/route';
+import '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
+import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
+
+// Phase 1-21 — inventory.
+import '@/app/api/v1/items/route';
+import '@/app/api/v1/stock-availability/route';
+import '@/app/api/v1/stock-movements/route';
+import '@/app/api/v1/inventory-reconciliations/route';
+import '@/app/api/v1/opening-inventory-batches/route';
+import '@/app/api/v1/opening-inventory-batches/[batchId]/lines/route';
+import '@/app/api/v1/opening-inventory-batches/[batchId]/approval/route';
+import '@/app/api/v1/stock-reservations/route';
+import '@/app/api/v1/stock-reservations/[reservationId]/release/route';
+import '@/app/api/v1/stock-issues/route';
+import '@/app/api/v1/stock-returns/route';
+import '@/app/api/v1/damaged-stock/route';
+import '@/app/api/v1/customer-supplied-parts/route';
+import '@/app/api/v1/external-purchase-parts/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
@@ -183,16 +267,20 @@ describe('OpenAPI contract', () => {
     const SEEDED_DOMAINS = [
       'apt',
       'crm',
+      'dia',
       'iam',
       'inv',
       'org',
+      'qms',
       'quo',
       'rec',
       'rpt',
       'sal',
       'shared',
       'svc',
+      'tech',
       'veh',
+      'wo',
       'wty',
     ];
     const document = JSON.parse(generated) as {

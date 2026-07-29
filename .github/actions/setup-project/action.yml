@@ -1,0 +1,206 @@
+# =============================================================================
+# RootLco — project checkout and dependency installation.
+#
+# Exists to close CSA-11: the identical five-line setup block appeared four times
+# across two workflows, with the Node version written out four times. Drift
+# between them was a matter of when, not whether.
+#
+# It also makes the exact-SHA rule the DEFAULT rather than something each caller
+# has to remember. `actions/checkout` resolves a `pull_request` event to
+# `refs/pull/N/merge` — a synthetic commit that exists nowhere in branch history
+# (CSA-05). Proving that tree says nothing about the commit being merged, so
+# every job here checks out the real head and asserts it.
+#
+# NO SECRETS. This action consumes none and must never begin to.
+# =============================================================================
+
+name: Set up the RootLco project
+description: Checks out the exact head commit, installs Node and the locked dependency tree.
+
+inputs:
+  node-version:
+    description: Node major version. Must match the Dockerfile runtime (ADR-007).
+    required: false
+    default: '22'
+  fetch-depth:
+    description: >-
+      Git history depth. Use 0 where a diff against the base branch is needed
+      (migration immutability, secret history, change detection).
+    required: false
+    default: '1'
+  install:
+    description: Whether to run `npm ci`. Set to 'false' for dependency-free scanners.
+    required: false
+    default: 'true'
+  ref:
+    description: >-
+      Commit to check out. Defaults to the exact pull-request head, falling back
+      to the pushed SHA. Overriding this is almost always a mistake.
+    required: false
+    default: ''
+
+outputs:
+  sha:
+    description: >-
+      The commit actually checked out, as a 40-character SHA. Taken from the
+      post-checkout assertion rather than from the requested ref, so a tag or
+      branch name is reported as the commit it resolved to.
+    value: ${{ steps.assert.outputs.sha }}
+  cache-hit:
+    description: Whether the npm cache was restored.
+    value: ${{ steps.node.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the commit to check out
+      id: resolve
+      shell: bash
+      env:
+        REQUESTED_REF: ${{ inputs.ref }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        EVENT_SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        # Precedence: explicit input, then the real PR head, then the pushed SHA.
+        # Never the merge ref.
+        if [ -n "${REQUESTED_REF}" ]; then
+          resolved="${REQUESTED_REF}"
+        elif [ -n "${PR_HEAD_SHA}" ]; then
+          resolved="${PR_HEAD_SHA}"
+        else
+          resolved="${EVENT_SHA}"
+        fi
+        # A ref reaches this from a `workflow_dispatch` input. A newline in it
+        # would inject arbitrary step outputs into GITHUB_OUTPUT, so the shape
+        # is constrained before it is written. Tags and branch names are
+        # accepted — `release-verification.yml` documents a tag as valid input —
+        # and the post-checkout assertion below resolves them to a SHA.
+        case "${resolved}" in
+          *[!A-Za-z0-9._/-]* | '')
+            echo "::error::Refusing to check out '${resolved}': a ref may contain only letters, digits and . _ / -"
+            exit 1
+            ;;
+        esac
+        echo "sha=${resolved}" >> "${GITHUB_OUTPUT}"
+        echo "resolved checkout ref: ${resolved}"
+
+    # Callers must bootstrap a sparse checkout before they can reach this action
+    # at all (a local `uses: ./…` resolves from an empty workspace). That sparse
+    # state is NOT reliably undone by the checkout below:
+    #
+    #   `actions/checkout` calls `git sparse-checkout disable` when it is given
+    #   no sparse-checkout input — but against a NON-CONE sparse checkout that
+    #   command is a no-op. It leaves `core.sparseCheckout=true` and restores
+    #   nothing, so the workspace stays at one file. `setup-node` then reports
+    #   "Dependencies lock file is not found" and the real cause is invisible.
+    #
+    # Reproduced locally by replaying both checkouts: non-cone leaves 1 file,
+    # cone leaves the whole tree. The bootstraps are cone-mode for that reason, and this
+    # step is the belt-and-braces that makes the action correct even if some
+    # future caller bootstraps sparsely by other means.
+    - name: Undo any sparse checkout left by the caller's bootstrap
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -d .git ]; then
+          echo "no repository in the workspace yet — nothing to undo"
+          exit 0
+        fi
+        # `git config --get` exits 1 when the key is absent, which is the normal
+        # case here, so it is read with an explicit default rather than allowed
+        # to abort the step under `set -e`. Deliberately not `|| true`: a real
+        # failure of the commands below must still stop the job.
+        enabled="$(git config --get core.sparseCheckout || printf 'false')"
+        sparse_file="$(git rev-parse --git-path info/sparse-checkout)"
+        if [ "${enabled}" != "true" ] && [ ! -f "${sparse_file}" ]; then
+          echo "workspace is not sparse"
+          exit 0
+        fi
+        echo "undoing the bootstrap sparse checkout"
+        git sparse-checkout disable
+        # `disable` is a NO-OP against a non-cone repository: it leaves
+        # core.sparseCheckout=true and restores nothing. So the flag is cleared
+        # explicitly. Only when it is still `true` — in cone mode git has already
+        # cleared it and may have written `false` into the WORKTREE config, where
+        # `--unset-all` against the local file exits 5 and would fail this step.
+        if [ "$(git config --get core.sparseCheckout || printf 'false')" = "true" ]; then
+          git config --unset-all core.sparseCheckout
+        fi
+        rm -f "${sparse_file}"
+        # Assert the outcome rather than trusting the commands that produced it.
+        if [ "$(git config --get core.sparseCheckout || printf 'false')" = "true" ]; then
+          echo "::error::core.sparseCheckout is still true, so the workspace would stay sparse."
+          exit 1
+        fi
+
+    - name: Checkout
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        ref: ${{ steps.resolve.outputs.sha }}
+        fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: false
+
+    - name: Assert the checked-out commit is the one we asked for
+      id: assert
+      shell: bash
+      env:
+        EXPECTED: ${{ steps.resolve.outputs.sha }}
+      run: |
+        set -euo pipefail
+        actual="$(git rev-parse HEAD)"
+        # A ref may legitimately be a tag or a branch — `release-verification.yml`
+        # documents "commit or tag on main". Comparing the REQUESTED STRING to a
+        # SHA would fail every such call, so a non-SHA is resolved to its commit
+        # first and the comparison is made between two SHAs.
+        if printf '%s' "${EXPECTED}" | grep -qE '^[0-9a-f]{40}$'; then
+          expected_sha="${EXPECTED}"
+        else
+          expected_sha="$(git rev-parse "${EXPECTED}^{commit}")"
+          printf 'resolved %s to %s\n' "${EXPECTED}" "${expected_sha}"
+        fi
+        echo "expected: ${expected_sha}"
+        echo "actual:   ${actual}"
+        if [ "${expected_sha}" != "${actual}" ]; then
+          echo "::error::Checked out ${actual} but expected ${expected_sha}. Every result below would describe a different tree."
+          exit 1
+        fi
+        # Republish the RESOLVED commit, so a caller comparing against this
+        # output is comparing SHAs and not a tag name.
+        echo "sha=${actual}" >> "${GITHUB_OUTPUT}"
+        echo "OK: at the exact commit"
+
+        # Being at the right COMMIT is not the same as having the whole TREE.
+        # A leftover sparse checkout leaves HEAD correct and the working tree
+        # nearly empty, which every later step then misreports as its own
+        # problem. Assert the tree positively, and count files so that a
+        # partially-materialised workspace cannot pass either.
+        missing=''
+        for required in package.json package-lock.json tsconfig.json; do
+          [ -f "${required}" ] || missing="${missing} ${required}"
+        done
+        tracked="$(git ls-files | wc -l)"
+        present="$(git ls-files | while read -r f; do [ -e "${f}" ] && printf 'x'; done | wc -c)"
+        if [ -n "${missing}" ] || [ "${present}" -lt "${tracked}" ]; then
+          echo "::error::The workspace is incomplete: ${present} of ${tracked} tracked files exist.${missing:+ Missing:${missing}.} This is what a sparse checkout that was never undone looks like; every later step would blame itself instead."
+          exit 1
+        fi
+        echo "OK: complete tree, ${present} of ${tracked} tracked files present"
+
+    - name: Set up Node
+      id: node
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+
+    - name: Install dependencies (locked)
+      if: inputs.install == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # `npm ci` fails if package.json and package-lock.json disagree, which is
+        # the lockfile-integrity check. `npm install` would silently resolve a
+        # different tree, so it must never appear in a workflow.
+        npm ci
+        echo "npm cache hit: ${{ steps.node.outputs.cache-hit }}"
