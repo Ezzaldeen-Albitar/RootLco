@@ -190,14 +190,16 @@ this gate record exists.
 
 ## Open items, recorded rather than hidden
 
-- **10 IAM operations declare `idempotent: true` with no replay evidence.**
-  Itemised with owners, expiry 2026-10-31. Any new one fails immediately.
-  Branch `fix/p1-14-idempotency-replay-evidence` carries replay tests for
-  exactly these ten; when it lands, these exceptions become stale and nothing
-  will flag the overlap automatically.
-- **The idempotency exceptions have no approval concept.** The dependency
-  exception now requires a signature; a correctness-evidence waiver does not.
-  Making them consistent would red the pipeline until ten entries are approved.
+- ~~**10 IAM operations declare `idempotent: true` with no replay evidence.**~~
+  **CLOSED** by the CodeQL Application Remediation initiative. The hazard
+  predicted here was exactly right — the branch landed, the ten exceptions went
+  stale, and the gate failed with ten `matches nothing` errors — so the evidence
+  and the removal were applied as one atomic change. 107 of 107 idempotent
+  operations now proven, 0 waived. No defect found: all ten really are
+  idempotent.
+- ~~**The idempotency exceptions have no approval concept.**~~ **MOOT.** The
+  list is empty, so there is nothing left to approve. If a future entry is ever
+  added, the question returns with it.
 - **`audit-and-outbox` backend coverage is 40.45%** — this tier's weak spot.
 - **`touchedFileMinimum: 0` on the backend tier**, where unit uses 60. Choosing
   a value needs a measured distribution; inventing one would be the guessed

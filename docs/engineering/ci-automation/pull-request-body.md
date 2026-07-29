@@ -212,11 +212,11 @@ exception with no proven production or runtime reachability.**
 
 ## Open findings, recorded rather than hidden
 
-- **10 IAM operations declare `idempotent: true` with no replay evidence**,
-  including `iam.grant-issue` and `iam.role-permission-add`. Whether the code
-  honours the promise is a P1-14 question and cannot be settled by a CI change.
-  Itemised in `.github/ci-baselines/idempotency-exceptions.json` with owners and
-  a 2026-10-31 expiry. Any **new** unproven promise fails the gate immediately.
+- ~~**10 IAM operations declare `idempotent: true` with no replay evidence**~~ —
+  **CLOSED** after this initiative, by the CodeQL Application Remediation
+  change, which imported the replay evidence and removed all ten entries
+  atomically. 107 of 107 idempotent operations proven, 0 waived, no defect
+  found. Any **new** unproven promise still fails the gate immediately.
 - **`src/shared/errors/app-error.ts` is dead code** with 0% coverage and zero
   references repo-wide. Deliberately left in the coverage set — excluding it
   would raise the number by hiding code rather than by testing it.

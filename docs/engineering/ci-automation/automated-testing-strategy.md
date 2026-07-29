@@ -151,9 +151,14 @@ evidence stays the job of layer 4.
 against the operation-test matrix's _derived_ evidence — derived, not declared,
 because a comment in a test header cannot satisfy a structural requirement.
 
-**Open**: 10 IAM operations declare idempotency with no replay evidence. Itemised
-in `.github/ci-baselines/idempotency-exceptions.json`, expiry 2026-10-31. Any new
-one fails immediately.
+**Closed (CSA-22).** Ten IAM operations declared idempotency with no replay
+evidence; all ten now have it, and the exception list is empty. The gate reports
+**107 of 107** idempotent operations proven, **0** waived. Evidence:
+`tests/backend/p1-14-idempotency-replay.test.ts`, imported with authorship from
+`fix/p1-14-idempotency-replay-evidence@c27b2a0` by the CodeQL remediation
+initiative — which had to remove the ten entries in the same change, because a
+stale exception is a hard failure. Any new unproven promise still fails
+immediately.
 
 ---
 

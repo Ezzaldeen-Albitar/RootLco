@@ -69,12 +69,18 @@ action, `pr-ci.yml` with 13 jobs, `protected-develop-verification.yml`.
 | `LOG_LEVEL` read by `src/server/observability/logger.ts`, absent from `.env.example` | Documented                                                                                                                                                                                                                |
 | `/api/health` sits outside `/api/v1`, which the contract forbids                     | Recorded as a justified exception with the reason; **any new** unversioned route is now a finding                                                                                                                         |
 
-**One finding recorded, not fixed:** 10 IAM operations declare `idempotent: true`
-with no replay evidence, including `iam.grant-issue` and
-`iam.role-permission-add`. Whether the code honours the promise is a P1-14
-question that a CI initiative cannot settle — writing the tests blind would
-either pass vacuously or turn into unscoped remediation. Itemised by name with
-owners and a 2026-10-31 expiry. Any new unproven promise fails immediately.
+**One finding recorded, not fixed _at the time_:** 10 IAM operations declared
+`idempotent: true` with no replay evidence, including `iam.grant-issue` and
+`iam.role-permission-add`. Whether the code honoured the promise was a P1-14
+question a CI initiative could not settle — writing the tests blind would either
+pass vacuously or turn into unscoped remediation. Itemised by name with owners
+and a 2026-10-31 expiry.
+
+**Since closed.** The CodeQL Application Remediation initiative imported the
+replay evidence and removed all ten entries in one change; the gate now reports
+107 of 107 proven and 0 waived. The tests found no defect — all ten really are
+idempotent — which is the outcome the exception list existed to establish rather
+than assume.
 
 **One finding recorded, deliberately not hidden:** `src/shared/errors/app-error.ts`
 is dead code with 0 % coverage and zero references repo-wide. Left in the
