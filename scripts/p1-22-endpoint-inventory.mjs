@@ -370,7 +370,32 @@ const TASKS = Object.freeze([
       ['symbol', 'src/modules/warranty/domain/warranty.ts', 'assertWritableStatus'],
     ],
   ],
-  ['P1-22-SEC-001', 'Authorization and isolation matrix', []],
+  [
+    'P1-22-SEC-001',
+    'Authorization and isolation matrix',
+    [
+      [
+        'test',
+        'tests/backend/p1-22-isolation.test.ts',
+        'refuses sal.payment-record for company A1 with a branch of company A9',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-isolation.test.ts',
+        'answers 200 while the grant is active and 403 once it is revoked',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-isolation.test.ts',
+        'refuses a body carrying a company, a branch or an amount',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-isolation.test.ts',
+        'refuses sal.payment-record and sal.receipt-detail on a VISIBLE receipt',
+      ],
+    ],
+  ],
   [
     'P1-22-SEC-002',
     'Currency coherence and exact money',
@@ -402,7 +427,20 @@ const TASKS = Object.freeze([
       ],
     ],
   ],
-  ['P1-22-QA-001', 'Phase test cases TC-P1-22-001 to 008', []],
+  [
+    'P1-22-QA-001',
+    'Phase test cases TC-P1-22-001 to 008',
+    [
+      ['test', 'tests/backend/p1-22-invoice-lifecycle.test.ts', 'TC-P1-22-001'],
+      ['test', 'tests/backend/p1-22-invoice-lifecycle.test.ts', 'TC-P1-22-002'],
+      ['test', 'tests/backend/p1-22-invoice-lifecycle.test.ts', 'TC-P1-22-003'],
+      ['test', 'tests/backend/p1-22-payments.test.ts', 'TC-P1-22-004'],
+      ['test', 'tests/backend/p1-22-currency-coherence.test.ts', 'TC-P1-22-005'],
+      ['test', 'tests/backend/p1-22-delivery.test.ts', 'TC-P1-22-006'],
+      ['test', 'tests/backend/p1-22-warranty.test.ts', 'TC-P1-22-007'],
+      ['test', 'tests/backend/p1-22-credit-note.test.ts', 'TC-P1-22-008'],
+    ],
+  ],
   [
     'P1-22-QA-002',
     'Idempotency replay evidence',
@@ -430,7 +468,28 @@ const TASKS = Object.freeze([
       ],
     ],
   ],
-  ['P1-22-QA-003', 'Real concurrency races', []],
+  [
+    'P1-22-QA-003',
+    'Real concurrency races',
+    [
+      ['symbol', 'tests/backend/p1-22-concurrency.test.ts', 'waitForBlockedBackends'],
+      [
+        'test',
+        'tests/backend/p1-22-concurrency.test.ts',
+        'sal.delivery-complete: two concurrent completions release custody exactly once',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-concurrency.test.ts',
+        'sal.payment-allocate: a concurrent cancel and allocate never both take effect',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-concurrency.test.ts',
+        'two concurrent warranty generations from one delivery issue exactly one record',
+      ],
+    ],
+  ],
   [
     'P1-22-QA-004',
     'Endpoint inventory and operation depth',

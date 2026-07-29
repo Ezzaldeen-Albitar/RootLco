@@ -79,7 +79,7 @@
     "p1_22": {
       "registered": 20,
       "publicApi": 20,
-      "operationDepth": 18,
+      "operationDepth": 20,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -4467,9 +4467,10 @@
         "outbox",
         "route",
         "service",
+        "stale-version",
         "success"
       ],
-      "missing": ["stale-version"],
+      "missing": [],
       "metadataOnly": false,
       "unitOnly": false
     },
@@ -4603,9 +4604,10 @@
         "outbox",
         "route",
         "service",
+        "stale-version",
         "success"
       ],
-      "missing": ["stale-version"],
+      "missing": [],
       "metadataOnly": false,
       "unitOnly": false
     },

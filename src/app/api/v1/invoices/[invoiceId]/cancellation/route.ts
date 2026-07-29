@@ -30,6 +30,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { AppFailure } from '@/server/errors/app-failure';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { MAX_REASON, billingModule } from '@/modules/billing';
 
@@ -68,13 +69,17 @@ export async function POST(
   return handleOperation(
     INVOICE_CANCEL_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, expectedVersion, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(CancelBody, body, 'body');
+      if (expectedVersion === null) {
+        throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
+      }
       const voided = await billingModule().invoices.cancelInvoice(
         db,
         params.invoiceId,
         parsed.reason,
+        expectedVersion,
         authorizeScope
       );
       return { body: voided, recordVersion: voided.invoice.recordVersion };

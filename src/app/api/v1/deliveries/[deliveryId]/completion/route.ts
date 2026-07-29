@@ -41,6 +41,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { AppFailure } from '@/server/errors/app-failure';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { MAX_REASON, ODOMETER_UNITS, deliveryModule } from '@/modules/delivery';
 
@@ -121,14 +122,25 @@ export async function POST(
   return handleOperation(
     DELIVERY_COMPLETE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, expectedVersion, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(CompleteBody, body, 'body');
+      if (expectedVersion === null) {
+        throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
+      }
       const completion = await deliveryModule().deliveries.completeDelivery(
         db,
         params.deliveryId,
         {
           finalOdometerValue: parsed.finalOdometerValue,
+          // Passed through, which is what makes the service's optimistic-concurrency
+          // check LIVE. The check already existed and was INERT: the field is optional,
+          // this route never supplied it, so `input.expectedVersion !== undefined` was
+          // always false and a stale `If-Match` was accepted in silence — a guard that
+          // read as implemented and enforced nothing. `handleOperation` requires the
+          // header for a `versionGuarded` operation, so this is never undefined here, and
+          // the `null` the type still permits is refused above.
+          expectedVersion,
           ...(parsed.odometerUnit === undefined ? {} : { odometerUnit: parsed.odometerUnit }),
           ...(parsed.overrideFinancialBlocker === undefined
             ? {}

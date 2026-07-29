@@ -936,7 +936,10 @@ describe('no unlabelled money aggregate escapes a P1-22 response', () => {
 // ===========================================================================
 
 describe('one receipt allocated across two invoices with exact decimal arithmetic', () => {
-  it('splits 100.0000 into 33.3300 and 66.6700 and then refuses a third allocation', async () => {
+  // The identifier belongs on the TITLE, not only in the section banner above: the
+  // endpoint-inventory gate strips comments before resolving a `test` proof, so a label
+  // that lives in a comment is a claim rather than evidence.
+  it('TC-P1-22-005 splits 100.0000 into 33.3300 and 66.6700 and then refuses a third allocation', async () => {
     const invoiceA = await seedIssuedInvoice('split_a');
     const invoiceB = await seedIssuedInvoice('split_b');
     expect(invoiceA.gross).toBe('100.0000');

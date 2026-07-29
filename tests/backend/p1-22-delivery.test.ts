@@ -41,13 +41,15 @@
  *  - **A refusal is asserted with its catalog code.** A 409 from the one-live-delivery
  *    index and a 409 from an unpaid balance are different answers to a client.
  *
- * ## One test is EXPECTED TO FAIL, and it is marked
+ * ## The version guard was VACUOUS when this suite was written
  *
  * `sal.delivery-complete` registers `versionGuarded: true`, which makes `If-Match`
- * MANDATORY — and the route never forwards the parsed version to the service, so a
- * STALE version is accepted and the handover proceeds. See the test titled
- * "refuses a stale If-Match" and the DEFECT comment above it. The assertion is left as
- * the contract requires rather than weakened to match the behaviour.
+ * mandatory — and the route originally parsed the header and never forwarded it, so
+ * `DeliveryService.completeDelivery`'s comparison was skipped on every request and a
+ * STALE version was accepted. Every test that sends a CORRECT version passes either
+ * way, which is exactly why it survived. The route now forwards `expectedVersion` and
+ * the assertion below holds; it is kept because it is the only test in this file that
+ * would have caught it. See the note above "refuses a stale If-Match".
  *
  * COVERAGE-EVIDENCE (P1-22 delivery):
  *   sal.delivery-create: route service authorization success denial audit idempotency isolation cross-tenant
@@ -119,6 +121,7 @@ import { POST as VERIFY_RECEIVER } from '@/app/api/v1/deliveries/[deliveryId]/au
 import { POST as RECORD_CHECKLIST } from '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
 import { POST as ATTACH_SIGNATURE } from '@/app/api/v1/deliveries/[deliveryId]/signatures/route';
 import { POST as COMPLETE_DELIVERY } from '@/app/api/v1/deliveries/[deliveryId]/completion/route';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as RECORD_PAYMENT } from '@/app/api/v1/payments/route';
 import { POST as ALLOCATE_PAYMENT } from '@/app/api/v1/payments/[paymentId]/allocations/route';
 
@@ -741,11 +744,33 @@ const CLOSURE_PATH = [
   { toState: 'in_progress' },
   { toState: 'qc_pending' },
   { toState: 'ready_to_close' },
-  { toState: 'closed' },
 ] as const;
 
 async function closeWorkOrder(workOrderId: string): Promise<void> {
-  await advance(workOrderId, CLOSURE_PATH, FULL);
+  // The last edge is NOT on `.../transition`: `WorkOrderService` checks the target
+  // state against the command it arrived on and refuses a terminal non-cancellation
+  // state there (`closure_requires_closure_operation`), because ending the workshop's
+  // liability is its own authority behind `wo.work_order.close`. So the fixture takes
+  // the same route a client must.
+  const version = await advance(workOrderId, CLOSURE_PATH, FULL);
+  authAs(FULL);
+  const response = await CLOSE_WORK_ORDER(
+    new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': randomUUID(),
+        'if-match': String(version),
+      },
+      body: JSON.stringify({ toState: 'closed' }),
+    }),
+    { params: Promise.resolve({ workOrderId }) }
+  );
+  if (response.status !== 200) {
+    throw new Error(
+      `fixture closure of ${workOrderId} failed with ${response.status}: ${await response.text()}`
+    );
+  }
 }
 
 /** Records `passed` against every mandatory item the DELIVERY's company holds. */
@@ -1327,16 +1352,21 @@ describe('sal.delivery-receiver-verify', () => {
     expect((await deliveryRow(delivery.id))?.status).toBe('receiver_verified');
     // `verified_at` is the column DEFAULT and is the exact value the time-aware guard
     // evaluated the role's validity window against, so the caller is told the
-    // database's value rather than an application guess at `now()`. Compared IN SQL
-    // against the stored `timestamptz` rather than through two `Date` parses, which
-    // would only prove that JavaScript agrees with itself.
-    expect(
-      await countRowsOf(
-        `SELECT count(*)::text AS n FROM sal.authorized_receivers
-          WHERE id = $1 AND verified_at = $2::timestamptz`,
-        [receiver.id, receiver.verifiedAt]
-      )
-    ).toBe(1);
+    // DATABASE's value rather than an application guess at `now()`.
+    //
+    // Rendered by PostgreSQL at millisecond precision rather than compared as a bare
+    // `timestamptz`, and the reason is a real lossy step rather than fussiness: the
+    // column holds MICROSECONDS, `Date` holds milliseconds, and the service reports the
+    // value through `toISOString()`. Both sides truncate (verified: `.123456` →
+    // `.123` on each), so `to_char(… .MS)` is the exact form the wire can carry — while
+    // `verified_at = $2::timestamptz` compares a truncated value against an untruncated
+    // one and is false for all but 1-in-1000 timestamps.
+    const stored = await admin.query<{ iso: string }>(
+      `SELECT to_char(verified_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS iso
+         FROM sal.authorized_receivers WHERE id = $1`,
+      [receiver.id]
+    );
+    expect(receiver.verifiedAt).toBe(stored.rows[0]?.iso);
 
     expect((await auditTotalFor('sal.delivery.receiver_verified')) - auditBefore).toBe(1);
     expect(await auditCountFor('sal.delivery.receiver_verified', receiver.id)).toBe(1);
@@ -2053,7 +2083,7 @@ describe('sal.delivery-complete', () => {
     ).toBe(1);
   });
 
-  it('REFUSES completion while an issued invoice is unpaid, and accepts the SAME request once it is settled (denial, THE FINANCIAL BLOCKER)', async () => {
+  it('TC-P1-22-006 REFUSES completion while an issued invoice is unpaid, and accepts the SAME request once it is settled (denial, THE FINANCIAL BLOCKER)', async () => {
     const { invoice, delivery } = await handoverReady('dlv_done_unpaid', { settled: false });
     const version = await currentVersion(delivery.id);
     expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('100.0000');
@@ -2127,7 +2157,7 @@ describe('sal.delivery-complete', () => {
     expect(await outboxCountFor(`vehicle.delivered:${delivery.id}`)).toBe(1);
   });
 
-  it('completes with an AUTHORIZED override and RECORDS the reason (THE FINANCIAL BLOCKER)', async () => {
+  it('TC-P1-22-006 completes with an AUTHORIZED override and RECORDS the reason (THE FINANCIAL BLOCKER)', async () => {
     const { invoice, delivery } = await handoverReady('dlv_done_override', { settled: false });
     const version = await currentVersion(delivery.id);
     const reason = 'goodwill handover authorised by the branch manager, invoice on account';
@@ -2290,25 +2320,22 @@ describe('sal.delivery-complete', () => {
 
   /**
    * ==========================================================================
-   * DEFECT — THIS TEST IS EXPECTED TO FAIL. The assertion is the contract.
+   * THE CASE THAT CAUGHT A VACUOUS GUARD. Do not weaken it.
    * ==========================================================================
    * `sal.delivery-complete` registers `versionGuarded: true`, so `handleOperation`
-   * REQUIRES `If-Match` (the 428 above proves it) and exposes the parsed value as
-   * `HandlerInput.expectedVersion`. The route
-   * (`src/app/api/v1/deliveries/[deliveryId]/completion/route.ts`, handler at line 107)
-   * destructures only `{ db, authorizeScope }` and never forwards `expectedVersion`, so
-   * `DeliveryService.completeDelivery`'s comparison at
-   * `src/modules/delivery/application/delivery-service.ts:890` is skipped for every
-   * request — the field is always `undefined`. The guard is PRESENT AND VACUOUS: a
-   * caller holding a stale view of a handover has its request applied to a record that
-   * has moved on, and every test that sends a CORRECT version passes either way, which
-   * is why it survived.
+   * REQUIRES `If-Match` (the 428 above proves that half) and exposes the parsed value
+   * as `HandlerInput.expectedVersion`. When this suite was written the completion route
+   * destructured only `{ db, authorizeScope }` and never forwarded it, so
+   * `DeliveryService.completeDelivery`'s comparison — guarded by
+   * `input.expectedVersion !== undefined` — never ran, and this assertion failed with
+   * 200. The header was required and its value discarded: a caller holding a stale view
+   * of a handover had its request applied to a record that had moved on.
    *
-   * The service's own field comment documents the gap and names the one-line fix
-   * (`async ({ db, expectedVersion, authorizeScope }) => …` plus `expectedVersion` in
-   * the input object, the `additional-work` convention). Weakening this assertion to
-   * `expect(response.status).toBe(200)` would encode the defect as the contract, so it
-   * is left failing.
+   * That is the hardest shape of defect to notice, because a required-header test and
+   * every correct-version test pass identically whether or not the comparison happens.
+   * Nothing but a deliberately STALE version distinguishes them, which is why this case
+   * exists as its own test and why the stale value is derived from the row's real
+   * `record_version` rather than hard-coded.
    */
   it('refuses a stale If-Match (stale-version)', async () => {
     const { delivery } = await handoverReady('dlv_done_stale', { settled: true });

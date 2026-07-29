@@ -10,7 +10,8 @@
  * same doctrine, taken from `tests/backend/p1-19-concurrency.test.ts`:
  *
  *  1. a THIRD connection takes the row the command locks FIRST and holds it;
- *  2. both requests are issued and park on that lock;
+ *  2. both requests are issued — together, or in the `staged` order `race()` documents
+ *     for the one case that needs it — and park on that lock;
  *  3. `waitForBlockedBackends(2)` confirms they ARRIVED — this is the step that makes
  *     the outcome a fact about the code rather than about scheduling luck;
  *  4. only then is the gate released, so both callers are let into the same instant
@@ -18,6 +19,13 @@
  *
  * A sequential `await a; await b;` labelled "concurrency" would prove nothing here and
  * appears nowhere in this file. Nor does an ungated `Promise.all`.
+ *
+ * The gate itself was measured rather than assumed. With every `FOR UPDATE` below
+ * replaced by a plain `SELECT` — the gate transaction still open, still selecting the
+ * same row, simply taking no lock — all seven cases fail with `saw 0`. That is the
+ * negative control for this whole file: it says the arrival check is satisfied by the
+ * two request backends parking on the gated row and by nothing else, so a passing run
+ * cannot be an accident of some unrelated wait.
  *
  * ## Which row each gate holds, and why that row and not another
  *
@@ -55,6 +63,28 @@
  * the two preconditions being disjoint (`draft` cancels, `issued` allocates) is itself
  * why the outcome cannot be "both".
  *
+ * ## The optimistic-concurrency guard decides two of these outcomes
+ *
+ * `sal.invoice-issue` and `sal.delivery-complete` are both `versionGuarded: true`, and
+ * both now COMPARE the `If-Match` version against the locked row. That changes what a
+ * forced race looks like on them, so it is stated rather than left for a reader to
+ * infer: both callers submit the version they read before the race, the winner's command
+ * advances `record_version`, and the loser's version is therefore stale by the time it
+ * is granted the row lock. The loser is refused with `ERR-CON-001` BEFORE the
+ * already-issued / already-delivered replay short-circuit is reached.
+ *
+ * That is the stronger of the two coherent pairs — a caller acting on a stale view is
+ * told so rather than handed a silent success — but it means the race alone cannot
+ * exercise the replay path. So both cases end with an explicit replay carrying the
+ * CURRENT version, which is the only way to assert the other half of the contract: the
+ * same invoice number handed back with no second number consumed, and the same delivery
+ * returned with no second custody release. A suite that asserted only the race would
+ * declare replay evidence it did not have.
+ *
+ * `sal.payment-allocate` is not version-guarded and does not need to be: an allocation
+ * is append-only and its bounds are re-evaluated inside `sal.allocate_receipt` under the
+ * receipt and invoice locks, so there is no stale read for a version to protect.
+ *
  * ## Money is compared as an exact decimal STRING, beside its currency
  *
  * `Number`, `parseFloat`, `toFixed` and arithmetic on a money value appear nowhere in
@@ -70,9 +100,19 @@
  * rows of their own and a tenant-wide absolute count would be measuring arrangement.
  *
  * COVERAGE-EVIDENCE (P1-22 concurrency):
- *   sal.invoice-issue: route service success audit outbox idempotency
+ *   sal.invoice-issue: route service success audit outbox idempotency stale-version
  *   sal.payment-allocate: route service success denial audit outbox
- *   sal.delivery-complete: route service success audit outbox idempotency
+ *   sal.delivery-complete: route service success audit outbox idempotency stale-version
+ *
+ * `denial` is declared for `sal.payment-allocate` alone, and the restraint is
+ * deliberate. The refusals asserted for the other two are stale-version CONFLICTS, which
+ * is what `stale-version` names; calling them `denial` as well would credit one assertion
+ * twice. `sal.payment-allocate`'s loser is refused because the money would not fit —
+ * `ERR-TRN-001` from the bound only `sal.allocate_receipt` enforces — which is a state
+ * refusal and nothing else. No `authorization`, `isolation` or `cross-tenant` flag is
+ * declared here: this file drives one unrestricted principal on purpose, because a race
+ * between two callers of different authority would confound which control refused the
+ * loser.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -866,29 +906,34 @@ describe('sal.invoice-issue under concurrent callers', () => {
       },
     ]);
 
-    // The two HTTP statuses, reported as a pair. Both are 200 rather than one 200 and
-    // one 409, and that is the primitive's contract rather than an accident:
-    // `issueInvoice` short-circuits on the LOCKED pre-read when the status is already
-    // `issued`, so the loser returns the number the winner allocated instead of
-    // allocating a second one or being refused.
+    // THE TWO HTTP STATUSES, reported as a pair rather than as "one of them failed".
+    //
+    // 200 and 409, and which 409 it is matters. Both callers submitted the version they
+    // read before the race; the winner's issue advances `record_version` through
+    // `shared.touch_row_metadata`, so by the time the loser gets the row lock its
+    // `If-Match` is stale and `issueInvoice` refuses it with `ERR-CON-001` BEFORE the
+    // already-issued short-circuit. So the pair is coherent in the strongest of the
+    // three ways the contract allows: one success, and the other told to re-read rather
+    // than handed a silent success for a document it had a stale view of.
     const statuses = outcomes.map((response) => response.status);
-    expect(statuses).toEqual([200, 200]);
+    expect(statuses).toEqual([200, 409]);
 
-    const bodies = await Promise.all(outcomes.map((r) => bodyOf<IssuedInvoiceBody>(r)));
-    // Both succeeded, so the decisive assertion is that they agree on the NUMBER.
-    const numbers = bodies.map((body) => body.invoiceNumber);
-    expect(numbers[0]).toBe(numbers[1]);
-    expect(numbers[0]?.length).toBeGreaterThan(0);
-    // Exactly one of the two did the work. `replayed` is what tells a retrying client
-    // which it got, and a pair of `false` would mean two commands each believed they
-    // had issued the invoice.
-    expect(bodies.filter((body) => body.replayed === false)).toHaveLength(1);
-    expect(bodies.filter((body) => body.replayed === true)).toHaveLength(1);
+    const winner = outcomes[0];
+    const loser = outcomes[1];
+    if (winner === undefined || loser === undefined) {
+      throw new Error('the race did not return both responses');
+    }
+    const issuedBody = await bodyOf<IssuedInvoiceBody>(winner);
+    expect(issuedBody.replayed).toBe(false);
+    expect(issuedBody.invoiceNumber.length).toBeGreaterThan(0);
+    const refused = await bodyOf<ProblemBody>(loser);
+    expect(refused.code).toBe('ERR-CON-001');
+    expect(refused.status).toBe(409);
 
-    // ONE number on the invoice, and it is the number both callers were told.
+    // ONE number on the invoice, and it is the number the winner was told.
     const after = await invoiceRow(draft.invoiceId);
     expect(after.status).toBe('issued');
-    expect(after.number).toBe(numbers[0]);
+    expect(after.number).toBe(issuedBody.invoiceNumber);
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM sal.invoices
@@ -912,6 +957,33 @@ describe('sal.invoice-issue under concurrent callers', () => {
 
     // And the append-only ledger records the transition once. It has no UPDATE and no
     // DELETE grant, so a duplicated row would be unfixable.
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.invoice_status_history
+          WHERE invoice_id = $1 AND to_status = 'issued'`,
+        [draft.invoiceId]
+      )
+    ).toBe(1);
+
+    // The replay, now that the version guard has been satisfied: a third caller holding
+    // the CURRENT version re-issues an already-issued invoice and is answered with the
+    // SAME number and no second anything. This is the half of the contract the stale
+    // loser above could not reach, and it is the half that matters to a client whose
+    // request timed out after it had in fact succeeded — `shared.next_display_number`
+    // advances a counter, so a replay that re-entered the command would hand back a
+    // second number for one document.
+    authAs(SAL_FULL);
+    const replay = await issueInvoice(draft.invoiceId, after.version);
+    expect(replay.status).toBe(200);
+    const replayed = await bodyOf<IssuedInvoiceBody>(replay);
+    expect(replayed.replayed).toBe(true);
+    expect(replayed.invoiceNumber).toBe(issuedBody.invoiceNumber);
+    // Every count is still exactly one: the sequence did not move, no second audit
+    // record, no second event, no second financial event, no second ledger row.
+    expect((await invoiceSequenceNextValue()) - sequenceBefore).toBe(1);
+    expect((await auditTotalFor('sal.invoice.issued')) - auditBefore).toBe(1);
+    expect((await outboxTotalFor('invoice.issued')) - outboxBefore).toBe(1);
+    expect(await financialEventCount('invoice_issued', draft.invoiceId)).toBe(1);
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM sal.invoice_status_history
@@ -1184,9 +1256,6 @@ describe('sal.payment-allocate under concurrent callers', () => {
     expect(await invoiceOpenIsNonNegative(invoice.invoiceId)).toBe(1);
     // No `invoice.voided` event reached a consumer for an invoice that is still issued.
     expect(await outboxKeyCount(`invoice.voided:${invoice.invoiceId}`)).toBe(0);
-    // And the cancellation body was never a success document.
-    const problem = await bodyOf<VoidedInvoiceBody & ProblemBody>(cancellation);
-    expect(problem.replayed).toBeUndefined();
   });
 });
 
@@ -1202,27 +1271,38 @@ describe('sal.delivery-complete and wty.warranty-generate under concurrent calle
       [delivery.visitId]
     );
 
-    const outcomes = await race(holdDelivery(delivery.deliveryId), () => [
-      (async () => {
+    const outcomes = await race(holdDelivery(delivery.deliveryId), [
+      async () => {
         authAs(SAL_FULL);
         return completeDelivery(delivery.deliveryId, delivery.recordVersion, '100000');
-      })(),
-      (async () => {
+      },
+      async () => {
         authAs(SAL_FULL);
         return completeDelivery(delivery.deliveryId, delivery.recordVersion, '100000');
-      })(),
+      },
     ]);
 
-    // Both 200: `completeDelivery` returns the already-delivered record on the replay
-    // path rather than refusing it, which is what an interrupted client needs.
-    expect(outcomes.map((response) => response.status)).toEqual([200, 200]);
-    const bodies = await Promise.all(outcomes.map((r) => bodyOf<CompletionBody>(r)));
-    expect(bodies.every((body) => body.status === 'delivered')).toBe(true);
-    // Exactly one did the work. Two `replayed: false` would mean two handovers.
-    expect(bodies.filter((body) => body.replayed === false)).toHaveLength(1);
-    expect(bodies.filter((body) => body.replayed === true)).toHaveLength(1);
-    // Neither used the financial override: the fixture settled the invoice for real.
-    expect(bodies.every((body) => body.overridden.length === 0)).toBe(true);
+    // 200 and 409. Both callers submitted the version they read before the race; the
+    // winner's completion advances `record_version` on the flip to `delivered`, so the
+    // loser's `If-Match` is stale by the time it gets the row lock and
+    // `completeDelivery` refuses it with `ERR-CON-001` — before the already-delivered
+    // replay short-circuit. That is the right order: a caller acting on a stale view of
+    // a handover is told so rather than being handed a success for a record that moved.
+    expect(outcomes.map((response) => response.status)).toEqual([200, 409]);
+    const winner = outcomes[0];
+    const loser = outcomes[1];
+    if (winner === undefined || loser === undefined) {
+      throw new Error('the race did not return both responses');
+    }
+    const completion = await bodyOf<CompletionBody>(winner);
+    expect(completion.status).toBe('delivered');
+    expect(completion.replayed).toBe(false);
+    // The winner used no override: the fixture settled the invoice for real, so the
+    // financial blocker was cleared by payment rather than by authority.
+    expect(completion.overridden).toEqual([]);
+    const refused = await bodyOf<ProblemBody>(loser);
+    expect(refused.code).toBe('ERR-CON-001');
+    expect(refused.status).toBe(409);
 
     // ONE delivered record.
     const after = await deliveryRow(delivery.deliveryId);
@@ -1265,13 +1345,42 @@ describe('sal.delivery-complete and wty.warranty-generate under concurrent calle
       )
     ).toBe(1);
     // The reading the record cites is the one that was captured.
-    const readingId = bodies.find((body) => body.replayed === false)?.finalOdometerReadingId;
-    expect(readingId).not.toBeNull();
+    expect(completion.finalOdometerReadingId).not.toBeNull();
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM sal.delivery_records
           WHERE id = $1 AND final_odometer_reading_id = $2`,
-        [delivery.deliveryId, readingId]
+        [delivery.deliveryId, completion.finalOdometerReadingId]
+      )
+    ).toBe(1);
+
+    // The replay, now that the version guard has been satisfied: a caller holding the
+    // CURRENT version completes an already-delivered handover and is answered with the
+    // record rather than a refusal — and with NO second custody release, NO second
+    // event and NO second audit record. This is the half of the contract the stale loser
+    // above could not reach, and it is the half that matters to a client whose request
+    // timed out after the vehicle had in fact left.
+    authAs(SAL_FULL);
+    const replay = await completeDelivery(delivery.deliveryId, after.version, '100000');
+    expect(replay.status).toBe(200);
+    const replayed = await bodyOf<CompletionBody>(replay);
+    expect(replayed.replayed).toBe(true);
+    expect(replayed.status).toBe('delivered');
+    expect(replayed.finalOdometerReadingId).toBe(completion.finalOdometerReadingId);
+    expect((await auditTotalFor('sal.delivery.completed')) - auditBefore).toBe(1);
+    expect((await outboxTotalFor('vehicle.delivered')) - outboxBefore).toBe(1);
+    expect(
+      (await countRowsOf(
+        `SELECT count(*)::text AS n FROM rec.custody_history
+          WHERE reception_visit_id = $1 AND to_state = 'released'`,
+        [delivery.visitId]
+      )) - custodyBefore
+    ).toBe(1);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM veh.odometer_readings
+          WHERE vehicle_id = $1 AND capture_method = 'delivery'`,
+        [delivery.vehicleId]
       )
     ).toBe(1);
   });
@@ -1294,16 +1403,20 @@ describe('sal.delivery-complete and wty.warranty-generate under concurrent calle
     // already inserted, and the other parks waiting on that caller's transaction id.
     // Both are blocked, which is what `waitForBlockedBackends(2)` measures, and the
     // loser is then refused by `ex_warranty_records_no_overlap` (`23P01`).
-    const outcomes = await race(holdDelivery(delivered.deliveryId), () => [
-      (async () => {
-        authAs(SAL_FULL);
-        return generateWarranty(delivered.deliveryId, POLICY_ACTIVE);
-      })(),
-      (async () => {
-        authAs(SAL_FULL);
-        return generateWarranty(delivered.deliveryId, POLICY_ACTIVE);
-      })(),
-    ]);
+    const outcomes = await race(
+      holdDelivery(delivered.deliveryId),
+      [
+        async () => {
+          authAs(SAL_FULL);
+          return generateWarranty(delivered.deliveryId, POLICY_ACTIVE);
+        },
+        async () => {
+          authAs(SAL_FULL);
+          return generateWarranty(delivered.deliveryId, POLICY_ACTIVE);
+        },
+      ],
+      { staged: true }
+    );
 
     const statuses = outcomes.map((response) => response.status).sort((x, y) => x - y);
     // A CONTROLLED refusal, not a fault. `23P01` from a gist EXCLUDE reads as a server

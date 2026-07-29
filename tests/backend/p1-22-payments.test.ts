@@ -278,7 +278,7 @@ describe('sal.payment-record', () => {
     expect(await outboxCountFor(`receipt.recorded:${receipt.id}`)).toBe(1);
   });
 
-  it('replays an idempotency key without recording a second receipt (idempotency)', async () => {
+  it('TC-P1-22-004 replays an idempotency key without recording a second receipt (idempotency)', async () => {
     const key = randomUUID();
     const payload = validPayment('42.0000');
     const auditBefore = await auditTotalFor('sal.receipt.recorded');

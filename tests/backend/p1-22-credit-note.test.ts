@@ -636,7 +636,7 @@ describe('sal.credit-note-create', () => {
 });
 
 describe('sal.credit-note-approve', () => {
-  it('approves under dual control and reduces the receivable by exactly the credit (success, audit, outbox)', async () => {
+  it('TC-P1-22-008 approves under dual control and reduces the receivable by exactly the credit (success, audit, outbox)', async () => {
     const invoice = await seedIssuedInvoice('cn_approve');
     const note = await pendingNote(invoice.invoiceId, '40.0000');
     expect(note.requestedBy).toBe(SAL_FULL.userId);

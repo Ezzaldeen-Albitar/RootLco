@@ -697,6 +697,7 @@ export class InvoiceService {
   public async issueInvoice(
     db: DbHandle,
     invoiceId: string,
+    expectedVersion: number,
     authorizeScope: ScopeAuthorizer
   ): Promise<IssuedInvoice> {
     const before = await this.repository.findInvoiceForUpdate(db, invoiceId);
@@ -706,6 +707,25 @@ export class InvoiceService {
       });
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+
+    // The version guard, applied against the LOCKED row.
+    //
+    // `versionGuarded: true` on the operation makes `handleOperation` require an
+    // `If-Match` header and hand the parsed value to the handler as `expectedVersion`.
+    // All three P1-22 version-guarded routes used to DISCARD it, which made the guard
+    // decorative: a caller working from a stale read was told nothing, and its command
+    // applied to a document that had already moved on. The suite author found it, wrote
+    // the cases to the contract, and LEFT THEM FAILING rather than declaring evidence for
+    // a control that did not exist — which is why this code is here.
+    //
+    // Compared AFTER the `FOR UPDATE` read, not before. Comparing against an unlocked
+    // read would leave a window in which a concurrent write bumps the version between the
+    // comparison and the mutation, which is precisely the race the guard exists to close.
+    if (before.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The invoice has changed since it was read; re-read it and retry',
+      });
+    }
 
     if (before.status === 'issued') {
       /* c8 ignore next 5 -- `ck_invoices_number_iff_issued` makes a numberless
@@ -832,6 +852,7 @@ export class InvoiceService {
     db: DbHandle,
     invoiceId: string,
     reason: string,
+    expectedVersion: number,
     authorizeScope: ScopeAuthorizer
   ): Promise<VoidedInvoice> {
     const trimmedReason = requireReason(reason, 'body.reason');
@@ -843,6 +864,25 @@ export class InvoiceService {
       });
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+
+    // The version guard, applied against the LOCKED row.
+    //
+    // `versionGuarded: true` on the operation makes `handleOperation` require an
+    // `If-Match` header and hand the parsed value to the handler as `expectedVersion`.
+    // All three P1-22 version-guarded routes used to DISCARD it, which made the guard
+    // decorative: a caller working from a stale read was told nothing, and its command
+    // applied to a document that had already moved on. The suite author found it, wrote
+    // the cases to the contract, and LEFT THEM FAILING rather than declaring evidence for
+    // a control that did not exist — which is why this code is here.
+    //
+    // Compared AFTER the `FOR UPDATE` read, not before. Comparing against an unlocked
+    // read would leave a window in which a concurrent write bumps the version between the
+    // comparison and the mutation, which is precisely the race the guard exists to close.
+    if (before.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The invoice has changed since it was read; re-read it and retry',
+      });
+    }
 
     if (before.status === 'void_before_issue') {
       return {

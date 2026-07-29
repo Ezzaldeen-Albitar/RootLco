@@ -37,6 +37,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { AppFailure } from '@/server/errors/app-failure';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { billingModule } from '@/modules/billing';
 
@@ -72,11 +73,15 @@ export async function POST(
   return handleOperation(
     INVOICE_ISSUE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, expectedVersion, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
+      if (expectedVersion === null) {
+        throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
+      }
       const issued = await billingModule().invoices.issueInvoice(
         db,
         params.invoiceId,
+        expectedVersion,
         authorizeScope
       );
       // The version travels on the nested invoice, not on the result wrapper: the

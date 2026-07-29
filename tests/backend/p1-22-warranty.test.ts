@@ -236,7 +236,7 @@ afterEach(() => {
 });
 
 describe('wty.warranty-generate', () => {
-  it('dates the warranty from the handover and makes the odometer limit absolute (success)', async () => {
+  it('TC-P1-22-007 dates the warranty from the handover and makes the odometer limit absolute (success)', async () => {
     const delivery = await seedDeliveredDelivery('wty_success');
     expect(delivery.status).toBe('delivered');
     // Every expected term is derived by PostgreSQL from the delivery and the coverage

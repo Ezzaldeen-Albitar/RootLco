@@ -49,23 +49,34 @@
  * `quo.approval_decisions` row per item so `rollUpDecisions` derives `accepted` from the
  * decisions rather than from a status column.
  *
- * ## Two declarations this file deliberately does NOT make
+ * ## The declaration this file could not make when it was written, and now can
  *
- * `stale-version` is absent from `sal.invoice-issue` and `sal.invoice-cancel` below,
- * and that absence is the finding rather than an omission. Both operations declare
+ * `stale-version` was ABSENT from `sal.invoice-issue` and `sal.invoice-cancel`, and the
+ * absence was the finding rather than an omission. Both operations declare
  * `versionGuarded: true`, so `handleOperation` requires an `If-Match` header and hands
- * the parsed value to the handler as `expectedVersion` — and both routes discard it. The
- * two cases named `stale If-Match` are written to the contract and LEFT FAILING; see the
- * `DEFECT` comments on them. Declaring the flag would claim evidence for a control that
- * does not exist, which is the exact dishonesty this gate is for.
+ * the parsed value to the handler as `expectedVersion` — and both routes DISCARDED it.
+ * Reproduced directly: `POST /invoices/{id}/issuance` with `If-Match: 99` against an
+ * invoice at `record_version` 1 returned 200 and allocated a number. The guard read as
+ * implemented and enforced nothing.
+ *
+ * The two `stale If-Match` cases were written to the contract and left FAILING rather
+ * than weakened, because declaring the flag would have claimed evidence for a control
+ * that did not exist — which is the exact dishonesty this gate is for.
+ *
+ * The control now exists: both services take `expectedVersion` and compare it against
+ * the row they have just locked `FOR UPDATE` — after the lock, so no concurrent write
+ * can slip between the comparison and the mutation — and both routes pass it through.
+ * `sal.delivery-complete` had the same defect in a different shape: its service check
+ * existed but was inert, because the field was optional and the route never supplied it.
+ * All three are fixed, and the flag is declared here only now that it is backed.
  *
  * COVERAGE-EVIDENCE (P1-22 invoice lifecycle):
  *   sal.invoice-preview: route service authorization success denial isolation cross-tenant
  *   sal.invoice-create: route service authorization success denial audit outbox idempotency isolation cross-tenant
- *   sal.invoice-issue: route service authorization success denial audit outbox idempotency isolation cross-tenant
+ *   sal.invoice-issue: route service authorization success denial audit outbox idempotency isolation cross-tenant stale-version
  *   sal.invoice-detail: route service authorization success denial isolation cross-tenant
  *   sal.invoice-outstanding-read: route service authorization success denial isolation cross-tenant
- *   sal.invoice-cancel: route service authorization success denial audit outbox idempotency isolation cross-tenant
+ *   sal.invoice-cancel: route service authorization success denial audit outbox idempotency isolation cross-tenant stale-version
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -842,7 +853,7 @@ describe('sal.invoice-preview', () => {
 });
 
 describe('sal.invoice-create', () => {
-  it('is born draft with a NULL number, and every line and amount is server-derived (success)', async () => {
+  it('TC-P1-22-001 is born draft with a NULL number, and every line and amount is server-derived (success)', async () => {
     const billable = await seedBillable('inv_create_ok');
 
     authAs(SAL_FULL);
@@ -1059,7 +1070,7 @@ describe('sal.invoice-create', () => {
 });
 
 describe('sal.invoice-issue', () => {
-  it('allocates EXACTLY ONE number and advances the branch sequence by one (success)', async () => {
+  it('TC-P1-22-002 allocates EXACTLY ONE number and advances the branch sequence by one (success)', async () => {
     const billable = await seedBillable('inv_issue_ok');
     const draft = await draftInvoiceFor(billable);
     const sequenceBefore = await invoiceSequenceNextValue();
@@ -1104,7 +1115,7 @@ describe('sal.invoice-issue', () => {
     expect(await statusHistoryRowsFor(draft.invoice.id, 'issued')).toBe(1);
   });
 
-  it('replays an idempotency key with the SAME number and no second allocation (idempotency)', async () => {
+  it('TC-P1-22-003 replays an idempotency key with the SAME number and no second allocation (idempotency)', async () => {
     const billable = await seedBillable('inv_issue_replay');
     const draft = await draftInvoiceFor(billable);
     const key = randomUUID();
@@ -1192,24 +1203,29 @@ describe('sal.invoice-issue', () => {
   it('refuses a stale If-Match with a conflict (stale-version)', async () => {
     /**
      * ===================================================================
-     * DEFECT — LEFT FAILING ON PURPOSE. DO NOT WEAKEN THIS ASSERTION.
+     * This case was written FAILING, and the defect it found is now fixed.
      * ===================================================================
      * `sal.invoice-issue` declares `versionGuarded: true`, so `handleOperation`
      * requires an `If-Match` header, parses it, and hands the value to the handler as
      * `expectedVersion`. `src/app/api/v1/invoices/[invoiceId]/issuance/route.ts`
-     * destructures only `{ db, authorizeScope }` and never reads `expectedVersion`,
-     * and `InvoiceService.issueInvoice(db, invoiceId, authorizeScope)` takes no version
-     * parameter — so the value is discarded and ANY positive integer is accepted.
+     * destructured only `{ db, authorizeScope }` and never read it, and
+     * `InvoiceService.issueInvoice(db, invoiceId, authorizeScope)` took no version
+     * parameter — so the value was discarded and ANY positive integer was accepted.
+     * Reproduced as `If-Match: 99` against an invoice at `record_version` 1: 200, issued,
+     * number allocated.
      *
-     * A caller working from a stale read therefore issues an invoice whose amounts may
-     * have changed under it, which is precisely what the route's own header says the
-     * guard exists to prevent ("`If-Match` prevents a confident issue of the wrong
+     * A caller working from a stale read therefore issued an invoice whose amounts may
+     * have changed under it — precisely what the route's own header said the guard
+     * existed to prevent ("`If-Match` prevents a confident issue of the wrong
      * document"). Every other `versionGuarded: true` route in the repository reads
-     * `expectedVersion` and passes it down.
+     * `expectedVersion` and passes it down; these did not.
      *
-     * `stale-version` is consequently NOT declared for this operation in the
-     * COVERAGE-EVIDENCE block above: the control does not exist, so claiming evidence
-     * for it would be the dishonesty the gate is for.
+     * The fix: the service now takes `expectedVersion` and compares it against the row
+     * it has just locked `FOR UPDATE` — after the lock, so no concurrent write can slip
+     * between the comparison and the mutation — and BEFORE the already-issued
+     * short-circuit, so a caller holding a pre-issue version is told rather than handed
+     * a `replayed: true` for a document that moved on. `stale-version` is declared in the
+     * COVERAGE-EVIDENCE block above only now that this passes.
      */
     const billable = await seedBillable('inv_issue_stale');
     const draft = await draftInvoiceFor(billable);
@@ -1812,21 +1828,24 @@ describe('sal.invoice-cancel', () => {
   it('refuses a stale If-Match with a conflict (stale-version)', async () => {
     /**
      * ===================================================================
-     * DEFECT — LEFT FAILING ON PURPOSE. DO NOT WEAKEN THIS ASSERTION.
+     * This case was written FAILING, and the defect it found is now fixed.
      * ===================================================================
-     * Same defect as `sal.invoice-issue`'s, in a second route.
-     * `src/app/api/v1/invoices/[invoiceId]/cancellation/route.ts` declares
-     * `versionGuarded: true` — so `handleOperation` demands an `If-Match` header and
-     * parses it into `expectedVersion` — and then destructures only
+     * The same defect as `sal.invoice-issue`'s, in a second route.
+     * `src/app/api/v1/invoices/[invoiceId]/cancellation/route.ts` declared
+     * `versionGuarded: true` — so `handleOperation` demanded an `If-Match` header and
+     * parsed it into `expectedVersion` — and then destructured only
      * `{ db, authorizeScope }`. `InvoiceService.cancelInvoice(db, invoiceId, reason,
-     * authorizeScope)` takes no version parameter, so the header's value is discarded
-     * and ANY positive integer voids the invoice.
+     * authorizeScope)` took no version parameter, so the header's value was discarded
+     * and ANY positive integer voided the invoice.
      *
-     * That matters more here than for a read: voiding is terminal and there is no
-     * un-void, so a caller acting on a stale read destroys a document it had not
-     * actually seen the current state of.
+     * That mattered more here than for the issue path: voiding is terminal and there is
+     * no un-void, so a caller acting on a stale read destroyed a document whose current
+     * state it had not actually seen.
      *
-     * `stale-version` is consequently NOT declared for this operation above.
+     * Fixed the same way, and `stale-version` is declared above only now that this
+     * passes. The third instance of the same shape — `sal.delivery-complete`, whose
+     * service check existed but was inert because the field was optional and the route
+     * never supplied it — is fixed too.
      */
     const billable = await seedBillable('inv_void_stale');
     const draft = await draftInvoiceFor(billable);
