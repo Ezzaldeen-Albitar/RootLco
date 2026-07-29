@@ -26,10 +26,17 @@
  * `23503`, which reads as "that method does not exist" about a method the caller can
  * see in this very list.
  *
- * So the projection carries `usableForReceipt` per row rather than leaving the caller
- * to discover the FK the hard way. An operator provisions tenant-scoped method rows;
+ * So the projection carries `recordable` per row rather than leaving the caller to
+ * discover the FK the hard way. An operator provisions tenant-scoped method rows;
  * `tests/db/p1-11-helpers.ts` records the same conclusion beside the fixture method it
  * has to create for exactly this reason.
+ *
+ * `recordable` is about SCOPE, not about activeness: the query already filters
+ * `status = 'active' AND deleted_at IS NULL`, so an inactive or withdrawn method is
+ * absent from the list entirely rather than present and unselectable. A platform row IS
+ * returned though — unrecordable but visible — because a tenant with no method of a
+ * given kind needs to see that the platform defines one and its own row is missing,
+ * which is a provisioning action this phase cannot perform.
  *
  * No amount, no currency and no credential is involved on this path.
  */
