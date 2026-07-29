@@ -80,6 +80,43 @@ jobs:
           # even when the Security tab is unavailable on this plan.
           output: sarif-results
 
+      # The analysis produced a document; nothing until now read it. A green
+      # `analyze` step means SARIF was UPLOADED, not that it was clean — which is
+      # exactly how a red `CodeQL` check sat on five consecutive heads of the
+      # previous initiative while every report said the workflow was green
+      # (AR-52). This is the repository's own opinion of its own SARIF.
+      - name: CodeQL policy
+        run: |
+          set -euo pipefail
+          # `--language` names what THIS leg is responsible for. Each matrix leg
+          # analyses one language and therefore only has its own SARIF on disk,
+          # so asserting the baseline's full language list here would fail every
+          # leg for the language it is not running. The "both languages ran"
+          # assertion belongs to `ci-gate`, which can see both jobs.
+          node scripts/ci/codeql-policy.mjs \
+            --sarif sarif-results \
+            --language "${MATRIX_LANGUAGE}" \
+            --baseline .github/ci-baselines/codeql-baseline.json \
+            --json "codeql-policy-${MATRIX_LANGUAGE}.json" \
+            --markdown "codeql-policy-${MATRIX_LANGUAGE}.md"
+        env:
+          MATRIX_LANGUAGE: ${{ matrix.language }}
+
+      - name: Summarise
+        if: always()
+        env:
+          MATRIX_LANGUAGE: ${{ matrix.language }}
+        run: |
+          set -euo pipefail
+          if [ -f "codeql-policy-${MATRIX_LANGUAGE}.md" ]; then
+            cat "codeql-policy-${MATRIX_LANGUAGE}.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            # An absent report is itself the finding: the policy step did not
+            # reach the point of writing one, so nothing has judged this SARIF.
+            printf '### CodeQL policy\n\nNo policy report was produced for %s.\n' \
+              "${MATRIX_LANGUAGE}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
       - name: Upload SARIF as evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -87,4 +124,7 @@ jobs:
           name: evidence-code-security-${{ matrix.language }}
           retention-days: ${{ inputs.artifact-retention-days }}
           if-no-files-found: ignore
-          path: sarif-results/**
+          path: |
+            sarif-results/**
+            codeql-policy-${{ matrix.language }}.json
+            codeql-policy-${{ matrix.language }}.md

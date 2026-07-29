@@ -1,0 +1,377 @@
+/**
+ * The CodeQL/SARIF policy gate, and the commit check-run enumerator.
+ *
+ * Both exist because of AR-52: a `CodeQL` check from GitHub Advanced Security
+ * sat red on five consecutive heads of the previous initiative while every
+ * report said the workflow was 14/14 green. The workflow WAS green — uploading
+ * SARIF is what that job does. The alerts it uploaded were judged by a separate
+ * check-run that `/actions/runs` does not list.
+ *
+ * Every test below is a mutation in disguise: each asserts that some way of
+ * being blind produces No-Go rather than silence.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  evaluate,
+  extractFindings,
+  isApplicationPath,
+  normalisePath,
+  severityOf,
+  validateSarif,
+  toMarkdown,
+} from '../../scripts/ci/codeql-policy.mjs';
+import {
+  evaluate as evaluateChecks,
+  toMarkdown as checksMarkdown,
+} from '../../scripts/ci/check-commit-checks.mjs';
+
+/** A minimal but realistic CodeQL SARIF document. */
+const sarif = (results: unknown[], driver = 'CodeQL') => ({
+  version: '2.1.0',
+  runs: [
+    {
+      tool: {
+        driver: {
+          name: driver,
+          rules: [
+            {
+              id: 'js/remote-property-injection',
+              name: 'js/remote-property-injection',
+              properties: { 'security-severity': '7.5', precision: 'high' },
+            },
+            {
+              id: 'js/file-system-race',
+              name: 'js/file-system-race',
+              properties: { 'security-severity': '7.0', precision: 'medium' },
+            },
+            {
+              id: 'js/template-syntax-in-string-literal',
+              name: 'js/template-syntax-in-string-literal',
+              properties: { precision: 'high' },
+              defaultConfiguration: { level: 'warning' },
+            },
+          ],
+        },
+      },
+      results,
+    },
+  ],
+});
+
+const result = (ruleId: string, path: string, extra: Record<string, unknown> = {}) => ({
+  ruleId,
+  message: { text: `finding in ${path}` },
+  locations: [{ physicalLocation: { artifactLocation: { uri: path }, region: { startLine: 10 } } }],
+  ...extra,
+});
+
+const docs = (document: unknown, label = 'javascript.sarif') => [{ label, document }];
+
+const BASE = { expectedLanguages: [], today: '2026-07-29' };
+
+describe('the gate refuses to report clean when it cannot see', () => {
+  it('fails when no SARIF exists at all', () => {
+    const verdict = evaluate({ documents: [], baseline: BASE });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/did not run must never read as/);
+  });
+
+  it('fails when `runs` is empty — nothing was analysed', () => {
+    const verdict = evaluate({ documents: docs({ version: '2.1.0', runs: [] }), baseline: BASE });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/`runs` is empty/);
+  });
+
+  it('fails when `results` is absent, because absent is not empty', () => {
+    const broken = {
+      version: '2.1.0',
+      runs: [{ tool: { driver: { name: 'CodeQL' } } }],
+    };
+    expect(evaluate({ documents: docs(broken), baseline: BASE }).ok).toBe(false);
+    expect(validateSarif(broken, 'x').join('\n')).toMatch(/absent is not the same as empty/);
+  });
+
+  it('fails on a document that is not SARIF 2.1', () => {
+    expect(validateSarif({ version: '1.0.0', runs: [] }, 'x').join('\n')).toMatch(/not 2\.1/);
+    expect(validateSarif(null, 'x').join('\n')).toMatch(/not a JSON object/);
+  });
+
+  it('fails when an expected language produced no SARIF', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([]), 'javascript-typescript.sarif'),
+      baseline: { ...BASE, expectedLanguages: ['javascript-typescript', 'actions'] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/no SARIF for actions/);
+  });
+
+  it('fails when the analysis reported zero files', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([])),
+      baseline: BASE,
+      filesAnalysed: 0,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/empty scan is not a clean scan/);
+  });
+
+  it('passes a genuinely clean analysis, so the gate is not merely a refuser', () => {
+    const verdict = evaluate({ documents: docs(sarif([])), baseline: BASE, filesAnalysed: 400 });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.decision).toBe('Go');
+    expect(verdict.counts.total).toBe(0);
+  });
+});
+
+describe('blocking severities', () => {
+  it('fails on an unresolved application High', () => {
+    const verdict = evaluate({
+      documents: docs(
+        sarif([result('js/remote-property-injection', 'src/server/http/validation.ts')])
+      ),
+      baseline: BASE,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/unresolved HIGH/);
+    expect(verdict.counts.application).toBe(1);
+  });
+
+  it('fails on an unresolved tooling High too — "CI only" is not a disposition', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([result('js/file-system-race', 'scripts/check-encoding.mjs')])),
+      baseline: BASE,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.counts.tooling).toBe(1);
+  });
+
+  it('does not block a warning-level quality finding', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([result('js/template-syntax-in-string-literal', 'tests/x.test.ts')])),
+      baseline: BASE,
+    });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.counts.bySeverity.warning).toBe(1);
+  });
+
+  it('maps security-severity scores to the right bands', () => {
+    expect(severityOf({ properties: { 'security-severity': '9.1' } }, {}).level).toBe('critical');
+    expect(severityOf({ properties: { 'security-severity': '7.0' } }, {}).level).toBe('high');
+    expect(severityOf({ properties: { 'security-severity': '4.0' } }, {}).level).toBe('medium');
+    expect(severityOf({ properties: { 'security-severity': '1.0' } }, {}).level).toBe('low');
+  });
+});
+
+describe('dismissal governance', () => {
+  const finding = result('js/file-system-race', 'scripts/legacy.mjs');
+  const good = {
+    ruleId: 'js/file-system-race',
+    path: 'scripts/legacy.mjs',
+    source: 'a repository path from readdirSync',
+    sink: 'readFileSync in a try/catch',
+    reason: 'no concurrent writer exists in a CI checkout; reproduced by …',
+    reviewer: 'platform-owner',
+    reviewedOn: '2026-07-29',
+    expiresOn: '2099-01-01',
+  };
+
+  it('accepts a complete, unexpired, path-exact dismissal', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([finding])),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('refuses a dismissal that covers APPLICATION source', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([result('js/file-system-race', 'src/server/x.ts')])),
+      baseline: { ...BASE, dismissals: [{ ...good, path: 'src/server/x.ts' }] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/covers APPLICATION source/);
+  });
+
+  it('refuses an expired dismissal', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([finding])),
+      baseline: { ...BASE, dismissals: [{ ...good, expiresOn: '2026-01-01' }] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/expired on 2026-01-01/);
+  });
+
+  it('refuses a dismissal missing any of its required evidence fields', () => {
+    for (const field of ['reason', 'reviewer', 'reviewedOn', 'source', 'sink']) {
+      const entry: Record<string, unknown> = { ...good };
+      delete entry[field];
+      const verdict = evaluate({
+        documents: docs(sarif([finding])),
+        baseline: { ...BASE, dismissals: [entry] },
+      });
+      expect(verdict.ok, field).toBe(false);
+      expect(verdict.failures.join('\n'), field).toContain(`\`${field}\``);
+    }
+  });
+
+  it('fails when a dismissal matches nothing — the finding moved or was fixed', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([])),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
+  });
+
+  it('fails when the dismissed rule appears at a DIFFERENT path', () => {
+    const verdict = evaluate({
+      documents: docs(
+        sarif([finding, result('js/file-system-race', 'scripts/somewhere-else.mjs')])
+      ),
+      baseline: { ...BASE, dismissals: [good] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/somewhere-else\.mjs/);
+    expect(verdict.failures.join('\n')).toMatch(/per-path on purpose/);
+  });
+
+  it('treats a GitHub-suppressed result as adjudicated, not as live', () => {
+    const suppressed = result('js/file-system-race', 'scripts/legacy.mjs', {
+      suppressions: [{ kind: 'external' }],
+    });
+    const verdict = evaluate({ documents: docs(sarif([suppressed])), baseline: BASE });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.counts.total).toBe(0);
+    expect(verdict.counts.suppressed).toBe(1);
+  });
+});
+
+describe('the alert-count ratchet', () => {
+  it('fails when the open count rises above the recorded ceiling', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([result('js/file-system-race', 'scripts/a.mjs')])),
+      baseline: { ...BASE, maximumOpenFindings: 0 },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/rose to 1, above the recorded ceiling of 0/);
+  });
+
+  it('warns rather than fails when the count falls, so the gain can be locked in', () => {
+    const verdict = evaluate({
+      documents: docs(sarif([])),
+      baseline: { ...BASE, maximumOpenFindings: 3 },
+    });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.warnings.join('\n')).toMatch(/lower the ceiling/);
+  });
+});
+
+describe('path classification', () => {
+  it('separates application source from tooling', () => {
+    expect(isApplicationPath('src/server/http/validation.ts')).toBe(true);
+    expect(isApplicationPath('scripts/ci/x.mjs')).toBe(false);
+    expect(isApplicationPath('tests/foundation/x.test.ts')).toBe(false);
+  });
+
+  it('normalises SARIF artifact URIs', () => {
+    expect(normalisePath('file:///src/a.ts')).toBe('src/a.ts');
+    expect(normalisePath('src\\a.ts')).toBe('src/a.ts');
+    expect(normalisePath(undefined)).toBe('');
+  });
+
+  it('extracts rule, severity, path and line together', () => {
+    const [finding] = extractFindings(
+      docs(sarif([result('js/remote-property-injection', 'src/a.ts')]))
+    );
+    expect(finding).toMatchObject({
+      ruleId: 'js/remote-property-injection',
+      severity: 'high',
+      path: 'src/a.ts',
+      startLine: 10,
+      scope: 'application',
+      precision: 'high',
+    });
+  });
+
+  it('renders a report that states the counts it is claiming', () => {
+    const verdict = evaluate({ documents: docs(sarif([])), baseline: BASE });
+    const markdown = toMarkdown(verdict);
+    expect(markdown).toContain('CodeQL policy: Go');
+    expect(markdown).toContain('| Open findings | 0 |');
+    expect(markdown).toContain('| Tools | CodeQL |');
+  });
+});
+
+/**
+ * The other half of AR-52: a listing that only sees Actions is the listing that
+ * missed the red check for five commits.
+ */
+describe('commit check-run enumeration', () => {
+  const check = (name: string, conclusion: string | null, app = 'github-actions') => ({
+    name,
+    status: conclusion === null ? 'in_progress' : 'completed',
+    conclusion,
+    app: { slug: app },
+    output: { title: null },
+    html_url: null,
+  });
+
+  it('passes when every check completed acceptably', () => {
+    const verdict = evaluateChecks([
+      check('ci-gate', 'success'),
+      check('CodeQL', 'success', 'github-advanced-security'),
+    ]);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('FAILS on a red check produced by an app other than Actions — the AR-52 case', () => {
+    const verdict = evaluateChecks([
+      check('ci-gate', 'success'),
+      check('unit-tests-coverage / unit-coverage', 'success'),
+      check('CodeQL', 'failure', 'github-advanced-security'),
+    ]);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/`CodeQL` concluded `failure`/);
+    expect(verdict.failures.join('\n')).toMatch(/github-advanced-security/);
+  });
+
+  it('fails on a check still running — a merge now is a merge without it', () => {
+    const verdict = evaluateChecks([check('ci-gate', null)]);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/is in_progress, not completed/);
+  });
+
+  it('fails on an empty check list, because nothing judged the commit', () => {
+    const verdict = evaluateChecks([]);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/ZERO check-runs/);
+  });
+
+  it('fails when a REQUIRED check is absent entirely (CSA-06)', () => {
+    const verdict = evaluateChecks([check('ci-gate', 'success')], { required: ['CodeQL'] });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/`CodeQL` is absent from the commit entirely/);
+  });
+
+  it('accepts skipped and neutral, which are real outcomes', () => {
+    expect(evaluateChecks([check('a', 'skipped'), check('b', 'neutral')]).ok).toBe(true);
+  });
+
+  it('reports how many checks came from apps other than Actions', () => {
+    const verdict = evaluateChecks([
+      check('ci-gate', 'success'),
+      check('CodeQL', 'success', 'github-advanced-security'),
+    ]);
+    expect(verdict.nonActions).toHaveLength(1);
+    const markdown = checksMarkdown(verdict, 'abc1234def');
+    expect(markdown).toContain('other than GitHub Actions: **1**');
+    expect(markdown).toContain('Commit checks: Go');
+  });
+
+  it('warns when everything came from Actions, rather than assuming that is complete', () => {
+    const verdict = evaluateChecks([check('ci-gate', 'success')]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.warnings.join('\n')).toMatch(/AR-52 was a check from another app/);
+  });
+});

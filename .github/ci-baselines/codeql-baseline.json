@@ -1,0 +1,22 @@
+{
+  "description": "CodeQL policy baseline. The ceiling is a RATCHET, not a budget: it records how many open findings the tree carried when it was last measured, so a new one fails and a fixed one is visible as slack to lock in.",
+  "policy": "docs/engineering/security/codeql-remediation/codeql-policy-gate.md",
+  "establishedBy": "RootLco CodeQL Application Remediation and Security Hardening, from the SARIF of the hosted `code-security` job on the remediation branch.",
+  "expectedLanguages": ["javascript-typescript", "actions"],
+  "expectedLanguagesNote": "A language that was not analysed cannot be reported clean. If a SARIF for either is missing the gate fails rather than judging the languages it happens to have — the AR-45 shape, where a scan that enumerated nothing read as a scan that found nothing.",
+  "maximumOpenFindings": 0,
+  "maximumOpenFindingsNote": "Zero, because this initiative closed the entire backlog: the two application findings are fixed structurally, the fifteen script findings are fixed, and the four vacuous assertions are repaired. Nothing is waived. A ceiling above zero would be a budget for the next one.",
+  "dismissals": [],
+  "dismissalsNote": "EMPTY, and empty is the finished state. Every alert in the 21-alert baseline was fixed or repaired; none was dismissed. The machinery is retained and tested because the next finding may genuinely be a false positive — but a dismissal must name the exact rule, the exact path, a reproduction of why the source cannot be attacker-controlled AND why the sink is safe, a reviewer, a review date, and an expiry. An entry matching nothing fails the gate, and the same rule appearing at a different path is treated as a new finding rather than as covered.",
+  "dismissalSchema": {
+    "ruleId": "the exact CodeQL rule, e.g. js/incomplete-sanitization",
+    "path": "the exact repo-relative path — dismissals are per-path on purpose",
+    "source": "what the dataflow source is, and why it cannot be attacker-controlled",
+    "sink": "what the sink is, and why reaching it is safe",
+    "reason": "the refutation, reproducible by someone else",
+    "reviewer": "a person, not a team",
+    "reviewedOn": "ISO date",
+    "expiresOn": "ISO date; an expired dismissal fails the gate"
+  },
+  "applicationScopeNote": "Findings under src/ are APPLICATION findings and may never be dismissed by this file at all — they are fixed or refuted in code. The split is enforced by codeql-policy.mjs, which fails if a dismissal covers an application path."
+}
