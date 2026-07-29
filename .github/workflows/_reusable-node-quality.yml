@@ -205,6 +205,7 @@ jobs:
           npm run validate:p1-20-inventory
           npm run validate:p1-21-inventory
           npm run validate:p1-22-inventory
+          npm run validate:exact-money
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'

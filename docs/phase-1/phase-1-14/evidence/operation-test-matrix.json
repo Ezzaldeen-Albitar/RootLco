@@ -2,10 +2,10 @@
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
     "registered": 219,
-    "publicApi": 199,
+    "publicApi": 219,
     "internal": 0,
-    "withRequiredEvidence": 185,
-    "invocationOnly": 34,
+    "withRequiredEvidence": 205,
+    "invocationOnly": 14,
     "p1_15": {
       "registered": 21,
       "publicApi": 21,
@@ -78,13 +78,13 @@
     },
     "p1_22": {
       "registered": 20,
-      "publicApi": 0,
+      "publicApi": 20,
       "operationDepth": 0,
-      "invocationOnly": 20,
+      "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
       "unreferenced": 20,
-      "metadataOnly": 0
+      "metadataOnly": 20
     }
   },
   "operations": [
@@ -4070,147 +4070,757 @@
     },
     {
       "id": "sal.credit-note-approve",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/credit-notes/{creditNoteId}/approval",
+      "public": false,
+      "files": ["tests/backend/p1-22-credit-note.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.credit-note-create",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/invoices/{invoiceId}/credit-notes",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-credit-note.test.ts",
+        "tests/backend/p1-22-currency-coherence.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-checklist-record",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries/{deliveryId}/checklist-results",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-complete",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries/{deliveryId}/completion",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-concurrency.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-create",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-eligibility-read",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}/eligibility",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-receiver-verify",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries/{deliveryId}/authorized-receiver",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.delivery-signature-attach",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries/{deliveryId}/signatures",
+      "public": false,
+      "files": ["tests/backend/p1-22-delivery.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-cancel",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/invoices/{invoiceId}/cancellation",
+      "public": false,
+      "files": ["tests/backend/p1-22-invoice-lifecycle.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-create",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/invoices",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-22-isolation.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial",
+        "cross-tenant"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial",
+        "cross-tenant"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-detail",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/invoices/{invoiceId}",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-22-isolation.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-issue",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/invoices/{invoiceId}/issuance",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-22-concurrency.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-outstanding-read",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/invoices/{invoiceId}/outstanding",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-22-isolation.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.invoice-preview",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/invoice-preview",
+      "public": false,
+      "files": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-22-isolation.test.ts"
+      ],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.payment-allocate",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/payments/{paymentId}/allocations",
+      "public": false,
+      "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-concurrency.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.payment-method-list",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/payment-methods",
+      "public": false,
+      "files": ["tests/backend/p1-22-payments.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": ["route", "service", "success", "authorization", "denial"],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.payment-record",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/payments",
+      "public": false,
+      "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial",
+        "cross-tenant"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial",
+        "cross-tenant"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "sal.receipt-detail",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/payments/{paymentId}",
+      "public": false,
+      "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "shared.attachment-download-authorize",
@@ -7441,19 +8051,82 @@
     },
     {
       "id": "wty.warranty-detail",
-      "files": [],
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/warranties/{warrantyId}",
+      "public": false,
+      "files": ["tests/backend/p1-22-warranty.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     },
     {
       "id": "wty.warranty-generate",
-      "files": [],
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/deliveries/{deliveryId}/warranties",
+      "public": false,
+      "files": ["tests/backend/p1-22-warranty.test.ts", "tests/backend/p1-22-isolation.test.ts"],
       "referenced": false,
-      "required": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["outbox", "denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
       "provided": [],
-      "missing": ["<undeclared>"]
+      "missing": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "outbox",
+        "denial"
+      ],
+      "metadataOnly": true,
+      "unitOnly": false
     }
   ]
 }

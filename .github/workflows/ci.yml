@@ -122,6 +122,16 @@ jobs:
       - name: P1-22 endpoint inventory and task traceability
         run: npm run validate:p1-22-inventory
 
+      # Phase 1-22 (P1-22-SEC-002): the financial surface may not contain a
+      # Number(), parseFloat, Math.*, toFixed, unary plus, or a JSON number schema.
+      # A single one of those turns an exact numeric(18,4) into an approximation,
+      # and the loss is silent, unrepeatable, and invisible in a passing test -
+      # the wrong value is still a number and it is still close. Scoped to the
+      # declared money trees rather than all of src, because a gate that banned
+      # Number() everywhere would be switched off within a week.
+      - name: Exact-money audit
+        run: npm run validate:exact-money
+
       - name: OpenAPI validation
         run: npm run validate:openapi
 
