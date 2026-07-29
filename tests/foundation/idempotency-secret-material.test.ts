@@ -202,6 +202,25 @@ describe('the fingerprint refuses secret material', () => {
     ).toBe('ERR-IAM-002');
   });
 
+  it('answers a CLIENT error, so a caller cannot manufacture a 500 at will', () => {
+    // The regression an adversarial review caught in the first version of this
+    // guard. `options.body` is the RAW pre-validation JSON — routes obtain it
+    // with `request.clone().json()` before `handleOperation` runs — so any
+    // authenticated caller could append a `password` key to any of the 107
+    // idempotent endpoints and turn a would-be 422 into a server error. The
+    // refusal is right; the 500 was not.
+    const failure = capture(() =>
+      requestFingerprint(context(), {
+        method: 'POST',
+        path: '/v1/things',
+        body: { amount: 10, password: SECRET },
+      })
+    );
+    expect(failure.code).toBe('ERR-INT-003');
+    expect(failure.status, 'a caller-supplied field must never yield a 5xx').toBeLessThan(500);
+    expect(failure.status).toBe(400);
+  });
+
   it('bounds its own traversal so a hostile nesting depth cannot hang it', () => {
     let deep: Record<string, unknown> = { password: SECRET };
     for (let i = 0; i < 5_000; i += 1) deep = { nested: deep };

@@ -212,6 +212,21 @@ function* everyKey(value: unknown, depth = 0): Generator<string> {
  * which is a design decision with its own review, not something a fingerprint
  * should improvise at request time.
  *
+ * ## Why this is a 400 and not a 500
+ *
+ * The fingerprint is computed over `options.body`, which is the **raw
+ * pre-validation JSON** — routes obtain it with `request.clone().json()` before
+ * `handleOperation` runs, so every key in it is caller-chosen. An earlier
+ * version of this guard answered 500, which meant any authenticated caller
+ * could append `{"password":"x"}` to any of the 107 idempotent endpoints and
+ * manufacture a server error at will. The refusal is real, but the fault is the
+ * caller's, so the answer is a client error in the same class the request would
+ * have received from a `.strict()` schema moments later.
+ *
+ * The case this guard exists for — a route that genuinely DECLARES a secret
+ * field — never reaches here at all: the registration gate in
+ * `tests/foundation/idempotency-secret-material.test.ts` fails the build first.
+ *
  * ## Reachability at the time of writing
  *
  * Nothing hits this today, and it is not dead code. `route-handler.ts` computes

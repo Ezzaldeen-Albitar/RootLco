@@ -129,7 +129,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-IAM-002', status: 401, owner: 'authorization', class: 'security', retryable: false },
   { code: 'ERR-INT-001', status: 409, owner: 'idempotency', class: 'conflict', retryable: false },
   { code: 'ERR-INT-002', status: 400, owner: 'idempotency', class: 'client', retryable: false },
-  { code: 'ERR-INT-003', status: 500, owner: 'idempotency', class: 'server', retryable: false },
+  { code: 'ERR-INT-003', status: 400, owner: 'idempotency', class: 'client', retryable: false },
   { code: 'ERR-NTF-001', status: 409, owner: 'notification', class: 'conflict', retryable: false },
   { code: 'ERR-PAG-001', status: 400, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-QMS-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },

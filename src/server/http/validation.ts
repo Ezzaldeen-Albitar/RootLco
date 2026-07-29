@@ -61,6 +61,27 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
  * object. `Object.create(null)` keeps that contract exactly: spread,
  * `JSON.stringify`, `Object.entries` and `safeParse` all behave identically.
  *
+ * ## Why `__proto__` is refused rather than stored
+ *
+ * A null prototype alone would have RELOCATED defect 2 rather than removed it.
+ * On a null-prototype object `__proto__` becomes a live own enumerable key, and
+ * the value travels: `Object.assign({}, query)` or a `for…in` copy writes it
+ * into a target that *does* have `Object.prototype`, re-arming the setter and
+ * reshaping **that** object instead. Measured — the copied target's prototype
+ * becomes the array, and it survives a `JSON.parse(JSON.stringify(…))` round
+ * trip. Before the change no `__proto__` key existed at all, so the anomaly
+ * died with the object. Storing it would have turned a self-contained problem
+ * into a portable one, which is a worse trade even though no caller copies this
+ * object today.
+ *
+ * So the parameter is refused. Silently dropping it is what the old code did by
+ * accident and is defect 3; a client naming this field gets a real error
+ * instead. No schema can declare a field called `__proto__` anyway, so nothing
+ * legitimate is being turned away. `constructor` and `prototype` are NOT
+ * refused: they are ordinary own keys with no setter behaviour, they shadow
+ * nothing that matters on a null-prototype object, and refusing them would
+ * reject requests from generic form serialisers for no benefit.
+ *
  * The one behaviour that does change: the result has no `Object.prototype`
  * methods, so `result.hasOwnProperty(...)` would throw. No caller does that —
  * every use in `src/` is the safe `Object.prototype.hasOwnProperty.call(…)`
@@ -69,6 +90,12 @@ export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: strin
 export function searchParamsToObject(params: URLSearchParams): Record<string, string | string[]> {
   const out = Object.create(null) as Record<string, string | string[]>;
   for (const key of new Set(params.keys())) {
+    if (key === '__proto__') {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Validation failed for query',
+        safeDetails: { violations: [{ path: 'query.__proto__', rule: 'forbidden_key' }] },
+      });
+    }
     const values = params.getAll(key);
     out[key] = values.length > 1 ? values : (values[0] ?? '');
   }

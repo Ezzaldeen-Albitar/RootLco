@@ -245,25 +245,53 @@ describe('searchParamsToObject — prototype safety', () => {
     ).toBeUndefined();
   });
 
-  it('treats __proto__ as an ordinary key instead of silently dropping it', () => {
+  it('refuses a __proto__ parameter instead of silently dropping it', () => {
     // On a plain `{}` this hit the setter: Object.keys() was empty and the field
     // never reached Zod — no value, no error, nothing to debug.
-    const out = searchParamsToObject(new URLSearchParams('__proto__=sent-by-client'));
-    expect(Object.keys(out)).toEqual(['__proto__']);
-    expect(out['__proto__']).toBe('sent-by-client');
+    const failure = captureFailure(() =>
+      searchParamsToObject(new URLSearchParams('__proto__=sent-by-client'))
+    );
+    expect(failure.code).toBe('ERR-VAL-001');
+    expect(failure.safeDetails.violations?.[0]).toEqual({
+      path: 'query.__proto__',
+      rule: 'forbidden_key',
+    });
   });
 
-  it('cannot have its own prototype reshaped by a repeated __proto__ parameter', () => {
+  it('refuses the repeated form too — the one that actually reshaped anything', () => {
     // The array form is what made this reachable: the `__proto__` setter ignores
     // a string but accepts an object, and repeated params produce an array.
-    const out = searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b'));
-    expect(Object.getPrototypeOf(out)).toBeNull();
-    expect(out['__proto__']).toEqual(['a', 'b']);
+    expect(
+      captureFailure(() => searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b')))
+        .code
+    ).toBe('ERR-VAL-001');
+  });
+
+  it('never hands back an object whose __proto__ key can travel into a copy', () => {
+    // The regression an adversarial review caught in the FIRST version of this
+    // fix. `Object.create(null)` alone turned `__proto__` into a live own key,
+    // and the value travelled: `Object.assign({}, query)` wrote it into a target
+    // that does have Object.prototype, re-arming the setter and reshaping THAT
+    // object — measured, and it survived a JSON round trip. The old plain-`{}`
+    // code never produced such a key, so storing it would have converted a
+    // self-contained anomaly into a portable one.
+    for (const query of ['limit=25', 'constructor=x&prototype=y', 'a.b=1&c[d]=2']) {
+      const out = searchParamsToObject(new URLSearchParams(query));
+      expect(Object.getOwnPropertyNames(out), query).not.toContain('__proto__');
+
+      const assigned = Object.assign({}, out);
+      expect(Array.isArray(Object.getPrototypeOf(assigned)), query).toBe(false);
+      expect(Object.getPrototypeOf(assigned), query).toBe(Object.prototype);
+
+      const copied: Record<string, unknown> = {};
+      for (const key in out) copied[key] = out[key];
+      expect(Object.getPrototypeOf(copied), query).toBe(Object.prototype);
+    }
   });
 
   it('leaves Object.prototype untouched for every dangerous key', () => {
     const before = Object.getOwnPropertyNames(Object.prototype).sort();
-    for (const key of ['__proto__', 'constructor', 'prototype', 'toString', 'valueOf']) {
+    for (const key of ['constructor', 'prototype', 'toString', 'valueOf']) {
       searchParamsToObject(new URLSearchParams(`${key}=x&${key}=y`));
       searchParamsToObject(new URLSearchParams(`${encodeURIComponent(key)}=x`));
     }
@@ -288,18 +316,19 @@ describe('searchParamsToObject — prototype safety', () => {
     // dotted or bracketed name is just a key with an odd character in it. The
     // test pins that: these must not be interpreted, merely stored.
     const out = searchParamsToObject(
-      new URLSearchParams('a.b=1&c%5Bd%5D=2&__pro%74o__=3&constructor.prototype.polluted=4')
+      new URLSearchParams('a.b=1&c%5Bd%5D=2&constructor.prototype.polluted=4')
     );
     expect(Object.getPrototypeOf(out)).toBeNull();
     expect(out['a.b']).toBe('1');
     expect(out['c[d]']).toBe('2');
-    expect(out['__proto__']).toBe('3');
     expect(out['constructor.prototype.polluted']).toBe('4');
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it('survives a generated sweep of dangerous key shapes', () => {
-    const bases = ['__proto__', 'constructor', 'prototype', '__defineGetter__', '__lookupGetter__'];
+    // '__proto__' itself is excluded: it is refused outright, and its own
+    // tests above cover that. Everything else must be stored inertly.
+    const bases = ['constructor', 'prototype', '__defineGetter__', '__lookupGetter__'];
     const shapes = bases.flatMap((base) => [
       base,
       `${base}.x`,
@@ -325,7 +354,7 @@ describe('searchParamsToObject — prototype safety', () => {
 
   it('still parses normally through Zod, including unknown-field stripping', () => {
     const result = Query.safeParse(
-      searchParamsToObject(new URLSearchParams('limit=25&role=viewer&__proto__=x&unknown=y'))
+      searchParamsToObject(new URLSearchParams('limit=25&role=viewer&unknown=y'))
     );
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -335,7 +364,9 @@ describe('searchParamsToObject — prototype safety', () => {
   it('one request cannot observe state injected by another', () => {
     // Object-local by construction: each call builds its own accumulator, so a
     // hostile first request leaves the second with nothing.
-    searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b&constructor=evil'));
+    // A hostile first request is refused outright; a benign one leaves nothing.
+    expect(() => searchParamsToObject(new URLSearchParams('__proto__=a&__proto__=b'))).toThrow();
+    searchParamsToObject(new URLSearchParams('constructor=evil'));
     const second = searchParamsToObject(new URLSearchParams('limit=1'));
     expect(Object.keys(second)).toEqual(['limit']);
     expect(second['constructor']).toBeUndefined();
