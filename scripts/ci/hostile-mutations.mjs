@@ -29,6 +29,16 @@ const SECRETS = 'npx vitest run tests/foundation/idempotency-secret-material.tes
 const POLICY = 'npx vitest run tests/ci/codeql-policy.test.ts';
 const FINGERPRINT = 'npx vitest run tests/foundation/idempotency-fingerprint.test.ts';
 const TEMPLATES = 'npx vitest run tests/foundation/route-templates.test.ts';
+/**
+ * P1-22 verifiers. The backend tier needs its own config because these suites talk to a
+ * real PostgreSQL — a mutation 'caught' by a suite that never reached the database would
+ * be caught by the connection failing, which proves nothing about the guard.
+ */
+const PAYMENTS =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-payments.test.ts';
+const WARRANTY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-warranty.test.ts';
+const MONEY_GATE = 'npx vitest run tests/foundation/exact-money-gate.test.ts';
 
 /**
  * Every `verify` command is a literal from this frozen table. Nothing here is
@@ -295,6 +305,97 @@ const MUTATIONS = Object.freeze([
     from: "    if (check.status !== 'completed') {",
     to: '    if (false) {',
     verify: POLICY,
+  },
+  // ---- Phase 1-22 — billing, payment, delivery and warranty ----------------
+  //
+  // These target the guards that have NO database backstop. Every one of them, if
+  // it survived, would mean the application is the only thing standing between a
+  // caller and a wrong financial or custody outcome — and that nothing would
+  // notice its removal.
+  //
+  // The verifier for each is the suite that is supposed to care. A mutation
+  // verified by a suite that does not exercise the guard is a mutation that
+  // proves the verifier wrong, not the guard safe.
+  {
+    id: 'M-22-01',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'a platform payment method is refused before it reaches the FK, because fk_receipts_method resolves (tenant_id, id) and a platform row carries a NULL tenant',
+    from: '      assertPaymentMethodIsTenantScoped(method);',
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-02',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim: 'an inactive or unknown-kind payment method is refused',
+    from: '      assertPaymentMethodUsable(method);',
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-03',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'the three allocation currencies must agree — sal.allocate_receipt compares receipt against invoice and never sees what the caller believed',
+    from: `      assertAllocationCurrencyCoherent(
+        declaredCurrency,
+        receipt.currencyCode,
+        invoice.currencyCode
+      );`,
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-04',
+    target: 'src/modules/payments/data/payments-repository.ts',
+    claim:
+      'an allocation is created by sal.allocate_receipt and by nothing else — app_runtime holds raw INSERT on sal.payment_allocations and no constraint bounds the sum',
+    from: 'const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4) AS id`;',
+    to: 'const ALLOCATE_RECEIPT_SQL = `INSERT INTO sal.payment_allocations (tenant_id) VALUES ($1) RETURNING id`;',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-05',
+    target: 'src/modules/warranty/application/warranty-service.ts',
+    claim:
+      'an ARCHIVED warranty policy is refused — wty.issue_warranty checks the coverage status and NEVER the policy status, so nothing else refuses it (CC-6)',
+    from: "    ruleRefusal('ERR-TRN-001', () => assertPolicyActive(policy.status, policy.policyCode));",
+    to: '',
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-06',
+    target: 'src/modules/warranty/application/warranty-service.ts',
+    claim: 'a warranty is generated only from a delivery that is committed as delivered',
+    from: "    ruleRefusal('ERR-TRN-001', () => assertDeliveryDelivered(delivery.status));",
+    to: '',
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-07',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim: 'recording a payment writes exactly one audit record',
+    from: '    await appendAudit(db, {',
+    to: '    if (false as boolean) await appendAudit(db, {',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-08',
+    target: 'src/modules/warranty/application/warranty-service.ts',
+    claim: 'generating a warranty publishes exactly one event, in the committing transaction',
+    from: '    await publishEvent(db, {',
+    to: '    if (false as boolean) await publishEvent(db, {',
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-09',
+    target: 'scripts/ci/check-exact-money.mjs',
+    claim:
+      'the exact-money gate refuses Number() on the financial surface — the loss it prevents is silent, unrepeatable, and invisible in a passing test',
+    from: '    pattern: /\\bNumber\\s*\\(/,',
+    to: '    pattern: /\\bNeverMatchesAnything\\s*\\(/,',
+    verify: MONEY_GATE,
   },
 ]);
 
