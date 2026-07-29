@@ -57,7 +57,7 @@ describe('the fingerprint refuses secret material', () => {
     const failure = capture(() =>
       requestFingerprint(context(), {
         method: 'POST',
-        path: '/auth/password',
+        path: '/auth/password-reset',
         body: { password: SECRET },
       })
     );
@@ -68,7 +68,7 @@ describe('the fingerprint refuses secret material', () => {
     const failure = capture(() =>
       requestFingerprint(context(), {
         method: 'POST',
-        path: '/auth/password',
+        path: '/auth/password-reset',
         body: { password: SECRET },
       })
     );
@@ -82,7 +82,7 @@ describe('the fingerprint refuses secret material', () => {
       capture(() =>
         requestFingerprint(context(), {
           method: 'POST',
-          path: '/x',
+          path: '/appointments',
           body: { credentials: { user: 'a', clientSecret: SECRET } },
         })
       ).code
@@ -94,7 +94,7 @@ describe('the fingerprint refuses secret material', () => {
       capture(() =>
         requestFingerprint(context(), {
           method: 'POST',
-          path: '/x',
+          path: '/appointments',
           body: { entries: [{ ok: 1 }, { otp: '123456' }] },
         })
       ).code
@@ -106,7 +106,7 @@ describe('the fingerprint refuses secret material', () => {
       capture(() =>
         requestFingerprint(context(), {
           method: 'POST',
-          path: '/x/{recoveryCode}',
+          path: '/auth/password-reset/completion',
           body: null,
           params: { recovery_code: SECRET },
         })
@@ -148,7 +148,7 @@ describe('the fingerprint refuses secret material', () => {
       const failure = capture(() =>
         requestFingerprint(context(), {
           method: 'POST',
-          path: '/x',
+          path: '/appointments',
           body: { [name]: SECRET },
         })
       );
@@ -172,12 +172,12 @@ describe('the fingerprint refuses secret material', () => {
       items: [{ quantity: 2, unitPrice: '3.00' }],
     };
     expect(() =>
-      requestFingerprint(context(), { method: 'POST', path: '/x', body: benign })
+      requestFingerprint(context(), { method: 'POST', path: '/appointments', body: benign })
     ).not.toThrow();
   });
 
   it('still produces a stable digest for a request with no secret', () => {
-    const request = { method: 'POST', path: '/v1/things', body: { amount: 10 } } as const;
+    const request = { method: 'POST', path: '/appointments', body: { amount: 10 } } as const;
     const a = requestFingerprint(context(), request);
     const b = requestFingerprint(context(), request);
     expect(a).toBe(b);
@@ -195,7 +195,7 @@ describe('the fingerprint refuses secret material', () => {
       capture(() =>
         requestFingerprint(anonymous, {
           method: 'POST',
-          path: '/x',
+          path: '/appointments',
           body: { password: SECRET },
         })
       ).code
@@ -212,7 +212,7 @@ describe('the fingerprint refuses secret material', () => {
     const failure = capture(() =>
       requestFingerprint(context(), {
         method: 'POST',
-        path: '/v1/things',
+        path: '/appointments',
         body: { amount: 10, password: SECRET },
       })
     );

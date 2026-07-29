@@ -142,23 +142,10 @@ export function severityOf(rule, result) {
 }
 
 /**
- * The set of files these SARIF documents actually analysed.
+ * Every file these SARIF documents mention. Reported, never used for scoping.
  *
- * CodeQL records every file it looked at in `run.artifacts`, and that set is the
- * honest scope of anything this invocation can say. It matters because
- * `code-security` is a MATRIX: the `actions` leg analyses 17 workflow YAML files
- * and no JavaScript at all, so a dismissal naming a `.mjs` path is not something
- * that leg is in any position to judge.
- *
- * This gate got that wrong on a real run. It declared a perfectly live dismissal
- * "stale" on the `actions` leg purely because the file it names was not in that
- * leg's language. An adversarial reviewer filed exactly this and I refuted it —
- * the reviewer's reproduction was against a dirty tree, so I dismissed the
- * claim along with the reproduction. The claim was right. A flawed reproduction
- * is not a refuted finding, and it took a hosted run to settle it.
- *
- * Returns an empty set when no run reports artifacts, which the caller must
- * treat as "cannot scope" rather than "analysed nothing".
+ * See `analysedRules` for why: this number is not a statement about what was
+ * analysed, and treating it as one is a mistake this gate has already made.
  */
 export function analysedPaths(documents) {
   const paths = new Set();
@@ -171,6 +158,84 @@ export function analysedPaths(documents) {
     }
   }
   return paths;
+}
+
+/**
+ * True when CodeQL analysed only part of the tree.
+ *
+ * `run.properties.incrementalMode` is CodeQL's own statement that it ran
+ * `diff-informed` — on a pull request it reports findings in changed regions and
+ * stays silent about everything else. **That silence is not an answer**, and
+ * this initiative has now been caught by it three times:
+ *
+ *  - a previous initiative read `/actions/runs` and called five heads green
+ *    while a check it never enumerated was red (AR-52);
+ *  - this gate reported "0 open findings" from pull-request runs and merged the
+ *    claim, and the first full-tree analysis found two open Highs;
+ *  - and then it called a live dismissal "stale", because a diff-informed run
+ *    does not re-report a finding whose file did not change.
+ *
+ * So a partial analysis is now allowed to say only what it can see: a blocking
+ * finding it DID observe still fails, because that is a positive observation.
+ * Anything resting on absence — staleness, the open-finding ceiling — is
+ * deferred to a full analysis and labelled, never assumed.
+ */
+export function isIncremental(documents) {
+  for (const { document } of documents) {
+    for (const run of document.runs ?? []) {
+      if (run?.properties?.incrementalMode) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The set of rule IDs this analysis was capable of reporting.
+ *
+ * This is what decides whether the invocation is entitled to call a dismissal
+ * stale. `code-security` is a MATRIX — one language per leg — and a leg running
+ * the `actions` pack can never produce a `js/…` finding, so it can never be
+ * evidence that a `js/…` dismissal has gone dead.
+ *
+ * CodeQL writes the pack's **whole** rule set here, not merely the rules that
+ * produced results: measured at 27 rules for `actions` and 201 for
+ * `javascript-typescript`, on runs carrying 0 and 1 results respectively. That
+ * is the property that matters — the check stays alive precisely when the tree
+ * is clean, which is when a stale entry would otherwise hide.
+ *
+ * ## Why not the analysed file list
+ *
+ * Because that was the first fix, it looked right, and it was wrong.
+ *
+ * `run.artifacts` is not "files this language analysed". On a pull request
+ * CodeQL runs `diff-informed` and the `actions` leg listed **17** files; on the
+ * push to `develop` the same leg listed **712**, including 640 `.ts` and 55
+ * `.mjs` files it cannot analyse and did not analyse. Scoping by path therefore
+ * agreed with reality on the PR by coincidence and reproduced the identical
+ * false "stale" failure on `develop` — the same defect, two runs apart, from a
+ * fix validated against a single run.
+ *
+ * Rule IDs have no such ambiguity: they are the pack's own declaration of what
+ * it can say.
+ *
+ * Returns an empty set when no run declares rules, which the caller must treat
+ * as "cannot scope" rather than "can report nothing".
+ */
+export function analysedRules(documents) {
+  const rules = new Set();
+  for (const { document } of documents) {
+    for (const run of document.runs ?? []) {
+      for (const rule of run?.tool?.driver?.rules ?? []) {
+        if (rule?.id) rules.add(rule.id);
+      }
+      for (const extension of run?.tool?.extensions ?? []) {
+        for (const rule of extension?.rules ?? []) {
+          if (rule?.id) rules.add(rule.id);
+        }
+      }
+    }
+  }
+  return rules;
 }
 
 /** Flattens every result across every SARIF document into one finding list. */
@@ -232,6 +297,7 @@ function dismissalMatches(entry, finding) {
  * @returns {{
  *   ok: boolean,
  *   decision: string,
+ *   partial: boolean,
  *   failures: string[],
  *   warnings: string[],
  *   counts: { total: number, open: number, dismissed: number, suppressed: number,
@@ -254,6 +320,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
     return {
       ok: false,
       decision: 'No-Go',
+      partial: false,
       failures,
       warnings,
       findings: [],
@@ -269,6 +336,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
     return {
       ok: false,
       decision: 'No-Go',
+      partial: false,
       failures,
       warnings,
       findings: [],
@@ -372,17 +440,23 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
 
   // ---- 4. a dismissal that matches nothing is a lie about the tree ---------
   //
-  // But ONLY where this invocation actually looked. `code-security` is a matrix
-  // and each leg carries one language, so the `actions` leg sees 17 workflow
-  // YAML files and no JavaScript — a `.mjs` dismissal is outside its scope
-  // entirely, and calling it stale is a claim the leg has no evidence for. This
-  // gate did exactly that on a real run, against a live and correct entry.
+  // But only where this invocation could have produced the finding at all.
+  // `code-security` is a matrix, one language per leg, and a leg running the
+  // `actions` pack can never emit a `js/…` result — so its silence about a
+  // `js/…` dismissal is not evidence that the entry has gone dead.
   //
-  // When no run reports artifacts the scope is UNKNOWN, and the gate judges
-  // anyway rather than going quiet: an unscopeable run losing the staleness
-  // check silently is worse than an occasional false stale report, because the
-  // first is invisible.
+  // Scoped by RULE ID, not by analysed path. The path version was the first fix,
+  // it looked right, and it was wrong: `run.artifacts` listed 17 files on the
+  // pull request (`diff-informed`) and 712 on the push to `develop`, same leg,
+  // same language — so it agreed with reality once by coincidence and then
+  // reproduced the identical false failure on a protected branch.
+  //
+  // When no run declares rules the scope is UNKNOWN, and the gate judges anyway
+  // rather than going quiet: silently losing the check is worse than an
+  // occasional false stale report, because the first is invisible.
   const analysed = analysedPaths(documents);
+  const reportableRules = analysedRules(documents);
+  const partial = isIncremental(documents);
   const unjudged = [];
   dismissals.forEach((entry, index) => {
     if (usedDismissals.has(index)) return;
@@ -391,7 +465,14 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
       (finding) => finding.suppressed && dismissalMatches(entry, finding)
     );
     if (suppressedMatch) return;
-    if (analysed.size > 0 && !analysed.has(normalisePath(entry.path))) {
+    // A diff-informed run does not re-report a finding whose file did not
+    // change, so on a pull request EVERY dismissal looks stale. Judging one here
+    // is reading silence as an answer.
+    if (partial) {
+      unjudged.push(entry);
+      return;
+    }
+    if (reportableRules.size > 0 && !reportableRules.has(entry.ruleId)) {
       unjudged.push(entry);
       return;
     }
@@ -400,17 +481,21 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
         'The finding was fixed, or it moved — either way this entry is stale. Remove it.'
     );
   });
-  if (analysed.size === 0 && dismissals.length > 0) {
+  if (!partial && reportableRules.size === 0 && dismissals.length > 0) {
     warnings.push(
-      'no run reported the files it analysed, so every dismissal was judged for staleness ' +
-        'without knowing whether its path was in scope. Reported rather than assumed.'
+      'no run declared its rule set, so every dismissal was judged for staleness without ' +
+        'knowing whether this analysis could report that rule at all. Reported, not assumed.'
     );
   }
   for (const entry of unjudged) {
     warnings.push(
-      `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged here — ` +
-        `that path is not among the ${analysed.size} file(s) this analysis covered. ` +
-        'Another language leg owns it.'
+      partial
+        ? `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged — this is a ` +
+            'PARTIAL (diff-informed) analysis, which does not re-report a finding whose file ' +
+            'did not change. Staleness is a full-analysis question.'
+        : `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged here — ` +
+            `this analysis declares ${reportableRules.size} rule(s) and \`${entry.ruleId}\` is ` +
+            'not among them, so it could never have produced that finding. Another leg owns it.'
     );
   }
 
@@ -458,9 +543,22 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
 
   const ceiling = baseline.maximumOpenFindings;
   if (typeof ceiling === 'number' && open.length > ceiling) {
+    // A count ABOVE the ceiling is a positive observation and blocks whether the
+    // analysis was partial or not: these findings were seen.
     failures.push(
       `open findings rose to ${open.length}, above the recorded ceiling of ${ceiling}. ` +
         'Raise the ceiling in the same commit that justifies it, or fix the new finding.'
+    );
+  } else if (partial) {
+    // A count AT OR BELOW the ceiling proves nothing on a partial analysis: it
+    // is the number of findings in the changed regions, not in the tree. This is
+    // precisely the reading that let "0 open findings" be merged while two Highs
+    // sat on `develop`, so the gate now refuses to claim the ceiling was met and
+    // says which kind of run it was.
+    warnings.push(
+      `PARTIAL analysis (diff-informed): ${open.length} open finding(s) in the changed ` +
+        `regions only. This does NOT establish the repository ceiling of ${ceiling ?? 'n/a'} — ` +
+        'only a full analysis does, and one runs on every push to a protected branch.'
     );
   } else if (typeof ceiling === 'number' && open.length < ceiling) {
     warnings.push(
@@ -470,7 +568,11 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
 
   return {
     ok: failures.length === 0,
-    decision: failures.length === 0 ? 'Go' : 'No-Go',
+    // "Go (partial)" is not decoration. A reader who sees plain "Go" on a
+    // diff-informed run will believe the tree was judged, which is the mistake
+    // that reached a merge commit.
+    decision: failures.length === 0 ? (partial ? 'Go (partial)' : 'Go') : 'No-Go',
+    partial,
     failures,
     warnings,
     counts,
@@ -491,6 +593,9 @@ export function toMarkdown(result) {
   lines.push(`| Dismissed by GitHub | ${result.counts?.suppressed ?? 0} |`);
   lines.push(`| Files analysed | ${result.counts?.filesAnalysed ?? 0} |`);
   lines.push(
+    `| Analysis scope | ${result.partial ? '**PARTIAL** — diff-informed, changed regions only' : 'full tree'} |`
+  );
+  lines.push(
     `| Dismissals out of this leg's scope | ${result.counts?.dismissalsOutOfScope ?? 0} |`
   );
   for (const severity of ['critical', 'high', 'medium', 'low']) {
@@ -506,7 +611,7 @@ export function toMarkdown(result) {
   for (const warning of result.warnings) lines.push(`> ⚠️ ${warning}`);
   if (result.warnings.length > 0) lines.push('');
 
-  lines.push(`**CodeQL policy: ${result.ok ? 'Go' : 'No-Go'}**`);
+  lines.push(`**CodeQL policy: ${result.decision ?? (result.ok ? 'Go' : 'No-Go')}**`);
   return lines.join('\n');
 }
 
