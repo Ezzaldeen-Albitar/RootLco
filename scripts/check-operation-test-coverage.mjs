@@ -132,6 +132,26 @@ export const P1_20_PREFIXES = ['svc.', 'quo.'];
  * keeps the gate green. Both hooks or neither.
  */
 export const P1_21_PREFIXES = ['inv.'];
+/**
+ * P1-22 spans TWO id namespaces — `sal.` (billing, payment and delivery, which
+ * share the frozen Phase 1-11 `sal` schema) and `wty.` (warranty).
+ *
+ * The P1-22 archaeology measured what this array's absence costs, and the answer
+ * was worse than P1-20's: with neither hook extended, `derivedRequirements()`
+ * returned `[]` for a `wty.` read — no route, no service, no authorization, no
+ * isolation — so an operation could be credited at depth on evidence that was
+ * never required, exactly the P1-20 defect. And because the
+ * `parseProvidedFlags` alternation was blind too, a `sal.`/`wty.` declaration
+ * parsed to NOTHING, so the one namespace-agnostic obligation that did derive
+ * (`idempotency`, from CSA-22) could not be satisfied by any declaration a test
+ * could write. One hook alone is not half a gate — the two failures compound in
+ * opposite directions, and only extending both is coherent.
+ *
+ * `rpt.` is deliberately absent: Phase 1-11 also froze a `rpt` schema, but P1-22
+ * registers no `rpt.` operation. A prefix listed here with no operations behind
+ * it would report a vacuous 0/0 phase block that looks like passing coverage.
+ */
+export const P1_22_PREFIXES = ['sal.', 'wty.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -140,6 +160,7 @@ const DERIVED_PREFIXES = [
   ...P1_19_PREFIXES,
   ...P1_20_PREFIXES,
   ...P1_21_PREFIXES,
+  ...P1_22_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1731,14 +1752,15 @@ export function parseProvidedFlags(source) {
       continue;
     }
     // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
-    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19, and
-    // `svc`/`quo` with P1-20. The prefix list is explicit rather
+    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19,
+    // `svc`/`quo` with P1-20, `inv` with P1-21, and `sal`/`wty` with P1-22. The
+    // prefix list is explicit rather
     // than a wildcard so a typo in a declaration is a missing flag — which fails
     // the gate — instead of a silently accepted new namespace. Forgetting to add a
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1978,9 +2000,13 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((prefix) =>
-        id.startsWith(prefix)
-      );
+      const strict = [
+        ...P1_18_PREFIXES,
+        ...P1_19_PREFIXES,
+        ...P1_20_PREFIXES,
+        ...P1_21_PREFIXES,
+        ...P1_22_PREFIXES,
+      ].some((prefix) => id.startsWith(prefix));
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -2009,9 +2035,33 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
     // gate over a merged phase belongs in that phase's own remediation, not in a
     // later phase's feature branch.
+    //
+    // P1-22 (`sal.`/`wty.`) opts in for a reason worth stating plainly: the phase
+    // must report `metadata-only 0` and `unit-only 0` as acceptance criteria, and
+    // a namespace absent from THIS list computes both as `false` for every row.
+    // The counts would then read 0 because nothing was ever measured, not because
+    // nothing was wrong — a vacuous green of exactly the kind this gate exists to
+    // prevent.
+    //
+    // `inv.` (P1-21) is opted in at the same time, and the merged-phase caution
+    // above is why it needed a measurement first rather than an assumption. P1-21
+    // shipped both derived hooks but neither structural one and no phase-count
+    // block, so adding the block alone would have printed an unmeasured
+    // `P1-21 metadata-only: 0`. Opting the namespace in was measured before it was
+    // done: across all 14 `inv.` operations, metadata-only 0, unit-only 0,
+    // invocation-only 0, internal-without-reason 0, and 0 failing the strict
+    // comment ratchet. It costs nothing and makes the printed figure true, which
+    // is the opposite of the `crm.`/`veh.` case — those genuinely fail 38 rows and
+    // stay out, as P1-18-R-02 records.
     const isDerived =
       id.startsWith(DERIVED_PREFIX) ||
-      [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((p) => id.startsWith(p));
+      [
+        ...P1_18_PREFIXES,
+        ...P1_19_PREFIXES,
+        ...P1_20_PREFIXES,
+        ...P1_21_PREFIXES,
+        ...P1_22_PREFIXES,
+      ].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -2076,6 +2126,10 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
   // P1-20 spans two namespaces, so its phase row set is their union.
   const p1_20Rows = matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-21 spans one namespace.
+  const p1_21Rows = matrix.filter((m) => P1_21_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-22 spans two namespaces, so its phase row set is their union.
+  const p1_22Rows = matrix.filter((m) => P1_22_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -2106,6 +2160,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_18: phaseCounts(aptRecRows),
     p1_19: phaseCounts(p1_19Rows),
     p1_20: phaseCounts(p1_20Rows),
+    p1_21: phaseCounts(p1_21Rows),
+    p1_22: phaseCounts(p1_22Rows),
   };
   return { failures, matrix, counts };
 }
@@ -2238,6 +2294,24 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-21', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_21,
+      operations: matrix.filter((m) => P1_21_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-22', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_22,
+      operations: matrix.filter((m) => P1_22_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -2308,6 +2382,24 @@ async function runCli() {
     console.log(`P1-20 unit-only: ${u.unitOnly}`);
     console.log(`P1-20 unreferenced: ${u.unreferenced}`);
     console.log(`P1-20 metadata-only: ${u.metadataOnly}`);
+    const v = counts.p1_21;
+    console.log('');
+    console.log(`P1-21 registered public operations: ${v.registered}`);
+    console.log(`P1-21 operation-depth: ${v.operationDepth}`);
+    console.log(`P1-21 invocation-only: ${v.invocationOnly}`);
+    console.log(`P1-21 pending: ${v.pending}`);
+    console.log(`P1-21 unit-only: ${v.unitOnly}`);
+    console.log(`P1-21 unreferenced: ${v.unreferenced}`);
+    console.log(`P1-21 metadata-only: ${v.metadataOnly}`);
+    const w = counts.p1_22;
+    console.log('');
+    console.log(`P1-22 registered public operations: ${w.registered}`);
+    console.log(`P1-22 operation-depth: ${w.operationDepth}`);
+    console.log(`P1-22 invocation-only: ${w.invocationOnly}`);
+    console.log(`P1-22 pending: ${w.pending}`);
+    console.log(`P1-22 unit-only: ${w.unitOnly}`);
+    console.log(`P1-22 unreferenced: ${w.unreferenced}`);
+    console.log(`P1-22 metadata-only: ${w.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

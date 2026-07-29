@@ -28,8 +28,10 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   MANIFEST,
+  P1_22_PREFIXES,
   derivedRequirements,
   evaluateCoverage,
+  isDerivedId,
   parseProvidedFlags,
   stripCoverageBlock,
   stripComments,
@@ -484,6 +486,346 @@ describe('shared.demo-op', () => { it('invokes shared.demo-op', () => {}); });
             : null,
     });
     expect(failures).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// P1-22 (`sal.` / `wty.`): both derived hooks, each provably load-bearing
+// ===========================================================================
+
+/**
+ * The P1-22 archaeology (SB7) measured this gate against the phase it was about
+ * to gate and found it blind in TWO independent places:
+ *
+ *   1. `DERIVED_PREFIXES` did not list `sal.`/`wty.`, so `derivedRequirements()`
+ *      returned `[]` for a `wty.` read — no route, no service, no authorization,
+ *      no isolation — and the required floor became whatever the manifest chose
+ *      to volunteer. That is the P1-20 defect verbatim.
+ *   2. the `parseProvidedFlags` alternation did not accept `sal|wty`, so every
+ *      declaration a P1-22 test could write parsed to NOTHING.
+ *
+ * The two failures compound in OPPOSITE directions, which is why "extend one and
+ * the gate is half-fixed" is false. With only hook 1 blind, evidence is provided
+ * but not required, and deleting the assertions keeps the gate green. With only
+ * hook 2 blind, evidence is required but unprovidable, and no honest suite can
+ * pass. Both, and the phase is silently ungated.
+ *
+ * These suites are the contract for both hooks. Each is mutation-detectable on
+ * its own: remove `P1_22_PREFIXES` from `DERIVED_PREFIXES` and the derived-floor
+ * assertions fail; remove `sal|wty` from the alternation and the declaration
+ * assertions fail. Neither removal can hide behind the other.
+ */
+describe('operation coverage gate — P1-22 hook 1: the derived floor', () => {
+  /** A branch-scoped, audited, idempotent billing mutation with a path parameter. */
+  const salMutation = {
+    id: 'sal.invoice-issue',
+    module: 'billing',
+    method: 'POST',
+    path: '/invoices/{invoiceId}/issuance',
+    scope: 'branch',
+    auditClass: 'financial',
+    public: false,
+    idempotent: true,
+    versionGuarded: false,
+    surface: 'public-api',
+    source: 'src/app/api/v1/invoices/[invoiceId]/issuance/route.ts',
+  };
+  /** A branch-scoped billing read: no audit, no replay, still a full floor. */
+  const salRead = {
+    ...salMutation,
+    id: 'sal.invoice-read',
+    method: 'GET',
+    path: '/invoices/{invoiceId}',
+    auditClass: 'none',
+    idempotent: false,
+    source: 'src/app/api/v1/invoices/[invoiceId]/route.ts',
+  };
+  const wtyMutation = {
+    ...salMutation,
+    id: 'wty.warranty-generate',
+    module: 'warranty',
+    path: '/deliveries/{deliveryId}/warranties',
+    auditClass: 'standard',
+    source: 'src/app/api/v1/deliveries/[deliveryId]/warranties/route.ts',
+  };
+  const wtyRead = {
+    ...salRead,
+    id: 'wty.warranty-read',
+    module: 'warranty',
+    path: '/warranties/{warrantyId}',
+    source: 'src/app/api/v1/warranties/[warrantyId]/route.ts',
+  };
+
+  it('recognises both P1-22 namespaces as derived-evidence namespaces', () => {
+    expect(P1_22_PREFIXES).toEqual(['sal.', 'wty.']);
+    expect(isDerivedId('sal.invoice-issue')).toBe(true);
+    expect(isDerivedId('wty.warranty-generate')).toBe(true);
+  });
+
+  it('does NOT silently accept a neighbouring namespace that registers nothing', () => {
+    // Phase 1-11 froze `rpt` alongside `sal`/`wty`. Listing a prefix with no
+    // operations behind it would report a vacuous 0/0 phase block that reads like
+    // passing coverage, so `rpt.` is deliberately absent.
+    expect(isDerivedId('rpt.report-read')).toBe(false);
+  });
+
+  it('a sal.* READ derives its full mandatory floor, never an empty list', () => {
+    const derived = derivedRequirements(salRead);
+    expect(derived).not.toEqual([]);
+    expect([...derived].sort()).toEqual([
+      'authorization',
+      'cross-tenant',
+      'isolation',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('a sal.* MUTATION additionally derives audit and replay evidence', () => {
+    const derived = derivedRequirements(salMutation);
+    expect([...derived].sort()).toEqual([
+      'audit',
+      'authorization',
+      'cross-tenant',
+      'idempotency',
+      'isolation',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('a wty.* READ derives its full mandatory floor, never an empty list', () => {
+    const derived = derivedRequirements(wtyRead);
+    expect(derived).not.toEqual([]);
+    expect([...derived].sort()).toEqual([
+      'authorization',
+      'cross-tenant',
+      'isolation',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('a wty.* MUTATION additionally derives audit and replay evidence', () => {
+    const derived = derivedRequirements(wtyMutation);
+    expect(derived).toContain('audit');
+    expect(derived).toContain('idempotency');
+    expect([...derived].sort()).toEqual([
+      'audit',
+      'authorization',
+      'cross-tenant',
+      'idempotency',
+      'isolation',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('an idempotent billing/payment operation derives replay evidence', () => {
+    // The obligation is created by the flag, not by the manifest: a payment that
+    // promises the caller a safe retry owes the proof. CSA-22 is what the absence
+    // of this rule looked like — ten operations declared it and nothing replayed.
+    const payment = { ...salMutation, id: 'sal.payment-record', path: '/payments' };
+    expect(derivedRequirements(payment)).toContain('idempotency');
+    expect(derivedRequirements({ ...payment, idempotent: false })).not.toContain('idempotency');
+  });
+
+  it('a branch-scoped operation derives isolation evidence, and a tenant-scoped one does not', () => {
+    expect(derivedRequirements(salRead)).toContain('isolation');
+    expect(derivedRequirements({ ...salRead, scope: 'company' })).toContain('isolation');
+    expect(derivedRequirements({ ...salRead, scope: 'tenant' })).not.toContain('isolation');
+  });
+
+  it('a version-guarded P1-22 operation derives concurrency (stale-version) evidence', () => {
+    expect(derivedRequirements({ ...salMutation, versionGuarded: true })).toContain(
+      'stale-version'
+    );
+  });
+});
+
+describe('operation coverage gate — P1-22 hook 2: declarations are readable', () => {
+  const block = [
+    '/**',
+    ' * COVERAGE-EVIDENCE (P1-22):',
+    ' *   sal.invoice-issue: route service authorization success audit outbox isolation',
+    ' *   wty.warranty-generate: route service authorization success audit isolation',
+    ' */',
+  ].join('\n');
+
+  it('parses a sal.* declaration', () => {
+    const flags = parseProvidedFlags(block).get('sal.invoice-issue');
+    expect(flags).toBeDefined();
+    expect([...(flags ?? [])].sort()).toEqual([
+      'audit',
+      'authorization',
+      'isolation',
+      'outbox',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('parses a wty.* declaration', () => {
+    const flags = parseProvidedFlags(block).get('wty.warranty-generate');
+    expect(flags).toBeDefined();
+    expect([...(flags ?? [])].sort()).toEqual([
+      'audit',
+      'authorization',
+      'isolation',
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
+  it('still refuses a namespace that is not registered in the alternation', () => {
+    // The alternation is explicit rather than a wildcard precisely so a typo is a
+    // missing flag (which fails) instead of a silently accepted new namespace.
+    const typo = block.replace('sal.invoice-issue', 'sale.invoice-issue');
+    expect(parseProvidedFlags(typo).has('sale.invoice-issue')).toBe(false);
+  });
+});
+
+describe('operation coverage gate — P1-22 end to end: deleting evidence FAILS', () => {
+  const FILE = 'tests/backend/p1-22-demo.test.ts';
+  const OP = {
+    id: 'sal.invoice-issue',
+    module: 'billing',
+    method: 'POST',
+    path: '/invoices/{invoiceId}/issuance',
+    scope: 'branch',
+    auditClass: 'financial',
+    public: false,
+    idempotent: true,
+    versionGuarded: false,
+    surface: 'public-api',
+    source: 'src/app/api/v1/invoices/[invoiceId]/issuance/route.ts',
+  };
+
+  /**
+   * A synthetic suite. The operation id is referenced in a `describe` title —
+   * i.e. in executable code — because P1-22 is governed by the strict comment
+   * ratchet and a prose mention would not count.
+   *
+   * The leading `/**` matters and was earned. Written without it, the header is
+   * not a comment at all: `stripComments` is a lexical scanner, so with no opener
+   * it treats those lines as code, the id "appears in executable code" for free,
+   * and the ratchet this suite claims to exercise is never engaged. The
+   * declaration still parses (that path is line-based, so it never noticed), which
+   * is what made the omission invisible — three of these cases passed for a reason
+   * that had nothing to do with what they assert.
+   */
+  const fileWith = (flags: readonly string[]): string => `/**
+ * COVERAGE-EVIDENCE (P1-22):
+ *   sal.invoice-issue: ${flags.join(' ')}
+ */
+describe('sal.invoice-issue', () => { it('issues once', () => {}); });
+`;
+
+  const FULL = [
+    'route',
+    'service',
+    'authorization',
+    'success',
+    'cross-tenant',
+    'isolation',
+    'audit',
+    'idempotency',
+  ];
+
+  const run = (flags: readonly string[], operation: Record<string, unknown> = OP) =>
+    evaluateCoverage({
+      registered: new Map([[OP.id, operation]]),
+      manifest: { [OP.id]: { files: [FILE], required: ['outbox'] } },
+      readFile: (p: string) => (p === FILE ? fileWith(flags) : null),
+    });
+
+  it('PASSES with the complete derived floor plus the declared outbox obligation', () => {
+    expect(run([...FULL, 'outbox']).failures).toEqual([]);
+  });
+
+  it('reports the operation in the P1-22 phase block at operation depth', () => {
+    const { counts } = run([...FULL, 'outbox']);
+    expect(counts.p1_22).toEqual({
+      registered: 1,
+      publicApi: 1,
+      operationDepth: 1,
+      invocationOnly: 0,
+      pending: 0,
+      unitOnly: 0,
+      unreferenced: 0,
+      metadataOnly: 0,
+    });
+  });
+
+  // Each kind is deleted individually: a floor that fails only when everything
+  // is missing at once is not a floor.
+  for (const kind of [
+    'route',
+    'service',
+    'authorization',
+    'success',
+    'cross-tenant',
+    'isolation',
+    'audit',
+    'idempotency',
+    'outbox',
+  ]) {
+    it(`FAILS when ${kind} evidence is deleted`, () => {
+      const remaining = [...FULL, 'outbox'].filter((f) => f !== kind);
+      const { failures } = run(remaining);
+      expect(failures.length).toBeGreaterThan(0);
+      expect(failures.some((f: string) => f.includes(kind))).toBe(true);
+    });
+  }
+
+  it('FAILS as metadata-only when neither route nor service is declared', () => {
+    // Vacuous unless `sal.` is in the structural opt-in list: without it
+    // `metadataOnly` is computed as false for every row and the phase would
+    // report `metadata-only 0` because nothing was measured.
+    const { failures, counts } = run(['authorization', 'success']);
+    expect(failures.some((f: string) => f.includes('metadata-only'))).toBe(true);
+    expect(counts.p1_22.metadataOnly).toBe(1);
+  });
+
+  it('FAILS as unit-only when the only evidence is a pure-unit suite', () => {
+    const unitFile = 'tests/foundation/p1-22-demo.test.ts';
+    const { failures, counts } = evaluateCoverage({
+      registered: new Map([[OP.id, OP]]),
+      manifest: { [OP.id]: { files: [unitFile], required: [] } },
+      readFile: (p: string) => (p === unitFile ? fileWith(FULL) : null),
+    });
+    expect(failures.some((f: string) => f.includes('unit-only'))).toBe(true);
+    expect(counts.p1_22.unitOnly).toBe(1);
+  });
+
+  it('FAILS under the strict ratchet when the id appears only in prose', () => {
+    // P1-22 is opted into the P1-18 comment ratchet, so an "Operations exercised
+    // here" header cannot stand in for a test.
+    const prose = `/**
+ * Operations exercised here: sal.invoice-issue
+ *
+ * COVERAGE-EVIDENCE (P1-22):
+ *   sal.invoice-issue: ${[...FULL, 'outbox'].join(' ')}
+ */
+describe('something else entirely', () => {});
+`;
+    const { failures } = evaluateCoverage({
+      registered: new Map([[OP.id, OP]]),
+      manifest: { [OP.id]: { files: [FILE], required: [] } },
+      readFile: (p: string) => (p === FILE ? prose : null),
+    });
+    expect(failures.some((f: string) => f.includes('does not reference'))).toBe(true);
+  });
+
+  it('FAILS when a P1-22 operation is registered outside a route file with no reason', () => {
+    const { failures } = run([...FULL, 'outbox'], { ...OP, surface: 'internal' });
+    expect(failures.some((f: string) => f.includes('internalReason'))).toBe(true);
   });
 });
 

@@ -1,0 +1,14 @@
+{
+  "generatedFrom": "scripts/check-operation-test-coverage.mjs",
+  "counts": {
+    "registered": 0,
+    "publicApi": 0,
+    "operationDepth": 0,
+    "invocationOnly": 0,
+    "pending": 0,
+    "unitOnly": 0,
+    "unreferenced": 0,
+    "metadataOnly": 0
+  },
+  "operations": []
+}
