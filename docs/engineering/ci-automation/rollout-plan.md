@@ -85,22 +85,23 @@ Two consequences worth carrying:
 
 ## After the pull request is open
 
-| #   | Step                                                | Who       | Evidence                                                                       |
-| --- | --------------------------------------------------- | --------- | ------------------------------------------------------------------------------ |
-| 1   | First hosted `pr-ci` run                            | automatic | 13 jobs; expect first-run failures — the workflows have never executed         |
-| 2   | Diagnose from artifacts, fix, push                  | —         | never re-run blindly                                                           |
-| 3   | Record the measured baselines the run produces      | **owner** | backend coverage, build size, image size, seeded structural tables — see below |
-| 4   | `ci-gate` **Go** at one exact SHA                   | —         | run URL                                                                        |
-| 5   | Merge with a **merge commit**                       | owner     | no squash, no rebase                                                           |
-| 6   | `protected-gate` on the merge SHA                   | automatic | run URL                                                                        |
-| 7   | Gate branch, documentation-only, gate PR            | —         | proves the clean room cannot be skipped                                        |
-| 8   | `protected-gate` on the final develop SHA           | automatic | run URL                                                                        |
-| 9   | Add `ci-gate` to required checks                    | owner     | branch protection                                                              |
-| 10  | Remove the four `ci.yml` job names; delete `ci.yml` | owner     | separate PR                                                                    |
+| #   | Step                                                | Who       | Evidence                                                               |
+| --- | --------------------------------------------------- | --------- | ---------------------------------------------------------------------- |
+| 1   | First hosted `pr-ci` run                            | automatic | 13 jobs; expect first-run failures — the workflows have never executed |
+| 2   | Diagnose from artifacts, fix, push                  | —         | never re-run blindly                                                   |
+| 3   | Record the measured baselines the run produces      | **done**  | from run 19 artifacts — see `evidence/hosted-baselines.md`             |
+| 4   | `ci-gate` **Go** at one exact SHA                   | —         | run URL                                                                |
+| 5   | Merge with a **merge commit**                       | owner     | no squash, no rebase                                                   |
+| 6   | `protected-gate` on the merge SHA                   | automatic | run URL                                                                |
+| 7   | Gate branch, documentation-only, gate PR            | —         | proves the clean room cannot be skipped                                |
+| 8   | `protected-gate` on the final develop SHA           | automatic | run URL                                                                |
+| 9   | Add `ci-gate` to required checks                    | owner     | branch protection                                                      |
+| 10  | Remove the four `ci.yml` job names; delete `ci.yml` | owner     | separate PR                                                            |
 
-Steps **3**, 5, 9 and 10 are owner actions. Step 3 was reassigned once the
-measurements turned out to live only in artifacts and job summaries, neither of
-which is readable without a signed-in session.
+Steps **5**, 9 and 10 are owner actions. Step 3 had been reassigned to the owner
+once the measurements turned out to live only in artifacts and job summaries,
+neither of which is readable without a signed-in session; it is now closed,
+because a session was available and the artifacts were read directly.
 
 ## Baselines to record from the first hosted runs
 
@@ -119,32 +120,46 @@ Committed **unset** on purpose. Each has the reason written in its file.
 Until each is recorded, its gate **reports the measurement and passes**. That is
 measure-first, not a disabled check — and each file says which it is.
 
-### Step 3 is OPEN, and cannot be closed from this environment
+### Step 3 is CLOSED — recorded from run 19
 
-Still unset after eight hosted runs:
+Every baseline that could be established has been, from the artifacts of **PR CI
+run 19** (`30431556718`) at `8d7bfff09cf914e00ff5ff4587341ece261185c3`. Full
+provenance, per number, in
+[`evidence/hosted-baselines.md`](evidence/hosted-baselines.md).
 
-| File                             | Unset                                                   |
-| -------------------------------- | ------------------------------------------------------- |
-| `build-size-baseline.json`       | `standaloneBytes`, `staticBytes`, `totalBytes`          |
-| `container-baseline.json`        | `imageSizeBytes`                                        |
-| `coverage-baseline.backend.json` | `establishedBy` (the floors themselves are set)         |
-| `schema-baseline.json`           | `seededStructuralTables`                                |
-| `performance-baseline.json`      | `establishedBy` — needs three agreeing nightlies anyway |
+| File                             | Was unset                                      | Now                                                                    |
+| -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------- |
+| `build-size-baseline.json`       | `standaloneBytes`, `staticBytes`, `totalBytes` | 34,367,299 / 632,213 / 66,333,419 bytes                                |
+| `container-baseline.json`        | `imageSizeBytes`                               | 202,909,674 bytes, uncompressed, plus the local image ID and 12 layers |
+| `coverage-baseline.backend.json` | `establishedBy`, `global`, `criticalModules`   | 86.38 / 86.38 / 86.73 / 80.08, and six floors promoted from planned    |
+| `schema-baseline.json`           | `structuralTotals`, `seededStructuralTables`   | 242/514/631/541/0, and the seven structural catalogs enumerated        |
+| `test-count-baseline.json`       | unit floor rested on a local 1024              | hosted 1082/1624/1380; unit floor raised 1000 → 1050                   |
+| `performance-baseline.json`      | `establishedBy`, `queries`                     | **still unset** — see below                                            |
 
-The runs that measured these have all passed. The numbers exist. They are written
-to the job summary and to the uploaded evidence artifact — **and neither is
-readable without a signed-in session** (see above). So this step is reassigned to
-the owner rather than left looking done.
+This was previously reassigned to the owner on the grounds that artifacts and
+job summaries are unreadable without a signed-in session. That constraint was
+real but not permanent: an authenticated GitHub session was available for this
+pass, all 17 artifacts were downloaded and parsed, and the numbers were taken
+from the machine-readable JSON rather than from any log.
 
-To close it, for each baseline: download the job's `evidence-*` artifact, read the
-measured value, and commit it with `establishedBy` set to the run URL. Do it in a
-reviewable commit of its own — a ratchet whose origin nobody can point at is not
-a ratchet.
+Still NOT closed by measuring locally, which remains the wrong way to do it. A
+Windows workstation build is not the artefact the ratchet guards, and seeding a
+size or coverage floor from the wrong environment produces a gate that is either
+permanently slack or fails on its first honest run.
 
-Deliberately NOT closed by measuring locally. A Windows workstation build is not
-the artefact the ratchet is meant to guard, and seeding a size or coverage floor
-from the wrong environment produces a gate that is either permanently slack or
-fails on its first honest run.
+#### The one that stays open
+
+`performance-baseline.json` could not be established here, and no amount of
+session access would have changed that. Its measurement belongs to the
+`performance-baseline` job in `nightly-assurance.yml`, and **that workflow has
+never run**: a `schedule:` trigger fires only from the default branch, and the
+workflow exists only on this feature branch. Across the repository's entire run
+history the only workflows that have ever executed are `CI`, `PR CI` and `P1-21
+Hosted Clean Room`.
+
+It will be established by the first nightly after this branch merges. No PR-gate
+job reads the file, and `nightly-summary.mjs` classifies the job as
+`informational`, so a missing budget reports as missing rather than as passing.
 
 ## Expected first-run failures
 

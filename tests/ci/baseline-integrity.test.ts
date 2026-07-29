@@ -55,13 +55,96 @@ describe('committed baselines', () => {
     }
   });
 
-  it('the backend baseline is an unset placeholder, not a silenced ratchet', () => {
+  it('the backend baseline is established, and its ratchet is armed', () => {
     const baseline = read('coverage-baseline.backend.json');
-    // Measure-first is legitimate; a baseline that WAS established and then
-    // emptied is not. The distinction is `establishedBy`, and coverage-gate.mjs
-    // fails the second case.
-    expect(baseline.establishedBy).toBeNull();
+    // This test previously asserted the OPPOSITE — that `establishedBy` was
+    // null — because the tier had never been measured on a hosted runner and
+    // measure-first was the honest state. Run 19 measured it, so the assertion
+    // flips: from here on an empty `global` is a silenced ratchet, which is
+    // exactly the case coverage-gate.mjs fails when `establishedBy` is set.
+    expect(baseline.establishedBy).toBeTruthy();
+    expect(baseline.establishedBy).toMatch(/run id \d+/);
     expect(baseline.establishmentNote).toBeTruthy();
+    for (const metric of ['lines', 'statements', 'functions', 'branches']) {
+      expect(baseline.global[metric], metric).toBeTypeOf('number');
+      expect(baseline.global[metric], metric).toBeGreaterThan(50);
+    }
+  });
+
+  it('the committed backend baseline actually rejects a collapsed measurement', () => {
+    const collapsed = {
+      total: {
+        lines: { total: 100, covered: 10, pct: 10 },
+        statements: { total: 100, covered: 10, pct: 10 },
+        functions: { total: 100, covered: 10, pct: 10 },
+        branches: { total: 100, covered: 10, pct: 10 },
+      },
+    };
+    const result = evaluateCoverage(collapsed, read('coverage-baseline.backend.json'));
+    expect(result.ok, 'the committed backend baseline must reject a 10% measurement').toBe(false);
+  });
+
+  it('every backend critical-module floor sits below its recorded measurement', () => {
+    const baseline = read('coverage-baseline.backend.json');
+    expect(baseline.criticalModules.length).toBeGreaterThan(0);
+    for (const rule of baseline.criticalModules) {
+      expect(rule.minimum, rule.id).toBeTypeOf('number');
+      expect(rule.minMatchedFiles, rule.id).toBeGreaterThan(0);
+      expect(rule.why, rule.id).toBeTruthy();
+      // A floor recorded ABOVE what was measured is a gate that was red the
+      // moment it was committed; a floor recorded AT the measurement leaves no
+      // room for the rounding of an identical run.
+      expect(rule.measuredAtEstablishment, rule.id).toBeTypeOf('number');
+      expect(rule.minimum, rule.id).toBeLessThan(rule.measuredAtEstablishment);
+    }
+  });
+
+  it('the build-size and container baselines carry a measurement and its provenance', () => {
+    // Both were `null` until run 19. A number without provenance is a number
+    // somebody could have typed, which is the thing measure-first exists to
+    // prevent — so the run that produced it has to be nameable.
+    const build = read('build-size-baseline.json');
+    expect(build.standaloneBytes).toBeTypeOf('number');
+    expect(build.standaloneBytes).toBeGreaterThan(0);
+    expect(build.establishedBy).toMatch(/run id \d+/);
+    expect(build.warnGrowthRatio).toBeLessThan(build.failGrowthRatio);
+
+    const container = read('container-baseline.json');
+    expect(container.imageSizeBytes).toBeTypeOf('number');
+    expect(container.imageSizeBytes).toBeGreaterThan(0);
+    expect(container.establishedBy).toMatch(/run id \d+/);
+    // The size is uncompressed and the id is local, and both facts have to
+    // survive in the file — a reader who assumes "digest" means a registry
+    // manifest digest will otherwise compare it against one and be baffled.
+    expect(container.imageSizeKind).toMatch(/UNCOMPRESSED/);
+    expect(container.imageIdKind).toMatch(/PROVENANCE ONLY/);
+    expect(container.imageId, 'must not be named `imageId` — it is not a pin').toBeUndefined();
+  });
+
+  it('the schema baseline enforces structural totals and the seeded-table allow-list', () => {
+    const baseline = read('schema-baseline.json');
+    for (const key of ['tables', 'functions', 'policies', 'triggers']) {
+      expect(baseline.structuralTotals[key], key).toBeTypeOf('number');
+      expect(baseline.structuralTotals[key], key).toBeGreaterThan(0);
+    }
+    expect(baseline.structuralTotals.security_definer).toBe(0);
+
+    expect(Array.isArray(baseline.seededStructuralTables)).toBe(true);
+    expect(baseline.seededStructuralTables.length).toBeGreaterThan(0);
+    for (const table of baseline.seededStructuralTables) {
+      // `schema.table`, bare — migration-replay-checks.mjs compares against
+      // `p.split(' ')[0]`, so a row count smuggled into the string would never
+      // match and the allow-list entry would silently protect nothing.
+      expect(table, table).toMatch(/^[a-z_]+\.[a-z_]+$/);
+    }
+
+    // The two function counts disagree for a known reason. If someone
+    // "reconciles" them by editing this file, the explanation must go with it.
+    expect(baseline.functionCountDiscrepancyNote).toBeTruthy();
+    expect(baseline.functionCountDiscrepancyNote).toContain('212');
+    expect(baseline.functionCountDiscrepancyNote).toContain(
+      String(baseline.structuralTotals.functions)
+    );
   });
 
   it('every test-count floor sits at or below its recorded measurement', () => {

@@ -169,22 +169,29 @@ those two.
 Full evidence:
 [`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
 
-| Question                              | Answer                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------ |
-| Production-tree instances             | **0** — `npm ls brace-expansion --omit=dev --all` returns `(empty)`      |
-| Production audit                      | **0 vulnerabilities**                                                    |
-| Present in the built runner image     | **no** — asserted against the actual image filesystem on a hosted runner |
-| Imported by `src/` or `scripts/`      | **no**                                                                   |
-| Attacker-controlled patterns reach it | **no** — every glob comes from committed configuration                   |
-| Exploitability in RootLco's runtime   | **not reachable based on current evidence**                              |
+| Question                                    | Answer                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| Production-tree instances                   | **0** — `npm ls brace-expansion --omit=dev --all` returns `(empty)`       |
+| Production audit                            | **0 vulnerabilities**                                                     |
+| Code present in the built runner image      | **YES, unavoidably** — Node vendors it into the `node` binary via esbuild |
+| Resolvable as a package in the runner image | **no** — no `node_modules/brace-expansion/`, asserted against the image   |
+| Imported by `src/` or `scripts/`            | **no**                                                                    |
+| Attacker-controlled patterns reach it       | **no** — every glob comes from committed configuration                    |
+| Exploitability in RootLco's runtime         | **not reachable based on current evidence**                               |
+
+The first two rows must be read together, and separating them is the whole
+point. An earlier version of this table claimed only that the package was not
+"present in the built runner image", which read as _the vulnerable code is
+absent_. That was false: absence was never achievable, because the `node` binary
+itself contains a vendored copy that no build step can remove. The achievable —
+and sufficient — claim is the second row: nothing in the image can resolve or
+`require()` the package, so the running application cannot invoke it.
 
 Owner: platform-owner. Created 2026-07-28, review 2026-09-30, **expires
 2026-10-31**. Approval status: **APPROVED by the platform owner on 2026-07-29**,
 with the basis and the explicit scope limits recorded in the entry. The gate now
 REQUIRES an approved, signed and dated entry: an unapproved exception waives
 nothing, because a risk acceptance the machine ignores is not a control.
-Recorded with full
-evidence, awaiting explicit acceptance as a risk decision.
 
 ### What makes it an _exact_ exception
 

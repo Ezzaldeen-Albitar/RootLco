@@ -3,6 +3,8 @@
   "description": "Unit-tier coverage baseline. Scope is the `include` allow-list in vitest.config.ts — the pure-logic modules the unit tier genuinely exercises. Database-bound modules are measured separately in coverage-baseline.backend.json; merging the two would overstate both.",
   "policy": "docs/engineering/ci-automation/coverage-policy.md",
   "establishedBy": "local measurement at the Wave 0 audit; corrected from the first GitHub-hosted run",
+  "lastConfirmedBy": "PR CI run 19 (run id 30431556718), job `unit-tests-coverage / unit-coverage`, artifact `evidence-unit-coverage`, files `coverage/unit/coverage-summary.json` and `coverage-gate.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. 1082 unit tests across 249 files, 0 failed.",
+  "lastConfirmedNote": "That run measured lines 93.26, statements 93.26, functions 84.43, branches 93.41 — so functions sits 0.32 pp and branches 0.20 pp BELOW the recorded baseline, both inside the 0.5 pp tolerance. The numbers below were deliberately NOT lowered to match. Rewriting a floor down to whatever was last measured turns a ratchet into a rubber stamp: it would convert a real 0.32 pp decline into a new baseline of record and make the next 0.5 pp of decline free. The gate is passing on its own terms; if functions drifts a further 0.2 pp the gate goes red, and that is the mechanism doing its job rather than a fault to pre-empt. Raise these numbers when coverage genuinely rises; lower them only in a commit that says why.",
   "tolerancePercentagePoints": 0.5,
   "touchedFileMinimum": 60,
   "touchedFileExemptPrefixes": ["src/app/", "src/styles/"],

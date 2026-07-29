@@ -1,12 +1,19 @@
 {
   "description": "Production build size. Measured first, ratcheted second — no byte count here was invented. `standaloneBytes` is what the Dockerfile `runner` stage actually copies, so it is the number that governs the deployed artifact.",
   "policy": "docs/engineering/ci-automation/pr-gate.md",
-  "establishedBy": null,
-  "establishmentNote": "DELIBERATELY UNSET. `.next` was never measured by any workflow, and a local Windows measurement is not the number a Linux runner produces. The first GitHub-hosted build records it; the numbers are then committed and the ratchet starts.",
+  "establishedBy": "PR CI run 19 (run id 30431556718), job `application-build / build`, artifact `evidence-build`, file `build-size.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest.",
+  "establishmentNote": "Recorded from the first GitHub-hosted build that ever measured it. The earlier DELIBERATELY UNSET note is now spent, and it was not caution for its own sake: `.next` had never been measured by any workflow, and a Windows measurement is not the number a Linux runner produces, so the baseline waited for the runner rather than being guessed.",
   "warnGrowthRatio": 1.1,
   "failGrowthRatio": 1.5,
   "ratioRationale": "Expressed as a MULTIPLE of the recorded baseline rather than an absolute ceiling, because an absolute ceiling would be a guess. 1.1 flags a 10% jump for a human to look at; 1.5 refuses a 50% jump outright — at that size change something structural happened and it should be deliberate.",
-  "standaloneBytes": null,
-  "staticBytes": null,
-  "totalBytes": null
+  "standaloneBytes": 34367299,
+  "staticBytes": 632213,
+  "totalBytes": 66333419,
+  "measurementNote": "These three figures OVERLAP and must never be added together. `totalBytes` is the whole `.next` tree (4954 files); `standaloneBytes` is the `.next/standalone` subtree the runner stage copies; `staticBytes` is `.next/static`. The same run also measured `.next/server` at 30526906 bytes, which is counted inside `totalBytes` as well. Only `standaloneBytes` is ratcheted — build-size-report.mjs reads that field alone — because it is the only one that governs what actually ships.",
+  "alsoMeasuredInTheSameRun": {
+    "serverBytes": 30526906,
+    "totalFiles": 4954,
+    "routesInManifest": 173,
+    "routeFilesOnDisk": 171
+  }
 }

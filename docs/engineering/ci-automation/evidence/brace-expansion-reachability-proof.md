@@ -107,16 +107,32 @@ COPY --from=build --chown=nextjs:nodejs /app/public ./public
 
 That is a claim about the Dockerfile. The check that the claim **held** runs on
 a GitHub-hosted runner in the `container-security` job, which enumerates the
-image filesystem with `find / -xdev -type f` and fails if `eslint`, `prettier`,
-`vitest`, `typescript`, `@typescript-eslint`, `brace-expansion`, `minimatch`,
-`test-exclude`, `@vitest` or `stylelint` is present, or if any npm/yarn/pnpm
-cache is. It also asserts `/app/server.js` **is** present, so a check that only
-looks for absences cannot pass over an empty image.
+image filesystem with `find / -xdev -type f` and fails if a `node_modules/`
+directory for `eslint`, `prettier`, `vitest`, `typescript`, `@typescript-eslint`,
+`brace-expansion`, `minimatch`, `test-exclude`, `@vitest` or `stylelint` is
+resolvable, or if any npm/yarn/pnpm cache is. It also asserts `/app/server.js`
+**is** present, so a check that only looks for absences cannot pass over an empty
+image.
 
 The resulting inventory is fed straight back into
-`dependency-path-proof.mjs --image-inventory`, so `inRunnerImage` is a
+`dependency-path-proof.mjs --image-inventory`, so `packageDirInRunnerImage` is a
 measurement rather than a claim, and the dependency gate fails if it is ever
 `true`.
+
+### What this does NOT claim
+
+It does not claim the vulnerable code is absent from the image, and it must not
+be read that way. Node bundles brace-expansion into the `node` binary itself via
+esbuild, so a copy of the code ships inside every image that contains a Node
+runtime, and no build step can remove it. Deleting `node_modules` does not delete
+it; neither does a distroless base.
+
+The claim that is both **true** and **sufficient** is narrower: no
+`node_modules/brace-expansion/` directory exists in the image, so nothing the
+application runs can resolve or `require()` the package. Unreachable, not absent.
+The exception record states it the same way — `finalContainerCodePresent: true`
+alongside `finalContainerReachable: false` — and the two fields exist separately
+precisely so that nobody can collapse them back into a comfortable falsehood.
 
 ## 6. Imported by application runtime code?
 

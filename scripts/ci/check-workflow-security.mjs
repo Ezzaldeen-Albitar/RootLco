@@ -118,6 +118,33 @@ function suppressed(lines, index, rule) {
 }
 
 /**
+ * Every rule this linter can emit.
+ *
+ * Declared rather than inferred, because the published evidence records only
+ * `scanned` and `findings`: delete a rule and the artifact is byte-identical,
+ * the gate is green, and nothing anywhere says coverage shrank. The count is now
+ * written into the report, `add()` refuses an id that is not listed here, and a
+ * unit test reconciles this list against the ids actually present in the source
+ * — so the registry cannot quietly drift from the rules in either direction.
+ */
+export const RULE_IDS = Object.freeze([
+  'WFS-001',
+  'WFS-002',
+  'WFS-003',
+  'WFS-004',
+  'WFS-005',
+  'WFS-006',
+  'WFS-007',
+  'WFS-008',
+  'WFS-009',
+  'WFS-010',
+  'WFS-011',
+  'WFS-012',
+  'WFS-013',
+  'WFS-014',
+]);
+
+/**
  * @param {string} name  path shown in findings
  * @param {string} source
  * @param {{ isCompositeAction?: boolean }} options
@@ -132,6 +159,12 @@ export function lintWorkflow(name, source, options = {}) {
   const lines = source.split(/\r?\n/);
   const isAction = options.isCompositeAction === true;
   const add = (rule, line, message, severity = 'high') => {
+    if (!RULE_IDS.includes(rule)) {
+      throw new Error(
+        `workflow-security emitted unregistered rule \`${rule}\`. Add it to RULE_IDS — an ` +
+          'unregistered rule is not counted in the evidence, so its coverage is invisible.'
+      );
+    }
     if (isAction && (rule === 'WFS-003' || rule === 'WFS-004' || rule === 'WFS-010')) return;
     findings.push({ workflow: name, rule, line, message, severity });
   };
@@ -443,10 +476,13 @@ export function lintWorkflow(name, source, options = {}) {
 
 export function toMarkdown(findings, workflowCount) {
   const lines = ['### Workflow security', ''];
-  lines.push(`Scanned **${workflowCount}** workflow file(s).`);
+  lines.push(
+    `Scanned **${workflowCount}** workflow file(s) against **${RULE_IDS.length}** rules ` +
+      `(${RULE_IDS[0]}–${RULE_IDS[RULE_IDS.length - 1]}).`
+  );
   lines.push('');
   if (!findings.length) {
-    lines.push('No findings.');
+    lines.push('No findings — from a scan that applied every rule listed above.');
     return lines.join('\n');
   }
   lines.push('| Severity | Rule | Workflow | Line | Finding |');
@@ -518,7 +554,13 @@ function main(argv) {
   const labels = targets.map((t) => t.label);
   const jsonOut = arg('--json');
   if (jsonOut)
-    writeFileSync(jsonOut, `${JSON.stringify({ scanned: labels, findings }, null, 2)}\n`);
+    writeFileSync(
+      jsonOut,
+      // `ruleCount` and `ruleIds` are recorded so that "0 findings" can be
+      // distinguished from "0 rules ran". Without them the two are byte-identical
+      // in the evidence, which is exactly how a blind scanner passes for green.
+      `${JSON.stringify({ scanned: labels, ruleCount: RULE_IDS.length, ruleIds: [...RULE_IDS], findings }, null, 2)}\n`
+    );
   const mdOut = arg('--markdown');
   if (mdOut) writeFileSync(mdOut, `${toMarkdown(findings, targets.length)}\n`);
 

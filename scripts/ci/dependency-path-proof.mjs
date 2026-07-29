@@ -16,10 +16,20 @@
  *   4. whether any instance is reachable from the production tree;
  *   5. whether application source imports it, directly or transitively;
  *   6. whether it survives `npm ci --omit=dev`;
- *   7. whether it exists inside the built runner image.
+ *   7. whether the built runner image still RESOLVES it as an installed package.
  *
  * Items 6 and 7 need a real install and a real image, so they are reported as
  * `not-verified-here` when their inputs are absent rather than being asserted.
+ *
+ * Item 7 is deliberately narrow, and the narrowness is the honest part. It asks
+ * whether a `node_modules/<package>/` directory exists in the image — i.e.
+ * whether anything in the image could `require()` the package. It does NOT ask
+ * whether the package's CODE is absent from the image, because for several of
+ * these packages that question has a known answer and the answer is no: Node
+ * bundles brace-expansion into the `node` binary itself via esbuild, so the code
+ * is present in every image that contains a Node runtime and no build step can
+ * remove it. Reporting "absent from the image" would therefore be false. What is
+ * both true and sufficient is that the application cannot RESOLVE it.
  *
  * Usage:
  *   node scripts/ci/dependency-path-proof.mjs --package brace-expansion \
@@ -131,6 +141,19 @@ export function findDirectImports(packageName, roots = ['src', 'scripts']) {
   return hits;
 }
 
+/**
+ * @param {object} input
+ * @param {any} input.lock                     parsed package-lock.json
+ * @param {string} input.packageName
+ * @param {any} [input.productionTree]         `npm ls --omit=dev --json`, when available
+ * @param {string} [input.imageInventory]      `find / -xdev -type f` from the built image
+ *
+ * The last two are OPTIONAL by design: each answers a question that needs a real
+ * install or a real image, and when the input is absent the answer is reported
+ * as `not-verified-here` rather than assumed. Annotating them as optional also
+ * keeps callers honest under `checkJs` — without this, every call site had to
+ * pass `undefined` explicitly, which reads as an oversight rather than a choice.
+ */
 export function buildProof({ lock, packageName, productionTree, imageInventory }) {
   const instances = findInstances(lock, packageName);
   const paths = derivePaths(lock, packageName);
@@ -148,15 +171,22 @@ export function buildProof({ lock, packageName, productionTree, imageInventory }
     inProductionInstall = found;
   }
 
-  // 7: does it exist inside the built image? Only answerable from a real
-  // filesystem listing taken from the image.
-  let inRunnerImage = 'not-verified-here';
+  // 7: can the image RESOLVE it as an installed package? Answerable from a real
+  // filesystem listing taken from the image, and only that. A false here means
+  // no `node_modules/<pkg>/` directory exists, so nothing in the image can
+  // `require()` it — it does NOT mean the package's code is absent from the
+  // image. See the header: brace-expansion is vendored inside the `node` binary.
+  let packageDirInRunnerImage = 'not-verified-here';
   if (imageInventory !== undefined) {
-    inRunnerImage = imageInventory.split('\n').some((line) => line.includes(`/${packageName}/`));
+    packageDirInRunnerImage = imageInventory
+      .split('\n')
+      .some((line) => line.includes(`/${packageName}/`));
   }
 
   const productionReachable =
-    productionInstances.length > 0 || inProductionInstall === true || inRunnerImage === true;
+    productionInstances.length > 0 ||
+    inProductionInstall === true ||
+    packageDirInRunnerImage === true;
 
   return {
     package: packageName,
@@ -174,7 +204,7 @@ export function buildProof({ lock, packageName, productionTree, imageInventory }
     productionInstances,
     directImports,
     inProductionInstall,
-    inRunnerImage,
+    packageDirInRunnerImage,
     productionReachable,
   };
 }
@@ -194,9 +224,22 @@ export function toMarkdown(proof) {
     `| Imported directly by src/ or scripts/ | ${proof.directImports.length === 0 ? '**no**' : proof.directImports.join(', ')} |`
   );
   lines.push(`| Survives \`npm ci --omit=dev\` | ${describe(proof.inProductionInstall)} |`);
-  lines.push(`| Present in the built runner image | ${describe(proof.inRunnerImage)} |`);
+  lines.push(
+    `| Resolvable as an installed package in the runner image | ${describe(proof.packageDirInRunnerImage)} |`
+  );
   lines.push(`| **Production reachable** | ${proof.productionReachable ? '**YES**' : '**no**'} |`);
   lines.push('');
+  if (proof.packageDirInRunnerImage === false) {
+    lines.push(
+      '> The image row means no `node_modules/' +
+        proof.package +
+        '/` directory exists, so nothing in the image can `require()` it. It is ' +
+        'NOT a claim that the code is absent from the image — Node vendors some ' +
+        'of these packages inside the `node` binary, where no build step can ' +
+        'remove them. Non-resolvability is the claim that is both true and enough.'
+    );
+    lines.push('');
+  }
 
   lines.push('#### Resolved instances');
   lines.push('');

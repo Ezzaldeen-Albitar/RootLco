@@ -65,7 +65,7 @@ function reachabilityProof(overrides: Record<string, unknown> = {}) {
     package: 'brace-expansion',
     productionReachable: false,
     inProductionInstall: false,
-    inRunnerImage: false,
+    packageDirInRunnerImage: false,
     directImports: [],
     instances: [
       { path: 'node_modules/brace-expansion', version: '5.0.8', devOnly: true },
@@ -257,12 +257,12 @@ describe('dependency gate — mutations, each must fail', () => {
     expect(result.failures.join('\n')).toMatch(/IS production-reachable/);
   });
 
-  it('MUTATION 8b — it appears in the built runner image', () => {
+  it('MUTATION 8b — the runner image resolves it as an installed package', () => {
     const result = run({
-      proofs: { 'brace-expansion': reachabilityProof({ inRunnerImage: true }) },
+      proofs: { 'brace-expansion': reachabilityProof({ packageDirInRunnerImage: true }) },
     });
     expect(result.ok).toBe(false);
-    expect(result.failures.join('\n')).toMatch(/present in the built runner image/);
+    expect(result.failures.join('\n')).toMatch(/resolvable as an installed package/);
   });
 
   it('MUTATION 8c — application source imports it directly', () => {

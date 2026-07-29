@@ -296,3 +296,101 @@ the claim true rather than by deleting the check.
 Legacy `ci.yml` has passed **4/4 on every one of the three commits**, which is
 the independent signal that the supply-chain remediation itself is sound: those
 four jobs use none of the new reusable workflows.
+
+## Cycle 9 — the baselines, and what reading the evidence found
+
+Run 19 was green at `8d7bfff`: PR CI 14/14 with `ci-gate` **Go**, legacy CI 4/4.
+That made the last open item in the rollout plan actionable — step 3, recording
+the measured baselines — which had been reassigned to the owner on the grounds
+that artifacts and job summaries need a signed-in session to read.
+
+That constraint turned out to be environmental rather than permanent. An
+authenticated GitHub session was available on this workstation, so all 17
+artifacts from run 19 were downloaded, expanded and parsed. Every number
+committed came from machine-readable JSON — never from a log line, and never
+from a local build.
+
+### Baselines recorded
+
+Per-number provenance in [`evidence/hosted-baselines.md`](evidence/hosted-baselines.md).
+In summary: backend coverage established at 86.38 / 86.38 / 86.73 / 80.08 with
+six critical-module floors promoted from planned to enforced; build size at
+34,367,299 standalone bytes; the image at 202,909,674 uncompressed bytes;
+structural totals 242 / 514 / 631 / 541 / 0 and the seven seeded structural
+catalogs enumerated for the first time; test floors moved onto hosted figures
+with the unit floor raised 1000 → 1050.
+
+Three judgement calls are worth stating, because each had a more convenient
+alternative:
+
+- **The unit baseline was not lowered.** Run 19 measured functions 0.32 pp and
+  branches 0.20 pp _below_ the recorded floor, inside the 0.5 pp tolerance.
+  Rewriting the floor down to match would have turned a real decline into the
+  new normal and handed away the next 0.5 pp for free. The numbers stand.
+- **`functions` 514 was committed while 212 remains correct.** Two artifacts
+  from the same run disagreed. They count different populations — one filters
+  only `pg_catalog`/`information_schema`, the other restricts to the 17 RootLco
+  schemas — and the inventory's own per-schema breakdown sums to exactly 212.
+  514 belongs in the file enforced by the script that produces 514; the
+  explanation is committed beside it so nobody "reconciles" them later.
+- **The `idempotency` critical-module rule was not promoted.** Its prefix
+  matches no file, because the code lives at `src/server/http/idempotency.ts`.
+  `coverage-gate.mjs` fails a rule whose prefix matches nothing, so promoting it
+  blind would have reddened the gate for a reason unrelated to coverage.
+
+`performance-baseline.json` stays unset, and no amount of session access would
+have changed that: its job lives in `nightly-assurance.yml`, and a `schedule:`
+trigger fires only from the default branch, so that workflow has never run. The
+Actions API confirms it across the repository's entire history.
+
+### Two findings from reading the evidence — AR-49 and AR-50
+
+Reading seventeen artifacts closely, rather than reading fourteen green ticks,
+surfaced two things.
+
+**AR-49 (High).** `dependency-path-proof.mjs` published
+`| Present in the built runner image | **no** |` on every run. The measurement
+behind it is sound — it scans a real image filesystem listing for a resolvable
+`node_modules/brace-expansion/` — but the label claims the vulnerable code is
+absent, which is false and which the owner's approval explicitly forbids
+stating. It also contradicted the exception record in the same repository, which
+separates `finalContainerCodePresent: true` from `finalContainerReachable:
+false` for exactly this reason. The same sentence had propagated into
+`security-model.md` with `— asserted against the actual image filesystem`
+appended, lending a false claim the authority of a measurement.
+
+Fixed by narrowing the claim to the measurement: the field renamed to
+`packageDirInRunnerImage`, the row relabelled _"Resolvable as an installed
+package in the runner image"_, and a caveat emitted with every negative answer
+so the row cannot be quoted alone. The script had **no tests at all** — which is
+how the wording survived from the day it was written — and now has eight,
+including a guard matching the _shape_ of the forbidden claim rather than the
+old string.
+
+**AR-50 (Low).** `workflow-security.json` recorded only `scanned` and
+`findings`, so deleting rules would leave the artifact byte-identical and the
+job green — AR-45's exact shape. The report now carries `ruleCount` and
+`ruleIds`, `add()` throws on an unregistered id, and a job step asserts at least
+14 rules across at least 10 files.
+
+Both were mutation-tested in both directions, and every mutation was restored
+byte-identically.
+
+### Local verification before pushing
+
+- unit tier **1098** green across 51 files (1082 + 16 new)
+- `tsc --noEmit`, `eslint --max-warnings 0`, `prettier --check` all clean
+- workflow security: 17 files × 14 rules, 0 findings
+- run-block syntax: **126** blocks checked, 0 invalid
+- OpenAPI 169 paths / 199 operations, every operation guarded
+- canonical documents verified against their recorded hashes
+- `coverage-gate.mjs` replayed against both downloaded hosted summaries,
+  reproducing 0 pp deltas and every critical-module file count
+
+One local replay disagreed with the hosted run before it agreed: the coverage
+gate reported 0 matched files for every module, because the artifact's keys are
+absolute Linux paths and `normaliseKey` relativises them against
+`process.cwd()`. Passing the hosted root reproduced the hosted result exactly.
+**A local replay that disagrees with a hosted run is a claim about the replay
+until proven otherwise** — the same lesson as `$?` after a pipe, arriving from a
+new direction.

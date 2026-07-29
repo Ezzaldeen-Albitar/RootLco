@@ -819,9 +819,115 @@ verified; they are listed in the workflow output rather than silently dropped.
 
 ---
 
+## The baseline review — reading the evidence instead of the pipeline
+
+Run 19 was green, so the next step was to extract the hosted baselines and
+commit them. That meant reading seventeen artifacts closely for the first time,
+rather than reading the job results — and reading the evidence turned up two
+things no green tick could have.
+
+### AR-49 · the published proof asserted something the owner had forbidden — **High**
+
+`dependency-path-proof.mjs` rendered its image row as:
+
+```
+| Present in the built runner image | **no** |
+```
+
+The measurement behind it is sound: it scans a real `find / -xdev -type f`
+listing from the built image for a `node_modules/brace-expansion/` directory,
+and there is none. But the **label** says something much larger than the
+measurement — that the vulnerable code is not in the image. That is false.
+AR-43 had already established why: Node vendors brace-expansion into the `node`
+binary via esbuild, so a copy ships inside every image containing a Node
+runtime, and no build step removes it.
+
+Three things make this High rather than cosmetic:
+
+1. It is the **published artifact** for the one risk acceptance in this
+   initiative, regenerated on every run and read by anyone auditing it.
+2. It **contradicted another file in the same repository** — the exception
+   record states `finalContainerCodePresent: true` beside
+   `finalContainerReachable: false`, precisely so the two cannot be conflated.
+   The proof collapsed them back together.
+3. The owner's approval **explicitly forbids the claim**: _"Do not state that
+   the vulnerable code is absent from the image."_ The evidence was making the
+   exact statement the approval excluded.
+
+The same sentence had also propagated into `security-model.md`, which rendered
+it as a table row with `— asserted against the actual image filesystem on a
+hosted runner` appended, giving a false claim the authority of a measurement.
+
+Fixed by narrowing the claim to what was actually measured:
+`inRunnerImage` → `packageDirInRunnerImage`, the row relabelled _"Resolvable as
+an installed package in the runner image"_, and a caveat emitted alongside every
+negative answer so the row cannot be quoted on its own. `security-model.md` now
+carries **two** rows — code present **yes, unavoidably**; resolvable **no** —
+because separating them is the whole point.
+
+The script had **no tests at all**, which is how the wording survived from the
+day it was written. It has eight now, including a regression guard that matches
+the _shape_ of the forbidden claim rather than the old string, so a future
+rewording cannot reintroduce it. The guard was mutation-tested: restoring the
+original label fails two assertions, and the mutation was then restored
+byte-identically.
+
+Worth noting the guard was wrong on its first attempt too, in the way these
+keep being wrong — the negative assertion matched the caveat's own disclaimer
+("It is NOT a claim that the code is absent…"), so the sentence that fixes the
+problem was flagged as the problem. It now asserts against the document minus
+its blockquote, and separately asserts the blockquote exists, so the exclusion
+cannot quietly become vacuous.
+
+### AR-50 · the workflow scanner could not prove it was armed — **Low**
+
+`workflow-security.json` recorded `scanned` and `findings` and nothing else.
+Delete half the rules from `check-workflow-security.mjs` and the artifact is
+**byte-identical**, the job is green, and the PR body still claims fourteen
+rules. This is AR-45's shape exactly — there, a Trivy scan enumerated zero
+packages and reported zero vulnerabilities, and a green run did not notice.
+
+The compensating control was real: every rule has a mutation test, so a deleted
+rule fails the unit tier. But that is a different file noticing, and the number
+in the report was still unevidenced.
+
+The report now carries `ruleCount` and `ruleIds`; `add()` **throws** on an
+unregistered id, so the registry is a control rather than a comment; the
+markdown states _"No findings — from a scan that applied every rule listed
+above"_; and a job step asserts the scan applied at least 14 rules across at
+least 10 files. A test reconciles the registry against the ids present in the
+source in **both** directions. Mutation-tested both ways: removing a registered
+rule fails four tests, adding a phantom one fails three.
+
+### What this pass did not find
+
+Nothing in the baselines themselves was wrong, but two required diagnosis rather
+than transcription, and both are recorded in the files instead of being quietly
+resolved:
+
+- **`functions` is 514 here and 212 there.** Not a conflict — two different
+  `WHERE` clauses. `migration-replay-checks.mjs` filters only
+  `NOT IN ('pg_catalog','information_schema')`; `schema-inventory.mjs` restricts
+  to the 17 RootLco schemas, whose per-schema breakdown sums to exactly 212. The
+  302-function difference is extension-owned code. 514 is committed because this
+  file is enforced by the script that produces 514; 212 remains the number that
+  describes RootLco's own schema.
+- **The `idempotency` critical-module rule was never satisfiable.** Its prefix
+  `src/server/idempotency` matches nothing, because the code is a single file at
+  `src/server/http/idempotency.ts`. `coverage-gate.mjs` fails a rule whose prefix
+  matches no file, so promoting it blind would have turned the gate red for a
+  reason unrelated to coverage. It stays unpromoted, with the reason recorded —
+  the safeguard working, not an obstacle.
+
+---
+
 ## Result
 
 **Critical unresolved: 0 · High unresolved: 0.**
+
+Fifty findings, AR-01 through AR-50. Nine of them were defects inside this
+initiative's own remediations — including AR-49, where a fix's published
+evidence overstated what the fix had proven.
 
 One structural finding (AR-27) is documented rather than fixed, because it
 cannot be fixed here. Everything else on the Critical, High and Medium lists was

@@ -7,13 +7,15 @@
  * clean would keep passing after the repository stopped being clean.
  */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   lintWorkflow,
   extractRunBlocks,
   isLocalReference,
+  RULE_IDS,
+  toMarkdown as workflowSecurityMarkdown,
 } from '../../scripts/ci/check-workflow-security.mjs';
 import {
   lintTestFile,
@@ -336,6 +338,56 @@ jobs:
   });
 });
 
+/**
+ * AR-50. The published `workflow-security.json` recorded only `scanned` and
+ * `findings`. Delete half the rules and the artifact is byte-identical, the job
+ * is green, and the PR body still claims fourteen rules — the same failure shape
+ * as AR-45, where a scan enumerated zero packages and reported zero
+ * vulnerabilities. A count is only evidence if it cannot silently disagree with
+ * what ran, so the registry is reconciled against the source in both directions.
+ */
+describe('workflow-security rule registry', () => {
+  const source = readFileSync('scripts/ci/check-workflow-security.mjs', 'utf8');
+
+  /** Rule ids the source actually mentions, excluding the registry literal. */
+  const idsInSource = () => {
+    const withoutRegistry = source.replace(
+      /export const RULE_IDS = Object\.freeze\(\[[\s\S]*?\]\);/,
+      ''
+    );
+    return new Set(withoutRegistry.match(/WFS-\d{3}/g) ?? []);
+  };
+
+  it('registers exactly the rules the source can emit — no missing, no phantom', () => {
+    const declared = new Set(RULE_IDS);
+    const present = idsInSource();
+    // A rule in the source but not the registry is uncounted coverage; a rule in
+    // the registry but not the source is a count inflated past what runs.
+    expect([...present].filter((id) => !declared.has(id))).toEqual([]);
+    expect([...declared].filter((id) => !present.has(id))).toEqual([]);
+  });
+
+  it('holds fourteen rules, the number the PR body and gate record claim', () => {
+    expect(RULE_IDS).toHaveLength(14);
+    expect(new Set(RULE_IDS).size).toBe(14);
+  });
+
+  it('refuses to emit a rule that is not registered', () => {
+    // `add()` is closed over, so drive it through a rule that fires: a workflow
+    // whose id list has been tampered with cannot silently widen the linter.
+    const frozen = () => (RULE_IDS as unknown as string[]).push('WFS-999');
+    expect(frozen).toThrow();
+  });
+
+  it('states the rule count in the report, so "no findings" cannot mean "no rules"', () => {
+    const markdown = workflowSecurityMarkdown([], 17);
+    expect(markdown).toContain('**17** workflow file(s)');
+    expect(markdown).toContain('**14** rules');
+    expect(markdown).toContain('WFS-001–WFS-014');
+    expect(markdown).toContain('applied every rule listed above');
+  });
+});
+
 describe('test honesty', () => {
   /**
    * Every fixture below is ASSEMBLED AT RUNTIME rather than written as a
@@ -605,7 +657,7 @@ describe('dependency policy', () => {
     eslint: {
       package: 'eslint',
       productionReachable: false,
-      inRunnerImage: false,
+      packageDirInRunnerImage: false,
       directImports: [],
       instances: [{ path: 'node_modules/eslint', version: '0.9.0', devOnly: true }],
     },

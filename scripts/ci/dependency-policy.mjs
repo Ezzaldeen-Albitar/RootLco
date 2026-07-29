@@ -295,10 +295,10 @@ export function validateExactMatch(entry, advisory, devAudit, failures, proofs =
           'dependency-path proof, but the entry claims it is not. The waiver is void.'
       );
     }
-    if (proof.inRunnerImage === true) {
+    if (proof.packageDirInRunnerImage === true) {
       reject(
-        `exception \`${entry.id}\`: \`${entry.package}\` is present in the built runner image, but the ` +
-          'entry claims the final container does not reach it.'
+        `exception \`${entry.id}\`: \`${entry.package}\` is resolvable as an installed package in the ` +
+          'built runner image, but the entry claims the final container cannot reach it.'
       );
     }
     if (Array.isArray(proof.directImports) && proof.directImports.length > 0) {

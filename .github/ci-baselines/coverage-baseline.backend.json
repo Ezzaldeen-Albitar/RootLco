@@ -2,49 +2,87 @@
   "tier": "backend",
   "description": "Backend-tier coverage baseline. Scope is src/modules/** and src/server/** — the code whose behaviour only exists with a real PostgreSQL attached. Measured by `npm run test:backend -- --coverage` inside the integration-tests job.",
   "policy": "docs/engineering/ci-automation/coverage-policy.md",
-  "establishedBy": null,
-  "establishmentNote": "DELIBERATELY UNSET. The initiative requires measure-first: this tier has never been measured, so inventing a number here would be a guess dressed as a baseline. The first GitHub-hosted run records the measurement, the numbers are committed in a reviewable change, and the ratchet starts from the run after that. Until `global` is populated the gate reports the measurement and passes.",
+  "establishedBy": "PR CI run 19 (run id 30431556718), job `integration-tests / integration-tests`, artifact `evidence-integration-tests`, files `coverage/backend/coverage-summary.json` and `coverage-gate-backend.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. 1380 backend tests across 393 files, 0 failed, 199 instrumented source files.",
+  "establishmentNote": "Recorded from the first GitHub-hosted run that ever measured this tier. Every figure below is that run's own measurement — none was carried over, estimated, or rounded in the flattering direction. The percentages are coverage-gate.mjs's own `pct()` (covered/total to two decimals, rounded), which is what the ratchet compares against; istanbul's summary truncates instead, so it reports functions as 86.72 where the gate reports 86.73. The gate's convention is authoritative here because the gate is what enforces.",
   "tolerancePercentagePoints": 1,
   "touchedFileMinimum": 0,
   "touchedFileExemptPrefixes": [],
-  "global": {},
-  "criticalModules": [],
-  "plannedCriticalModules": [
+  "global": {
+    "lines": 86.38,
+    "statements": 86.38,
+    "functions": 86.73,
+    "branches": 80.08
+  },
+  "globalRawCounts": {
+    "lines": "25794/29860",
+    "statements": "25794/29860",
+    "functions": "1320/1522",
+    "branches": "4189/5231"
+  },
+  "criticalModules": [
     {
       "id": "iam-authorization",
       "pathPrefix": "src/modules/iam",
-      "why": "every scope decision in the product"
+      "metric": "lines",
+      "minimum": 68,
+      "why": "every scope decision in the product; H6 taught that a scope predicate can be wrong in a direction no test looks at",
+      "minMatchedFiles": 18,
+      "measuredAtEstablishment": 74.3
     },
     {
       "id": "inventory",
       "pathPrefix": "src/modules/inventory",
-      "why": "negative stock, reservation locks, exact quantities"
+      "metric": "lines",
+      "minimum": 85,
+      "why": "negative stock, reservation locks, exact quantities",
+      "minMatchedFiles": 6,
+      "measuredAtEstablishment": 91.15
     },
     {
       "id": "work-order",
       "pathPrefix": "src/modules/work-order",
-      "why": "lifecycle guards and closure eligibility"
+      "metric": "lines",
+      "minimum": 88,
+      "why": "lifecycle guards and closure eligibility",
+      "minMatchedFiles": 8,
+      "measuredAtEstablishment": 94.63
     },
     {
       "id": "quotation",
       "pathPrefix": "src/modules/quotation",
-      "why": "approval and revision races"
+      "metric": "lines",
+      "minimum": 83,
+      "why": "approval and revision races",
+      "minMatchedFiles": 5,
+      "measuredAtEstablishment": 89.73
     },
     {
       "id": "pricing",
       "pathPrefix": "src/modules/pricing",
-      "why": "exact money arithmetic and discount authorization"
+      "metric": "lines",
+      "minimum": 75,
+      "why": "exact money arithmetic and discount authorization",
+      "minMatchedFiles": 8,
+      "measuredAtEstablishment": 81.62
     },
     {
       "id": "audit-and-outbox",
       "pathPrefix": "src/server/audit",
-      "why": "append-only audit and at-least-once delivery"
-    },
+      "metric": "lines",
+      "minimum": 38,
+      "why": "append-only audit and at-least-once delivery",
+      "minMatchedFiles": 2,
+      "measuredAtEstablishment": 40.45
+    }
+  ],
+  "criticalModuleFloorNote": "Floors are set below the first hosted measurement — by roughly 5-7 points for the large modules, so ordinary churn does not trip them, and by 2.45 points for `audit-and-outbox`, whose 89 instrumented lines across 2 files do not churn enough to need a wide band. `minMatchedFiles` pins the instrumented file count at each prefix: a floor that silently starts protecting fewer files is a floor that has been weakened without a diff. `audit-and-outbox` at 40.45% is the honest weak spot of this tier and is recorded rather than omitted — most of that code is exercised in the unit tier, where `worker-backoff` sits at 100%, but that is an explanation and not a defence. Raising it is backend-coverage work, not baseline work.",
+  "plannedCriticalModules": [
     {
       "id": "idempotency",
       "pathPrefix": "src/server/idempotency",
-      "why": "replay must not duplicate state, audit or events"
+      "why": "replay must not duplicate state, audit or events",
+      "status": "NOT PROMOTED — the prefix matches nothing, because no such directory exists. The code is a single file, `src/server/http/idempotency.ts`, which sits inside the `http` prefix. The rule was written from an assumed layout and was never satisfiable; coverage-gate.mjs FAILS a rule whose prefix matches no file, so promoting it blind would have turned the gate red for a reason unrelated to coverage. Recorded here rather than deleted, because the gap it names is real: promote it once idempotency has its own module, or replace it with a rule aimed at the file that exists."
     }
   ],
-  "plannedCriticalModulesNote": "These become enforced `criticalModules` entries once the first hosted measurement proves each prefix matches real files. coverage-gate.mjs FAILS a rule whose prefix matches nothing, so a floor cannot be added blind — that is the intended safeguard, not an obstacle to work around."
+  "plannedCriticalModulesNote": "The six entries that were promoted into `criticalModules` above were promoted only after the hosted run proved each prefix matches real files, with the measured value recorded alongside each floor. The one that remains here stayed because that same proof failed for it — which is the safeguard working, not an obstacle to work around."
 }
