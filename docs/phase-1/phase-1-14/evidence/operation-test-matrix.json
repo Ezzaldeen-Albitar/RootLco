@@ -1,11 +1,11 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 199,
+    "registered": 219,
     "publicApi": 199,
     "internal": 0,
     "withRequiredEvidence": 185,
-    "invocationOnly": 14,
+    "invocationOnly": 34,
     "p1_15": {
       "registered": 21,
       "publicApi": 21,
@@ -77,13 +77,13 @@
       "metadataOnly": 0
     },
     "p1_22": {
-      "registered": 0,
+      "registered": 20,
       "publicApi": 0,
       "operationDepth": 0,
-      "invocationOnly": 0,
+      "invocationOnly": 20,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 0,
+      "unreferenced": 20,
       "metadataOnly": 0
     }
   },
@@ -4069,6 +4069,150 @@
       "unitOnly": false
     },
     {
+      "id": "sal.credit-note-approve",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.credit-note-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-checklist-record",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-complete",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-eligibility-read",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-receiver-verify",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.delivery-signature-attach",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-cancel",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-detail",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-issue",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-outstanding-read",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.invoice-preview",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.payment-allocate",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.payment-method-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.payment-record",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "sal.receipt-detail",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
       "id": "shared.attachment-download-authorize",
       "surface": "public-api",
       "method": "POST",
@@ -7294,6 +7438,22 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "wty.warranty-detail",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "wty.warranty-generate",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     }
   ]
 }

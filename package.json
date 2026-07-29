@@ -65,6 +65,7 @@
     "security:all": "npm run security:tracked-secrets && npm run security:browser-secrets && npm run security:scope-exclusions && npm run validate:no-fake-data",
     "validate:p1-20-inventory": "node scripts/p1-20-endpoint-inventory.mjs --check",
     "validate:p1-21-inventory": "node scripts/p1-21-endpoint-inventory.mjs --check",
+    "validate:p1-22-inventory": "node scripts/p1-22-endpoint-inventory.mjs --check",
     "validate:run-block-syntax": "node scripts/ci/check-run-block-syntax.mjs"
   },
   "comment:overrides": "Security overrides. Each entry forces a PATCHED version of a transitive dependency whose direct parent still pins a vulnerable range, so `npm audit` reports zero HIGH/CRITICAL rather than a permanently ignored baseline. Remove an entry only when the parent's own pin has caught up. See docs/engineering/ci-automation/security-model.md.",

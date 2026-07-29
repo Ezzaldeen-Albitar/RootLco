@@ -20,6 +20,7 @@
  * sends `eligible: true` must never be believed. Nothing in this module reads an
  * eligibility flag from client input.
  */
+import { type Decimal, type DecimalSpec, parseNonNegative } from '@/modules/pricing';
 
 /** `ck_delivery_records_status`. */
 export const DELIVERY_STATUSES = Object.freeze([
@@ -99,8 +100,45 @@ export const MAX_REASON = 2000;
 export const ODOMETER_UNITS = Object.freeze(['km', 'mi'] as const);
 export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
 
+/**
+ * `veh.odometer_readings.value` — `numeric(12,1)`, `CHECK (value >= 0)`.
+ *
+ * The final odometer reading is the one numeric value this module writes, and it is
+ * **not** money: its column is `numeric(12,1)`, so validating it against `MONEY`
+ * (`numeric(18,4)`) would accept `123.4567` and let PostgreSQL silently round three
+ * digits away on the cast. A reading is a fact about a vehicle that a warranty term
+ * may later be measured against, so the scale is checked against the column that
+ * actually holds it.
+ */
+export const ODOMETER_VALUE: DecimalSpec = Object.freeze({
+  precision: 12,
+  scale: 1,
+  label: 'odometer value',
+});
+
 export class DeliveryRuleError extends Error {
   public override readonly name = 'DeliveryRuleError';
+}
+
+/**
+ * Parses the final odometer reading, refusing anything the column would not hold.
+ *
+ * Returns a `Decimal` and nothing else — no arithmetic is performed on it here or
+ * anywhere in this module. The value crosses into SQL as the canonical decimal STRING
+ * bound to `$2::numeric`, because `numeric` holds values IEEE-754 cannot represent and
+ * `veh.guard_odometer_reading` compares it against the vehicle's current effective
+ * kilometres to enforce a forward-only series. Nothing about it may be approximate.
+ *
+ * `>= 0` mirrors `ck_odometer_readings_value_nonneg`. Whether the value is high enough
+ * is not decidable here: it is the guard's judgement, made under the vehicle row's own
+ * lock against every non-superseded prior reading.
+ */
+export function parseOdometerValue(input: string): Decimal {
+  try {
+    return parseNonNegative(input, ODOMETER_VALUE);
+  } catch (error) {
+    throw new DeliveryRuleError(`final odometer value: ${(error as Error).message}`);
+  }
 }
 
 /** One composed eligibility decision. */

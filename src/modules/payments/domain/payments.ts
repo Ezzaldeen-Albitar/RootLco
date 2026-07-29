@@ -107,6 +107,36 @@ export function assertPaymentMethodUsable(method: {
 }
 
 /**
+ * Refuses a platform-scoped method, which no receipt can cite.
+ *
+ * **Added in P1-22 because the rule was missing and is structural.**
+ * `fk_receipts_method` is `(tenant_id, payment_method_id) → sal.payment_methods
+ * (tenant_id, id)` and `ck_payment_methods_scope_tenant` forces a platform row's
+ * `tenant_id` to be NULL. Under MATCH SIMPLE both referencing columns are NOT NULL,
+ * so the referenced row must match on both, and no NULL tenant can equal a concrete
+ * one — the three seeded platform methods are therefore **visible to every tenant
+ * via `sel_payment_methods_scope` and citable by no receipt at all**. Recording
+ * against one raises `23503`, which reads as "that method does not exist" about a
+ * method the caller can see in the list.
+ *
+ * `tests/db/p1-11-helpers.ts` records the same conclusion beside the tenant-scoped
+ * fixture method it has to create: *"receipts cannot use a platform method — FK is
+ * (tenant_id,id)"*. Nothing else in the application refuses it, so this does.
+ */
+export function assertPaymentMethodIsTenantScoped(method: {
+  readonly scope: string;
+  readonly methodCode: string;
+}): void {
+  if (method.scope !== 'tenant') {
+    throw new PaymentRuleError(
+      `payment method "${method.methodCode}" is platform-scoped and cannot be cited by a ` +
+        'receipt: fk_receipts_method resolves (tenant_id, payment_method_id) and a platform ' +
+        "row's tenant_id is NULL, so the tenant must be provisioned with its own method row"
+    );
+  }
+}
+
+/**
  * Refuses an allocation whose three currencies are not all the same.
  *
  * `sal.allocate_receipt` checks receipt-vs-invoice itself. This adds the caller's

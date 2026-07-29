@@ -226,10 +226,6 @@ const EXPECTED_AUDIT_ACTIONS = [
   'crm.customer.status_changed',
   'crm.customer.tag_assigned',
   'crm.customer.vehicle_linked',
-  // Wave 7. `dia.diagnostic.entry_recorded` is one action across six entry tables,
-  // each record naming its `entry_kind`: they are the same fact — something was added
-  // to this report — and splitting them would make "what went into this report" six
-  // audit queries instead of one.
   'dia.diagnostic.completed',
   'dia.diagnostic.created',
   'dia.diagnostic.entry_recorded',
@@ -258,10 +254,6 @@ const EXPECTED_AUDIT_ACTIONS = [
   'iam.user.locked',
   'iam.user.unlocked',
   'iam.user.updated',
-  // Phase 1-21 inventory. Quantity movements are `privileged` rather than
-  // `financial`: Phase 1-10 put valuation out of scope, so `inv.stock_movements`
-  // carries a quantity and no amount. `inv.external_purchase.recorded` IS financial,
-  // because it carries a unit cost.
   'inv.customer_supplied_part.recorded',
   'inv.external_purchase.recorded',
   'inv.movement_history.read',
@@ -277,7 +269,6 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.branch.status_changed',
   'org.company.settings_updated',
   'org.tenant.settings_updated',
-  // Wave 8. `qms.*` sorts after `org.*` and before `rec.*`.
   'qms.quality_control.check_recorded',
   'qms.quality_control.finalized',
   'qms.quality_control.opened',
@@ -303,6 +294,18 @@ const EXPECTED_AUDIT_ACTIONS = [
   'rec.reception.party_role_assigned',
   'rec.reception.refusal_recorded',
   'rec.reception.signature_recorded',
+  'sal.credit_note.approved',
+  'sal.credit_note.requested',
+  'sal.delivery.checklist_recorded',
+  'sal.delivery.completed',
+  'sal.delivery.created',
+  'sal.delivery.receiver_verified',
+  'sal.delivery.signature_recorded',
+  'sal.invoice.created',
+  'sal.invoice.issued',
+  'sal.invoice.voided',
+  'sal.payment.allocated',
+  'sal.receipt.recorded',
   'shared.document.download_authorized',
   'shared.document.linked',
   'shared.document.unlinked',
@@ -339,8 +342,6 @@ const EXPECTED_AUDIT_ACTIONS = [
   'veh.vehicle.plate_assigned',
   'veh.vehicle.status_changed',
   'veh.vehicle.updated',
-  // Wave 6. `wo.additional_work.*` sorts before `wo.customer_approval.*` and both
-  // before `wo.job.*`, because the pin is sorted by the FULL code.
   'wo.additional_work.detail_read',
   'wo.additional_work.detail_recorded',
   'wo.additional_work.fulfillment_changed',
@@ -357,6 +358,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.work_order.rework_opened',
   'wo.work_order.service_line_recorded',
   'wo.work_order.state_changed',
+  'wty.warranty.issued',
 ];
 
 /**
@@ -574,11 +576,15 @@ const EXPECTED_EVENT_TYPES = [
   'business-partner.created',
   'business-partner.merged',
   'consent.changed',
+  'credit-note.issued',
   'customer-approval.recorded',
   'diagnostic-report.completed',
   'document.accepted',
   'document.link.changed',
   'document.version.registered',
+  'invoice.created',
+  'invoice.issued',
+  'invoice.voided',
   'job.assigned',
   'job.state-changed',
   'labor.session-changed',
@@ -586,6 +592,7 @@ const EXPECTED_EVENT_TYPES = [
   'message.delivery.changed',
   'message.enqueued',
   'organization.branch.status.changed',
+  'payment.allocated',
   'price-list.published',
   'quality-control.finalized',
   'quotation.accepted',
@@ -594,13 +601,11 @@ const EXPECTED_EVENT_TYPES = [
   'quotation.item-decided',
   'quotation.rejected',
   'quotation.revision-issued',
+  'receipt.recorded',
   'reception.approved',
   'rework.linked',
   'service.published',
   'session.revoked',
-  // Phase 1-21 inventory. One `stock.movement.posted` carries movementType,
-  // direction and the business reference, so it describes every posting kind
-  // without a consumer subscribing to four names for one fact.
   'stock.movement.posted',
   'stock.reservation.released',
   'stock.reserved',
@@ -608,8 +613,10 @@ const EXPECTED_EVENT_TYPES = [
   'user.status.changed',
   'vehicle.checked-in',
   'vehicle.created',
+  'vehicle.delivered',
   'vehicle.merged',
   'vehicle.relationship.changed',
+  'warranty.issued',
   'work-order.closed',
   'work-order.created',
   'work-order.state-changed',
