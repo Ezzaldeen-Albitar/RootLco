@@ -669,6 +669,54 @@ are additionally matched against the raw bytes. Verified across nine shapes —
 non-string `message` now all fail, as do both JSON rate-limit forms, token scope
 and SAML SSO.
 
+### AR-45 · a green pipeline did not notice one of its own scanners had gone blind
+
+The most instructive failure here, because the pipeline reported it as success.
+
+Four accuracy defects the second review flagged but had no budget to verify were
+checked by hand; all four were real. One was that `/sbin/apk` resolved while the
+container gate printed _"no package manager resolves in the production image"_ —
+a false statement inside a security gate. So apk was removed.
+
+**The removal took `/lib/apk/db` with it, and that is the installed-package
+database Trivy reads.** Trivy still recognised `alpine 3.24.1` from
+`/etc/alpine-release`, so it still produced an `os-pkgs` result — over nothing:
+
+| image                 | os-pkgs packages | os-pkgs vulns |
+| --------------------- | ---------------- | ------------- |
+| `/lib/apk/db` present | **18**           | 0             |
+| `/lib/apk/db` removed | **0**            | 0             |
+
+The two rows are indistinguishable from the outside. "0 OS vulnerabilities"
+meant the scanner could see nothing.
+
+**Run 12 (`4520b36`) passed 14/14 with `ci-gate` Go while this was true.** Every
+gate agreed the change was sound, including the container job whose own scanner
+had been blinded by it. It was found only by asking whether the hardening could
+have broken the scanner — nothing in the pipeline raised it, and nothing would
+have.
+
+**Fixed** by removing only the binary and keeping the database — apk does not
+resolve, no package manager resolves, and Trivy enumerates 27 OS and 48 language
+packages — and, more importantly, by making the class detectable: the container
+job now **asserts the scan enumerated packages** before accepting its silence.
+Verified in both directions; it fails on the blinded image. The JSON scan gained
+`list-all-pkgs: true`, without which the report carries no `Packages` array and
+the assertion would itself have had nothing to check.
+
+The hardening was still right. The measurement is the argument for it: removing
+the package managers took the image from **198 language packages to 48** and
+removed **14 real advisories** that ship in stock `node:22-alpine` —
+`brace-expansion 2.0.2` (×3), `tar` (×6), `picomatch` (×2), `sigstore`,
+`@sigstore/core`, `ip-address`. It simply must not cost the scanner its
+eyesight.
+
+The general rule, now enforced rather than believed: **a scanner must prove it
+looked at something before its silence is evidence of anything.** The same
+principle already governs the secret scanners, which refuse to report clean
+below a declared file count, and the private-key scan, which plants a canary it
+must find. The container scan was the one place it had not been applied.
+
 ### Recorded but not fixed
 
 Four findings reproduced mechanically and were then **refuted as defects** by
