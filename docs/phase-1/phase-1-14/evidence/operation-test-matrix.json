@@ -79,12 +79,12 @@
     "p1_22": {
       "registered": 20,
       "publicApi": 20,
-      "operationDepth": 0,
+      "operationDepth": 18,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 20,
-      "metadataOnly": 20
+      "unreferenced": 0,
+      "metadataOnly": 0
     }
   },
   "operations": [
@@ -4075,7 +4075,7 @@
       "path": "/credit-notes/{creditNoteId}/approval",
       "public": false,
       "files": ["tests/backend/p1-22-credit-note.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4099,20 +4099,20 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4125,7 +4125,7 @@
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4148,19 +4148,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4170,7 +4170,7 @@
       "path": "/deliveries/{deliveryId}/checklist-results",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4193,19 +4193,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4215,7 +4215,7 @@
       "path": "/deliveries/{deliveryId}/completion",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-concurrency.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4241,21 +4241,21 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "stale-version",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "stale-version",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4265,7 +4265,7 @@
       "path": "/deliveries",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4287,19 +4287,19 @@
         "denial",
         "cross-tenant"
       ],
-      "provided": [],
-      "missing": [
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
         "route",
         "service",
-        "success",
-        "authorization",
-        "idempotency",
-        "audit",
-        "isolation",
-        "denial",
-        "cross-tenant"
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4309,7 +4309,7 @@
       "path": "/deliveries/{deliveryId}/eligibility",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -4321,17 +4321,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4341,7 +4341,7 @@
       "path": "/deliveries/{deliveryId}/authorized-receiver",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4364,19 +4364,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4386,7 +4386,7 @@
       "path": "/deliveries/{deliveryId}/signatures",
       "public": false,
       "files": ["tests/backend/p1-22-delivery.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4409,19 +4409,19 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4431,7 +4431,7 @@
       "path": "/invoices/{invoiceId}/cancellation",
       "public": false,
       "files": ["tests/backend/p1-22-invoice-lifecycle.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4457,21 +4457,20 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "stale-version",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": ["stale-version"],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4484,7 +4483,7 @@
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4507,20 +4506,20 @@
         "denial",
         "cross-tenant"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
+      "provided": [
         "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
         "isolation",
         "outbox",
-        "denial",
-        "cross-tenant"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4533,7 +4532,7 @@
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -4545,17 +4544,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4568,7 +4567,7 @@
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-concurrency.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4594,21 +4593,20 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "stale-version",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": ["stale-version"],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4621,7 +4619,7 @@
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -4633,17 +4631,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4656,7 +4654,7 @@
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts"
       ],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -4668,17 +4666,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4688,7 +4686,7 @@
       "path": "/payments/{paymentId}/allocations",
       "public": false,
       "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-concurrency.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4712,20 +4710,20 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4735,13 +4733,13 @@
       "path": "/payment-methods",
       "public": false,
       "files": ["tests/backend/p1-22-payments.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
-      "declared": ["denial"],
-      "required": ["route", "service", "success", "authorization", "denial"],
-      "provided": [],
-      "missing": ["route", "service", "success", "authorization", "denial"],
-      "metadataOnly": true,
+      "declared": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4751,7 +4749,7 @@
       "path": "/payments",
       "public": false,
       "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -4774,20 +4772,20 @@
         "denial",
         "cross-tenant"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
-        "authorization",
-        "idempotency",
+      "provided": [
         "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
         "isolation",
         "outbox",
-        "denial",
-        "cross-tenant"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -4797,7 +4795,7 @@
       "path": "/payments/{paymentId}",
       "public": false,
       "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -4809,17 +4807,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -8056,7 +8054,7 @@
       "path": "/warranties/{warrantyId}",
       "public": false,
       "files": ["tests/backend/p1-22-warranty.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
       "required": [
@@ -8068,17 +8066,17 @@
         "isolation",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     },
     {
@@ -8088,7 +8086,7 @@
       "path": "/deliveries/{deliveryId}/warranties",
       "public": false,
       "files": ["tests/backend/p1-22-warranty.test.ts", "tests/backend/p1-22-isolation.test.ts"],
-      "referenced": false,
+      "referenced": true,
       "derived": [
         "route",
         "service",
@@ -8112,20 +8110,20 @@
         "outbox",
         "denial"
       ],
-      "provided": [],
-      "missing": [
-        "route",
-        "service",
-        "success",
+      "provided": [
+        "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
-        "audit",
         "isolation",
         "outbox",
-        "denial"
+        "route",
+        "service",
+        "success"
       ],
-      "metadataOnly": true,
+      "missing": [],
+      "metadataOnly": false,
       "unitOnly": false
     }
   ]

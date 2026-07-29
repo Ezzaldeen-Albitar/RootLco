@@ -78,7 +78,24 @@ export const DELIVERY_COMPLETE_OPERATION = defineOperation({
   method: 'POST',
   path: '/deliveries/{deliveryId}/completion',
   summary: 'Complete a delivery, releasing custody and capturing the final odometer.',
-  permissions: ['sal.delivery.complete', 'sal.finance.view'],
+  // `sal.delivery.view` is NOT bookkeeping, and omitting it made this operation
+  // IMPOSSIBLE to complete. `sal.complete_delivery` is `SECURITY INVOKER`, and two of
+  // its three gates read `sal.authorized_receivers` and `sal.delivery_signatures` —
+  // whose SELECT policies (`sel_authorized_receivers_gated`,
+  // `sel_delivery_signatures_gated`) are both gated by
+  // `iam.has_permission('sal.delivery.view')`. A caller without it makes those `EXISTS`
+  // checks see zero rows, so the primitive raises `check_violation` reporting "no
+  // authorized receiver" for a delivery whose receiver is verified and whose signature
+  // is on file.
+  //
+  // The task gate caught this by asking a question that looks like paperwork — "is
+  // every seeded permission declared by some operation?" — and the answer was that
+  // `sal.delivery.view` was declared by none of the twenty. It is the mirror image of
+  // the blind zero recorded in `tests/db/p1-22-protected-residuals.test.ts`: that one
+  // failed PERMISSIVELY and was dangerous, this one fails CLOSED and was merely
+  // unusable, and both come from the same root cause — a `SECURITY INVOKER` function
+  // reading RLS-gated tables the operation's permission set did not cover.
+  permissions: ['sal.delivery.complete', 'sal.delivery.view', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'privileged',
   auditAction: 'sal.delivery.completed',

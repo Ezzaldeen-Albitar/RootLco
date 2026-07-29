@@ -50,7 +50,14 @@ export const DELIVERY_ELIGIBILITY_OPERATION = defineOperation({
   method: 'GET',
   path: '/deliveries/{deliveryId}/eligibility',
   summary: 'Report whether a delivery may complete, with every blocking reason.',
-  permissions: ['sal.delivery.manage', 'sal.finance.view'],
+  // `sal.delivery.view` gates SELECT on `sal.authorized_receivers` and
+  // `sal.delivery_signatures`, and two of the eight blockers are composed from exactly
+  // those two tables. Without it they are RLS-invisible, so `receiver_not_verified` and
+  // `signature_missing` would be reported for a delivery that HAS both — the same
+  // invisible-absence confusion as the blind zero, but in the safe direction. Safe is
+  // not the same as correct: it would tell an operator the handover is blocked for a
+  // reason they have already satisfied, with nothing to act on.
+  permissions: ['sal.delivery.manage', 'sal.delivery.view', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',

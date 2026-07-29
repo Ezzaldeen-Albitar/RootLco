@@ -162,7 +162,16 @@ const PHASE_LABEL = 'P1-22';
  * then this paragraph, not silence, is the record of the gap.
  */
 const TASKS = Object.freeze([
-  ['P1-22-BE-001', 'Billing module foundation', []],
+  [
+    'P1-22-BE-001',
+    'Billing module foundation',
+    [
+      ['symbol', 'src/modules/billing/index.ts', 'billingModule'],
+      ['symbol', 'src/modules/billing/domain/billing.ts', 'parseInvoiceAmount'],
+      ['symbol', 'src/modules/billing/domain/billing.ts', 'parseInstrumentAmount'],
+      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'BillingRepository'],
+    ],
+  ],
   [
     'P1-22-BE-002',
     'Invoice preview',
@@ -170,6 +179,7 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-preview'],
       ['permission', 'sal.invoice.manage'],
       ['permission', 'sal.finance.view'],
+      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'previewInvoice'],
     ],
   ],
   [
@@ -179,6 +189,7 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-create'],
       ['audit', 'sal.invoice.created'],
       ['event', 'invoice.created'],
+      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'createInvoice'],
     ],
   ],
   [
@@ -189,15 +200,31 @@ const TASKS = Object.freeze([
       ['permission', 'sal.invoice.issue'],
       ['audit', 'sal.invoice.issued'],
       ['event', 'invoice.issued'],
+      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'issueInvoice'],
+      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'issueInvoice'],
+      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readNumberingConfig'],
     ],
   ],
-  ['P1-22-BE-005', 'Invoice read and money visibility', [['operation', 'sal.invoice-detail']]],
+  [
+    'P1-22-BE-005',
+    'Invoice read and money visibility',
+    [
+      ['operation', 'sal.invoice-detail'],
+      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readInvoice'],
+    ],
+  ],
   [
     'P1-22-BE-006',
     'Outstanding-balance projection',
     [
       ['operation', 'sal.invoice-outstanding-read'],
       ['permission', 'sal.finance.view'],
+      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readOutstanding'],
+      [
+        'symbol',
+        'src/modules/billing/application/billing-read-service.ts',
+        'openReceivableForWorkOrder',
+      ],
     ],
   ],
   [
@@ -207,6 +234,8 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-cancel'],
       ['audit', 'sal.invoice.voided'],
       ['event', 'invoice.voided'],
+      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'cancelInvoice'],
+      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'voidInvoice'],
     ],
   ],
   [
@@ -219,9 +248,21 @@ const TASKS = Object.freeze([
       ['audit', 'sal.credit_note.requested'],
       ['audit', 'sal.credit_note.approved'],
       ['event', 'credit-note.issued'],
+      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'requestCreditNote'],
+      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'approveCreditNote'],
+      ['symbol', 'src/modules/billing/domain/billing.ts', 'assertCurrencyMatches'],
     ],
   ],
-  ['P1-22-BE-009', 'Payments module foundation', [['operation', 'sal.payment-method-list']]],
+  [
+    'P1-22-BE-009',
+    'Payments module foundation',
+    [
+      ['operation', 'sal.payment-method-list'],
+      ['symbol', 'src/modules/payments/index.ts', 'paymentsModule'],
+      ['symbol', 'src/modules/payments/application/payment-read-service.ts', 'listPaymentMethods'],
+      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertPaymentMethodIsTenantScoped'],
+    ],
+  ],
   [
     'P1-22-BE-010',
     'Payment recording',
@@ -230,6 +271,8 @@ const TASKS = Object.freeze([
       ['permission', 'sal.payment.record'],
       ['audit', 'sal.receipt.recorded'],
       ['event', 'receipt.recorded'],
+      ['symbol', 'src/modules/payments/application/payment-service.ts', 'recordPayment'],
+      ['symbol', 'src/modules/payments/domain/payments.ts', 'parsePaymentAmount'],
     ],
   ],
   [
@@ -240,9 +283,20 @@ const TASKS = Object.freeze([
       ['permission', 'sal.payment.allocate'],
       ['audit', 'sal.payment.allocated'],
       ['event', 'payment.allocated'],
+      ['symbol', 'src/modules/payments/application/payment-service.ts', 'allocatePayment'],
+      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationUsesPrimitive'],
+      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationCurrencyCoherent'],
+      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationWithinBounds'],
     ],
   ],
-  ['P1-22-BE-012', 'Receipt read', [['operation', 'sal.receipt-detail']]],
+  [
+    'P1-22-BE-012',
+    'Receipt read',
+    [
+      ['operation', 'sal.receipt-detail'],
+      ['symbol', 'src/modules/payments/application/payment-read-service.ts', 'readReceipt'],
+    ],
+  ],
   [
     'P1-22-BE-013',
     'Delivery module foundation',
@@ -250,12 +304,19 @@ const TASKS = Object.freeze([
       ['operation', 'sal.delivery-create'],
       ['permission', 'sal.delivery.manage'],
       ['audit', 'sal.delivery.created'],
+      ['symbol', 'src/modules/delivery/index.ts', 'deliveryModule'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'createDelivery'],
     ],
   ],
   [
     'P1-22-BE-014',
     'Delivery eligibility composition',
-    [['operation', 'sal.delivery-eligibility-read']],
+    [
+      ['operation', 'sal.delivery-eligibility-read'],
+      ['symbol', 'src/modules/delivery/application/delivery-read-service.ts', 'readEligibility'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'composeEligibility'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'BLOCKER_CODES'],
+    ],
   ],
   [
     'P1-22-BE-015',
@@ -263,6 +324,7 @@ const TASKS = Object.freeze([
     [
       ['operation', 'sal.delivery-receiver-verify'],
       ['audit', 'sal.delivery.receiver_verified'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'verifyReceiver'],
     ],
   ],
   [
@@ -273,6 +335,10 @@ const TASKS = Object.freeze([
       ['operation', 'sal.delivery-signature-attach'],
       ['audit', 'sal.delivery.checklist_recorded'],
       ['audit', 'sal.delivery.signature_recorded'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'recordChecklistResult'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'attachSignature'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertChecklistResultShape'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertSignerRole'],
     ],
   ],
   [
@@ -283,6 +349,9 @@ const TASKS = Object.freeze([
       ['permission', 'sal.delivery.complete'],
       ['audit', 'sal.delivery.completed'],
       ['event', 'vehicle.delivered'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'completeDelivery'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'withOverrides'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertEligible'],
     ],
   ],
   [
@@ -294,23 +363,117 @@ const TASKS = Object.freeze([
       ['permission', 'wty.warranty.issue'],
       ['audit', 'wty.warranty.issued'],
       ['event', 'warranty.issued'],
+      ['symbol', 'src/modules/warranty/index.ts', 'warrantyModule'],
+      ['symbol', 'src/modules/warranty/application/warranty-service.ts', 'generateWarranty'],
+      ['symbol', 'src/modules/warranty/application/warranty-service.ts', 'readWarranty'],
+      ['symbol', 'src/modules/warranty/domain/warranty.ts', 'assertPolicyActive'],
+      ['symbol', 'src/modules/warranty/domain/warranty.ts', 'assertWritableStatus'],
     ],
   ],
   ['P1-22-SEC-001', 'Authorization and isolation matrix', []],
-  ['P1-22-SEC-002', 'Currency coherence and exact money', []],
-  ['P1-22-SEC-003', 'Receiver and signature privacy', [['permission', 'sal.delivery.view']]],
-  ['P1-22-SEC-004', 'Numbering safety', []],
+  [
+    'P1-22-SEC-002',
+    'Currency coherence and exact money',
+    [
+      ['symbol', 'scripts/ci/check-exact-money.mjs', 'MONEY_TREES'],
+      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'parseNonNegative'],
+      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'parsePositive'],
+      ['symbol', 'src/modules/pricing/domain/money.ts', 'assertSameCurrency'],
+    ],
+  ],
+  [
+    'P1-22-SEC-003',
+    'Receiver and signature privacy',
+    [
+      ['permission', 'sal.delivery.view'],
+      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'SIGNER_ROLES'],
+      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'attachSignature'],
+    ],
+  ],
+  [
+    'P1-22-SEC-004',
+    'Numbering safety',
+    [
+      ['symbol', 'src/modules/shared-services/domain/sequence-registry.ts', 'SEQUENCE_DEFINITIONS'],
+      [
+        'symbol',
+        'src/modules/shared-services/application/number-allocation-service.ts',
+        'isProvisioned',
+      ],
+    ],
+  ],
   ['P1-22-QA-001', 'Phase test cases TC-P1-22-001 to 008', []],
-  ['P1-22-QA-002', 'Idempotency replay evidence', []],
+  [
+    'P1-22-QA-002',
+    'Idempotency replay evidence',
+    [
+      ['symbol', 'scripts/ci/check-idempotency-evidence.mjs', 'EVIDENCE_KEY'],
+      [
+        'test',
+        'tests/backend/p1-22-payments.test.ts',
+        'replays an idempotency key without recording a second receipt',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-payments.test.ts',
+        'replays an idempotency key without allocating twice',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-warranty.test.ts',
+        'replays an idempotency key without issuing a second warranty',
+      ],
+      [
+        'test',
+        'tests/backend/p1-22-payments.test.ts',
+        'refuses the same idempotency key with a different payload',
+      ],
+    ],
+  ],
   ['P1-22-QA-003', 'Real concurrency races', []],
   [
     'P1-22-QA-004',
     'Endpoint inventory and operation depth',
     [['doc', 'docs/phase-1/phase-1-22/operation-inventory.md', 'sal.invoice-issue']],
   ],
-  ['P1-22-QA-005', 'Hostile mutation matrix', []],
-  ['P1-22-DO-001', 'CI gate integration', []],
-  ['P1-22-DO-002', 'Coverage non-regression and evidence artifacts', []],
+  [
+    'P1-22-QA-005',
+    'Hostile mutation matrix',
+    [
+      ['symbol', 'scripts/ci/hostile-mutations.mjs', 'M-22-01'],
+      ['symbol', 'scripts/ci/hostile-mutations.mjs', 'M-22-09'],
+      ['symbol', 'scripts/ci/hostile-mutations.mjs', 'ALLOCATE_RECEIPT_SQL'],
+      [
+        'test',
+        'tests/foundation/exact-money-gate.test.ts',
+        'MONEY-01 catches Number() on an amount',
+      ],
+    ],
+  ],
+  [
+    'P1-22-DO-001',
+    'CI gate integration',
+    [
+      ['symbol', '.github/workflows/ci.yml', 'npm run validate:p1-22-inventory'],
+      ['symbol', '.github/workflows/_reusable-clean-room.yml', 'npm run validate:p1-22-inventory'],
+      ['symbol', '.github/workflows/_reusable-node-quality.yml', 'npm run validate:exact-money'],
+      ['symbol', 'package.json', 'validate:p1-22-inventory'],
+    ],
+  ],
+  [
+    'P1-22-DO-002',
+    'Coverage non-regression and evidence artifacts',
+    [
+      ['symbol', 'scripts/ci/coverage-gate.mjs', 'tolerancePercentagePoints'],
+      ['symbol', '.github/ci-baselines/coverage-baseline.backend.json', 'touchedFileMinimum'],
+      ['symbol', 'scripts/check-operation-test-coverage.mjs', 'P1_22_PREFIXES'],
+      [
+        'symbol',
+        'tests/foundation/operation-coverage-gate.test.ts',
+        'P1-22 hook 1: the derived floor',
+      ],
+    ],
+  ],
   [
     'P1-22-DOC-001',
     'Operation inventory, blocker treatment and limitations',

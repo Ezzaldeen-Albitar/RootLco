@@ -58,7 +58,10 @@ export const DELIVERY_SIGNATURE_ATTACH_OPERATION = defineOperation({
   method: 'POST',
   path: '/deliveries/{deliveryId}/signatures',
   summary: 'Bind an existing signature document version to a delivery by reference.',
-  permissions: ['sal.delivery.manage'],
+  // Same asymmetry as the receiver route: 'sal.delivery.manage' grants the INSERT and
+  // 'sal.delivery.view' grants the SELECT that reads the row back. sal.delivery_signatures
+  // is append-only, so the read-back is the only way the response can name what was bound.
+  permissions: ['sal.delivery.manage', 'sal.delivery.view'],
   scope: 'branch',
   auditClass: 'privileged',
   auditAction: 'sal.delivery.signature_recorded',

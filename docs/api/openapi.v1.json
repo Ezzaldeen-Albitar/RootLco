@@ -2734,7 +2734,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.delivery.manage"],
+        "x-required-permissions": ["sal.delivery.manage", "sal.delivery.view"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2860,7 +2860,11 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.delivery.complete", "sal.finance.view"],
+        "x-required-permissions": [
+          "sal.delivery.complete",
+          "sal.delivery.view",
+          "sal.finance.view"
+        ],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -2914,7 +2918,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.delivery.manage", "sal.finance.view"],
+        "x-required-permissions": ["sal.delivery.manage", "sal.delivery.view", "sal.finance.view"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -2974,7 +2978,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.delivery.manage"],
+        "x-required-permissions": ["sal.delivery.manage", "sal.delivery.view"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",

@@ -49,7 +49,12 @@ export const DELIVERY_RECEIVER_VERIFY_OPERATION = defineOperation({
   method: 'POST',
   path: '/deliveries/{deliveryId}/authorized-receiver',
   summary: 'Verify the single authorized receiver for a delivery against the visit roles.',
-  permissions: ['sal.delivery.manage'],
+  // INSERT needs 'sal.delivery.manage' (ins_authorized_receivers_gated) but the
+  // 'exactly one receiver per delivery' pre-check and the read-back that builds the
+  // response both SELECT the row, and SELECT is gated by 'sal.delivery.view'. Declaring
+  // only the write authority would let the INSERT succeed and then fail to read back what
+  // it had just written.
+  permissions: ['sal.delivery.manage', 'sal.delivery.view'],
   scope: 'branch',
   auditClass: 'privileged',
   auditAction: 'sal.delivery.receiver_verified',
