@@ -366,10 +366,32 @@ const MUTATIONS = Object.freeze([
   },
   {
     id: 'M-22-06',
-    target: 'src/modules/warranty/application/warranty-service.ts',
-    claim: 'a warranty is generated only from a delivery that is committed as delivered',
-    from: "    ruleRefusal('ERR-TRN-001', () => assertDeliveryDelivered(delivery.status));",
-    to: '',
+    target: 'src/modules/warranty/domain/warranty.ts',
+    claim:
+      'the delivered-handover test is the RIGHT WAY ROUND — a delivered delivery is accepted and anything else is refused',
+    /**
+     * Retargeted after the original mutation SURVIVED, and the reason is worth keeping.
+     *
+     * The first version deleted the CALL SITE:
+     *   `ruleRefusal('ERR-TRN-001', () => assertDeliveryDelivered(delivery.status));`
+     * and the warranty suite still passed. That is not a weak test. It is an
+     * UNOBSERVABLE mutation, and the schema is why:
+     *
+     * `ck_delivery_records_delivered_shape` is
+     *   `(status = 'delivered') = (delivered_at IS NOT NULL AND final_odometer_reading_id IS NOT NULL)`
+     * so for any real row `status <> 'delivered'` IMPLIES `delivered_at IS NULL` — and the
+     * very next guard in the same method refuses a null `deliveredAt` with the SAME
+     * `ERR-TRN-001`. The two conditions are equivalent on real data and produce an
+     * identical HTTP response, so no assertion over the API surface can tell which one
+     * fired. Adding one would have meant asserting on a message, and `problemFor` never
+     * emits one.
+     *
+     * So the property worth pinning is not "the call exists" but "the comparison is the
+     * right way round". Inverting it makes a DELIVERED delivery refused, which the success
+     * case (TC-P1-22-007) must notice — and does.
+     */
+    from: "  if (deliveryStatus !== 'delivered') {",
+    to: "  if (deliveryStatus === 'delivered') {",
     verify: WARRANTY,
   },
   {

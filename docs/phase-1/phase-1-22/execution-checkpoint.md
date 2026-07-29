@@ -2,151 +2,153 @@
 
 **Phase:** P1-22 — Billing, Payment, Delivery, and Warranty Backend
 **Branch:** `feature/p1-22-billing-payment-delivery-warranty-backend`
-**Status:** **Wave 1 COMPLETE. Evidence wave IN PROGRESS. THE PHASE IS NOT CLOSED.**
+**Status:** **Implementation and evidence COMPLETE and green. Pre-merge verification in
+progress. THE PHASE IS NOT CLOSED.**
 
 ## Current position
 
-| Field                 | Value                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------- |
-| HEAD                  | `8efbd6e98e72fed5fdb640a286c4c6ffa9e18334`                                            |
-| Remote                | pushed — `origin/feature/…` equals HEAD                                               |
-| `P1_22_BASE_SHA`      | `0a53e540d72329e9aef6b196b68627aeb40b4c79`                                            |
-| Commits of P1-22 work | 11 (4 documentation, 7 executable)                                                    |
-| Migrations            | **119**, no `120`, none modified, nothing under `supabase/` touched                   |
-| Schema hash           | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c`                    |
-| `origin/develop`      | `0a53e540d72329e9aef6b196b68627aeb40b4c79` (unchanged)                                |
-| `origin/main`         | `9c2fea162e5a270c740bac8db3546ed695a6f58a` (promoted, untouched)                      |
-| Local PostgreSQL      | available — `supabase_db_RootLco`, 119 migrations applied, 24 `sal`+`wty` tables      |
-| GitHub API            | available — `gho_` token via `git credential fill`, scopes include `repo`, `workflow` |
-| Feature PR            | **not opened** — and must not be until the gates below are green                      |
+| Field            | Value                                                                   |
+| ---------------- | ----------------------------------------------------------------------- |
+| HEAD             | `6438b71446f837d111e02fda5a98de0a2782f95e` (plus uncommitted doc fixes) |
+| `P1_22_BASE_SHA` | `0a53e540d72329e9aef6b196b68627aeb40b4c79`                              |
+| Migrations       | **119**, no `120`, none modified, nothing under `supabase/` touched     |
+| Schema hash      | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c`      |
+| `origin/develop` | `0a53e540d72329e9aef6b196b68627aeb40b4c79` (unchanged)                  |
+| `origin/main`    | `9c2fea162e5a270c740bac8db3546ed695a6f58a` (promoted, untouched)        |
+| Feature PR       | **not opened** — opens only once the pre-merge list below is complete   |
 
-## Commit chain
+## Both phase gates are green
 
-| SHA       | What                                                                |
-| --------- | ------------------------------------------------------------------- |
-| `db35d75` | Wave 0 close (inherited)                                            |
-| `a22c666` | coverage gate: four hooks repaired, each mutation-tested separately |
-| `3b96af8` | four domain layers + the 20-operation inventory                     |
-| `862fe0c` | all ten blockers treated + the numbering runbook                    |
-| `5384d31` | four protected residuals proven at the DB tier                      |
-| `e4cd151` | four modules, twenty operations, all shared registrations           |
-| `e0111e2` | exact-money gate + twenty coverage-manifest entries                 |
-| `fda07c3` | the **blind zero** (fifth residual) + twenty OpenAPI registrations  |
-| `6ffffdb` | backend fixtures + payments and warranty suites (49 tests)          |
-| `8efbd6e` | dropped an unbackable obligation; fixed two comments I got wrong    |
+```
+operation-coverage:  20 registered · DEPTH 20 · invocation-only 0 · pending 0 ·
+                     unit-only 0 · unreferenced 0 · metadata-only 0
+p1-22 inventory:     20 operations; permissions, audit actions, events and ALL 31
+                     task identifiers reconcile
+```
 
-## Measured green
+Every figure is measured, and `metadata-only 0` in particular is measured rather than
+vacuous — the structural opt-in added in `a22c666` is what makes it so.
 
-- typecheck, eslint, prettier over the whole repository.
-- module boundaries: 410 files, 11 rules, no violation.
-- authorization coverage: every operation guarded, every route registered.
-- route ↔ OpenAPI registry parity: exit 0.
-- OpenAPI: **189 paths, 219 operations**, structurally valid, every operation guarded
-  (up from 169/199).
-- route-template reconciliation: 4/4 (189 templates, +20 with no reordering).
-- catalogue pins: `EXPECTED_AUDIT_ACTIONS` 138→151, `EXPECTED_EVENT_TYPES` 42→50,
-  plus the event-envelope implemented list and `OWNERS_BY_PHASE`.
-- exact-money gate: 42 files across 12 declared trees, **0 findings**, mutation-tested on
-  five vectors with byte-identical restoration.
-- `tests/db/p1-22-protected-residuals.test.ts`: **10/10**.
-- `tests/backend/p1-22-payments.test.ts`: **29/29**.
-- `tests/backend/p1-22-warranty.test.ts`: **20/20**.
-- unit + foundation tier: 1221 tests green.
-- `sal.payment-method-list` is the first P1-22 operation the coverage gate reports `[OK]`.
+## Test tiers
 
-## Measured RED, with the exact cause
+| Tier              | Files | Tests     |
+| ----------------- | ----- | --------- |
+| unit + foundation | 56    | **1239**  |
+| backend           | 68    | **1594**  |
+| database          | 138   | **1634**  |
+| **total**         | 262   | **4,467** |
 
-**Operation-coverage gate.** 20 registered, **operation depth 1 of 20**. The manifest
-names `p1-22-invoice-lifecycle`, `p1-22-credit-note`, `p1-22-delivery`, `p1-22-isolation`,
-`p1-22-concurrency` and `p1-22-currency-coherence`, and **those six files do not exist
-yet** — they are in flight. The names are in the manifest deliberately, so the gate keeps
-failing until the files exist rather than being quietly satisfied by a shorter list.
+P1-22's own backend contribution is 203 tests: invoice-lifecycle 43, delivery 49,
+payments 29, currency-coherence 21, isolation 20, warranty 20, credit-note 14,
+concurrency 7. Plus 10 DB residual tests and 18 money-gate fixture tests.
 
-**`validate:p1-22-inventory`** exits non-zero: 10 of 31 tasks have no proof yet, and the
-symbol/test proofs are added per task as evidence lands.
+## Static gates, all exit 0
 
-**Nothing in this branch claims any operation is tested that is not.**
+`tsc` · `prettier --check` (whole repo) · `eslint` · operation-coverage · exact-money ·
+route↔OpenAPI parity · authorization-coverage · openapi (189 paths / 219 operations) ·
+module-boundaries (410 files, 11 rules) · idempotency-evidence · sal-wty-rpt
+classification · no-fake-data · scope-exclusions · encoding · run-block syntax ·
+workflow-security (17 workflows, 14 rules).
 
-## The five protected residuals, all reproduced against the live database
+## Three Highs found and fixed, none of them in the archaeology
 
-Shaped the opposite way from every other DB suite: these prove the schema does **not**
-defend something, so if a future migration closes one, the case fails and says "the guard
-is now redundant, go and simplify it".
+**1. The blind zero.** `sal.invoice_open_receivable` is `SECURITY INVOKER` and all three
+of its inputs are gated by `sal.finance.view`, so a caller without it gets **`0` with no
+error** — byte-identical to a settled invoice. Composed into the delivery gate, that waves
+through an operator who may see invoices but not money, and `sal.complete_delivery` checks
+no balance itself. Reproduced: 100.0000 with the permission, 0.0000 without, same invoice,
+same transaction. Detected structurally, because an issued invoice ALWAYS has an amounts
+row (`guard_invoice_totals_reconcile` raises at COMMIT without one), so a NULL can only
+mean "you cannot see it".
 
-1. **SB1** — a JOD credit note against a USD invoice is inserted, **approved** by a
-   distinct dual-control approver, and 40 JOD is subtracted from a USD gross
-   (100.0000 → 60.0000). Guard: `assertCurrencyMatches`. `P1-22-L-02`, CC-1.
-2. **BR-SAL-002** — `allocate_receipt` refuses 500 against a 100 receipt; a raw INSERT of
-   the same 500 succeeds and drives both derivations to **−400.0000**. `app_runtime` holds
-   exactly `[INSERT, SELECT]`. Guard: route every allocation through the primitive. CC-4.
-3. **SB3** — `P0002` for an unprovisioned scope, `42501` for the repairing INSERT, and a
-   failed issue consumes **no** number. `P1-22-L-03` plus the operator runbook.
-4. **P1-22-L-06** — `partner_outstanding_balance` returns `150.0000` for one USD invoice
-   open 100 and one JOD open 50. Unlabellable at source, so it is not exposed.
-5. **The blind zero — not in the archaeology, found while implementing, and the most
-   consequential of the five.** `sal.invoice_open_receivable` is `SECURITY INVOKER` and all
-   three of its inputs are gated by `sal.finance.view`, so a caller without it gets **0
-   with no error** — byte-identical to a settled invoice. Composed into a delivery gate
-   that waves through an operator who may see invoices but not money, and
-   `sal.complete_delivery` checks no balance itself. Reproduced: 100.0000 with the
-   permission, 0.0000 without, same invoice, same transaction, amounts row invisible
-   (count 0) while the header stays visible (count 1). Detected structurally — an issued
-   invoice ALWAYS has an amounts row because `guard_invoice_totals_reconcile` raises at
-   COMMIT without one, so a NULL can only mean "you cannot see it". Both routes that read a
-   balance additionally require the permission.
+**2. `sal.delivery.view` was declared by no operation.** It gates SELECT on
+`sal.authorized_receivers` and `sal.delivery_signatures`, and `sal.complete_delivery` —
+`SECURITY INVOKER` — reads both. A caller holding exactly what the operation declared made
+those `EXISTS` checks see zero rows, so the primitive raised `check_violation` reporting
+"no authorized receiver" for a delivery whose receiver was verified. **Vehicle delivery was
+unreachable.** Caught by the task gate's "is every seeded permission declared by some
+operation?" reconciliation — the only thing in the repository that would have noticed.
+
+**3. `versionGuarded: true` declared and never enforced, on three routes.**
+`handleOperation` demanded an `If-Match` header and handed the value to the handler; all
+three discarded it. Reproduced as `If-Match: 99` against `record_version` 1 → 200, issued,
+number allocated. `sal.delivery-complete` had the same defect in the more instructive
+shape: its service check existed and was **inert**, because the field is optional and the
+route never supplied it. A guard can be present, correct, and dead.
+
+Highs 1 and 3 share one root cause with High 2: a `SECURITY INVOKER` function or an
+optional parameter meant a declared control did not cover what it appeared to. One failed
+permissively (dangerous), two failed closed (unusable).
+
+**How 3 was caught is worth recording.** Two suite authors reproduced it independently,
+left the cases FAILING with `DEFECT` comments, and refused to declare `stale-version` in
+their COVERAGE-EVIDENCE. The coverage gate then named exactly two missing flags. Had either
+declared the flag to make the gate green, the defect would have shipped behind a passing
+gate.
+
+## The five protected residuals, all reproduced
+
+`tests/db/p1-22-protected-residuals.test.ts` (10 tests) proves the schema does **not**
+defend five things, so if a migration ever closes one the case fails and says the
+application guard is now redundant.
+
+1. **SB1** — a JOD credit note against a USD invoice is inserted, **approved**, and 40 JOD
+   subtracted from a USD gross (100.0000 → 60.0000). `P1-22-L-02`, CC-1.
+2. **BR-SAL-002** — the primitive refuses 500 against a 100 receipt; a raw INSERT of the
+   same 500 succeeds and drives both derivations to **−400.0000**. CC-4.
+3. **SB3** — `P0002` unprovisioned, `42501` on the repairing INSERT, and a failed issue
+   consumes **no** number. `P1-22-L-03` + runbook.
+4. **P1-22-L-06** — `partner_outstanding_balance` returns `150.0000` for 100 USD + 50 JOD.
+5. **The blind zero** (above).
 
 ## Findings recorded from the implementation
 
 - `sal.credit_notes` has **no `deleted_at`/`deleted_by`**, unlike every other `sal` table.
-- `sal.credit_notes.reason` is `NOT NULL` with no non-empty and no length CHECK, and
-  `invoice_status_history.reason` has neither — `''` would be storable as the justification
-  for reducing a receivable. `requireReason()` is the only defence.
+- `sal.credit_notes.reason` is `NOT NULL` with no non-empty and no length CHECK;
+  `invoice_status_history.reason` has neither. `requireReason()` is the only defence.
 - **`invoice.status = 'credited'` is unreachable through any `sal` primitive.**
-- Nothing prevents **two accepted quotations on one work order**
-  (`ix_quotations_work_order` is not unique). The service refuses with `ERR-CON-001` rather
-  than choosing by `created_at`.
-- **`P1-22-L-07` (new): the warranty payer split is always customer-100%.** No protected
-  configuration determines a warranty contribution at invoice time — warranties are
-  generated _from_ a committed delivery, after invoicing — so a non-zero share could only
-  come from client input, which would let a caller reduce what a customer owes by asserting
-  it. Consequence: `sal.issue_invoice` emits no `warranty_split_recorded` event today.
-- `tax_class_id` is left NULL on every invoice line: `quo.quotation_items` captures a tax
-  _rate_ and no class, and no protected mapping exists from a rate back to its class.
-- `billing-repository.ts` reads `quo.*` read-only, widening a documented boundary the
-  checker does not police. It follows established practice (`inventory-repository.ts` reads
-  `wo.work_orders`), and the alternative forces a TypeScript sum. Recorded, not hidden.
-- A stale comment named a field (`usableForReceipt`) the read service does not emit
-  (`recordable`); and the manifest carried a `denial` obligation for an operation that
-  parses no input at all. Both were mine, both fixed in `8efbd6e`.
+- Nothing prevents **two accepted quotations on one work order**; the service refuses with
+  `ERR-CON-001` rather than choosing by `created_at`.
+- **The invoice preview has no tax-configuration lookup at all.** Tax comes from
+  `quo.quotation_items.captured_tax_rate`, which is `NOT NULL DEFAULT 0` — so rate 0 is a
+  legitimate "no tax", not a missing configuration. The brief's "controlled configuration
+  error for missing tax" was not implementable because there is nothing to be missing; the
+  real never-a-silent-zero guard on that path is `resolveCommercialSource`, and all three
+  ways a commercial source can fail are asserted instead.
+- `resolveCommercialSource`'s `itemCount === 0` branch is **dead code**:
+  `rollUpDecisions` returns `null` for an item-less revision, so the `accepted` filter
+  removes it first.
+- `problemFor` assembles a response from the catalog entry plus `safeDetails` only, so an
+  `AppFailure` message is **never observable over HTTP**. Asserted structurally: the
+  problem document's keys are exactly `code, correlationId, status, title, type`, and the
+  raw text matches no constraint name, index name, SQLSTATE, schema-qualified table or SQL
+  verb.
+- `billing-repository.ts` reads `quo.*` read-only, widening a boundary the checker does not
+  police. It follows established practice (`inventory-repository.ts` reads
+  `wo.work_orders`) and the alternative forces a TypeScript sum.
+- `scripts/ci` moved 26 → 27 scripts, and `tests/ci/documented-counts.test.ts` failed on
+  exactly that discrepancy rather than it being noticed in review.
 
-## Accepted limitations carried forward
+## Accepted limitations
 
 `P1-22-L-01` warranty claim adjudication · `L-02` currency equality is application-only ·
 `L-03` numbering requires operator provisioning · `L-04` signatures bind but cannot be
 retrieved · `L-05` no refund/partial reversal/multi-invoice credit/ledger ·
-`L-06` `partner_outstanding_balance` mixes currencies · **`L-07` warranty payer split is
-always customer-100%**.
+`L-06` `partner_outstanding_balance` mixes currencies · `L-07` the warranty payer split is
+always customer-100%, because no protected configuration determines it at invoice time —
+so `sal.issue_invoice` emits no `warranty_split_recorded` event today.
 
-## Tasks
+Change-control candidates CC-1..CC-6, none acted on, all needing a migration.
 
-**0 of 31 claimed.** Backend 0/18 · Security 0/4 · QA 0/5 · DevOps 0/2 · Documentation
-0/2. No task is claimed without executable evidence.
+## Remaining before closure
 
-## Next exact action
-
-1. Land the six in-flight suites and drive operation depth to 20/20 with pending,
-   unit-only, metadata-only and unreferenced all 0.
-2. Implement `TC-P1-22-001` … `008`; add symbol/test proofs for all 31 tasks.
-3. Add the P1-22 entries to `scripts/ci/hostile-mutations.mjs`, run the matrix, restore
-   byte-identically.
-4. Run the fifteen independent read-only reviews; personally reproduce every Critical and
-   High.
-5. Freeze `FINAL_FEATURE_SHA`; open the feature PR against `develop`; require every
-   check-run, `ci-gate`, the hosted clean room, PR CodeQL **and an explicit full-tree
-   CodeQL on the exact feature head** — reconciled against the GitHub alert list and the
-   complete `/commits/{sha}/check-runs` list, **never `/actions/runs`, which does not list
-   every check** (that is the trap that let a red CodeQL check sit on five heads reported
-   as green).
-6. Merge with a merge commit; verify parents, containment, byte-identical tree, zero drift,
-   119 migrations, unchanged schema hash; then the gate record on
-   `gate/p1-22-billing-payment-delivery-warranty-backend`.
+1. Hostile mutation matrix — 40 entries including the nine P1-22 ones; running.
+2. The fifteen independent read-only reviews; personally reproduce every Critical and High.
+3. Freeze `FINAL_FEATURE_SHA`; feature PR against `develop`; require every check-run,
+   `ci-gate`, the hosted clean room, PR CodeQL **and an explicit full-tree CodeQL on the
+   exact feature head** — reconciled against the GitHub alert list and the complete
+   `/commits/{sha}/check-runs` list, **never `/actions/runs`, which does not list every
+   check**.
+4. Merge commit; verify parents, containment, byte-identical tree, zero drift, 119
+   migrations, unchanged schema hash.
+5. Gate record on `gate/p1-22-billing-payment-delivery-warranty-backend`.

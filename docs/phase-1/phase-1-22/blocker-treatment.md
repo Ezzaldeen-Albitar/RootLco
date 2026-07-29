@@ -96,3 +96,89 @@ repository contains no `INSERT INTO sal.payment_allocations`. That is a real
 defence of this phase's code and it is **not** a defence of the table: any future
 module with the same grant could bypass it. The database-level bound is the only
 durable fix.
+
+---
+
+## Found during implementation, not during archaeology
+
+The nine lenses were read-only. Three of the phase's most consequential findings could
+only appear once code existed, and all three are recorded here because a findings document
+that stopped at the archaeology would understate what the phase actually learned.
+
+### High 1 — the blind zero
+
+`sal.invoice_open_receivable` is `SECURITY INVOKER` and **all three of its inputs are
+gated by `sal.finance.view`** (`sel_invoice_amounts_gated`, `sel_receipts_gated` /
+`sel_payment_allocations_gated`, `sel_credit_notes_gated`). A caller without that
+permission gets no error: the rows are invisible, so the function computes
+`round(COALESCE(NULL,0) − 0 − 0, 4)` and returns **`0`**, which is byte-identical to a
+fully settled invoice.
+
+Composed into the delivery gate — the one gate with no database backstop — that waves
+through an operator who may see invoices but not money. Reproduced in
+`tests/db/p1-22-protected-residuals.test.ts` as a fifth residual: `100.0000` with the
+permission and `0.0000` without, same invoice, same transaction.
+
+**Treatment: application composition.** `balanceIsTrustworthy()` distinguishes invisible
+from absent, structurally: an issued invoice ALWAYS has an amounts row, because
+`guard_invoice_totals_reconcile` raises at COMMIT for a non-draft invoice without one — so
+a NULL can only mean "you cannot see it". Both routes that read a balance additionally
+require the permission.
+
+### High 2 — `sal.delivery.view` was declared by no operation
+
+It gates SELECT on `sal.authorized_receivers` and `sal.delivery_signatures`, and
+`sal.complete_delivery` — `SECURITY INVOKER` — reads both. A caller holding exactly what
+`sal.delivery-complete` declared made those `EXISTS` checks see zero rows, so the primitive
+raised `check_violation` reporting "no authorized receiver" for a delivery whose receiver
+was verified and whose signature was on file. **Vehicle delivery was unreachable.**
+
+**Treatment: application composition.** Four operations now declare it. Caught by the task
+gate's "is every seeded permission declared by some operation?" reconciliation — a check
+that looks like paperwork and was the only thing in the repository that would have noticed.
+
+### High 3 — `versionGuarded: true` declared and never enforced
+
+Three routes declared it, so `handleOperation` demanded an `If-Match` header and handed the
+parsed value to the handler — and all three discarded it. Reproduced as `If-Match: 99`
+against `record_version` 1: 200, issued, number allocated.
+
+`sal.delivery-complete` had it in the more instructive shape: its service check **existed
+and was inert**, because the field is optional and the route never supplied it. A guard can
+be present, correct, and dead.
+
+**Treatment: application composition.** All three compare against the row they have just
+locked `FOR UPDATE`, after the lock and before any state logic.
+
+**Why it was caught:** two suite authors reproduced it independently, left the cases FAILING
+with `DEFECT` comments, and refused to declare `stale-version`. The coverage gate then named
+exactly two missing flags. Had either declared the flag to make the gate green, the defect
+would have shipped behind a passing gate.
+
+### One limitation the archaeology could not have predicted
+
+| ID         | Limitation                                                   | Why it cannot close in P1-22                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P1-22-L-07 | The invoice **warranty payer split is always customer-100%** | No protected configuration determines a warranty contribution at invoice time. `wty.warranty_records` are generated **from** a committed delivery, i.e. after invoicing; there is no coverage reference on a work order, job, service line or quotation item, and no claim table. A non-zero share could only come from client input — which would let a caller reduce what a customer owes by asserting it. |
+
+`ck_invoice_line_amounts_payer_split` is satisfied exactly and by construction
+(`customer = gross − warranty`, computed in SQL), so the constraint is honoured; the
+warranty side is simply always `0.0000`. The consequence is recorded rather than hidden:
+**`sal.issue_invoice` emits no `warranty_split_recorded` financial event today**, and
+`NO_WARRANTY_SHARE` in `invoice-service.ts` is the single place that changes when a
+coverage source exists.
+
+### One mutation that cannot be killed, and why that is a finding rather than a gap
+
+`M-22-06` originally deleted the call to `assertDeliveryDelivered` and the warranty suite
+still passed. That is not a weak test — the mutation is **unobservable**.
+`ck_delivery_records_delivered_shape` is
+`(status = 'delivered') = (delivered_at IS NOT NULL AND final_odometer_reading_id IS NOT NULL)`,
+so for any real row `status <> 'delivered'` implies `delivered_at IS NULL`, and the very
+next guard in the same method refuses a null `deliveredAt` with the **same**
+`ERR-TRN-001`. The two conditions are equivalent on real data and produce an identical HTTP
+response; `problemFor` never emits a message, so nothing over the API surface can tell
+which fired.
+
+The mutation was therefore retargeted at the property that IS pinnable — that the
+comparison is the right way round — and inverting it fails 10 tests.
