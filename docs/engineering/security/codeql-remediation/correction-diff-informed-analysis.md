@@ -85,6 +85,34 @@ the impact while leaving `out[key] = …` — the sink itself — in the code, w
 future reader would copy it. The accumulator is now an entries array materialised
 through `Object.fromEntries`, so no dynamic property write exists at all.
 
+## The mirror-image mistake, made immediately afterwards
+
+The first fix scoped dismissal staleness by rule set, and the pull-request run
+then failed with:
+
+```
+dismissal for `js/http-to-file-access` at `scripts/ci/check-commit-checks.mjs`
+matches nothing.
+```
+
+**A diff-informed run does not re-report a finding whose file did not change**,
+so on a pull request _every_ dismissal looks stale. Same error, opposite
+direction: the first read a partial scan's silence as "nothing is there", the
+second read it as "it is gone".
+
+## What the gate does now
+
+`run.properties.incrementalMode` is CodeQL's own declaration that the analysis
+was partial, so the gate reads it and separates two kinds of claim:
+
+- **What a partial run saw is trustworthy.** A blocking finding still fails; a
+  count _above_ the ceiling still fails. Those are positive observations.
+- **What a partial run did not see proves nothing.** Staleness is deferred to a
+  full analysis. A count at or below the ceiling is reported as _"does NOT
+  establish the repository ceiling"_, and the verdict reads **`Go (partial)`**,
+  never a bare `Go` — because a bare `Go` is what let this through the first
+  time.
+
 ## The rule this leaves behind
 
 **A partial analysis reporting zero is not a clean analysis, and the gate must

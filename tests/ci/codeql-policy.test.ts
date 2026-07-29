@@ -538,6 +538,102 @@ describe('path classification', () => {
  * The other half of AR-52: a listing that only sees Actions is the listing that
  * missed the red check for five commits.
  */
+describe('a PARTIAL analysis may only say what it saw', () => {
+  // The defect that reached a merge commit. CodeQL analyses a pull request
+  // `diff-informed` — changed regions only — and this gate read its "0 open
+  // findings" as a statement about the tree. Two Highs were sitting on
+  // `develop` the whole time, and the first full analysis found them.
+  //
+  // It then made the mirror-image mistake: a diff-informed run does not
+  // re-report a finding whose file did not change, so the gate called a live
+  // dismissal stale and reded a protected branch.
+  //
+  // Both are the same error. Absence of a finding in a partial scan is not
+  // evidence of absence in the tree.
+  const partial = (results: unknown[]) => {
+    const document = sarif(results) as {
+      version: string;
+      runs: Array<Record<string, unknown>>;
+    };
+    return {
+      ...document,
+      runs: document.runs.map((run) => ({
+        ...run,
+        properties: { incrementalMode: 'diff-informed' },
+      })),
+    };
+  };
+
+  const dismissal = {
+    ruleId: 'js/file-system-race',
+    path: 'scripts/legacy.mjs',
+    source: 'a repository path from readdirSync',
+    sink: 'readFileSync in a try/catch',
+    reason: 'no concurrent writer exists in a CI checkout; reproduced by …',
+    reviewer: 'platform-owner',
+    reviewedOn: '2026-07-29',
+    expiresOn: '2099-01-01',
+  };
+
+  it('does not call a dismissal stale just because this run did not re-report it', () => {
+    const verdict = evaluate({
+      documents: docs(partial([])),
+      baseline: { ...BASE, dismissals: [dismissal] },
+    });
+    expect(verdict.failures.join('\n')).not.toMatch(/matches nothing/);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.warnings.join('\n')).toMatch(/PARTIAL \(diff-informed\)/);
+  });
+
+  it('does not claim the ceiling was met, and says the scope out loud', () => {
+    const verdict = evaluate({
+      documents: docs(partial([])),
+      baseline: { ...BASE, maximumOpenFindings: 0 },
+    });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.partial).toBe(true);
+    expect(verdict.decision, 'a bare "Go" reads as "the tree was judged"').toBe('Go (partial)');
+    expect(verdict.warnings.join('\n')).toMatch(/does NOT establish the repository ceiling/);
+    expect(toMarkdown(verdict)).toMatch(/PARTIAL/);
+  });
+
+  it('STILL fails on a blocking finding it did see — that is a positive observation', () => {
+    // The scope caveat must not become a way for a real High to pass. What the
+    // partial run OBSERVED is fully trustworthy; only its silence is not.
+    const verdict = evaluate({
+      documents: docs(
+        partial([result('js/remote-property-injection', 'src/server/http/validation.ts')])
+      ),
+      baseline: BASE,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/unresolved HIGH/);
+  });
+
+  it('STILL fails when a partial run puts the count ABOVE the ceiling', () => {
+    // Above-ceiling is also a positive observation: those findings exist.
+    const verdict = evaluate({
+      documents: docs(partial([result('js/file-system-race', 'scripts/a.mjs')])),
+      baseline: { ...BASE, maximumOpenFindings: 0 },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/above the recorded ceiling/);
+  });
+
+  it('a FULL analysis still judges everything', () => {
+    // The guard is on `incrementalMode`, not on convenience: with the flag
+    // absent, staleness and the ceiling are enforced exactly as before.
+    const verdict = evaluate({
+      documents: docs(sarif([])),
+      baseline: { ...BASE, dismissals: [dismissal] },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures.join('\n')).toMatch(/matches nothing/);
+    expect(verdict.partial).toBe(false);
+    expect(verdict.decision).toBe('No-Go');
+  });
+});
+
 describe('commit check-run enumeration', () => {
   const check = (name: string, conclusion: string | null, app = 'github-actions') => ({
     name,

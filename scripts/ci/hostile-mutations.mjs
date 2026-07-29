@@ -238,6 +238,39 @@ const MUTATIONS = Object.freeze([
     verify: TEMPLATES,
   },
 
+  {
+    id: 'M-28',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'a diff-informed run does not judge dismissal staleness',
+    from: '    if (partial) {\n      unjudged.push(entry);\n      return;\n    }',
+    to: '',
+    verify: POLICY,
+  },
+  {
+    id: 'M-29',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'a diff-informed run does not claim the ceiling was met',
+    from: '  } else if (partial) {',
+    to: '  } else if (false) {',
+    verify: POLICY,
+  },
+  {
+    id: 'M-30',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'incrementalMode is what decides the scope, not a guess',
+    from: '      if (run?.properties?.incrementalMode) return true;',
+    to: '      if (false) return true;',
+    verify: POLICY,
+  },
+  {
+    id: 'M-31',
+    target: 'scripts/ci/codeql-policy.mjs',
+    claim: 'a partial run STILL blocks on a High it actually saw',
+    from: '  for (const finding of blocking) {',
+    to: '  for (const finding of []) {',
+    verify: POLICY,
+  },
+
   // ---- scripts/ci/check-commit-checks.mjs — the AR-52 instrument -----------
   {
     id: 'M-16',

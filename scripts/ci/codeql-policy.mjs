@@ -161,6 +161,35 @@ export function analysedPaths(documents) {
 }
 
 /**
+ * True when CodeQL analysed only part of the tree.
+ *
+ * `run.properties.incrementalMode` is CodeQL's own statement that it ran
+ * `diff-informed` — on a pull request it reports findings in changed regions and
+ * stays silent about everything else. **That silence is not an answer**, and
+ * this initiative has now been caught by it three times:
+ *
+ *  - a previous initiative read `/actions/runs` and called five heads green
+ *    while a check it never enumerated was red (AR-52);
+ *  - this gate reported "0 open findings" from pull-request runs and merged the
+ *    claim, and the first full-tree analysis found two open Highs;
+ *  - and then it called a live dismissal "stale", because a diff-informed run
+ *    does not re-report a finding whose file did not change.
+ *
+ * So a partial analysis is now allowed to say only what it can see: a blocking
+ * finding it DID observe still fails, because that is a positive observation.
+ * Anything resting on absence — staleness, the open-finding ceiling — is
+ * deferred to a full analysis and labelled, never assumed.
+ */
+export function isIncremental(documents) {
+  for (const { document } of documents) {
+    for (const run of document.runs ?? []) {
+      if (run?.properties?.incrementalMode) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * The set of rule IDs this analysis was capable of reporting.
  *
  * This is what decides whether the invocation is entitled to call a dismissal
@@ -268,6 +297,7 @@ function dismissalMatches(entry, finding) {
  * @returns {{
  *   ok: boolean,
  *   decision: string,
+ *   partial: boolean,
  *   failures: string[],
  *   warnings: string[],
  *   counts: { total: number, open: number, dismissed: number, suppressed: number,
@@ -290,6 +320,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
     return {
       ok: false,
       decision: 'No-Go',
+      partial: false,
       failures,
       warnings,
       findings: [],
@@ -305,6 +336,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
     return {
       ok: false,
       decision: 'No-Go',
+      partial: false,
       failures,
       warnings,
       findings: [],
@@ -424,6 +456,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   // occasional false stale report, because the first is invisible.
   const analysed = analysedPaths(documents);
   const reportableRules = analysedRules(documents);
+  const partial = isIncremental(documents);
   const unjudged = [];
   dismissals.forEach((entry, index) => {
     if (usedDismissals.has(index)) return;
@@ -432,6 +465,13 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
       (finding) => finding.suppressed && dismissalMatches(entry, finding)
     );
     if (suppressedMatch) return;
+    // A diff-informed run does not re-report a finding whose file did not
+    // change, so on a pull request EVERY dismissal looks stale. Judging one here
+    // is reading silence as an answer.
+    if (partial) {
+      unjudged.push(entry);
+      return;
+    }
     if (reportableRules.size > 0 && !reportableRules.has(entry.ruleId)) {
       unjudged.push(entry);
       return;
@@ -441,7 +481,7 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
         'The finding was fixed, or it moved — either way this entry is stale. Remove it.'
     );
   });
-  if (reportableRules.size === 0 && dismissals.length > 0) {
+  if (!partial && reportableRules.size === 0 && dismissals.length > 0) {
     warnings.push(
       'no run declared its rule set, so every dismissal was judged for staleness without ' +
         'knowing whether this analysis could report that rule at all. Reported, not assumed.'
@@ -449,9 +489,13 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
   }
   for (const entry of unjudged) {
     warnings.push(
-      `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged here — ` +
-        `this analysis declares ${reportableRules.size} rule(s) and \`${entry.ruleId}\` is ` +
-        'not among them, so it could never have produced that finding. Another leg owns it.'
+      partial
+        ? `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged — this is a ` +
+            'PARTIAL (diff-informed) analysis, which does not re-report a finding whose file ' +
+            'did not change. Staleness is a full-analysis question.'
+        : `dismissal for \`${entry.ruleId}\` at \`${entry.path}\` was NOT judged here — ` +
+            `this analysis declares ${reportableRules.size} rule(s) and \`${entry.ruleId}\` is ` +
+            'not among them, so it could never have produced that finding. Another leg owns it.'
     );
   }
 
@@ -499,9 +543,22 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
 
   const ceiling = baseline.maximumOpenFindings;
   if (typeof ceiling === 'number' && open.length > ceiling) {
+    // A count ABOVE the ceiling is a positive observation and blocks whether the
+    // analysis was partial or not: these findings were seen.
     failures.push(
       `open findings rose to ${open.length}, above the recorded ceiling of ${ceiling}. ` +
         'Raise the ceiling in the same commit that justifies it, or fix the new finding.'
+    );
+  } else if (partial) {
+    // A count AT OR BELOW the ceiling proves nothing on a partial analysis: it
+    // is the number of findings in the changed regions, not in the tree. This is
+    // precisely the reading that let "0 open findings" be merged while two Highs
+    // sat on `develop`, so the gate now refuses to claim the ceiling was met and
+    // says which kind of run it was.
+    warnings.push(
+      `PARTIAL analysis (diff-informed): ${open.length} open finding(s) in the changed ` +
+        `regions only. This does NOT establish the repository ceiling of ${ceiling ?? 'n/a'} — ` +
+        'only a full analysis does, and one runs on every push to a protected branch.'
     );
   } else if (typeof ceiling === 'number' && open.length < ceiling) {
     warnings.push(
@@ -511,7 +568,11 @@ export function evaluate({ documents, baseline = {}, filesAnalysed = null, langu
 
   return {
     ok: failures.length === 0,
-    decision: failures.length === 0 ? 'Go' : 'No-Go',
+    // "Go (partial)" is not decoration. A reader who sees plain "Go" on a
+    // diff-informed run will believe the tree was judged, which is the mistake
+    // that reached a merge commit.
+    decision: failures.length === 0 ? (partial ? 'Go (partial)' : 'Go') : 'No-Go',
+    partial,
     failures,
     warnings,
     counts,
@@ -532,6 +593,9 @@ export function toMarkdown(result) {
   lines.push(`| Dismissed by GitHub | ${result.counts?.suppressed ?? 0} |`);
   lines.push(`| Files analysed | ${result.counts?.filesAnalysed ?? 0} |`);
   lines.push(
+    `| Analysis scope | ${result.partial ? '**PARTIAL** — diff-informed, changed regions only' : 'full tree'} |`
+  );
+  lines.push(
     `| Dismissals out of this leg's scope | ${result.counts?.dismissalsOutOfScope ?? 0} |`
   );
   for (const severity of ['critical', 'high', 'medium', 'low']) {
@@ -547,7 +611,7 @@ export function toMarkdown(result) {
   for (const warning of result.warnings) lines.push(`> ⚠️ ${warning}`);
   if (result.warnings.length > 0) lines.push('');
 
-  lines.push(`**CodeQL policy: ${result.ok ? 'Go' : 'No-Go'}**`);
+  lines.push(`**CodeQL policy: ${result.decision ?? (result.ok ? 'Go' : 'No-Go')}**`);
   return lines.join('\n');
 }
 
