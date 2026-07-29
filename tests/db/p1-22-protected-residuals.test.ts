@@ -3,16 +3,16 @@
  *
  * This suite is deliberately shaped the opposite way round from every other DB
  * suite in the repository. Those prove the protected schema DEFENDS an invariant.
- * These prove it DOES NOT — that four specific gaps the P1-11 handoff prose
- * describes as enforced are, measured against the deployed DDL, enforced by
- * nothing at all.
+ * These prove it DOES NOT — that five specific gaps the P1-11 handoff prose
+ * describes as enforced, or does not mention at all, are measured against the
+ * deployed DDL and enforced by nothing.
  *
  * ## Why a passing test that asserts a hole exists is worth having
  *
  * P1-22 compensates for each of these in application code. An application test
  * alone would show the mitigation working and would say nothing about whether the
  * mitigation is still NEEDED — so a later reader could reasonably conclude the
- * database had been fixed and drop the guard. These four cases pin the residual
+ * database had been fixed and drop the guard. These cases pin the residual
  * itself. If a future migration closes one of them, the corresponding case here
  * FAILS, which is the correct and useful signal: it says "the application guard is
  * now redundant, go and simplify it", and it says so loudly rather than leaving
@@ -23,7 +23,7 @@
  * as an owner, because owner behaviour is never evidence about RLS or about what
  * the application role can do.
  *
- * The four residuals, and where each is compensated:
+ * The five residuals, and where each is compensated:
  *
  *   1. SB1  — a credit note in one currency is accepted against an invoice in
  *             another, approved, and subtracted from the gross.
@@ -38,6 +38,13 @@
  *             plus an operator runbook. P1-22-L-03.
  *   4. P1-22-L-06 — `sal.partner_outstanding_balance` sums across currencies and
  *             returns one unlabelled scalar. Compensated by NOT exposing it.
+ *   5. **The blind zero** — `sal.invoice_open_receivable` returns `0`, with no
+ *             error, to a caller who cannot see its inputs. Not in the archaeology:
+ *             found while implementing, and the most consequential of the five,
+ *             because `0` is byte-identical to a settled invoice and the delivery
+ *             gate that consumes it has no database backstop. Compensated by
+ *             `balanceIsTrustworthy()` and by requiring `sal.finance.view` on both
+ *             routes that read a balance.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Client } from 'pg';
@@ -310,6 +317,112 @@ describe('P1-22 residual 3 (SB3) — numbering cannot be repaired from the appli
       ).rows[0]!;
       expect(row.st).toBe('draft');
       expect(row.num).toBeNull();
+    });
+  });
+});
+
+describe('P1-22 residual 5 — the open receivable returns 0, not an error, when it cannot see', () => {
+  /**
+   * The most consequential residual of the five, and the reason it is here rather
+   * than only in the application suite.
+   *
+   * `sal.invoice_open_receivable` is `SECURITY INVOKER`, and **all three of its
+   * inputs are gated by `iam.has_permission('sal.finance.view')`** —
+   * `sel_invoice_amounts_gated`, `sel_receipts_gated` /
+   * `sel_payment_allocations_gated`, and `sel_credit_notes_gated`. A caller without
+   * that permission does not get an error: the rows are simply invisible, so the
+   * function computes `round(COALESCE(NULL, 0) − 0 − 0, 4)` and returns **0**.
+   *
+   * `0` is byte-identical to a fully settled invoice.
+   *
+   * Compose a delivery gate out of that and a delivery operator who may see invoices
+   * but not money is waved through as though every invoice were paid — and
+   * `sal.complete_delivery` checks no balance itself, so nothing downstream would
+   * notice. That is the worst available failure mode for a handover gate: not a
+   * refusal, not an error, but a confident wrong answer in the permissive direction.
+   *
+   * The application detects it structurally rather than by guessing: an ISSUED
+   * invoice ALWAYS has an `sal.invoice_amounts` row, because
+   * `sal.guard_invoice_totals_reconcile` is a DEFERRED constraint trigger that raises
+   * at COMMIT for a non-draft invoice without one. So a NULL amounts row behind an
+   * issued invoice cannot mean "no amounts exist" — it can only mean "you cannot see
+   * them", and that distinction is what `balanceIsTrustworthy()` keys on. The billing
+   * port then answers `hasOutstanding: true, balanceVisible: false` instead of a
+   * false zero, and the delivery composition treats it as a blocker.
+   *
+   * Both P1-22 routes that consume the balance additionally require
+   * `sal.finance.view`, so an authorized caller should never reach this path. It is
+   * handled anyway, because a permission list is a declaration and this is a
+   * behaviour.
+   */
+  it('returns 0 for an issued, wholly unpaid invoice when the caller lacks sal.finance.view', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { invoice } = await seedInvoiceWithLine(c, 'blindzero', { net: 100, tax: 0 });
+      await issueInvoice(c, invoice);
+
+      // With the permission: the real figure.
+      expect(
+        (
+          await c.query<{ o: string }>(`SELECT sal.invoice_open_receivable($1)::text AS o`, [
+            invoice,
+          ])
+        ).rows[0]!.o
+      ).toBe('100.0000');
+
+      // The SAME invoice, the same transaction, a different actor — one who is an
+      // active tenant-A user with no `sal.finance.view` grant.
+      await setUser(c, P11.NOPERM_USER);
+
+      // Not an error. Not null. Zero.
+      expect(
+        (
+          await c.query<{ o: string }>(`SELECT sal.invoice_open_receivable($1)::text AS o`, [
+            invoice,
+          ])
+        ).rows[0]!.o
+      ).toBe('0.0000');
+
+      // And the mechanism, asserted directly so the case above cannot be
+      // misread as the function having a bug: the amounts row is INVISIBLE, while
+      // the invoice header remains visible. That asymmetry is the whole finding —
+      // `sal.invoices` is scope-gated only, `sal.invoice_amounts` is permission-gated.
+      expect(
+        (
+          await c.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM sal.invoice_amounts WHERE invoice_id = $1`,
+            [invoice]
+          )
+        ).rows[0]!.n
+      ).toBe('0');
+      expect(
+        (
+          await c.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM sal.invoices WHERE id = $1`,
+            [invoice]
+          )
+        ).rows[0]!.n
+      ).toBe('1');
+
+      await setUser(c, USER_A);
+    });
+  });
+
+  it('keeps the amounts row provably present, so an invisible zero cannot be an absent one', async () => {
+    // The other half of `balanceIsTrustworthy`'s premise. If an issued invoice could
+    // legitimately have no amounts row, a NULL would be ambiguous and the detection
+    // would be a guess. `sal.guard_invoice_totals_reconcile` is what forbids it.
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { invoice } = await seedInvoiceWithLine(c, 'amountsrow', { net: 100, tax: 0 });
+      await issueInvoice(c, invoice);
+      expect(
+        (
+          await c.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM sal.invoice_amounts
+              WHERE invoice_id = $1 AND deleted_at IS NULL`,
+            [invoice]
+          )
+        ).rows[0]!.n
+      ).toBe('1');
     });
   });
 });
