@@ -34,9 +34,21 @@ updates:
       prefix: 'chore(deps)'
       prefix-development: 'chore(deps-dev)'
       include: scope
-    # Security updates target the working branch, never `main`. Promotion to
-    # `main` is a founders' reserved decision (ADR-006) and Dependabot may not
-    # make it.
+    # VERSION updates target the working branch, so Dependabot never proposes a
+    # promotion to `main` — that is a founders' reserved decision (ADR-006).
+    #
+    # This comment previously said "Security updates target the working branch,
+    # never `main`", which is BACKWARDS. `target-branch` is documented as
+    # version-updates-only, and when it is set: "Options defined for this
+    # `package-ecosystem` no longer apply to security updates because security
+    # updates always use the default branch for the repository." This
+    # repository's default branch IS `main`. So a Dependabot SECURITY update for
+    # npm targets `main`, and arrives with none of this block's `labels`,
+    # `commit-message`, `groups`, `ignore` or `open-pull-requests-limit`
+    # applied. That is a real interaction with ADR-006 and is recorded as an
+    # open question for the owner in
+    # docs/engineering/dependency-maintenance/pre-p1-23/final-reconciliation.md;
+    # it is NOT changed here, because changing it changes behaviour.
     target-branch: develop
     groups:
       # One pull request for the framework, because Next, React and the eslint
@@ -83,6 +95,57 @@ updates:
         update-types: ['version-update:semver-major']
       # Pinned to the Supabase local stack's major and the Dockerfile runtime.
       - dependency-name: '@supabase/supabase-js'
+        update-types: ['version-update:semver-major']
+      # -----------------------------------------------------------------------
+      # Deferred majors. Each of these was proposed, reviewed against the real
+      # protected tree, reproduced as failing, and closed in favour of a
+      # tracking issue. Reproposing them weekly does not change the upstream
+      # facts; it only trains people to ignore Dependabot.
+      #
+      # Scope is deliberately narrow: `version-update:semver-major` suppresses
+      # MAJOR version updates only, so patches and minors still arrive. Remove
+      # the relevant entry when its issue's revisit condition is met.
+      #
+      # ON SECURITY UPDATES — READ THIS BEFORE COPYING THE PATTERN. An earlier
+      # draft of this comment claimed that "Dependabot security updates are not
+      # affected by a `version-update:semver-*` ignore". That is FALSE as a
+      # general rule and the claim was removed. In GitHub's options reference
+      # `ignore` carries the "Security updates" marker, and "All options marked
+      # with a [shield-check] icon also change how Dependabot creates pull
+      # requests for security updates, EXCEPT WHERE `target-branch` IS USED."
+      # The exemption sentence that does exist — "`update-types` only affects
+      # version updates, not security updates" — sits under
+      # `update-types` (`allow`), not under `update-types` (`ignore`).
+      #
+      # These ignores therefore do not touch security updates HERE only because
+      # `target-branch: develop` is set above, which takes this whole
+      # `package-ecosystem` block out of scope for security updates. If
+      # `target-branch` is ever removed, every semver-major ignore in this list
+      # — including next, react, react-dom and @supabase/supabase-js — starts
+      # suppressing security-update pull requests whose only fix is a major
+      # bump. Re-read this block before dropping `target-branch`.
+      #
+      # TypeScript 7 — issue #117. `typescript-eslint@8.65.0`, the latest
+      # published release, declares `typescript: ">=4.8.4 <6.1.0"` and there is
+      # no 9.x on the registry; Next.js separately reports that "TypeScript
+      # 7.0.2 does not provide the compiler API required by Next.js". TS 7.0
+      # ships no programmatic API at all — upstream defers that to 7.1.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # Vitest 4 — issue #118. The 4.x v8 coverage provider counts the SAME 19
+      # instrumented files on a different basis (line denominator 1480 -> 439),
+      # so the ratchet can no longer compare like with like and two critical
+      # floors breach; it also changes the `brace-expansion` waiver's
+      # dependency-node fingerprint, which needs owner re-approval.
+      #
+      # BOTH halves are ignored together on purpose. `@vitest/coverage-v8`
+      # pins `vitest` as an EXACT peer, so ignoring only one half lets the
+      # mirror-image half-pair be proposed and fail `npm ci` identically —
+      # which is exactly how #99 arrived. Majors only; the compatible 3.x
+      # patches and minors both packages need still come through.
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/coverage-v8'
         update-types: ['version-update:semver-major']
 
   # ---------------------------------------------------------------------------
