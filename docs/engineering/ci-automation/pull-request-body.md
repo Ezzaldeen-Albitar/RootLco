@@ -60,9 +60,16 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **9 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **26 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **27 scripts in `scripts/ci`**,
 **11 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
+
+The `scripts/ci` count moved from 26 to 27 in P1-22, which added
+`check-exact-money.mjs` — the gate that refuses `Number()`, `parseFloat`, `Math.*`,
+`toFixed`, a unary plus and a JSON number schema on the declared financial surface.
+The count is stated here rather than left to drift because
+`tests/ci/documented-counts.test.ts` reconciles it against the filesystem, and it
+failed on exactly this discrepancy rather than being noticed in review.
 
 `pr-ci.yml` declares **12 governed jobs plus `ci-gate` = 13**, which appear as
 **14 checks** on a pull request because `code-security` is a two-language matrix

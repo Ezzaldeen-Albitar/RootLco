@@ -1047,6 +1047,113 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'Stored stock balances were re-derived from the movement ledger and compared. A non-zero incoherent count is evidence that inv.guard_stock_balance_coherence was bypassed rather than a routine finding, which is why the result is reported and never silently repaired.',
   },
+
+  // ---- Phase 1-22 — Billing and payment (sal) ----
+  //
+  // Every action in this block is `financial` except the credit-note approval,
+  // which is `approval` because the fact it records is a second person's decision
+  // rather than a movement of money. The catalog class and the operation's declared
+  // class must agree or `defineOperation()` refuses the registration at module
+  // load, so the two spellings cannot drift apart.
+  {
+    code: 'sal.invoice.created',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and uq_invoices_work_order_active permits at most one live invoice per work order.',
+  },
+  {
+    code: 'sal.invoice.issued',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one.',
+  },
+  {
+    code: 'sal.invoice.voided',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft invoice was voided before issue. Reachable only from `draft`; an issued invoice can never be voided, because a number that has been shown to a customer is never withdrawn. Records the reason, which the status-history row carries alongside it.',
+  },
+  {
+    code: 'sal.credit_note.requested',
+    class: 'financial',
+    entityType: 'sal.credit_note',
+    description:
+      'A credit note was requested against an issued invoice, bounded by that invoice’s open receivable. Born `pending` and worth nothing until approved: sal.stamp_dual_control_maker forces requested_by from the session and nulls the approval fields, so a request can never arrive pre-approved. The currency is read from the parent invoice because no protected constraint compares the two (P1-22-L-02).',
+  },
+  {
+    code: 'sal.credit_note.approved',
+    class: 'approval',
+    entityType: 'sal.credit_note',
+    description:
+      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction.',
+  },
+  {
+    code: 'sal.receipt.recorded',
+    class: 'financial',
+    entityType: 'sal.receipt',
+    description:
+      'Money was received and a receipt number was consumed. Records no settlement claim of any kind: ck_payment_methods_kind admits only cash, card_terminal and bank_transfer, so there is no column in which a gateway authorisation could be stored, and no payment credential is written, logged or forwarded. sal.record_receipt server-stamps the cashier from the session.',
+  },
+  {
+    code: 'sal.payment.allocated',
+    class: 'financial',
+    entityType: 'sal.payment_allocation',
+    description:
+      'A receipt amount was applied against a specific invoice. Written only by sal.allocate_receipt, which takes the receipt lock before the invoice lock and is the ONLY path that bounds the allocation sum — no constraint, trigger or exclusion limits it, and app_runtime holds raw INSERT on the table, so a direct insert would be accepted with no bound at all (BR-SAL-002).',
+  },
+
+  // ---- Phase 1-22 — Delivery and custody (sal) ----
+  //
+  // `privileged` rather than `financial`: these record custody of a vehicle, not a
+  // movement of money. The completion action is the one that ends the shop’s
+  // custody, and it is the only one whose blocker set includes a financial term.
+  {
+    code: 'sal.delivery.created',
+    class: 'privileged',
+    entityType: 'sal.delivery_record',
+    description:
+      'A delivery record was opened for a work order. Hands nothing over: the vehicle and reception visit are derived from the work order because sal.guard_delivery_coherence requires them to match it, and uq_delivery_records_work_order_active permits one live delivery per work order.',
+  },
+  {
+    code: 'sal.delivery.receiver_verified',
+    class: 'privileged',
+    entityType: 'sal.authorized_receiver',
+    description:
+      'The person authorised to collect the vehicle was verified, at most one per delivery. sal.guard_authorized_receiver requires the receiver to hold a rec.reception_party_roles row valid at the moment of verification, so authority is checked against the visit rather than asserted by the caller. Any identity evidence is bound by reference; its contents are never read, stored or logged.',
+  },
+  {
+    code: 'sal.delivery.checklist_recorded',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_result',
+    description:
+      'A handover checklist item was recorded as passed, failed or waived. A waiver requires a reason — ck_delivery_checklist_results_waiver makes the biconditional structural — and sal.complete_delivery refuses completion while any mandatory item lacks a passed or waived result.',
+  },
+  {
+    code: 'sal.delivery.signature_recorded',
+    class: 'privileged',
+    entityType: 'sal.delivery_signature',
+    description:
+      'A handover signature was bound to a delivery by document-version reference. The reference only: no signature bytes enter the audit record, the event payload or any log line, and this platform makes no biometric or legal-validation claim about the image. The version can be bound but never downloaded, because no application path can move one to `accepted` (P1-22-L-04).',
+  },
+  {
+    code: 'sal.delivery.completed',
+    class: 'privileged',
+    entityType: 'sal.delivery_record',
+    description:
+      'The vehicle was handed over, custody was released and a final odometer reading was captured. sal.complete_delivery enforces receiver, mandatory checklist and at least one signature — and checks no work-order state, no quality control and NO FINANCIAL BALANCE, so the financial blocker recorded here is enforced by the application alone. An override of it is recorded with its reason in the details.',
+  },
+
+  // ---- Phase 1-22 — Warranty (wty) ----
+  {
+    code: 'wty.warranty.issued',
+    class: 'privileged',
+    entityType: 'wty.warranty_record',
+    description:
+      'A warranty record was generated from a committed delivery. Every term is configuration: duration, odometer limit and covered scope come from the wty.warranty_coverage row effective at the delivery date, and the backend defaults none of them. Records generation only — P1-22 implements no claim intake or adjudication, because no claim table exists in any schema (P1-22-L-01).',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

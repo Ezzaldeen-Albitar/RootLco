@@ -29,6 +29,20 @@ const SECRETS = 'npx vitest run tests/foundation/idempotency-secret-material.tes
 const POLICY = 'npx vitest run tests/ci/codeql-policy.test.ts';
 const FINGERPRINT = 'npx vitest run tests/foundation/idempotency-fingerprint.test.ts';
 const TEMPLATES = 'npx vitest run tests/foundation/route-templates.test.ts';
+/**
+ * P1-22 verifiers. The backend tier needs its own config because these suites talk to a
+ * real PostgreSQL — a mutation 'caught' by a suite that never reached the database would
+ * be caught by the connection failing, which proves nothing about the guard.
+ */
+const PAYMENTS =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-payments.test.ts';
+const WARRANTY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-warranty.test.ts';
+const MONEY_GATE = 'npx vitest run tests/foundation/exact-money-gate.test.ts';
+const DELIVERY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-delivery.test.ts';
+const CURRENCY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-currency-coherence.test.ts';
 
 /**
  * Every `verify` command is a literal from this frozen table. Nothing here is
@@ -295,6 +309,169 @@ const MUTATIONS = Object.freeze([
     from: "    if (check.status !== 'completed') {",
     to: '    if (false) {',
     verify: POLICY,
+  },
+  // ---- Phase 1-22 — billing, payment, delivery and warranty ----------------
+  //
+  // These target the guards that have NO database backstop. Every one of them, if
+  // it survived, would mean the application is the only thing standing between a
+  // caller and a wrong financial or custody outcome — and that nothing would
+  // notice its removal.
+  //
+  // The verifier for each is the suite that is supposed to care. A mutation
+  // verified by a suite that does not exercise the guard is a mutation that
+  // proves the verifier wrong, not the guard safe.
+  {
+    id: 'M-22-01',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'a platform payment method is refused before it reaches the FK, because fk_receipts_method resolves (tenant_id, id) and a platform row carries a NULL tenant',
+    from: '      assertPaymentMethodIsTenantScoped(method);',
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-02',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim: 'an inactive or unknown-kind payment method is refused',
+    from: '      assertPaymentMethodUsable(method);',
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-03',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'the three allocation currencies must agree — sal.allocate_receipt compares receipt against invoice and never sees what the caller believed',
+    from: `      assertAllocationCurrencyCoherent(
+        declaredCurrency,
+        receipt.currencyCode,
+        invoice.currencyCode
+      );`,
+    to: '',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-04',
+    target: 'src/modules/payments/data/payments-repository.ts',
+    claim:
+      'an allocation is created by sal.allocate_receipt and by nothing else — app_runtime holds raw INSERT on sal.payment_allocations and no constraint bounds the sum',
+    from: 'const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4) AS id`;',
+    to: 'const ALLOCATE_RECEIPT_SQL = `INSERT INTO sal.payment_allocations (tenant_id) VALUES ($1) RETURNING id`;',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-05',
+    target: 'src/modules/warranty/application/warranty-service.ts',
+    claim:
+      'an ARCHIVED warranty policy is refused — wty.issue_warranty checks the coverage status and NEVER the policy status, so nothing else refuses it (CC-6)',
+    from: "    ruleRefusal('ERR-TRN-001', () => assertPolicyActive(policy.status, policy.policyCode));",
+    to: '',
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-06',
+    target: 'src/modules/warranty/domain/warranty.ts',
+    claim:
+      'the delivered-handover test is the RIGHT WAY ROUND — a delivered delivery is accepted and anything else is refused',
+    /**
+     * Retargeted after the original mutation SURVIVED, and the reason is worth keeping.
+     *
+     * The first version deleted the CALL SITE:
+     *   `ruleRefusal('ERR-TRN-001', () => assertDeliveryDelivered(delivery.status));`
+     * and the warranty suite still passed. That is not a weak test. It is an
+     * UNOBSERVABLE mutation, and the schema is why:
+     *
+     * `ck_delivery_records_delivered_shape` is
+     *   `(status = 'delivered') = (delivered_at IS NOT NULL AND final_odometer_reading_id IS NOT NULL)`
+     * so for any real row `status <> 'delivered'` IMPLIES `delivered_at IS NULL` — and the
+     * very next guard in the same method refuses a null `deliveredAt` with the SAME
+     * `ERR-TRN-001`. The two conditions are equivalent on real data and produce an
+     * identical HTTP response, so no assertion over the API surface can tell which one
+     * fired. Adding one would have meant asserting on a message, and `problemFor` never
+     * emits one.
+     *
+     * So the property worth pinning is not "the call exists" but "the comparison is the
+     * right way round". Inverting it makes a DELIVERED delivery refused, which the success
+     * case (TC-P1-22-007) must notice — and does.
+     */
+    from: "  if (deliveryStatus !== 'delivered') {",
+    to: "  if (deliveryStatus === 'delivered') {",
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-07',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim: 'recording a payment writes exactly one audit record',
+    from: '    await appendAudit(db, {',
+    to: '    if (false as boolean) await appendAudit(db, {',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-08',
+    target: 'src/modules/warranty/application/warranty-service.ts',
+    claim: 'generating a warranty publishes exactly one event, in the committing transaction',
+    from: '    await publishEvent(db, {',
+    to: '    if (false as boolean) await publishEvent(db, {',
+    verify: WARRANTY,
+  },
+  {
+    id: 'M-22-09',
+    target: 'scripts/ci/check-exact-money.mjs',
+    claim:
+      'the exact-money gate refuses Number() on the financial surface — the loss it prevents is silent, unrepeatable, and invisible in a passing test',
+    from: '    pattern: /\\bNumber\\s*\\(/,',
+    to: '    pattern: /\\bNeverMatchesAnything\\s*\\(/,',
+    verify: MONEY_GATE,
+  },
+  /**
+   * The five below target the fixes for the independent review round. Each restores the
+   * exact defect a review found, so a green matrix is the claim that the fix is pinned by
+   * a test rather than merely present in the diff.
+   */
+  {
+    id: 'M-22-10',
+    target: 'src/modules/billing/application/billing-read-service.ts',
+    claim:
+      'a draft invoice is NOT collectable, so the delivery module blocks on it — otherwise creating a draft REMOVES the financial blocker and makes a handover more permissive than one carrying no invoice at all',
+    from: '        collectable: false,',
+    to: '        collectable: true,',
+    verify: DELIVERY,
+  },
+  {
+    id: 'M-22-11',
+    target: 'src/modules/delivery/application/delivery-service.ts',
+    claim:
+      'delivery evidence must be attached to the delivery\u2019s work order or reception visit — without the link check the signature gate degrades to "name any document id you can see", and every principal in the tenant can enumerate them',
+    from: '    let hasProvenance = version.linkedToEntity;',
+    to: '    let hasProvenance = true;',
+    verify: DELIVERY,
+  },
+  {
+    id: 'M-22-12',
+    target: 'src/server/http/validation.ts',
+    claim:
+      'an amount more precise than its currency is refused — a half-cent USD credit leaves a residue no tenderable payment can settle, holding the delivery financial blocker up forever with an override as the only exit',
+    from: '  if (!/[1-9]/.test(excess)) return;',
+    to: '  if (true) return;',
+    verify: CURRENCY,
+  },
+  {
+    id: 'M-22-13',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'no restricted amount reaches the outbox — shared.event_outbox\u2019s only SELECT policy is tenant-only, with no permission and no scope predicate, so an amount in a payload is a copy of the cash ledger behind a strictly weaker policy',
+    from: '        receiptStatus: after.status,',
+    to: '        receiptStatus: allocation.amount,',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-14',
+    target: 'src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts',
+    claim:
+      'the eligibility read publishes the delivery\u2019s record_version — it is the only response a completing principal can obtain, and sal.delivery-complete is versionGuarded with no wildcard If-Match, so without it the operation is unreachable',
+    from: '      return { body: eligibility, recordVersion: eligibility.recordVersion };',
+    to: '      return { body: eligibility };',
+    verify: DELIVERY,
   },
 ]);
 

@@ -542,6 +542,110 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     description:
       'An immutable stock movement was appended to the ledger, carrying its type, direction, and validated business reference.',
   },
+
+  // ---- Billing, payment, delivery and warranty (P1-22) ---------------------
+  //
+  // The P1-11 forward contract anticipated `billing.invoice-issued.v1`,
+  // `billing.payment-recorded.v1`, `delivery.completed.v1` and
+  // `warranty.issued.v1`. The `.v1` suffix is NOT used, for the reason stated
+  // above the P1-20 block: `schema_version` is its own column and encoding the
+  // version twice creates two places that can disagree. The `billing.` and
+  // `delivery.` prefixes are dropped too — the established grammar here is
+  // `<aggregate>.<past-tense-fact>`, so the aggregate is the first segment and
+  // repeating the module name would make `billing.invoice-issued` say invoice
+  // twice.
+  //
+  // NOTHING IS RESERVED FOR AN UNBUILT PRODUCER. Four facts P1-11's contract
+  // names have no entry here because P1-22 builds no producer for them:
+  // receipt reversal, refund, progress billing, and every warranty-claim
+  // transition. The first three are structurally absent from `sal`; the fourth
+  // has no table to be a claim in, so a reserved name would be fiction of exactly
+  // the kind the inventory block above refuses.
+  //
+  // `credit-note.issued` is emitted on APPROVAL, not on request: a pending credit
+  // note reduces nothing, and an event named `issued` that fired before the second
+  // person decided would tell every consumer the receivable had fallen when it had
+  // not. `sal.credit_note.requested` is audited, and deliberately not published.
+  {
+    code: 'EVT-SAL-001',
+    eventType: 'invoice.created',
+    schemaVersion: 1,
+    aggregateType: 'sal.invoice',
+    owner: 'billing',
+    implementedIn: 'P1-22',
+    description:
+      'A draft invoice was created from approved commercial data. Carries no number and creates no receivable — the invoice is born `draft` and only `invoice.issued` makes it collectable.',
+  },
+  {
+    code: 'EVT-SAL-002',
+    eventType: 'invoice.issued',
+    schemaVersion: 1,
+    aggregateType: 'sal.invoice',
+    owner: 'billing',
+    implementedIn: 'P1-22',
+    description:
+      'A draft invoice was issued, consuming exactly one number from its branch sequence and becoming immutable financial history.',
+  },
+  {
+    code: 'EVT-SAL-003',
+    eventType: 'invoice.voided',
+    schemaVersion: 1,
+    aggregateType: 'sal.invoice',
+    owner: 'billing',
+    implementedIn: 'P1-22',
+    description:
+      'A draft invoice was voided before issue. Reachable only from `draft`, so no consumer ever sees a number withdrawn.',
+  },
+  {
+    code: 'EVT-SAL-004',
+    eventType: 'credit-note.issued',
+    schemaVersion: 1,
+    aggregateType: 'sal.credit_note',
+    owner: 'billing',
+    implementedIn: 'P1-22',
+    description:
+      'A credit note was approved under dual control and reduced an issued invoice’s open receivable. Published on approval, never on request.',
+  },
+  {
+    code: 'EVT-SAL-005',
+    eventType: 'receipt.recorded',
+    schemaVersion: 1,
+    aggregateType: 'sal.receipt',
+    owner: 'payments',
+    implementedIn: 'P1-22',
+    description:
+      'Money was received against a partner and a receipt number was consumed. Carries no settlement claim and no payment credential — none exists to carry.',
+  },
+  {
+    code: 'EVT-SAL-006',
+    eventType: 'payment.allocated',
+    schemaVersion: 1,
+    aggregateType: 'sal.payment_allocation',
+    owner: 'payments',
+    implementedIn: 'P1-22',
+    description:
+      'A receipt amount was applied against a specific invoice by sal.allocate_receipt, the only path that bounds the allocation sum.',
+  },
+  {
+    code: 'EVT-SAL-007',
+    eventType: 'vehicle.delivered',
+    schemaVersion: 1,
+    aggregateType: 'sal.delivery_record',
+    owner: 'delivery',
+    implementedIn: 'P1-22',
+    description:
+      'A vehicle was handed over, custody was released and a final odometer reading was captured. Published in the committing transaction, so a consumer never learns of a handover that did not happen.',
+  },
+  {
+    code: 'EVT-WTY-001',
+    eventType: 'warranty.issued',
+    schemaVersion: 1,
+    aggregateType: 'wty.warranty_record',
+    owner: 'warranty',
+    implementedIn: 'P1-22',
+    description:
+      'A warranty record was generated from a committed delivery, on terms taken entirely from the coverage row effective at the delivery date. Generation only: P1-22 publishes no claim transition, because no claim table exists.',
+  },
 ]);
 
 export function findEvent(eventType: string): EventCatalogEntry | undefined {

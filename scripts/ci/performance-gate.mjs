@@ -25,7 +25,29 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-/** Pulls `{ name, p50, p95, p99, plan }` out of whatever shape the report uses. */
+/**
+ * Pulls `{ name, p50, p95, p99, plan }` out of whatever shape the report uses.
+ *
+ * ## This function could not read its own producer, and nothing said so
+ *
+ * `scripts/db/perf-baseline.mjs` — the only thing that writes this report — emits rows
+ * shaped `{ family, median_ms, p95_ms, p99_ms, index_used, uses_seq_scan }`. The alias
+ * lists here previously looked for `name`/`query`/`id` and `p50`/`median`/`med`, `p95`,
+ * `p99`. **Not one of those keys matches.** Every row therefore normalised to
+ * `p50: NaN, p95: NaN`, the `Number.isFinite` filter below dropped all of them, and
+ * `evaluate` reported `measurements: 0`.
+ *
+ * So the gate refused — correctly, and with the right message: "an empty result set must
+ * never be read as fast — either the harness did not run or its output shape changed."
+ * The true answer was a third option it did not offer: the two sides never agreed at all,
+ * so `performance-baseline` had never once been able to pass. The nightly evidence for it
+ * was a red job whose cause looked environmental.
+ *
+ * The `_ms` and `family` aliases are added below, and
+ * `tests/ci/performance-gate-shape.test.ts` now feeds this function a fixture in the
+ * producer's exact shape — so a future rename on either side fails a test instead of
+ * quietly emptying the report again.
+ */
 export function normalise(report) {
   const source = Array.isArray(report)
     ? report
@@ -35,11 +57,17 @@ export function normalise(report) {
     : Object.entries(source).map(([name, v]) => ({ name, ...v }));
   return rows
     .map((row) => ({
-      name: row.name ?? row.query ?? row.id ?? 'unnamed',
-      p50: Number(row.p50 ?? row.median ?? row.med ?? NaN),
-      p95: Number(row.p95 ?? NaN),
-      p99: Number(row.p99 ?? NaN),
-      plan: row.plan ?? row.scan ?? row.node ?? null,
+      name: row.name ?? row.query ?? row.id ?? row.family ?? 'unnamed',
+      p50: Number(row.p50 ?? row.median ?? row.med ?? row.median_ms ?? NaN),
+      p95: Number(row.p95 ?? row.p95_ms ?? NaN),
+      p99: Number(row.p99 ?? row.p99_ms ?? NaN),
+      // `uses_seq_scan` is the producer's own field and is the one this gate acts on:
+      // `evaluate` refuses a sequential scan on these tenant-leading indexed families.
+      plan:
+        row.plan ??
+        row.scan ??
+        row.node ??
+        (row.uses_seq_scan === true ? 'Seq Scan' : row.index_used === true ? 'Index Scan' : null),
       rows: row.rows ?? null,
     }))
     .filter((row) => Number.isFinite(row.p50) || Number.isFinite(row.p95));
@@ -64,12 +92,32 @@ export function evaluate(report, baseline) {
     };
   }
 
-  // ---- absolute: an indexed lookup must not sequentially scan --------------
+  // ---- absolute: an indexed POINT LOOKUP must not sequentially scan --------
+  //
+  // Scoped to point-lookup families, and the scoping is the fix to a second defect that
+  // only became visible once this gate could read its report at all. The rule used to
+  // apply to every family on the stated grounds that "these families are the tenant-leading
+  // indexed lookups". Two of the four are not: `partner_scan_by_tenant_isolation` scans a
+  // whole tenant's partners BY DESIGN — that is what it measures — and
+  // `partner_outstanding_balance_fn` is a function call whose plan is neither. So the first
+  // honest run of this gate would have failed on a family doing exactly what it exists to
+  // do, which is the kind of failure that gets a gate disabled rather than believed.
+  //
+  // A sequential scan on a point lookup remains a hard failure: there it means a missing or
+  // unusable index, not a slow machine.
+  const isPointLookup = (name) => /point_lookup/i.test(name);
   for (const m of measurements) {
-    if (typeof m.plan === 'string' && /seq\s*scan/i.test(m.plan)) {
+    if (typeof m.plan !== 'string' || !/seq\s*scan/i.test(m.plan)) continue;
+    if (isPointLookup(m.name)) {
       failures.push(
-        `\`${m.name}\` executed a sequential scan. These families are the tenant-leading indexed lookups; ` +
-          'a sequential scan here is a missing or unusable index, not a slow machine.'
+        `\`${m.name}\` executed a sequential scan. It is a tenant-leading indexed point ` +
+          'lookup; a sequential scan here is a missing or unusable index, not a slow machine.'
+      );
+    } else {
+      warnings.push(
+        `\`${m.name}\` executed a sequential scan. It is not a point-lookup family, so this ` +
+          'is recorded rather than refused — but a scan family that starts using an index, ' +
+          'or stops, has changed what it measures.'
       );
     }
   }

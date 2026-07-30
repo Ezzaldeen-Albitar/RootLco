@@ -21,6 +21,42 @@ export function toViolations(error: z.ZodError, prefix: string): readonly FieldV
   }));
 }
 
+/**
+ * Refuses an inbound amount that carries more significant decimal places than its
+ * currency has minor units.
+ *
+ * The money column is `numeric(18,4)`, so the boundary regexes accept four decimals
+ * for every currency. That is the column's scale, not the currency's: USD and EUR have
+ * two minor units and JOD has three (`shared.currencies.minor_unit`). Without this
+ * check a USD credit note for `0.0001` was accepted end to end — and because no
+ * tenderable USD payment can settle a hundredth of a cent, the invoice's open
+ * receivable stayed permanently non-zero, which in turn held the delivery's
+ * `financial_balance_outstanding` blocker up forever with an override as the only exit.
+ *
+ * Trailing zeros are not significant: `100.0000` is a valid USD amount. Only a NON-ZERO
+ * digit beyond the currency's minor units is refused.
+ *
+ * The comparison is string-only. No `Number`, no `parseFloat`, no scaling arithmetic —
+ * the value is money and never becomes a JavaScript number, not even to be measured.
+ */
+export function assertMinorUnitScale(
+  amount: string,
+  currency: string,
+  minorUnit: number,
+  path: string
+): void {
+  const dot = amount.indexOf('.');
+  if (dot === -1) return;
+  const excess = amount.slice(dot + 1 + minorUnit);
+  if (!/[1-9]/.test(excess)) return;
+  throw new AppFailure('ERR-VAL-001', {
+    // The currency and its minor unit are reference data, not caller input, so naming
+    // them is safe and is the difference between an actionable refusal and a riddle.
+    message: `${currency} has ${minorUnit} minor unit(s); the amount is more precise than the currency.`,
+    safeDetails: { violations: [{ path, rule: 'minor_unit_scale' }] },
+  });
+}
+
 /** Parses a value, throwing `ERR-VAL-001` with field-level violations. */
 export function parseOrFail<T>(schema: ZodType<T>, value: unknown, prefix: string): T {
   const result = schema.safeParse(value);
@@ -165,8 +201,10 @@ export const schemas = {
    * forces every consumer to choose a decimal library deliberately.
    *
    * Scale is not fixed here because minor units differ by currency
-   * (`shared.currencies.minor_unit`: USD 2, JOD 3); the domain validates scale
-   * against the currency it is working in.
+   * (`shared.currencies.minor_unit`: USD 2, JOD 3). The currency-specific check is
+   * `assertMinorUnitScale` below, which a service calls once it has loaded the
+   * minor unit for the currency it is working in — this schema bounds the SHAPE,
+   * that function bounds the SCALE.
    */
   money: z.object({
     amount: z

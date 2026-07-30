@@ -201,6 +201,12 @@ describe('reserved-name registry', () => {
       'business-partner.created',
       'business-partner.merged',
       'consent.changed',
+      // P1-22 publishes this on APPROVAL, not on request. A pending credit note
+      // reduces nothing, so an `issued` event fired at request time would tell every
+      // consumer the receivable had fallen while the second approver had not yet
+      // decided. The request is audited (`sal.credit_note.requested`) and
+      // deliberately not published.
+      'credit-note.issued',
       // The aggregate is the APPROVAL row, which is immutable — so its version is
       // and stays 1, and `uq_customer_approvals_active` means the fact happens at
       // most once per request.
@@ -210,6 +216,16 @@ describe('reserved-name registry', () => {
       'diagnostic-report.completed',
       'document.link.changed',
       'document.version.registered',
+      // P1-22 billing, owner `billing`. Three names for one aggregate because the
+      // three facts have different consumers: creation is a draft nobody may
+      // collect against, issue is the irreversible one that consumed a number, and
+      // void is reachable only from draft — so no consumer ever sees a number
+      // withdrawn. `invoice.paid` is deliberately absent: payment state is DERIVED
+      // from sal.invoice_open_receivable and is never stored on the invoice row, so
+      // an event asserting it would be asserting a status the schema cannot hold.
+      'invoice.created',
+      'invoice.issued',
+      'invoice.voided',
       // Wave 5 also publishes `job.assigned`. Its owner is `wo` and not `tech`
       // because the assignment row lives in `wo.job_assignments` and is written by
       // the work-order module; `buildEventEnvelope` refuses a producer whose leading
@@ -226,6 +242,10 @@ describe('reserved-name registry', () => {
       'message-template.version.changed',
       'message.enqueued',
       'organization.branch.status.changed',
+      // P1-22 payments, owner `payments`. `payment.allocated` names the allocation
+      // row rather than the receipt because that row is the fact — one receipt may
+      // allocate to many invoices, and a per-receipt event could not say which.
+      'payment.allocated',
       // Wave 8. Owner `qms`: finalization is what closure blocker B5 reads, and a
       // rework link is what B6 reads — the two facts the closure gate waits on.
       // P1-20 publishes the eight svc/quo events from src/modules/{pricing,quotation}.
@@ -239,6 +259,7 @@ describe('reserved-name registry', () => {
       'quotation.item-decided',
       'quotation.rejected',
       'quotation.revision-issued',
+      'receipt.recorded',
       'reception.approved',
       'rework.linked',
       // Published from `src/modules/service-catalog` by the P1-20 service-catalog
@@ -260,8 +281,17 @@ describe('reserved-name registry', () => {
       // P1-17 publishes `vehicle.created`, `vehicle.merged`, and
       // `vehicle.relationship.changed` from `src/modules/vehicle`.
       'vehicle.created',
+      // P1-22 delivery, owner `delivery`. The aggregate is the delivery record, not
+      // the vehicle, but the NAME leads with the vehicle because the fact consumers
+      // wait for is "this vehicle left the shop". Published inside the committing
+      // transaction, so no consumer learns of a handover that did not happen.
+      'vehicle.delivered',
       'vehicle.merged',
       'vehicle.relationship.changed',
+      // P1-22 warranty, owner `warranty`. Generation only. No claim transition is
+      // registered, reserved or published — there is no claim table in any schema to
+      // publish one about (P1-22-L-01).
+      'warranty.issued',
       'work-order.closed',
       'work-order.state-changed',
     ]);
@@ -295,6 +325,14 @@ describe('reserved-name registry', () => {
       // `buildEventEnvelope` refuses a producer whose leading segment differs from
       // the catalog owner.
       'P1-21': ['inventory'],
+      // P1-22 publishes from all four of its modules. The split is by AUTHORITY, not
+      // by schema: `billing`, `payments` and `delivery` all live in the frozen `sal`
+      // schema, and each owns the tables its own permissions gate. That is the same
+      // arrangement P1-20 used for `svc` (`service-catalog` and `pricing`), and it is
+      // what lets `buildEventEnvelope`'s owner check stay meaningful — a producer
+      // string of `payments.payment-service` may not publish `invoice.issued`,
+      // because the leading segment must equal the catalog owner.
+      'P1-22': ['billing', 'payments', 'delivery', 'warranty'],
     };
     for (const entry of EVENT_CATALOG) {
       if (!implemented.includes(entry.eventType)) continue;

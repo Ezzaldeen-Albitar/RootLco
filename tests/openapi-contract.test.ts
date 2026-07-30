@@ -213,6 +213,35 @@ import '@/app/api/v1/damaged-stock/route';
 import '@/app/api/v1/customer-supplied-parts/route';
 import '@/app/api/v1/external-purchase-parts/route';
 
+// Phase 1-22 — billing, payment, delivery and warranty.
+//
+// Twenty imports, and every one of them is load-bearing in the way this file's own
+// header warns about: an absent import leaves the operation out of the GENERATED
+// document as well as the committed one, so the divergence assertion compares two
+// documents that agree with each other and disagree with the code.
+// `scripts/ci/check-route-registry-parity.mjs` is what catches that, and it named all
+// twenty of these before they were added.
+import '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
+import '@/app/api/v1/invoices/route';
+import '@/app/api/v1/invoices/[invoiceId]/route';
+import '@/app/api/v1/invoices/[invoiceId]/issuance/route';
+import '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
+import '@/app/api/v1/invoices/[invoiceId]/cancellation/route';
+import '@/app/api/v1/invoices/[invoiceId]/credit-notes/route';
+import '@/app/api/v1/credit-notes/[creditNoteId]/approval/route';
+import '@/app/api/v1/payments/route';
+import '@/app/api/v1/payments/[paymentId]/route';
+import '@/app/api/v1/payments/[paymentId]/allocations/route';
+import '@/app/api/v1/payment-methods/route';
+import '@/app/api/v1/deliveries/route';
+import '@/app/api/v1/deliveries/[deliveryId]/eligibility/route';
+import '@/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route';
+import '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
+import '@/app/api/v1/deliveries/[deliveryId]/signatures/route';
+import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
+import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
+import '@/app/api/v1/warranties/[warrantyId]/route';
+
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
 describe('OpenAPI contract', () => {
