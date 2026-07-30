@@ -94,7 +94,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "prettier": "^3.9.6",
-    "sass": "^1.101.0",
+    "sass": "^1.102.0",
     "stylelint": "^17.14.1",
     "stylelint-config-standard-scss": "^17.0.0",
     "supabase": "^2.34.3",
