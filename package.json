@@ -98,7 +98,7 @@
     "stylelint": "^17.14.1",
     "stylelint-config-standard-scss": "^17.0.0",
     "supabase": "^2.34.3",
-    "typescript": "^5",
+    "typescript": "^7",
     "vitest": "^3.2.4"
   }
 }
