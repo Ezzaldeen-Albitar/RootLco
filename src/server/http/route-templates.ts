@@ -60,6 +60,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/auth/password-reset',
   '/auth/password-reset/completion',
   '/auth/session',
+  '/credit-notes/{creditNoteId}/approval',
   '/customer-duplicates/{candidateId}/review',
   '/customer-supplied-parts',
   '/customers',
@@ -80,6 +81,13 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/customers/{customerId}/timeline',
   '/customers/{customerId}/vehicles',
   '/damaged-stock',
+  '/deliveries',
+  '/deliveries/{deliveryId}/authorized-receiver',
+  '/deliveries/{deliveryId}/checklist-results',
+  '/deliveries/{deliveryId}/completion',
+  '/deliveries/{deliveryId}/eligibility',
+  '/deliveries/{deliveryId}/signatures',
+  '/deliveries/{deliveryId}/warranties',
   '/exports/authorizations',
   '/exports/resources',
   '/external-purchase-parts',
@@ -115,6 +123,12 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/inspections/{inspectionId}/reviews',
   '/inspections/{inspectionId}/transition',
   '/inventory-reconciliations',
+  '/invoices',
+  '/invoices/{invoiceId}',
+  '/invoices/{invoiceId}/cancellation',
+  '/invoices/{invoiceId}/credit-notes',
+  '/invoices/{invoiceId}/issuance',
+  '/invoices/{invoiceId}/outstanding',
   '/items',
   '/jobs/{jobId}',
   '/jobs/{jobId}/assignments',
@@ -138,6 +152,10 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/org/companies/{companyId}/settings',
   '/org/tenant',
   '/organization/branches/{branchId}/status',
+  '/payment-methods',
+  '/payments',
+  '/payments/{paymentId}',
+  '/payments/{paymentId}/allocations',
   '/price-lists',
   '/price-lists/{priceListId}/versions',
   '/price-lists/{priceListId}/versions/{versionId}/publication',
@@ -194,12 +212,14 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/vehicles/{vehicleId}/plates',
   '/vehicles/{vehicleId}/relationships',
   '/vehicles/{vehicleId}/status',
+  '/warranties/{warrantyId}',
   '/work-orders',
   '/work-orders/{workOrderId}',
   '/work-orders/{workOrderId}/additional-work',
   '/work-orders/{workOrderId}/closure',
   '/work-orders/{workOrderId}/closure-eligibility',
   '/work-orders/{workOrderId}/history',
+  '/work-orders/{workOrderId}/invoice-preview',
   '/work-orders/{workOrderId}/jobs',
   '/work-orders/{workOrderId}/quality-controls',
   '/work-orders/{workOrderId}/reopen-attempts',
@@ -221,7 +241,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
  *
  * A `Set` membership check used to precede this. It was removed: `find` already
  * answers the same question, so the check decided nothing, and a line that
- * cannot change any outcome is a line no test can pin. 169 short strings is not
+ * cannot change any outcome is a line no test can pin. 189 short strings is not
  * a hot path worth an untestable branch.
  */
 export function internRouteTemplate(path: string): string | null {

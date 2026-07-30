@@ -132,6 +132,26 @@ export const P1_20_PREFIXES = ['svc.', 'quo.'];
  * keeps the gate green. Both hooks or neither.
  */
 export const P1_21_PREFIXES = ['inv.'];
+/**
+ * P1-22 spans TWO id namespaces — `sal.` (billing, payment and delivery, which
+ * share the frozen Phase 1-11 `sal` schema) and `wty.` (warranty).
+ *
+ * The P1-22 archaeology measured what this array's absence costs, and the answer
+ * was worse than P1-20's: with neither hook extended, `derivedRequirements()`
+ * returned `[]` for a `wty.` read — no route, no service, no authorization, no
+ * isolation — so an operation could be credited at depth on evidence that was
+ * never required, exactly the P1-20 defect. And because the
+ * `parseProvidedFlags` alternation was blind too, a `sal.`/`wty.` declaration
+ * parsed to NOTHING, so the one namespace-agnostic obligation that did derive
+ * (`idempotency`, from CSA-22) could not be satisfied by any declaration a test
+ * could write. One hook alone is not half a gate — the two failures compound in
+ * opposite directions, and only extending both is coherent.
+ *
+ * `rpt.` is deliberately absent: Phase 1-11 also froze a `rpt` schema, but P1-22
+ * registers no `rpt.` operation. A prefix listed here with no operations behind
+ * it would report a vacuous 0/0 phase block that looks like passing coverage.
+ */
+export const P1_22_PREFIXES = ['sal.', 'wty.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -140,6 +160,7 @@ const DERIVED_PREFIXES = [
   ...P1_19_PREFIXES,
   ...P1_20_PREFIXES,
   ...P1_21_PREFIXES,
+  ...P1_22_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1582,6 +1603,149 @@ export const MANIFEST = {
     required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
     note: 'a reference and not procurement: ck_external_purchase_parts_not_procurement CHECK (is_procurement = false) is the schema refusing to become a PO/goods-receipt workflow, so this creates no purchase order, runs no approval chain and adds no stock — a part that physically arrives becomes company stock only through an opening batch or an adjustment, both of which need inv.adjustment.approve and a second person, because letting a purchase record raise on_hand directly would be an unapproved path to minting stock; the test asserts the ledger and balances are unchanged; unitCost is written to inv.external_purchase_part_details whose every RLS policy is gated by iam.has_permission(inv.cost.view), so a caller without it gets a refusal rather than a silently dropped cost, and the amount is NEVER echoed back — costRecorded is a boolean; ck_external_purchase_parts_supplier requires a partner or a name and the absence of both is a field-level refusal rather than a constraint name (denial)',
   },
+
+  // ========================================================================
+  // Phase 1-22 (sal. / wty.) — Billing, Payment, Delivery and Warranty.
+  //
+  // The derived floor already supplies route, service, success, authorization,
+  // plus cross-tenant for a `{param}` path, isolation for branch scope, audit
+  // for a non-`none` class, idempotency for `idempotent: true` and
+  // stale-version for `versionGuarded: true`. So `required` below adds only
+  // what the REGISTRATION cannot know:
+  //
+  //   `outbox`       — the eight operations that publish an event. The
+  //                    registration says nothing about the outbox, so without
+  //                    this the one row per commit is unproven.
+  //   `denial`       — a validation or state refusal. Every mutation here has
+  //                    one that matters, and several reads do too.
+  //   `cross-tenant` — added by hand for the four operations with NO path
+  //                    parameter, because the derived rule keys on `{param}`
+  //                    and these carry the foreign identifier in the BODY
+  //                    instead. `POST /invoices` naming another tenant's work
+  //                    order is exactly the same risk as `GET /invoices/{id}`
+  //                    naming another tenant's invoice; the derived rule simply
+  //                    cannot see it. `sal.payment-method-list` is the one
+  //                    genuine exception — it takes no resource identifier at
+  //                    all, so there is no foreign row to reach for.
+  // ========================================================================
+  'sal.invoice-preview': {
+    files: [
+      'tests/backend/p1-22-invoice-lifecycle.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+    ],
+    required: ['denial'],
+    note: 'read-only and writes nothing, so it is safe to call repeatedly while a price is negotiated — which is why it exists separately from create; every amount is computed by PostgreSQL in numeric with round(...,4), the same shape ck_invoice_amounts_gross enforces and sal.issue_invoice later applies, so the preview cannot disagree with the invoice it previews; requires sal.finance.view because the preview IS money and a caller who may not see an invoice’s amounts must not obtain them from a preview instead; tax is the rate the quotation captured and this phase invents nothing, but that is NOT a guarantee the rate is non-zero: org.tax_classes has zero rows and no writer, so price_rules.tax_class_id is unsettable and the resolver’s zero branch is the only reachable one — every invoice this API can produce is untaxed today, recorded as P1-22-L-08 rather than asserted away (denial)',
+  },
+  'sal.invoice-create': {
+    files: [
+      'tests/backend/p1-22-invoice-lifecycle.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+    ],
+    required: ['outbox', 'denial', 'cross-tenant'],
+    note: 'client totals are not ignored, they are UNEXPRESSIBLE: the body has no amount, total, tax, lines or unitPrice and .strict() makes a body carrying one a refusal rather than a silent drop, so no code path can trust a client total because no field delivers one; born draft because sal.guard_invoice_freeze raises check_violation on any INSERT whose status is not draft, closing the bypass of the numbering allocator and the completeness event; uq_invoices_work_order_active permits at most ONE live invoice per work order so staged billing is structurally impossible and a second attempt is 23505 surfaced as a conflict (denial); requires sal.finance.view because the two amount tables are gated by it on INSERT as well as SELECT, so declaring only sal.invoice.manage would advertise an operation RLS always refuses; cross-tenant is declared by hand because the work order arrives in the body rather than the path',
+  },
+  'sal.invoice-issue': {
+    files: [
+      'tests/backend/p1-22-invoice-lifecycle.test.ts',
+      'tests/backend/p1-22-concurrency.test.ts',
+    ],
+    required: ['outbox', 'denial'],
+    note: 'EXACTLY ONE NUMBER, and the primitive is what guarantees it: sal.issue_invoice takes the row FOR UPDATE and returns the EXISTING invoice_number when the status is already issued, so a replay cannot mint a second number and two concurrent issues serialise on that lock — the concurrency suite asserts one allocation and one returned copy, not two numbers; an unprovisioned tenant is refused with a controlled configuration error naming the missing (company, branch, sequence_code) because shared.next_display_number raises P0002 and app_runtime holds NO INSERT grant and NO INSERT policy on shared.number_sequences, so the backend CANNOT self-heal and must not invent a fallback, a timestamp or a UUID (denial); a failed issue consumes no number, proved directly in tests/db/p1-22-protected-residuals.test.ts; the number is opaque text and is never constructed, parsed, regex-validated or sorted by',
+  },
+  'sal.invoice-detail': {
+    files: [
+      'tests/backend/p1-22-invoice-lifecycle.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+    ],
+    required: ['denial'],
+    note: 'the ONE operation in this phase that deliberately does not require sal.finance.view: sal.invoices is scope-gated only while the money lives in two separately gated tables, so a caller without the finance permission must receive a header WITHOUT money rather than a 403 — returning 403 would deny a fact the schema leaves visible; built on a LEFT JOIN so RLS invisibility yields NULL rather than zero rows, and the money sub-object is OMITTED not zeroed, because a total of 0 would be a lie about the invoice where an absent key is the truth about the caller; the test drives it with a principal holding every sal code EXCEPT sal.finance.view and asserts the header is present and totals is null, which is the assertion that would fail if the join were an INNER one',
+  },
+  'sal.invoice-outstanding-read': {
+    files: [
+      'tests/backend/p1-22-invoice-lifecycle.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+    ],
+    required: ['denial'],
+    note: 'server-derived BY CONSTRUCTION rather than by discipline: nothing stores a balance anywhere in sal, and sal.invoice_open_receivable recomputes round(gross − allocations − approved_credits, 4) on every call excluding reversed receipts (H-fin-1), so there is no column a client could write and no cached value that could drift; a separate operation rather than a field on the invoice because the header is readable without sal.finance.view and the balance is not — folding them would either deny the header or make the response shape change silently with the caller’s permissions; the currency is ALWAYS returned beside the amount, because the protected function returns a bare numeric with no currency predicate at all and only the invoice’s own currency_code labels it',
+  },
+  'sal.invoice-cancel': {
+    files: ['tests/backend/p1-22-invoice-lifecycle.test.ts'],
+    required: ['outbox', 'denial'],
+    note: 'draft only, and the vocabulary itself refuses the alternative: the status is named void_before_issue, sal.guard_invoice_freeze permits draft → void_before_issue and nothing else reaches it, and ck_invoices_number_iff_issued makes it structural that a voided invoice carries a NULL number — so there is no state in which a voided invoice holds a number a customer has seen (denial asserts an ISSUED invoice is refused); a reason is required and lands in sal.invoice_status_history.reason, whose actor and timestamp are server-stamped by shared.stamp_status_history and are therefore not client inputs; idempotent on the terminal state and the test asserts a replay writes NO second history row and NO second audit record, which is the part a naive re-run of the transition would get wrong',
+  },
+  'sal.credit-note-create': {
+    files: [
+      'tests/backend/p1-22-credit-note.test.ts',
+      'tests/backend/p1-22-currency-coherence.test.ts',
+    ],
+    required: ['denial'],
+    note: 'the original invoice is never rewritten: a credit is a separate POSITIVE-amount row because there is no signed amount anywhere in sal, and the issued invoice’s own amounts stay frozen by sal.guard_invoice_amount_frozen; born pending via sal.stamp_dual_control_maker, which forces requested_by from iam.current_user_id() and NULLs the approval fields so a request cannot arrive pre-approved — nothing is credited here, which is why this operation publishes NO event and credit-note.issued fires on approval instead; CURRENCY IS READ FROM THE PARENT INVOICE and a supplied mismatch is refused, and that check is the ONLY defence in the entire system: five triggers fire on sal.credit_notes and not one reads sal.invoices.currency_code, sal.approve_credit_note compares amount and never currency, and sal.invoice_open_receivable has no currency predicate — tests/db/p1-22-protected-residuals.test.ts approves a JOD credit note against a USD invoice and shows 100.0000 become 60.0000 (P1-22-L-02, change-control candidate CC-1)',
+  },
+  'sal.credit-note-approve': {
+    files: ['tests/backend/p1-22-credit-note.test.ts'],
+    required: ['outbox', 'denial'],
+    note: 'a SECOND operation rather than a flag, because sal.guard_dual_control_approval raises check_violation when approved_by = requested_by and BOTH are stamped from iam.current_user_id() — the maker on INSERT, the approver on UPDATE — so the two acts must come from two sessions belonging to two different users and no single endpoint could satisfy that however it were shaped; audit class is approval rather than financial because the fact recorded is a second person’s decision; the test drives it with a distinct approver principal and asserts the same-user attempt is refused with a caller-safe message rather than a constraint name (denial); idempotent because the primitive returns silently on an already-approved note, and uq_financial_events_source would refuse a second event with 23505 in any case — a free backstop',
+  },
+  'sal.payment-record': {
+    files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['outbox', 'denial', 'cross-tenant'],
+    note: 'records that money was received and structurally CANNOT claim a settlement: ck_payment_methods_kind admits exactly cash, card_terminal and bank_transfer with the schema comment "No online payment gateway/settlement types (ASM-14, CON-04)", so there is no column in which an authorisation or a card could be stored and the body has no such field; receivedBy is absent by construction because sal.record_receipt stamps the cashier and the tenant from the session, so offering either as an input would be offering a lie; the denial cases include a PLATFORM payment method, which is visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL, so it raises 23503 about a method the caller can see in the list; a fifth decimal place is refused at the boundary because exceeding scale is NOT an error, PostgreSQL silently rounds it away',
+  },
+  'sal.payment-allocate': {
+    files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-concurrency.test.ts'],
+    required: ['outbox', 'denial'],
+    note: 'THE ONE INVARIANT THE DATABASE DOES NOT DEFEND: Σ allocations ≤ receipt.amount and ≤ invoice.open are enforced ONLY inside sal.allocate_receipt — no constraint, trigger or exclusion bounds the sum, and app_runtime holds raw INSERT on sal.payment_allocations, which tests/db/p1-22-protected-residuals.test.ts reproduces by driving both derivations to −400.0000 with one raw insert of 500 against a receipt of 100; so the service calls the primitive, the repository contains no INSERT path, and a test asserts that absence textually (change-control candidate CC-4, because a future module with the same grant could still bypass it); currency is REQUIRED even though the server knows it, because the primitive compares receipt against invoice and never sees what the caller believed — without it a client allocating what it thinks are USD against a JOD receipt succeeds in a currency it did not intend; allocations are append-only with no UPDATE or DELETE grant and no reversal record, so a misallocated line is correctable only by reversing the whole receipt, which this phase does not expose',
+  },
+  'sal.receipt-detail': {
+    files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['denial'],
+    note: 'requires sal.finance.view where the invoice detail does not, and the asymmetry is the schema’s: sal.receipts is gated WHOLE-ROW by it on SELECT, so a caller without it sees zero receipts rather than redacted ones and there is no honest "receipt without amounts" projection to build — declaring the permission is the truthful contract, because the alternative is an endpoint that returns 404 for a receipt that exists; the receipt reference is stable and is not a second identity: receipt_number is allocated once by sal.record_receipt and frozen by sal.guard_receipt_freeze, which is unconditional on every UPDATE and covers the number as well as the money, so the test asserts the SAME number after a replay of the recording command',
+  },
+  'sal.payment-method-list': {
+    files: ['tests/backend/p1-22-payments.test.ts'],
+    required: [],
+    note: 'exists because sal.record_receipt takes a payment_method_id and without a way to discover one payment recording is unreachable — the difference between a usable API and a decorative one; scope is tenant and that is FORCED by the table, which has no company_id and no branch_id column at all, so declaring branch would be a claim the schema cannot support and authorizeScope would have nothing coherent to check; the projection reports `recordable` per row, because the three seeded PLATFORM methods are visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL — so leaving a caller to discover that FK by receiving a 23503 about a method it can see in the list would be the trap this list exists to remove. THE `required` LIST IS EMPTY, AND THAT IS DELIBERATE: this is the only P1-22 operation that parses NO input at all — no path parameter, no query schema, no body — so it has nothing to validate and no state to refuse, and neither `denial` nor `cross-tenant` can be backed by an assertion that is not a fiction. `denial` was in this entry and was REMOVED after the suite author refused to declare an unbacked flag and said so; the same argument this note already made for `cross-tenant` applies to it verbatim, and the obligation had been copy-pasted across the P1-22 block. The derived floor still requires route, service, success and authorization, so this is not an unguarded row — it is a row whose extra obligations were imaginary',
+  },
+  'sal.delivery-create': {
+    files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'creates the parent that eligibility, receiver, checklist, signature and completion all hang off, and hands nothing over — the record is born ready; the vehicle and reception visit are NOT client inputs because sal.guard_delivery_coherence (M-dlv-1) requires both to equal the work order’s, so the service derives them, which is both safer and a better error: a mismatch cannot be expressed at all rather than surfacing as a 23514 naming a trigger; uq_delivery_records_work_order_active permits one live delivery per work order so a second attempt is 23505 surfaced as a conflict (denial); publishes no event, because opening a delivery is not yet a business fact any consumer waits for — vehicle.delivered is',
+  },
+  'sal.delivery-eligibility-read': {
+    files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['denial'],
+    note: 'THE FINANCIAL BLOCKER HAS NO DATABASE ENFORCEMENT ANYWHERE: sal.complete_delivery checks a receiver row, mandatory checklist results and one signature, and checks no work-order state, no quality control and no balance — deleting this composition would not fail a single constraint; requires sal.finance.view in ADDITION to the delivery authority, and that is not belt-and-braces: the blocker composes from sal.invoice_open_receivable whose inputs sit behind that permission, so a caller without it would be waved through by an RLS-INVISIBLE ZERO reading as "nothing outstanding", the worst available failure mode for a handover gate; there is no `eligible` input anywhere on this path, the answer is a closed BLOCKER_CODES vocabulary rather than a boolean, and the service FAILS CLOSED on any fact it cannot establish — including treating billing’s null as blocking, which deliberately disagrees with the billing port’s own doc comment because null conflates "nothing invoiced" with "no work order found"',
+  },
+  'sal.delivery-receiver-verify': {
+    files: ['tests/backend/p1-22-delivery.test.ts'],
+    required: ['denial'],
+    note: 'singular because uq_authorized_receivers_delivery permits exactly ONE receiver per delivery, so a plural path would advertise a collection the schema cannot hold; the authority is checked against the VISIT rather than asserted by the caller — sal.guard_authorized_receiver (M-dlv-2) requires a rec.reception_party_roles row valid at the moment of verification, and it is TIME-AWARE, so an expired role does not authorise a collection today and one starting tomorrow does not authorise one now (denial drives a partner with no valid role and asserts a caller-safe message rather than a trigger name); identity evidence is bound BY REFERENCE and its contents are never read, stored or logged, and no biometric or legal-validation claim is made anywhere on the path',
+  },
+  'sal.delivery-checklist-record': {
+    files: ['tests/backend/p1-22-delivery.test.ts'],
+    required: ['denial'],
+    note: 'ck_delivery_checklist_results_waiver makes the waiver rule a BICONDITIONAL — (outcome = waived) = (waiver_reason IS NOT NULL) — so a waiver with no reason AND a reason attached to a pass are both refused, and the second is the half a caller would not expect, which is why it is an explicit refusal rather than a silently dropped field (both are denial cases); sal.complete_delivery evaluates mandatory items scoped to the delivery’s COMPANY rather than to any one template, so adding a mandatory item to any active template immediately blocks every in-flight delivery with no result for it — the test asserts that, because it is the behaviour an operator will otherwise discover in production; uq_delivery_checklist_results_item permits one result per item per delivery and the service REFUSES a re-record rather than overwriting, because an overwrite would silently erase a failed outcome a completion gate had already read',
+  },
+  'sal.delivery-signature-attach': {
+    files: ['tests/backend/p1-22-delivery.test.ts'],
+    required: ['denial'],
+    note: 'a REFERENCE, never the image: the body carries a shared.document_versions id and nothing else, .strict() makes a body carrying signatureData a refusal rather than an ignored field, and no signature bytes reach an audit detail, an event payload or a log line — the test asserts the audit details and the outbox payload contain no base64-shaped value; NO biometric and NO legal-validation claim is made, because this platform records that a document was bound to a handover and does not assert whose mark it is; bound but never retrievable (P1-22-L-04): the table accepts any document_versions row regardless of status while DOWNLOADABLE_STATES is [accepted] and no application path can produce acceptance — shared.file_scan_results is granted to no role, the transition guard requires a clean scan, and the only runtime UPDATE policy pins pending → rejected — so this phase ships NO retrieval endpoint, because one that fails on every call reads as a capability',
+  },
+  'sal.delivery-complete': {
+    files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-concurrency.test.ts'],
+    required: ['outbox', 'denial'],
+    note: 'the point at which the shop’s custody ends, and the three checks the primitive does NOT make are composed here: work-order state, quality control and the financial balance; eligibility is recomputed INSIDE the transaction after locking the row, from the SAME read service that answers the GET, so what a caller was shown and what is enforced are the same code over the same tables — two implementations would be two chances for the financial blocker to be dropped from the one that matters; EXACTLY ONE blocker is overridable (financial_balance_outstanding), it requires a reason, its authority is sal.delivery.complete rather than sal.delivery.manage, and the reason lands in the audit details — the others are not overridable because two of them are enforced INSIDE the primitive, so an override would be accepted here and then fail at the database, and advertising an override that cannot work is worse than not offering one; the test proves financial BLOCKING and authorized override behaviour as separate cases',
+  },
+  'wty.warranty-generate': {
+    files: ['tests/backend/p1-22-warranty.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['outbox', 'denial'],
+    note: 'a subresource of the delivery rather than a top-level POST, and the shape carries meaning: wty.guard_warranty_record_coherence refuses an INSERT whose delivery is not delivered and every term is dated from delivered_at, so making the delivery the parent segment means "issue a warranty for nothing" cannot be expressed; the caller may name a policy AND NOTHING ELSE — duration, odometer limit, covered scope and the effective window all come from the coverage row effective at the delivery date, a missing one is a controlled configuration error and never a defaulted twelve months, and an ambiguous or absent policy is a configuration error too because guessing which of two policies a customer’s warranty falls under would be inventing a legal term (denial); the record’s odometer_limit is ABSOLUTE where the coverage’s is RELATIVE and the test asserts that arithmetic; an ARCHIVED policy is refused by the application because wty.issue_warranty checks the coverage status and NEVER the policy’s — a gap closed in code because closing it in the database needs a migration (CC-6)',
+  },
+  'wty.warranty-detail': {
+    files: ['tests/backend/p1-22-warranty.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    required: ['denial'],
+    note: 'reuses wty.warranty.issue because the permission catalogue contains no wty.warranty.read — inventing one needs a seed change outside this phase’s authority, and borrowing wty.policy.manage would be worse, handing coverage administration to a caller who only needs to read a record; carries NO monetary field, and that is not an omission to fill in later: wty has 80 columns and not one is an amount, a currency or a cap in any unit of account, so a covered value here would be a fabricated business fact and the test asserts the response has no key matching /amount|currency|price|cost|value/i; carries no claim history because there is none to carry — status may legally READ claimed_against since it is in ck_warranty_records_status, and nothing in this phase can ever WRITE it (P1-22-L-01), which the test pins structurally so a future edit cannot quietly add a claim route',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1731,14 +1895,15 @@ export function parseProvidedFlags(source) {
       continue;
     }
     // `shared` joined `iam` and `meta` with P1-15; `crm` joins with P1-16, `veh`
-    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19, and
-    // `svc`/`quo` with P1-20. The prefix list is explicit rather
+    // with P1-17, `apt`/`rec` with P1-18, `wo`/`tech`/`dia`/`qms` with P1-19,
+    // `svc`/`quo` with P1-20, `inv` with P1-21, and `sal`/`wty` with P1-22. The
+    // prefix list is explicit rather
     // than a wildcard so a typo in a declaration is a missing flag — which fails
     // the gate — instead of a silently accepted new namespace. Forgetting to add a
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
@@ -1978,9 +2143,13 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
       // block — the declaration cannot vouch for the invocation it declares.
       // For P1-18 the bar is higher: outside EVERY comment, so a prose line in
       // the header cannot stand in for a test either.
-      const strict = [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((prefix) =>
-        id.startsWith(prefix)
-      );
+      const strict = [
+        ...P1_18_PREFIXES,
+        ...P1_19_PREFIXES,
+        ...P1_20_PREFIXES,
+        ...P1_21_PREFIXES,
+        ...P1_22_PREFIXES,
+      ].some((prefix) => id.startsWith(prefix));
       const visible =
         source == null ? null : strict ? stripComments(source) : stripCoverageBlock(source);
       const inThisFile = visible != null && visible.includes(id);
@@ -2009,9 +2178,33 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // `crm.`/`veh.` namespaces are deliberately NOT opted in here — tightening a
     // gate over a merged phase belongs in that phase's own remediation, not in a
     // later phase's feature branch.
+    //
+    // P1-22 (`sal.`/`wty.`) opts in for a reason worth stating plainly: the phase
+    // must report `metadata-only 0` and `unit-only 0` as acceptance criteria, and
+    // a namespace absent from THIS list computes both as `false` for every row.
+    // The counts would then read 0 because nothing was ever measured, not because
+    // nothing was wrong — a vacuous green of exactly the kind this gate exists to
+    // prevent.
+    //
+    // `inv.` (P1-21) is opted in at the same time, and the merged-phase caution
+    // above is why it needed a measurement first rather than an assumption. P1-21
+    // shipped both derived hooks but neither structural one and no phase-count
+    // block, so adding the block alone would have printed an unmeasured
+    // `P1-21 metadata-only: 0`. Opting the namespace in was measured before it was
+    // done: across all 14 `inv.` operations, metadata-only 0, unit-only 0,
+    // invocation-only 0, internal-without-reason 0, and 0 failing the strict
+    // comment ratchet. It costs nothing and makes the printed figure true, which
+    // is the opposite of the `crm.`/`veh.` case — those genuinely fail 38 rows and
+    // stay out, as P1-18-R-02 records.
     const isDerived =
       id.startsWith(DERIVED_PREFIX) ||
-      [...P1_18_PREFIXES, ...P1_19_PREFIXES, ...P1_20_PREFIXES].some((p) => id.startsWith(p));
+      [
+        ...P1_18_PREFIXES,
+        ...P1_19_PREFIXES,
+        ...P1_20_PREFIXES,
+        ...P1_21_PREFIXES,
+        ...P1_22_PREFIXES,
+      ].some((p) => id.startsWith(p));
     const metadataOnly = isDerived && !provided.has('route') && !provided.has('service');
     const unitOnly = files.length > 0 && files.every(isPureUnitFile);
     if (isDerived && metadataOnly) {
@@ -2076,6 +2269,10 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
   const p1_19Rows = matrix.filter((m) => P1_19_PREFIXES.some((p) => m.id.startsWith(p)));
   // P1-20 spans two namespaces, so its phase row set is their union.
   const p1_20Rows = matrix.filter((m) => P1_20_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-21 spans one namespace.
+  const p1_21Rows = matrix.filter((m) => P1_21_PREFIXES.some((p) => m.id.startsWith(p)));
+  // P1-22 spans two namespaces, so its phase row set is their union.
+  const p1_22Rows = matrix.filter((m) => P1_22_PREFIXES.some((p) => m.id.startsWith(p)));
   const atOperationDepth = (m) =>
     m.referenced &&
     m.missing.length === 0 &&
@@ -2106,6 +2303,8 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     p1_18: phaseCounts(aptRecRows),
     p1_19: phaseCounts(p1_19Rows),
     p1_20: phaseCounts(p1_20Rows),
+    p1_21: phaseCounts(p1_21Rows),
+    p1_22: phaseCounts(p1_22Rows),
   };
   return { failures, matrix, counts };
 }
@@ -2238,6 +2437,24 @@ async function runCli() {
     }
   );
 
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-21', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_21,
+      operations: matrix.filter((m) => P1_21_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
+  await writeMatrix(
+    join(ROOT, 'docs', 'phase-1', 'phase-1-22', 'evidence', 'operation-test-matrix.json'),
+    {
+      generatedFrom,
+      counts: counts.p1_22,
+      operations: matrix.filter((m) => P1_22_PREFIXES.some((p) => m.id.startsWith(p))),
+    }
+  );
+
   if (jsonOutput) {
     console.log(JSON.stringify({ counts, operations: matrix, failures }, null, 2));
   } else {
@@ -2308,6 +2525,24 @@ async function runCli() {
     console.log(`P1-20 unit-only: ${u.unitOnly}`);
     console.log(`P1-20 unreferenced: ${u.unreferenced}`);
     console.log(`P1-20 metadata-only: ${u.metadataOnly}`);
+    const v = counts.p1_21;
+    console.log('');
+    console.log(`P1-21 registered public operations: ${v.registered}`);
+    console.log(`P1-21 operation-depth: ${v.operationDepth}`);
+    console.log(`P1-21 invocation-only: ${v.invocationOnly}`);
+    console.log(`P1-21 pending: ${v.pending}`);
+    console.log(`P1-21 unit-only: ${v.unitOnly}`);
+    console.log(`P1-21 unreferenced: ${v.unreferenced}`);
+    console.log(`P1-21 metadata-only: ${v.metadataOnly}`);
+    const w = counts.p1_22;
+    console.log('');
+    console.log(`P1-22 registered public operations: ${w.registered}`);
+    console.log(`P1-22 operation-depth: ${w.operationDepth}`);
+    console.log(`P1-22 invocation-only: ${w.invocationOnly}`);
+    console.log(`P1-22 pending: ${w.pending}`);
+    console.log(`P1-22 unit-only: ${w.unitOnly}`);
+    console.log(`P1-22 unreferenced: ${w.unreferenced}`);
+    console.log(`P1-22 metadata-only: ${w.metadataOnly}`);
     if (failures.length === 0) {
       console.log(
         `\nOK: every registered operation is invoked in a referencing test and provides its required evidence.`

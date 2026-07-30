@@ -114,6 +114,24 @@ jobs:
       - name: P1-21 endpoint inventory and task traceability
         run: npm run validate:p1-21-inventory
 
+      # Phase 1-22 (P1-22-DO-001): the same reconciliation for billing, payment,
+      # delivery and warranty. This is the first phase to span FOUR modules and TWO
+      # id namespaces, so the script's prefix and module handling is plural
+      # throughout — a check that silently assumed one of each would reconcile half
+      # the phase and report the other half as clean.
+      - name: P1-22 endpoint inventory and task traceability
+        run: npm run validate:p1-22-inventory
+
+      # Phase 1-22 (P1-22-SEC-002): the financial surface may not contain a
+      # Number(), parseFloat, Math.*, toFixed, unary plus, or a JSON number schema.
+      # A single one of those turns an exact numeric(18,4) into an approximation,
+      # and the loss is silent, unrepeatable, and invisible in a passing test -
+      # the wrong value is still a number and it is still close. Scoped to the
+      # declared money trees rather than all of src, because a gate that banned
+      # Number() everywhere would be switched off within a week.
+      - name: Exact-money audit
+        run: npm run validate:exact-money
+
       - name: OpenAPI validation
         run: npm run validate:openapi
 

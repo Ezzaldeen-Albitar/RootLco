@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
+  assertMinorUnitScale,
   parseJsonBody,
   parseOrFail,
   schemas,
@@ -393,5 +394,103 @@ describe('searchParamsToObject — prototype safety', () => {
     expect({ ...out }).toEqual({ limit: '25', tag: ['a', 'b'] });
     expect(JSON.parse(JSON.stringify(out))).toEqual({ limit: '25', tag: ['a', 'b'] });
     expect(Object.entries(out)).toHaveLength(2);
+  });
+});
+
+describe('assertMinorUnitScale', () => {
+  /**
+   * The currency-scale check, which the money schema's own docstring delegates to.
+   *
+   * It exists because the boundary regexes accept four decimals for every currency —
+   * that is the COLUMN's scale (`numeric(18,4)`), not the currency's. USD and EUR carry
+   * two minor units and JOD three (`shared.currencies.minor_unit`). Nothing downstream
+   * objects to a half-cent: PostgreSQL rounds a fifth decimal away silently and stores
+   * the fourth exactly, so an amount more precise than its currency reaches the ledger
+   * and stays there.
+   *
+   * The consequence is not cosmetic. A `0.0001` USD credit note leaves an open
+   * receivable no tenderable payment can settle, `readOutstanding` reports
+   * `isSettled: false` permanently, and the delivery module's
+   * `financial_balance_outstanding` blocker stays raised with an override as the only
+   * exit.
+   */
+  const path = 'body.amount';
+
+  it('accepts an amount inside its currency’s minor units', () => {
+    expect(() => assertMinorUnitScale('10.50', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('0.01', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('0.001', 'JOD', 3, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('12345678901234.99', 'EUR', 2, path)).not.toThrow();
+  });
+
+  it('accepts an integer amount and one with no fractional part at all', () => {
+    // The early return on a missing decimal point, which is the common case for a
+    // currency with `minor_unit = 0`.
+    expect(() => assertMinorUnitScale('100', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('0', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('7', 'JPY', 0, path)).not.toThrow();
+  });
+
+  it('treats trailing zeros as insignificant, because the column scale is still four', () => {
+    // `100.0000` is a perfectly valid USD amount, and every amount read back out of
+    // `numeric(18,4)` looks like this. Refusing it would refuse the database's own
+    // output.
+    expect(() => assertMinorUnitScale('100.0000', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('10.5000', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('0.00', 'USD', 2, path)).not.toThrow();
+    expect(() => assertMinorUnitScale('1.000000', 'USD', 2, path)).not.toThrow();
+  });
+
+  it('refuses a non-zero digit beyond the currency’s minor units', () => {
+    expect(() => assertMinorUnitScale('0.0001', 'USD', 2, path)).toThrow(AppFailure);
+    expect(() => assertMinorUnitScale('10.005', 'USD', 2, path)).toThrow(AppFailure);
+    expect(() => assertMinorUnitScale('10.0050', 'USD', 2, path)).toThrow(AppFailure);
+    // JOD tolerates a third decimal and refuses a fourth — the check is per currency,
+    // which is the whole reason the scale cannot be pinned in the schema.
+    expect(() => assertMinorUnitScale('0.0001', 'JOD', 3, path)).toThrow(AppFailure);
+    // And a zero-minor-unit currency refuses any fraction at all.
+    expect(() => assertMinorUnitScale('1.5', 'JPY', 0, path)).toThrow(AppFailure);
+  });
+
+  it('refuses with ERR-VAL-001, the field path, and a stable rule code', () => {
+    let failure: AppFailure | null = null;
+    try {
+      assertMinorUnitScale('0.0001', 'USD', 2, path);
+    } catch (error) {
+      failure = isAppFailure(error) ? error : null;
+    }
+    expect(failure).not.toBeNull();
+    expect(failure?.code).toBe('ERR-VAL-001');
+    expect(failure?.safeDetails.violations).toEqual([{ path, rule: 'minor_unit_scale' }]);
+  });
+
+  it('names the currency and its minor unit, and echoes no submitted value', () => {
+    // The currency and the minor unit are REFERENCE data, not caller input, so naming
+    // them is safe and is the difference between an actionable refusal and a riddle.
+    // The amount is caller input and must not be echoed — this file's whole contract.
+    let message = '';
+    try {
+      assertMinorUnitScale(`0.0001${CANARY}`.slice(0, 6), 'USD', 2, path);
+    } catch (error) {
+      message = isAppFailure(error) ? error.message : '';
+    }
+    expect(message).toContain('USD');
+    expect(message).toContain('2');
+    expect(message).not.toContain(CANARY);
+
+    // And nothing a caller can read carries the value either.
+    const failure = new AppFailure('ERR-VAL-001', {
+      message: 'USD has 2 minor unit(s); the amount is more precise than the currency.',
+      safeDetails: { violations: [{ path, rule: 'minor_unit_scale' }] },
+    });
+    expect(JSON.stringify(problemFor(failure, CORRELATION_ID))).not.toContain(CANARY);
+  });
+
+  it('never converts the amount to a number, so a 20-digit value is judged exactly', () => {
+    // A `Number()` implementation would lose the trailing digits of a value this long
+    // and answer "fine". The comparison is string-only, so the offending digit is seen.
+    expect(() => assertMinorUnitScale('99999999999999.9999', 'USD', 2, path)).toThrow(AppFailure);
+    // The mirror case: the same length, with the excess digits zero.
+    expect(() => assertMinorUnitScale('99999999999999.9900', 'USD', 2, path)).not.toThrow();
   });
 });
