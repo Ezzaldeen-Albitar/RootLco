@@ -83,12 +83,12 @@ reason written out in full:
 | Action                             | Pin                                        | Version |
 | ---------------------------------- | ------------------------------------------ | ------- |
 | `actions/checkout`                 | `11d5960a326750d5838078e36cf38b85af677262` | v4.4.0  |
-| `actions/setup-node`               | `49933ea5288caeca8642d1e84afbd3f7d6820020` | v4.4.0  |
-| `actions/upload-artifact`          | `ea165f8d65b6e75b540449e92b4886f43607fa02` | v4.6.2  |
-| `actions/download-artifact`        | `d3f86a106a0bac45b974a628896c90dbdf5c8093` | v4.3.0  |
+| `actions/setup-node`               | `820762786026740c76f36085b0efc47a31fe5020` | v7.0.0  |
+| `actions/upload-artifact`          | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` | v7.0.1  |
+| `actions/download-artifact`        | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` | v8.0.1  |
 | `actions/dependency-review-action` | `2031cfc080254a8a887f58cffee85186f0e49e48` | v4.9.0  |
-| `actions/attest-build-provenance`  | `e8998f949152b193b063cb0ec769d69d929409be` | v2.4.0  |
-| `github/codeql-action/*`           | `4187e74d05793876e9989daffde9c3e66b4acd07` | v3.37.3 |
+| `actions/attest-build-provenance`  | `0f67c3f4856b2e3261c31976d6725780e5e4c373` | v4.1.1  |
+| `github/codeql-action/*`           | `e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81` | v4.37.3 |
 | `docker/setup-buildx-action`       | `8d2750c68a42422c14e847fe6c8ac0403b4cbd6f` | v3.12.0 |
 | `docker/build-push-action`         | `10e90e3645eae34f1e60eeb005ba3a3d33f178e8` | v6.19.2 |
 | `aquasecurity/trivy-action`        | `ed142fd0673e97e23eac54620cfb913e5ce36c25` | v0.36.0 |
@@ -96,18 +96,52 @@ reason written out in full:
 | `anchore/sbom-action`              | `e22c389904149dbc22b58101806040fa8d37a610` | v0.24.0 |
 
 All from trusted publishers: GitHub itself, Docker Inc., Aqua Security, hadolint,
-Anchore. Pinned to the latest release _within the major line the repository
-already proves works_ — deliberately not the newest major, because migrating
-`actions/checkout` v4 → v7 is a change with its own risk and does not belong in
-a CI-platform pull request.
+Anchore.
+
+**Pinning rule.** Every reference is a full 40-character commit SHA with a
+trailing `# vX.Y.Z` comment, and **all references to the same action carry the
+same SHA**. A tag or a floating major is never acceptable.
+
+**Major-version rule — amended.** This section previously said pins stay
+"within the major line the repository already proves works — deliberately not
+the newest major". That was the rule while the pipeline was being built, and the
+pre-P1-23 dependency-maintenance gate deliberately changed it: five actions were
+migrated to their newest major (`upload-artifact` v4 → v7,
+`download-artifact` v4 → v8, `setup-node` v4 → v7,
+`attest-build-provenance` v2 → v4, `github/codeql-action` v3 → v4). The rule
+now is that a newest-major migration is permitted **when it is proven on the
+current tree**, which for that gate meant: every changed workflow read line by
+line, every pinned SHA resolved against its claimed tag, both halves of any
+coupled pair moved together, and a complete green check population on the
+resulting tree — not on the stale base a bot proposed it against.
+
+`actions/checkout` remains on v4.4.0 because nothing has yet proven v7 here;
+that is now an explicit exception rather than a blanket policy.
+
+Two lessons are recorded rather than smoothed over. **Coupled pairs must move
+together**: `github/codeql-action/analyze` bumped alone broke every CodeQL leg
+with "Loaded a configuration file for version '3.37.3', but running version
+'4.37.3'", and `vitest` bumped without `@vitest/coverage-v8` broke `npm ci`
+outright. **A pin can hide outside `.github/workflows/`**: the composite at
+`.github/actions/setup-project/action.yml` holds the `setup-node` reference
+that 15 workflows and 21 call sites actually use, and `dependabot.yml`'s
+`github-actions` entry with `directory: /` does **not** see it — so the first
+attempt at that upgrade moved 3 of 24 call sites and left the other 21 on the
+old major. WFS-001/WFS-002 check that each pin _is_ a SHA with a comment, not
+that two references to one action _agree_, so nothing detected the split.
 
 `actionlint` is downloaded rather than used as an action, and its tarball is
 verified against a SHA-256 checksum that was confirmed against the publisher's
 own checksums file. A linter fetched over the network is itself a supply-chain
 input.
 
-Dependabot keeps the pins current, including the trailing version comment —
-which is exactly the maintenance burden that makes teams abandon SHA pinning.
+Dependabot proposes pin updates, including the trailing version comment — which
+is exactly the maintenance burden that makes teams abandon SHA pinning. It does
+not keep them correct on its own, and this table is not maintained by it: it
+cannot see `.github/actions/*/action.yml`, it moves one half of a coupled pair,
+and it proposes against whatever base its branch was cut from. Every entry above
+is a maintainer decision, and this table is the record that must be updated in
+the same change as the workflows.
 
 ## 4. Dependency policy
 
