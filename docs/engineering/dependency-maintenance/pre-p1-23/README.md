@@ -225,3 +225,15 @@ remains `release-2-database-baseline` from P1-12.
 ## Decision
 
 **Go — RootLco Pre-P1-23 Dependency and CI Maintenance Gate Passed**
+
+## Superseded in part — see the final reconciliation
+
+This gate closed leaving #99 and #102 open. That was resolved afterwards in
+[`final-reconciliation.md`](final-reconciliation.md), which closes both against tracking issues
+[#117](https://github.com/Ezzaldeen-Albitar/RootLco/issues/117) and
+[#118](https://github.com/Ezzaldeen-Albitar/RootLco/issues/118), adds narrow Dependabot
+major-version ignores, and corrects four statements above — the TypeScript peer range, a second
+(Next.js) blocker on #102 that was red in CI but absent from this record, the now-rebased
+pull-request bases, and the decision to leave red pull requests open at all. It also records
+three claims of its **own** that adversarial review corrected before it merged. Read that
+document alongside this one; nothing here has been rewritten.
