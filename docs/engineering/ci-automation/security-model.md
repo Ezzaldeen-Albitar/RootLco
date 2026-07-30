@@ -82,15 +82,15 @@ reason written out in full:
 
 | Action                             | Pin                                        | Version |
 | ---------------------------------- | ------------------------------------------ | ------- |
-| `actions/checkout`                 | `11d5960a326750d5838078e36cf38b85af677262` | v4.4.0  |
+| `actions/checkout`                 | `3d3c42e5aac5ba805825da76410c181273ba90b1` | v7.0.1  |
 | `actions/setup-node`               | `820762786026740c76f36085b0efc47a31fe5020` | v7.0.0  |
 | `actions/upload-artifact`          | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` | v7.0.1  |
 | `actions/download-artifact`        | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` | v8.0.1  |
-| `actions/dependency-review-action` | `2031cfc080254a8a887f58cffee85186f0e49e48` | v4.9.0  |
+| `actions/dependency-review-action` | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` | v5.0.0  |
 | `actions/attest-build-provenance`  | `0f67c3f4856b2e3261c31976d6725780e5e4c373` | v4.1.1  |
-| `github/codeql-action/*`           | `e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81` | v4.37.3 |
-| `docker/setup-buildx-action`       | `8d2750c68a42422c14e847fe6c8ac0403b4cbd6f` | v3.12.0 |
-| `docker/build-push-action`         | `10e90e3645eae34f1e60eeb005ba3a3d33f178e8` | v6.19.2 |
+| `github/codeql-action/*`           | `f205ea1c3313d32999d8d6a48b4f6530d4437b38` | v4.37.4 |
+| `docker/setup-buildx-action`       | `bb05f3f5519dd87d3ba754cc423b652a5edd6d2c` | v4.2.0  |
+| `docker/build-push-action`         | `53b7df96c91f9c12dcc8a07bcb9ccacbed38856a` | v7.3.0  |
 | `aquasecurity/trivy-action`        | `ed142fd0673e97e23eac54620cfb913e5ce36c25` | v0.36.0 |
 | `hadolint/hadolint-action`         | `2332a7b74a6de0dda2e2221d575162eba76ba5e5` | v3.3.0  |
 | `anchore/sbom-action`              | `e22c389904149dbc22b58101806040fa8d37a610` | v0.24.0 |
@@ -115,8 +115,16 @@ line, every pinned SHA resolved against its claimed tag, both halves of any
 coupled pair moved together, and a complete green check population on the
 resulting tree — not on the stale base a bot proposed it against.
 
-`actions/checkout` remains on v4.4.0 because nothing has yet proven v7 here;
-that is now an explicit exception rather than a blanket policy.
+`actions/checkout` has since moved to **v7.0.1**, so the exception recorded
+here is closed. It was proven on the current tree by the pre-P1-23 maintenance
+batch: the fork-PR protection v7 introduces applies to `pull_request_target`,
+which this repository does not use anywhere, and GitHub backported that
+enforcement to v4 regardless; every input still used (`sparse-checkout`,
+`fetch-depth`, `persist-credentials`, `ref`) survives v7; and the composite at
+`.github/actions/setup-project/action.yml` was moved in the SAME change as the
+sixteen workflows, because Dependabot proposed only the sixteen.
+
+**There is no longer any action pinned below its newest proven major.**
 
 Two lessons are recorded rather than smoothed over. **Coupled pairs must move
 together**: `github/codeql-action/analyze` bumped alone broke every CodeQL leg
