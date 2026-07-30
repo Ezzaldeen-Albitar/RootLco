@@ -45,7 +45,11 @@ import {
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction } from '@/server/db/transaction';
 import { defineOperation, type RegisteredOperation } from '@/server/auth/operation-registry';
-import { evaluatePermissions, requirePermissions } from '@/server/auth/authorization';
+import {
+  evaluatePermissions,
+  requirePermissions,
+  requireScopedPermissions,
+} from '@/server/auth/authorization';
 import {
   UnregisteredFeatureFlagError,
   isFeatureEnabled,
@@ -185,5 +189,93 @@ describe('entitlement resolves against the tenant, after authorization', () => {
 
     expect(error).toBeInstanceOf(UnregisteredFeatureFlagError);
     expect((error as Error).message).toContain('fx_p1_13_never_registered');
+  });
+});
+
+describe('requireScopedPermissions fails closed on an empty target (P1-18-A-01)', () => {
+  /**
+   * The guard this covers had **no test at all**, and how that was discovered matters more
+   * than the test itself.
+   *
+   * The nightly `mutation-assurance` job exists to remove one guard at a time and require
+   * the suite to notice. It could never run: its three manifest entries invoked
+   * `npm run test:backend -- --config vitest.config.backend.ts`, and `test:backend` already
+   * supplies `--config`, so vitest refused the duplicated flag and every target reported
+   * `error` instead of `killed`. Fixing the invocation made the harness run for the first
+   * time, and it immediately reported this guard as **survived**.
+   *
+   * What the guard does: reaching `requireScopedPermissions` means a choke point has
+   * discovered a resource's real scope and is asking to be judged against it. If neither a
+   * company nor a branch arrives, the decision would fall through to scope-blind
+   * `iam.has_permission`, which answers yes for a principal holding the code ANYWHERE in
+   * the tenant. That is P1-18-A-01 — a branch-scoped permission that is decorative — and
+   * disabling this one condition restores it exactly.
+   *
+   * `USER_PERMITTED` holds the permission through an unrestricted tenant-wide grant, and
+   * that choice is the whole design of these cases. A DENIED principal would raise
+   * `ERR-IAM-001` either way, the assertion would still pass with the guard removed, and
+   * the test would be vacuous in precisely the direction that matters. The assertions are
+   * on the guard's own SENTENCE rather than only on the code, for the same reason: every
+   * refusal on this path shares the code.
+   */
+  const DEFERRED_REFUSAL = 'deferred scoped authorization requires';
+
+  it('denies a PERMITTED principal when neither company nor branch is supplied', async () => {
+    // Sanity first: this principal really is allowed the operation, so the refusal below
+    // is about the missing target and about nothing else.
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(requirePermissions(db, COMMAND_OPERATION)).resolves.toBeUndefined();
+    });
+
+    const error = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) =>
+      requireScopedPermissions(db, COMMAND_OPERATION, {}).catch((caught: unknown) => caught)
+    );
+
+    expect(error).toBeInstanceOf(AppFailure);
+    expect((error as AppFailure).code).toBe('ERR-IAM-001');
+    expect((error as AppFailure).status).toBe(403);
+    expect((error as AppFailure).message).toContain(DEFERRED_REFUSAL);
+    // Required codes are documented API metadata and safe to disclose; the resource is
+    // not, and is never named.
+    expect((error as AppFailure).safeDetails.requiredPermissions).toEqual([COMMAND_PERMISSION]);
+  });
+
+  /**
+   * There is deliberately no case for `{ companyId: undefined, branchId: undefined }`.
+   *
+   * That is what a caller writes when it means "I could not resolve either", and it is
+   * **unrepresentable**: the repository compiles with `exactOptionalPropertyTypes`, so
+   * `AuthorizationTarget`'s optional properties reject an explicit `undefined` and `tsc`
+   * refuses the call outright. Asserting it at runtime would need a cast, and a test that
+   * has to defeat the type system to reach a branch is describing a state the program
+   * cannot be in. The absent-property form above is the one the types permit, so it is the
+   * one the guard has to catch.
+   */
+
+  it('does not raise the deferred refusal once a company IS named', async () => {
+    // The other half, so the two cases above are not simply "this function always throws".
+    // A named company may still be refused on scope — that is a different decision, made by
+    // `iam.has_permission_in_scope` — so the assertion is that THIS guard did not fire,
+    // identified by its own sentence rather than by the code every refusal here shares.
+    const outcome = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) =>
+      requireScopedPermissions(db, COMMAND_OPERATION, { companyId: randomUUID() }).catch(
+        (caught: unknown) => caught
+      )
+    );
+    const message = outcome instanceof AppFailure ? outcome.message : '';
+    expect(message).not.toContain(DEFERRED_REFUSAL);
+  });
+
+  it('does not exempt an operation merely because its declared scope is tenant', async () => {
+    // `COMMAND_OPERATION` declares `scope: 'tenant'`, and the guard is deliberately NOT
+    // keyed on that. Keying it on the declaration would exempt any operation that omitted
+    // `scope` — `defineOperation` defaults it to `'tenant'` — so a future id-addressed
+    // command that forgot one line would be decided scope-blind while looking entirely
+    // correct at the call site.
+    expect(COMMAND_OPERATION.scope).toBe('tenant');
+    const error = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) =>
+      requireScopedPermissions(db, COMMAND_OPERATION, {}).catch((caught: unknown) => caught)
+    );
+    expect((error as AppFailure).message).toContain(DEFERRED_REFUSAL);
   });
 });

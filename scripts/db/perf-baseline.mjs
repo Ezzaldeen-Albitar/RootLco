@@ -106,18 +106,41 @@ async function main() {
     vehicles: Number((await c.query(`SELECT count(*)::int c FROM veh.vehicles`)).rows[0].c),
   };
   // Sample ids for point lookups (which must use the tenant-leading unique index).
-  const pid = (
-    await c.query(
-      `SELECT id FROM crm.business_partners WHERE tenant_id=$1 ORDER BY id OFFSET 10000 LIMIT 1`,
-      [TENANT_A]
-    )
-  ).rows[0].id;
-  const vid = (
-    await c.query(
-      `SELECT id FROM veh.vehicles WHERE tenant_id=$1 ORDER BY id OFFSET 10000 LIMIT 1`,
-      [TENANT_A]
-    )
-  ).rows[0].id;
+  //
+  // The offset is derived from the row count rather than hard-coded. It was `OFFSET 10000`,
+  // which made the harness unrunnable at any `--scale` below ~10,001: the query returned no
+  // row, `rows[0].id` threw `Cannot read properties of undefined`, and the process died
+  // before writing a report — so a smaller local run could not reproduce anything CI did.
+  // Sampling from the middle is the point (a row at either end could be favoured by
+  // clustering), and that is what a proportional offset gives at every scale.
+  const sampleOffset = (total) => Math.max(0, Math.floor(total / 2));
+  const requireId = (rows, what) => {
+    const id = rows[0]?.id;
+    if (id === undefined) {
+      throw new Error(
+        `no ${what} row to sample: the generated dataset is empty, so no measurement is possible`
+      );
+    }
+    return id;
+  };
+  const pid = requireId(
+    (
+      await c.query(
+        `SELECT id FROM crm.business_partners WHERE tenant_id=$1 ORDER BY id OFFSET $2 LIMIT 1`,
+        [TENANT_A, sampleOffset(volumes.partners)]
+      )
+    ).rows,
+    'crm.business_partners'
+  );
+  const vid = requireId(
+    (
+      await c.query(
+        `SELECT id FROM veh.vehicles WHERE tenant_id=$1 ORDER BY id OFFSET $2 LIMIT 1`,
+        [TENANT_A, sampleOffset(volumes.vehicles)]
+      )
+    ).rows,
+    'veh.vehicles'
+  );
 
   // Query families that target the ACTUAL tenant-leading indexes on the generated tables.
   const families = [
