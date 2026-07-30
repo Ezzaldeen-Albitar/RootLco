@@ -2,20 +2,26 @@
 
 **Phase:** P1-22 — Billing, Payment, Delivery, and Warranty Backend
 **Branch:** `feature/p1-22-billing-payment-delivery-warranty-backend`
-**Status:** **Implementation and evidence COMPLETE and green. Pre-merge verification in
-progress. THE PHASE IS NOT CLOSED.**
+**Status:** **Feature merged into `develop`. The gate record is the last step.**
 
 ## Current position
 
-| Field            | Value                                                                   |
-| ---------------- | ----------------------------------------------------------------------- |
-| HEAD             | `6438b71446f837d111e02fda5a98de0a2782f95e` (plus uncommitted doc fixes) |
-| `P1_22_BASE_SHA` | `0a53e540d72329e9aef6b196b68627aeb40b4c79`                              |
-| Migrations       | **119**, no `120`, none modified, nothing under `supabase/` touched     |
-| Schema hash      | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c`      |
-| `origin/develop` | `0a53e540d72329e9aef6b196b68627aeb40b4c79` (unchanged)                  |
-| `origin/main`    | `9c2fea162e5a270c740bac8db3546ed695a6f58a` (promoted, untouched)        |
-| Feature PR       | **not opened** — opens only once the pre-merge list below is complete   |
+| Field                | Value                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `FINAL_FEATURE_SHA`  | `f5c3a02dca8a1cf602d5468aceaa5f5d056614f4`                                                      |
+| `P1_22_BASE_SHA`     | `0a53e540d72329e9aef6b196b68627aeb40b4c79`                                                      |
+| Feature PR           | **#107 merged** with a merge commit                                                             |
+| Feature merge commit | `c864183a564e3f85c4348a4a36c5c076d445dbc4`                                                      |
+| Merge parents        | `0a53e540` (develop) + `f5c3a02` (feature) — two, a real merge                                  |
+| Merge tree           | `6b1aa4b0e7b5c02aa569dd248c119100f0ceced3` — **byte-identical** to the feature tree, zero drift |
+| `origin/develop`     | `c864183a564e3f85c4348a4a36c5c076d445dbc4`                                                      |
+| `origin/main`        | `9c2fea162e5a270c740bac8db3546ed695a6f58a` — **UNTOUCHED**                                      |
+| Migrations           | **119**, no `120`, none modified, nothing under `supabase/` touched                             |
+| Schema hash          | `a677eb05fac193536cb53735f189e03a65d182d2d9bab56351ff9953d8ab6c2c` unchanged                    |
+
+Every one of `FINAL_FEATURE_SHA`, `REMOTE_FEATURE_SHA`, `PR_HEAD_SHA`, `HOSTED_PR_CI_SHA`,
+`HOSTED_CLEAN_ROOM_SHA`, `CI_GATE_SHA`, `CODEQL_PR_SHA` and `CODEQL_FULL_TREE_SHA` is
+`f5c3a02`, so all eight name the same executable tree.
 
 ## Both phase gates are green
 
@@ -33,10 +39,10 @@ vacuous — the structural opt-in added in `a22c666` is what makes it so.
 
 | Tier              | Files | Tests     |
 | ----------------- | ----- | --------- |
-| unit + foundation | 56    | **1246**  |
-| backend           | 68    | **1600**  |
+| unit + foundation | 57    | **1252**  |
+| backend           | 68    | **1603**  |
 | database          | 138   | **1636**  |
-| **total**         | 262   | **4,482** |
+| **total**         | 263   | **4,491** |
 
 P1-22's own backend contribution is 209 tests: delivery 52, invoice-lifecycle 43, payments
 30, currency-coherence 23, isolation 20, warranty 20, credit-note 14, concurrency 7. Plus 12
@@ -227,25 +233,100 @@ writer, so `price_rules.tax_class_id` is unsettable.
 
 Change-control candidates CC-1..CC-8, none acted on, all needing a migration.
 
-## Remaining before closure
+## Pre-merge verification, as performed
 
-1. Freeze `FINAL_FEATURE_SHA`; feature PR against `develop`; require every check-run,
-   `ci-gate`, the hosted clean room, PR CodeQL **and an explicit full-tree CodeQL on the
-   exact feature head** — reconciled against the GitHub alert list and the complete
-   `/commits/{sha}/check-runs` list, **never `/actions/runs`, which does not list every
-   check**.
-2. Merge commit; verify parents, containment, byte-identical tree, zero drift, 119
-   migrations, unchanged schema hash.
-3. Gate record on `gate/p1-22-billing-payment-delivery-warranty-backend`.
+All 34 check-runs on `f5c3a02` were enumerated through **`/commits/{sha}/check-runs`**, never
+`/actions/runs` — the distinction that previously let a red GHAS `CodeQL` check sit on five
+consecutive heads reported as green. The jobs list shows 14; the commit carries 34.
+
+**The five checks `develop`'s ruleset requires, all green:** `Docker build validation` ·
+`Secret and sensitive-file scan` · `Lint, types, tests, build` ·
+`Database migrations and RLS tests` · `ci-gate`. The ruleset also allows only
+`merge_methods: ["merge"]`, which is how #107 was merged.
+
+**`hosted-clean-room / hosted-clean-room`: success**, and it is the independent confirmation
+of the migration count and schema hash.
+
+**CodeQL, in both modes.** `CodeQL` (GitHub Advanced Security, and NOT in the ruleset's
+required list, so it had to be checked separately): success. Both
+`code-security (javascript-typescript)` and `code-security (actions)` legs: success, twice
+each — once from the pull request, which is **diff-informed**, and once from the dispatched
+full-tree run on the same head. A PR analysis alone cannot support a whole-tree claim, and on
+the previous head `CodeQL` was `neutral` with "1 configuration not found", which is not a
+pass and was not read as one.
+
+**Reconciled against the alert list, not the check conclusion.** Open code-scanning alerts on
+the feature ref: **one**, medium, `js/http-to-file-access` in
+`scripts/ci/check-commit-checks.mjs` — a CI script, not application source, created
+2026-07-29 and identical to the `develop` baseline. **Application Critical 0 / High 0, and
+zero new alerts.**
+
+## Remaining
+
+The gate record on `gate/p1-22-billing-payment-delivery-warranty-backend`, which is this
+change.
+
+## What dispatching the nightly cost, and what it was worth
+
+The full-tree CodeQL analysis is not obtainable from the pull request: the PR analysis is
+**diff-informed**, which is the mistake this project has already paid for once. There is no
+standalone dispatchable CodeQL workflow — the check comes from GitHub Advanced Security
+default setup — so the full-tree run was obtained by dispatching `nightly-assurance`, which
+calls `_reusable-code-security.yml`, at the feature head.
+
+That brought the rest of the nightly along, and **six of its jobs went red**. None is a
+P1-22 defect, and each cause was read out of the job log rather than assumed. Three were
+genuinely broken and are now fixed (commit `f5c3a02`, explicitly not a P1-22 change):
+
+- **`mutation-assurance` could not run a single target.** The manifest invoked
+  `npm run test:backend -- --config vitest.config.backend.ts` and `test:backend` already
+  supplies `--config`, so vitest hard-errored on the duplicate. Fixing it made the harness
+  run for the first time and it immediately reported a **surviving mutation**: the guard in
+  `requireScopedPermissions` that refuses an empty target had no test at all, so
+  P1-18-A-01 could have been restored by deleting one condition. Now killed.
+- **`performance-baseline` could not read its own producer.** `perf-baseline.mjs` writes
+  `median_ms`/`p95_ms`/`family`; the gate looked for `p50`/`p95`/`name`. Every row became
+  `NaN` and the report emptied, so the job had never once been able to pass. Fixed, and
+  pinned by a fixture in the producer's exact shape.
+- **The sequential-scan rule failed two families for scanning by design**, visible only
+  once the gate could read anything. Scoped to point lookups.
+
+Three remain red and are recorded rather than fixed, because none is a repository defect:
+
+- **`full-rls-matrix` and `migration-replay`** refuse with "No base reference is available
+  (event `workflow_dispatch`), so migration immutability cannot be checked. A check that
+  cannot run must not report success." That is the correct behaviour of a check written for
+  push and pull-request contexts, and it is a property of dispatching rather than of this
+  tree. Both pass on the pull request, where a base ref exists.
+- **`backup-restore-drill`** fails at `pg_dump: aborting because of server version
+mismatch — server 17.10, pg_dump 16.14`: the runner image's client tools are a major
+  version behind the service container. A workflow tooling gap, with no repository code
+  involved.
+- **`historical-secret-scan`** flags two credential shapes at commit `1ae4ae1f` in
+  `tests/ci/policy-and-linters.test.ts` — a historical CI-initiative commit containing
+  scanner fixtures. Pre-existing and unrelated to this branch.
+- **`compatibility (node 22, postgres 18)`** fails on two PostgreSQL 18 behaviour changes,
+  in four foundation test files this branch never touched
+  (`git diff --name-only origin/develop...HEAD` on all four is empty). PostgreSQL 18 returns
+  SQLSTATE **`23001`** (`restrict_violation`) where 17 returned `23503`
+  (`foreign_key_violation`) for an `ON DELETE RESTRICT` violation, which fails three
+  constraint assertions; and `tests/db/foundation.test.ts` asserts the server version
+  matches `/^17\./`, which `18.4` does not. Both `postgres 17` legs pass on node 22 and node 24. Deciding whether the platform supports PostgreSQL 18 is a platform decision with a
+  migration and a version-pinning consequence, so it is recorded here rather than answered
+  by a phase whose mandate forbids migration 120.
+
+The pull request's own required checks are unaffected by all six: they are nightly jobs.
+Stating that is not the same as excusing them, which is why the three that were fixable
+were fixed and the three that were not are named with their evidence.
 
 ## Verified state at the close of the review round
 
 | Tier              | Count     |
 | ----------------- | --------- |
-| unit + foundation | **1246**  |
-| backend           | **1600**  |
+| unit + foundation | **1252**  |
+| backend           | **1603**  |
 | database          | **1636**  |
-| **total**         | **4,482** |
+| **total**         | **4,491** |
 
 Operation depth 20/20 with `pending`, `unit-only`, `invocation-only`, `unreferenced` and
 `metadata-only` all measured at 0. Task gate 31/31. Exact-money audit 42 files, 0 findings.
