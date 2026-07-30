@@ -152,6 +152,29 @@ export const P1_21_PREFIXES = ['inv.'];
  * it would report a vacuous 0/0 phase block that looks like passing coverage.
  */
 export const P1_22_PREFIXES = ['sal.', 'wty.'];
+/**
+ * P1-23 spans ONE *new* id namespace — `rpt.` — and reuses one existing one.
+ *
+ * The document, file, template and notification operations of P1-23 live in
+ * `shared.`, which `DERIVED_PREFIX` has covered since P1-14. They need no new
+ * hook, and adding one would double-count the namespace. What is new is
+ * reporting: Phase 1-11 froze the `rpt` schema
+ * (`rpt.report_configurations`, `report_configuration_versions`,
+ * `saved_filters`) and, as the P1-22 note above records, `rpt.` was left out
+ * *precisely because no operation existed behind it* — a prefix with no
+ * operations reports a vacuous 0/0 block that reads like passing coverage.
+ *
+ * P1-23 registers the first `rpt.` operations, so the prefix is added now and
+ * not before. Listed here **and** in the `parseProvidedFlags` alternation
+ * below, because P1-20 and P1-22 both proved that extending one hook without
+ * the other produces a gate that looks stricter than it is, and that the two
+ * failures compound in opposite directions: an unlisted prefix makes
+ * `derivedRequirements()` return `[]` so nothing is required, while an
+ * unlisted alternation makes every declaration parse to nothing so the one
+ * namespace-agnostic obligation cannot be satisfied by any declaration a test
+ * could write. Both hooks or neither.
+ */
+export const P1_23_PREFIXES = ['rpt.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -161,6 +184,7 @@ const DERIVED_PREFIXES = [
   ...P1_20_PREFIXES,
   ...P1_21_PREFIXES,
   ...P1_22_PREFIXES,
+  ...P1_23_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1903,7 +1927,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
