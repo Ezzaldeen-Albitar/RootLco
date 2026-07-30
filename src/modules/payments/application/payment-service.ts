@@ -50,6 +50,7 @@
  * added here.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE, sqlState } from '@/server/db/repository';
@@ -373,6 +374,7 @@ export class PaymentService {
   ): Promise<ReceiptView> {
     const amount = parseAmount(input.amount, 'amount');
     const currencyCode = parseCurrency(input.currencyCode, 'currencyCode');
+    await this.assertAmountFitsCurrency(db, input.amount, currencyCode, 'body.amount');
 
     await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
 
@@ -511,16 +513,20 @@ export class PaymentService {
       eventKey: `receipt.recorded:${receipt.id}`,
       payload: {
         receiptId: receipt.id,
-        receiptNumber: receipt.receiptNumber,
         payerPartnerId: receipt.payerPartnerId,
         paymentMethodId: receipt.paymentMethodId,
         paymentMethodKind: method.kind,
-        // Money crosses as `{ amount, currency }` — a fixed-scale decimal string
-        // beside the code that gives it meaning, never a bare number and never an
-        // unlabelled aggregate. No settlement reference and no credential of any
-        // kind appears here, because none exists to appear.
-        amount: receipt.amount,
-        currency: receipt.currencyCode,
+        // No amount, no currency and no receipt number, for the same reason
+        // `invoice.created` carries none (see billing/invoice-service.ts): the
+        // amount column is classified `restricted` and gated by
+        // `sal.finance.view` plus company/branch scope, whereas the outbox's only
+        // runtime SELECT policy is `sel_event_outbox_producer`, whose qualifier is
+        // `tenant_id = iam.current_tenant_id()` — no permission predicate and no
+        // scope predicate at all. Carrying money here would publish it past its
+        // own RLS policy to every reader in the tenant.
+        //
+        // No settlement reference and no credential of any kind appears here,
+        // because none exists to appear.
         receivedAt: receipt.receivedAt.toISOString(),
       },
     });
@@ -584,6 +590,11 @@ export class PaymentService {
     //    coherent and the predicates are what pin it (H6).
     const scope = { companyId: receipt.companyId, branchId: receipt.branchId };
     await authorizeScope(scope);
+
+    // Checked against the RECEIPT's currency, which is the stored record rather than the
+    // request's claim about it. A half-cent allocation is refused here rather than
+    // leaving a residue on the invoice that no tenderable payment can ever settle.
+    await this.assertAmountFitsCurrency(db, input.amount, receipt.currencyCode, 'body.amount');
 
     // 3. The invoice comes from `@/modules/billing`'s public port. This module may not
     //    read `sal.invoices` — `billing` owns that table, and a second reader would be
@@ -731,10 +742,17 @@ export class PaymentService {
         allocationId: allocation.id,
         receiptId: allocation.receiptId,
         invoiceId: allocation.invoiceId,
-        amount: allocation.amount,
-        currency: allocation.currencyCode,
+        // The allocated amount and the receipt's unallocated remainder are both
+        // withheld for the reason given on `receipt.recorded` above. The remainder
+        // is the stronger case of the two: `sal.receipt_unallocated()` is
+        // SECURITY INVOKER, so a reader without `sal.finance.view` cannot compute
+        // it by any legitimate query — publishing it here would hand out a derived
+        // financial position that RLS exists to withhold.
+        //
+        // `receiptStatus` stays: it is the lifecycle value a consumer needs to know
+        // the aggregate moved, it is classified `internal` rather than
+        // `restricted`, and it states no figure.
         receiptStatus: after.status,
-        receiptUnallocated: remainder.unallocated,
       },
     });
 
@@ -755,6 +773,31 @@ export class PaymentService {
   // -------------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------------
+
+  /**
+   * Refuses an amount more precise than its currency.
+   *
+   * The money columns are `numeric(18,4)` and the boundary regex accepts four decimals
+   * for every currency, but USD and EUR have two minor units and JOD has three
+   * (`shared.currencies.minor_unit`). The database will not catch this: a fifth decimal
+   * is rounded away silently on the cast, and the fourth is stored exactly, so nothing
+   * downstream ever objects to a half-cent.
+   */
+  private async assertAmountFitsCurrency(
+    db: DbHandle,
+    rawAmount: string,
+    currency: string,
+    path: string
+  ): Promise<void> {
+    const minorUnit = await this.repository.minorUnitForCurrency(db, currency);
+    if (minorUnit === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path, rule: 'unknown_currency' }] },
+      });
+    }
+    assertMinorUnitScale(rawAmount, currency, minorUnit, path);
+  }
 
   /**
    * The module's ONLY coupling to `@/modules/billing`, in one place.

@@ -143,6 +143,7 @@ import {
   invoiceOpenReceivable,
   receiptUnallocated,
   seedDeliveredDelivery,
+  linkSignatureDocumentToWorkOrder,
   seedWorkOrderChain,
   type WorkOrderChain,
 } from './p1-22-helpers';
@@ -748,6 +749,9 @@ interface EligibleDelivery {
 async function seedEligibleDelivery(tag: string): Promise<EligibleDelivery> {
   const chain = await seedWorkOrderChain(tag);
   await closeWorkOrderChain(chain.workOrderId);
+  // The signature document needs provenance against THIS work order, or
+  // `requireUsableDocumentVersion` refuses it.
+  await linkSignatureDocumentToWorkOrder(chain.workOrderId);
 
   const invoice = await seedIssuedInvoiceLocally(`${tag}_inv`, {
     workOrder: chain,

@@ -87,6 +87,8 @@ implemented:
 | CC-4      | A bound on `Σ sal.payment_allocations` per receipt and per invoice, so the primitive is not the only defence of BR-SAL-002 |
 | CC-5      | An `INSERT` path for `shared.number_sequences` usable by an operator tool rather than by hand (SB3)                        |
 | CC-6      | A policy-status check inside `wty.issue_warranty`, which today reads only the coverage status                              |
+| CC-7      | A tax-class / tax-rate administration operation, so `org.tax_classes` can be populated at all (`P1-22-L-08`)               |
+| CC-8      | A permission predicate on `shared.event_outbox`'s SELECT policy, so payload discipline is not the only control             |
 
 CC-4 deserves a note. `app_runtime` holds raw `INSERT` on `sal.payment_allocations`
 and no constraint, trigger or exclusion bounds the sum — over-allocation is
@@ -155,7 +157,7 @@ with `DEFECT` comments, and refused to declare `stale-version`. The coverage gat
 exactly two missing flags. Had either declared the flag to make the gate green, the defect
 would have shipped behind a passing gate.
 
-### One limitation the archaeology could not have predicted
+### Two limitations the archaeology could not have predicted
 
 | ID         | Limitation                                                   | Why it cannot close in P1-22                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -167,6 +169,27 @@ warranty side is simply always `0.0000`. The consequence is recorded rather than
 **`sal.issue_invoice` emits no `warranty_split_recorded` financial event today**, and
 `NO_WARRANTY_SHARE` in `invoice-service.ts` is the single place that changes when a
 coverage source exists.
+
+### `P1-22-L-08` — every invoice this API can produce is untaxed
+
+| ID         | Limitation                                | Why it cannot close in P1-22                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-22-L-08 | **The reachable tax rate is always zero** | `quo.quotation_items.captured_tax_rate` is `NOT NULL DEFAULT 0`. Its only writer is P1-20's quotation service, which copies `resolvePrice`, which returns `Decimal.zero(TAX_RATE)` whenever `svc.price_rules.tax_class_id` is `null`. That column can only reference `org.tax_classes` — **0 rows**, no seed, and no writer anywhere in `src/` — so the FK makes any non-null value unsettable and the null branch is the only reachable one. |
+
+This is recorded because an earlier revision of this phase **asserted the opposite**, in a
+route docstring and in the coverage note for `sal.invoice-preview`: _"a missing tax
+configuration is a controlled configuration error — never a silent zero, which would
+under-bill by exactly the tax and look like a correct answer"_. That refusal is real
+(`price-resolution-service.ts`), but it fires only for a **half**-configured rule — a named
+tax class with no effective rate. The wholly unconfigured case, which is the only case that
+exists, returns zero and says nothing.
+
+P1-22's own behaviour is correct and unchanged: it bills the captured rate exactly and
+invents nothing. Inventing a jurisdiction default here is precisely what §9 forbids. What
+belonged to this phase was not claiming the gap was closed, and both statements have been
+replaced with the fact. The mechanism is upstream — P1-11's default, P1-20's resolver, and
+the absent org-configuration surface — so closing it needs a tax-class admin operation,
+which is a new phase's scope and is raised as `CC-7`.
 
 ### One mutation that cannot be killed, and why that is a finding rather than a gap
 

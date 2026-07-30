@@ -1172,11 +1172,29 @@ export class DeliveryService {
    * this rule — registered, in scope, not refused — is the whole of the application's
    * contribution, and it is stated rather than implied.
    *
-   * `linkedToEntity` is intentionally not required. `sal.delivery_records` is not in
-   * `LINKABLE_ENTITY_TYPES`, and the binding between a delivery and its evidence is
-   * the foreign key on `sal.authorized_receivers` / `sal.delivery_signatures` — not a
-   * `shared.document_links` row — so demanding a link would refuse every legitimate
-   * call.
+   * ## Provenance is required, via the delivery's parents
+   *
+   * The document must be linked to this delivery's work order or its reception visit.
+   * Without that check the gate degraded to "name any document id you can see": the two
+   * foreign keys (`fk_delivery_signatures_document`, `fk_authorized_receivers_evidence`)
+   * are `(tenant_id, version_id)` only, and `sel_documents_tenant` /
+   * `sel_document_versions_tenant` carry no permission predicate, so every principal in
+   * the tenant can enumerate candidate ids. Another customer's ID scan or an unrelated
+   * invoice PDF would have satisfied `sal.complete_delivery`'s "a signature exists" gate.
+   *
+   * An earlier revision of this method skipped the check on the grounds that
+   * `sal.delivery_records` is not in `LINKABLE_ENTITY_TYPES`. That is true and beside the
+   * point: `wo.work_orders` and `rec.reception_visits` both ARE, and `DeliveryRecordRow`
+   * carries both ids, so the control was available with no migration. The composite
+   * foreign key binds the signature ROW to its own parent delivery — tautologically — and
+   * constrains the DOCUMENT not at all, which is the binding that was missing.
+   *
+   * Either parent is accepted because a handover document may legitimately have been
+   * captured against the visit (at reception) or against the job (at completion), and
+   * refusing one of those would refuse legitimate calls. `quo.quotations` sets the
+   * precedent for requiring the link at all
+   * (`quotation-decision-service.ts` — "any visible document could be attached as
+   * evidence for any quotation").
    */
   private async requireUsableDocumentVersion(
     db: DbHandle,
@@ -1187,8 +1205,8 @@ export class DeliveryService {
     const version = await sharedServicesModule().attachments.verifyEvidenceVersion(
       db,
       versionId,
-      'sal.delivery_records',
-      delivery.id
+      'wo.work_orders',
+      delivery.workOrderId
     );
 
     if (
@@ -1204,6 +1222,35 @@ export class DeliveryService {
     if (REFUSED_VERSION_STATES.includes(version.status)) {
       throw new AppFailure('ERR-DOC-001', {
         message: 'The document version was refused by review or quarantine and cannot be bound.',
+      });
+    }
+
+    /**
+     * Provenance is checked LAST, and the order is deliberate.
+     *
+     * The two checks above are about the document itself — a version from another
+     * company or branch, or one review has refused, is wrong regardless of what it is
+     * attached to, and those are the answers an operator can act on. Checking provenance
+     * first would refuse a foreign-branch document for being unlinked, which is true but
+     * not the point, and it would make every test of those two rules pass for a reason
+     * unrelated to what it asserts.
+     */
+    let hasProvenance = version.linkedToEntity;
+    if (!hasProvenance) {
+      const byVisit = await sharedServicesModule().attachments.verifyEvidenceVersion(
+        db,
+        versionId,
+        'rec.reception_visits',
+        delivery.receptionVisitId
+      );
+      hasProvenance = byVisit.linkedToEntity;
+    }
+    if (!hasProvenance) {
+      throw new AppFailure('ERR-VAL-001', {
+        message:
+          'That document is not attached to this delivery’s work order or reception visit ' +
+          'and cannot be its evidence.',
+        safeDetails: { violations: [{ path, rule: 'custom' }] },
       });
     }
   }

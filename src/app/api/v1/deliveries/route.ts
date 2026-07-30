@@ -71,7 +71,10 @@ export async function POST(request: Request): Promise<Response> {
         },
         authorizeScope
       );
-      return { status: 201, body: delivery };
+      // The body already carried `recordVersion`; publishing it as an ETag too means a
+      // client holding this response can use the platform's normal `If-Match` flow
+      // rather than having to know that one field of one body is special.
+      return { status: 201, body: delivery, recordVersion: delivery.recordVersion };
     },
     { body }
   );

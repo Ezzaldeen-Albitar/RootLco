@@ -862,3 +862,94 @@ describe('sal.payment-method-list', () => {
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
   });
 });
+
+// ===========================================================================
+/**
+ * The outbox carries no money — asserted on the payloads themselves.
+ *
+ * `shared.event_outbox` has exactly ONE runtime SELECT policy,
+ * `sel_event_outbox_producer`, whose qualifier is `tenant_id = iam.current_tenant_id()`:
+ * no permission predicate and no company/branch predicate. `sal.receipts.amount` and
+ * `sal.payment_allocations.amount` are classified `restricted` and their tables are gated
+ * whole-row by `iam.has_permission('sal.finance.view')` plus both scope predicates. So an
+ * amount in a payload is a copy of restricted money behind a strictly weaker policy — a
+ * per-receipt shadow of the cash ledger readable by every principal in the tenant. The
+ * policy comparison itself is pinned in `tests/db/p1-22-protected-residuals.test.ts`.
+ *
+ * `billing`'s three events state this rule for themselves in comments and keep it. These
+ * two did not, and carried `amount`, `currency`, `receiptNumber` and — worst of the four —
+ * `receiptUnallocated`, which is `sal.receipt_unallocated()`: a SECURITY INVOKER derived
+ * financial position that a caller without `sal.finance.view` cannot compute by any
+ * legitimate query, so the outbox row was its only source.
+ */
+describe('P1-22 outbox payloads carry no money', () => {
+  const MONEY_OR_NUMBER_KEY = /amount|currency|total|balance|unallocated|number|money/i;
+
+  const payloadFor = async (eventKey: string): Promise<Record<string, unknown>> => {
+    const row = await admin.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM shared.event_outbox WHERE event_key = $1`,
+      [eventKey]
+    );
+    const payload = row.rows[0]?.payload;
+    if (payload === undefined) throw new Error(`no outbox row for ${eventKey}`);
+    return payload;
+  };
+
+  it('receipt.recorded and payment.allocated name no figure and no receipt number', async () => {
+    const invoice = await seedIssuedInvoice('outbox_no_money', { net: '12500.0000' });
+    const receipt = await recordedReceipt('12500.0000');
+
+    authAs(SAL_FULL);
+    const allocated = await allocatePayment(receipt.id, {
+      invoiceId: invoice.invoiceId,
+      amount: '12500.0000',
+      currency: 'USD',
+    });
+    expect(allocated.status).toBe(201);
+    const allocation = await bodyOf<AllocationBody>(allocated);
+
+    // The money IS returned to the caller that asked for it — the route is gated by
+    // `sal.finance.view`, so this is the amount arriving where the policy allows it. The
+    // event is a different audience with a different policy, and that is the distinction.
+    expect(allocation.money.amount).toBe('12500.0000');
+
+    // The receipt number (exposed as reference) exists and is deliberately not published, on the same rule
+    // `invoice.created` states for the invoice number.
+    expect(receipt.reference).not.toBe('');
+
+    for (const [eventKey, label] of [
+      [`receipt.recorded:${receipt.id}`, 'receipt.recorded'],
+      [`payment.allocated:${allocation.id}`, 'payment.allocated'],
+    ] as const) {
+      const payload = await payloadFor(eventKey);
+
+      // Not vacuous: the payload must still identify its aggregate, or "carries no money"
+      // would be satisfied by an empty object.
+      expect(
+        Object.keys(payload).length,
+        `${label} must still identify its aggregate`
+      ).toBeGreaterThan(1);
+
+      for (const key of Object.keys(payload)) {
+        expect(key, `${label}.${key} must not name money or a document number`).not.toMatch(
+          MONEY_OR_NUMBER_KEY
+        );
+      }
+      // And the figures themselves appear nowhere in the serialised row, under any key —
+      // a key-name predicate alone would miss `{ detail: '12500.0000 received' }`.
+      const serialised = JSON.stringify(payload);
+      expect(serialised).not.toContain('12500');
+      expect(serialised).not.toContain(receipt.reference);
+
+      // What DOES survive: the aggregate id, so a consumer can go and read the record
+      // under its own policy rather than being handed the money.
+      expect(serialised).toContain(receipt.id);
+    }
+
+    // `receiptStatus` is retained on purpose and is the one lifecycle value a consumer
+    // needs. It states no figure, and `sal.receipts.status` is classified `internal`.
+    expect((await payloadFor(`payment.allocated:${allocation.id}`))['receiptStatus']).toBe(
+      'allocated'
+    );
+  });
+});

@@ -62,6 +62,7 @@ import {
   type CreditNoteRow,
   type InvoiceRow,
 } from '../data/billing-repository';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import {
   BillingRuleError,
   INVOICE_LINE_TYPES,
@@ -1043,6 +1044,18 @@ export class InvoiceService {
         refuseInvalidValue(error, 'body.currency');
       }
     }
+
+    // The invoice's currency, not the request's: the two are now known to agree, and
+    // the invoice is the record the credit lands against. Checked against the
+    // CURRENCY's precision rather than the column's — see `assertMinorUnitScale`.
+    const minorUnit = await this.repository.minorUnitForCurrency(db, invoice.currencyCode);
+    if (minorUnit === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${invoice.currencyCode} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.amount', rule: 'unknown_currency' }] },
+      });
+    }
+    assertMinorUnitScale(input.amount, invoice.currencyCode, minorUnit, 'body.amount');
 
     // Refused BEFORE the ceiling check, not after it. Without `sal.finance.view`
     // `sal.invoice_open_receivable` returns 0 rather than failing, so the ceiling

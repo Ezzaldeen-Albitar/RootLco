@@ -1634,7 +1634,7 @@ export const MANIFEST = {
       'tests/backend/p1-22-isolation.test.ts',
     ],
     required: ['denial'],
-    note: 'read-only and writes nothing, so it is safe to call repeatedly while a price is negotiated — which is why it exists separately from create; every amount is computed by PostgreSQL in numeric with round(...,4), the same shape ck_invoice_amounts_gross enforces and sal.issue_invoice later applies, so the preview cannot disagree with the invoice it previews; requires sal.finance.view because the preview IS money and a caller who may not see an invoice’s amounts must not obtain them from a preview instead; a missing tax configuration is a controlled configuration error and NOT a silent zero, which would under-bill by exactly the tax and look like a correct answer (denial)',
+    note: 'read-only and writes nothing, so it is safe to call repeatedly while a price is negotiated — which is why it exists separately from create; every amount is computed by PostgreSQL in numeric with round(...,4), the same shape ck_invoice_amounts_gross enforces and sal.issue_invoice later applies, so the preview cannot disagree with the invoice it previews; requires sal.finance.view because the preview IS money and a caller who may not see an invoice’s amounts must not obtain them from a preview instead; tax is the rate the quotation captured and this phase invents nothing, but that is NOT a guarantee the rate is non-zero: org.tax_classes has zero rows and no writer, so price_rules.tax_class_id is unsettable and the resolver’s zero branch is the only reachable one — every invoice this API can produce is untaxed today, recorded as P1-22-L-08 rather than asserted away (denial)',
   },
   'sal.invoice-create': {
     files: [

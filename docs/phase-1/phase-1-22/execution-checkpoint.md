@@ -34,13 +34,16 @@ vacuous — the structural opt-in added in `a22c666` is what makes it so.
 | Tier              | Files | Tests     |
 | ----------------- | ----- | --------- |
 | unit + foundation | 56    | **1239**  |
-| backend           | 68    | **1594**  |
-| database          | 138   | **1634**  |
-| **total**         | 262   | **4,467** |
+| backend           | 68    | **1600**  |
+| database          | 138   | **1636**  |
+| **total**         | 262   | **4,475** |
 
-P1-22's own backend contribution is 203 tests: invoice-lifecycle 43, delivery 49,
-payments 29, currency-coherence 21, isolation 20, warranty 20, credit-note 14,
-concurrency 7. Plus 10 DB residual tests and 18 money-gate fixture tests.
+P1-22's own backend contribution is 209 tests: delivery 52, invoice-lifecycle 43, payments
+30, currency-coherence 23, isolation 20, warranty 20, credit-note 14, concurrency 7. Plus 12
+DB residual tests and 18 money-gate fixture tests. The increase over the pre-review figure
+of 203 is the regression coverage for the six review Highs. `P1-22-R-01` adds no case count:
+it is pinned by assertions inside the existing invoice-detail authorization test, beside the
+403 it is the counterpart to, because separating them is what let the asymmetry go unnoticed.
 
 ## Static gates, all exit 0
 
@@ -50,7 +53,14 @@ module-boundaries (410 files, 11 rules) · idempotency-evidence · sal-wty-rpt
 classification · no-fake-data · scope-exclusions · encoding · run-block syntax ·
 workflow-security (17 workflows, 14 rules).
 
-## Three Highs found and fixed, none of them in the archaeology
+## Three Highs found and fixed during implementation
+
+An earlier revision of this heading said "none of them in the archaeology". That was too
+strong, and the governance review was right to refuse it: the committed
+`archaeology.json` does foreshadow High 1, in the entry about
+`sal.invoice_open_receivable`'s inputs being gated. What is true is narrower — none of the
+three was reported AS a defect, and each had to be reproduced here before it could be
+believed.
 
 **1. The blind zero.** `sal.invoice_open_receivable` is `SECURITY INVOKER` and all three
 of its inputs are gated by `sal.finance.view`, so a caller without it gets **`0` with no
@@ -86,10 +96,10 @@ their COVERAGE-EVIDENCE. The coverage gate then named exactly two missing flags.
 declared the flag to make the gate green, the defect would have shipped behind a passing
 gate.
 
-## The five protected residuals, all reproduced
+## The six protected residuals, all reproduced
 
-`tests/db/p1-22-protected-residuals.test.ts` (10 tests) proves the schema does **not**
-defend five things, so if a migration ever closes one the case fails and says the
+`tests/db/p1-22-protected-residuals.test.ts` (12 tests) proves the schema does **not**
+defend six things, so if a migration ever closes one the case fails and says the
 application guard is now redundant.
 
 1. **SB1** — a JOD credit note against a USD invoice is inserted, **approved**, and 40 JOD
@@ -100,6 +110,13 @@ application guard is now redundant.
    consumes **no** number. `P1-22-L-03` + runbook.
 4. **P1-22-L-06** — `partner_outstanding_balance` returns `150.0000` for 100 USD + 50 JOD.
 5. **The blind zero** (above).
+6. **The outbox policy is strictly weaker than the ledger it describes.**
+   `sel_event_outbox_producer` is `tenant_id = iam.current_tenant_id()` with no permission
+   and no scope predicate, while `sal.receipts` and `sal.payment_allocations` require
+   `sal.finance.view` plus both scope predicates — and `app_runtime` can read the `payload`
+   column. So payload discipline is the only control, which is why two payloads were
+   emptied of money. `sal.receipt_unallocated` is confirmed `SECURITY INVOKER`, making the
+   remainder it published the one field with no other lawful source. CC-8.
 
 ## Findings recorded from the implementation
 
@@ -110,11 +127,19 @@ application guard is now redundant.
 - Nothing prevents **two accepted quotations on one work order**; the service refuses with
   `ERR-CON-001` rather than choosing by `created_at`.
 - **The invoice preview has no tax-configuration lookup at all.** Tax comes from
-  `quo.quotation_items.captured_tax_rate`, which is `NOT NULL DEFAULT 0` — so rate 0 is a
-  legitimate "no tax", not a missing configuration. The brief's "controlled configuration
-  error for missing tax" was not implementable because there is nothing to be missing; the
-  real never-a-silent-zero guard on that path is `resolveCommercialSource`, and all three
-  ways a commercial source can fail are asserted instead.
+  `quo.quotation_items.captured_tax_rate`, which is `NOT NULL DEFAULT 0`. The brief's
+  "controlled configuration error for missing tax" was not implementable here because there
+  is no configuration for this phase to find missing; the real never-a-silent-zero guard on
+  that path is `resolveCommercialSource`, and all three ways a commercial source can fail
+  are asserted instead.
+
+  An earlier revision of this entry then went one step too far and called rate 0 "a
+  legitimate 'no tax', not a missing configuration". Zero IS the only reachable rate —
+  `org.tax_classes` has no rows and no writer, so `price_rules.tax_class_id` is unsettable —
+  which means the platform cannot presently distinguish "no tax applies" from "tax was never
+  configured". That is now `P1-22-L-08` and `CC-7`, and the route docstring says so instead
+  of asserting the opposite.
+
 - `resolveCommercialSource`'s `itemCount === 0` branch is **dead code**:
   `rollUpDecisions` returns `null` for an item-less revision, so the `accepted` filter
   removes it first.
@@ -129,26 +154,100 @@ application guard is now redundant.
 - `scripts/ci` moved 26 → 27 scripts, and `tests/ci/documented-counts.test.ts` failed on
   exactly that discrepancy rather than it being noticed in review.
 
-## Accepted limitations
+## The fifteen independent reviews — 0 Critical, 6 High, all reproduced and fixed
+
+Fifteen read-only reviews ran against the feature head, one per lens. They returned
+**0 Criticals and 7 High findings, of which 6 were distinct** — the draft-invoice defect was
+found independently by both the delivery-eligibility lens and the test-honesty lens, which
+is worth recording: two different questions arrived at the same hole.
+
+Every High was reproduced here before being changed, and each fix is pinned by a mutation
+in `scripts/ci/hostile-mutations.mjs` (`M-22-10`…`M-22-14`) as well as by a test.
+
+| #   | Lens                                | Finding                                                                                                                 | Treatment                                                                                                                    |
+| --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1   | delivery eligibility · test honesty | A **draft** invoice switched the financial blocker OFF, so creating one was strictly MORE permissive than creating none | `collectable`/`status` added to the receivable view; a not-issued invoice now blocks and the fact names the status           |
+| 2   | receiver & signature privacy        | `linkedToEntity` discarded, so **any** document version in the tenant could be the handover signature                   | Provenance now required against the delivery's work order or reception visit, checked after the document's own scope checks  |
+| 3   | tax & discount neutrality           | The docstring claimed a missing tax configuration is a controlled error; zero is the only reachable rate                | Both false statements replaced with the fact; recorded as `P1-22-L-08` and `CC-7`. Behaviour unchanged and already correct   |
+| 4   | money & currency                    | No amount was validated against `shared.currencies.minor_unit`, despite the platform standard claiming it is            | `assertMinorUnitScale` at the three inbound money paths; a half-cent USD amount is refused instead of stranding a receivable |
+| 5   | audit, outbox & events              | `receipt.recorded`/`payment.allocated` carried restricted money into the one table with no permission policy            | Amount, currency, receipt number and the derived remainder removed; `receiptStatus` retained                                 |
+| 6   | API surface & OpenAPI               | `sal.delivery-complete` demanded an `If-Match` **no operation published**, so it was unreachable                        | The eligibility read publishes `record_version` as body field and ETag, and no longer requires `sal.delivery.manage`         |
+
+Three of the six were reachability or disclosure defects that every green test in the phase
+had walked past, and in each case the reason was the same shape: the suite proved the guard
+worked without ever proving the path was usable. The completion tests took their `If-Match`
+from a superuser read; the signature tests reused one unlinked fixture document for every
+delivery in the suite; the financial tests always issued the invoice first.
+
+Two false claims were also corrected rather than defended: the "no unlabelled money"
+invariant did not hold for `InvoicePreview`'s ten per-line amounts (the response labels them
+once, at document level, which is now what the comment says), and the preview's promise that
+it "cannot disagree with the invoice it is previewing" was breakable because `sum()` returns
+unconstrained `numeric` — every previewed figure now passes `Decimal.fromDatabase(_, MONEY)`,
+which is the same drift check the invoice path applies.
+
+## Medium and Low findings — triaged, and open rather than quietly dropped
+
+The same fifteen reviews returned roughly thirty Medium and sixty Low findings. None is a
+Critical or a High, and the gate's bar is `Critical 0 / High 0`, so these are recorded here
+with a decision against each theme rather than fixed silently or left unmentioned.
+
+**Corrected, because they were false statements in this phase's own documents.** The tax
+guarantee (now `P1-22-L-08`), the "money is never returned unlabelled" invariant, the
+preview's "cannot disagree with the invoice" promise, and the stale permission sets in
+`operation-inventory.md` — the last regenerated from source, so the document can no longer
+disagree with the declarations it describes.
+
+**Open and named, because closing them would invent policy this phase was not given:**
+
+| ID           | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-22-R-01` | `sal.invoice-outstanding-read` requires only `sal.finance.view`, so a principal refused `GET /invoices/{id}` can still read that invoice's status and exact open receivable. Every other invoice-addressed operation also requires an invoice permission. Both readings are defensible — a cashier needs the outstanding figure to take payment, and `sal.invoice.read` does not exist — and what was actually wrong is that nothing recorded the decision.                                                             |
+| `P1-22-R-02` | A **cancelled** work order satisfies the `work_order_not_complete` blocker, because the delivery module tests `is_closed` and `cancelled` carries `is_closed = true`. `wo.guard_work_order_closure` returns early for a cancellation, so B1–B4 were never enforced on that path, and this module composes substitutes for B5a/B5b/B6 only. Blocking a cancelled job's handover would be the wrong answer — the customer still takes the vehicle back — so the correct fix is a policy decision, not a code change here. |
+| `P1-22-R-03` | `POST /payments` needs a `sal.payment_methods` row and no operation creates one, so payment recording depends on operator provisioning in the same way numbering does (`P1-22-L-03`). The four read/write payment operations are reachable only after that provisioning.                                                                                                                                                                                                                                                |
+| `P1-22-R-04` | The `P0002` numbering diagnostic is composed and then discarded — `problemFor` emits no message, so the sentence naming the missing `(company, branch, sequence_code)` tuple reaches no sink. `SB3`'s treatment is documented as though a caller sees it; the runbook is the actual delivery mechanism.                                                                                                                                                                                                                 |
+| `P1-22-R-05` | Several claims of the form "no test exercises this" hold: the receiver identity-evidence path, the party-role time predicate, and the warranty covered-items path are reachable but unasserted. They are coverage gaps, not defects — each was read and none is wrong.                                                                                                                                                                                                                                                  |
+
+**Accepted as accurate but not acted on:** the archaeology-attribution wording (High 1 _was_
+foreshadowed by a committed archaeology entry, and the checkpoint's earlier "none of them in
+the archaeology" was too strong — corrected above), the OpenAPI document's omission of 404 /
+400 / 201 and request bodies, which is a platform-wide generator property and not this
+phase's to change, and the observation that `P1-22-DO-001` would stay green if a workflow
+stopped invoking the P1-22 gates — true, and the same vacuous-evidence shape this phase
+already fixed twice, but the fix belongs to the CI initiative's own gate rather than here.
 
 `P1-22-L-01` warranty claim adjudication · `L-02` currency equality is application-only ·
 `L-03` numbering requires operator provisioning · `L-04` signatures bind but cannot be
 retrieved · `L-05` no refund/partial reversal/multi-invoice credit/ledger ·
 `L-06` `partner_outstanding_balance` mixes currencies · `L-07` the warranty payer split is
 always customer-100%, because no protected configuration determines it at invoice time —
-so `sal.issue_invoice` emits no `warranty_split_recorded` event today.
+so `sal.issue_invoice` emits no `warranty_split_recorded` event today ·
+`L-08` the reachable tax rate is always zero, because `org.tax_classes` has no rows and no
+writer, so `price_rules.tax_class_id` is unsettable.
 
-Change-control candidates CC-1..CC-6, none acted on, all needing a migration.
+Change-control candidates CC-1..CC-8, none acted on, all needing a migration.
 
 ## Remaining before closure
 
-1. Hostile mutation matrix — 40 entries including the nine P1-22 ones; running.
-2. The fifteen independent read-only reviews; personally reproduce every Critical and High.
-3. Freeze `FINAL_FEATURE_SHA`; feature PR against `develop`; require every check-run,
+1. Freeze `FINAL_FEATURE_SHA`; feature PR against `develop`; require every check-run,
    `ci-gate`, the hosted clean room, PR CodeQL **and an explicit full-tree CodeQL on the
    exact feature head** — reconciled against the GitHub alert list and the complete
    `/commits/{sha}/check-runs` list, **never `/actions/runs`, which does not list every
    check**.
-4. Merge commit; verify parents, containment, byte-identical tree, zero drift, 119
+2. Merge commit; verify parents, containment, byte-identical tree, zero drift, 119
    migrations, unchanged schema hash.
-5. Gate record on `gate/p1-22-billing-payment-delivery-warranty-backend`.
+3. Gate record on `gate/p1-22-billing-payment-delivery-warranty-backend`.
+
+## Verified state at the close of the review round
+
+| Tier              | Count     |
+| ----------------- | --------- |
+| unit + foundation | **1239**  |
+| backend           | **1600**  |
+| database          | **1636**  |
+| **total**         | **4,475** |
+
+Operation depth 20/20 with `pending`, `unit-only`, `invocation-only`, `unreferenced` and
+`metadata-only` all measured at 0. Task gate 31/31. Exact-money audit 42 files, 0 findings.
+Hostile mutation matrix 45 entries. OpenAPI regenerated for the one changed permission set,
+a one-line semantic diff. 119 migrations, no 120, schema hash unchanged.

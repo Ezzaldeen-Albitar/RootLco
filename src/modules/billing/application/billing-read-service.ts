@@ -7,9 +7,19 @@
  *
  * ## Money is never returned unlabelled
  *
- * Every amount crosses this boundary as a `MoneyView` — a fixed-scale decimal
- * STRING plus an explicit ISO 4217 code — built by `moneyView()` from
- * `@/modules/pricing`. A `numeric(18,4)` holds values IEEE-754 cannot represent, so
+ * Every amount crosses this boundary as a fixed-scale decimal STRING with an ISO 4217
+ * code that applies to it, and there are exactly two shapes for that. Per-amount:
+ * a `MoneyView` built by `moneyView()` from `@/modules/pricing`, used wherever amounts
+ * of different currencies could appear in one response. Per-document: a single
+ * `currency` field governing every figure below it, used only by `InvoicePreview`,
+ * which is one quotation revision in one currency and would otherwise repeat that code
+ * ten times per line.
+ *
+ * The distinction is stated because it is easy to read the per-document form as an
+ * oversight. What it is NOT allowed to be is a way around the exactness check:
+ * `readInvoicePreview` passes every figure through `Decimal.fromDatabase(_, MONEY)`
+ * even though it does not wrap them in `MoneyView`, because that call is the
+ * schema-drift guard as much as it is a parse. A `numeric(18,4)` holds values IEEE-754 cannot represent, so
  * a JSON number would lose money for some inputs, silently and unrepeatably. And
  * `sal.invoice_open_receivable` takes no currency and returns a bare `numeric`, so
  * an unlabelled balance is not merely untidy: it is a JOD figure that a client may
@@ -168,6 +178,28 @@ export interface WorkOrderReceivableView {
    * gates on `hasOutstanding` need not: that field is already fail-closed.
    */
   readonly balanceVisible: boolean;
+  /**
+   * False when the invoice exists but is not yet ISSUED, so nothing is collectable.
+   *
+   * This is the third distinct reason `amount` can be `null`, and it is NOT an
+   * authorization problem — `balanceVisible` stays true, because the caller can see
+   * everything. There is simply nothing to collect yet.
+   *
+   * It exists because the alternative was strictly worse than having no invoice at all.
+   * `sal.invoice_open_receivable` returns `0` for a `draft`, by design, so a draft
+   * carrying a real five-thousand of derived amounts answered "nothing outstanding" —
+   * and `null` (no invoice) is treated as BLOCKING on the principle that "nothing was
+   * invoiced is not settlement". Creating a draft therefore REMOVED the financial
+   * blocker. `hasOutstanding` is now true in this case for the same reason it is true
+   * when the balance is invisible: a zero that is structural is not a zero that was paid.
+   */
+  readonly collectable: boolean;
+  /**
+   * The live invoice's own status, so a consumer can say WHY rather than only that a
+   * blocker is present. `draft` and `issued` are very different conversations with an
+   * operator, and the eligibility response is the place that difference has to survive.
+   */
+  readonly status: string;
 }
 
 /** One previewed line. Every amount a fixed-scale decimal STRING. */
@@ -565,16 +597,31 @@ export class BillingReadService {
       branchId: source.branchId,
     });
 
+    /**
+     * Every previewed total passes through `Decimal.fromDatabase(_, MONEY)`, which is
+     * not decoration: it is the same scale-and-precision check the invoice path applies,
+     * and the preview's promise is that it "cannot disagree with the invoice it is
+     * previewing".
+     *
+     * Without it the promise was breakable. PostgreSQL's `sum()` returns UNCONSTRAINED
+     * `numeric`, not `numeric(18,4)`, and `ck_quotation_items_line_total` bounds each
+     * line's own total without bounding their sum — so a Σ exceeding 14 integer digits
+     * was returned here as a cheerful `200`, while `POST /invoices` for the same work
+     * order answered `409` on SQLSTATE `22003`. The preview now fails on exactly the
+     * input the invoice fails on.
+     */
+    const exact = (value: string): string => Decimal.fromDatabase(value, MONEY).toString();
+
     return {
       workOrderId: scope.workOrderId,
       quotationId: source.quotationId,
       quotationRevisionId: source.revisionId,
       currency: source.currencyCode,
-      subtotal: source.subtotal,
-      discountTotal: source.discountTotal,
-      taxTotal: source.taxTotal,
-      netTotal: source.netTotal,
-      grossTotal: source.grossTotal,
+      subtotal: exact(source.subtotal),
+      discountTotal: exact(source.discountTotal),
+      taxTotal: exact(source.taxTotal),
+      netTotal: exact(source.netTotal),
+      grossTotal: exact(source.grossTotal),
       lines: lines.map((line) => ({
         sourceQuotationItemId: line.quotationItemId,
         lineNumber: line.lineNumber,
@@ -586,12 +633,14 @@ export class BillingReadService {
         serviceId: line.serviceId,
         itemId: line.itemRef,
         quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        discount: line.discount,
+        unitPrice: exact(line.unitPrice),
+        discount: exact(line.discount),
+        // A `numeric(9,6)` fraction, not money — carried through unchanged, because
+        // validating it against MONEY's scale would be the wrong check.
         taxRate: line.taxRate,
-        netAmount: line.netAmount,
-        taxAmount: line.taxAmount,
-        grossAmount: line.grossAmount,
+        netAmount: exact(line.netAmount),
+        taxAmount: exact(line.taxAmount),
+        grossAmount: exact(line.grossAmount),
       })),
     };
   }
@@ -707,6 +756,40 @@ export class BillingReadService {
     });
     if (!invoice) return null;
 
+    /**
+     * A NOT-YET-ISSUED invoice has an open receivable of ZERO, and that zero is
+     * structural rather than settlement.
+     *
+     * `sal.invoice_open_receivable` opens with
+     * `IF v_status IS NULL OR v_status IN ('draft','void_before_issue') THEN RETURN 0`,
+     * so a draft carrying a real 5,000.0000 of derived amounts answers `0.0000` — and an
+     * independent `Decimal` comparison confirms that zero rather than questioning it.
+     *
+     * Reported as an outstanding balance, because the consumer that matters is the
+     * delivery gate and the alternative was strictly worse than having no invoice at all:
+     * `null` (no invoice) is treated as BLOCKING on the stated principle that "nothing was
+     * invoiced is not settlement", while a draft resolved to `hasOutstanding: false` and
+     * cleared the gate. Creating a draft invoice therefore REMOVED the financial blocker,
+     * and the completion audit recorded `overriddenBlockers: null` — affirmatively
+     * asserting the handover had cleared every gate on its own.
+     *
+     * `amount: null` rather than `'0.0000'` for the same reason the invisible case reports
+     * null: the number is not a balance a caller may act on. `balanceVisible` stays true,
+     * because this is not an authorization problem — the caller can see everything; there
+     * is simply nothing collectable yet.
+     */
+    if (invoice.status !== 'issued' && invoice.status !== 'credited') {
+      return {
+        invoiceId: invoice.id,
+        amount: null,
+        currency: invoice.currencyCode,
+        hasOutstanding: true,
+        balanceVisible: true,
+        collectable: false,
+        status: invoice.status,
+      };
+    }
+
     if (!balanceIsTrustworthy(invoice)) {
       return {
         invoiceId: invoice.id,
@@ -717,6 +800,8 @@ export class BillingReadService {
         currency: invoice.currencyCode,
         hasOutstanding: true,
         balanceVisible: false,
+        collectable: true,
+        status: invoice.status,
       };
     }
 
@@ -740,6 +825,8 @@ export class BillingReadService {
       currency: open.currencyCode,
       hasOutstanding: amount.greaterThan(Decimal.zero(MONEY)),
       balanceVisible: true,
+      collectable: true,
+      status: invoice.status,
     };
   }
 

@@ -813,6 +813,17 @@ export async function seedIssuedInvoice(
     readonly tax?: string;
     readonly currency?: string;
     readonly payerPartnerId?: string;
+    /**
+     * Leave the invoice in `draft` — do NOT call `sal.issue_invoice`.
+     *
+     * A draft is the state that broke the delivery module's financial blocker:
+     * `sal.invoice_open_receivable` returns `0` for it by design, so an unissued
+     * invoice carrying real amounts used to answer "nothing outstanding" and made a
+     * handover MORE permissive than one with no invoice at all. `invoiceNumber` is
+     * empty and `gross` is the computed total, which is the point — the money is
+     * real, only the document is not issued.
+     */
+    readonly draft?: boolean;
   } = {}
 ): Promise<IssuedInvoice> {
   const chain = await seedWorkOrderChain(tag);
@@ -868,9 +879,10 @@ export async function seedIssuedInvoice(
         USER_A,
       ]
     );
-    const issued = await client.query<{ n: string }>(`SELECT sal.issue_invoice($1,NULL) AS n`, [
-      invoiceId,
-    ]);
+    const issued =
+      options.draft === true
+        ? { rows: [{ n: '' }] }
+        : await client.query<{ n: string }>(`SELECT sal.issue_invoice($1,NULL) AS n`, [invoiceId]);
     const totals = await client.query<{ gross_total: string }>(
       `SELECT gross_total::text AS gross_total FROM sal.invoice_amounts
         WHERE tenant_id = $1 AND invoice_id = $2 AND deleted_at IS NULL`,
@@ -919,6 +931,31 @@ export interface SeededDelivery {
  * `complete` is `false` for the `ready` fixture that proves an incomplete handover
  * cannot produce a warranty.
  */
+/**
+ * Give the shared signature document real provenance against one work order.
+ *
+ * `requireUsableDocumentVersion` refuses a document that is not linked to the delivery's
+ * work order or reception visit, so without this row the API signature path is refused —
+ * correctly. Before that check existed these fixtures bound ONE version, with no
+ * `shared.document_links` row at all, as the signature of every delivery they seeded
+ * across different work orders, visits, vehicles and customers, and every insert
+ * succeeded. That is the forged-attachment case, and it used to be the fixture.
+ *
+ * Links are per DOCUMENT, and `uq_document_links_active` is keyed on
+ * `(tenant, document, entity_type, entity_id, purpose)`, so one document may legitimately
+ * carry a link per work order.
+ */
+export async function linkSignatureDocumentToWorkOrder(workOrderId: string): Promise<void> {
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'wo.work_orders',$3,'signature',$4,$4)
+     ON CONFLICT (tenant_id, document_id, entity_type, entity_id, link_purpose)
+       WHERE deleted_at IS NULL DO NOTHING`,
+    [TENANT_A, SIG_DOCUMENT, workOrderId, USER_A]
+  );
+}
+
 export async function seedDelivery(
   tag: string,
   options: {
@@ -934,6 +971,7 @@ export async function seedDelivery(
   });
   const complete = options.complete ?? true;
   const odometer = options.odometer ?? DELIVERY_ODOMETER;
+  await linkSignatureDocumentToWorkOrder(chain.workOrderId);
 
   return inTenantTransaction(TENANT_A, USER_A, async (client) => {
     const delivery = await client.query<{ id: string }>(

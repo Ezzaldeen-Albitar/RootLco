@@ -57,7 +57,16 @@ export const DELIVERY_ELIGIBILITY_OPERATION = defineOperation({
   // invisible-absence confusion as the blind zero, but in the safe direction. Safe is
   // not the same as correct: it would tell an operator the handover is blocked for a
   // reason they have already satisfied, with nothing to act on.
-  permissions: ['sal.delivery.manage', 'sal.delivery.view', 'sal.finance.view'],
+  //
+  // `sal.delivery.manage` is deliberately NOT required. This read is the pre-flight
+  // check for `sal.delivery-complete`, which requires `sal.delivery.complete` instead —
+  // so requiring `manage` here made the answer unreadable by the only principal that
+  // acts on it. It also made that operation unreachable outright: `sal.delivery-complete`
+  // is `versionGuarded`, this response carries the `record_version` to put in `If-Match`,
+  // and a complete-but-not-manage principal could call neither this nor any of the three
+  // preparation writes, so it could never obtain a current version at all. The two
+  // permissions that remain are the ones that gate the rows the answer is composed from.
+  permissions: ['sal.delivery.view', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',
@@ -79,7 +88,9 @@ export async function GET(
         params.deliveryId,
         authorizeScope
       );
-      return { body: eligibility };
+      // Publishing the version as an ETag as well as in the body is what makes the
+      // completion guard usable: the caller re-reads here and echoes the value.
+      return { body: eligibility, recordVersion: eligibility.recordVersion };
     },
     { params: raw }
   );

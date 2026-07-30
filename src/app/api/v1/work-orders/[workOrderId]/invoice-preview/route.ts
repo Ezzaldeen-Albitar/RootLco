@@ -22,12 +22,35 @@
  * ## Nothing here is a business-policy default
  *
  * Tax and discount are read from protected configuration. No rate, no jurisdiction, no
- * currency and no tax-inclusive/exclusive assumption is written into this phase. A
- * missing tax configuration is a controlled configuration error — never a silent zero,
- * which would under-bill by exactly the tax and look like a correct answer.
+ * currency and no tax-inclusive/exclusive assumption is written into this phase. This
+ * route bills `quo.quotation_items.captured_tax_rate` exactly as the quotation captured
+ * it, and invents nothing.
  *
- * Every amount crosses the boundary as a decimal STRING with an explicit currency
- * beside it. There is no unlabelled total anywhere in the response.
+ * ## What that does NOT guarantee (`P1-22-L-08`)
+ *
+ * It does not guarantee the rate is non-zero, and today it never is. `captured_tax_rate`
+ * is `NOT NULL DEFAULT 0`; its only writer is P1-20's quotation service, which copies
+ * whatever `resolvePrice` returned; and that resolver returns `Decimal.zero(TAX_RATE)`
+ * whenever `price_rules.tax_class_id` is `null`. That column can only reference
+ * `org.tax_classes`, which has **zero rows** and no writer anywhere in `src/` — there is
+ * no tax-class or tax-rate admin endpoint, and no seed populates either table — so the
+ * FK makes any non-null value unsettable and the null branch is the only reachable one.
+ *
+ * So every invoice this API can currently produce is untaxed, and an earlier revision of
+ * this comment asserted the opposite: that "a missing tax configuration is a controlled
+ * configuration error — never a silent zero". That refusal exists, but it fires only for
+ * a HALF-configured rule — a named tax class with no effective rate. The wholly
+ * unconfigured case, which is the only case that exists, returns zero and says nothing.
+ *
+ * The mechanism is upstream of this phase (P1-11's default, P1-20's resolver, the absent
+ * org-configuration surface) and P1-22 is not the place to invent a jurisdiction policy.
+ * What belonged to this phase was not claiming the gap was closed.
+ *
+ * Every amount crosses the boundary as a fixed-scale decimal STRING, and the response's
+ * single `currency` field labels all of them — this is one quotation revision in one
+ * currency, so the code is stated once rather than repeated ten times per line. No
+ * figure here is a JSON number, and every one is validated by
+ * `Decimal.fromDatabase(_, MONEY)` before it is returned.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';

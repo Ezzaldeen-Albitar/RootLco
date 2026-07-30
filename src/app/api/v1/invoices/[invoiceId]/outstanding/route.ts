@@ -47,6 +47,25 @@ export const INVOICE_OUTSTANDING_OPERATION = defineOperation({
   method: 'GET',
   path: '/invoices/{invoiceId}/outstanding',
   summary: 'Report an invoice’s open receivable, always with its currency.',
+  /**
+   * `sal.finance.view` ALONE, and unlike every other invoice-addressed operation
+   * (`sal.invoice-detail`, `-create`, `-cancel` and the preview all also require
+   * `sal.invoice.manage`). Recorded as `P1-22-R-01`, because the asymmetry is real and
+   * was previously undocumented, which made it indistinguishable from an oversight.
+   *
+   * The reason it is deliberate: the principal who needs an open receivable is the one
+   * about to take money against it, and that principal holds `sal.payment.record`, not
+   * `sal.invoice.manage`. Requiring a *manage* permission for a read is the anomaly on
+   * the other operations — no `sal.invoice.read` code exists in `iam.permissions` to use
+   * instead — and demanding it here would make the cashier path unreachable in exactly
+   * the way `sal.delivery-complete` was unreachable before the review round.
+   *
+   * The honest cost, stated rather than glossed: `sel_invoices_scope` carries no
+   * permission predicate, so a caller refused `GET /invoices/{id}` can still read that
+   * invoice's status and exact open receivable here. It must already know the UUID —
+   * there is no list route — and it does hold the money permission for that branch. A
+   * test pins both halves so the next reader finds a decision rather than a gap.
+   */
   permissions: ['sal.finance.view'],
   scope: 'branch',
   auditClass: 'none',

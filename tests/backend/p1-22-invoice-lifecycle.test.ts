@@ -1493,6 +1493,26 @@ describe('sal.invoice-detail', () => {
     expect(reader.status).toBe(403);
     expect((await bodyOf<ProblemBody>(reader)).code).toBe('ERR-IAM-001');
 
+    // `P1-22-R-01`, pinned in BOTH directions so it is a decision and not an accident.
+    //
+    // The SAME principal, refused the invoice document above, is ALLOWED its open
+    // receivable here — `sal.invoice-outstanding-read` requires only `sal.finance.view`,
+    // because the principal who needs that figure is the one about to take money against
+    // it and holds `sal.payment.record` rather than `sal.invoice.manage`. The asymmetry
+    // is real, it discloses the invoice's status and exact balance, and it was previously
+    // recorded nowhere — which is what made it indistinguishable from an oversight. If a
+    // future phase decides the other way, this assertion is the one that has to change,
+    // and it will say so.
+    authAs(SAL_READER);
+    const outstanding = await readOutstanding(draft.invoice.id);
+    expect(outstanding.status).toBe(200);
+    const view = await bodyOf<{
+      readonly status: string;
+      readonly outstanding: { readonly amount: string; readonly currency: string };
+    }>(outstanding);
+    expect(view.status).toBe('draft');
+    expect(view.outstanding.currency).toBe('USD');
+
     authAs(SAL_FULL);
     const malformed = await readInvoice('not-a-uuid');
     expect(malformed.status).toBe(422);

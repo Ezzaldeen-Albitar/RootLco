@@ -799,19 +799,82 @@ describe('a zero-total issued invoice is legal, and sal.credit-note-create has n
     });
     const before = await creditNoteRowsFor(invoice.invoiceId);
 
-    // Legal to issue, and nothing to credit. One ten-thousandth is the smallest amount
-    // `numeric(18,4)` can express, so this is the boundary of the ceiling check rather
-    // than a comfortable margin. A conflict rather than a validation failure: the
-    // request is well formed and what refuses it is the invoice's state.
+    // Legal to issue, and nothing to credit. One CENT is the smallest amount USD can
+    // express — `shared.currencies.minor_unit` is 2 — so this is the boundary of the
+    // ceiling check rather than a comfortable margin. A conflict rather than a validation
+    // failure: the request is well formed and what refuses it is the invoice's state.
     authAs(SAL_FULL);
     const response = await requestCreditNote(invoice.invoiceId, {
-      amount: '0.0001',
+      amount: '0.01',
       reason: 'nothing to credit',
       currency: 'USD',
     });
     expect(response.status).toBe(409);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-TRN-001');
     expect(await creditNoteRowsFor(invoice.invoiceId)).toBe(before);
+  });
+
+  it('refuses an amount more precise than its CURRENCY, not merely than the column (denial)', async () => {
+    // The column is `numeric(18,4)` and every boundary regex in the phase accepts four
+    // decimals, so `0.0001` was accepted end to end for a two-minor-unit currency. That
+    // is not a cosmetic defect: no tenderable USD payment can settle a hundredth of a
+    // cent, so the invoice's open receivable stayed permanently non-zero and the
+    // delivery's `financial_balance_outstanding` blocker was held up forever with an
+    // override as the only exit. An earlier revision of this suite asserted `0.0001` was
+    // "the smallest amount" — of the column, which is not the question.
+    const invoice = await seedIssuedInvoice('minor_unit_credit', { net: '100.0000' });
+    const before = await creditNoteRowsFor(invoice.invoiceId);
+
+    authAs(SAL_FULL);
+    const tooPrecise = await requestCreditNote(invoice.invoiceId, {
+      amount: '0.0001',
+      reason: 'a hundredth of a cent',
+      currency: 'USD',
+    });
+    // 422, not 409: the amount is malformed FOR THIS CURRENCY, which is a shape problem
+    // and not a state problem. It is refused before the ceiling is ever consulted.
+    expect(tooPrecise.status).toBe(422);
+    const problem = await bodyOf<ProblemBody>(tooPrecise);
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(JSON.stringify(problem)).toContain('minor_unit_scale');
+    expect(await creditNoteRowsFor(invoice.invoiceId)).toBe(before);
+
+    // Trailing zeros are NOT significant — `numeric(18,4)` is still the storage scale, and
+    // a four-decimal string whose last two digits are zero is a valid USD amount.
+    authAs(SAL_FULL);
+    const exactCents = await requestCreditNote(invoice.invoiceId, {
+      amount: '10.5000',
+      reason: 'ten fifty, written at column scale',
+      currency: 'USD',
+    });
+    expect(exactCents.status).toBe(201);
+  });
+
+  it('accepts three decimals for JOD, whose minor unit is 3 (success)', async () => {
+    // The check is per CURRENCY, not a blanket two-decimal rule. JOD has three minor
+    // units, so a fils is legal here and would be refused in USD — which is the whole
+    // reason the scale cannot be pinned at the boundary schema.
+    const invoice = await seedIssuedInvoice('minor_unit_jod', {
+      net: '100.0000',
+      currency: 'JOD',
+    });
+
+    authAs(SAL_FULL);
+    const fils = await requestCreditNote(invoice.invoiceId, {
+      amount: '0.001',
+      reason: 'one fils',
+      currency: 'JOD',
+    });
+    expect(fils.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const tooPrecise = await requestCreditNote(invoice.invoiceId, {
+      amount: '0.0001',
+      reason: 'a tenth of a fils',
+      currency: 'JOD',
+    });
+    expect(tooPrecise.status).toBe(422);
+    expect(JSON.stringify(await bodyOf<ProblemBody>(tooPrecise))).toContain('minor_unit_scale');
   });
 });
 
@@ -1020,11 +1083,14 @@ describe('one receipt allocated across two invoices with exact decimal arithmeti
     expect(detail.status).toBe('allocated');
     expect(detail.allocations).toHaveLength(2);
 
-    // ---- a third allocation of the smallest expressible amount is refused ----
+    // ---- a third allocation of the smallest TENDERABLE amount is refused ----
+    // One cent, not one ten-thousandth: USD has two minor units, so `0.0001` is now
+    // refused as a 422 for being more precise than the currency, which would test the
+    // boundary check rather than the sum bound this case is about.
     authAs(SAL_FULL);
     const third = await allocatePayment(receipt.id, {
       invoiceId: invoiceA.invoiceId,
-      amount: '0.0001',
+      amount: '0.01',
       currency: 'USD',
     });
     // `Σ allocations <= receipt.amount` is bounded ONLY inside `sal.allocate_receipt`

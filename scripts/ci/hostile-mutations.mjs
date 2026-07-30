@@ -39,6 +39,10 @@ const PAYMENTS =
 const WARRANTY =
   'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-warranty.test.ts';
 const MONEY_GATE = 'npx vitest run tests/foundation/exact-money-gate.test.ts';
+const DELIVERY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-delivery.test.ts';
+const CURRENCY =
+  'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-currency-coherence.test.ts';
 
 /**
  * Every `verify` command is a literal from this frozen table. Nothing here is
@@ -418,6 +422,56 @@ const MUTATIONS = Object.freeze([
     from: '    pattern: /\\bNumber\\s*\\(/,',
     to: '    pattern: /\\bNeverMatchesAnything\\s*\\(/,',
     verify: MONEY_GATE,
+  },
+  /**
+   * The five below target the fixes for the independent review round. Each restores the
+   * exact defect a review found, so a green matrix is the claim that the fix is pinned by
+   * a test rather than merely present in the diff.
+   */
+  {
+    id: 'M-22-10',
+    target: 'src/modules/billing/application/billing-read-service.ts',
+    claim:
+      'a draft invoice is NOT collectable, so the delivery module blocks on it — otherwise creating a draft REMOVES the financial blocker and makes a handover more permissive than one carrying no invoice at all',
+    from: '        collectable: false,',
+    to: '        collectable: true,',
+    verify: DELIVERY,
+  },
+  {
+    id: 'M-22-11',
+    target: 'src/modules/delivery/application/delivery-service.ts',
+    claim:
+      'delivery evidence must be attached to the delivery\u2019s work order or reception visit — without the link check the signature gate degrades to "name any document id you can see", and every principal in the tenant can enumerate them',
+    from: '    let hasProvenance = version.linkedToEntity;',
+    to: '    let hasProvenance = true;',
+    verify: DELIVERY,
+  },
+  {
+    id: 'M-22-12',
+    target: 'src/server/http/validation.ts',
+    claim:
+      'an amount more precise than its currency is refused — a half-cent USD credit leaves a residue no tenderable payment can settle, holding the delivery financial blocker up forever with an override as the only exit',
+    from: '  if (!/[1-9]/.test(excess)) return;',
+    to: '  if (true) return;',
+    verify: CURRENCY,
+  },
+  {
+    id: 'M-22-13',
+    target: 'src/modules/payments/application/payment-service.ts',
+    claim:
+      'no restricted amount reaches the outbox — shared.event_outbox\u2019s only SELECT policy is tenant-only, with no permission and no scope predicate, so an amount in a payload is a copy of the cash ledger behind a strictly weaker policy',
+    from: '        receiptStatus: after.status,',
+    to: '        receiptStatus: allocation.amount,',
+    verify: PAYMENTS,
+  },
+  {
+    id: 'M-22-14',
+    target: 'src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts',
+    claim:
+      'the eligibility read publishes the delivery\u2019s record_version — it is the only response a completing principal can obtain, and sal.delivery-complete is versionGuarded with no wildcard If-Match, so without it the operation is unreachable',
+    from: '      return { body: eligibility, recordVersion: eligibility.recordVersion };',
+    to: '      return { body: eligibility };',
+    verify: DELIVERY,
   },
 ]);
 

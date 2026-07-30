@@ -96,6 +96,7 @@ import {
   PAYMENT_METHOD_A,
   SAL_FULL,
   SAL_PERMISSION_ELSEWHERE,
+  SAL_NO_FINANCE,
   SAL_READER,
   SAL_TENANT_B,
   SIGNATURE_DOCUMENT_VERSION,
@@ -106,6 +107,7 @@ import {
   establishP1_22Fixtures,
   invoiceOpenReceivable,
   outboxCountFor,
+  linkSignatureDocumentToWorkOrder,
   seedIssuedInvoice,
   seedWorkOrderChain,
   type IssuedInvoice,
@@ -289,6 +291,27 @@ function expectNoSchemaLeak(problem: ProblemBody): void {
  * everything the completion route needs EXCEPT the one permission under test,
  * including `sal.finance.view`, so the 403 can only be about `sal.delivery.complete`.
  */
+/**
+ * Holds `sal.delivery.complete` and NOT `sal.delivery.manage` — the realistic split
+ * where one person prepares a handover and another authorises it.
+ *
+ * This is the principal the version-reachability regression needs: it can call neither
+ * `POST /deliveries` nor either preparation write, so every route that used to carry a
+ * version was closed to it.
+ */
+const DELIVERY_COMPLETER_ONLY: Principal = {
+  roleId: 'f1229999-0000-4000-8000-000000000111',
+  userId: 'f1229999-0000-4000-8000-000000000112',
+  subject: 'fx_p122_dlv_complete_only',
+  tenantId: TENANT_A,
+  permissions: [
+    'sal.delivery.complete',
+    'sal.delivery.view',
+    'sal.finance.view',
+    'wo.work_order.read',
+  ],
+};
+
 const DELIVERY_MANAGER_ONLY: Principal = {
   roleId: 'f1229999-0000-4000-8000-000000000101',
   userId: 'f1229999-0000-4000-8000-000000000102',
@@ -718,6 +741,12 @@ const CONTENT_SHAPED_KEY = /signature_?data|imagedata|base64|bytes|content|blob|
 
 /** Opens a delivery through the real route and fails loudly if arrangement broke. */
 async function openDelivery(workOrderId: string): Promise<DeliveryBody> {
+  // Give the shared signature document real provenance against this work order.
+  // `requireUsableDocumentVersion` requires the document to be attached to the delivery's
+  // work order or reception visit, so one unlinked version can no longer serve as the
+  // signature of every delivery in the suite — which is what it used to do, across
+  // different work orders, visits, vehicles and customers, successfully.
+  await linkSignatureDocumentToWorkOrder(workOrderId);
   authAs(SAL_FULL);
   const response = await createDelivery({ workOrderId, deliveringEmployeeId: USER_A });
   if (response.status !== 201) {
@@ -797,7 +826,12 @@ async function passEveryMandatoryItem(deliveryId: string): Promise<void> {
   }
 }
 
-/** Verifies `PARTNER_A` and binds the shared signature version. */
+/**
+ * Verifies `PARTNER_A` and binds the shared signature version.
+ *
+ * The provenance link is created by `openDelivery`, so it covers every signature site in
+ * the suite rather than only this one.
+ */
 async function satisfyReceiverAndSignature(deliveryId: string): Promise<void> {
   authAs(SAL_FULL);
   const receiver = await verifyReceiver(deliveryId, { receiverPartnerId: PARTNER_A });
@@ -900,6 +934,7 @@ beforeAll(async () => {
   await establishP1_19Fixtures(admin);
   await establishP1_22Fixtures(admin);
   await seedLocalPrincipal(DELIVERY_MANAGER_ONLY);
+  await seedLocalPrincipal(DELIVERY_COMPLETER_ONLY);
   await seedChecklistTemplate();
   await seedOutsiderPartner();
   await seedForeignBranchDocumentVersion();
@@ -1280,15 +1315,31 @@ describe('sal.delivery-eligibility-read', () => {
     expect((await bodyOf<ProblemBody>(unknown)).code).toBe('ERR-RES-001');
   });
 
-  it('refuses a caller lacking sal.delivery.manage (authorization)', async () => {
+  it('requires sal.finance.view, and is readable WITHOUT write authority (authorization)', async () => {
     const { delivery } = await bareDelivery('dlv_elig_authz');
-    // `SAL_READER` holds `sal.finance.view` — the permission the financial blocker
-    // needs — and not the delivery authority, so the refusal proves which of the two
-    // the operation actually requires.
+
+    // `SAL_NO_FINANCE` holds every other `sal`/`wty` permission, including
+    // `sal.delivery.manage` and `sal.delivery.view`, and lacks exactly `sal.finance.view`.
+    // So this refusal isolates the one permission that matters most here: without it
+    // `sal.invoice_open_receivable` returns an RLS-invisible zero and the financial
+    // blocker would be waved through rather than refused.
+    authAs(SAL_NO_FINANCE);
+    const refused = await readEligibility(delivery.id);
+    expect(refused.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(refused)).code).toBe('ERR-IAM-001');
+
+    // And the other half of the contract, which is what makes the operation usable:
+    // `SAL_READER` holds the two view permissions and NO write authority at all — no
+    // `manage`, no `complete` — and it can read the answer. `sal.delivery.manage` is
+    // deliberately not required, because the principal that acts on this read holds
+    // `sal.delivery.complete`; demanding `manage` made `sal.delivery-complete`
+    // unreachable, since this response is where its mandatory `If-Match` comes from.
     authAs(SAL_READER);
-    const response = await readEligibility(delivery.id);
-    expect(response.status).toBe(403);
-    expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
+    const allowed = await readEligibility(delivery.id);
+    expect(allowed.status).toBe(200);
+    const view = await bodyOf<EligibilityBody & { recordVersion: number }>(allowed);
+    expect(view.recordVersion).toBeGreaterThan(0);
+    expect(allowed.headers.get('etag')).toBe(`"${view.recordVersion}"`);
   });
 
   it('refuses a caller scoped to another branch although the row is visible (isolation)', async () => {
@@ -2481,5 +2532,180 @@ describe('sal.delivery-complete', () => {
         [BRANCH_A9]
       )
     ).toBe(0);
+  });
+});
+
+// ===========================================================================
+/**
+ * Three findings from the independent review round, each pinned by a case that fails
+ * against the code as it stood before the fix.
+ *
+ * They are grouped rather than filed under the operations they belong to because what
+ * they have in common is the reason the original suite missed them: every financial test
+ * issued its invoice, every signature test reused one fixture document, and every
+ * completion test took its `If-Match` from a superuser read rather than from a response
+ * a real client could hold.
+ */
+describe('P1-22 review regressions', () => {
+  it('BLOCKS completion while the invoice is a DRAFT, and says which state it is in', async () => {
+    // `sal.invoice_open_receivable` returns 0 for a draft BY DESIGN, so before the fix
+    // this composition answered `eligible: true` with an empty blocker list and an
+    // `established: true` financial fact. The vehicle left with the money owed, no
+    // override and no reason — while a work order with NO invoice correctly blocked.
+    // Creating a draft was strictly more permissive than creating nothing.
+    const invoice = await seedIssuedInvoice('dlv_draft_blocks', { net: '5000.0000', draft: true });
+    await closeWorkOrder(invoice.workOrderId);
+    const delivery = await openDelivery(invoice.workOrderId);
+    await passEveryMandatoryItem(delivery.id);
+    await satisfyReceiverAndSignature(delivery.id);
+
+    // The invoice really is a draft carrying real money, so the zero under test is the
+    // STRUCTURAL zero and not an empty invoice.
+    // Read off the LINE amounts, not `sal.invoice_amounts`: only `sal.issue_invoice`
+    // inserts that table, so an unissued invoice has no totals row at all — which is
+    // itself part of why a draft's open receivable is a structural zero.
+    const stored = await admin.query<{ status: string; gross: string }>(
+      `SELECT i.status,
+              (SELECT sum(la.gross_amount)::text FROM sal.invoice_line_amounts la
+                WHERE la.invoice_id = i.id AND la.deleted_at IS NULL) AS gross
+         FROM sal.invoices i WHERE i.id = $1`,
+      [invoice.invoiceId]
+    );
+    expect(stored.rows[0]?.status).toBe('draft');
+    expect(stored.rows[0]?.gross).toBe('5000.0000');
+    // And the primitive still returns its designed zero — the fix is in the composition
+    // above it, not in the database.
+    //
+    // `'0'`, not `'0.0000'`: the draft short-circuit is a bare `RETURN 0`, so it is an
+    // UNSCALED numeric literal, while a real settled balance comes back from
+    // `round(…, 4)` as `'0.0000'`. The two zeros are not even the same string — which is
+    // a neat illustration of the point, though nothing should depend on it, since the
+    // composition distinguishes them by the invoice's status rather than by shape.
+    expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('0');
+
+    const eligibility = await eligibilityOf(delivery.id);
+    expect(eligibility.eligible).toBe(false);
+    expect(eligibility.blockers).toContain('financial_balance_outstanding');
+
+    // `established: true`, not false: this is not a fact we failed to read. We read it
+    // exactly, and it says the money is not collectable yet. The reason has to reach the
+    // operator, or the blocker is unactionable.
+    const fact = eligibility.facts.find((f) => f.blocker === 'financial_balance_outstanding');
+    expect(fact?.established).toBe(true);
+    expect(fact?.source).toContain('draft');
+
+    // And the handover is actually refused, not merely reported as blocked.
+    authAs(SAL_FULL);
+    const refused = await completeDelivery(
+      delivery.id,
+      { finalOdometerValue: '90210', odometerUnit: 'km' },
+      { version: await currentVersion(delivery.id) }
+    );
+    expect(refused.status).toBe(409);
+    const row = await deliveryRow(delivery.id);
+    expect(row?.status).not.toBe('delivered');
+    expect(row?.deliveredAt).toBeNull();
+  });
+
+  it('REFUSES a visible document belonging to no part of this delivery as its signature', async () => {
+    // Before the fix `linkedToEntity` was discarded, so the signature gate degraded to
+    // "name any document id you can see" — and `sel_document_versions_tenant` is
+    // `tenant_id = current_tenant_id()` with no permission predicate, so every principal
+    // in the tenant can enumerate candidates. Another customer's ID scan satisfied
+    // `sal.complete_delivery`'s "a signature exists" gate.
+    const { delivery } = await bareDelivery('dlv_unlinked_sig');
+    // Tenant-wide (company and branch both NULL) and `pending`, so it passes the scope
+    // check and the refused-state check. The ONLY thing wrong with it is provenance:
+    // `seedDocumentVersion` writes no `shared.document_links` row.
+    const strangerVersionId = await seedDocumentVersion({ tenantId: TENANT_A });
+
+    authAs(SAL_FULL);
+    const receiver = await verifyReceiver(delivery.id, { receiverPartnerId: PARTNER_A });
+    expect(receiver.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const refused = await attachSignature(delivery.id, {
+      signerRole: 'receiver',
+      signatureDocumentVersionId: strangerVersionId,
+    });
+    expect(refused.status).toBe(422);
+    // Asserted on the VIOLATION, not the message: `problemFor` never emits an
+    // `AppFailure` message, so the field path is the only part of the refusal that
+    // actually reaches the caller.
+    const problem = await bodyOf<{
+      readonly code: string;
+      readonly violations?: readonly { readonly path: string }[];
+    }>(refused);
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations?.map((v) => v.path)).toContain('body.signatureDocumentVersionId');
+
+    // Nothing was bound. A refusal that still writes the row is not a refusal.
+    expect(
+      await countRowsOf(
+        // No `deleted_at` predicate: `sal.delivery_signatures` has no such column. A
+        // bound signature is append-only and there is no correction path.
+        `SELECT count(*)::text AS n FROM sal.delivery_signatures
+          WHERE delivery_record_id = $1`,
+        [delivery.id]
+      )
+    ).toBe(0);
+
+    // The same document, once it IS linked to this delivery's work order, is accepted —
+    // so the refusal is about provenance and not about the document.
+    const parent = await admin.query<{ work_order_id: string }>(
+      `SELECT work_order_id FROM sal.delivery_records WHERE id = $1`,
+      [delivery.id]
+    );
+    await admin.query(
+      `INSERT INTO shared.document_links
+         (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+       SELECT $1, v.document_id, 'wo.work_orders', $2, 'signature', $3, $3
+         FROM shared.document_versions v WHERE v.id = $4`,
+      [TENANT_A, parent.rows[0]?.work_order_id ?? '', USER_A, strangerVersionId]
+    );
+    authAs(SAL_FULL);
+    const accepted = await attachSignature(delivery.id, {
+      signerRole: 'receiver',
+      signatureDocumentVersionId: strangerVersionId,
+    });
+    expect(accepted.status).toBe(201);
+  });
+
+  it('lets the principal that COMPLETES obtain the version it must echo, from the API', async () => {
+    // `sal.delivery-complete` is `versionGuarded` and `parseIfMatch` accepts only an
+    // exact integer — there is no `*`. `tg_delivery_records_touch_metadata` bumps
+    // `record_version` on the receiver-verify and signature-attach steps, so the `1` in
+    // the create response is stale by the time a handover is completable, and before the
+    // fix NO other response carried the value: the guard answered 409 and named nothing
+    // to re-read. Every completion test in this file sources its version from
+    // `currentVersion()` — a superuser read that bypasses RLS and the API — so the guard
+    // was proved to work while the operation was never proved to be REACHABLE.
+    const { invoice, delivery } = await handoverReady('dlv_version_reachable', { settled: true });
+    expect(invoice.invoiceNumber).not.toBe('');
+
+    // The completing principal is deliberately NOT a delivery manager: it can call
+    // neither `POST /deliveries` nor either preparation write.
+    authAs(DELIVERY_COMPLETER_ONLY);
+    const eligibility = await readEligibility(delivery.id);
+    expect(eligibility.status).toBe(200);
+    const view = await bodyOf<EligibilityBody & { recordVersion: number }>(eligibility);
+    expect(view.eligible).toBe(true);
+
+    // Published both in the body and as an ETag, and already past 1 — the preparation
+    // steps moved it, which is exactly what made the create response useless.
+    expect(view.recordVersion).toBeGreaterThan(1);
+    expect(eligibility.headers.get('etag')).toBe(`"${view.recordVersion}"`);
+    expect(view.recordVersion).toBe(await currentVersion(delivery.id));
+
+    // The decisive assertion: the handover completes using ONLY a version the API gave
+    // this principal. No admin read anywhere on this path.
+    authAs(DELIVERY_COMPLETER_ONLY);
+    const completed = await completeDelivery(
+      delivery.id,
+      { finalOdometerValue: '120500', odometerUnit: 'km' },
+      { version: view.recordVersion }
+    );
+    expect(completed.status).toBe(200);
+    expect((await deliveryRow(delivery.id))?.status).toBe('delivered');
   });
 });

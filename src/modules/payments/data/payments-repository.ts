@@ -411,6 +411,24 @@ export class PaymentsRepository extends Repository {
    * authority; taking the lock here means the application's advisory check and the
    * primitive's authoritative one see the same row rather than racing each other.
    */
+  /**
+   * The currency's minor unit, so an inbound amount can be refused for being more
+   * precise than the money it is denominated in.
+   *
+   * `shared.currencies` is reference data: `sel_currencies_all` is `true` and
+   * `app_runtime` holds SELECT, so this needs no permission and no scope. `null` means
+   * the platform does not support the code, which the caller reports rather than
+   * silently falling back to the column's four decimal places.
+   */
+  public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
+    const row = await this.runOne<{ minor_unit: number }>(
+      db,
+      `SELECT minor_unit FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? row.minor_unit : null;
+  }
+
   public async findReceiptForUpdate(db: DbHandle, receiptId: string): Promise<ReceiptRow | null> {
     const context = this.assertContext(db);
     const row = await this.runOne<ReceiptSql>(

@@ -463,3 +463,69 @@ describe('P1-22 residual 4 (P1-22-L-06) — partner_outstanding_balance mixes cu
     });
   });
 });
+
+describe('P1-22 residual 6 — the outbox policy is strictly weaker than the ledger it describes', () => {
+  /**
+   * This is the reason `receipt.recorded` and `payment.allocated` carry no amount.
+   *
+   * It is a residual rather than a defect: nothing in `sal` or `shared` prevents a
+   * producer from putting restricted money in a payload, so the only control is the
+   * application's discipline about what it writes. If a future migration adds a
+   * permission predicate to the outbox's SELECT policy, this case fails and says so.
+   */
+  it('gates sal.receipts on sal.finance.view and shared.event_outbox on nothing but tenancy', async () => {
+    const policies = await admin.query<{ tablename: string; qual: string }>(
+      `SELECT tablename, coalesce(qual,'') AS qual
+         FROM pg_policies
+        WHERE schemaname IN ('sal','shared')
+          AND tablename IN ('receipts','payment_allocations','event_outbox')
+          AND cmd = 'SELECT'
+        ORDER BY tablename, policyname`
+    );
+
+    const qualFor = (table: string): string => {
+      const row = policies.rows.find((r) => r.tablename === table);
+      if (row === undefined) throw new Error(`no SELECT policy on ${table}`);
+      return row.qual;
+    };
+
+    // Both ledger tables carry the permission AND both scope predicates.
+    for (const table of ['receipts', 'payment_allocations']) {
+      const qual = qualFor(table);
+      expect(qual, `${table} must require sal.finance.view`).toContain('sal.finance.view');
+      expect(qual, `${table} must be company-scoped`).toContain('allowed_company_ids');
+      expect(qual, `${table} must be branch-scoped`).toContain('allowed_branch_ids');
+    }
+
+    // The outbox carries neither. Asserted as an absence, which is the whole point: a
+    // payload is readable by every principal in the tenant regardless of permission.
+    const outbox = qualFor('event_outbox');
+    expect(outbox).toContain('current_tenant_id');
+    expect(outbox).not.toContain('has_permission');
+    expect(outbox).not.toContain('allowed_company_ids');
+    expect(outbox).not.toContain('allowed_branch_ids');
+
+    // And `app_runtime` really can read the payload column, so the policy is the only
+    // control standing between a consumer and whatever a producer wrote.
+    const grant = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n
+         FROM information_schema.column_privileges
+        WHERE table_schema = 'shared' AND table_name = 'event_outbox'
+          AND column_name = 'payload' AND grantee = 'app_runtime'
+          AND privilege_type = 'SELECT'`
+    );
+    expect(grant.rows[0]!.n).toBe('1');
+  });
+
+  it('cannot compute receipt_unallocated without sal.finance.view, which is why it is not published', async () => {
+    // `sal.receipt_unallocated` is SECURITY INVOKER, so it answers from the caller's own
+    // visibility. Publishing its value in an outbox payload handed a derived financial
+    // position to readers who cannot derive it — a strictly larger disclosure than the
+    // stored amount, and the one field of the four that had no other source.
+    const secdef = await admin.query<{ prosecdef: boolean }>(
+      `SELECT prosecdef FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'sal' AND p.proname = 'receipt_unallocated'`
+    );
+    expect(secdef.rows[0]!.prosecdef).toBe(false);
+  });
+});

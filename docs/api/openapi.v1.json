@@ -2918,7 +2918,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.delivery.manage", "sal.delivery.view", "sal.finance.view"],
+        "x-required-permissions": ["sal.delivery.view", "sal.finance.view"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",

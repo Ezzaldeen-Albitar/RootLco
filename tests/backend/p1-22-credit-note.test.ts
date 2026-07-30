@@ -469,6 +469,12 @@ describe('sal.credit-note-create', () => {
     const invoice = await seedIssuedInvoice('cn_ceiling');
     expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('100.0000');
 
+    // ONE CENT over, not one ten-thousandth: USD has two minor units
+    // (`shared.currencies.minor_unit`), and `assertMinorUnitScale` now refuses a
+    // more precise amount at the boundary with 422 before the ceiling is consulted. The
+    // ceiling is still what this case is about, so the amount has to be one the currency
+    // can actually express.
+    //
     // The caller-safe sentence, asserted where it exists. `sal.approve_credit_note`
     // would raise `check_violation` for the same overrun, and that message is not a
     // contract a caller can act on; this one names the ceiling.
@@ -480,8 +486,8 @@ describe('sal.credit-note-create', () => {
           db,
           {
             invoiceId: invoice.invoiceId,
-            amount: '100.0001',
-            reason: 'One ten-thousandth over the ceiling',
+            amount: '100.01',
+            reason: 'One cent over the ceiling',
           },
           authorizeScope
         )
@@ -494,8 +500,8 @@ describe('sal.credit-note-create', () => {
     // constraint name, no trigger name and no SQLSTATE.
     authAs(SAL_FULL);
     const over = await requestCreditNote(invoice.invoiceId, {
-      amount: '100.0001',
-      reason: 'One ten-thousandth over the ceiling',
+      amount: '100.01',
+      reason: 'One cent over the ceiling',
     });
     await expectCallerSafeConflict(over);
     expect(await creditNotesFor(invoice.invoiceId)).toBe(0);

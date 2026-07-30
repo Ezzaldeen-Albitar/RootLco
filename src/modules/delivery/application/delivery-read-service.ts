@@ -94,6 +94,20 @@ export interface EligibilityView {
   readonly checklistGaps: readonly ChecklistGapRow[];
   /** Which blockers may be overridden at all, and the permission each needs. */
   readonly overridable: readonly { readonly code: BlockerCode; readonly permission: string }[];
+  /**
+   * The delivery's current optimistic-concurrency counter, published so that
+   * `sal.delivery-complete` is REACHABLE.
+   *
+   * That operation is `versionGuarded`, so `handleOperation` requires an `If-Match`
+   * whose value `parseIfMatch` accepts only as an exact positive integer — there is no
+   * `*` wildcard. Meanwhile `tg_delivery_records_touch_metadata` bumps
+   * `record_version` on every `advanceStatus`, so the receiver-verify and
+   * signature-attach steps each raise it. Without this field the only version a client
+   * ever saw was the `1` in the create response, and by the time a delivery was
+   * completable that value was stale — the guard answered 409 and named nothing to
+   * re-read. This read IS the re-read.
+   */
+  readonly recordVersion: number;
 }
 
 /** The composition plus the evidence behind it, shared with the write path. */
@@ -175,6 +189,7 @@ export class DeliveryReadService {
       facts: composed.facts,
       checklistGaps: composed.checklistGaps,
       overridable: OVERRIDABLE_BLOCKERS,
+      recordVersion: delivery.recordVersion,
     };
   }
 
@@ -412,6 +427,33 @@ export class DeliveryReadService {
           source:
             '@/modules/billing — the balance is hidden by sal.finance.view, so it is unknown ' +
             'rather than zero',
+        },
+      };
+    }
+    /**
+     * A live invoice that has not been ISSUED is a blocker, and this branch exists so the
+     * response says which of the two zeros it is.
+     *
+     * `sal.invoice_open_receivable` returns `0` for a `draft` by design, so a draft
+     * carrying five thousand of derived amounts answered "nothing outstanding" and the
+     * independent `Decimal` re-check below CONFIRMED that zero rather than questioning it.
+     * Creating a draft invoice therefore removed this blocker, making the composition
+     * strictly less blocking than for a work order with no invoice at all — where `null`
+     * blocks on the stated principle that "nothing was invoiced is not settlement".
+     *
+     * `established: true`, unlike the two cases above: this is not a fact we failed to
+     * establish. We established it exactly, and it says the money is not collectable yet.
+     */
+    if (!receivable.collectable) {
+      return {
+        outstanding: true,
+        fact: {
+          blocker,
+          established: true,
+          source:
+            `@/modules/billing — the live invoice is "${receivable.status}" and not yet issued, ` +
+            'so its open receivable is structurally zero rather than settled; issue it or ' +
+            'override with a reason',
         },
       };
     }

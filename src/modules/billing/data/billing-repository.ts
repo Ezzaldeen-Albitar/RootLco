@@ -510,6 +510,24 @@ export class BillingRepository extends Repository {
    * a business decision this phase was not given. Handover *is* gated, by the
    * delivery module's own blocker list.
    */
+  /**
+   * The currency's minor unit, so an inbound amount can be refused for being more
+   * precise than the money it is denominated in.
+   *
+   * `shared.currencies` is reference data: `sel_currencies_all` is `true` and
+   * `app_runtime` holds SELECT, so this needs no permission and no scope. `null` means
+   * the code is not a currency this platform supports, which the caller reports as a
+   * validation failure rather than defaulting to the column's scale.
+   */
+  public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
+    const row = await this.runOne<{ minor_unit: number }>(
+      db,
+      `SELECT minor_unit FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? row.minor_unit : null;
+  }
+
   public async findWorkOrderScope(
     db: DbHandle,
     workOrderId: string
