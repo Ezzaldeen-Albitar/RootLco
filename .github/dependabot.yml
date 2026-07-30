@@ -64,25 +64,80 @@ updates:
         update-types:
           - minor
           - patch
-      # Test and lint tooling: low blast radius, high volume.
+      # COUPLED PAIRS GET THEIR OWN GROUPS.
+      #
+      # This is not tidiness, it is the fix for a defect that has now occurred
+      # three times: Dependabot moves ONE HALF of a pair of packages that must
+      # move together, and the result is a pull request that cannot install.
+      # `@vitest/coverage-v8` pins `vitest` as an EXACT peer, so a lone `vitest`
+      # bump fails `npm ci` outright — that was PR #99, 13 red checks from one
+      # install failure. Putting both patterns in one group forces Dependabot to
+      # propose them as a single pull request for every minor and patch.
+      #
+      # Their MAJORS are ignored below, so this group governs the compatible
+      # range where the pair genuinely can move.
+      vitest-coupled:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+        update-types:
+          - minor
+          - patch
+      # The ESLint stack moves together for the same reason. ESLint 10 was
+      # refused (issue #132) because three plugins reached through
+      # `eslint-config-next` still declare `eslint: ^9`; a lone plugin bump can
+      # break lint just as a lone `eslint` bump can. One pull request for the
+      # whole stack keeps the peer graph consistent and diagnosable.
+      eslint-stack:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
+        exclude-patterns:
+          - 'eslint-config-next' # belongs to next-and-react, above
+        update-types:
+          - minor
+          - patch
+      # Everything else in development tooling, in one weekly pull request.
+      # Widened from a hand-written package list to "all development
+      # dependencies", because that list silently missed `sass` and `supabase`
+      # and they arrived as two separate pull requests in the pre-P1-23 batch.
+      # The coupled groups above are excluded so they keep their own PR.
       dev-tooling:
         dependency-type: development
         patterns:
+          - '*'
+        exclude-patterns:
           - 'vitest'
           - '@vitest/*'
           - 'eslint'
           - 'eslint-*'
-          - 'prettier'
-          - 'stylelint*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
           - 'typescript'
-          - '@types/*'
+          - '@types/react*'
         update-types:
           - minor
           - patch
-      # Everything else compatible, in one weekly pull request.
-      production-patches:
+      # Production dependencies, compatible ranges only. Widened from
+      # patch-only to patch AND minor: patch-only meant every production minor
+      # arrived as its own pull request, which is what happened to `pino`
+      # before it turned out to be a major. The framework packages keep their
+      # own group above and are excluded here.
+      production-updates:
         dependency-type: production
+        patterns:
+          - '*'
+        exclude-patterns:
+          - 'next'
+          - 'react'
+          - 'react-dom'
+          - '@supabase/*'
         update-types:
+          - minor
           - patch
     ignore:
       # A major of the framework is a migration, not a dependency bump. It is
@@ -146,6 +201,23 @@ updates:
       - dependency-name: vitest
         update-types: ['version-update:semver-major']
       - dependency-name: '@vitest/coverage-v8'
+        update-types: ['version-update:semver-major']
+      # ESLint 10 — issue #132. Blocked upstream, not here: no published
+      # release of `eslint-plugin-react`, `eslint-plugin-import` or
+      # `eslint-plugin-jsx-a11y` accepts eslint 10, and `eslint-plugin-react`
+      # crashes on the rule-context methods ESLint 10 removed
+      # ("contextOrFilename.getFilename is not a function"). Those three reach
+      # this repository through `eslint-config-next`, so its permissive
+      # `eslint: >=9.0.0` peer does not help.
+      - dependency-name: eslint
+        update-types: ['version-update:semver-major']
+      # @types/node — issue #133. NOT an upstream block: 26 passes typecheck,
+      # lint, build and tests. It is refused because the supported runtime is
+      # Node 22 (`engines.node: ">=22.0.0"`, CI node-version 22, Docker
+      # node:22). Types ahead of the runtime let code compile against APIs that
+      # do not exist when it runs. The types major must stay at or below the
+      # runtime major; raise this when the runtime is raised.
+      - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
 
   # ---------------------------------------------------------------------------
