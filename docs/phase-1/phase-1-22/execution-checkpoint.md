@@ -33,10 +33,10 @@ vacuous — the structural opt-in added in `a22c666` is what makes it so.
 
 | Tier              | Files | Tests     |
 | ----------------- | ----- | --------- |
-| unit + foundation | 56    | **1239**  |
+| unit + foundation | 56    | **1246**  |
 | backend           | 68    | **1600**  |
 | database          | 138   | **1636**  |
-| **total**         | 262   | **4,475** |
+| **total**         | 262   | **4,482** |
 
 P1-22's own backend contribution is 209 tests: delivery 52, invoice-lifecycle 43, payments
 30, currency-coherence 23, isolation 20, warranty 20, credit-note 14, concurrency 7. Plus 12
@@ -242,12 +242,32 @@ Change-control candidates CC-1..CC-8, none acted on, all needing a migration.
 
 | Tier              | Count     |
 | ----------------- | --------- |
-| unit + foundation | **1239**  |
+| unit + foundation | **1246**  |
 | backend           | **1600**  |
 | database          | **1636**  |
-| **total**         | **4,475** |
+| **total**         | **4,482** |
 
 Operation depth 20/20 with `pending`, `unit-only`, `invocation-only`, `unreferenced` and
 `metadata-only` all measured at 0. Task gate 31/31. Exact-money audit 42 files, 0 findings.
-Hostile mutation matrix 45 entries. OpenAPI regenerated for the one changed permission set,
-a one-line semantic diff. 119 migrations, no 120, schema hash unchanged.
+Hostile mutation matrix 45/45 caught. OpenAPI regenerated for the one changed permission
+set, a one-line semantic diff. 119 migrations, no 120, schema hash unchanged.
+
+### The coverage ratchet caught the fix for finding 4
+
+Worth recording, because it is the same shape as everything else on this branch. The
+first push of the review fixes went red on `unit-tests-coverage`: global lines and
+statements fell 93.26% → 92.43% and functions 84.75% → 83.74%, all outside the 0.5 pp
+tolerance.
+
+The cause was a single function. `assertMinorUnitScale` lives in
+`src/server/http/validation.ts`, which is one of the twelve paths in the unit tier's
+coverage `include` list, and it arrived with no unit test — every case exercising it went
+in at the backend tier, whose coverage is deliberately not merged. So a money guard was
+shipped with its only proof one layer away from where it is measured.
+
+Seven unit cases now cover it directly, including the two that matter most for a
+string-only comparison: trailing zeros are insignificant (`100.0000` is valid USD, and is
+what every read out of `numeric(18,4)` looks like), and a twenty-digit value is judged
+exactly, where a `Number()` implementation would drop the offending digit and answer
+"fine". Coverage is now 93.37% lines and statements, 84.87% functions, 93.73% branches —
+above the baseline on all four axes rather than merely back inside tolerance.
