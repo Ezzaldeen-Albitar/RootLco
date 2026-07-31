@@ -12,7 +12,7 @@
  * leaving a client to infer it.
  *
  * A draft, an archived report, another tenant's report and a code that never
- * existed all answer ERR-RPT-001 identically — the catalogue must not be usable
+ * existed all answer ERR-RES-001 identically — the catalogue must not be usable
  * to discover which codes a tenant has configured.
  */
 import { defineOperation } from '@/server/auth/operation-registry';

@@ -252,7 +252,13 @@ const TASKS = Object.freeze([
   [
     'P1-23-BE-009',
     'Storage key never projected',
-    [['test', 'tests/backend/p1-23-document-retention.test.ts', 'never projects the storage key']],
+    [
+      [
+        'test',
+        'tests/backend/p1-23-document-retention.test.ts',
+        'projects exactly the approved field set and nothing else',
+      ],
+    ],
   ],
   [
     'P1-23-BE-010',

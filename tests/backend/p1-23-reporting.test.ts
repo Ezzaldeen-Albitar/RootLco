@@ -10,7 +10,7 @@
  *   * only `published` definitions are visible — a draft is an unfinished
  *     decision and an archived one is withdrawn;
  *   * a draft, an archived report, another tenant's report and a code that
- *     never existed all answer ERR-RPT-001 **identically**, so the endpoint
+ *     never existed all answer ERR-RES-001 **identically**, so the endpoint
  *     cannot be used to enumerate which report codes a tenant has configured;
  *   * the per-report export permission is projected, because
  *     `export_permission_code` is a foreign key into the permission catalogue
@@ -199,7 +199,7 @@ describe('rpt.report-read', () => {
     ['an archived report', ARCHIVED],
     ['another tenant report', FOREIGN],
     ['a code that never existed', 'p1_23_absent'],
-  ])('answers ERR-RPT-001 identically for %s', async (_label, code) => {
+  ])('answers ERR-RES-001 identically for %s', async (_label, code) => {
     // All four answer the same way. A catalogue that distinguished them would
     // be a way to enumerate which report codes a tenant has configured.
     const denied = (await withTransaction(
@@ -212,7 +212,7 @@ describe('rpt.report-read', () => {
     )) as AppFailure;
 
     expect(denied).toBeInstanceOf(AppFailure);
-    expect(denied.code).toBe('ERR-RPT-001');
+    expect(denied.code).toBe('ERR-RES-001');
   });
 });
 

@@ -131,7 +131,7 @@ export class NotificationReadService extends ApplicationService {
     return { ...page, items: page.items.map(toNotificationView) };
   }
 
-  /** One notification from the caller's own inbox, or `ERR-NTF-001` if it is not theirs. */
+  /** One notification from the caller's own inbox, or `ERR-RES-001` if it is not theirs. */
   async readMine(db: DbHandle, notificationId: string): Promise<NotificationView> {
     const context = this.contextOf(db);
     const row = await this.repository.findForRecipient(
@@ -142,7 +142,7 @@ export class NotificationReadService extends ApplicationService {
     if (row === null) {
       // Deliberately indistinguishable from "does not exist": a caller must not
       // be able to probe which notification ids are real in this tenant.
-      throw new AppFailure('ERR-NTF-001', {
+      throw new AppFailure('ERR-RES-001', {
         // No `safeDetails`: the id the caller already sent adds nothing, and
         // `SafeDetails` is a closed shape precisely so identifiers cannot drift
         // into error bodies.
@@ -168,7 +168,7 @@ export class NotificationReadService extends ApplicationService {
   }> {
     const row = await this.repository.findForInspection(db, notificationId);
     if (row === null) {
-      throw new AppFailure('ERR-NTF-001', {
+      throw new AppFailure('ERR-RES-001', {
         // No `safeDetails`: the id the caller already sent adds nothing, and
         // `SafeDetails` is a closed shape precisely so identifiers cannot drift
         // into error bodies.
