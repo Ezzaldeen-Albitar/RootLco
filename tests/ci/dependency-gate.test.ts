@@ -18,9 +18,97 @@ import { evaluate, assertUsableAudit } from '../../scripts/ci/dependency-policy.
 
 const BASELINE = join(__dirname, '../../.github/ci-baselines/dependency-exceptions.json');
 
-/** The committed exception, deep-cloned so a mutation cannot leak between tests. */
-function committedExceptions(): Record<string, unknown> {
-  return JSON.parse(readFileSync(BASELINE, 'utf8'));
+/**
+ * A SYNTHETIC exception, in the exact shape the gate demands.
+ *
+ * This used to be the committed one, deep-cloned. That worked only while the
+ * repository actually held a waiver — and on 2026-08-01 the last one was removed,
+ * because a compatible patch landed and the entry's own `removalCondition` fired.
+ * Every mutation below then had nothing to mutate, and eleven rules that had been
+ * proved to fire silently stopped being proved at all.
+ *
+ * Which is backwards. An empty exception list is the state this gate exists to make
+ * reachable, so it must be the state in which the rules are MOST testable, not least.
+ * The fixture is therefore synthetic and self-contained: it matches
+ * `braceExpansionAudit()` and `reachabilityProof()` below, which were always
+ * synthetic, so the three agree by construction and none of them depends on what the
+ * repository happens to be carrying today.
+ *
+ * The committed file is still read — by `describe('the committed configuration')`,
+ * which asserts what it really contains rather than assuming it contains something.
+ */
+function syntheticException(): Record<string, unknown> {
+  return {
+    developmentAdvisories: [
+      {
+        id: 'GHSA-mh99-v99m-4gvg',
+        advisorySource: 1124334,
+        advisoryUrl: 'https://github.com/advisories/GHSA-mh99-v99m-4gvg',
+        title:
+          'brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash',
+        package: 'brace-expansion',
+        severity: 'high',
+        affectedRange: '<=5.0.7',
+        patchedVersion: '5.0.8',
+        installedAffectedVersions: ['1.1.16', '2.1.3'],
+        dependencyNodes: [
+          'node_modules/glob/node_modules/brace-expansion',
+          'node_modules/minimatch/node_modules/brace-expansion',
+        ],
+        attemptedRemediation:
+          'package.json overrides forcing brace-expansion to ^5.0.8 across the tree.',
+        attemptedRemediationResult:
+          'ESLint broken. npm run lint failed with TypeError: expand is not a function at ' +
+          'Minimatch.braceExpand. Verified by execution, not inferred.',
+        environment: 'development tooling only',
+        productionReachable: false,
+        productionReachableEvidence:
+          '`npm ls brace-expansion --omit=dev --all` returns `(empty)`. The production dependency tree contains no brace-expansion, no minimatch and no eslint. Every one … (trimmed for the fixture)',
+        finalContainerReachable: false,
+        finalContainerReachableEvidence:
+          'READ THIS AS REACHABILITY, NOT ABSENCE. See `finalContainerCodePresent`: the code IS in the image, vendored inside the `node` binary itself. What is asserted … (trimmed for the fixture)',
+        finalContainerCodePresent: true,
+        finalContainerCodePresentEvidence:
+          "brace-expansion's CODE IS PRESENT in the final container and cannot be removed. Node.js bundles its internal JavaScript tooling into the executable: the … (trimmed for the fixture)",
+        runtimeImportEvidence:
+          'No file under src/ or scripts/ imports brace-expansion, minimatch or glob, directly or transitively. Verified by scripts/ci/dependency-path-proof.mjs on every run.',
+        exploitability:
+          'Not reachable based on current evidence. The vulnerability is a denial of service triggered by an attacker-supplied brace expression. Reaching it requires an … (trimmed for the fixture)',
+        attackerControlledPatterns: false,
+        attackerControlledPatternsEvidence:
+          'The glob and brace patterns evaluated in this repository come from eslint.config.mjs, the three vitest configs and package.json script arguments — all … (trimmed for the fixture)',
+        reasonUpgradeCannotBeApplied:
+          'The parent ESLint and minimatch chain requires the older brace-expansion API. minimatch@3.1.5 requires ^1.1.7 and minimatch@9.0.9 requires ^2.0.2; … (trimmed for the fixture)',
+        compensatingControls: [
+          'No attacker-controlled brace or glob expressions: every pattern evaluated comes from committed configuration.',
+          'Repository-controlled patterns only: GitHub Actions passes no event-supplied value into a glob.',
+          'No production inclusion: absent from the production dependency tree, proven by `npm ls --omit=dev`.',
+          'Not reachable from the running application: `require("brace-expansion")` fails with MODULE_NOT_FOUND in the built image and the name is not a Node builtin, so … (trimmed for the fixture)',
+          'Dependency monitoring: Dependabot watches npm weekly; the dependency-security job re-derives the full path proof on every pull request and every protected push.',
+          'The gate fails automatically if the package ever becomes production-reachable, if the dependency path changes, or if a compatible patched version becomes installable.',
+        ],
+        owner: 'platform-owner',
+        createdOn: '2026-07-28',
+        reviewBy: '2026-09-30',
+        expiresOn: '2026-10-31',
+        removalCondition:
+          'The parent dependency chain supports a patched compatible brace-expansion version — that is, eslint and @vitest/coverage-v8 resolve a minimatch that accepts … (trimmed for the fixture)',
+        evidenceLinks: [
+          'docs/engineering/ci-automation/evidence/brace-expansion-reachability-proof.md',
+          'docs/engineering/ci-automation/security-model.md',
+          'scripts/ci/dependency-path-proof.mjs',
+          'https://github.com/advisories/GHSA-mh99-v99m-4gvg',
+          'Dockerfile',
+          '.github/workflows/_reusable-container.yml',
+        ],
+        approvalStatus: 'approved',
+        approvedBy: 'platform-owner',
+        approvedOn: '2026-07-29',
+        approvalNote:
+          'APPROVED by the platform owner on 2026-07-29 as a narrow, temporary, upstream-blocked development-tooling exception. The approval is recorded with its stated … (trimmed for the fixture)',
+      },
+    ],
+  };
 }
 
 /** The real advisory shape npm produces for GHSA-mh99-v99m-4gvg. */
@@ -84,7 +172,7 @@ function run(options: Record<string, unknown> = {}) {
   return evaluate({
     prodAudit: CLEAN_PRODUCTION,
     devAudit: braceExpansionAudit(),
-    exceptions: committedExceptions(),
+    exceptions: syntheticException(),
     licences: [],
     installedPackages: new Set(),
     today: new Date('2026-07-28'),
@@ -93,8 +181,10 @@ function run(options: Record<string, unknown> = {}) {
   });
 }
 
-describe('dependency gate — the committed configuration', () => {
-  it('passes with the real exception, the real advisory and the real proof', () => {
+describe('dependency gate — the synthetic exception is a WORKING one', () => {
+  it('passes with a complete exception, its advisory and its proof', () => {
+    // The control. Without it, every mutation below could be failing for a reason
+    // that has nothing to do with the thing it mutated.
     const result = run();
     expect(result.failures, result.failures.join('\n')).toEqual([]);
     expect(result.ok).toBe(true);
@@ -107,6 +197,49 @@ describe('dependency gate — the committed configuration', () => {
   });
 });
 
+describe('dependency gate — the committed configuration', () => {
+  const committed = JSON.parse(readFileSync(BASELINE, 'utf8')) as {
+    developmentAdvisories: Array<Record<string, unknown>>;
+    removedAdvisories?: Array<Record<string, unknown>>;
+  };
+
+  it('currently waives nothing', () => {
+    // Asserted rather than assumed. If a waiver is ever added back this fails, and
+    // the next test is what checks it is well formed — so neither state is silent.
+    expect(committed.developmentAdvisories).toEqual([]);
+  });
+
+  it('every committed exception, if any, carries the fields the gate requires', () => {
+    for (const entry of committed.developmentAdvisories) {
+      for (const field of [
+        'id',
+        'package',
+        'severity',
+        'affectedRange',
+        'dependencyNodes',
+        'owner',
+        'expiresOn',
+        'approvalStatus',
+        'approvedBy',
+        'approvedOn',
+      ]) {
+        expect(entry[field], `${String(entry.id)} is missing ${field}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('a removed exception keeps its history rather than vanishing', () => {
+    // The waiver removed on 2026-08-01 is retained under `removedAdvisories`. A
+    // deleted waiver leaves no record that a risk was ever accepted, or why it
+    // stopped being one.
+    for (const entry of committed.removedAdvisories ?? []) {
+      expect(entry.removedOn).toBeTruthy();
+      expect(entry.removedBecause).toBeTruthy();
+      expect(entry.remediation).toBeTruthy();
+    }
+  });
+});
+
 describe('dependency gate — mutations, each must fail', () => {
   it('MUTATION 1 — remove the exception', () => {
     const result = run({ exceptions: { developmentAdvisories: [] } });
@@ -115,7 +248,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 2 — broaden the exception version range', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     exceptions.developmentAdvisories[0]!.affectedRange = '<=99.0.0';
@@ -125,7 +258,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 3 — omit the dependency path', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     delete exceptions.developmentAdvisories[0]!.dependencyNodes;
@@ -135,7 +268,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 3b — change the dependency path', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     exceptions.developmentAdvisories[0]!.dependencyNodes = ['node_modules/somewhere/else'];
@@ -145,7 +278,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 4 — mark it production-safe without evidence', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     delete exceptions.developmentAdvisories[0]!.productionReachableEvidence;
@@ -155,7 +288,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 4b — claim the container does not reach it, with no image evidence', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     delete exceptions.developmentAdvisories[0]!.finalContainerReachableEvidence;
@@ -170,7 +303,7 @@ describe('dependency gate — mutations, each must fail', () => {
     // approved one did, so the owner's decision changed nothing. A risk
     // acceptance the machine ignores is not a control.
     for (const status of ['pending-owner-approval', 'rejected', undefined]) {
-      const exceptions = committedExceptions() as {
+      const exceptions = syntheticException() as {
         developmentAdvisories: Array<Record<string, unknown>>;
       };
       if (status === undefined) delete exceptions.developmentAdvisories[0]!.approvalStatus;
@@ -189,7 +322,7 @@ describe('dependency gate — mutations, each must fail', () => {
       },
       (e: Record<string, unknown>) => delete e.approvedOn,
     ]) {
-      const exceptions = committedExceptions() as {
+      const exceptions = syntheticException() as {
         developmentAdvisories: Array<Record<string, unknown>>;
       };
       mutate(exceptions.developmentAdvisories[0]!);
@@ -318,7 +451,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 13 — the exception drops its owner', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     delete exceptions.developmentAdvisories[0]!.owner;
@@ -336,7 +469,7 @@ describe('dependency gate — mutations, each must fail', () => {
       'attemptedRemediationResult',
       'removalCondition',
     ]) {
-      const exceptions = committedExceptions() as {
+      const exceptions = syntheticException() as {
         developmentAdvisories: Array<Record<string, unknown>>;
       };
       delete exceptions.developmentAdvisories[0]![field];
@@ -348,7 +481,7 @@ describe('dependency gate — mutations, each must fail', () => {
 
   it('MUTATION 15 — the exception drops its compensating controls or evidence links', () => {
     for (const field of ['compensatingControls', 'evidenceLinks']) {
-      const exceptions = committedExceptions() as {
+      const exceptions = syntheticException() as {
         developmentAdvisories: Array<Record<string, unknown>>;
       };
       exceptions.developmentAdvisories[0]![field] = [];
@@ -358,7 +491,7 @@ describe('dependency gate — mutations, each must fail', () => {
   });
 
   it('MUTATION 16 — the exception is retargeted at a different package', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     exceptions.developmentAdvisories[0]!.package = 'lodash';
@@ -370,7 +503,7 @@ describe('dependency gate — mutations, each must fail', () => {
 
 describe('the committed exception is exact, not broad', () => {
   it('waives one advisory, one package, one range, one dependency-path fingerprint', () => {
-    const exceptions = committedExceptions() as {
+    const exceptions = syntheticException() as {
       developmentAdvisories: Array<Record<string, unknown>>;
     };
     expect(exceptions.developmentAdvisories).toHaveLength(1);
@@ -387,9 +520,8 @@ describe('the committed exception is exact, not broad', () => {
   });
 
   it('records both a review date and a later hard expiry', () => {
-    const entry = (
-      committedExceptions() as { developmentAdvisories: Array<Record<string, string>> }
-    ).developmentAdvisories[0]!;
+    const entry = (syntheticException() as { developmentAdvisories: Array<Record<string, string>> })
+      .developmentAdvisories[0]!;
     const review = new Date(entry.reviewBy!).getTime();
     const expiry = new Date(entry.expiresOn!).getTime();
     expect(Number.isNaN(review)).toBe(false);
@@ -398,9 +530,8 @@ describe('the committed exception is exact, not broad', () => {
   });
 
   it('states the attempted remediation and why it failed, so nobody retries it blindly', () => {
-    const entry = (
-      committedExceptions() as { developmentAdvisories: Array<Record<string, string>> }
-    ).developmentAdvisories[0]!;
+    const entry = (syntheticException() as { developmentAdvisories: Array<Record<string, string>> })
+      .developmentAdvisories[0]!;
     expect(entry.attemptedRemediation).toMatch(/override/i);
     expect(entry.attemptedRemediationResult).toMatch(/ESLint broken|expand is not a function/i);
   });

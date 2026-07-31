@@ -184,56 +184,73 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 
 **Production dependency advisories: Resolved through compatible patch upgrades.**
 
-**brace-expansion advisory: Open — upstream-blocked development-tooling exception
-with no proven production or runtime reachability.**
+**brace-expansion advisory: CLOSED on 2026-08-01. The exception has been removed and
+the tree carries zero advisories.**
 
-### The one development exception
+### The one development exception, and why it is gone
 
-`GHSA-mh99-v99m-4gvg` in `brace-expansion`, reaching the tree through `minimatch`
-→ eslint, its plugins, and `@vitest/coverage-v8`.
+`GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this
+repository ever held. It is closed, and it closed the way the record said it would:
+**the gate failed and told us to remove it.**
 
-It has **no consumable fix**. The advisory affects every release up to and
-including 5.0.7; the only patched release is 5.0.8, whose changed export shape
-breaks `minimatch` — verified by execution, not assumed: overriding to `^5.0.8`
-makes `npm run lint` fail with `TypeError: expand is not a function` at
-`Minimatch.braceExpand`. There is no patched release in the 1.x, 2.x, 3.x or 4.x
-lines for `minimatch` to consume, and npm's own `fixAvailable` names
-`eslint@10.8.0` with `isSemVerMajor: true`.
+The entry carried an explicit `removalCondition`:
 
-The override was reverted completely and must not be reintroduced. ESLint is not
-weakened, no rule is disabled, and no lint coverage is removed.
+> The parent dependency chain supports a patched compatible brace-expansion version —
+> that is, eslint and `@vitest/coverage-v8` resolve a minimatch that accepts
+> brace-expansion >=5.0.8, **or npm reports a non-semver-major `fixAvailable`**. When
+> that happens the gate FAILS with a compatible-fix-available finding, because an
+> exception that outlives its cause is worse than none.
 
-Of the three resolved instances, **one is already patched**: `minimatch@10.2.5`
-requires `^5.0.5`, so `node_modules/brace-expansion` resolves to 5.0.8. Only the
-1.1.16 and 2.1.3 instances are affected, and npm's `nodes` list names exactly
-those two.
+On 2026-08-01 all three of the gate's exactness rules fired at once, each describing
+the same upstream change from a different angle:
 
-Full evidence:
-[`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
+- the advisory was **re-scoped upstream** from `<=5.0.7` to `<1.1.17`, so the 2.1.3 and
+  5.0.8 instances are no longer affected at all;
+- the **dependency fingerprint collapsed** from two resolved nodes to one — only
+  `node_modules/minimatch/node_modules/brace-expansion` remains in range;
+- npm now reports **`fixAvailable: true`** with no major version bump.
+
+**Remediation:** `npm audit fix --package-lock-only` bumped that one node from 1.1.16
+to **1.1.18**. Lockfile only. `package.json` is unchanged and **no override was
+added** — the `^5.0.8` override that broke ESLint in July is still reverted and still
+must not be reintroduced.
+
+**Verified by execution, not inferred**, because this record insisted on exactly that
+after the override attempt: following `npm ci`, `npm run lint` is clean and the unit
+tier passes 1285/1285. A 1.1.x patch keeps the v1 export shape that `minimatch@3`
+calls, which is precisely what `brace-expansion@5` did not.
+
+`npm audit` now reports **0 vulnerabilities** across the whole tree, production and
+development.
+
+The removed entry is retained in `.github/ci-baselines/dependency-exceptions.json`
+under `removedAdvisories` rather than deleted, so the waiver's history survives its
+removal.
+
+#### What remains true after the fix
+
+The reachability work behind the waiver was never really about the advisory, and it
+still stands:
 
 | Question                                    | Answer                                                                    |
 | ------------------------------------------- | ------------------------------------------------------------------------- |
-| Production-tree instances                   | **0** — `npm ls brace-expansion --omit=dev --all` returns `(empty)`       |
-| Production audit                            | **0 vulnerabilities**                                                     |
 | Code present in the built runner image      | **YES, unavoidably** — Node vendors it into the `node` binary via esbuild |
 | Resolvable as a package in the runner image | **no** — no `node_modules/brace-expansion/`, asserted against the image   |
 | Imported by `src/` or `scripts/`            | **no**                                                                    |
 | Attacker-controlled patterns reach it       | **no** — every glob comes from committed configuration                    |
-| Exploitability in RootLco's runtime         | **not reachable based on current evidence**                               |
 
-The first two rows must be read together, and separating them is the whole
-point. An earlier version of this table claimed only that the package was not
-"present in the built runner image", which read as _the vulnerable code is
-absent_. That was false: absence was never achievable, because the `node` binary
-itself contains a vendored copy that no build step can remove. The achievable —
-and sufficient — claim is the second row: nothing in the image can resolve or
-`require()` the package, so the running application cannot invoke it.
+Those first two rows must be read together, and separating them is the whole point. An
+earlier version of this table claimed only that the package was not "present in the
+built runner image", which read as _the vulnerable code is absent_. That was false:
+absence was never achievable, because the `node` binary itself contains a vendored copy
+that no build step can remove. The achievable — and sufficient — claim is the second
+row: nothing in the image can resolve or `require()` the package, so the running
+application cannot invoke it. Findings AR-35, AR-37 and AR-43 are how that was learned,
+three corrections in a row, and they are preserved in
+[`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
 
-Owner: platform-owner. Created 2026-07-28, review 2026-09-30, **expires
-2026-10-31**. Approval status: **APPROVED by the platform owner on 2026-07-29**,
-with the basis and the explicit scope limits recorded in the entry. The gate now
-REQUIRES an approved, signed and dated entry: an unapproved exception waives
-nothing, because a risk acceptance the machine ignores is not a control.
+The gate machinery below is unchanged and is now guarding an empty exception list —
+which is the state it was built to make reachable.
 
 ### What makes it an _exact_ exception
 
