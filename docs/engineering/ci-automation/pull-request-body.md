@@ -60,11 +60,18 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **9 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **27 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **28 scripts in `scripts/ci`**,
 **11 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 
-The `scripts/ci` count moved from 26 to 27 in P1-22, which added
+The `scripts/ci` count moved from 27 to 28 in the Main Branch Governance and
+Ruleset Alignment gate, which added `check-promotion-source.mjs` — the gate that
+enforces ADR-006 §45 and §47, previously prose only. A branch ruleset cannot
+express it, because rulesets constrain the TARGET ref and not where a pull
+request came from, so until that script existed a feature branch could open a
+pull request straight into `main` and every check would pass.
+
+The count moved from 26 to 27 in P1-22, which added
 `check-exact-money.mjs` — the gate that refuses `Number()`, `parseFloat`, `Math.*`,
 `toFixed`, a unary plus and a JSON number schema on the declared financial surface.
 The count is stated here rather than left to drift because
