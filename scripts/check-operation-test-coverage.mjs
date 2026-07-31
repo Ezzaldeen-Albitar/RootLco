@@ -1348,6 +1348,32 @@ export const MANIFEST = {
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
+  // ---- P1-23 notification reads ------------------------------------------
+  //
+  // The obligations below are DECLARED on top of the derived floor, not instead
+  // of it: `shared.` derives route/service/success/authorization/isolation, and
+  // these add what is specific to a read surface the database cannot guard.
+  //
+  // `cross-tenant` is the weaker of the two isolation proofs here and is listed
+  // because the floor requires it. The stronger one is `same-tenant-recipient`:
+  // RLS proves a row belongs to the tenant and says NOTHING about which user
+  // inside it may see the row, so an inbox that leaked every message in the
+  // tenant would pass every cross-tenant assertion ever written.
+  'shared.notification-list': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['cross-tenant'],
+    note: 'recipient-scoped inbox; a same-tenant neighbour message is proven invisible, which the cross-tenant proof alone cannot establish; digest and body columns proven unprojected; page size clamped',
+  },
+  'shared.notification-read': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: "another user's message answers ERR-NTF-001 identically to a non-existent id, so the endpoint cannot be used to probe which ids are real; the failure carries no identifier because SafeDetails is a closed shape",
+  },
+  'shared.notification-delivery-list': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'deliberately wider than the inbox so an operator can inspect a message they did not receive, which is why it takes a different permission and is audited with a DELTA assertion; provider payload proven unprojected while the normalized classification survives; accepted is never reported as delivered',
+  },
   'shared.notification-enqueue': {
     files: [
       'tests/backend/p1-15-operation-routes.test.ts',

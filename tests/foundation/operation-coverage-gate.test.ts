@@ -858,9 +858,13 @@ describe('operation coverage gate — real registry and real files', () => {
     };
     const { counts } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
 
-    expect(counts.p1_15.registered).toBe(21);
-    expect(counts.p1_15.publicApi).toBe(21);
-    expect(counts.p1_15.operationDepth).toBe(21);
+    // 21 from P1-15 plus the 3 P1-23 reads that share the `shared.` namespace.
+    // The counter selects by prefix, so it cannot separate the phases; what it
+    // still proves exactly is that every operation in the namespace is at
+    // operation depth, with none pending, unit-only or metadata-only.
+    expect(counts.p1_15.registered).toBe(24);
+    expect(counts.p1_15.publicApi).toBe(24);
+    expect(counts.p1_15.operationDepth).toBe(24);
     expect(counts.p1_15.invocationOnly).toBe(0);
     expect(counts.p1_15.pending).toBe(0);
     expect(counts.p1_15.unitOnly).toBe(0);

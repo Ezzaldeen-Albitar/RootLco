@@ -59,6 +59,8 @@ import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
 import '@/app/api/v1/notifications/route';
+import '@/app/api/v1/notifications/[notificationId]/route';
+import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
 import '@/app/api/v1/message-templates/route';
 import '@/app/api/v1/message-templates/[templateId]/route';
 import '@/app/api/v1/message-templates/[templateId]/versions/route';
@@ -313,6 +315,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'shared.document.version_registered',
   'shared.document.version_rejected',
   'shared.export.authorized',
+  'shared.notification.delivery_inspected',
   'shared.notification.enqueued',
   'shared.template.created',
   'shared.template.updated',
@@ -398,6 +401,13 @@ const P1_15_AUDIT_ACTIONS: readonly { code: string; class: string; entityType: s
     entityType: 'shared.document_version',
   },
   { code: 'shared.export.authorized', class: 'export', entityType: 'shared.export_request' },
+  // P1-23: the delivery view is wider than the recipient inbox, so it is
+  // recorded. Listed here because this inventory is exact in both directions.
+  {
+    code: 'shared.notification.delivery_inspected',
+    class: 'security',
+    entityType: 'shared.outbound_message',
+  },
   {
     code: 'shared.notification.enqueued',
     class: 'privileged',
@@ -479,7 +489,13 @@ const EXPECTED_P1_15_OPERATIONS = [
   'shared.export-catalogue',
   'shared.health-live',
   'shared.health-ready',
+  // P1-23 read surface, same namespace. Listed here because this assertion is
+  // exact by design: a new `shared.` operation appearing without a deliberate
+  // edit is precisely what it exists to catch.
+  'shared.notification-delivery-list',
   'shared.notification-enqueue',
+  'shared.notification-list',
+  'shared.notification-read',
   'shared.template-activation-set',
   'shared.template-create',
   'shared.template-update',
@@ -500,6 +516,9 @@ const EXPECTED_P1_15_AUDITED: Readonly<Record<string, string>> = {
   'shared.attachment-version-reject': 'shared.document.version_rejected',
   'shared.branch-status-change': 'org.branch.status_changed',
   'shared.export-authorize': 'shared.export.authorized',
+  // P1-23: the only audited operation of the read surface. The two inbox
+  // reads are unaudited and appear in the list below instead.
+  'shared.notification-delivery-list': 'shared.notification.delivery_inspected',
   'shared.notification-enqueue': 'shared.notification.enqueued',
   'shared.template-activation-set': 'shared.template.updated',
   'shared.template-create': 'shared.template.created',
@@ -555,6 +574,12 @@ describe('registered operations against the audit-action catalog', () => {
       'shared.export-catalogue',
       'shared.health-live',
       'shared.health-ready',
+      // P1-23: reading your own inbox is not privileged, so these two are
+      // unaudited. `shared.notification-delivery-list` is deliberately ABSENT
+      // from this list — it is wider than the inbox and is audited, and its
+      // appearing here would mean that accountability had been dropped.
+      'shared.notification-list',
+      'shared.notification-read',
       'shared.template-version-preview',
     ]);
     for (const operation of allOperations()) {

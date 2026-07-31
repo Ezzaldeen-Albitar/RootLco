@@ -288,6 +288,14 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An outbound message was enqueued from an approved template version. Rendered content is not persisted; only its integrity digest is.',
   },
+  // ---- Notification delivery inspection (P1-23) ---------------------------
+  {
+    code: 'shared.notification.delivery_inspected',
+    class: 'security',
+    entityType: 'shared.outbound_message',
+    description:
+      'The delivery attempts of one outbound message were inspected. This read is deliberately wider than the recipient inbox — an operator diagnosing a stuck queue must see messages they did not receive — so it is recorded. Wider visibility that is not accountable is a leak with a permission attached. No recipient address, message body or provider payload is readable through the operation this records.',
+  },
   {
     code: 'shared.template.created',
     class: 'privileged',

@@ -28,6 +28,7 @@ import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { appendAudit } from '@/server/audit/audit';
 import type { NotificationReadRepository } from '../data/notification-read-repository';
 import {
   NOTIFICATION_ORDERING,
@@ -175,6 +176,30 @@ export class NotificationReadService extends ApplicationService {
       });
     }
     const attempts = await this.repository.listAttempts(db, notificationId);
+
+    // The audit is written HERE, in the same transaction as the read, because
+    // the wider-than-inbox visibility is the thing being made accountable. A
+    // record written after the response would be a record of an intention.
+    //
+    // The recipient is audited as a USER REFERENCE, never as an address: the
+    // row's other recipient column is a salted digest and neither belongs in an
+    // audit trail.
+    await appendAudit(db, {
+      action: 'shared.notification.delivery_inspected',
+      entityType: 'shared.outbound_message',
+      entityId: notificationId,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      details: [
+        { field: 'message_status', classification: 'internal', value: row.status },
+        { field: 'attempt_count', classification: 'internal', value: String(attempts.length) },
+        {
+          field: 'inspected_own_message',
+          classification: 'internal',
+          value: String(row.recipient_user_id === this.contextOf(db).principal.userId),
+        },
+      ],
+    });
     return {
       notification: toNotificationView(row),
       attempts: attempts.map(toAttemptView),

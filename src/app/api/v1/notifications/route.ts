@@ -13,7 +13,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { sharedServicesModule } from '@/modules/shared-services';
 
 export const runtime = 'nodejs';
@@ -86,4 +91,48 @@ export async function POST(request: Request): Promise<Response> {
     },
     { body }
   );
+}
+
+/**
+ * GET /api/v1/notifications (P1-23).
+ *
+ * The caller's own in-app inbox. The recipient is the authenticated principal
+ * and is never an input — there is deliberately no `recipientUserId` query
+ * parameter, because an optional one would let any caller read any inbox in the
+ * tenant while every tenant-isolation test still passed.
+ *
+ * Reading your own notifications is not privileged, so this is not audited. The
+ * *delivery* view next door is a different question and is.
+ */
+const ListQuery = z
+  .object({
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict();
+
+export const NOTIFICATION_LIST_OPERATION = defineOperation({
+  id: 'shared.notification-list',
+  module: 'shared-services',
+  method: 'GET',
+  path: '/notifications',
+  summary: "List the authenticated user's in-app notifications, newest first.",
+  permissions: ['shared.notification.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'standard-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(request: Request): Promise<Response> {
+  return handleOperation(NOTIFICATION_LIST_OPERATION, request, async ({ db, request: raw }) => {
+    const url = new URL(raw.url);
+    const query = parseOrFail(ListQuery, searchParamsToObject(url.searchParams), 'query');
+    return {
+      body: await sharedServicesModule().notificationReads.listMine(db, {
+        cursor: query.cursor,
+        limit: query.limit,
+      }),
+    };
+  });
 }

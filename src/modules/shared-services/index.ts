@@ -39,6 +39,7 @@ import { setNotificationService } from '@/server/contracts/notification-service'
 import { DocumentRepository } from './data/document-repository';
 import { ExportRepository } from './data/export-repository';
 import { MessageDispatchRepository } from './data/message-dispatch-repository';
+import { NotificationReadRepository } from './data/notification-read-repository';
 import { NotificationRepository } from './data/notification-repository';
 import { NumberSequenceRepository } from './data/number-sequence-repository';
 import { TemplateRepository } from './data/template-repository';
@@ -49,6 +50,7 @@ import { ExportAuthorizationService } from './application/export-authorization-s
 import { HealthService } from './application/health-service';
 import { MessageDispatcher } from './application/message-dispatcher';
 import { NumberAllocationService } from './application/number-allocation-service';
+import { NotificationReadService } from './application/notification-read-service';
 import { SharedNotificationService } from './application/notification-service';
 import { StatusTransitionService } from './application/status-transition-service';
 import { TemplateService } from './application/template-service';
@@ -263,6 +265,7 @@ export const sharedServicesModule = composeModule({
     const sequences = new NumberSequenceRepository();
     const exports_ = new ExportRepository();
     const dispatch = new MessageDispatchRepository();
+    const messageReads = new NotificationReadRepository();
 
     const attachments = new AttachmentService(documents);
     const notifications = new SharedNotificationService(messages, templates);
@@ -276,6 +279,10 @@ export const sharedServicesModule = composeModule({
     return {
       attachments,
       notifications,
+      // The P1-23 read half. Separate from `notifications` because the write
+      // path and the read path run under different grants: the writer may only
+      // INSERT a pending message, and nothing here can mutate anything at all.
+      notificationReads: new NotificationReadService(messageReads),
       templates: new TemplateService(templates),
       numbers: new NumberAllocationService(sequences),
       transitions: new StatusTransitionService([new BranchTransitionAdapter()]),

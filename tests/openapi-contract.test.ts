@@ -67,6 +67,8 @@ import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
 import '@/app/api/v1/notifications/route';
+import '@/app/api/v1/notifications/[notificationId]/route';
+import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
 import '@/app/api/v1/message-templates/route';
 import '@/app/api/v1/message-templates/[templateId]/route';
 import '@/app/api/v1/message-templates/[templateId]/versions/route';
