@@ -102,7 +102,7 @@ export class ReportCatalogueService extends ApplicationService {
       // A draft, an archived report, another tenant's report and a code that
       // never existed all answer identically. The catalogue must not be usable
       // to discover which report codes a tenant has configured.
-      throw new AppFailure('ERR-RPT-001', { message: 'Report not found.' });
+      throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
     }
     return toView(row);
   }

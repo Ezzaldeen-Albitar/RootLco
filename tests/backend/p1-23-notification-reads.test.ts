@@ -219,14 +219,38 @@ describe('shared.notification-list — the caller reads only their own inbox', (
       (db) => sharedServicesModule().notificationReads.listMine(db, {})
     );
 
-    const serialized = JSON.stringify(page);
-    expect(serialized).not.toContain('recipient_digest');
-    expect(serialized).not.toContain('recipientDigest');
-    expect(serialized).not.toContain('body_sha256');
-    expect(serialized).not.toContain('bodySha256');
-    // The seeded digests themselves, in case a future projection leaks the value
-    // under a different key.
-    expect(serialized).not.toContain('cdcdcdcd');
+    // An EXACT key set, not a "does not contain" scan.
+    //
+    // The scan this replaced could not fail in the direction that matters. It
+    // forbade five spellings by name, so a projection that leaked
+    // `recipient_digest` under any SIXTH name passed, and the value-level check
+    // (`cdcdcdcd`) compared a hex literal against a `bytea` column that does not
+    // serialise to that form at all — so it was asserting against a string the
+    // response could never have contained however broken the projection was.
+    //
+    // Widening the projection by one column now fails here whatever it is called.
+    const item = page.items[0];
+    expect(item, 'the seeded message must be visible to its recipient').toBeDefined();
+    expect(Object.keys(item!).sort()).toEqual(
+      [
+        'branchId',
+        'cancelledAt',
+        'channel',
+        'companyId',
+        'createdAt',
+        'deliveredAt',
+        'failedAt',
+        'failureClass',
+        'notificationId',
+        'purpose',
+        'queuedAt',
+        'recordVersion',
+        'sentAt',
+        'status',
+        'templateVersionId',
+        'retryCount',
+      ].sort()
+    );
   });
 
   it('bounds the page size rather than trusting the caller', async () => {
@@ -279,7 +303,7 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     );
 
     expect(denied).toBeInstanceOf(AppFailure);
-    expect((denied as AppFailure).code).toBe('ERR-NTF-001');
+    expect((denied as AppFailure).code).toBe('ERR-RES-001');
 
     // Same failure for an id that does not exist at all: the endpoint must not
     // let a caller distinguish "not yours" from "not real".
@@ -291,7 +315,7 @@ describe('shared.notification-read — one message, and only if it is yours', ()
           .then(() => null)
           .catch((error: unknown) => error)
     );
-    expect((absent as AppFailure).code).toBe('ERR-NTF-001');
+    expect((absent as AppFailure).code).toBe('ERR-RES-001');
   });
 
   it('carries no identifier in the failure details', async () => {
@@ -327,11 +351,57 @@ describe('shared.notification-read — one message, and only if it is yours', ()
           .catch((error: unknown) => error)
     )) as AppFailure;
 
-    expect(denied.code).toBe('ERR-NTF-001');
+    expect(denied.code).toBe('ERR-RES-001');
   });
 });
 
 describe('shared.notification-delivery-list — privileged inspection, and audited', () => {
+  it('returns only the addressed message attempts when another message also has some', async () => {
+    // TWO messages, each with attempts. Without the second, dropping the
+    // `message_id` predicate returns the same rows and nothing notices — which is
+    // exactly what the mutation matrix found: the confinement SURVIVED every
+    // assertion in this suite until this case existed.
+    const target = randomUUID();
+    const other = randomUUID();
+    for (const id of [target, other]) {
+      await seedMessage({
+        id,
+        tenantId: TENANT_A,
+        recipientUserId: NEIGHBOUR,
+        dedupeKey: `p123-${id}`,
+      });
+    }
+    await admin.query(
+      // `ck_delivery_attempts_completion` requires `completed_at` on a terminal
+      // status, and `ck_delivery_attempts_error_summary` requires a summary on
+      // `errored`. Every row here is `accepted`: the confinement is proven by
+      // WHICH rows come back, not by their statuses.
+      `INSERT INTO shared.delivery_attempts
+         (tenant_id, message_id, attempt_number, provider_code, status,
+          completed_at, created_by)
+       VALUES ($1, $2, 1, 'local_test', 'accepted', now(), $4),
+              ($1, $3, 1, 'local_test', 'accepted', now(), $4),
+              ($1, $3, 2, 'local_test', 'accepted', now(), $4)`,
+      [TENANT_A, target, other, USER_A]
+    );
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: CALLER,
+        operation: 'shared.notification-delivery-list',
+      }),
+      (db) => sharedServicesModule().notificationReads.readDeliveries(db, target)
+    );
+
+    // One attempt belongs to `target`; three exist in the tenant.
+    expect(result.attempts).toHaveLength(1);
+    // And every returned attempt must belong to the message that was asked for.
+    // An operator inspecting one delivery must not be shown another's history.
+    expect(result.attempts[0]?.attemptNumber).toBe(1);
+    expect(result.notification.notificationId).toBe(target);
+  });
+
   it('invokes shared.notification-delivery-list and reports attempts as stored', async () => {
     const message = randomUUID();
     await seedMessage({
@@ -434,7 +504,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
           .catch((error: unknown) => error)
     )) as AppFailure;
 
-    expect(denied.code).toBe('ERR-NTF-001');
+    expect(denied.code).toBe('ERR-RES-001');
   });
 
   it('records an audit entry for the privileged inspection', async () => {

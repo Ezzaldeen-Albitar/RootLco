@@ -64,6 +64,7 @@ import { withTransaction } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
 import { requirePermissions } from '@/server/auth/authorization';
 import { sharedServicesModule } from '@/modules/shared-services';
+import { DocumentReadRepository } from '@/modules/shared-services/data/document-read-repository';
 
 let admin: Pool;
 let runtime: Pool;
@@ -174,7 +175,7 @@ describe('shared.document-read', () => {
     expect(view.retentionClass).toBe('operational');
   });
 
-  it('never projects the storage key', async () => {
+  it('projects exactly the approved field set and nothing else', async () => {
     const id = randomUUID();
     await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'operational' });
 
@@ -183,9 +184,62 @@ describe('shared.document-read', () => {
       (db) => sharedServicesModule().documentReads.read(db, id)
     );
 
-    const serialized = JSON.stringify(view);
-    expect(serialized).not.toContain('storage_key');
-    expect(serialized).not.toContain('storageKey');
+    // An EXACT key set, not a "does not contain" scan.
+    //
+    // This assertion replaced one that read `expect(serialized).not.toContain('storage_key')`
+    // — which could never fail, because `shared.documents` has NO storage_key
+    // column. There is no file location on the row at all; bytes are object
+    // storage and out of scope. A guard against leaking a field that cannot
+    // exist is decoration, and it made the mutation that "proved" it a mutation
+    // that selected a nonexistent column and was caught by SQLSTATE 42703 rather
+    // than by this suite.
+    //
+    // Asserted at BOTH layers, because the service maps rows field by field and
+    // therefore hides a widened repository projection completely. Checking only
+    // the view proved exactly nothing about the SQL: the mutation matrix added
+    // `deleted_at` to the SELECT and this suite stayed green until the
+    // repository-level assertion below was added.
+    const row = await withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.document-read' }),
+      (db) => new DocumentReadRepository().find(db, id)
+    );
+    expect(row, 'the seeded document must be readable').not.toBeNull();
+    expect(Object.keys(row!).sort()).toEqual(
+      [
+        'archived_at',
+        'branch_id',
+        'category_id',
+        'classification',
+        'company_id',
+        'created_at',
+        'id',
+        'legal_hold',
+        'record_version',
+        'retention_class',
+        'status',
+        'title',
+      ].sort()
+    );
+
+    // An exact key set is falsifiable in the direction that matters: widening the
+    // repository projection by ONE column fails here, whatever the column is
+    // called and whether or not anyone thought to forbid it by name.
+    expect(Object.keys(view).sort()).toEqual(
+      [
+        'archivedAt',
+        'branchId',
+        'categoryId',
+        'classification',
+        'companyId',
+        'createdAt',
+        'documentId',
+        'legalHold',
+        'recordVersion',
+        'retentionClass',
+        'status',
+        'title',
+      ].sort()
+    );
   });
 
   it('refuses a document belonging to another tenant', async () => {
@@ -202,7 +256,7 @@ describe('shared.document-read', () => {
     )) as AppFailure;
 
     expect(denied).toBeInstanceOf(AppFailure);
-    expect(denied.code).toBe('ERR-DOC-001');
+    expect(denied.code).toBe('ERR-RES-001');
   });
 });
 
@@ -462,7 +516,7 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
           .catch((error: unknown) => error)
     )) as AppFailure;
 
-    expect(denied.code).toBe('ERR-DOC-001');
+    expect(denied.code).toBe('ERR-RES-001');
   });
 
   it('records an audit entry stating that no deletion was performed', async () => {

@@ -110,7 +110,7 @@ export class DocumentReadService extends ApplicationService {
   async read(db: DbHandle, documentId: string): Promise<DocumentView> {
     const row = await this.repository.find(db, documentId);
     if (row === null) {
-      throw new AppFailure('ERR-DOC-001', { message: 'Document not found.' });
+      throw new AppFailure('ERR-RES-001', { message: 'Document not found.' });
     }
     return {
       documentId: row.id,
@@ -139,7 +139,7 @@ export class DocumentReadService extends ApplicationService {
   async evaluateRetention(db: DbHandle, documentId: string): Promise<RetentionEvaluation> {
     const row = await this.repository.find(db, documentId);
     if (row === null) {
-      throw new AppFailure('ERR-DOC-001', { message: 'Document not found.' });
+      throw new AppFailure('ERR-RES-001', { message: 'Document not found.' });
     }
 
     const eligibility = await this.repository.evaluateEligibility(db, documentId);
