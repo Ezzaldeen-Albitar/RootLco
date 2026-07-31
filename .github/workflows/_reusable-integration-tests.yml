@@ -136,6 +136,18 @@ jobs:
           set -euo pipefail
           npm run test:backend -- --reporter=default --reporter=json --outputFile=vitest-backend.json
 
+      # P1-23-QA-005. A green backend tier proves the code and the tests agree;
+      # it does not prove the tests would NOTICE if the code were wrong. This
+      # phase produced the counter-example: four permission codes were missing
+      # from the platform catalog and every denial-based authorization test still
+      # passed, because a permission that does not exist cannot be held by
+      # anybody. Each mutation below breaks one security property on purpose and
+      # fails the build if the suite stays green. It needs the database, so it
+      # runs here rather than in static quality, and it restores every mutated
+      # file byte-for-byte (asserted, not assumed).
+      - name: P1-23 hostile mutation matrix
+        run: npm run validate:p1-23-mutations
+
       - name: Summarise the backend tier
         id: backend
         if: '!cancelled()'

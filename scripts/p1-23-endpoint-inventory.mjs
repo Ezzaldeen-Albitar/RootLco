@@ -377,8 +377,13 @@ const TASKS = Object.freeze([
     ],
   ],
   [
+    // The canonical task register is 27 (Backend 14, Security 4, QA 5, DevOps 2,
+    // Documentation 2). The hostile mutation matrix belongs to THIS task rather
+    // than a 28th: inventing a task id would change a total the phase mandate
+    // fixes, and the matrix is the evidence that QA-005's assertions are real
+    // rather than a separate deliverable.
     'P1-23-QA-005',
-    'Retention ladder asserted in precedence order',
+    'Retention ladder asserted in precedence order, proven by mutation',
     [
       [
         'test',
@@ -390,6 +395,9 @@ const TASKS = Object.freeze([
         'tests/backend/p1-23-document-retention.test.ts',
         'lets an active link block a document whose retention has already elapsed',
       ],
+      ['symbol', 'scripts/p1-23-mutation-matrix.mjs', 'MUTATIONS'],
+      ['symbol', 'scripts/p1-23-mutation-matrix.mjs', 'SURVIVED'],
+      ['ci', 'validate:p1-23-mutations', 'scripts/p1-23-mutation-matrix.mjs'],
     ],
   ],
 
