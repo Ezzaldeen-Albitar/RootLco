@@ -71,10 +71,26 @@ Contract details the compiler taught, both now respected:
 - **Existing permissions to reuse:** `shared.document.manage` (documents,
   scope `tenant`, `auditClass: 'security'`), `rpt.export` (exports, scope
   `tenant`, `auditClass: 'export'`), `shared.notification.send` (enqueue).
-- **New codes follow `domain.resource.action`** and are created like every other
-  code (permissions are tenant rows, not migration seeds):
+- **New codes follow `domain.resource.action`.** ~~permissions are tenant rows,
+  not migration seeds~~ — **CORRECTED (measured, 2026-07-31).** Permissions are
+  PLATFORM catalog rows in `supabase/seeds/04_iam_permission_catalog.sql`, which
+  is idempotent and additive and is not a migration. A tenant grants them via
+  `iam.role_permissions` + `iam.role_grants`, but the CODE must exist in the
+  platform catalog first. Four codes were added there:
   `shared.notification.read` (inbox), `shared.notification.delivery.read`
-  (privileged inspection), `rpt.report.read`.
+  (privileged inspection), `shared.document.archive` (guards retention
+  evaluation as well as archival), `rpt.report.read`.
+- **A denial-only authorization test proves nothing.** All four codes above were
+  absent from the catalog while every denial test in the phase passed — a
+  permission that does not exist cannot be held by anybody. Assert the POSITIVE
+  direction (`tests/backend/p1-23-authorization.test.ts`): a principal who holds
+  the permission is ALLOWED. Verified by mutation — deleting one code fails 3
+  assertions there while the denial-only reporting suite stays 10/10 green.
+- **`P1_23_PREFIXES = ['rpt.']`** in `scripts/check-operation-test-coverage.mjs`.
+  The `rpt.` namespace had never carried an operation, so it had to join
+  `DERIVED_PREFIXES` _and_ the declaration alternation together — a prefix in one
+  but not the other reports a vacuous 0/0 that reads like passing coverage.
+  `shared.` needed no new hook; it was already opted in by P1-15.
 - Route shape: `defineOperation({...})` + `handleOperation(OP, request, fn)`,
   `export const runtime = 'nodejs'` and `dynamic = 'force-dynamic'`.
 - `ERR-NTF-001`, `ERR-DOC-001`, `ERR-EXP-001` already exist in the catalog.

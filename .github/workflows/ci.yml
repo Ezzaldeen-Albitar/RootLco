@@ -122,6 +122,14 @@ jobs:
       - name: P1-22 endpoint inventory and task traceability
         run: npm run validate:p1-22-inventory
 
+      # Phase 1-23 (P1-23-DO-001): documents, notifications and reporting. This is the
+      # first phase to SHARE a module with an earlier one — shared-services is P1-15's —
+      # so its phase set is an explicit allowlist rather than a prefix scan, and the
+      # script re-derives that allowlist against the base branch so it cannot quietly
+      # absorb P1-15 operations and report a larger surface than the phase delivered.
+      - name: P1-23 endpoint inventory and task traceability
+        run: npm run validate:p1-23-inventory
+
       # Phase 1-22 (P1-22-SEC-002): the financial surface may not contain a
       # Number(), parseFloat, Math.*, toFixed, unary plus, or a JSON number schema.
       # A single one of those turns an exact numeric(18,4) into an approximation,

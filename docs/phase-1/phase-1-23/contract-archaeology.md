@@ -154,6 +154,79 @@ are **reads, observability, retention and reporting** — not the write lifecycl
 - **Manual retry at request runtime is not grantable** without changing roles —
   recorded as a contract boundary, not a defect.
 
+### Retention: the verdict is delegated, never recomputed
+
+`shared.document_deletion_eligibility(tenant, document)` already owns the rule and
+is `STABLE`, `SECURITY INVOKER`, and granted to `app_runtime`. P1-23 calls it and
+reports its answer verbatim. It is not reimplemented in TypeScript, because two
+answers to one question drift apart and the drift only surfaces when a document
+is destroyed that should have been kept.
+
+Its ladder, in the order it applies — the order is itself the contract:
+
+| Verdict                 | Cause                                                               |
+| ----------------------- | ------------------------------------------------------------------- |
+| `not_found`             | no such document in this tenant                                     |
+| `legal_hold`            | the `legal_hold` flag **or** an unreleased `shared.legal_holds` row |
+| `already_archived`      | `status = 'archived'`                                               |
+| `active_links`          | an undeleted `shared.document_links` row                            |
+| `class_undefined`       | `retention_class` has no `shared.retention_classes` row             |
+| `class_no_delete`       | the class forbids deletion                                          |
+| `retention_indefinite`  | the class permits deletion but defines no minimum                   |
+| `retention_not_elapsed` | `now() < created_at + min_retention_days`                           |
+| `eligible`              | every gate passed                                                   |
+
+**`eligible` means PERMITTED, not done.** Nothing in this phase deletes a
+document; the operation is an evaluation and its response says
+`deletionPerformed: false` on every path.
+
+`class_undefined` is not reachable from a test: the CHECK constraint on
+`shared.documents.retention_class` permits exactly the five class codes
+`shared.retention_classes` seeds, so the two sets coincide. That is recorded here
+rather than covered by an assertion that proves nothing.
+
+### Reporting: the catalogue is readable, execution has no contract to bind to
+
+`rpt.report_configurations` carries `report_code`, `name`, `scope_level`,
+`export_permission_code`, `owner_user_id` and `status`, plus versioned
+`parameter_schema` rows. It contains **no binding from a report code to a data
+source** — no query, no table, no module reference.
+
+So there is no approved contract stating what `report_code = 'x'` should select,
+and inventing one would mean inventing a business report definition the Product
+Owner has not approved. Report **execution** and **export generation** are
+therefore not implemented in this phase. The catalogue and the definitions are,
+and the response states `executable: false` explicitly rather than leaving a
+client to infer it from a missing field. The `parameter_schema` and
+`export_permission_code` a future execution surface will need are already
+projected, so the contract a caller programs against does not change when
+execution arrives.
+
+Export **authorization** already exists from P1-15 (`shared.export-authorize`,
+guarded by `rpt.export`) and is not duplicated.
+
+### Permission codes this phase had to add
+
+P1-15 seeded only the two `shared.` **write** capabilities, because it delivered
+only writes. Reading is a separate authority, so P1-23 adds four **read** codes to
+the idempotent platform catalog (`supabase/seeds/04_iam_permission_catalog.sql`,
+no migration): `shared.notification.read`,
+`shared.notification.delivery.read`, `shared.document.archive` and
+`rpt.report.read`.
+
+Reusing the existing write codes was the alternative and it was rejected: it would
+have meant that anyone who may enqueue a notification may also read every
+recipient's inbox, and that anyone who may configure a report may read every
+report — over-granting by omission rather than by decision.
+
+**This was found by a gate, not by inspection, and the finding is worth keeping.**
+All four codes were missing while every denial test in the phase passed, because a
+permission that does not exist cannot be held by anybody: "this principal is
+refused" was true for a reason unrelated to authorization working.
+`tests/backend/p1-23-authorization.test.ts` now asserts the positive direction —
+a principal who HOLDS the permission is ALLOWED — which is the direction that
+fails when a code is absent.
+
 ## Route grammar
 
 Existing routes use noun/sub-resource segments, **not** colon actions:

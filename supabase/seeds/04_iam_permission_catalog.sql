@@ -236,7 +236,28 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- charges every customer segment, not just the one in front of you.
   ('svc.service.read',         'svc', 'Read the service catalog and branch availability', 'low',    '00000000-0000-4000-8000-000000000001'),
   ('svc.price.read',           'svc', 'Read price lists, rules and resolved prices',      'medium', '00000000-0000-4000-8000-000000000001'),
-  ('quo.quotation.read',       'quo', 'Read quotations, revisions and decisions',         'low',    '00000000-0000-4000-8000-000000000001')
+  ('quo.quotation.read',       'quo', 'Read quotations, revisions and decisions',         'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Phase 1-23 — Document, notification and reporting READS.
+  --
+  -- P1-15 seeded only the two WRITE capabilities (shared.document.manage,
+  -- shared.notification.send) because it delivered only writes. Reading is a
+  -- separate authority and gets separate codes: reusing the write codes would
+  -- have meant that anyone who may enqueue a notification may also read every
+  -- recipient's inbox, and that anyone who may configure a report may read every
+  -- report — over-granting by omission rather than by decision.
+  --
+  -- Delivery inspection is 'medium', not 'low', because a delivery attempt
+  -- carries provider failure detail and the fact that a given person was
+  -- contacted, which the notification list itself does not expose.
+  --
+  -- shared.document.archive is 'high' and guards retention EVALUATION as well as
+  -- archival: asking "may this be destroyed" is the same authority as destroying
+  -- it, and pricing that question lower would let a reader enumerate which
+  -- records are disposable.
+  ('shared.notification.read', 'shared', 'Read own notification inbox',                     'low',    '00000000-0000-4000-8000-000000000001'),
+  ('shared.notification.delivery.read', 'shared', 'Inspect notification delivery attempts', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('shared.document.archive',  'shared', 'Archive documents and evaluate disposal eligibility', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('rpt.report.read',          'rpt', 'Read published report definitions',                'low',    '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
