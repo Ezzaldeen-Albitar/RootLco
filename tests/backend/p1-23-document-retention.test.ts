@@ -13,13 +13,18 @@
  * drift would only surface when a document was deleted that should not have
  * been.
  *
- * NOT REACHABLE, AND SAID SO RATHER THAN FAKED. The protected function has a
- * `class_undefined` branch, and this suite does not assert it:
- * `shared.documents.retention_class` is NOT NULL by schema, so a document with
- * no retention class cannot be constructed by any row a test is allowed to
- * write. A placeholder asserting nothing would be worse than no test. The
- * distinction the service draws with `policyDecided` is still proven by the
- * legal-hold case, where policy IS decided and disposal is still refused.
+ * ONE BRANCH NOT ASSERTED, AND SAID SO RATHER THAN FAKED. The function has a
+ * `class_undefined` branch that this suite does not reach. It fires when a
+ * document's `retention_class` has no row in `shared.retention_classes` — and
+ * the CHECK constraint on `shared.documents.retention_class` permits exactly
+ * the five class codes that table already seeds, so the two sets coincide and
+ * no insertable value can miss. Reaching it would mean deleting a seeded
+ * retention class underneath the other suites sharing this database. A
+ * placeholder asserting nothing would be worse than no test.
+ *
+ * Every other rung of the ladder IS asserted below, in precedence order, because
+ * the order is the contract: a legal hold outranks an archived status, which
+ * outranks active links, which outrank any retention arithmetic.
  *
  * Operations exercised here (coverage-gate references):
  *   shared.document-read   shared.document-retention-evaluate
@@ -57,39 +62,64 @@ let runtime: Pool;
 /** The category every seeded document uses; created once with a known retention class. */
 const CATEGORY = 'p1_23_probe';
 
+/**
+ * Deterministic per-tenant category ids.
+ *
+ * The upsert below conflicts on the PRIMARY KEY rather than on
+ * (tenant_id, category_code), because `uq_document_categories_tenant_code` is a
+ * PARTIAL unique index — `WHERE scope = 'tenant' AND deleted_at IS NULL`.
+ * PostgreSQL will not infer a partial index unless the statement repeats that
+ * predicate, so the tenant-code form raised "there is no unique or exclusion
+ * constraint matching the ON CONFLICT specification". The primary key needs no
+ * inference and cannot drift if the partial predicate is ever changed.
+ *
+ * `shared.guard_document_category_scope` requires a document's category to be a
+ * platform category or one owned by the SAME tenant, so each tenant gets its own.
+ */
+const CATEGORY_ID: Readonly<Record<string, string>> = {
+  [TENANT_A]: '0c000000-0000-4000-8000-0000000023a1',
+  [TENANT_B]: '0c000000-0000-4000-8000-0000000023b1',
+};
+
 async function seedDocument(input: {
   readonly id: string;
   readonly tenantId: string;
   readonly retentionClass: string;
   readonly legalHold?: boolean;
+  readonly status?: 'pending' | 'accepted' | 'quarantined' | 'archived';
 }): Promise<void> {
   const owner = input.tenantId === TENANT_B ? USER_TENANT_B : USER_A;
-  // One tenant-scoped category per tenant, reused by every document below.
-  const category = await admin.query<{ id: string }>(
+  const categoryId = CATEGORY_ID[input.tenantId];
+  await admin.query(
     `INSERT INTO shared.document_categories
-       (scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
+       (id, scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
         default_classification, default_retention_class, created_by)
-     VALUES ('tenant', $1, $2, 'P1-23 probe', ARRAY['application/pdf'], 1048576,
-             'internal', 'operational', $3)
-     ON CONFLICT (tenant_id, category_code) DO UPDATE SET name = EXCLUDED.name
-     RETURNING id`,
-    [input.tenantId, CATEGORY, owner]
+     VALUES ($1, 'tenant', $2, $3, 'P1-23 probe', ARRAY['application/pdf'], 1048576,
+             'internal', 'operational', $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [categoryId, input.tenantId, CATEGORY, owner]
   );
+  // `tg_documents_guard_initial_state` requires status='pending' on INSERT so a
+  // caller cannot bypass the controlled archival path with a terminal-state
+  // insert. The lifecycle is therefore reproduced rather than short-circuited:
+  // insert pending, then move to the wanted status. ('active' is not a document
+  // status at all — the set is pending/accepted/quarantined/archived.)
   await admin.query(
     `INSERT INTO shared.documents
        (id, tenant_id, category_id, title, classification, retention_class,
         legal_hold, status, created_by)
-     VALUES ($1, $2, $3, 'P1-23 probe document', 'internal', $4,
-             COALESCE($5, false), 'active', $6)`,
-    [
-      input.id,
-      input.tenantId,
-      category.rows[0]?.id,
-      input.retentionClass,
-      input.legalHold ?? false,
-      owner,
-    ]
+     VALUES ($1, $2, $3, 'P1-23 probe document', 'internal', $4, $5, 'pending', $6)`,
+    [input.id, input.tenantId, categoryId, input.retentionClass, input.legalHold ?? false, owner]
   );
+  const status = input.status ?? 'accepted';
+  if (status !== 'pending') {
+    await admin.query(
+      `UPDATE shared.documents
+          SET status = $3, archived_at = CASE WHEN $3 = 'archived' THEN now() ELSE archived_at END
+        WHERE tenant_id = $1 AND id = $2`,
+      [input.tenantId, input.id, status]
+    );
+  }
 }
 
 beforeAll(async () => {
@@ -101,6 +131,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Children first: both reference shared.documents.
+  await admin.query(`DELETE FROM shared.legal_holds WHERE tenant_id = ANY($1::uuid[])`, [
+    [TENANT_A, TENANT_B],
+  ]);
+  await admin.query(`DELETE FROM shared.document_links WHERE tenant_id = ANY($1::uuid[])`, [
+    [TENANT_A, TENANT_B],
+  ]);
   await admin.query(`DELETE FROM shared.documents WHERE tenant_id = ANY($1::uuid[])`, [
     [TENANT_A, TENANT_B],
   ]);
@@ -124,7 +161,7 @@ describe('shared.document-read', () => {
     );
 
     expect(view.documentId).toBe(id);
-    expect(view.status).toBe('active');
+    expect(view.status).toBe('accepted');
     expect(view.retentionClass).toBe('operational');
   });
 
@@ -207,6 +244,94 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
     expect(result.policyDecided).toBe(true);
     expect(result.deletionPerformed).toBe(false);
     expect(await countRows(admin, 'shared.documents', 'id = $1', [id])).toBe(1);
+  });
+
+  it('honours a legal-hold RECORD, not only the flag on the document', async () => {
+    const id = randomUUID();
+    // legal_hold = false. The block must come from the hold record alone; a
+    // reading that only consulted the boolean would call this document eligible
+    // and 'operational' retention elapses immediately, so the mistake would be
+    // maximally destructive.
+    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'operational' });
+    await admin.query(
+      `INSERT INTO shared.legal_holds
+         (tenant_id, document_id, reason, placed_by, created_by)
+       VALUES ($1, $2, 'P1-23 retention probe', $3, $3)`,
+      [TENANT_A, id, USER_A]
+    );
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: USER_A,
+        operation: 'shared.document-retention-evaluate',
+      }),
+      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+    );
+
+    expect(result.eligibility).toBe('legal_hold');
+    expect(result.disposable).toBe(false);
+    expect(result.deletionPerformed).toBe(false);
+  });
+
+  // The ladder, in the order the function applies it. The ORDER is the contract:
+  // each case below would answer differently if the gates were reordered.
+  it.each([
+    // `operational` permits deletion and its minimum retention is zero days, so
+    // this is the one combination that reaches the bottom of the ladder.
+    ['eligible', { retentionClass: 'operational' as const }],
+    // Archived outranks every retention consideration below it.
+    ['already_archived', { retentionClass: 'operational' as const, status: 'archived' as const }],
+    // A class that forbids deletion is a decision to keep, not an unelapsed clock.
+    ['class_no_delete', { retentionClass: 'immutable-financial-history' as const }],
+    // Deletion allowed, but no minimum defined — indefinite is not "elapsed".
+    ['retention_indefinite', { retentionClass: 'personal-data' as const }],
+    // 3650 days from created_at; a freshly seeded document cannot have elapsed it.
+    ['retention_not_elapsed', { retentionClass: 'evidence-audit' as const }],
+  ])('reports %s exactly as the protected function decides it', async (expected, seed) => {
+    const id = randomUUID();
+    await seedDocument({ id, tenantId: TENANT_A, ...seed });
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: USER_A,
+        operation: 'shared.document-retention-evaluate',
+      }),
+      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+    );
+
+    expect(result.eligibility).toBe(expected);
+    // `eligible` means disposal is PERMITTED — it must never mean disposal
+    // happened. Nothing in this phase deletes a document.
+    expect(result.disposable).toBe(expected === 'eligible');
+    expect(result.deletionPerformed).toBe(false);
+    expect(await countRows(admin, 'shared.documents', 'id = $1', [id])).toBe(1);
+  });
+
+  it('lets an active link block a document whose retention has already elapsed', async () => {
+    const id = randomUUID();
+    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'operational' });
+    await admin.query(
+      // entity_type is constrained to a dotted schema.table form.
+      `INSERT INTO shared.document_links
+         (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+       VALUES ($1, $2, 'wo.work_orders', $3, 'evidence', $4, $4)`,
+      [TENANT_A, id, randomUUID(), USER_A]
+    );
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: USER_A,
+        operation: 'shared.document-retention-evaluate',
+      }),
+      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+    );
+
+    // Same class and same age as the `eligible` case above; only the link differs.
+    expect(result.eligibility).toBe('active_links');
+    expect(result.disposable).toBe(false);
   });
 
   it('refuses a document belonging to another tenant', async () => {
