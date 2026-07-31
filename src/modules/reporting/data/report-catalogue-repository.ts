@@ -23,6 +23,27 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  buildPage,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
+
+/**
+ * By report code, ascending.
+ *
+ * `uq_report_configurations_code` makes `report_code` unique per tenant, so it
+ * is a total ordering by itself — the keyset still carries the id because
+ * `keysetFragment` takes both, but the tie-break can never actually be needed
+ * here. Code order is also the only stable order a caller can predict:
+ * `published_at` moves whenever a new version is published.
+ */
+export const REPORT_ORDERING: OrderingContract = {
+  key: 'rpt.report_configurations:report_code_asc',
+  direction: 'asc',
+};
 
 export interface ReportConfigurationRow {
   readonly id: string;
@@ -65,9 +86,27 @@ const PUBLISHED_VERSION = `
 export class ReportCatalogueRepository extends Repository {
   protected readonly module = 'reporting';
 
-  /** Every published report definition in the caller's tenant, by code. */
-  async listPublished(db: DbHandle): Promise<readonly ReportConfigurationRow[]> {
+  /**
+   * A page of published report definitions in the caller's tenant, by code.
+   *
+   * PAGINATED, unlike `shared.export-catalogue`, and the difference is not
+   * stylistic. That catalogue returns a static in-code array and is bounded by
+   * construction; this one reads `rpt.report_configurations`, a table a tenant
+   * writes through `rpt.report.configure`. An unbounded SELECT over a
+   * tenant-controlled table is a response whose size the tenant chooses.
+   *
+   * `report_code` is unique per tenant, so it is a total ordering on its own and
+   * the keyset needs no id tie-break — unlike the notification list, where two
+   * messages can share a `created_at`.
+   */
+  async listPublished(db: DbHandle, request: PageRequest): Promise<Page<ReportConfigurationRow>> {
     const context = this.assertContext(db);
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.report_code', id: 'c.id' },
+      REPORT_ORDERING,
+      2
+    );
     const result = await this.run<ReportConfigurationRow>(
       db,
       `SELECT ${COLUMNS}
@@ -76,10 +115,15 @@ export class ReportCatalogueRepository extends Repository {
         WHERE c.tenant_id = $1
           AND c.status = 'published'
           AND c.deleted_at IS NULL
-        ORDER BY c.report_code ASC`,
-      [context.principal.tenantId]
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [context.principal.tenantId, ...keyset.values]
     );
-    return result.rows;
+    return buildPage(result.rows, request, REPORT_ORDERING, (row) => ({
+      sortValue: row.report_code,
+      id: row.id,
+    }));
   }
 
   /** One published report definition by its stable code. */

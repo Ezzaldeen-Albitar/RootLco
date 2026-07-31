@@ -33,7 +33,9 @@
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
+import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { REPORT_ORDERING } from '../data/report-catalogue-repository';
 import type {
   ReportCatalogueRepository,
   ReportConfigurationRow,
@@ -77,11 +79,21 @@ export class ReportCatalogueService extends ApplicationService {
     super();
   }
 
+  /**
+   * A page of published definitions.
+   *
+   * Paginated because `rpt.report_configurations` is a table the TENANT writes,
+   * so an unbounded read would let a tenant choose the response size. The
+   * existing `shared.export-catalogue` returns a static in-code array and is
+   * bounded by construction; this one is not, and the difference is what decided
+   * the shape.
+   */
   async listPublished(
-    db: DbHandle
-  ): Promise<{ readonly reports: readonly ReportDefinitionView[] }> {
-    const rows = await this.repository.listPublished(db);
-    return { reports: rows.map(toView) };
+    db: DbHandle,
+    query: { readonly limit?: number | undefined; readonly cursor?: string | undefined }
+  ): Promise<Page<ReportDefinitionView>> {
+    const page = await this.repository.listPublished(db, pageRequest(REPORT_ORDERING, query));
+    return { ...page, items: page.items.map(toView) };
   }
 
   async readByCode(db: DbHandle, reportCode: string): Promise<ReportDefinitionView> {

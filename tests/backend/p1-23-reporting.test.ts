@@ -46,6 +46,7 @@ import {
 import { __resetBackendConfigForTests } from '@/server/config/backend-config';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction } from '@/server/db/transaction';
+import { MAX_PAGE_SIZE } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
 import { requirePermissions } from '@/server/auth/authorization';
 import { reportingModule } from '@/modules/reporting';
@@ -135,30 +136,43 @@ describe('rpt.report-catalogue', () => {
   it('invokes rpt.report-catalogue and lists only published definitions', async () => {
     const result = await withTransaction(
       contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'rpt.report-catalogue' }),
-      (db) => reportingModule().catalogue.listPublished(db)
+      (db) => reportingModule().catalogue.listPublished(db, {})
     );
 
-    const codes = result.reports.map((r) => r.reportCode);
+    const codes = result.items.map((r) => r.reportCode);
     expect(codes).toContain(PUBLISHED);
     // A draft is an unfinished decision; an archived report is a withdrawn one.
     expect(codes).not.toContain(DRAFT);
     expect(codes).not.toContain(ARCHIVED);
   });
 
+  it('bounds the page size rather than trusting the caller', async () => {
+    // `rpt.report_configurations` is a table the TENANT writes, so an unbounded
+    // read would let a tenant choose the response size. Unlike
+    // shared.export-catalogue, which returns a static in-code array, this one
+    // needs a real cap.
+    const result = await withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'rpt.report-catalogue' }),
+      (db) => reportingModule().catalogue.listPublished(db, { limit: 100_000 })
+    );
+
+    expect(result.items.length).toBeLessThanOrEqual(MAX_PAGE_SIZE);
+  });
+
   it('does not list another tenant catalogue', async () => {
     const result = await withTransaction(
       contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'rpt.report-catalogue' }),
-      (db) => reportingModule().catalogue.listPublished(db)
+      (db) => reportingModule().catalogue.listPublished(db, {})
     );
-    expect(result.reports.map((r) => r.reportCode)).not.toContain(FOREIGN);
+    expect(result.items.map((r) => r.reportCode)).not.toContain(FOREIGN);
   });
 
   it('projects the per-report export permission and never claims executability', async () => {
     const result = await withTransaction(
       contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'rpt.report-catalogue' }),
-      (db) => reportingModule().catalogue.listPublished(db)
+      (db) => reportingModule().catalogue.listPublished(db, {})
     );
-    const report = result.reports.find((r) => r.reportCode === PUBLISHED);
+    const report = result.items.find((r) => r.reportCode === PUBLISHED);
     expect(report?.exportPermissionCode).toBe('rpt.export');
     // No data source is bound to a report code by the frozen schema, so nothing
     // can be run yet and the response must say so rather than let a client infer.
