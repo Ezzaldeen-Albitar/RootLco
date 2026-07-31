@@ -6,6 +6,8 @@
  * archival is a controlled transition audited in the SAME transaction, so an audit
  * failure (invalid actor_kind) rolls the archival back. No physical deletion.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import {
@@ -23,6 +25,46 @@ import {
 
 const ACTOR = USER_A;
 const SYS = '00000000-0000-4000-8000-000000000001';
+
+const RETENTION_SEED = join(__dirname, '..', '..', 'supabase', 'seeds', '05_shared_reference.sql');
+const SEED_CONFLICT_ARM = /ON\s+CONFLICT\s*\(\s*class_code\s*\)\s*DO\s+NOTHING/gi;
+
+/**
+ * Puts the five governed retention classes back exactly as seed 05 defines them.
+ *
+ * shared.retention_classes is PLATFORM reference data, not a fixture: nothing in
+ * cleanFixtures touches it, so the periods this suite forces in beforeAll would
+ * otherwise outlive the run and be observed by every later suite and tool on the
+ * same database (validate:seed-state fails outright; a retention test that hard-
+ * codes a verdict per class code would silently assert invented durations). CI
+ * hides this because the db and backend tiers use separate containers; a
+ * long-lived local database does not.
+ *
+ * The seed's own INSERT is reused verbatim and only its conflict arm is rewritten
+ * from DO NOTHING to DO UPDATE, so no retention period is ever restated here and
+ * the restore cannot drift from 05_shared_reference.sql. class_code/created_at/
+ * created_by are left alone — tg_retention_classes_immutable guards them.
+ */
+async function restoreSeededRetentionClasses(pool: Pool): Promise<void> {
+  const seed = readFileSync(RETENTION_SEED, 'utf8');
+  const arms = seed.match(SEED_CONFLICT_ARM) ?? [];
+  if (arms.length !== 1) {
+    throw new Error(
+      `Expected exactly one "ON CONFLICT (class_code) DO NOTHING" in ${RETENTION_SEED}, found ` +
+        `${arms.length}. The restore in shared-retention.test.ts must be updated before this ` +
+        `suite may override platform retention periods again.`
+    );
+  }
+  await pool.query(
+    seed.replace(
+      SEED_CONFLICT_ARM,
+      `ON CONFLICT (class_code) DO UPDATE
+         SET description        = EXCLUDED.description,
+             min_retention_days = EXCLUDED.min_retention_days,
+             allows_deletion    = EXCLUDED.allows_deletion`
+    )
+  );
+}
 
 const CAT = 'd3000000-0000-4000-8000-000000000001';
 const DOC_ELIG = 'd3c00000-0000-4000-8000-00000000000e';
@@ -54,8 +96,10 @@ beforeAll(async () => {
     // classes. Seed 05 leaves periods NULL (owner-configured later); this suite
     // tests the eligibility FUNCTION across finite/indefinite/no-delete cases and
     // therefore sets its own known periods. class_code stays immutable; only the
-    // mutable period/deletion fields are overridden. (validate:seed-state is the
-    // authority on the seed's own governed values.)
+    // mutable period/deletion fields are overridden, and afterAll puts the seeded
+    // values back (restoreSeededRetentionClasses) because this is platform
+    // reference data shared with every other suite on the same database.
+    // (validate:seed-state is the authority on the seed's own governed values.)
     `INSERT INTO shared.retention_classes (class_code, description, min_retention_days, allows_deletion, created_by)
      VALUES
        ('operational','Operational working data',0,true,$1),
@@ -86,9 +130,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanFixtures(admin);
-  await runtime.end();
-  await admin.end();
+  try {
+    // Restore BEFORE fixture cleanup: a cleanFixtures failure must not be able to
+    // leave this suite's invented retention periods behind on a shared database.
+    // Safe in this order — the restore changes no class_code, so the fixture
+    // documents still referencing these classes are unaffected.
+    await restoreSeededRetentionClasses(admin);
+    await cleanFixtures(admin);
+  } finally {
+    await runtime.end();
+    await admin.end();
+  }
 });
 
 const eligibility = (tenant: string, doc: string) =>

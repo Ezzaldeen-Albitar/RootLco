@@ -17,6 +17,7 @@ import {
   ensureOrgFixtures,
   ensureTestLogins,
   expectSqlState,
+  restoreSeededPermissionCatalog,
   runtimePool,
   withRolledBackTx,
 } from './helpers';
@@ -170,10 +171,25 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanFixtures(admin);
-  await admin.query(`DELETE FROM iam.permissions WHERE permission_code = 'iam.sensitive.view'`);
-  await runtime.end();
-  await admin.end();
+  try {
+    // The delete stays: iam.sensitive.view is a SEEDED code, and removing it is
+    // what keeps the sensitive-read gate honest for the next suite. It must run
+    // after cleanFixtures, which clears the role_permissions row referencing it
+    // (fk_role_permissions_permission is ON DELETE RESTRICT).
+    await cleanFixtures(admin);
+    await admin.query(`DELETE FROM iam.permissions WHERE permission_code = 'iam.sensitive.view'`);
+  } finally {
+    // Restore in finally, so a cleanFixtures failure cannot leave the platform
+    // catalog short a governed code — or, if this suite created the row itself
+    // (it inserts fixture wording when the seeded row is absent), leave that
+    // fixture wording behind as the catalog's definition of the code.
+    try {
+      await restoreSeededPermissionCatalog(admin);
+    } finally {
+      await runtime.end();
+      await admin.end();
+    }
+  }
 });
 
 describe('shared.tags and shared.entity_tags — soft-delete-aware uniqueness', () => {
