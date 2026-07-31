@@ -4,8 +4,8 @@
     "registered": 226,
     "publicApi": 226,
     "internal": 0,
-    "withRequiredEvidence": 212,
-    "invocationOnly": 14,
+    "withRequiredEvidence": 226,
+    "invocationOnly": 0,
     "p1_15": {
       "registered": 26,
       "publicApi": 26,
@@ -1596,13 +1596,30 @@
       "public": false,
       "files": [
         "tests/backend/iam-access-administration.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["success", "denial"],
-      "required": ["idempotency", "success", "denial"],
-      "provided": ["audit", "denial", "idempotency", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1613,12 +1630,41 @@
       "method": "PATCH",
       "path": "/iam/approval-limits/{limitId}",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
       "declared": ["success", "denial", "audit", "stale-version"],
-      "required": ["success", "denial", "audit", "stale-version"],
-      "provided": ["audit", "denial", "stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1629,12 +1675,15 @@
       "method": "GET",
       "path": "/iam/approval-limits",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1645,12 +1694,15 @@
       "method": "GET",
       "path": "/audit-events/{recordId}",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "provided": ["audit", "authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1661,12 +1713,15 @@
       "method": "GET",
       "path": "/audit-events",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "audit"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "audit"],
+      "provided": ["audit", "authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1677,12 +1732,15 @@
       "method": "POST",
       "path": "/auth/login",
       "public": true,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": ["success", "denial", "audit"],
-      "required": ["success", "denial", "audit"],
-      "provided": ["audit", "denial", "success"],
+      "required": ["route", "service", "success", "unauthenticated", "denial", "audit"],
+      "provided": ["audit", "denial", "route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1693,12 +1751,15 @@
       "method": "POST",
       "path": "/auth/logout",
       "public": true,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": ["success", "audit", "idempotency"],
-      "required": ["success", "audit", "idempotency"],
-      "provided": ["audit", "idempotency", "success"],
+      "required": ["route", "service", "success", "unauthenticated", "audit", "idempotency"],
+      "provided": ["audit", "idempotency", "route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1709,12 +1770,15 @@
       "method": "POST",
       "path": "/auth/password-reset",
       "public": true,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": ["success", "denial"],
-      "required": ["success", "denial"],
-      "provided": ["denial", "success"],
+      "required": ["route", "service", "success", "unauthenticated", "denial"],
+      "provided": ["denial", "route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1725,12 +1789,15 @@
       "method": "POST",
       "path": "/auth/password-reset/completion",
       "public": true,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "unauthenticated"],
       "declared": ["success", "denial", "idempotency"],
-      "required": ["success", "denial", "idempotency"],
-      "provided": ["denial", "idempotency", "success"],
+      "required": ["route", "service", "success", "unauthenticated", "denial", "idempotency"],
+      "provided": ["denial", "idempotency", "route", "service", "success", "unauthenticated"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1741,12 +1808,15 @@
       "method": "GET",
       "path": "/auth/session",
       "public": false,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": ["success"],
-      "required": ["success"],
-      "provided": ["success"],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1757,12 +1827,15 @@
       "method": "GET",
       "path": "/org/branches/{branchId}/settings",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1775,13 +1848,41 @@
       "public": false,
       "files": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
       "declared": ["success", "audit", "isolation"],
-      "required": ["idempotency", "success", "audit", "isolation"],
-      "provided": ["audit", "idempotency", "isolation", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1792,12 +1893,15 @@
       "method": "GET",
       "path": "/org/companies/{companyId}/settings",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1810,13 +1914,41 @@
       "public": false,
       "files": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
       "declared": ["success", "audit", "isolation"],
-      "required": ["idempotency", "success", "audit", "isolation"],
-      "provided": ["audit", "idempotency", "isolation", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1829,13 +1961,34 @@
       "public": false,
       "files": [
         "tests/backend/iam-access-administration.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "required": ["idempotency", "success", "denial", "cross-tenant", "audit", "outbox"],
-      "provided": ["audit", "cross-tenant", "denial", "idempotency", "outbox", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1846,12 +1999,39 @@
       "method": "DELETE",
       "path": "/iam/grants/{grantId}",
       "public": false,
-      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "files": [
+        "tests/backend/iam-access-administration.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
       "declared": ["success", "stale-version"],
-      "required": ["success", "stale-version"],
-      "provided": ["stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1864,13 +2044,41 @@
       "public": false,
       "files": [
         "tests/backend/iam-access-administration.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
       "declared": ["success", "isolation"],
-      "required": ["idempotency", "success", "isolation"],
-      "provided": ["audit", "idempotency", "isolation", "outbox", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1881,12 +2089,15 @@
       "method": "GET",
       "path": "/iam/grants/{grantId}/scopes",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1897,12 +2108,15 @@
       "method": "DELETE",
       "path": "/iam/grants/{grantId}/scopes/{scopeId}",
       "public": false,
-      "files": ["tests/backend/iam-access-administration.test.ts"],
+      "files": [
+        "tests/backend/iam-access-administration.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
       "declared": ["success"],
-      "required": ["success"],
-      "provided": ["success"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "provided": ["audit", "authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1915,13 +2129,42 @@
       "public": false,
       "files": [
         "tests/backend/iam-auth-provider.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
       "declared": ["success", "denial", "audit", "outbox"],
-      "required": ["idempotency", "success", "denial", "audit", "outbox"],
-      "provided": ["audit", "denial", "idempotency", "outbox", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1932,12 +2175,33 @@
       "method": "DELETE",
       "path": "/iam/invitations/{userId}",
       "public": false,
-      "files": ["tests/backend/iam-auth-provider.test.ts"],
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
       "declared": ["success", "denial", "audit", "outbox"],
-      "required": ["success", "denial", "audit", "outbox"],
-      "provided": ["audit", "denial", "outbox", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1950,13 +2214,34 @@
       "public": false,
       "files": [
         "tests/backend/iam-auth-provider.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox"],
-      "required": ["idempotency", "success", "denial", "cross-tenant", "audit", "outbox"],
-      "provided": ["audit", "cross-tenant", "denial", "idempotency", "outbox", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1967,12 +2252,15 @@
       "method": "GET",
       "path": "/iam/permissions",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -1985,13 +2273,14 @@
       "public": false,
       "files": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": [],
-      "required": ["idempotency"],
-      "provided": ["audit", "idempotency", "route", "success"],
+      "required": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "provided": ["audit", "authorization", "idempotency", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2002,12 +2291,15 @@
       "method": "GET",
       "path": "/iam/roles",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2020,13 +2312,40 @@
       "public": false,
       "files": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
       "declared": ["success", "denial", "audit"],
-      "required": ["idempotency", "success", "denial", "audit"],
-      "provided": ["audit", "denial", "idempotency", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2037,12 +2356,15 @@
       "method": "GET",
       "path": "/iam/roles/{roleId}/permissions",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2053,12 +2375,31 @@
       "method": "DELETE",
       "path": "/iam/roles/{roleId}/permissions/{mappingId}",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
       "declared": ["success", "denial", "audit"],
-      "required": ["success", "denial", "audit"],
-      "provided": ["audit", "denial", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2069,12 +2410,41 @@
       "method": "PATCH",
       "path": "/iam/roles/{roleId}/permissions/{mappingId}",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
       "declared": ["success", "denial", "audit", "stale-version"],
-      "required": ["success", "denial", "audit", "stale-version"],
-      "provided": ["audit", "denial", "stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2085,12 +2455,41 @@
       "method": "PATCH",
       "path": "/iam/roles/{roleId}",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
       "declared": ["success", "denial", "cross-tenant", "audit", "stale-version"],
-      "required": ["success", "denial", "cross-tenant", "audit", "stale-version"],
-      "provided": ["audit", "cross-tenant", "denial", "stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2101,12 +2500,15 @@
       "method": "GET",
       "path": "/org/tenant",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2117,12 +2519,31 @@
       "method": "PATCH",
       "path": "/org/tenant",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "stale-version", "audit"],
       "declared": ["success", "denial", "audit", "stale-version"],
-      "required": ["success", "denial", "audit", "stale-version"],
-      "provided": ["audit", "denial", "stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2133,12 +2554,15 @@
       "method": "GET",
       "path": "/iam/users/{userId}",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2149,12 +2573,15 @@
       "method": "GET",
       "path": "/iam/users",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2165,12 +2592,15 @@
       "method": "GET",
       "path": "/iam/users/{userId}/sessions",
       "public": false,
-      "files": ["tests/backend/iam-operations.test.ts"],
+      "files": [
+        "tests/backend/iam-operations.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2181,12 +2611,35 @@
       "method": "DELETE",
       "path": "/iam/users/{userId}/sessions",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
       "declared": ["success", "denial", "audit", "outbox", "idempotency"],
-      "required": ["success", "denial", "audit", "outbox", "idempotency"],
-      "provided": ["audit", "denial", "idempotency", "outbox", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial",
+        "outbox",
+        "idempotency"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2199,13 +2652,42 @@
       "public": false,
       "files": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-14-idempotency-replay.test.ts"
+        "tests/backend/p1-14-idempotency-replay.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "referenced": true,
-      "derived": ["idempotency"],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
       "declared": ["success", "denial", "audit", "outbox"],
-      "required": ["idempotency", "success", "denial", "audit", "outbox"],
-      "provided": ["audit", "denial", "idempotency", "outbox", "route", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2216,12 +2698,41 @@
       "method": "PATCH",
       "path": "/iam/users/{userId}",
       "public": false,
-      "files": ["tests/backend/iam-admin-writes.test.ts"],
+      "files": [
+        "tests/backend/iam-admin-writes.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
       "referenced": true,
-      "derived": [],
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit"
+      ],
       "declared": ["success", "denial", "cross-tenant", "audit", "stale-version"],
-      "required": ["success", "denial", "cross-tenant", "audit", "stale-version"],
-      "provided": ["audit", "cross-tenant", "denial", "stale-version", "success"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2767,12 +3278,12 @@
       "method": "GET",
       "path": "/meta/ping",
       "public": false,
-      "files": ["tests/backend/api-ping.test.ts"],
+      "files": ["tests/backend/api-ping.test.ts", "tests/backend/p1-24-iam-route-depth.test.ts"],
       "referenced": true,
-      "derived": [],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": [],
-      "required": [],
-      "provided": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

@@ -3,8 +3,8 @@
   "info": {
     "title": "Commercial Multi-Tenant Automotive CRM and ERP Platform — API",
     "version": "0.1.0",
-    "summary": "Backend foundation (Phase 1-13) plus the authentication, authorization, and administration surface (Phase 1-14).",
-    "description": "Shared components and conventions every later backend phase composes, and the identity and access-administration operations built on them. Sessions are bearer tokens issued by the authentication provider recorded in ADR-019; authorization is evaluated in the database on every request and is never carried in a token. The product name is deliberately absent: it is pending owner approval (ADR-011).",
+    "summary": "226 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
+    "description": "Shared components and conventions every backend module composes, and the operations built on them. Sessions are bearer tokens issued by the authentication provider recorded in ADR-019; authorization is evaluated in the database on every request and is never carried in a token. Money is an exact decimal string with an ISO-4217 code, never a JSON number. Pages are opaque-cursor; offset paging is not offered. Every failure is an RFC 9457 problem document carrying a stable catalog code. The product name is deliberately absent: it is pending owner approval (ADR-011).",
     "contact": {
       "name": "RootLco — Root Link Company"
     }
