@@ -14,7 +14,7 @@
  *   3. an operation declares `scope: 'branch'` but its handler enforces no scope;
  *   4. a phase operation is served by a module this phase does not own;
  *   5. a P1-23 task names an ARTIFACT that does not exist, or names none at all;
- *   6. this phase claims an operation that develop already had (see check 6);
+ *   6. this phase claims an operation the phase baseline already had (see check 6);
  *   7. the generated documents are stale.
  *
  * The reconciliation direction is code -> catalog, deliberately. Catalog -> code would
@@ -40,10 +40,16 @@
  *     "every `shared.` operation belongs to this phase" would sweep all of P1-15 into
  *     P1-23's inventory and report a surface four times its real size. So the phase set
  *     is an EXPLICIT ALLOWLIST (`PHASE_OPERATIONS`) rather than a prefix scan, and
- *     check 6 asserts the allowlist against `origin/develop` — an operation this phase
- *     claims must genuinely be absent from the base branch. That check is what makes the
- *     allowlist honest rather than merely asserted; without it, adding a P1-15 id to the
- *     list below would inflate the count and nothing would object.
+ *     check 6 asserts that allowlist against the PINNED PHASE BASELINE: an operation
+ *     this phase claims must genuinely be absent from the tree the phase started
+ *     from. That check is what makes the allowlist honest rather than merely
+ *     asserted; without it, adding a P1-15 id to the list below would inflate the
+ *     count and nothing would object.
+ *
+ *     It is pinned to a SHA and not to `origin/develop` for a reason paid for once
+ *     already — see `BASE_REF`. It also SKIPS, loudly, when the baseline commit is
+ *     not present (a shallow CI checkout), and a skip is reported as a skip rather
+ *     than counted as a pass.
  *
  *   - **No events, so no event checks.** P1-22 had checks 5 and 6 for `EVENT_CATALOG`.
  *     P1-23 publishes no event: every operation is a read, and the one audited operation
@@ -87,8 +93,8 @@ const PHASE_MODULES = ['shared-services', 'reporting'];
 /**
  * The operations this phase adds — an explicit allowlist, not a prefix scan, because
  * `shared.` is shared with P1-15. Check 6 proves every entry is genuinely new by
- * diffing against the base branch, so this list cannot quietly absorb an older phase's
- * work.
+ * diffing against the pinned phase baseline, so this list cannot quietly absorb an
+ * older phase's work.
  */
 const PHASE_OPERATIONS = Object.freeze([
   'shared.notification-list',
@@ -100,8 +106,23 @@ const PHASE_OPERATIONS = Object.freeze([
   'rpt.report-read',
 ]);
 
-/** The base branch check 6 measures novelty against. */
-const BASE_REF = process.env.P1_23_BASE_REF ?? 'origin/develop';
+/**
+ * The commit check 6 measures novelty against — the PHASE BASELINE, pinned.
+ *
+ * It used to be `origin/develop`, and that was a design defect a green pull
+ * request could never expose: while the phase was in review, `origin/develop`
+ * WAS the baseline, so the check passed. The moment the feature merged, the
+ * seven operations existed on `origin/develop` and the check reported all seven
+ * as "an earlier phase's operation" — the gate destroyed itself on the first
+ * push to the branch it was protecting.
+ *
+ * A moving ref was the wrong thing to compare against. The claim worth enforcing
+ * is permanent: these operations were ABSENT FROM THE TREE THIS PHASE STARTED
+ * FROM. `9f7ef083` is that tree (P1_23_BASE_SHA, recorded in the execution
+ * checkpoint), and it never moves, so the check keeps its meaning on the feature
+ * branch, on develop, and on main alike.
+ */
+const BASE_REF = process.env.P1_23_BASE_REF ?? '9f7ef083ba90be3343aec2be1c721e3826070946';
 
 /**
  * The canonical 27 task identifiers, each with the ARTIFACTS that prove it was done.
@@ -600,10 +621,14 @@ function baseOperationIds() {
 
 const baseIds = baseOperationIds();
 if (baseIds === null) {
-  // Not a failure: a shallow clone or a detached checkout legitimately cannot see
-  // the base branch. Silence would be wrong, so say so in the output instead of
-  // reporting a check that did not run as one that passed.
-  console.log(`  note: ${BASE_REF} not available; novelty check 6 SKIPPED`);
+  // Not a failure: a shallow CI checkout legitimately does not contain the phase
+  // baseline commit. Silence would be wrong, so this SAYS it was skipped rather
+  // than letting a check that did not run read as one that passed. The check is
+  // therefore only meaningful where full history exists -- locally, and in any job
+  // that checks out with fetch-depth 0.
+  console.log(
+    `  NOTE: baseline ${BASE_REF.slice(0, 12)} not present in this checkout; novelty check 6 SKIPPED (not passed)`
+  );
 } else {
   for (const id of PHASE_OPERATIONS) {
     if (baseIds.has(id)) {
