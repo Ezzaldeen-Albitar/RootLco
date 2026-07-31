@@ -33,8 +33,10 @@ import type { DocumentReadRepository, EligibilityCode } from '../data/document-r
 
 export interface DocumentView {
   readonly documentId: string;
-  readonly categoryCode: string;
-  readonly retentionClassCode: string | null;
+  readonly categoryId: string;
+  readonly title: string;
+  readonly classification: string;
+  readonly retentionClass: string;
   readonly status: string;
   readonly companyId: string | null;
   readonly branchId: string | null;
@@ -46,7 +48,7 @@ export interface DocumentView {
 
 export interface RetentionEvaluation {
   readonly documentId: string;
-  readonly retentionClassCode: string | null;
+  readonly retentionClass: string;
   /** The protected function's verdict, reported verbatim. */
   readonly eligibility: EligibilityCode;
   /** True only when the function says 'eligible'. */
@@ -80,8 +82,10 @@ export class DocumentReadService extends ApplicationService {
     }
     return {
       documentId: row.id,
-      categoryCode: row.category_code,
-      retentionClassCode: row.retention_class_code,
+      categoryId: row.category_id,
+      title: row.title,
+      classification: row.classification,
+      retentionClass: row.retention_class,
       status: row.status,
       companyId: row.company_id,
       branchId: row.branch_id,
@@ -117,11 +121,7 @@ export class DocumentReadService extends ApplicationService {
       branchId: row.branch_id,
       details: [
         { field: 'eligibility', classification: 'internal', value: eligibility },
-        {
-          field: 'retention_class',
-          classification: 'internal',
-          value: row.retention_class_code ?? 'undefined',
-        },
+        { field: 'retention_class', classification: 'internal', value: row.retention_class },
         // Recorded explicitly so the audit trail states, on every evaluation,
         // that nothing was destroyed. A later phase that adds deletion must not
         // be able to reuse this record to imply approval.
@@ -131,7 +131,7 @@ export class DocumentReadService extends ApplicationService {
 
     return {
       documentId,
-      retentionClassCode: row.retention_class_code,
+      retentionClass: row.retention_class,
       eligibility,
       disposable: eligibility === 'eligible',
       policyDecided: !UNDECIDED.has(eligibility),

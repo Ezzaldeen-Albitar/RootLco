@@ -13,6 +13,14 @@
  * drift would only surface when a document was deleted that should not have
  * been.
  *
+ * NOT REACHABLE, AND SAID SO RATHER THAN FAKED. The protected function has a
+ * `class_undefined` branch, and this suite does not assert it:
+ * `shared.documents.retention_class` is NOT NULL by schema, so a document with
+ * no retention class cannot be constructed by any row a test is allowed to
+ * write. A placeholder asserting nothing would be worse than no test. The
+ * distinction the service draws with `policyDecided` is still proven by the
+ * legal-hold case, where policy IS decided and disposal is still refused.
+ *
  * Operations exercised here (coverage-gate references):
  *   shared.document-read   shared.document-retention-evaluate
  *
@@ -52,32 +60,34 @@ const CATEGORY = 'p1_23_probe';
 async function seedDocument(input: {
   readonly id: string;
   readonly tenantId: string;
-  readonly retentionClass: string | null;
+  readonly retentionClass: string;
   readonly legalHold?: boolean;
 }): Promise<void> {
-  await admin.query(
+  const owner = input.tenantId === TENANT_B ? USER_TENANT_B : USER_A;
+  // One tenant-scoped category per tenant, reused by every document below.
+  const category = await admin.query<{ id: string }>(
     `INSERT INTO shared.document_categories
-       (tenant_id, category_code, description, retention_class_code, created_by)
-     VALUES ($1, $2, 'P1-23 probe category', $3, $4)
-     ON CONFLICT (tenant_id, category_code) DO NOTHING`,
-    [
-      input.tenantId,
-      CATEGORY,
-      input.retentionClass,
-      input.tenantId === TENANT_B ? USER_TENANT_B : USER_A,
-    ]
+       (scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
+        default_classification, default_retention_class, created_by)
+     VALUES ('tenant', $1, $2, 'P1-23 probe', ARRAY['application/pdf'], 1048576,
+             'internal', 'operational', $3)
+     ON CONFLICT (tenant_id, category_code) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`,
+    [input.tenantId, CATEGORY, owner]
   );
   await admin.query(
     `INSERT INTO shared.documents
-       (id, tenant_id, category_code, retention_class_code, status, legal_hold, created_by)
-     VALUES ($1, $2, $3, $4, 'active', COALESCE($5, false), $6)`,
+       (id, tenant_id, category_id, title, classification, retention_class,
+        legal_hold, status, created_by)
+     VALUES ($1, $2, $3, 'P1-23 probe document', 'internal', $4,
+             COALESCE($5, false), 'active', $6)`,
     [
       input.id,
       input.tenantId,
-      CATEGORY,
+      category.rows[0]?.id,
       input.retentionClass,
       input.legalHold ?? false,
-      input.tenantId === TENANT_B ? USER_TENANT_B : USER_A,
+      owner,
     ]
   );
 }
@@ -115,7 +125,7 @@ describe('shared.document-read', () => {
 
     expect(view.documentId).toBe(id);
     expect(view.status).toBe('active');
-    expect(view.retentionClassCode).toBe('operational');
+    expect(view.retentionClass).toBe('operational');
   });
 
   it('never projects the storage key', async () => {
@@ -171,27 +181,6 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
     // flag is claiming. A boolean that nothing checks is decoration.
     const survived = await countRows(admin, 'shared.documents', 'id = $1', [id]);
     expect(survived).toBe(1);
-  });
-
-  it('reports "no policy decided" as distinct from a refusal when the class is undefined', async () => {
-    const id = randomUUID();
-    await seedDocument({ id, tenantId: TENANT_A, retentionClass: null });
-
-    const result = await withTransaction(
-      contextFor({
-        tenantId: TENANT_A,
-        userId: USER_A,
-        operation: 'shared.document-retention-evaluate',
-      }),
-      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
-    );
-
-    // Not disposable AND no policy exists. Collapsing these two into one
-    // boolean would hide a configuration gap behind what looks like a decision.
-    expect(result.eligibility).toBe('class_undefined');
-    expect(result.disposable).toBe(false);
-    expect(result.policyDecided).toBe(false);
-    expect(result.deletionPerformed).toBe(false);
   });
 
   it('treats a legal hold as decisive and still destroys nothing', async () => {

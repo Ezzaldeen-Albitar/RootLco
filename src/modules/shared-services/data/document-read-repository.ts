@@ -37,8 +37,11 @@ export type EligibilityCode =
 
 export interface DocumentRow {
   readonly id: string;
-  readonly category_code: string;
-  readonly retention_class_code: string | null;
+  readonly category_id: string;
+  readonly title: string;
+  readonly classification: string;
+  /** NOT NULL by schema: every document carries a retention class. */
+  readonly retention_class: string;
   readonly status: string;
   readonly company_id: string | null;
   readonly branch_id: string | null;
@@ -67,10 +70,10 @@ export class DocumentReadRepository extends Repository {
     const context = this.assertContext(db);
     return this.runOne<DocumentRow>(
       db,
-      `SELECT id, category_code, retention_class_code, status, company_id, branch_id,
-              legal_hold, record_version, created_at, archived_at
+      `SELECT id, category_id, title, classification, retention_class, status,
+              company_id, branch_id, legal_hold, record_version, created_at, archived_at
          FROM shared.documents
-        WHERE tenant_id = $1 AND id = $2`,
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
       [context.principal.tenantId, id]
     );
   }
