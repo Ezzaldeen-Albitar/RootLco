@@ -342,6 +342,57 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
     }
   );
 
+  // `policyDecided` separates "we decided to keep this" from "nobody has decided
+  // anything". Both cases below are REACHABLE, which is the point: the flag was
+  // originally false only for `class_undefined`, and that verdict cannot occur,
+  // so the flag was true in every state a caller could reach — a field that
+  // carried no information while appearing to.
+  it('reports no decided policy when the class defines no retention period', async () => {
+    const id = randomUUID();
+    // `personal-data` permits deletion and its min_retention_days is NULL: the
+    // seed calls that "owner- and jurisdiction-defined", i.e. NOT yet configured.
+    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'personal-data' });
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: USER_A,
+        operation: 'shared.document-retention-evaluate',
+      }),
+      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+    );
+
+    expect(result.eligibility).toBe('retention_indefinite');
+    // Claiming a decision here would be inventing a retention policy.
+    expect(result.policyDecided).toBe(false);
+    expect(result.disposable).toBe(false);
+  });
+
+  it('reports a decided policy when the class forbids deletion outright', async () => {
+    const id = randomUUID();
+    // Same absence of a duration, opposite meaning: this class is never eligible
+    // BY DECISION. If policyDecided did not distinguish these two, it would be
+    // reporting the same thing for both.
+    await seedDocument({
+      id,
+      tenantId: TENANT_A,
+      retentionClass: 'immutable-financial-history',
+    });
+
+    const result = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: USER_A,
+        operation: 'shared.document-retention-evaluate',
+      }),
+      (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+    );
+
+    expect(result.eligibility).toBe('class_no_delete');
+    expect(result.policyDecided).toBe(true);
+    expect(result.disposable).toBe(false);
+  });
+
   it('treats an archived document as decisive, outranking the retention clock', async () => {
     const id = randomUUID();
     // `temporary` is the one class that would otherwise answer `eligible`, so this

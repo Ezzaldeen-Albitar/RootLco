@@ -8,17 +8,25 @@
  * compliance. What it does is evaluate — through the protected function that
  * already owns the rule — and report.
  *
- * Two of the reason codes are the decision-neutral ones and are surfaced as
- * such rather than being flattened into "not eligible":
+ * Two of the reason codes mean NO POLICY EXISTS YET, and are surfaced as such
+ * rather than flattened into "not eligible":
  *
- *   * `class_undefined`  — the document has no retention class, so no policy
- *                          exists to apply. The correct answer is a controlled
- *                          configuration result, not a default.
- *   * `retention_indefinite` — the class exists and defines no maximum, which
- *                          is a decision to keep, not an absence of one.
+ *   * `class_undefined`  — the document's retention class has no row at all, so
+ *                          there is nothing to apply.
+ *   * `retention_indefinite` — the class permits deletion but defines no
+ *                          MINIMUM retention. The seeded classes describe that
+ *                          state as "retention is owner- and
+ *                          jurisdiction-defined": a duration nobody has
+ *                          configured, not a decision to keep forever.
  *
- * `policyDecided` is false for the first and true for the second, and that
- * distinction is the whole reason both are reported instead of one boolean.
+ * `policyDecided` is false for both. It is true for `class_no_delete`, which IS
+ * a decision — `immutable-financial-history` is never eligible by design — and
+ * that pair is the whole reason the flag exists rather than a single boolean.
+ *
+ * Today `retention_indefinite` is the answer for `operational`,
+ * `evidence-audit` and `personal-data` alike, so `policyDecided: false` is the
+ * honest state of most of this system. Saying otherwise would be inventing a
+ * retention policy, which this phase must not do.
  *
  * There is no destructive path in this service. "Dry run" is not a mode here
  * because deletion is not implemented at all — when it is, it belongs behind a
@@ -66,7 +74,31 @@ export interface RetentionEvaluation {
 }
 
 /** Codes that mean "no approved policy exists to apply here". */
-const UNDECIDED: ReadonlySet<string> = new Set<EligibilityCode>(['class_undefined']);
+/**
+ * The verdicts that mean NOBODY HAS DECIDED, as opposed to a decision to keep.
+ *
+ * `retention_indefinite` belongs here, and putting it in the other set was a
+ * defect worth naming. It is returned when the class permits deletion but its
+ * `min_retention_days` is NULL — and the seeded classes describe exactly that
+ * state as "retention is owner- and jurisdiction-defined", i.e. not configured
+ * yet. Reporting `policyDecided: true` for it claimed a decision that has not
+ * been made, which is the kind of quiet invention this phase is forbidden from
+ * making.
+ *
+ * `class_no_delete` deliberately stays OUT: a class that forbids deletion is a
+ * real decision, and `immutable-financial-history` is the case that proves the
+ * two are different.
+ *
+ * Both members matter. `class_undefined` alone made the flag vacuous, because
+ * that verdict is unreachable — the CHECK constraint on
+ * `shared.documents.retention_class` admits exactly the class codes
+ * `shared.retention_classes` seeds — so `policyDecided` was `true` in every
+ * state a caller could actually reach.
+ */
+const UNDECIDED: ReadonlySet<string> = new Set<EligibilityCode>([
+  'class_undefined',
+  'retention_indefinite',
+]);
 
 export class DocumentReadService extends ApplicationService {
   protected readonly module = 'shared-services';

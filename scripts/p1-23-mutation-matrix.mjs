@@ -97,6 +97,18 @@ const MUTATIONS = [
     suite: DOC_TESTS,
   },
   {
+    // Reverts the exact defect this phase's own review found: with only
+    // `class_undefined` in the set, `policyDecided` is true in every reachable
+    // state, because that verdict cannot occur. The mutation must be caught, or
+    // the field is decoration.
+    id: 'M6b',
+    property: 'policyDecided distinguishes "no policy" from "decided to keep"',
+    file: DOC_SERVICE,
+    from: "'class_undefined',\n  'retention_indefinite',",
+    to: "'class_undefined',",
+    suite: DOC_TESTS,
+  },
+  {
     id: 'M7',
     property: 'Only published report definitions are visible',
     file: RPT_REPO,
