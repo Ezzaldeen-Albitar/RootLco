@@ -54,7 +54,8 @@ is cited by its real id throughout.
 | `1d77396` | 0–2    | operation register; IAM route depth; derived floor extended to `iam.`/`meta.`; F-002 and F-003 fixes |
 | `3f83cd7` | 3, 10  | cross-domain journey; read-path shape and the performance baseline                                   |
 | `24ab9f0` | 12, 18 | hostile mutation matrix; event coverage matrix; CI wiring for both                                   |
-| _pending_ | 16     | task traceability                                                                                    |
+| `bef3940` | 16     | task traceability; checkpoint                                                                        |
+| `4ab5c3f` | 22     | F-004: closed the brace-expansion waiver; made the dependency gate testable with no exception        |
 
 ## Findings
 
@@ -65,6 +66,7 @@ See [`findings.md`](findings.md).
 | P1-24-F-001 — 39 operations outside the derived-evidence floor   | High     | Fixed |
 | P1-24-F-002 — every public operation bypassed the error pipeline | High     | Fixed |
 | P1-24-F-003 — the published contract understated its own scope   | Low      | Fixed |
+| P1-24-F-004 — the last dependency waiver had outlived its cause  | Medium   | Fixed |
 
 Two recorded non-findings, both measurement errors of mine, kept for the lesson.
 
@@ -91,10 +93,10 @@ Two recorded non-findings, both measurement errors of mine, kept for the lesson.
 | 16   | documentation and traceability synchronization    | complete                                              |
 | 17   | adversarial security and correctness review       | complete — the mutation matrix is its executable half |
 | 18   | mutation testing                                  | complete — 6/6 caught                                 |
-| 19   | full local verification                           | in progress                                           |
-| 20   | clean-room exact-SHA reproof                      | pending                                               |
-| 21   | feature Pull Request preparation                  | pending                                               |
-| 22   | hosted CI and PR readiness                        | pending                                               |
+| 19   | full local verification                           | complete                                              |
+| 20   | clean-room exact-SHA reproof                      | complete                                              |
+| 21   | feature Pull Request preparation                  | complete — PR #151                                    |
+| 22   | hosted CI and PR readiness                        | complete                                              |
 
 ## Measured surface
 

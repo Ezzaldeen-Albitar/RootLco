@@ -10,6 +10,7 @@ as such rather than deleted — the false ones are the cheapest lessons in the f
 | P1-24-F-001 | High     | Test-evidence floor | Fixed |
 | P1-24-F-002 | High     | HTTP pipeline       | Fixed |
 | P1-24-F-003 | Low      | Published contract  | Fixed |
+| P1-24-F-004 | Medium   | Supply chain        | Fixed |
 
 ---
 
@@ -193,6 +194,91 @@ Fixed by **deriving** it. `describeSurface()` counts operations and modules from
 `allOperations()`, so the sentence is regenerated with the document and the existing
 drift test that guards the paths now guards this too. Restating the phase list would
 have gone stale again at P1-25.
+
+---
+
+## P1-24-F-004 — the last dependency waiver had outlived its cause
+
+**Severity: Medium. Area: supply chain. State: fixed. Not introduced by this phase.**
+
+### How it surfaced
+
+Hosted CI, on the first push of this branch. `dependency-security` was the only red
+check; `ci-gate` failed by inheritance and everything else was green.
+
+**This branch did not cause it.** The lockfile diff against the base was empty at that
+point — P1-24 had changed two `package.json` script entries and nothing else about
+dependencies. `develop` would have failed identically that day.
+
+### What the gate said
+
+Three findings against the single committed exception, `GHSA-mh99-v99m-4gvg` in
+`brace-expansion`:
+
+1. the entry records affected range `<=5.0.7`; npm now reports `<1.1.17`;
+2. the entry records two resolved dependency nodes; the tree resolves one;
+3. npm reports a fix is available without a breaking change.
+
+All three describe one upstream event from different angles. The advisory was
+**re-scoped**, so the 2.1.3 and 5.0.8 instances left its range entirely and only the
+1.x instance under `minimatch` remained affected — which is also why a patch became
+available where none had existed.
+
+### Why the failure is the gate working
+
+The exception carried its own `removalCondition`, and it named this trigger exactly:
+
+> The parent dependency chain supports a patched compatible brace-expansion version —
+> that is, eslint and `@vitest/coverage-v8` resolve a minimatch that accepts
+> brace-expansion >=5.0.8, **or npm reports a non-semver-major `fixAvailable`**. When
+> that happens the gate FAILS with a compatible-fix-available finding, because an
+> exception that outlives its cause is worse than none.
+
+A waiver that survives its own cause reads as a decision somebody made about the risk
+that exists now. Nobody made this one.
+
+### The fix
+
+`npm audit fix --package-lock-only` bumped
+`node_modules/minimatch/node_modules/brace-expansion` from 1.1.16 to **1.1.18**.
+Lockfile only. `package.json` unchanged, and **no override added** — the `^5.0.8`
+override that broke ESLint in July stays reverted.
+
+**Verified by execution, not inferred**, because the record insisted on that after the
+override attempt: following `npm ci`, `npm run lint` is clean and the unit tier passes.
+A 1.1.x patch keeps the v1 export shape `minimatch@3` calls, which is precisely what
+`brace-expansion@5` did not. `npm audit` reports **0 vulnerabilities** across
+production and development, and the real policy gate run locally reports
+**"Dependency policy: pass"** with 0 advisories and 0 waived.
+
+The entry is retained under `removedAdvisories` rather than deleted. A deleted waiver
+leaves no record that a risk was ever accepted, or why it stopped being one.
+
+### The consequence worth more than the version bump
+
+Removing the last exception **broke eleven mutation tests** — they mutated _the
+committed entry_, and there was suddenly nothing to mutate. Eleven rules that had been
+proved to fire silently stopped being proved at all.
+
+That is backwards. An empty exception list is the state the gate exists to make
+reachable, so it should be the state in which its rules are MOST testable, not least.
+
+The fixture is now synthetic and self-contained, matching the already-synthetic audit
+and reachability fixtures beside it, so the three agree by construction and none
+depends on what the repository happens to carry today. A control test asserts the
+synthetic exception **passes**, so a mutation cannot go red for a reason unrelated to
+what it mutated. The committed file is still read — by three assertions about what it
+really contains: that it currently waives nothing, that any future entry carries the
+ten fields the gate requires, and that a removed entry keeps its removal record.
+
+### What was NOT deleted with the waiver
+
+The reachability work was never really about the advisory. `brace-expansion`'s code is
+still vendored inside the `node` binary and always will be — you cannot ship a Node
+application without Node. Findings AR-35, AR-37 and AR-43 are three corrections in a
+row that arrived at stating **non-reachability** rather than absence, and that
+reasoning outlives the advisory. It is preserved in
+`docs/engineering/ci-automation/evidence/brace-expansion-reachability-proof.md`.
 
 ---
 
