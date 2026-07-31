@@ -48,9 +48,14 @@ export const PROMOTION_TARGET = 'main';
 /**
  * Decides one pull request.
  *
- * @param {{ baseRef?: string, headRef?: string }} pr
+ * @param {{ baseRef?: string, headRef?: string } | null | undefined} pr
  *   Branch NAMES, not refs — `develop`, not `refs/heads/develop`. GitHub's
  *   `github.event.pull_request.base.ref` is already in this form.
+ *
+ *   `null` and `undefined` are accepted DELIBERATELY, not defensively: the whole
+ *   contract of this gate is that an unusable event fails closed, and a
+ *   signature that refused those inputs would make the fail-closed path
+ *   untestable while leaving the runtime behaviour unchanged.
  * @returns {{ allowed: boolean, reason: string }}
  */
 export function evaluatePromotionSource(pr) {
