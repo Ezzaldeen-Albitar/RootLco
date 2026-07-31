@@ -1,15 +1,15 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 219,
-    "publicApi": 219,
+    "registered": 226,
+    "publicApi": 226,
     "internal": 0,
-    "withRequiredEvidence": 205,
+    "withRequiredEvidence": 212,
     "invocationOnly": 14,
     "p1_15": {
-      "registered": 21,
-      "publicApi": 21,
-      "operationDepth": 21,
+      "registered": 26,
+      "publicApi": 26,
+      "operationDepth": 26,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -4069,6 +4069,54 @@
       "unitOnly": false
     },
     {
+      "id": "rpt.report-catalogue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reports",
+      "public": false,
+      "files": ["tests/backend/p1-23-reporting.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rpt.report-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reports/{reportCode}",
+      "public": false,
+      "files": ["tests/backend/p1-23-reporting.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "sal.credit-note-approve",
       "surface": "public-api",
       "method": "POST",
@@ -5122,6 +5170,63 @@
       "unitOnly": false
     },
     {
+      "id": "shared.document-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/attachments/documents/{documentId}",
+      "public": false,
+      "files": ["tests/backend/p1-23-document-retention.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.document-retention-evaluate",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/retention-evaluations",
+      "public": false,
+      "files": ["tests/backend/p1-23-document-retention.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "shared.export-authorize",
       "surface": "public-api",
       "method": "POST",
@@ -5198,6 +5303,39 @@
       "unitOnly": false
     },
     {
+      "id": "shared.notification-delivery-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/notifications/{notificationId}/deliveries",
+      "public": false,
+      "files": ["tests/backend/p1-23-notification-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "shared.notification-enqueue",
       "surface": "public-api",
       "method": "POST",
@@ -5229,6 +5367,54 @@
         "idempotency",
         "outbox",
         "provider",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.notification-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/notifications",
+      "public": false,
+      "files": ["tests/backend/p1-23-notification-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.notification-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/notifications/{notificationId}",
+      "public": false,
+      "files": ["tests/backend/p1-23-notification-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
         "route",
         "service",
         "success"

@@ -152,6 +152,29 @@ export const P1_21_PREFIXES = ['inv.'];
  * it would report a vacuous 0/0 phase block that looks like passing coverage.
  */
 export const P1_22_PREFIXES = ['sal.', 'wty.'];
+/**
+ * P1-23 spans ONE *new* id namespace — `rpt.` — and reuses one existing one.
+ *
+ * The document, file, template and notification operations of P1-23 live in
+ * `shared.`, which `DERIVED_PREFIX` has covered since P1-14. They need no new
+ * hook, and adding one would double-count the namespace. What is new is
+ * reporting: Phase 1-11 froze the `rpt` schema
+ * (`rpt.report_configurations`, `report_configuration_versions`,
+ * `saved_filters`) and, as the P1-22 note above records, `rpt.` was left out
+ * *precisely because no operation existed behind it* — a prefix with no
+ * operations reports a vacuous 0/0 block that reads like passing coverage.
+ *
+ * P1-23 registers the first `rpt.` operations, so the prefix is added now and
+ * not before. Listed here **and** in the `parseProvidedFlags` alternation
+ * below, because P1-20 and P1-22 both proved that extending one hook without
+ * the other produces a gate that looks stricter than it is, and that the two
+ * failures compound in opposite directions: an unlisted prefix makes
+ * `derivedRequirements()` return `[]` so nothing is required, while an
+ * unlisted alternation makes every declaration parse to nothing so the one
+ * namespace-agnostic obligation cannot be satisfied by any declaration a test
+ * could write. Both hooks or neither.
+ */
+export const P1_23_PREFIXES = ['rpt.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -161,6 +184,7 @@ const DERIVED_PREFIXES = [
   ...P1_20_PREFIXES,
   ...P1_21_PREFIXES,
   ...P1_22_PREFIXES,
+  ...P1_23_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1324,6 +1348,58 @@ export const MANIFEST = {
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
+  // ---- P1-23 reporting catalogue -------------------------------------------
+  //
+  // The first operations ever registered against the `rpt.` namespace, which is
+  // why the namespace joined DERIVED_PREFIXES in this phase and not earlier: a
+  // prefix with nothing behind it reports a vacuous 0/0 block.
+  'rpt.report-catalogue': {
+    files: ['tests/backend/p1-23-reporting.test.ts'],
+    required: ['cross-tenant'],
+    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable",
+  },
+  'rpt.report-read': {
+    files: ['tests/backend/p1-23-reporting.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented",
+  },
+  // ---- P1-23 document surface ----------------------------------------------
+  'shared.document-read': {
+    files: ['tests/backend/p1-23-document-retention.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'metadata only; the storage key is proven unprojected because it is a locator that travels outside RLS into every downstream system that touches it',
+  },
+  'shared.document-retention-evaluate': {
+    files: ['tests/backend/p1-23-document-retention.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'EVALUATION ONLY — no destructive path exists in this phase; the decision-neutral outcomes (class_undefined, retention_indefinite) are proven distinguishable from a refusal, and a legal hold is proven to win over an elapsed retention',
+  },
+  // ---- P1-23 notification reads ------------------------------------------
+  //
+  // The obligations below are DECLARED on top of the derived floor, not instead
+  // of it: `shared.` derives route/service/success/authorization/isolation, and
+  // these add what is specific to a read surface the database cannot guard.
+  //
+  // `cross-tenant` is the weaker of the two isolation proofs here and is listed
+  // because the floor requires it. The stronger one is `same-tenant-recipient`:
+  // RLS proves a row belongs to the tenant and says NOTHING about which user
+  // inside it may see the row, so an inbox that leaked every message in the
+  // tenant would pass every cross-tenant assertion ever written.
+  'shared.notification-list': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['cross-tenant'],
+    note: 'recipient-scoped inbox; a same-tenant neighbour message is proven invisible, which the cross-tenant proof alone cannot establish; digest and body columns proven unprojected; page size clamped',
+  },
+  'shared.notification-read': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: "another user's message answers ERR-NTF-001 identically to a non-existent id, so the endpoint cannot be used to probe which ids are real; the failure carries no identifier because SafeDetails is a closed shape",
+  },
+  'shared.notification-delivery-list': {
+    files: ['tests/backend/p1-23-notification-reads.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'deliberately wider than the inbox so an operator can inspect a message they did not receive, which is why it takes a different permission and is audited with a DELTA assertion; provider payload proven unprojected while the normalized classification survives; accepted is never reported as delivered',
+  },
   'shared.notification-enqueue': {
     files: [
       'tests/backend/p1-15-operation-routes.test.ts',
@@ -1903,7 +1979,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

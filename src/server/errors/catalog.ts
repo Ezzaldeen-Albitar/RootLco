@@ -38,6 +38,7 @@ export const ERROR_CODES = [
   'ERR-DOC-001',
   'ERR-NTF-001',
   'ERR-EXP-001',
+  'ERR-RPT-001',
   'ERR-TRN-001',
   'ERR-WO-001',
   'ERR-WO-002',
@@ -74,6 +75,7 @@ export interface ErrorDefinition {
     | 'attachment'
     | 'notification'
     | 'export'
+    | 'reporting'
     | 'transition'
     | 'platform';
   /** Advisory: may the same request succeed later without modification? */
@@ -282,6 +284,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'The consent evaluation supplied with the queue request reported that the recipient has not granted consent for this channel, so nothing was enqueued. Neither an authorization failure (the caller may send) nor a validation failure (the request was well-formed): the request conflicts with the recipient’s recorded consent state, which only the recipient can change.',
+  },
+  'ERR-RPT-001': {
+    code: 'ERR-RPT-001',
+    title: 'Report not found',
+    status: 404,
+    owner: 'reporting',
+    retryable: false,
+    class: 'client',
+    description:
+      'No PUBLISHED report definition with this code exists in the caller\u2019s tenant. Deliberately indistinguishable between four cases \u2014 a draft, an archived report, another tenant\u2019s report, and a code that never existed \u2014 because a catalogue that answered them differently would be a way to enumerate which report codes a tenant has configured.',
   },
   'ERR-EXP-001': {
     code: 'ERR-EXP-001',

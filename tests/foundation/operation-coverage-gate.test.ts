@@ -29,6 +29,8 @@ import { join } from 'node:path';
 import {
   MANIFEST,
   P1_22_PREFIXES,
+  P1_23_PREFIXES,
+  EVIDENCE_KEY_IDEMPOTENCY,
   derivedRequirements,
   evaluateCoverage,
   isDerivedId,
@@ -562,11 +564,19 @@ describe('operation coverage gate — P1-22 hook 1: the derived floor', () => {
     expect(isDerivedId('wty.warranty-generate')).toBe(true);
   });
 
-  it('does NOT silently accept a neighbouring namespace that registers nothing', () => {
-    // Phase 1-11 froze `rpt` alongside `sal`/`wty`. Listing a prefix with no
-    // operations behind it would report a vacuous 0/0 phase block that reads like
-    // passing coverage, so `rpt.` is deliberately absent.
-    expect(isDerivedId('rpt.report-read')).toBe(false);
+  it('did NOT silently accept a neighbouring namespace that registered nothing', () => {
+    // Phase 1-11 froze `rpt` alongside `sal`/`wty`, and through P1-22 no `rpt.`
+    // operation existed. Listing a prefix with nothing behind it reports a
+    // vacuous 0/0 phase block that reads like passing coverage, so `rpt.` was
+    // deliberately absent — it is NOT part of the P1-22 prefix set, and this
+    // assertion is what keeps that true.
+    expect(P1_22_PREFIXES).not.toContain('rpt.');
+
+    // P1-23 registers the first `rpt.` operations, so the prefix is derived
+    // FROM THAT PHASE — see the P1-23 suites below. The rule the original
+    // assertion encoded ("no prefix without operations behind it") is intact;
+    // what changed is that operations now exist.
+    expect(isDerivedId('rpt.report-read')).toBe(true);
   });
 
   it('a sal.* READ derives its full mandatory floor, never an empty list', () => {
@@ -848,9 +858,15 @@ describe('operation coverage gate — real registry and real files', () => {
     };
     const { counts } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
 
-    expect(counts.p1_15.registered).toBe(21);
-    expect(counts.p1_15.publicApi).toBe(21);
-    expect(counts.p1_15.operationDepth).toBe(21);
+    // 21 from P1-15 plus the 5 P1-23 operations that share the `shared.`
+    // namespace: three notification reads, a document read, and a
+    // non-destructive retention evaluation.
+    // The counter selects by prefix, so it cannot separate the phases; what it
+    // still proves exactly is that every operation in the namespace is at
+    // operation depth, with none pending, unit-only or metadata-only.
+    expect(counts.p1_15.registered).toBe(26);
+    expect(counts.p1_15.publicApi).toBe(26);
+    expect(counts.p1_15.operationDepth).toBe(26);
     expect(counts.p1_15.invocationOnly).toBe(0);
     expect(counts.p1_15.pending).toBe(0);
     expect(counts.p1_15.unitOnly).toBe(0);
@@ -915,5 +931,152 @@ describe('operation coverage gate — real registry and real files', () => {
       meta: 1,
       veh: 20,
     });
+  });
+});
+
+/**
+ * P1-23 — Documents, Notifications and Reporting Backend.
+ *
+ * P1-23 is the first phase to span a namespace it does NOT introduce and one it
+ * does. Its document, file, template and notification operations live in
+ * `shared.`, derived since P1-14; its reporting operations live in `rpt.`,
+ * which Phase 1-11 froze as a schema and against which no phase had registered
+ * an operation until now.
+ *
+ * That asymmetry is the trap these suites exist for. `shared.` needs no new
+ * hook, and adding one would double-count it. `rpt.` needs BOTH hooks — the
+ * derived-prefix list and the `parseProvidedFlags` alternation — for the reason
+ * P1-20 and P1-22 each paid for once: with only hook 1 blind, evidence is
+ * provided but never required, so deleting every assertion keeps the gate
+ * green; with only hook 2 blind, evidence is required but no declaration can
+ * express it, so no honest suite can pass. Each suite below fails on its own
+ * mutation, so neither removal can hide behind the other.
+ */
+describe('operation coverage gate — P1-23 hook 1: the derived floor', () => {
+  /** A branch-scoped, audited, idempotent export mutation. */
+  const rptExport = {
+    id: 'rpt.export-request',
+    module: 'reporting',
+    method: 'POST',
+    path: '/reports/{reportCode}/exports',
+    scope: 'branch',
+    auditClass: 'standard',
+    public: false,
+    idempotent: true,
+    versionGuarded: false,
+    surface: 'public-api',
+    source: 'src/app/api/v1/reports/[reportCode]/exports/route.ts',
+  };
+  /** A branch-scoped report read: no audit, no replay, still a full floor. */
+  const rptRead = {
+    ...rptExport,
+    id: 'rpt.report-read',
+    method: 'GET',
+    path: '/reports/{reportCode}',
+    auditClass: 'none',
+    idempotent: false,
+    source: 'src/app/api/v1/reports/[reportCode]/route.ts',
+  };
+  /** A shared-namespace document read — derived since P1-14, re-asserted here. */
+  const docRead = {
+    ...rptRead,
+    id: 'shared.document-read',
+    module: 'shared-services',
+    path: '/attachments/documents/{documentId}',
+    source: 'src/app/api/v1/attachments/documents/[documentId]/route.ts',
+  };
+  /** A shared-namespace in-app notification read. */
+  const notificationRead = {
+    ...docRead,
+    id: 'shared.notification-list',
+    path: '/notifications',
+    source: 'src/app/api/v1/notifications/route.ts',
+  };
+  /** A shared-namespace notification mutation. */
+  const notificationMutation = {
+    ...rptExport,
+    id: 'shared.notification-retry-request',
+    module: 'shared-services',
+    path: '/notifications/{notificationId}/retry-requests',
+    source: 'src/app/api/v1/notifications/[notificationId]/retry-requests/route.ts',
+  };
+  /** A shared-namespace document mutation. */
+  const documentMutation = {
+    ...rptExport,
+    id: 'shared.document-retention-evaluate',
+    module: 'shared-services',
+    path: '/attachments/documents/retention-evaluations',
+    source: 'src/app/api/v1/attachments/documents/retention-evaluations/route.ts',
+  };
+
+  it('recognises the P1-23 reporting namespace as a derived-evidence namespace', () => {
+    expect(P1_23_PREFIXES).toEqual(['rpt.']);
+    expect(isDerivedId('rpt.report-read')).toBe(true);
+    expect(isDerivedId('rpt.export-request')).toBe(true);
+  });
+
+  it('reuses `shared.` rather than re-declaring it, so the namespace is not double-counted', () => {
+    expect(isDerivedId('shared.document-read')).toBe(true);
+    expect(P1_23_PREFIXES).not.toContain('shared.');
+  });
+
+  it.each([
+    ['report read', rptRead],
+    ['export mutation', rptExport],
+    ['document read', docRead],
+    ['document mutation', documentMutation],
+    ['notification read', notificationRead],
+    ['notification mutation', notificationMutation],
+  ])('a P1-23 %s derives a non-empty mandatory floor', (_label, operation) => {
+    const derived = derivedRequirements(operation);
+    // The whole point: never `[]`. An empty floor credits an operation at depth
+    // on evidence that was never required.
+    expect(derived).not.toEqual([]);
+    expect(derived).toContain('route');
+    expect(derived).toContain('service');
+    expect(derived).toContain('authorization');
+  });
+
+  it('derives replay evidence for an idempotent P1-23 mutation and not for a read', () => {
+    expect(derivedRequirements(rptExport)).toContain(EVIDENCE_KEY_IDEMPOTENCY);
+    expect(derivedRequirements(rptRead)).not.toContain(EVIDENCE_KEY_IDEMPOTENCY);
+  });
+
+  it('derives audit evidence for an audited P1-23 mutation and not for an unaudited read', () => {
+    expect(derivedRequirements(rptExport)).toContain('audit');
+    expect(derivedRequirements(rptRead)).not.toContain('audit');
+  });
+
+  it('derives isolation evidence for every branch-scoped P1-23 operation', () => {
+    for (const operation of [rptRead, rptExport, docRead, notificationRead]) {
+      expect(derivedRequirements(operation)).toContain('isolation');
+    }
+  });
+});
+
+describe('operation coverage gate — P1-23 hook 2: declarations are parseable', () => {
+  const block = (line: string) => ['/**', ' * COVERAGE-EVIDENCE', ` * ${line}`, ' */'].join('\n');
+
+  it.each(['rpt.report-read', 'rpt.export-request'])(
+    'parses an `rpt.` declaration for %s',
+    (id) => {
+      const parsed = parseProvidedFlags(block(`${id}: route service authorization`));
+      // Before `rpt` joined the alternation this parsed to NOTHING, so no
+      // declaration a test could write could satisfy any obligation.
+      expect(parsed.size).toBe(1);
+      expect([...parsed.keys()][0]).toBe(id);
+    }
+  );
+
+  it('still parses the `shared.` declarations P1-23 also relies on', () => {
+    const parsed = parseProvidedFlags(block('shared.document-read: route service authorization'));
+    expect(parsed.size).toBe(1);
+    expect([...parsed.keys()][0]).toBe('shared.document-read');
+  });
+
+  it('does not accept an unregistered namespace', () => {
+    // The alternation is an allowlist, not a wildcard: a namespace nobody has
+    // opted in must not silently start parsing.
+    expect(parseProvidedFlags(block('bogus.thing-read: route service')).size).toBe(0);
   });
 });

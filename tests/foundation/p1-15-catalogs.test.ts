@@ -55,10 +55,16 @@ import {
 import '@/app/api/v1/attachments/upload-authorizations/route';
 import '@/app/api/v1/attachments/versions/route';
 import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
+import '@/app/api/v1/attachments/documents/[documentId]/route';
+import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
+import '@/app/api/v1/reports/route';
+import '@/app/api/v1/reports/[reportCode]/route';
 import '@/app/api/v1/notifications/route';
+import '@/app/api/v1/notifications/[notificationId]/route';
+import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
 import '@/app/api/v1/message-templates/route';
 import '@/app/api/v1/message-templates/[templateId]/route';
 import '@/app/api/v1/message-templates/[templateId]/versions/route';
@@ -102,6 +108,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-REQ-002',
   'ERR-RES-001',
   'ERR-RES-002',
+  'ERR-RPT-001',
   'ERR-RTE-001',
   'ERR-STB-001',
   'ERR-SYS-001',
@@ -139,6 +146,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-REQ-002', status: 404, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-RES-001', status: 404, owner: 'resource', class: 'client', retryable: false },
   { code: 'ERR-RES-002', status: 409, owner: 'resource', class: 'conflict', retryable: false },
+  { code: 'ERR-RPT-001', status: 404, owner: 'reporting', class: 'client', retryable: false },
   { code: 'ERR-RTE-001', status: 429, owner: 'throttling', class: 'throttle', retryable: true },
   { code: 'ERR-STB-001', status: 501, owner: 'stub', class: 'client', retryable: false },
   { code: 'ERR-SYS-001', status: 500, owner: 'platform', class: 'server', retryable: true },
@@ -147,11 +155,6 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-TRN-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-VAL-001', status: 422, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-WO-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
-  // Wave 6's unapproved-work execution gate. Same status/owner/class as ERR-WO-001
-  // and deliberately a separate code: ERR-WO-001 is the whole-order B1..B6 closure
-  // gate, this refuses ONE job movement while additional work it discovered awaits a
-  // customer decision. Sharing the code would make the catalog's own description of
-  // ERR-WO-001 false.
   { code: 'ERR-WO-002', status: 409, owner: 'transition', class: 'conflict', retryable: false },
 ];
 
@@ -308,11 +311,13 @@ const EXPECTED_AUDIT_ACTIONS = [
   'sal.receipt.recorded',
   'shared.document.download_authorized',
   'shared.document.linked',
+  'shared.document.retention_evaluated',
   'shared.document.unlinked',
   'shared.document.upload_authorized',
   'shared.document.version_registered',
   'shared.document.version_rejected',
   'shared.export.authorized',
+  'shared.notification.delivery_inspected',
   'shared.notification.enqueued',
   'shared.template.created',
   'shared.template.updated',
@@ -398,6 +403,21 @@ const P1_15_AUDIT_ACTIONS: readonly { code: string; class: string; entityType: s
     entityType: 'shared.document_version',
   },
   { code: 'shared.export.authorized', class: 'export', entityType: 'shared.export_request' },
+  // P1-23: retention evaluation. EVALUATION ONLY — no destructive path
+  // exists in this phase, and the record states deletion_performed=false on
+  // every entry so a later phase cannot reuse it to imply approval.
+  {
+    code: 'shared.document.retention_evaluated',
+    class: 'security',
+    entityType: 'shared.document',
+  },
+  // P1-23: the delivery view is wider than the recipient inbox, so it is
+  // recorded. Listed here because this inventory is exact in both directions.
+  {
+    code: 'shared.notification.delivery_inspected',
+    class: 'security',
+    entityType: 'shared.outbound_message',
+  },
   {
     code: 'shared.notification.enqueued',
     class: 'privileged',
@@ -467,6 +487,11 @@ describe('audit-action catalog', () => {
 
 /** Every operation the P1-15 route modules imported above register. */
 const EXPECTED_P1_15_OPERATIONS = [
+  // P1-23 reporting. The catalogue is tenant CONFIGURATION, and neither
+  // operation executes a report — the frozen rpt schema binds no data source
+  // to a report code.
+  'rpt.report-catalogue',
+  'rpt.report-read',
   'shared.attachment-download-authorize',
   'shared.attachment-link-create',
   'shared.attachment-link-withdraw',
@@ -475,11 +500,21 @@ const EXPECTED_P1_15_OPERATIONS = [
   'shared.attachment-version-reject',
   'shared.branch-status-change',
   'shared.branch-status-read',
+  // P1-23 document surface: a metadata read and a NON-DESTRUCTIVE retention
+  // evaluation. Listed here because this assertion is exact by design.
+  'shared.document-read',
+  'shared.document-retention-evaluate',
   'shared.export-authorize',
   'shared.export-catalogue',
   'shared.health-live',
   'shared.health-ready',
+  // P1-23 read surface, same namespace. Listed here because this assertion is
+  // exact by design: a new `shared.` operation appearing without a deliberate
+  // edit is precisely what it exists to catch.
+  'shared.notification-delivery-list',
   'shared.notification-enqueue',
+  'shared.notification-list',
+  'shared.notification-read',
   'shared.template-activation-set',
   'shared.template-create',
   'shared.template-update',
@@ -500,6 +535,10 @@ const EXPECTED_P1_15_AUDITED: Readonly<Record<string, string>> = {
   'shared.attachment-version-reject': 'shared.document.version_rejected',
   'shared.branch-status-change': 'org.branch.status_changed',
   'shared.export-authorize': 'shared.export.authorized',
+  'shared.document-retention-evaluate': 'shared.document.retention_evaluated',
+  // P1-23: the only audited operation of the read surface. The two inbox
+  // reads are unaudited and appear in the list below instead.
+  'shared.notification-delivery-list': 'shared.notification.delivery_inspected',
   'shared.notification-enqueue': 'shared.notification.enqueued',
   'shared.template-activation-set': 'shared.template.updated',
   'shared.template-create': 'shared.template.created',
@@ -551,10 +590,19 @@ describe('registered operations against the audit-action catalog', () => {
         .map((operation) => operation.id)
     );
     expect(unaudited).toEqual([
+      'rpt.report-catalogue',
+      'rpt.report-read',
       'shared.branch-status-read',
+      'shared.document-read',
       'shared.export-catalogue',
       'shared.health-live',
       'shared.health-ready',
+      // P1-23: reading your own inbox is not privileged, so these two are
+      // unaudited. `shared.notification-delivery-list` is deliberately ABSENT
+      // from this list — it is wider than the inbox and is audited, and its
+      // appearing here would mean that accountability had been dropped.
+      'shared.notification-list',
+      'shared.notification-read',
       'shared.template-version-preview',
     ]);
     for (const operation of allOperations()) {
