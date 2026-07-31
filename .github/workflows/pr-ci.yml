@@ -68,6 +68,22 @@ jobs:
           fetch-depth: '0'
           install: 'false'
 
+      # ADR-006 §45 and §47 in prose only until this step existed. A branch
+      # ruleset cannot express it — rulesets constrain the TARGET ref, not where
+      # a pull request came from — so a feature branch could open a PR straight
+      # into `main` and every check would pass, because none was looking.
+      #
+      # Runs in change-detection, the one job every pull request reaches, so the
+      # decision is made before any expensive job starts and `ci-gate` inherits
+      # it through `needs`.
+      - name: Promotion source policy
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-promotion-source.mjs
+
       - name: Resolve the commits under comparison
         id: resolve
         env:
