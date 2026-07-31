@@ -264,6 +264,78 @@ function readErrorCodes() {
   return new Set([...source.matchAll(/\bcode:\s*'(ERR-[A-Z0-9-]+)'/g)].map((m) => m[1]));
 }
 
+// ---------------------------------------------------------------------------
+// Event coverage (P1-24-BE-011)
+// ---------------------------------------------------------------------------
+
+function walkTs(directory, out = []) {
+  for (const entry of readdirSync(directory)) {
+    const full = join(directory, entry);
+    if (statSync(full).isDirectory()) walkTs(full, out);
+    else if (full.endsWith('.ts')) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * Measures the event catalog against the code and the tests.
+ *
+ * Three of the seven columns §22 asks for are properties of the PUBLISHER rather
+ * than of an individual event, and are therefore proved once, structurally:
+ *
+ *   - **transactionally persisted** — `publishEvent()` writes into
+ *     `shared.event_outbox` using the caller's own transaction handle, so an event
+ *     exists if and only if the business transaction committed. That holds for every
+ *     event only while the publisher is the ONLY writer, which `singleProducer`
+ *     below asserts rather than assumes.
+ *   - **replay-safe** — `event_key` is unique per tenant, so a producer retrying its
+ *     own command cannot emit twice. Idempotent at the database, not by convention.
+ *   - **failure-tested** — retry, backoff, lease expiry and poison handling live in
+ *     the worker, which is one component with its own suite; a per-event failure test
+ *     would be the same test copied fifty times.
+ *
+ * The remaining columns ARE per-event and are measured per event.
+ */
+function measureEvents(events) {
+  const sourceFiles = walkTs(join(ROOT, 'src'));
+  const testFiles = walkTs(join(ROOT, 'tests'));
+
+  const publisherPath = join(ROOT, 'src', 'server', 'events', 'publisher.ts');
+  const catalogPath = join(ROOT, 'src', 'server', 'events', 'envelope.ts');
+
+  // Every direct INSERT into the outbox outside the publisher, which would bypass
+  // the transactional guarantee the whole pattern rests on.
+  const foreignWriters = sourceFiles.filter((file) => {
+    if (file === publisherPath) return false;
+    const source = stripComments(readFileSync(file, 'utf8'));
+    return /INSERT\s+INTO\s+shared\.event_outbox/i.test(source);
+  });
+
+  const producerText = sourceFiles
+    .filter((file) => file !== catalogPath)
+    .map((file) => stripComments(readFileSync(file, 'utf8')))
+    .join('\n');
+
+  const testSources = testFiles.map((file) => ({
+    path: toPosix(relative(ROOT, file)),
+    text: readFileSync(file, 'utf8'),
+  }));
+
+  const rows = events.map((event) => {
+    const produced = producerText.includes(`'${event.eventType}'`);
+    // "Delivery-tested" means a test that names the event AND reads the outbox —
+    // naming it in prose proves nothing, which is the same standard the coverage
+    // gate applies to operations.
+    const deliveryTests = testSources
+      .filter((file) => file.text.includes(event.eventType) && file.text.includes('event_outbox'))
+      .map((file) => file.path);
+    const anyReference = testSources.filter((file) => file.text.includes(event.eventType)).length;
+    return { ...event, produced, deliveryTests, referencedInTests: anyReference };
+  });
+
+  return { rows, foreignWriters: foreignWriters.map((file) => toPosix(relative(ROOT, file))) };
+}
+
 function readOpenApi() {
   const document = JSON.parse(readFileSync(join(ROOT, 'docs', 'api', 'openapi.v1.json'), 'utf8'));
   const byOperationId = new Map();
@@ -347,6 +419,7 @@ function build() {
   const events = readEventCatalog();
   const errorCodes = readErrorCodes();
   const openapi = readOpenApi();
+  const eventCoverage = measureEvents(events);
   const { references, flags } = collectEvidence(operations.map((o) => o.id));
 
   const failures = [];
@@ -461,7 +534,58 @@ function build() {
     failures.push(`Uncovered operations: ${counts.Uncovered} > ceiling ${MAX_UNCOVERED}`);
   }
 
-  return { rows, counts, failures, openapi, events, errorCodes, permissionCodes, auditActions };
+  // The outbox guarantee is "an event exists if and only if the business
+  // transaction committed", and it holds only while `publishEvent()` is the sole
+  // writer. A second writer would fail no existing test — it would simply be a
+  // second, unproven path — so the check is here rather than nowhere.
+  for (const file of eventCoverage.foreignWriters) {
+    failures.push(`${file}: writes shared.event_outbox directly, bypassing publishEvent()`);
+  }
+  // `implementedIn` is the catalog's own claim, and it is checked in BOTH directions.
+  //
+  // `null` means RESERVED: catalogued so the name is taken and the shape agreed, with
+  // no producer yet. Three entries are genuinely in that state and each says why in
+  // its own comment — `document.accepted` has no scanner to accept anything,
+  // `work-order.created` has no creation path the conversion event does not already
+  // cover, and `message.delivery.changed` changes state on the WORKER archetype,
+  // which has no `RequestContext` and therefore cannot call `publishEvent()` at all.
+  //
+  // So "no producer" is a defect only when the catalog CLAIMS a phase implemented it.
+  // The reverse is equally a defect and easier to miss: a producer for an entry still
+  // marked reserved means the catalog is stale, and a consumer reading it would not
+  // know the event exists.
+  for (const event of eventCoverage.rows) {
+    const reserved = event.implementedIn === null;
+    if (reserved && event.produced) {
+      failures.push(
+        `${event.code} (${event.eventType}): marked reserved but a producer names it — ` +
+          'the catalog is stale'
+      );
+    }
+    if (!reserved && !event.produced) {
+      failures.push(
+        `${event.code} (${event.eventType}): claims implementedIn ${event.implementedIn} but no ` +
+          'producer names it'
+      );
+    }
+    if (!reserved && event.deliveryTests.length === 0) {
+      failures.push(
+        `${event.code} (${event.eventType}): no test names it AND reads shared.event_outbox`
+      );
+    }
+  }
+
+  return {
+    rows,
+    counts,
+    failures,
+    openapi,
+    events,
+    eventCoverage,
+    errorCodes,
+    permissionCodes,
+    auditActions,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +593,16 @@ function build() {
 // ---------------------------------------------------------------------------
 
 function renderMarkdown(result) {
-  const { rows, counts, openapi, events, errorCodes, permissionCodes, auditActions } = result;
+  const {
+    rows,
+    counts,
+    openapi,
+    events,
+    eventCoverage,
+    errorCodes,
+    permissionCodes,
+    auditActions,
+  } = result;
 
   const domains = [...new Set(rows.map((row) => row.domain))].sort();
   const lines = [];
@@ -536,13 +669,40 @@ function renderMarkdown(result) {
     );
   }
   lines.push('');
-  lines.push('## Event catalog');
+  lines.push('## Event coverage matrix');
   lines.push('');
-  lines.push('| Code | Event type | v | Aggregate | Owner | Implemented in |');
-  lines.push('| --- | --- | --- | --- | --- | --- |');
-  for (const event of events) {
+  lines.push(
+    'Three of the columns §22 asks for are properties of the PUBLISHER rather than of an',
+    'individual event, and are proved once instead of fifty times:',
+    ''
+  );
+  lines.push(
+    '- **Transactionally persisted** — `publishEvent()` writes into `shared.event_outbox`',
+    "  on the caller's own transaction handle, so an event exists if and only if the",
+    '  business transaction committed. That holds for every event only while the publisher',
+    '  is the sole writer, which this register asserts — ' +
+      `${eventCoverage.foreignWriters.length} foreign writer(s) found.`,
+    '- **Replay-safe** — `event_key` is unique per tenant, so a producer retrying its own',
+    '  command cannot emit the same event twice.',
+    '- **Failure-tested** — retry, backoff, lease expiry and poison handling live in the',
+    '  outbox worker, which has its own suite. A per-event failure test would be that one',
+    '  copied fifty times.',
+    ''
+  );
+  lines.push('| Code | Event type | v | Aggregate | Owner | Phase | Produced | Delivery-tested |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const event of eventCoverage.rows) {
+    const reserved = event.implementedIn === null;
+    const produced = event.produced ? 'yes' : reserved ? 'reserved' : '**no**';
+    const tested =
+      event.deliveryTests.length > 0
+        ? `${event.deliveryTests.length} file(s)`
+        : reserved
+          ? 'reserved'
+          : '**none**';
     lines.push(
-      `| ${event.code} | \`${event.eventType}\` | ${event.schemaVersion} | ${event.aggregateType} | ${event.owner} | ${event.implementedIn} |`
+      `| ${event.code} | \`${event.eventType}\` | ${event.schemaVersion} | ${event.aggregateType} | ` +
+        `${event.owner} | ${event.implementedIn ?? '—'} | ${produced} | ${tested} |`
     );
   }
   lines.push('');
@@ -573,6 +733,10 @@ const json = `${JSON.stringify(
       openapiOperations: result.openapi.operationCount,
       openapiSchemas: result.openapi.schemaCount,
       events: result.events.length,
+      eventsProduced: result.eventCoverage.rows.filter((e) => e.produced).length,
+      eventsDeliveryTested: result.eventCoverage.rows.filter((e) => e.deliveryTests.length > 0)
+        .length,
+      outboxForeignWriters: result.eventCoverage.foreignWriters.length,
       errorCodes: result.errorCodes.size,
       permissionCodes: result.permissionCodes.size,
       auditActions: result.auditActions.size,
@@ -584,10 +748,25 @@ const json = `${JSON.stringify(
   2
 )}\n`;
 
+/**
+ * Formats THROUGH the repository's own prettier configuration.
+ *
+ * `prettier.format()` does NOT read `.prettierrc` on its own — passing only
+ * `parser`/`filepath` uses prettier's defaults, which differ from this repo's
+ * (`printWidth: 100`, `singleQuote`, `trailingComma: es5`). The generator then emits
+ * output that `prettier --check` rejects, `format:check` fails, running
+ * `prettier --write` changes the file, and `--check` on this script reports the
+ * register stale — a loop where each fix breaks the other. `resolveConfig` is what
+ * breaks it. P1-23's generator learned the same lesson; this is the same fix.
+ */
 const prettier = await import('prettier');
+const formatWith = async (text, path) => {
+  const config = (await prettier.resolveConfig(path)) ?? {};
+  return prettier.format(text, { ...config, filepath: path });
+};
 const formatted = {
-  md: await prettier.format(markdown, { parser: 'markdown', filepath: REGISTER_MD }),
-  json: await prettier.format(json, { parser: 'json', filepath: REGISTER_JSON }),
+  md: await formatWith(markdown, REGISTER_MD),
+  json: await formatWith(json, REGISTER_JSON),
 };
 
 if (CHECK) {

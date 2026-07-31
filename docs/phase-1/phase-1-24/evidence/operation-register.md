@@ -285,57 +285,70 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `wty.warranty-detail`                  | GET    | `/api/v1/warranties/{warrantyId}`                                             | branch  | `wty.warranty.issue`                                                 | —                                      | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wty.warranty-generate`                | POST   | `/api/v1/deliveries/{deliveryId}/warranties`                                  | branch  | `wty.warranty.issue`                                                 | wty.warranty.issued                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 
-## Event catalog
+## Event coverage matrix
 
-| Code        | Event type                           | v   | Aggregate                  | Owner           | Implemented in |
-| ----------- | ------------------------------------ | --- | -------------------------- | --------------- | -------------- |
-| EVT-IAM-001 | `access.grant.changed`               | 1   | iam.role_grant             | iam             | P1-14          |
-| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14          |
-| EVT-IAM-003 | `user.status.changed`                | 1   | iam.user_account           | iam             | P1-14          |
-| EVT-IAM-004 | `session.revoked`                    | 1   | iam.user_session           | iam             | P1-14          |
-| EVT-CRM-001 | `business-partner.merged`            | 1   | crm.business_partner       | crm             | P1-16          |
-| EVT-CRM-002 | `business-partner.created`           | 1   | crm.business_partner       | crm             | P1-16          |
-| EVT-CRM-003 | `consent.changed`                    | 1   | crm.business_partner       | crm             | P1-16          |
-| EVT-VEH-001 | `vehicle.relationship.changed`       | 1   | veh.vehicle                | veh             | P1-17          |
-| EVT-VEH-002 | `vehicle.created`                    | 1   | veh.vehicle                | veh             | P1-17          |
-| EVT-VEH-003 | `vehicle.merged`                     | 1   | veh.vehicle                | veh             | P1-17          |
-| EVT-APT-001 | `appointment.changed`                | 1   | apt.appointment            | apt             | P1-18          |
-| EVT-REC-001 | `vehicle.checked-in`                 | 1   | rec.reception_visit        | rec             | P1-18          |
-| EVT-REC-002 | `reception.approved`                 | 1   | rec.reception_visit        | rec             | P1-18          |
-| EVT-DOC-001 | `document.accepted`                  | 1   | shared.document            | shared          | null           |
-| EVT-NTF-001 | `message.delivery.changed`           | 1   | shared.outbound_message    | shared          | null           |
-| EVT-DOC-002 | `document.version.registered`        | 1   | shared.document            | shared          | P1-15          |
-| EVT-DOC-003 | `document.link.changed`              | 1   | shared.document            | shared          | P1-15          |
-| EVT-NTF-002 | `message.enqueued`                   | 1   | shared.outbound_message    | shared          | P1-15          |
-| EVT-TPL-001 | `message-template.version.changed`   | 1   | shared.message_template    | shared          | P1-15          |
-| EVT-ORG-001 | `organization.branch.status.changed` | 1   | org.branch                 | shared          | P1-15          |
-| EVT-WOR-001 | `work-order.created`                 | 1   | wo.work_order              | wo              | null           |
-| EVT-WOR-002 | `work-order.state-changed`           | 1   | wo.work_order              | wo              | P1-19          |
-| EVT-WOR-003 | `work-order.closed`                  | 1   | wo.work_order              | wo              | P1-19          |
-| EVT-TEC-001 | `job.assigned`                       | 1   | wo.job                     | wo              | P1-19          |
-| EVT-TEC-002 | `job.state-changed`                  | 1   | wo.job                     | wo              | P1-19          |
-| EVT-TEC-003 | `labor.session-changed`              | 1   | tech.labor_session         | tech            | P1-19          |
-| EVT-WOR-004 | `additional-work.requested`          | 1   | wo.additional_work_request | wo              | P1-19          |
-| EVT-WOR-005 | `customer-approval.recorded`         | 1   | wo.customer_approval       | wo              | P1-19          |
-| EVT-DIA-001 | `diagnostic-report.completed`        | 1   | dia.diagnostic_report      | dia             | P1-19          |
-| EVT-QMS-001 | `quality-control.finalized`          | 1   | qms.quality_control_record | qms             | P1-19          |
-| EVT-QMS-002 | `rework.linked`                      | 1   | qms.rework_link            | qms             | P1-19          |
-| EVT-SVC-001 | `service.published`                  | 1   | svc.service_version        | service-catalog | P1-20          |
-| EVT-SVC-002 | `price-list.published`               | 1   | svc.price_list_version     | pricing         | P1-20          |
-| EVT-QUO-001 | `quotation.created`                  | 1   | quo.quotation              | quotation       | P1-20          |
-| EVT-QUO-002 | `quotation.revision-issued`          | 1   | quo.quotation_revision     | quotation       | P1-20          |
-| EVT-QUO-003 | `quotation.item-decided`             | 1   | quo.quotation_item         | quotation       | P1-20          |
-| EVT-QUO-004 | `quotation.accepted`                 | 1   | quo.quotation              | quotation       | P1-20          |
-| EVT-QUO-005 | `quotation.rejected`                 | 1   | quo.quotation              | quotation       | P1-20          |
-| EVT-QUO-006 | `quotation.expired`                  | 1   | quo.quotation              | quotation       | P1-20          |
-| EVT-INV-001 | `stock.reserved`                     | 1   | inv.stock_reservation      | inventory       | P1-21          |
-| EVT-INV-002 | `stock.reservation.released`         | 1   | inv.stock_reservation      | inventory       | P1-21          |
-| EVT-INV-003 | `stock.movement.posted`              | 1   | inv.stock_movement         | inventory       | P1-21          |
-| EVT-SAL-001 | `invoice.created`                    | 1   | sal.invoice                | billing         | P1-22          |
-| EVT-SAL-002 | `invoice.issued`                     | 1   | sal.invoice                | billing         | P1-22          |
-| EVT-SAL-003 | `invoice.voided`                     | 1   | sal.invoice                | billing         | P1-22          |
-| EVT-SAL-004 | `credit-note.issued`                 | 1   | sal.credit_note            | billing         | P1-22          |
-| EVT-SAL-005 | `receipt.recorded`                   | 1   | sal.receipt                | payments        | P1-22          |
-| EVT-SAL-006 | `payment.allocated`                  | 1   | sal.payment_allocation     | payments        | P1-22          |
-| EVT-SAL-007 | `vehicle.delivered`                  | 1   | sal.delivery_record        | delivery        | P1-22          |
-| EVT-WTY-001 | `warranty.issued`                    | 1   | wty.warranty_record        | warranty        | P1-22          |
+Three of the columns §22 asks for are properties of the PUBLISHER rather than of an
+individual event, and are proved once instead of fifty times:
+
+- **Transactionally persisted** — `publishEvent()` writes into `shared.event_outbox`
+  on the caller's own transaction handle, so an event exists if and only if the
+  business transaction committed. That holds for every event only while the publisher
+  is the sole writer, which this register asserts — 0 foreign writer(s) found.
+- **Replay-safe** — `event_key` is unique per tenant, so a producer retrying its own
+  command cannot emit the same event twice.
+- **Failure-tested** — retry, backoff, lease expiry and poison handling live in the
+  outbox worker, which has its own suite. A per-event failure test would be that one
+  copied fifty times.
+
+| Code        | Event type                           | v   | Aggregate                  | Owner           | Phase | Produced | Delivery-tested |
+| ----------- | ------------------------------------ | --- | -------------------------- | --------------- | ----- | -------- | --------------- |
+| EVT-IAM-001 | `access.grant.changed`               | 1   | iam.role_grant             | iam             | P1-14 | yes      | 3 file(s)       |
+| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14 | yes      | 3 file(s)       |
+| EVT-IAM-003 | `user.status.changed`                | 1   | iam.user_account           | iam             | P1-14 | yes      | 4 file(s)       |
+| EVT-IAM-004 | `session.revoked`                    | 1   | iam.user_session           | iam             | P1-14 | yes      | 2 file(s)       |
+| EVT-CRM-001 | `business-partner.merged`            | 1   | crm.business_partner       | crm             | P1-16 | yes      | 3 file(s)       |
+| EVT-CRM-002 | `business-partner.created`           | 1   | crm.business_partner       | crm             | P1-16 | yes      | 2 file(s)       |
+| EVT-CRM-003 | `consent.changed`                    | 1   | crm.business_partner       | crm             | P1-16 | yes      | 2 file(s)       |
+| EVT-VEH-001 | `vehicle.relationship.changed`       | 1   | veh.vehicle                | veh             | P1-17 | yes      | 3 file(s)       |
+| EVT-VEH-002 | `vehicle.created`                    | 1   | veh.vehicle                | veh             | P1-17 | yes      | 3 file(s)       |
+| EVT-VEH-003 | `vehicle.merged`                     | 1   | veh.vehicle                | veh             | P1-17 | yes      | 2 file(s)       |
+| EVT-APT-001 | `appointment.changed`                | 1   | apt.appointment            | apt             | P1-18 | yes      | 3 file(s)       |
+| EVT-REC-001 | `vehicle.checked-in`                 | 1   | rec.reception_visit        | rec             | P1-18 | yes      | 2 file(s)       |
+| EVT-REC-002 | `reception.approved`                 | 1   | rec.reception_visit        | rec             | P1-18 | yes      | 3 file(s)       |
+| EVT-DOC-001 | `document.accepted`                  | 1   | shared.document            | shared          | —     | reserved | 3 file(s)       |
+| EVT-NTF-001 | `message.delivery.changed`           | 1   | shared.outbound_message    | shared          | —     | reserved | 1 file(s)       |
+| EVT-DOC-002 | `document.version.registered`        | 1   | shared.document            | shared          | P1-15 | yes      | 1 file(s)       |
+| EVT-DOC-003 | `document.link.changed`              | 1   | shared.document            | shared          | P1-15 | yes      | 1 file(s)       |
+| EVT-NTF-002 | `message.enqueued`                   | 1   | shared.outbound_message    | shared          | P1-15 | yes      | 3 file(s)       |
+| EVT-TPL-001 | `message-template.version.changed`   | 1   | shared.message_template    | shared          | P1-15 | yes      | 1 file(s)       |
+| EVT-ORG-001 | `organization.branch.status.changed` | 1   | org.branch                 | shared          | P1-15 | yes      | 1 file(s)       |
+| EVT-WOR-001 | `work-order.created`                 | 1   | wo.work_order              | wo              | —     | reserved | 1 file(s)       |
+| EVT-WOR-002 | `work-order.state-changed`           | 1   | wo.work_order              | wo              | P1-19 | yes      | 2 file(s)       |
+| EVT-WOR-003 | `work-order.closed`                  | 1   | wo.work_order              | wo              | P1-19 | yes      | 2 file(s)       |
+| EVT-TEC-001 | `job.assigned`                       | 1   | wo.job                     | wo              | P1-19 | yes      | 3 file(s)       |
+| EVT-TEC-002 | `job.state-changed`                  | 1   | wo.job                     | wo              | P1-19 | yes      | 3 file(s)       |
+| EVT-TEC-003 | `labor.session-changed`              | 1   | tech.labor_session         | tech            | P1-19 | yes      | 2 file(s)       |
+| EVT-WOR-004 | `additional-work.requested`          | 1   | wo.additional_work_request | wo              | P1-19 | yes      | 2 file(s)       |
+| EVT-WOR-005 | `customer-approval.recorded`         | 1   | wo.customer_approval       | wo              | P1-19 | yes      | 2 file(s)       |
+| EVT-DIA-001 | `diagnostic-report.completed`        | 1   | dia.diagnostic_report      | dia             | P1-19 | yes      | 2 file(s)       |
+| EVT-QMS-001 | `quality-control.finalized`          | 1   | qms.quality_control_record | qms             | P1-19 | yes      | 1 file(s)       |
+| EVT-QMS-002 | `rework.linked`                      | 1   | qms.rework_link            | qms             | P1-19 | yes      | 1 file(s)       |
+| EVT-SVC-001 | `service.published`                  | 1   | svc.service_version        | service-catalog | P1-20 | yes      | 1 file(s)       |
+| EVT-SVC-002 | `price-list.published`               | 1   | svc.price_list_version     | pricing         | P1-20 | yes      | 1 file(s)       |
+| EVT-QUO-001 | `quotation.created`                  | 1   | quo.quotation              | quotation       | P1-20 | yes      | 2 file(s)       |
+| EVT-QUO-002 | `quotation.revision-issued`          | 1   | quo.quotation_revision     | quotation       | P1-20 | yes      | 2 file(s)       |
+| EVT-QUO-003 | `quotation.item-decided`             | 1   | quo.quotation_item         | quotation       | P1-20 | yes      | 1 file(s)       |
+| EVT-QUO-004 | `quotation.accepted`                 | 1   | quo.quotation              | quotation       | P1-20 | yes      | 2 file(s)       |
+| EVT-QUO-005 | `quotation.rejected`                 | 1   | quo.quotation              | quotation       | P1-20 | yes      | 2 file(s)       |
+| EVT-QUO-006 | `quotation.expired`                  | 1   | quo.quotation              | quotation       | P1-20 | yes      | 2 file(s)       |
+| EVT-INV-001 | `stock.reserved`                     | 1   | inv.stock_reservation      | inventory       | P1-21 | yes      | 2 file(s)       |
+| EVT-INV-002 | `stock.reservation.released`         | 1   | inv.stock_reservation      | inventory       | P1-21 | yes      | 2 file(s)       |
+| EVT-INV-003 | `stock.movement.posted`              | 1   | inv.stock_movement         | inventory       | P1-21 | yes      | 3 file(s)       |
+| EVT-SAL-001 | `invoice.created`                    | 1   | sal.invoice                | billing         | P1-22 | yes      | 3 file(s)       |
+| EVT-SAL-002 | `invoice.issued`                     | 1   | sal.invoice                | billing         | P1-22 | yes      | 3 file(s)       |
+| EVT-SAL-003 | `invoice.voided`                     | 1   | sal.invoice                | billing         | P1-22 | yes      | 3 file(s)       |
+| EVT-SAL-004 | `credit-note.issued`                 | 1   | sal.credit_note            | billing         | P1-22 | yes      | 2 file(s)       |
+| EVT-SAL-005 | `receipt.recorded`                   | 1   | sal.receipt                | payments        | P1-22 | yes      | 3 file(s)       |
+| EVT-SAL-006 | `payment.allocated`                  | 1   | sal.payment_allocation     | payments        | P1-22 | yes      | 4 file(s)       |
+| EVT-SAL-007 | `vehicle.delivered`                  | 1   | sal.delivery_record        | delivery        | P1-22 | yes      | 3 file(s)       |
+| EVT-WTY-001 | `warranty.issued`                    | 1   | wty.warranty_record        | warranty        | P1-22 | yes      | 3 file(s)       |

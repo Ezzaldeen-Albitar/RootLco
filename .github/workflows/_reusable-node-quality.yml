@@ -206,6 +206,7 @@ jobs:
           npm run validate:p1-21-inventory
           npm run validate:p1-22-inventory
           npm run validate:p1-23-inventory
+          npm run validate:p1-24-register
           npm run validate:exact-money
 
       - name: Route ↔ OpenAPI registry parity

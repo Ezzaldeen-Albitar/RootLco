@@ -1133,11 +1133,23 @@ describe('P1-24-BE-005 — the public auth routes answer with no authenticator a
       asNobody();
       // A body that cannot satisfy any of the four schemas, so every one of them
       // throws from inside the handler.
-      const response = await call<ProblemBody>(entry.handler, {
+      //
+      // The rejection is CAUGHT rather than allowed to propagate, so that a
+      // regression produces an assertion failure instead of an unhandled throw. The
+      // difference matters to the mutation matrix, which treats a crash as STILLBORN:
+      // a mutant that makes the route reject has to fail an assertion to count.
+      const outcome = await call<ProblemBody>(entry.handler, {
         path: entry.path,
         method: 'POST',
         body: { unexpected: '/'.repeat(4) },
-      });
+      }).then(
+        (value) => ({ resolved: true as const, value }),
+        (error: unknown) => ({ resolved: false as const, error })
+      );
+
+      expect(outcome.resolved).toBe(true);
+      if (!outcome.resolved) return;
+      const response = outcome.value;
 
       expect(response.status).toBeGreaterThanOrEqual(200);
       expect(response.headers.get('x-correlation-id')).toMatch(

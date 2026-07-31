@@ -68,6 +68,8 @@
     "validate:p1-22-inventory": "node scripts/p1-22-endpoint-inventory.mjs --check",
     "validate:p1-23-inventory": "node scripts/p1-23-endpoint-inventory.mjs --check",
     "validate:p1-23-mutations": "node scripts/p1-23-mutation-matrix.mjs",
+    "validate:p1-24-register": "node scripts/p1-24-operation-register.mjs --check",
+    "validate:p1-24-mutations": "node scripts/p1-24-mutation-matrix.mjs",
     "validate:exact-money": "node scripts/ci/check-exact-money.mjs",
     "validate:run-block-syntax": "node scripts/ci/check-run-block-syntax.mjs"
   },

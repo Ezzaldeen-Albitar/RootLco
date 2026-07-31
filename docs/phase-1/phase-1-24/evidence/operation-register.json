@@ -6,6 +6,9 @@
     "openapiOperations": 226,
     "openapiSchemas": 3,
     "events": 50,
+    "eventsProduced": 47,
+    "eventsDeliveryTested": 50,
+    "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 104,
     "auditActions": 153
@@ -1646,7 +1649,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-24-read-path-shape.test.ts"
       ],
       "classification": "Covered",
       "file": "src/app/api/v1/audit-events/route.ts"
@@ -1934,7 +1938,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/foundation/operation-coverage-gate.test.ts"
       ],
       "classification": "Covered",
       "file": "src/app/api/v1/org/companies/[companyId]/settings/route.ts"
@@ -2372,7 +2377,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-24-read-path-shape.test.ts"
       ],
       "classification": "Covered",
       "file": "src/app/api/v1/iam/roles/route.ts"
@@ -2659,7 +2665,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/foundation/operation-coverage-gate.test.ts"
       ],
       "classification": "Covered",
       "file": "src/app/api/v1/iam/users/[userId]/route.ts"
@@ -2684,7 +2691,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-24-read-path-shape.test.ts"
       ],
       "classification": "Covered",
       "file": "src/app/api/v1/iam/users/route.ts"
