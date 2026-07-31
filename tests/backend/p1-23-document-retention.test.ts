@@ -283,36 +283,75 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
     expect(result.deletionPerformed).toBe(false);
   });
 
-  // The ladder, in the order the function applies it. The ORDER is the contract:
-  // each case below would answer differently if the gates were reordered.
+  // The ladder's CLASS-DEPENDENT tail.
   //
-  // The classes come from `supabase/seeds/05_shared_reference.sql`, whose
-  // `min_retention_days` is NULL for FOUR of the five classes — deliberately,
-  // because retention durations are owner- and jurisdiction-defined and this
-  // project does not invent them. Only `temporary` carries a number, and it is 0.
+  // The expected verdict is derived from the class row read at run time, NOT
+  // hard-coded per class code, and that is deliberate. `shared.retention_classes`
+  // is platform reference data that a sibling suite mutates and does not restore:
+  // `tests/db/shared-retention.test.ts` forces `operational` to 0 days and
+  // `evidence-audit` to 3650 as its own fixture. In CI the tiers hold separate
+  // databases so the backend tier sees the seeded values, but any run that shares
+  // one database would flip the verdicts — and a test whose expectation depends on
+  // which suite ran first is not evidence about the code.
   //
-  // `retention_not_elapsed` is therefore NOT REACHABLE and is not asserted here:
-  // reaching it needs a class with a positive minimum, and no approved class has
-  // one. That is the phase's central constraint showing up as data, not a gap in
-  // the suite. It is recorded in the docstring and in the archaeology rather than
-  // simulated by writing a duration nobody approved.
-  it.each([
-    // `temporary` is the ONLY class that reaches the bottom of the ladder: it
-    // permits deletion and its minimum is 0 days.
-    ['eligible', { retentionClass: 'temporary' as const }],
-    // Archived outranks every retention consideration below it.
-    ['already_archived', { retentionClass: 'temporary' as const, status: 'archived' as const }],
-    // A class that forbids deletion is a decision to keep, not an unelapsed clock.
-    ['class_no_delete', { retentionClass: 'immutable-financial-history' as const }],
-    // Deletion allowed, but no minimum defined. Indefinite is NOT "elapsed" — and
-    // this is the answer for `operational`, `evidence-audit` and `personal-data`
-    // alike, which is what "no duration has been approved" looks like in practice.
-    ['retention_indefinite', { retentionClass: 'personal-data' as const }],
-    ['retention_indefinite', { retentionClass: 'operational' as const }],
-    ['retention_indefinite', { retentionClass: 'evidence-audit' as const }],
-  ])('reports %s exactly as the protected function decides it', async (expected, seed) => {
+  // Deriving the expectation from `allows_deletion` and `min_retention_days` is
+  // not reimplementing the function: those two columns ARE the contract for the
+  // last three gates, and the four gates above them (legal hold, archived, active
+  // links) are asserted with fixed expectations because they precede the class
+  // lookup entirely.
+  it.each(['temporary', 'immutable-financial-history', 'personal-data', 'operational'] as const)(
+    'reports the verdict the class data implies for %s',
+    async (retentionClass) => {
+      const { rows } = await admin.query<{
+        allows_deletion: boolean;
+        min_retention_days: number | null;
+      }>(
+        `SELECT allows_deletion, min_retention_days FROM shared.retention_classes
+          WHERE class_code = $1`,
+        [retentionClass]
+      );
+      const klass = rows[0];
+      expect(klass, `${retentionClass} must exist in shared.retention_classes`).toBeDefined();
+
+      // The tail of the ladder, and only the tail.
+      const expected = !klass!.allows_deletion
+        ? 'class_no_delete'
+        : klass!.min_retention_days === null
+          ? 'retention_indefinite'
+          : klass!.min_retention_days > 0
+            ? 'retention_not_elapsed'
+            : 'eligible';
+
+      const id = randomUUID();
+      await seedDocument({ id, tenantId: TENANT_A, retentionClass });
+
+      const result = await withTransaction(
+        contextFor({
+          tenantId: TENANT_A,
+          userId: USER_A,
+          operation: 'shared.document-retention-evaluate',
+        }),
+        (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
+      );
+
+      expect(result.eligibility).toBe(expected);
+      expect(result.disposable).toBe(expected === 'eligible');
+      // Whatever the verdict, nothing is destroyed.
+      expect(result.deletionPerformed).toBe(false);
+      expect(await countRows(admin, 'shared.documents', 'id = $1', [id])).toBe(1);
+    }
+  );
+
+  it('treats an archived document as decisive, outranking the retention clock', async () => {
     const id = randomUUID();
-    await seedDocument({ id, tenantId: TENANT_A, ...seed });
+    // `temporary` is the one class that would otherwise answer `eligible`, so this
+    // asserts the ARCHIVED gate rather than agreeing with the class by accident.
+    await seedDocument({
+      id,
+      tenantId: TENANT_A,
+      retentionClass: 'temporary',
+      status: 'archived',
+    });
 
     const result = await withTransaction(
       contextFor({
@@ -323,10 +362,8 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
       (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
     );
 
-    expect(result.eligibility).toBe(expected);
-    // `eligible` means disposal is PERMITTED — it must never mean disposal
-    // happened. Nothing in this phase deletes a document.
-    expect(result.disposable).toBe(expected === 'eligible');
+    expect(result.eligibility).toBe('already_archived');
+    expect(result.disposable).toBe(false);
     expect(result.deletionPerformed).toBe(false);
     expect(await countRows(admin, 'shared.documents', 'id = $1', [id])).toBe(1);
   });

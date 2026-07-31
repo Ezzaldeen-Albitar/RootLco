@@ -199,11 +199,26 @@ The practical consequence, worth stating plainly: today the honest answer for
 almost every document is `retention_indefinite`. `temporary` is the only class
 that can ever answer `eligible`.
 
-**A stale local database hid this.** The local Postgres used during development
-carried `operational = 0` and `evidence-audit = 3650` — values no migration or
-seed produces — so a ladder written against it passed locally and failed in the
-clean room. Reference data is verified against `supabase/seeds/`, not against
-whatever a long-lived local database happens to contain.
+**A mutated local database hid this, and the mutation has a source.**
+`tests/db/shared-retention.test.ts:59` deliberately forces `operational` to `0`
+days and `evidence-audit` to `3650` as its own fixture, with
+`ON CONFLICT DO UPDATE`, and **never restores them**. Platform reference data is
+left mutated for whatever runs next against that database.
+
+In CI this is invisible: the db tier and the backend tier get separate database
+containers, so the backend tier sees the seeded values. It bit here because a
+long-lived local database had run both.
+
+The consequence for this phase is recorded rather than worked around. P1-23's
+retention-tail assertions **derive their expected verdict from the class row read
+at run time** instead of hard-coding a verdict per class code, so the suite is
+correct under either state — verified by running it against both. A test whose
+expectation depends on which suite ran first is not evidence about the code.
+
+Reference data is verified against `supabase/seeds/` and `npm run
+validate:seed-state`, never against whatever a long-lived database contains.
+`P1-23-A-01` (below) tracks the unrestored fixture itself, which is outside this
+phase's scope to change.
 
 ### Reporting: the catalogue is readable, execution has no contract to bind to
 

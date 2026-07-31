@@ -255,7 +255,12 @@ const TASKS = Object.freeze([
       [
         'test',
         'tests/backend/p1-23-document-retention.test.ts',
-        'exactly as the protected function decides it',
+        'reports the verdict the class data implies',
+      ],
+      [
+        'test',
+        'tests/backend/p1-23-document-retention.test.ts',
+        'treats an archived document as decisive',
       ],
     ],
   ],
@@ -725,10 +730,30 @@ const traceability = [
   '',
 ].join('\n');
 
+/**
+ * Generated markdown is written THROUGH prettier, using the repository's own
+ * config, so the file this script produces is byte-identical to the file
+ * `format:check` wants.
+ *
+ * Without this the two gates contradict each other and the loser is whichever
+ * ran second: `prettier --write docs` re-pads the markdown tables, `--check`
+ * then reports the documents stale, regenerating un-pads them, and
+ * `format:check` fails instead. Every prior phase's generator happens to emit
+ * prettier-stable output; relying on that coincidence is what broke here.
+ */
 async function write(path, text) {
+  let formatted = text;
+  try {
+    const prettier = await import('prettier');
+    const config = (await prettier.resolveConfig(path)) ?? {};
+    formatted = await prettier.format(text, { ...config, filepath: path });
+  } catch {
+    // Prettier unavailable (e.g. a production install). Writing the raw text is
+    // correct then; format:check does not run in that environment either.
+  }
   const previous = readIf(path);
-  if (previous === text) return false;
-  await writeFile(path, text, 'utf8');
+  if (previous === formatted) return false;
+  await writeFile(path, formatted, 'utf8');
   return true;
 }
 

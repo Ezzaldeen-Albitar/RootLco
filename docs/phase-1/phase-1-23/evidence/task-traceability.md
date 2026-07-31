@@ -16,7 +16,7 @@
 | `P1-23-BE-008`  | Document metadata read operation                               | 3      | satisfied |
 | `P1-23-BE-009`  | Storage key never projected                                    | 1      | satisfied |
 | `P1-23-BE-010`  | Retention evaluation delegated to the protected function       | 4      | satisfied |
-| `P1-23-BE-011`  | Retention evaluation destroys nothing                          | 2      | satisfied |
+| `P1-23-BE-011`  | Retention evaluation destroys nothing                          | 3      | satisfied |
 | `P1-23-BE-012`  | Reporting module foundation                                    | 2      | satisfied |
 | `P1-23-BE-013`  | Report catalogue listing                                       | 3      | satisfied |
 | `P1-23-BE-014`  | Report definition read                                         | 2      | satisfied |
