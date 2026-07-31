@@ -280,3 +280,14 @@ So the plan's illustrative `POST /api/v1/files:authorize-upload` grammar is
 **None.** Every required table, constraint, policy and protected function
 already exists. Migrations stay at **119**, migration 120 absent, schema hash
 `a677eb05…` unchanged.
+
+## Open findings carried out of this phase
+
+| Id           | Severity | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `P1-23-A-01` | Low      | `tests/db/shared-retention.test.ts:59` overwrites the platform `shared.retention_classes` values (`operational` → 0 days, `evidence-audit` → 3650) with `ON CONFLICT DO UPDATE` and never restores them, so `npm run validate:seed-state` fails on any database that suite has run against. Masked in CI because the db and backend tiers use separate containers. Not fixed here: the suite is P1-05's and changing it is outside this phase's scope. |
+| `P1-23-A-02` | Low      | Report **execution** and **export generation** are not implemented, because `rpt.report_configurations` binds no data source to a report code and inventing one would mean inventing an unapproved report definition. The catalogue reports `executable: false` explicitly. Export **authorization** already exists from P1-15 and is not duplicated.                                                                                                  |
+| `P1-23-A-03` | Low      | `retention_not_elapsed` and `class_undefined` are unreachable and therefore unasserted — the first because no approved retention class carries a positive minimum, the second because the CHECK constraint and the seeded class set coincide. Both recorded above rather than simulated.                                                                                                                                                               |
+
+None is a defect in delivered behaviour; all three are boundaries recorded so the
+next phase inherits them stated rather than discovered.

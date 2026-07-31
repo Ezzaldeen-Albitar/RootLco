@@ -18,10 +18,26 @@ closed as a duplicate of the tracked deferral **#136**. Open PRs then **0**.
 
 ## Commits so far
 
-| SHA        | Wave | Contents                                          |
-| ---------- | ---- | ------------------------------------------------- |
-| `5e779a5e` | 0    | archaeology + operation-coverage namespace repair |
-| `b47ea34b` | 2a   | notification read repository + service            |
+| SHA        | Wave | Contents                                                         |
+| ---------- | ---- | ---------------------------------------------------------------- |
+| `5e779a5e` | 0    | archaeology + operation-coverage namespace repair                |
+| `b47ea34b` | 2a   | notification read repository + service                           |
+| `6377d621` | 2b   | notification routes and operations                               |
+| `9fedd2c7` | 1    | document read + retention evaluation                             |
+| `4cd02aa0` | 1b   | document routes, error catalog                                   |
+| `6045d481` | 3    | reporting module, catalogue and definition reads                 |
+| `2bdc177d` | fix  | real document schema (category_id, no `active` status)           |
+| `f084398d` | fix  | document lifecycle reproduced; retention ladder                  |
+| `75511e5e` | 4    | **27-task phase gate** + the 4 missing permission codes it found |
+| `b91b8a85` | fix  | ladder corrected to APPROVED class data; catalog pin 100→104     |
+| `b3497eb7` | fix  | ladder derived from class row; generator writes through prettier |
+| `c183d3e9` | fix  | schema-baseline permissionCount 100→104                          |
+
+## Status
+
+**7 operations** (not 8 — `shared.notification-enqueue` is P1-15's), all `[OK]`
+in the coverage gate. Phase gate **27/27**. Local tiers: unit 1267, db 1636,
+backend 1648. Migrations **119**, no 120, schema hash unchanged.
 
 ## Wave 0 — baseline and archaeology · COMPLETE
 
@@ -95,20 +111,39 @@ Contract details the compiler taught, both now respected:
   `export const runtime = 'nodejs'` and `dynamic = 'force-dynamic'`.
 - `ERR-NTF-001`, `ERR-DOC-001`, `ERR-EXP-001` already exist in the catalog.
 
+## Traps this phase has already paid for — do not re-derive
+
+- **A denial-only authorization suite proves nothing.** Four declared permission
+  codes were missing from the platform catalog and every denial test passed,
+  because a code that does not exist cannot be held. Assert the positive
+  direction.
+- **The local database is not an oracle for reference data.**
+  `tests/db/shared-retention.test.ts:59` forces `operational = 0` and
+  `evidence-audit = 3650` and never restores them, so any suite sharing that
+  database afterwards sees invented retention periods. CI hides it (separate
+  containers per tier). Verify reference data against `supabase/seeds/` and
+  `npm run validate:seed-state`.
+- **`shared.documents` has no `active` status** — the set is
+  `pending / accepted / quarantined / archived`, and a BEFORE INSERT guard
+  requires `pending`, so the lifecycle must be reproduced, not short-circuited.
+- **`uq_document_categories_tenant_code` is PARTIAL**, so `ON CONFLICT
+(tenant_id, category_code)` does not resolve. Conflict on the primary key.
+- **Run the doc generator LAST, or make it prettier-stable.** `prettier --write
+docs` re-pads generated tables; the generator now writes through prettier so
+  `--check` and `format:check` cannot contradict each other.
+- **Two count pins move with the catalog**, and both are deliberate:
+  `tests/db/p1-15-shared-services-runtime-capabilities.test.ts` (100→104) and
+  `.github/ci-baselines/schema-baseline.json` `permissionCount` (100→104).
+
 ## Next exact actions
 
-1. Register the three notification routes and declare their operations:
-   - `GET /notifications` → `shared.notification-list`
-   - `GET /notifications/{notificationId}` → `shared.notification-read`
-   - `GET /notifications/{notificationId}/deliveries` →
-     `shared.notification-delivery-list` (privileged, audited)
-     Wire `NotificationReadService` into `installSharedServicesRuntime()`.
-2. Wave 1 — document read + retention evaluation (dry-run, non-destructive,
-   refusing to act when policy is absent).
-3. Wave 3 — `rpt.` report catalogue/read and export request/status.
-4. Waves 4–7 — isolation and abuse tests, evidence suites, the 27-task gate
-   script, OpenAPI regeneration, hostile mutation matrix, adversarial reviews,
-   feature PR → merge, documentation-only gate PR → merge, promotion to main.
+1. Get PR #139 fully green on a frozen `FINAL_P1_23_FEATURE_SHA`.
+2. Hostile mutation matrix over the seven operations; adversarial reviews.
+3. Full-tree CodeQL on develop AFTER the feature merge (PR analysis is
+   diff-informed and cannot stand in for it).
+4. Feature PR → merge; documentation-only gate branch
+   `gate/p1-23-documents-notifications-reporting-backend` → merge; promotion to
+   main.
 
 ## Invariants to re-check at every wave
 
