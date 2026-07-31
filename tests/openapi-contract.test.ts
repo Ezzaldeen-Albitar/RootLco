@@ -63,6 +63,8 @@ import '@/app/api/v1/org/branches/[branchId]/settings/route';
 import '@/app/api/v1/attachments/upload-authorizations/route';
 import '@/app/api/v1/attachments/versions/route';
 import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
+import '@/app/api/v1/attachments/documents/[documentId]/route';
+import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';

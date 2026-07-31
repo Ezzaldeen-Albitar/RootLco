@@ -58,6 +58,7 @@ import {
   USER_A,
   USER_TENANT_B,
   USER_UNPERMITTED,
+  IDENTITY_PROVIDER,
   adminPool,
   cleanBackendFixtures,
   contextFor,
@@ -115,10 +116,13 @@ beforeAll(async () => {
   // recipient predicate cannot be tested at all — every cross-user case would
   // also be a cross-tenant case, and the weaker guard would look sufficient.
   await admin.query(
-    `INSERT INTO iam.user_accounts (id, tenant_id, display_name, status, created_by)
-     VALUES ($1, $2, 'P1-23 neighbour', 'active', $3)
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name,
+        status, created_by)
+     VALUES ($1, $2, $4, $5, 'fx-p1-23-neighbour@example.test', 'P1-23 neighbour',
+             'active', $3)
      ON CONFLICT (id) DO NOTHING`,
-    [USER_A_NEIGHBOUR, TENANT_A, USER_A]
+    [USER_A_NEIGHBOUR, TENANT_A, USER_A, IDENTITY_PROVIDER, 'fx_p1_23_neighbour']
   );
 });
 

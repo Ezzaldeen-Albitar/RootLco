@@ -55,6 +55,8 @@ import {
 import '@/app/api/v1/attachments/upload-authorizations/route';
 import '@/app/api/v1/attachments/versions/route';
 import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
+import '@/app/api/v1/attachments/documents/[documentId]/route';
+import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
@@ -310,6 +312,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'sal.receipt.recorded',
   'shared.document.download_authorized',
   'shared.document.linked',
+  'shared.document.retention_evaluated',
   'shared.document.unlinked',
   'shared.document.upload_authorized',
   'shared.document.version_registered',
@@ -401,6 +404,14 @@ const P1_15_AUDIT_ACTIONS: readonly { code: string; class: string; entityType: s
     entityType: 'shared.document_version',
   },
   { code: 'shared.export.authorized', class: 'export', entityType: 'shared.export_request' },
+  // P1-23: retention evaluation. EVALUATION ONLY — no destructive path
+  // exists in this phase, and the record states deletion_performed=false on
+  // every entry so a later phase cannot reuse it to imply approval.
+  {
+    code: 'shared.document.retention_evaluated',
+    class: 'security',
+    entityType: 'shared.document',
+  },
   // P1-23: the delivery view is wider than the recipient inbox, so it is
   // recorded. Listed here because this inventory is exact in both directions.
   {
@@ -485,6 +496,10 @@ const EXPECTED_P1_15_OPERATIONS = [
   'shared.attachment-version-reject',
   'shared.branch-status-change',
   'shared.branch-status-read',
+  // P1-23 document surface: a metadata read and a NON-DESTRUCTIVE retention
+  // evaluation. Listed here because this assertion is exact by design.
+  'shared.document-read',
+  'shared.document-retention-evaluate',
   'shared.export-authorize',
   'shared.export-catalogue',
   'shared.health-live',
@@ -516,6 +531,7 @@ const EXPECTED_P1_15_AUDITED: Readonly<Record<string, string>> = {
   'shared.attachment-version-reject': 'shared.document.version_rejected',
   'shared.branch-status-change': 'org.branch.status_changed',
   'shared.export-authorize': 'shared.export.authorized',
+  'shared.document-retention-evaluate': 'shared.document.retention_evaluated',
   // P1-23: the only audited operation of the read surface. The two inbox
   // reads are unaudited and appear in the list below instead.
   'shared.notification-delivery-list': 'shared.notification.delivery_inspected',
@@ -571,6 +587,7 @@ describe('registered operations against the audit-action catalog', () => {
     );
     expect(unaudited).toEqual([
       'shared.branch-status-read',
+      'shared.document-read',
       'shared.export-catalogue',
       'shared.health-live',
       'shared.health-ready',

@@ -1348,6 +1348,17 @@ export const MANIFEST = {
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
+  // ---- P1-23 document surface ----------------------------------------------
+  'shared.document-read': {
+    files: ['tests/backend/p1-23-document-retention.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'metadata only; the storage key is proven unprojected because it is a locator that travels outside RLS into every downstream system that touches it',
+  },
+  'shared.document-retention-evaluate': {
+    files: ['tests/backend/p1-23-document-retention.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit'],
+    note: 'EVALUATION ONLY — no destructive path exists in this phase; the decision-neutral outcomes (class_undefined, retention_indefinite) are proven distinguishable from a refusal, and a legal hold is proven to win over an elapsed retention',
+  },
   // ---- P1-23 notification reads ------------------------------------------
   //
   // The obligations below are DECLARED on top of the derived floor, not instead

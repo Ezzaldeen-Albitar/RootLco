@@ -288,6 +288,14 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An outbound message was enqueued from an approved template version. Rendered content is not persisted; only its integrity digest is.',
   },
+  // ---- Retention evaluation (P1-23) ---------------------------------------
+  {
+    code: 'shared.document.retention_evaluated',
+    class: 'security',
+    entityType: 'shared.document',
+    description:
+      'Retention disposition was evaluated for a document. EVALUATION ONLY — this phase implements no destructive retention path, and the record states deletion_performed=false on every entry so a later phase cannot reuse it to imply approval. The verdict comes from the protected shared.document_deletion_eligibility function, which owns the rule: legal hold always wins, active links block, retention is measured against the class definition.',
+  },
   // ---- Notification delivery inspection (P1-23) ---------------------------
   {
     code: 'shared.notification.delivery_inspected',

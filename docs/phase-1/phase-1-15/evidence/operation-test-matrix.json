@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 24,
-    "publicApi": 24,
-    "operationDepth": 24,
+    "registered": 26,
+    "publicApi": 26,
+    "operationDepth": 26,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -306,6 +306,63 @@
       "declared": [],
       "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.document-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/attachments/documents/{documentId}",
+      "public": false,
+      "files": ["tests/backend/p1-23-document-retention.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.document-retention-evaluate",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/attachments/documents/{documentId}/retention-evaluations",
+      "public": false,
+      "files": ["tests/backend/p1-23-document-retention.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
