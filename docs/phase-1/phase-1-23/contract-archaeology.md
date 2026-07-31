@@ -180,10 +180,30 @@ Its ladder, in the order it applies — the order is itself the contract:
 document; the operation is an evaluation and its response says
 `deletionPerformed: false` on every path.
 
-`class_undefined` is not reachable from a test: the CHECK constraint on
-`shared.documents.retention_class` permits exactly the five class codes
-`shared.retention_classes` seeds, so the two sets coincide. That is recorded here
-rather than covered by an assertion that proves nothing.
+Two verdicts are **not reachable**, and both are recorded rather than covered by
+an assertion that proves nothing:
+
+- `class_undefined` — the CHECK constraint on `shared.documents.retention_class`
+  permits exactly the five class codes `shared.retention_classes` seeds, so the
+  two sets coincide and no insertable value can miss.
+- `retention_not_elapsed` — **this one is the phase constraint showing up as
+  data.** `supabase/seeds/05_shared_reference.sql` sets `min_retention_days` to
+  **NULL** for `operational`, `evidence-audit`, `personal-data` and
+  `immutable-financial-history`, because retention durations are owner- and
+  jurisdiction-defined; only `temporary` carries a number, and it is `0`. So no
+  approved class has a positive minimum, and nothing can be "not yet elapsed".
+  Reaching this branch would mean inventing a duration the Product Owner has not
+  approved.
+
+The practical consequence, worth stating plainly: today the honest answer for
+almost every document is `retention_indefinite`. `temporary` is the only class
+that can ever answer `eligible`.
+
+**A stale local database hid this.** The local Postgres used during development
+carried `operational = 0` and `evidence-audit = 3650` — values no migration or
+seed produces — so a ladder written against it passed locally and failed in the
+clean room. Reference data is verified against `supabase/seeds/`, not against
+whatever a long-lived local database happens to contain.
 
 ### Reporting: the catalogue is readable, execution has no contract to bind to
 

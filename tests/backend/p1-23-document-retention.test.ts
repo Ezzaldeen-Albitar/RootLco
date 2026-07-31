@@ -13,14 +13,23 @@
  * drift would only surface when a document was deleted that should not have
  * been.
  *
- * ONE BRANCH NOT ASSERTED, AND SAID SO RATHER THAN FAKED. The function has a
- * `class_undefined` branch that this suite does not reach. It fires when a
- * document's `retention_class` has no row in `shared.retention_classes` — and
- * the CHECK constraint on `shared.documents.retention_class` permits exactly
- * the five class codes that table already seeds, so the two sets coincide and
- * no insertable value can miss. Reaching it would mean deleting a seeded
- * retention class underneath the other suites sharing this database. A
- * placeholder asserting nothing would be worse than no test.
+ * TWO BRANCHES NOT ASSERTED, AND SAID SO RATHER THAN FAKED.
+ *
+ * `class_undefined` fires when a document's `retention_class` has no row in
+ * `shared.retention_classes` — and the CHECK constraint on
+ * `shared.documents.retention_class` permits exactly the five class codes that
+ * table seeds, so the two sets coincide and no insertable value can miss.
+ * Reaching it would mean deleting a seeded retention class underneath the other
+ * suites sharing this database.
+ *
+ * `retention_not_elapsed` needs a class with a POSITIVE `min_retention_days`,
+ * and no approved class has one: `supabase/seeds/05_shared_reference.sql` sets
+ * NULL for four of the five classes because retention durations are owner- and
+ * jurisdiction-defined, and `temporary` is 0. Asserting this branch would mean
+ * writing a duration nobody approved, which is the exact thing the phase mandate
+ * forbids. So the branch is unasserted and the reason is the finding.
+ *
+ * A placeholder asserting nothing would be worse than no test in either case.
  *
  * Every other rung of the ladder IS asserted below, in precedence order, because
  * the order is the contract: a legal hold outranks an archived status, which
@@ -248,11 +257,11 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
 
   it('honours a legal-hold RECORD, not only the flag on the document', async () => {
     const id = randomUUID();
-    // legal_hold = false. The block must come from the hold record alone; a
-    // reading that only consulted the boolean would call this document eligible
-    // and 'operational' retention elapses immediately, so the mistake would be
-    // maximally destructive.
-    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'operational' });
+    // legal_hold = false. The block must come from the hold record alone. The
+    // class is 'temporary' on purpose: it is the ONE class that would otherwise
+    // answer 'eligible' immediately, so a reading that consulted only the boolean
+    // would make the most destructive mistake available here.
+    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'temporary' });
     await admin.query(
       `INSERT INTO shared.legal_holds
          (tenant_id, document_id, reason, placed_by, created_by)
@@ -276,18 +285,31 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
 
   // The ladder, in the order the function applies it. The ORDER is the contract:
   // each case below would answer differently if the gates were reordered.
+  //
+  // The classes come from `supabase/seeds/05_shared_reference.sql`, whose
+  // `min_retention_days` is NULL for FOUR of the five classes — deliberately,
+  // because retention durations are owner- and jurisdiction-defined and this
+  // project does not invent them. Only `temporary` carries a number, and it is 0.
+  //
+  // `retention_not_elapsed` is therefore NOT REACHABLE and is not asserted here:
+  // reaching it needs a class with a positive minimum, and no approved class has
+  // one. That is the phase's central constraint showing up as data, not a gap in
+  // the suite. It is recorded in the docstring and in the archaeology rather than
+  // simulated by writing a duration nobody approved.
   it.each([
-    // `operational` permits deletion and its minimum retention is zero days, so
-    // this is the one combination that reaches the bottom of the ladder.
-    ['eligible', { retentionClass: 'operational' as const }],
+    // `temporary` is the ONLY class that reaches the bottom of the ladder: it
+    // permits deletion and its minimum is 0 days.
+    ['eligible', { retentionClass: 'temporary' as const }],
     // Archived outranks every retention consideration below it.
-    ['already_archived', { retentionClass: 'operational' as const, status: 'archived' as const }],
+    ['already_archived', { retentionClass: 'temporary' as const, status: 'archived' as const }],
     // A class that forbids deletion is a decision to keep, not an unelapsed clock.
     ['class_no_delete', { retentionClass: 'immutable-financial-history' as const }],
-    // Deletion allowed, but no minimum defined — indefinite is not "elapsed".
+    // Deletion allowed, but no minimum defined. Indefinite is NOT "elapsed" — and
+    // this is the answer for `operational`, `evidence-audit` and `personal-data`
+    // alike, which is what "no duration has been approved" looks like in practice.
     ['retention_indefinite', { retentionClass: 'personal-data' as const }],
-    // 3650 days from created_at; a freshly seeded document cannot have elapsed it.
-    ['retention_not_elapsed', { retentionClass: 'evidence-audit' as const }],
+    ['retention_indefinite', { retentionClass: 'operational' as const }],
+    ['retention_indefinite', { retentionClass: 'evidence-audit' as const }],
   ])('reports %s exactly as the protected function decides it', async (expected, seed) => {
     const id = randomUUID();
     await seedDocument({ id, tenantId: TENANT_A, ...seed });
@@ -311,7 +333,9 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
 
   it('lets an active link block a document whose retention has already elapsed', async () => {
     const id = randomUUID();
-    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'operational' });
+    // Same class and same age as the `eligible` case; ONLY the link differs, so
+    // the case cannot pass for an unrelated reason.
+    await seedDocument({ id, tenantId: TENANT_A, retentionClass: 'temporary' });
     await admin.query(
       // entity_type is constrained to a dotted schema.table form.
       `INSERT INTO shared.document_links
@@ -329,7 +353,6 @@ describe('shared.document-retention-evaluate — evaluates, never destroys', () 
       (db) => sharedServicesModule().documentReads.evaluateRetention(db, id)
     );
 
-    // Same class and same age as the `eligible` case above; only the link differs.
     expect(result.eligibility).toBe('active_links');
     expect(result.disposable).toBe(false);
   });
