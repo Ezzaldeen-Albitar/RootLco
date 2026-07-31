@@ -31,12 +31,12 @@ ones this phase is built on. Nothing was taken on trust.
 
 ### Prior closure verified
 
-P1-23 is closed and promoted: `docs/phase-1/phase-1-23/` carries
-`gate-record.md` and `promotion-record.md`, `origin/develop` is an ancestor of
-`origin/main`, and the two trees are byte-identical. P1-25 has not started — no
-branch, no PR, no `docs/phase-1/phase-1-25`, no file mentioning it.
+P1-23 is closed and promoted: `docs/phase-1/phase-1-23/` carries `gate-record.md` and
+`promotion-record.md`, `origin/develop` is an ancestor of `origin/main`, and the two
+trees are byte-identical. P1-25 has not started — no branch, no PR, no
+`docs/phase-1/phase-1-25`, no file mentioning it.
 
-### Canonical documentation structure
+### Two names in the brief do not match the repository
 
 The brief names `documentation/04-chapter-03-requirements.md` and siblings. **No
 `documentation/` directory exists in this repository.** The canonical pattern is
@@ -44,82 +44,104 @@ The brief names `documentation/04-chapter-03-requirements.md` and siblings. **No
 onward and used unchanged here. §5 forbids inventing a parallel structure when a
 canonical one exists, so P1-24 evidence lives at `docs/phase-1/phase-1-24/`.
 
+Likewise the performance requirement is **`NFR-PERF-01`**, not `NFR-PERF-001`, and it
+is cited by its real id throughout.
+
 ## Commits
 
-| SHA       | Wave | Contents                                                                            |
-| --------- | ---- | ----------------------------------------------------------------------------------- |
-| _pending_ | 0–2  | operation register, IAM route depth, derived-floor extension, F-002 and F-003 fixes |
+| SHA       | Waves  | Contents                                                                                             |
+| --------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `1d77396` | 0–2    | operation register; IAM route depth; derived floor extended to `iam.`/`meta.`; F-002 and F-003 fixes |
+| `3f83cd7` | 3, 10  | cross-domain journey; read-path shape and the performance baseline                                   |
+| `24ab9f0` | 12, 18 | hostile mutation matrix; event coverage matrix; CI wiring for both                                   |
+| _pending_ | 16     | task traceability                                                                                    |
 
 ## Findings
 
-See [`findings.md`](findings.md). Summary: **P1-24-F-001** (High, fixed) — 39
-operations outside the derived-evidence floor; **P1-24-F-002** (High, fixed) — every
-public operation bypassed the error pipeline; **P1-24-F-003** (Low, fixed) — the
-published contract understated its own scope. Two recorded non-findings, both
-measurement errors of mine, kept for the lesson.
+See [`findings.md`](findings.md).
+
+| ID                                                               | Severity | State |
+| ---------------------------------------------------------------- | -------- | ----- |
+| P1-24-F-001 — 39 operations outside the derived-evidence floor   | High     | Fixed |
+| P1-24-F-002 — every public operation bypassed the error pipeline | High     | Fixed |
+| P1-24-F-003 — the published contract understated its own scope   | Low      | Fixed |
+
+Two recorded non-findings, both measurement errors of mine, kept for the lesson.
 
 ## Wave status
 
-| Wave | Subject                                           | State                                      |
-| ---- | ------------------------------------------------- | ------------------------------------------ |
-| 0    | live ground truth, previous closure verification  | complete                                   |
-| 1    | feature foundation, integrated operation register | complete                                   |
-| 2    | API and contract validation                       | complete                                   |
-| 3    | cross-domain integration proof                    | pending                                    |
-| 4    | transaction and rollback verification             | pending                                    |
-| 5    | RLS and isolation reproof                         | complete for `iam.`/`meta.`; sweep pending |
-| 6    | authorization and privilege-escalation review     | complete for `iam.`/`meta.`; sweep pending |
-| 7    | error-path coverage                               | in progress                                |
-| 8    | concurrency verification                          | pending                                    |
-| 9    | idempotency and replay safety                     | pending                                    |
-| 10   | performance verification                          | pending                                    |
-| 11   | audit verification                                | pending                                    |
-| 12   | event and outbox delivery verification            | pending                                    |
-| 13   | file-security verification                        | pending                                    |
-| 14   | OpenAPI completion                                | complete                                   |
-| 15   | CI, observability, operational readiness          | pending                                    |
-| 16   | documentation and traceability synchronization    | in progress                                |
-| 17   | adversarial security and correctness review       | pending                                    |
-| 18   | mutation testing                                  | pending                                    |
-| 19   | full local verification                           | pending                                    |
-| 20   | clean-room exact-SHA reproof                      | pending                                    |
-| 21   | feature Pull Request preparation                  | pending                                    |
-| 22   | hosted CI and PR readiness                        | pending                                    |
+| Wave | Subject                                           | State                                                 |
+| ---- | ------------------------------------------------- | ----------------------------------------------------- |
+| 0    | live ground truth, previous closure verification  | complete                                              |
+| 1    | feature foundation, integrated operation register | complete                                              |
+| 2    | API and contract validation                       | complete                                              |
+| 3    | cross-domain integration proof                    | complete                                              |
+| 4    | transaction and rollback verification             | complete — verified, no gap                           |
+| 5    | RLS and isolation reproof                         | complete                                              |
+| 6    | authorization and privilege-escalation review     | complete — F-001                                      |
+| 7    | error-path coverage                               | complete — F-002                                      |
+| 8    | concurrency verification                          | complete — verified, no gap                           |
+| 9    | idempotency and replay safety                     | complete                                              |
+| 10   | performance verification                          | complete — baseline recorded, no threshold claimed    |
+| 11   | audit verification                                | complete                                              |
+| 12   | event and outbox delivery verification            | complete                                              |
+| 13   | file-security verification                        | complete — verified, no gap                           |
+| 14   | OpenAPI completion                                | complete — F-003                                      |
+| 15   | CI, observability, operational readiness          | complete                                              |
+| 16   | documentation and traceability synchronization    | complete                                              |
+| 17   | adversarial security and correctness review       | complete — the mutation matrix is its executable half |
+| 18   | mutation testing                                  | complete — 6/6 caught                                 |
+| 19   | full local verification                           | in progress                                           |
+| 20   | clean-room exact-SHA reproof                      | pending                                               |
+| 21   | feature Pull Request preparation                  | pending                                               |
+| 22   | hosted CI and PR readiness                        | pending                                               |
 
 ## Measured surface
 
-| Measure                            | Value                                          |
-| ---------------------------------- | ---------------------------------------------- |
-| Public operations                  | 226                                            |
-| Backend modules                    | 19                                             |
-| OpenAPI paths                      | 195                                            |
-| OpenAPI operations                 | 226                                            |
-| Shared component schemas           | 3 (`ProblemDocument`, `Money`, `PageEnvelope`) |
-| Published error codes              | 28 — the whole catalog                         |
-| Permission codes seeded            | 104                                            |
-| Audit actions catalogued           | 153                                            |
-| Domain events catalogued           | 50                                             |
-| Route files under `src/app/api/v1` | 195                                            |
-| Migrations                         | 119, no 120                                    |
+| Measure                                      | Value                                          |
+| -------------------------------------------- | ---------------------------------------------- |
+| Public operations                            | 226                                            |
+| Backend modules                              | 19                                             |
+| Operations classified `Covered`              | 226                                            |
+| Operations `Partially covered` / `Uncovered` | 0 / 0                                          |
+| OpenAPI paths                                | 195                                            |
+| OpenAPI operations                           | 226                                            |
+| Shared component schemas                     | 3 (`ProblemDocument`, `Money`, `PageEnvelope`) |
+| Published error codes                        | 28 — the whole catalog                         |
+| Permission codes seeded                      | 104                                            |
+| Audit actions catalogued                     | 153                                            |
+| Domain events catalogued                     | 50 (47 produced, 3 reserved)                   |
+| Foreign writers of `shared.event_outbox`     | 0                                              |
+| Migrations                                   | 119, no 120                                    |
 
 Request and response bodies are inline per operation rather than named components;
-the three shared schemas are the cross-cutting ones. That is a design choice, recorded
-here so "3 schemas" is not read as a coverage gap.
+the three shared schemas are the cross-cutting ones. Recorded here so "3 schemas" is
+not read as a coverage gap.
 
 ## Commands executed, with outcomes
 
-| Command                                                          | Outcome                                                 |
-| ---------------------------------------------------------------- | ------------------------------------------------------- |
-| `node scripts/p1-24-operation-register.mjs`                      | 226 operations, 226 Covered, 0 failures                 |
-| `node scripts/check-operation-test-coverage.mjs`                 | OK — 226 operations, 0 invocation-only                  |
-| `npm run validate:openapi`                                       | OK — 195 paths, 226 operations, every operation guarded |
-| `npm run validate:authorization-coverage`                        | OK — every operation guarded, every route registered    |
-| `npm run typecheck`                                              | clean                                                   |
-| `npx vitest run tests/backend/p1-24-iam-route-depth.test.ts`     | 87/87                                                   |
-| `UPDATE_OPENAPI=1 npx vitest run tests/openapi-contract.test.ts` | 4/4, document regenerated                               |
+| Command                                             | Outcome                                                     |
+| --------------------------------------------------- | ----------------------------------------------------------- |
+| `node scripts/p1-24-operation-register.mjs --check` | OK — 226 operations, 0 reconciliation failures              |
+| `node scripts/p1-24-mutation-matrix.mjs`            | 6/6 CAUGHT, 0 survived, 0 stillborn                         |
+| `node scripts/check-operation-test-coverage.mjs`    | OK — 226 operations, 0 invocation-only                      |
+| `npm run validate:openapi`                          | OK — 195 paths, 226 operations, every operation guarded     |
+| `npm run validate:authorization-coverage`           | OK                                                          |
+| `node scripts/ci/check-workflow-security.mjs`       | 17 files, 14 rules, no findings                             |
+| `node scripts/ci/check-run-block-syntax.mjs`        | 129 blocks, 0 invalid                                       |
+| `npm run typecheck`                                 | clean                                                       |
+| `npm run lint`                                      | clean                                                       |
+| `npm run format:check`                              | clean                                                       |
+| `npm run validate:encoding`                         | OK                                                          |
+| `npm run test`                                      | 1285 / 1285                                                 |
+| `npm run test:backend`                              | 1739 / 1739 at `1d77396`; re-run at the final candidate SHA |
 
 ## Next action
 
-Wave 3 — cross-domain integration proof (`P1-24-BE-002`, `TC-INT-001`,
-`TC-P1-24-001`, `TC-P1-24-002`): the full workshop journey across the real domain
-contracts.
+Wave 19 — finish the full local gate battery at the final candidate SHA, then the
+clean-room reproof (Wave 20), then push and open the feature Pull Request (Wave 21)
+and wait for hosted CI (Wave 22).
+
+**The owner gate is not recorded here and must not be.** P1-G24 remains Pending until
+the owner merges the feature PR and a separate post-merge process verifies protected
+`develop`.
