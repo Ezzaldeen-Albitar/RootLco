@@ -288,6 +288,22 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An outbound message was enqueued from an approved template version. Rendered content is not persisted; only its integrity digest is.',
   },
+  // ---- Retention evaluation (P1-23) ---------------------------------------
+  {
+    code: 'shared.document.retention_evaluated',
+    class: 'security',
+    entityType: 'shared.document',
+    description:
+      'Retention disposition was evaluated for a document. EVALUATION ONLY — this phase implements no destructive retention path, and the record states deletion_performed=false on every entry so a later phase cannot reuse it to imply approval. The verdict comes from the protected shared.document_deletion_eligibility function, which owns the rule: legal hold always wins, active links block, retention is measured against the class definition.',
+  },
+  // ---- Notification delivery inspection (P1-23) ---------------------------
+  {
+    code: 'shared.notification.delivery_inspected',
+    class: 'security',
+    entityType: 'shared.outbound_message',
+    description:
+      'The delivery attempts of one outbound message were inspected. This read is deliberately wider than the recipient inbox — an operator diagnosing a stuck queue must see messages they did not receive — so it is recorded. Wider visibility that is not accountable is a leak with a permission attached. No recipient address, message body or provider payload is readable through the operation this records.',
+  },
   {
     code: 'shared.template.created',
     class: 'privileged',

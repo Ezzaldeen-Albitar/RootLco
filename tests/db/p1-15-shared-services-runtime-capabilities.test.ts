@@ -371,7 +371,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 100', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 104', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -415,9 +415,27 @@ describe('P1-15 / global security posture', () => {
     // inv.adjustment.approve already does — a near-duplicate would make the authority
     // model less legible, not more precise.
     //
+    // P1-22 adds none: billing, payment, delivery and warranty declare only codes
+    // P1-11 had already seeded.
+    //
+    // P1-23 adds four, taking the catalog to 104: shared.notification.read,
+    // shared.notification.delivery.read, shared.document.archive and
+    // rpt.report.read. P1-15 seeded only the two shared WRITE capabilities above
+    // because it delivered only writes; this phase delivers the reads, and reading
+    // is a separate authority. Reusing the write codes would have meant that
+    // anyone who may enqueue a notification may also read every recipient's inbox,
+    // and that anyone who may configure a report may read every report.
+    //
+    // This pin is what turned that into a caught defect rather than a shipped one:
+    // all four codes were declared by routes and missing from the catalog, and
+    // every denial-based authorization test still passed, because a permission
+    // that does not exist cannot be held by anybody. See
+    // tests/backend/p1-23-authorization.test.ts for the positive-direction
+    // assertion that now fails when a code is absent.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(100);
+    expect(Number(total.rows[0]?.n)).toBe(104);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
