@@ -135,18 +135,36 @@ docs` re-pads generated tables; the generator now writes through prettier so
   `tests/db/p1-15-shared-services-runtime-capabilities.test.ts` (100→104) and
   `.github/ci-baselines/schema-baseline.json` `permissionCount` (100→104).
 
-## Next exact actions
+## Merge chain — COMPLETE
 
-1. Get PR #139 fully green on a frozen `FINAL_P1_23_FEATURE_SHA`.
-2. Hostile mutation matrix over the seven operations; adversarial reviews.
-3. Full-tree CodeQL on develop AFTER the feature merge (PR analysis is
-   diff-informed and cannot stand in for it).
-4. Feature PR → merge; documentation-only gate branch
-   `gate/p1-23-documents-notifications-reporting-backend` → merge; promotion to
-   main.
+Every merge used a MERGE COMMIT (`develop` permits `merge` only); none is a squash.
 
-## Invariants to re-check at every wave
+| PR   | Head       | Merge      | Contents                                                   |
+| ---- | ---------- | ---------- | ---------------------------------------------------------- |
+| #139 | `c2f89d91` | `12a80c9e` | the phase — seven operations                               |
+| #140 | `222d363e` | `efe800d9` | novelty check pinned to the phase baseline (see below)     |
+| #141 | `d98922d4` | `a247c78b` | adversarial-review findings; the mutation matrix made real |
 
-migrations 119 · no 120 · schema hash `a677eb05…` · production audit 0 ·
-application CodeQL Critical 0 / High 0 · no deployment · no tag · P1-24 not
-started · no real email sent · no real customer document uploaded.
+`develop` tree after #139 was `971557bf`, **predicted with `git merge-tree` before the
+merge and matched after**.
+
+## What each post-merge fix was for
+
+**#140 — the gate destroyed itself.** Check 6 compared the phase allowlist against
+`origin/develop`. That passed on all nineteen green PR runs, because while the phase was
+in review `origin/develop` WAS the baseline. The instant #139 merged, the seven operations
+existed there and four checks went red. A green pull request could not have revealed it.
+`BASE_REF` is now the immovable phase baseline `9f7ef083`.
+
+**#141 — the mutation matrix was measuring nothing.** It reported 9/9 caught. `runSuite`
+scored ANY non-zero exit as CAUGHT, and the runner could not start at all — `execFileSync`
+on a `.cmd` throws `EINVAL` under Node 24 on Windows. Rewritten with a green baseline and
+a requirement that the failure be an ASSERTION; crash signatures are STILLBORN and fail the
+run. The honest matrix then found two real survivors, both fixed, and a third that is
+recorded rather than fixed.
+
+## Invariants at closure
+
+migrations **119** · no 120 · schema hash `a677eb05…` unchanged · permissions **104** ·
+CodeQL full-tree **0 Critical / 0 High** · no deployment · no tag · P1-24 not started ·
+no real email sent · no real customer document uploaded · no business data seeded.

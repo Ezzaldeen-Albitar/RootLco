@@ -172,29 +172,75 @@ note, because that is this check's state in every CI job that does not fetch ful
 
 ---
 
-## 7. Hostile mutation matrix — 9/9 caught
+## 7. Hostile mutation matrix — and the revision where it measured nothing
 
-Each mutation breaks one security property and must turn a named suite red.
+The first version reported **9/9 caught, 0 survivors**. That number was worthless, and an
+independent adversarial review is what established it:
 
-| Id  | Property                                                     |
-| --- | ------------------------------------------------------------ |
-| M1  | the inbox is confined to the calling recipient               |
-| M2  | the caller cannot choose whose inbox to read                 |
-| M3  | tenant isolation on the notification read                    |
-| M4  | document reads never project the storage key                 |
-| M5  | retention evaluation reports the protected function verbatim |
-| M6  | retention evaluation never claims a deletion happened        |
-| M6b | `policyDecided` separates "no policy" from "decided to keep" |
-| M7  | only published report definitions are visible                |
-| M8  | the catalogue does not claim reports are executable          |
+- `runSuite` was `try { exec } catch { return false }` — ANY non-zero exit scored CAUGHT.
+  It never inspected the exit code, stdout or stderr.
+- The runner could not start at all. `execFileSync` on `node_modules/.bin/vitest.cmd`
+  throws `EINVAL` on Windows under Node 24 (the CVE-2024-27980 mitigation forbids running
+  a `.cmd` without a shell), so every run threw before vitest existed and every mutation
+  scored CAUGHT for that reason alone.
+- Five mutations were STILLBORN regardless: one made a parameter untypable (SQLSTATE
+  `42P18`, parse analysis), one selected `storage_key` — a column that does not exist on
+  `shared.documents` (`42703`) — one referenced an unbound identifier while patching the
+  wrong function, and one attacked `findPublishedByCode` while claiming to test the
+  paginated catalogue.
 
-**Four of eight did not APPLY on the first run** and that is reported as a failure, not
-skipped — their patterns matched 2–4 places each, and a mutation that never applied is
-indistinguishable from one that was caught unless the script says so. The anchors were
-made unique rather than the check loosened.
+Now: a BASELINE run per suite that must be green before anything is mutated; the mutant
+must fail with an ASSERTION, with crash signatures outranking it and reported STILLBORN
+(which fails the run); and a launcher that cannot start is distinguished from a suite that
+went red.
 
-Every mutated file is restored and the restoration is **verified by comparing content**,
-not assumed.
+| Id  | Property                                                   | Verdict |
+| --- | ---------------------------------------------------------- | ------- |
+| M1  | the inbox is confined to the calling recipient             | CAUGHT  |
+| M2  | the inbox recipient comes from the request context         | CAUGHT  |
+| M3  | delivery inspection is confined to the addressed message   | CAUGHT  |
+| M4  | the document read projects exactly the approved field set  | CAUGHT  |
+| M5  | retention evaluation reports the function verbatim         | CAUGHT  |
+| M6  | retention evaluation never claims a deletion happened      | CAUGHT  |
+| M6b | policyDecided separates "no policy" from "decided to keep" | CAUGHT  |
+| M7  | only published definitions appear in the catalogue LISTING | CAUGHT  |
+| M7b | only published definitions are readable BY CODE            | CAUGHT  |
+| M8  | the catalogue does not claim reports are executable        | CAUGHT  |
+
+**10 caught, 0 survived, 0 stillborn, 0 not applied** — every verdict a real assertion
+failure against a green baseline.
+
+### The two real survivors it found, both fixed
+
+- **Delivery inspection was confined by nothing.** Only one message in the tenant had
+  attempts, so dropping the `message_id` predicate returned the same rows and no assertion
+  noticed. A second message with its own attempts now makes it observable.
+- **The projection assertion checked only the VIEW.** The service maps fields one by one,
+  so a widened SQL projection was invisible. Asserted at both layers now.
+
+### One survivor recorded rather than fixed
+
+Removing the code-side `tenant_id` predicate fails NO test, because the RLS policy
+(`USING (tenant_id = iam.current_tenant_id())`) blocks the foreign row first. The predicate
+is defence in depth and stays, but nothing reachable through the service can observe its
+failure independently, so a mutation for it could only ever survive. It is removed rather
+than kept as decoration. **Every cross-tenant assertion in this phase is RLS-backstopped,
+and that is the honest description of what they prove.**
+
+### Two error codes were semantically wrong, and two assertions could never fail
+
+`ERR-DOC-001` is registered as "Document version not available", **409**, with a
+description stating verbatim that the version EXISTS and that reporting not-found would be
+misleading. `ERR-NTF-001` is "Recipient consent not granted", **409**, about the enqueue
+path. Both were thrown for READ MISSES, and titles and statuses come from the catalog, not
+from the thrown message — so a missing document answered `409 Document version not
+available`. All three read paths now use `ERR-RES-001` (404, "indistinguishable from
+exists-but-out-of-scope by design"), and `ERR-RPT-001` was removed as it then had no
+producer.
+
+"Never projects the storage key" forbade a column that does not exist; the digest scan
+forbade five spellings by name while comparing a hex literal against a `bytea` column that
+never serialises to that form. Both are exact key sets now.
 
 ---
 
@@ -233,39 +279,34 @@ contract boundary, not a defect, and no operation pretends otherwise.
 
 ## 10. Verification
 
-All checks measured via `/commits/{sha}/check-runs` — **19 checks**, not the 14 Actions
-jobs, because `/actions/runs` does not list checks that are not Actions workflows. A
-`CodeQL` check from Advanced Security was red on five heads reported green in an earlier
-initiative for exactly that reason.
+All checks green on the feature head, on GitHub-hosted Actions, measured via
+`/commits/{sha}/check-runs` — **19 checks**, not the 14 Actions jobs, because
+`/actions/runs` does not list checks that are not Actions workflows.
 
-| Head       | Meaning               | Result                           |
-| ---------- | --------------------- | -------------------------------- |
-| `c2f89d91` | feature head          | 19/19 green                      |
-| `12a80c9e` | develop after PR #139 | 4 red — see §6a                  |
-| `222d363e` | fix head (PR #140)    | 19/19 green                      |
-| `efe800d9` | develop after PR #140 | recorded in the promotion record |
-
-**CodeQL, full tree.** Pull-request analysis is DIFF-INFORMED and cannot stand in for a
-full-tree run; a full run happens on push to a protected branch. Open alerts across the
-repository: **1**, medium, `js/http-to-file-access` in
-`scripts/ci/check-commit-checks.mjs:252` — a CI script, not application source,
-pre-existing on `main` and not introduced by this phase. **0 Critical, 0 High.**
-
-Two failures were environment, not code, and are recorded as such rather than diagnosed as
-defects: one `integration-tests` Docker service-container networking error
-(`failed to set up container networking`), re-run; and one `hosted-clean-room`
-`The operation was canceled`, a run superseded by a later push.
-
-One `integration-tests` check on PR #140 is `skipped`, legitimately: change-detection saw
-that the diff touches only a gate script, no source and no test. A skip is recorded as a
-skip.
+One `integration-tests` failure was a Docker service-container networking error
+(`failed to set up container networking`) and was re-run rather than diagnosed as a code
+defect. One `hosted-clean-room` failure was `The operation was canceled` — a run superseded
+by a later push, not a result.
 
 ---
 
 ## 11. Decision
 
-Recorded in the promotion record accompanying this gate.
+**Go — P1-23 Documents, Notifications and Reporting Backend gate passed.**
 
-`origin/main` is untouched by the feature branch. Promotion of an integrated `develop` into
-`main` is the only route by which implementation reaches `main` (ADR-006 §45, §47).
+Seven operations, 27/27 tasks, no migration, schema hash unchanged, 0 Critical and 0 High
+from a full-tree CodeQL run, and a mutation matrix whose every verdict is a real assertion
+failure against a green baseline.
+
+The phase is recorded with its defects, not despite them. Three of the four most
+significant findings were in work this phase produced — a denial-only authorization suite
+that proved nothing, a phase gate that destroyed itself on the first push to the branch it
+protected, and a mutation matrix that reported 9/9 while its runner could not start. Each
+is written down above with what it would have cost, because a gate record that lists only
+successes is the same failure in a different register.
+
+`origin/develop` = `a247c78b7c1ac1543cd55d7a07cf5dfd5f14880f`, **17/17 checks green**.
+
+Promotion of the integrated `develop` into `main` follows in the accompanying promotion
+record, by merge commit, per ADR-006 §45 and §47. No deployment. No release. No tag.
 P1-24 is **not** started.
