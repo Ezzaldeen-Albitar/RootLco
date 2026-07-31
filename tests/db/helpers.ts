@@ -22,6 +22,8 @@
  * DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD. They are not secrets;
  * no production credential is ever read here.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Client, Pool } from 'pg';
 import type { ClientConfig } from 'pg';
 
@@ -647,6 +649,65 @@ export async function cleanFixtures(admin: Pool): Promise<void> {
   // Test-created platform fixtures use the fx_ prefix by convention.
   await admin.query(`DELETE FROM org.subscription_plans WHERE plan_code LIKE 'fx\\_%'`);
   await admin.query(`DELETE FROM org.feature_flags WHERE flag_code LIKE 'fx\\_%'`);
+}
+
+const PERMISSION_CATALOG_SEED = join(
+  __dirname,
+  '..',
+  '..',
+  'supabase',
+  'seeds',
+  '04_iam_permission_catalog.sql'
+);
+const PERMISSION_SEED_CONFLICT_ARM = /ON\s+CONFLICT\s*\(\s*permission_code\s*\)\s*DO\s+NOTHING/gi;
+
+/**
+ * Puts the governed platform permission catalog back exactly as seed 04 defines
+ * it. For suites that must remove a SEEDED permission code to exercise a gate.
+ *
+ * iam.permissions is PLATFORM reference data, not a fixture: cleanFixtures only
+ * removes the `test.` prefix codes suites mint for themselves, so a suite that
+ * deletes a governed code leaves the catalog one row short for every suite and
+ * tool that runs afterwards on the same database. CI hides this because the db
+ * and backend tiers use separate containers; a long-lived local database does
+ * not, and the row does not come back on its own.
+ *
+ * The seed's own INSERT is reused verbatim and only its conflict arm is rewritten
+ * from DO NOTHING to DO UPDATE, so no code, domain, description or risk level is
+ * ever restated here and the restore cannot drift from
+ * 04_iam_permission_catalog.sql. DO UPDATE rather than the seed's own DO NOTHING
+ * because a deleted code gets re-created by whichever OTHER suite next inserts it
+ * as a fixture, with that suite's own wording — so the row can be present and
+ * still be wrong, and only an update puts the seeded text back.
+ *
+ * The WHERE clause keeps that update to rows that actually differ:
+ * tg_permissions_touch_metadata advances record_version on EVERY update, so an
+ * unguarded replay would bump all hundred rows on each suite that calls this —
+ * the same leak class in a quieter column. permission_code/created_at/created_by
+ * are never in the SET list: tg_permissions_immutable guards them.
+ */
+export async function restoreSeededPermissionCatalog(admin: Pool): Promise<void> {
+  const seed = readFileSync(PERMISSION_CATALOG_SEED, 'utf8');
+  const arms = seed.match(PERMISSION_SEED_CONFLICT_ARM) ?? [];
+  if (arms.length !== 1) {
+    throw new Error(
+      `Expected exactly one "ON CONFLICT (permission_code) DO NOTHING" in ` +
+        `${PERMISSION_CATALOG_SEED}, found ${arms.length}. restoreSeededPermissionCatalog must ` +
+        `be updated before any suite may delete a seeded permission code again.`
+    );
+  }
+  await admin.query(
+    seed.replace(
+      PERMISSION_SEED_CONFLICT_ARM,
+      `ON CONFLICT (permission_code) DO UPDATE
+         SET domain      = EXCLUDED.domain,
+             description = EXCLUDED.description,
+             risk_level  = EXCLUDED.risk_level
+       WHERE permissions.domain      IS DISTINCT FROM EXCLUDED.domain
+          OR permissions.description IS DISTINCT FROM EXCLUDED.description
+          OR permissions.risk_level  IS DISTINCT FROM EXCLUDED.risk_level`
+    )
+  );
 }
 
 /** Error-code convenience: `42501` insufficient_privilege, etc. */
