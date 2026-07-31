@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 224,
-    "publicApi": 224,
+    "registered": 226,
+    "publicApi": 226,
     "internal": 0,
-    "withRequiredEvidence": 210,
+    "withRequiredEvidence": 212,
     "invocationOnly": 14,
     "p1_15": {
       "registered": 26,
@@ -4059,6 +4059,54 @@
         "cross-tenant",
         "denial",
         "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rpt.report-catalogue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reports",
+      "public": false,
+      "files": ["tests/backend/p1-23-reporting.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rpt.report-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reports/{reportCode}",
+      "public": false,
+      "files": ["tests/backend/p1-23-reporting.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
         "isolation",
         "route",
         "service",

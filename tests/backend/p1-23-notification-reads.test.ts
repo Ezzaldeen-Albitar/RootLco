@@ -56,9 +56,10 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
+  USER_PERMITTED,
+  USER_SCOPED,
   USER_TENANT_B,
   USER_UNPERMITTED,
-  IDENTITY_PROVIDER,
   adminPool,
   cleanBackendFixtures,
   contextFor,
@@ -73,8 +74,21 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { requirePermissions } from '@/server/auth/authorization';
 import { sharedServicesModule } from '@/modules/shared-services';
 
-/** A second user inside TENANT_A — the same-tenant neighbour whose inbox must stay private. */
-const USER_A_NEIGHBOUR = 'c1230000-0000-4000-8000-0000000000a2';
+/**
+ * The caller, and a SECOND user in the same tenant whose inbox must stay
+ * private.
+ *
+ * Both come from `ensureBackendFixtures` rather than being minted here: the FK
+ * on (tenant_id, recipient_user_id) requires a real `iam.user_accounts` row in
+ * that tenant, and a row this file created is one `cleanBackendFixtures` away
+ * from vanishing underneath a suite that runs alongside it.
+ *
+ * The neighbour is what makes the recipient predicate testable at all. Without
+ * a second user inside TENANT_A every cross-user case would also be a
+ * cross-tenant case, and the weaker guard would look sufficient.
+ */
+const CALLER = USER_PERMITTED;
+const NEIGHBOUR = USER_SCOPED;
 
 let admin: Pool;
 let runtime: Pool;
@@ -111,19 +125,6 @@ beforeAll(async () => {
   runtime = runtimeAppPool();
   __setPrimaryPoolForTests(runtime);
   await ensureBackendFixtures(admin);
-
-  // The same-tenant neighbour. Without a second user inside TENANT_A the
-  // recipient predicate cannot be tested at all — every cross-user case would
-  // also be a cross-tenant case, and the weaker guard would look sufficient.
-  await admin.query(
-    `INSERT INTO iam.user_accounts
-       (id, tenant_id, identity_provider, provider_subject, email, display_name,
-        status, created_by)
-     VALUES ($1, $2, $4, $5, 'fx-p1-23-neighbour@example.test', 'P1-23 neighbour',
-             'active', $3)
-     ON CONFLICT (id) DO NOTHING`,
-    [USER_A_NEIGHBOUR, TENANT_A, USER_A, IDENTITY_PROVIDER, 'fx_p1_23_neighbour']
-  );
 });
 
 afterAll(async () => {
@@ -133,7 +134,6 @@ afterAll(async () => {
   await admin.query(`DELETE FROM shared.outbound_messages WHERE tenant_id = ANY($1::uuid[])`, [
     [TENANT_A, TENANT_B],
   ]);
-  await admin.query(`DELETE FROM iam.user_accounts WHERE id = $1`, [USER_A_NEIGHBOUR]);
   await cleanBackendFixtures(admin);
   await runtime.end();
   await admin.end();
@@ -146,18 +146,18 @@ describe('shared.notification-list — the caller reads only their own inbox', (
     await seedMessage({
       id: mine1,
       tenantId: TENANT_A,
-      recipientUserId: USER_A,
+      recipientUserId: CALLER,
       dedupeKey: `p123-${mine1}`,
     });
     await seedMessage({
       id: mine2,
       tenantId: TENANT_A,
-      recipientUserId: USER_A,
+      recipientUserId: CALLER,
       dedupeKey: `p123-${mine2}`,
     });
 
     const page = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-list' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-list' }),
       (db) => sharedServicesModule().notificationReads.listMine(db, {})
     );
 
@@ -176,12 +176,12 @@ describe('shared.notification-list — the caller reads only their own inbox', (
     await seedMessage({
       id: neighbours,
       tenantId: TENANT_A,
-      recipientUserId: USER_A_NEIGHBOUR,
+      recipientUserId: NEIGHBOUR,
       dedupeKey: `p123-${neighbours}`,
     });
 
     const page = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-list' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-list' }),
       (db) => sharedServicesModule().notificationReads.listMine(db, {})
     );
 
@@ -198,7 +198,7 @@ describe('shared.notification-list — the caller reads only their own inbox', (
     });
 
     const page = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-list' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-list' }),
       (db) => sharedServicesModule().notificationReads.listMine(db, {})
     );
 
@@ -210,12 +210,12 @@ describe('shared.notification-list — the caller reads only their own inbox', (
     await seedMessage({
       id: mine,
       tenantId: TENANT_A,
-      recipientUserId: USER_A,
+      recipientUserId: CALLER,
       dedupeKey: `p123-${mine}`,
     });
 
     const page = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-list' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-list' }),
       (db) => sharedServicesModule().notificationReads.listMine(db, {})
     );
 
@@ -231,7 +231,7 @@ describe('shared.notification-list — the caller reads only their own inbox', (
 
   it('bounds the page size rather than trusting the caller', async () => {
     const page = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-list' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-list' }),
       (db) => sharedServicesModule().notificationReads.listMine(db, { limit: 10_000 })
     );
     // MAX_PAGE_SIZE is the foundation's clamp; the exact value is its business,
@@ -246,12 +246,12 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     await seedMessage({
       id: mine,
       tenantId: TENANT_A,
-      recipientUserId: USER_A,
+      recipientUserId: CALLER,
       dedupeKey: `p123-${mine}`,
     });
 
     const view = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-read' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-read' }),
       (db) => sharedServicesModule().notificationReads.readMine(db, mine)
     );
 
@@ -265,12 +265,12 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     await seedMessage({
       id: neighbours,
       tenantId: TENANT_A,
-      recipientUserId: USER_A_NEIGHBOUR,
+      recipientUserId: NEIGHBOUR,
       dedupeKey: `p123-${neighbours}`,
     });
 
     const denied = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-read' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-read' }),
       (db) =>
         sharedServicesModule()
           .notificationReads.readMine(db, neighbours)
@@ -284,7 +284,7 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     // Same failure for an id that does not exist at all: the endpoint must not
     // let a caller distinguish "not yours" from "not real".
     const absent = await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-read' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-read' }),
       (db) =>
         sharedServicesModule()
           .notificationReads.readMine(db, randomUUID())
@@ -298,7 +298,7 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     // `SafeDetails` is a closed shape, and the failure deliberately sets none:
     // an error body is exactly where identifiers drift into logs.
     const denied = (await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-read' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-read' }),
       (db) =>
         sharedServicesModule()
           .notificationReads.readMine(db, randomUUID())
@@ -319,7 +319,7 @@ describe('shared.notification-read — one message, and only if it is yours', ()
     });
 
     const denied = (await withTransaction(
-      contextFor({ tenantId: TENANT_A, userId: USER_A, operation: 'shared.notification-read' }),
+      contextFor({ tenantId: TENANT_A, userId: CALLER, operation: 'shared.notification-read' }),
       (db) =>
         sharedServicesModule()
           .notificationReads.readMine(db, foreign)
@@ -340,7 +340,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
       // Addressed to the NEIGHBOUR: an operator must be able to inspect delivery
       // of a message they did not receive, which is the whole point of the
       // wider permission.
-      recipientUserId: USER_A_NEIGHBOUR,
+      recipientUserId: NEIGHBOUR,
       dedupeKey: `p123-${message}`,
     });
     await admin.query(
@@ -357,7 +357,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     const result = await withTransaction(
       contextFor({
         tenantId: TENANT_A,
-        userId: USER_A,
+        userId: CALLER,
         operation: 'shared.notification-delivery-list',
       }),
       (db) => sharedServicesModule().notificationReads.readDeliveries(db, message)
@@ -382,7 +382,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     await seedMessage({
       id: message,
       tenantId: TENANT_A,
-      recipientUserId: USER_A,
+      recipientUserId: CALLER,
       dedupeKey: `p123-${message}`,
     });
     await admin.query(
@@ -397,7 +397,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     const result = await withTransaction(
       contextFor({
         tenantId: TENANT_A,
-        userId: USER_A,
+        userId: CALLER,
         operation: 'shared.notification-delivery-list',
       }),
       (db) => sharedServicesModule().notificationReads.readDeliveries(db, message)
@@ -424,7 +424,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     const denied = (await withTransaction(
       contextFor({
         tenantId: TENANT_A,
-        userId: USER_A,
+        userId: CALLER,
         operation: 'shared.notification-delivery-list',
       }),
       (db) =>
@@ -442,7 +442,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     await seedMessage({
       id: message,
       tenantId: TENANT_A,
-      recipientUserId: USER_A_NEIGHBOUR,
+      recipientUserId: NEIGHBOUR,
       dedupeKey: `p123-${message}`,
     });
 
@@ -456,7 +456,7 @@ describe('shared.notification-delivery-list — privileged inspection, and audit
     await withTransaction(
       contextFor({
         tenantId: TENANT_A,
-        userId: USER_A,
+        userId: CALLER,
         operation: 'shared.notification-delivery-list',
       }),
       (db) => sharedServicesModule().notificationReads.readDeliveries(db, message)

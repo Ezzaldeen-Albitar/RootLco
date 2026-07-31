@@ -1348,6 +1348,21 @@ export const MANIFEST = {
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
+  // ---- P1-23 reporting catalogue -------------------------------------------
+  //
+  // The first operations ever registered against the `rpt.` namespace, which is
+  // why the namespace joined DERIVED_PREFIXES in this phase and not earlier: a
+  // prefix with nothing behind it reports a vacuous 0/0 block.
+  'rpt.report-catalogue': {
+    files: ['tests/backend/p1-23-reporting.test.ts'],
+    required: ['cross-tenant'],
+    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable",
+  },
+  'rpt.report-read': {
+    files: ['tests/backend/p1-23-reporting.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented",
+  },
   // ---- P1-23 document surface ----------------------------------------------
   'shared.document-read': {
     files: ['tests/backend/p1-23-document-retention.test.ts'],

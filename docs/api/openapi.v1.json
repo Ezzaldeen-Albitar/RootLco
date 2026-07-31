@@ -9443,6 +9443,114 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/reports": {
+      "get": {
+        "operationId": "rpt.report-catalogue",
+        "summary": "List the published report definitions configured for the tenant.",
+        "tags": ["reporting"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rpt.report.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "standard-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/reports/{reportCode}": {
+      "get": {
+        "operationId": "rpt.report-read",
+        "summary": "Read one published report definition, including its filter allowlist.",
+        "tags": ["reporting"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["rpt.report.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "standard-read",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/rework-links/{reworkLinkId}": {
       "get": {
         "operationId": "qms.rework-detail",
@@ -13054,6 +13162,7 @@
               "ERR-DOC-001",
               "ERR-NTF-001",
               "ERR-EXP-001",
+              "ERR-RPT-001",
               "ERR-TRN-001",
               "ERR-WO-001",
               "ERR-WO-002",

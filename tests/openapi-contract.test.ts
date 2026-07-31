@@ -68,6 +68,8 @@ import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/ro
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
+import '@/app/api/v1/reports/route';
+import '@/app/api/v1/reports/[reportCode]/route';
 import '@/app/api/v1/notifications/route';
 import '@/app/api/v1/notifications/[notificationId]/route';
 import '@/app/api/v1/notifications/[notificationId]/deliveries/route';

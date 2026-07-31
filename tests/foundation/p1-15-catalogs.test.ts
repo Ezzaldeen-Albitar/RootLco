@@ -60,6 +60,8 @@ import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/ro
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
+import '@/app/api/v1/reports/route';
+import '@/app/api/v1/reports/[reportCode]/route';
 import '@/app/api/v1/notifications/route';
 import '@/app/api/v1/notifications/[notificationId]/route';
 import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
@@ -106,6 +108,7 @@ const EXPECTED_ERROR_CODES = [
   'ERR-REQ-002',
   'ERR-RES-001',
   'ERR-RES-002',
+  'ERR-RPT-001',
   'ERR-RTE-001',
   'ERR-STB-001',
   'ERR-SYS-001',
@@ -143,6 +146,7 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-REQ-002', status: 404, owner: 'request', class: 'client', retryable: false },
   { code: 'ERR-RES-001', status: 404, owner: 'resource', class: 'client', retryable: false },
   { code: 'ERR-RES-002', status: 409, owner: 'resource', class: 'conflict', retryable: false },
+  { code: 'ERR-RPT-001', status: 404, owner: 'reporting', class: 'client', retryable: false },
   { code: 'ERR-RTE-001', status: 429, owner: 'throttling', class: 'throttle', retryable: true },
   { code: 'ERR-STB-001', status: 501, owner: 'stub', class: 'client', retryable: false },
   { code: 'ERR-SYS-001', status: 500, owner: 'platform', class: 'server', retryable: true },
@@ -151,11 +155,6 @@ const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-TRN-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
   { code: 'ERR-VAL-001', status: 422, owner: 'validation', class: 'client', retryable: false },
   { code: 'ERR-WO-001', status: 409, owner: 'transition', class: 'conflict', retryable: false },
-  // Wave 6's unapproved-work execution gate. Same status/owner/class as ERR-WO-001
-  // and deliberately a separate code: ERR-WO-001 is the whole-order B1..B6 closure
-  // gate, this refuses ONE job movement while additional work it discovered awaits a
-  // customer decision. Sharing the code would make the catalog's own description of
-  // ERR-WO-001 false.
   { code: 'ERR-WO-002', status: 409, owner: 'transition', class: 'conflict', retryable: false },
 ];
 
@@ -488,6 +487,11 @@ describe('audit-action catalog', () => {
 
 /** Every operation the P1-15 route modules imported above register. */
 const EXPECTED_P1_15_OPERATIONS = [
+  // P1-23 reporting. The catalogue is tenant CONFIGURATION, and neither
+  // operation executes a report — the frozen rpt schema binds no data source
+  // to a report code.
+  'rpt.report-catalogue',
+  'rpt.report-read',
   'shared.attachment-download-authorize',
   'shared.attachment-link-create',
   'shared.attachment-link-withdraw',
@@ -586,6 +590,8 @@ describe('registered operations against the audit-action catalog', () => {
         .map((operation) => operation.id)
     );
     expect(unaudited).toEqual([
+      'rpt.report-catalogue',
+      'rpt.report-read',
       'shared.branch-status-read',
       'shared.document-read',
       'shared.export-catalogue',
