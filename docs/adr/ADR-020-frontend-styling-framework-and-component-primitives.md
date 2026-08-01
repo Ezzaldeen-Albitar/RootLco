@@ -44,10 +44,10 @@ shared states, Arabic/English with RTL, accessibility and print foundations.
 
 ### The evaluation criteria ADR-002 named
 
-| Criterion | What it demands of the styling approach |
-| --- | --- |
-| **Multi-tenant theming** | Theme values must be swappable at runtime, from one source, without recompiling or editing components |
-| **RTL support for Arabic** | Logical properties must be the default; direction must not be encoded per component |
+| Criterion                  | What it demands of the styling approach                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-tenant theming**   | Theme values must be swappable at runtime, from one source, without recompiling or editing components                         |
+| **RTL support for Arabic** | Logical properties must be the default; direction must not be encoded per component                                           |
 | **Config-driven branding** | The final logo and palette are unknown today (OIR-06). Replacing them must not touch buttons, tables, dialogs, forms or pages |
 
 A fourth criterion is imposed by this repository rather than by ADR-002: **the decision

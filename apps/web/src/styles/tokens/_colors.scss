@@ -104,18 +104,15 @@ $semantic: (
   // as a token keeps the print stylesheet free of raw values like every other
   // layer, rather than making print the one exception nobody notices.
   'paper': map-get($neutral, 0),
-
   // text
   'text-primary': map-get($neutral, 900),
   'text-secondary': map-get($neutral, 600),
   'text-muted': map-get($neutral, 500),
   'text-inverse': map-get($neutral, 0),
   'text-disabled': map-get($neutral, 400),
-
   // borders
   'border': map-get($neutral, 200),
   'border-strong': map-get($neutral, 300),
-
   // actions
   'primary': map-get($primary, 500),
   'primary-hover': map-get($primary, 600),
@@ -125,7 +122,6 @@ $semantic: (
   'accent': map-get($primary, 400),
   'focus-ring': map-get($primary, 400),
   'disabled': map-get($neutral, 200),
-
   // status
   'success': map-get($success, 500),
   'success-subtle': map-get($success, 50),
@@ -135,7 +131,6 @@ $semantic: (
   'error-subtle': map-get($danger, 50),
   'info': map-get($info, 500),
   'info-subtle': map-get($info, 50),
-
   // table — called out separately because the data table is the highest-traffic
   // surface in an operational product and must be tunable without touching
   // general surface tokens

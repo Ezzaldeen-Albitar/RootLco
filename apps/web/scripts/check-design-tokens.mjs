@@ -23,10 +23,7 @@ import { pathToFileURL } from 'node:url';
 const ROOT = process.cwd();
 
 /** Directories permitted to contain raw design values. */
-export const TOKEN_ROOTS = [
-  join('src', 'styles', 'tokens'),
-  join('src', 'styles', 'themes'),
-];
+export const TOKEN_ROOTS = [join('src', 'styles', 'tokens'), join('src', 'styles', 'themes')];
 
 /** What counts as a raw design value. */
 export const RULES = [
@@ -52,9 +49,7 @@ export function isTokenFile(relPath) {
 
 /** Strips comments so prose about a hex colour is not itself a violation. */
 export function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|\s)\/\/.*$/gm, '$1');
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/.*$/gm, '$1');
 }
 
 export function inspect(relPath, source) {
@@ -97,7 +92,9 @@ function main() {
   // A check that examined nothing is not a clean result — the failure mode this
   // repository keeps finding.
   if (files.length === 0) {
-    console.error('::error::design-token check inspected ZERO files. That is not clean, it is blind.');
+    console.error(
+      '::error::design-token check inspected ZERO files. That is not clean, it is blind.'
+    );
     process.exit(2);
   }
 

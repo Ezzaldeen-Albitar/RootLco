@@ -279,7 +279,7 @@ API routes unchanged.
 
 ## Remaining waves for `apps/api` — A2…A15
 
-**A2 — normalize validators onto the helper BEFORE moving.** `p1-24-operation-register`,
+**A2+A3+A4+A5 — ONE commit (finding P1-25-F-006).** Normalize validators onto the helper, `p1-24-operation-register`,
 `check-operation-test-coverage`, `check-authorization-coverage`, route inventory, OpenAPI
 discovery, coverage globs. Each needs a test proving it finds all 196 routes and 226
 operations and does not double-prefix.
@@ -299,6 +299,48 @@ failures by root cause.
 verification, Dockerfile workspace install with an API-only image, CI + CodeQL paths, clean
 `npm ci`, full baseline (1752 backend / 1636 DB-RLS), runtime smoke on separate ports,
 dependency-equivalence proof, documentation.
+
+## Wave A2 — attempted, and why it has no standalone green commit
+
+**Finding `P1-25-F-006`.** The planned commit sequence cannot be followed as written.
+
+Normalizing the validators onto `apps/api` and asserting the post-move shape in
+`repository-paths.test.ts` cannot both be green while the backend is still at the
+repository root. A transitional fallback makes the validators pass but the tests fail —
+correctly, because those tests exist precisely so a leftover fallback cannot survive
+unnoticed. Weakening them to obtain a green intermediate would remove the only thing that
+detects a stale dual-layout mode.
+
+**Therefore A2, A3, A4 and A5 must land as ONE commit.** Validators, API tooling, the
+`git mv`, and the resolver/test repairs are a single atomic unit. This was proven by
+executing A2 in full: all four validators (p1-24-register, authorization-coverage,
+operation-coverage, openapi) went green through the path authority, and the three original
+path tests went red against the transitional fallback. Reverted rather than committed.
+
+Also confirmed during A2: the three-way root derivation is genuinely removable —
+`process.cwd()` disappears from all three validators once they import the authority. One
+insertion bug is worth remembering: appending an import after "the last import line"
+places it INSIDE a multi-line import block. Insert after the closing brace.
+
+## Wave A2b — workspace formatting ownership — **COMPLETE**
+
+Two real defects from the `apps/web` move, invisible until now because the root formatter
+was checking files it does not own:
+
+- **`P1-25-F-007`** — root prettier formatted `apps/web/**` with the ROOT config while the
+  web workspace formats the same files with its own. Once root stopped checking `apps/`,
+  six web files and two root files (ADR-020, `tsconfig.json`) reported as unformatted. All
+  were committed earlier and had never been checked by the formatter that owns them.
+- **`P1-25-F-008`** — the coordinator had no per-workspace entry points, so `typecheck:web`
+  did not exist and reported as a failure that looked like a code defect.
+
+Root `.prettierignore` excludes `apps/`; `format:check:all` runs root plus each workspace.
+Added `dev:web`, `build:web`, `lint:web`, `typecheck:web`, `test:web`, `validate:web-tokens`,
+`validate:web-brand`, and `verify:workspaces` as the single aggregate that fails if either
+application fails. Historical root command names keep their current meaning.
+
+**Verified:** `verify:workspaces` green · unit 1307/1307 across 59 files · web 6/6 · token
+gate 33/0 · brand gate 33/0 · all four path-authority validators green.
 
 ## Next action
 

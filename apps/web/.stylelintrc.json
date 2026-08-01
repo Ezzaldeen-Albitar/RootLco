@@ -1,18 +1,10 @@
 {
-  "extends": [
-    "stylelint-config-standard-scss"
-  ],
+  "extends": ["stylelint-config-standard-scss"],
   "rules": {
     "declaration-property-value-disallowed-list": {
-      "/^(margin|padding)-(left|right)$/": [
-        {}
-      ],
-      "/^(border)-(left|right)$/": [
-        {}
-      ],
-      "/^(left|right)$/": [
-        {}
-      ]
+      "/^(margin|padding)-(left|right)$/": [{}],
+      "/^(border)-(left|right)$/": [{}],
+      "/^(left|right)$/": [{}]
     },
     "scss/dollar-variable-pattern": null,
     "custom-property-pattern": null,
@@ -40,17 +32,9 @@
     "scss/at-rule-no-unknown": [
       true,
       {
-        "ignoreAtRules": [
-          "tailwind",
-          "apply",
-          "layer",
-          "screen"
-        ]
+        "ignoreAtRules": ["tailwind", "apply", "layer", "screen"]
       }
     ]
   },
-  "ignoreFiles": [
-    ".next/**",
-    "node_modules/**"
-  ]
+  "ignoreFiles": [".next/**", "node_modules/**"]
 }

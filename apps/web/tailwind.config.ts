@@ -90,21 +90,33 @@ const config: Config = {
       },
       fontSize: {
         display: ['var(--font-size-display)', { lineHeight: 'var(--line-height-display)' }],
-        'page-title': ['var(--font-size-page-title)', { lineHeight: 'var(--line-height-page-title)' }],
+        'page-title': [
+          'var(--font-size-page-title)',
+          { lineHeight: 'var(--line-height-page-title)' },
+        ],
         'section-title': [
           'var(--font-size-section-title)',
           { lineHeight: 'var(--line-height-section-title)' },
         ],
         body: ['var(--font-size-body)', { lineHeight: 'var(--line-height-body)' }],
-        'body-large': ['var(--font-size-body-large)', { lineHeight: 'var(--line-height-body-large)' }],
-        supporting: ['var(--font-size-supporting)', { lineHeight: 'var(--line-height-supporting)' }],
+        'body-large': [
+          'var(--font-size-body-large)',
+          { lineHeight: 'var(--line-height-body-large)' },
+        ],
+        supporting: [
+          'var(--font-size-supporting)',
+          { lineHeight: 'var(--line-height-supporting)' },
+        ],
         label: ['var(--font-size-label)', { lineHeight: 'var(--line-height-label)' }],
         caption: ['var(--font-size-caption)', { lineHeight: 'var(--line-height-caption)' }],
         'table-header': [
           'var(--font-size-table-header)',
           { lineHeight: 'var(--line-height-table-header)' },
         ],
-        'table-cell': ['var(--font-size-table-cell)', { lineHeight: 'var(--line-height-table-cell)' }],
+        'table-cell': [
+          'var(--font-size-table-cell)',
+          { lineHeight: 'var(--line-height-table-cell)' },
+        ],
         button: ['var(--font-size-button)', { lineHeight: 'var(--line-height-button)' }],
       },
       zIndex: {

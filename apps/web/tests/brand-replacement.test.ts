@@ -133,10 +133,9 @@ describe('replacing the provisional identity touches configuration only', () => 
         f.startsWith('apps/web/src/features/')
     );
 
-    expect(
-      componentEdits,
-      'a brand swap must not require editing any component or route'
-    ).toEqual([]);
+    expect(componentEdits, 'a brand swap must not require editing any component or route').toEqual(
+      []
+    );
     expect(changed).toContain('apps/web/src/config/brand.ts');
     expect(changed).toContain('apps/web/src/styles/tokens/_colors.scss');
   });

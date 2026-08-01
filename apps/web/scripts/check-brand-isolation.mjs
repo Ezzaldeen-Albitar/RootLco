@@ -22,10 +22,7 @@ import { pathToFileURL } from 'node:url';
 const ROOT = process.cwd();
 
 /** Only these may consume the brand configuration. */
-export const BRAND_CONSUMERS = [
-  join('src', 'components', 'brand'),
-  join('src', 'config'),
-];
+export const BRAND_CONSUMERS = [join('src', 'components', 'brand'), join('src', 'config')];
 
 export const RULES = [
   {

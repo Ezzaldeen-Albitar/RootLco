@@ -17,3 +17,9 @@ supabase/.temp
 # The P1-15 file is the same generator's P1-15-only projection.
 docs/phase-1/phase-1-14/evidence/operation-test-matrix.json
 docs/phase-1/phase-1-15/evidence/operation-test-matrix.json
+
+# Workspaces format themselves — each apps/* package owns its own prettier
+# config. The root formatting the same files with a different config is a
+# permanent disagreement between two formatters, not a style preference.
+# Root orchestration runs each workspace check via format:check:all.
+apps/
