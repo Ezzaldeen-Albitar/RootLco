@@ -138,6 +138,25 @@ not read as a coverage gap.
 | `npm run test`                                      | 1285 / 1285                                                 |
 | `npm run test:backend`                              | 1739 / 1739 at `1d77396`; re-run at the final candidate SHA |
 
+## Post-merge
+
+Feature PR **#151** merged by the owner on 2026-08-01T07:08:51Z as merge commit
+`38d1ec22ddaf3a6507c876e0a4ffff447de8b972`. First parent `1c74454d` (the protected
+base), second parent `76632b05` (the reviewed feature). The merge tree is
+`f7b06ecc5cf8072e0ed687933ce840834579d9f4` — **byte-identical** to the reviewed
+feature tree, so no unreviewed executable change entered protected `develop`.
+
+Protected merge-SHA CI: **17/17 green**, including the `protected-gate` aggregate,
+across runs `30689149654` (CI) and `30689149773` (Protected branch verification).
+
+A fresh clone at `38d1ec2` re-proved the candidate: unit 1288, backend 1752,
+**database/RLS 1636 inside that clone**, total 4676, 0 failed, 0 skipped; mutation 6/6;
+`npm audit` 0; migrations 119 with no 120 and a 0-file `supabase/` diff; schema hash
+unmoved. All four findings re-proven against the protected tree, each with its
+counterfactual re-run there.
+
+The full record is [`gate-record.md`](gate-record.md).
+
 ## Next action
 
 Wave 19 — finish the full local gate battery at the final candidate SHA, then the
