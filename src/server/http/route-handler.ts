@@ -272,7 +272,20 @@ export async function handleOperation<T>(
     }
 
     if (operation.public) {
-      return handlePublic(operation, request, handler, options, correlationId);
+      // `return await`, not `return` (P1-24-F-002).
+      //
+      // In an async function, `return somePromise()` settles THIS function's
+      // promise with that one and hands the rejection straight to the caller —
+      // the enclosing `try` never sees it. So for every `public: true` operation
+      // a thrown AppFailure escaped the pipeline entirely: no canonical problem
+      // document, no `x-correlation-id` on the response, no `errorCount` metric
+      // and no "Operation failed" log. `POST /api/v1/auth/login` with a
+      // malformed body — reachable by anyone, unauthenticated — produced a
+      // framework-level 500 instead of the 422 the contract publishes.
+      //
+      // The `await` is the whole fix, and it is load-bearing rather than
+      // stylistic. `tests/backend/p1-24-iam-route-depth.test.ts` fails without it.
+      return await handlePublic(operation, request, handler, options, correlationId);
     }
 
     const claims = await sessionAuthenticator().authenticate(request);

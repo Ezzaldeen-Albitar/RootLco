@@ -97,11 +97,26 @@ the Chapter 4 Table 4.5 allocation in the canonical documents (see
 [canonical-documents.md](../governance/canonical-documents.md); those documents live outside this
 repository by owner decision); the other three were allocated beyond that reservation — the two
 vehicle names P1-17 added (`vehicle.created`, `vehicle.merged`) and P1-18's `reception.approved`.
-**The registry is behind the code:**
-[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds twenty entries, and
-the ten added by Phases 1-14, 1-15, and 1-16 have not been carried back into this table as §4
-requires. That gap is recorded here rather than papered over; closing it belongs to those phases'
-owners, not to a vehicle change.
+**The registry is behind the code, and P1-24 measured by how much:**
+[`src/server/events/envelope.ts`](../../src/server/events/envelope.ts) holds **fifty** entries —
+not the twenty this paragraph claimed until P1-24 re-counted it — and the **forty** added by
+Phases 1-14 through 1-22 have not been carried back into this table as §4 requires. By the phase
+that added the producer: P1-14 4 · P1-15 5 · P1-16 3 · P1-17 3 · P1-18 3 · P1-19 10 · P1-20 8 ·
+P1-21 3 · P1-22 8, plus **3 reserved** with `implementedIn: null`. P1-23 and P1-24 added none.
+
+That gap is recorded here rather than papered over, and P1-24 did not close it by writing the
+forty names into this table. It could not: `ECR-P1-19-001` is **Open**, and it states that no
+event name it proposes "may be treated as authoritative until this change request is accepted".
+Transcribing those names into the canonical registry would grant an acceptance a change request is
+deliberately withholding. Closing the gap belongs to those phases' owners and to that change
+request.
+
+The full derived matrix — every one of the fifty with its code, aggregate, owning module,
+`implementedIn`, and the operations that publish it — is generated from the code and machine-checked
+in
+[`docs/phase-1/phase-1-24/evidence/operation-register.md`](../phase-1/phase-1-24/evidence/operation-register.md)
+(`scripts/p1-24-operation-register.mjs`, run in CI with `--check`). It is derived evidence, not a
+second registry: this document remains the place a name is reserved.
 
 | Code            | Event type                     | Schema version | Aggregate type            | Owner module | `implementedIn` | Description                                                                  |
 | --------------- | ------------------------------ | -------------- | ------------------------- | ------------ | --------------- | ---------------------------------------------------------------------------- |
@@ -116,11 +131,20 @@ owners, not to a vehicle change.
 | **EVT-DOC-001** | `document.accepted`            | 1              | `shared.document`         | `shared`     | **`null`**      | A document version passed scanning and was accepted.                         |
 | **EVT-NTF-001** | `message.delivery.changed`     | 1              | `shared.outbound_message` | `shared`     | **`null`**      | An outbound message changed delivery state.                                  |
 
-`implementedIn` is the whole claim this table makes about what actually runs. Two names still carry
-**`null`** — `document.accepted` and `message.delivery.changed` — and for those it means exactly
-what it says: **reserved only**. Nothing publishes them, nothing consumes them, and no payload
-schema for them exists yet. P1-18 moved `appointment.changed` and `vehicle.checked-in` off `null` by
-adding real producers, and registered one new name, `reception.approved`.
+`implementedIn` is the whole claim this table makes about what actually runs. Two of the names
+**in this table** still carry **`null`** — `document.accepted` and `message.delivery.changed` — and
+for those it means exactly what it says: **reserved only**. Nothing publishes them, nothing consumes
+them, and no payload schema for them exists yet. P1-18 moved `appointment.changed` and
+`vehicle.checked-in` off `null` by adding real producers, and registered one new name,
+`reception.approved`.
+
+**In the code as a whole there are three**, not two. The third is `work-order.created`
+(`EVT-WOR-001`), which is absent from this table for the reason above — it is one of the forty
+names `ECR-P1-19-001` has not yet made authoritative. Its `implementedIn` is `null` because
+`wo.work_order_status_history` already records created, changed and closed as distinct facts, so the
+event stayed reserved rather than duplicating a ledger that exists. Recorded here so that this
+table's "two" and the P1-24 gate record's "three" are not read as a contradiction: they count
+different sets.
 
 P1-18 Field 24 calls the check-in fact `reception.vehicle-checked-in.v1`, while Chapter 4 Table 4.5
 and the P1-08 boundary record allocate `vehicle.checked-in.v1` for the same fact. The **reserved

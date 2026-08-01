@@ -42,11 +42,21 @@ import {
 
 const ROOT = process.cwd();
 
+/**
+ * A declaration carrying the manifest's `required:` flags AND the derived floor.
+ *
+ * Before P1-24 the three manifest flags were the whole obligation for an `iam.`
+ * operation, so this fixture named only those. Now that `iam.` is on the derived
+ * floor it must also name `route service authorization` — the floor a
+ * non-public operation owes for existing. The fixture is the SUM, deliberately:
+ * these cases exercise "a complete declaration passes", and after P1-24 a complete
+ * declaration is a larger thing.
+ */
 const complete = `
  * Operations exercised here: iam.demo-op
  *
  * COVERAGE-EVIDENCE (...):
- *   iam.demo-op: success denial audit
+ *   iam.demo-op: route service authorization success denial audit
  */
 describe('iam.demo-op', () => { it('invokes iam.demo-op', () => {}); });
 `;
@@ -154,7 +164,28 @@ describe('operation coverage gate — the P1-18 comment ratchet', () => {
   });
 });
 
-describe('operation coverage gate — P1-14 evidence model, unchanged', () => {
+/**
+ * P1-24 changed this block's subject, so the block is rewritten rather than deleted.
+ *
+ * It used to be titled "P1-14 evidence model, unchanged" and its two central
+ * assertions pinned the asymmetry P1-24 removed: that `derivedRequirements` returns
+ * ONLY `idempotency` for an `iam.` operation, and `[]` for one that declares no
+ * idempotency — even when that operation is version-guarded, audited,
+ * branch-scoped and parameterised. Every one of those four properties creates an
+ * obligation in a derived namespace and created none here.
+ *
+ * That asymmetry was correct for a feature phase and is what P1-24-F-001 measured:
+ * 39 operations, none of them carrying route-layer authorization evidence, fourteen
+ * carrying no evidence at all. `iam.` and `meta.` now sit on the same floor as every
+ * other namespace, so the assertions below state the NEW rule, and the old ones are
+ * quoted here rather than silently replaced — a reader comparing this file across
+ * P1-24 should be able to see exactly what changed and why.
+ *
+ * What has NOT changed is P1-14's `required:` manifest declarations. They still
+ * apply, on top of the derived floor, exactly as before: the floor can only make
+ * the gate stricter.
+ */
+describe('operation coverage gate — the derived floor now covers iam. and meta. too', () => {
   const registered = new Set(['iam.demo-op']);
   const manifest = {
     'iam.demo-op': { file: 'demo.test.ts', required: ['success', 'denial', 'audit'] },
@@ -171,24 +202,47 @@ describe('operation coverage gate — P1-14 evidence model, unchanged', () => {
     expect(matrix.map((m: { files: readonly string[] }) => m.files)).toEqual([['demo.test.ts']]);
   });
 
-  it('derives ONLY idempotency for an iam operation — every other P1-14 obligation stays declared', () => {
-    // `idempotent: true` is a promise to the caller and creates its obligation in
-    // every namespace (CSA-22): ten P1-14 operations declared it while `derived`
-    // came back empty, so nothing ever exercised a replay. Everything else about
-    // P1-14's evidence model is unchanged — note `versionGuarded` below derives
-    // nothing here, where it would derive `stale-version` in a derived namespace.
+  it('derives the full floor for an iam operation, not idempotency alone', () => {
+    // Before P1-24 this returned exactly `['idempotency']` — `versionGuarded: true`
+    // derived nothing, so no `iam.` operation ever owed stale-version evidence.
     expect(
       derivedRequirements({ id: 'iam.demo-op', idempotent: true, versionGuarded: true })
-    ).toEqual(['idempotency']);
+    ).toEqual(['route', 'service', 'success', 'authorization', 'idempotency', 'stale-version']);
   });
 
-  it('derives nothing at all for an iam operation that promises no idempotency', () => {
+  it('derives the floor even when the operation promises no idempotency', () => {
+    // Before P1-24 this returned `[]`. A version-guarded, audited, branch-scoped
+    // operation on a parameterised path owed nothing at all — which is precisely
+    // the shape of `iam.user-detail`, `iam.company-settings-read` and twelve others.
     expect(
       derivedRequirements({
         id: 'iam.demo-op',
         versionGuarded: true,
         auditClass: 'privileged',
         scope: 'branch',
+        path: '/demo/{thingId}',
+      })
+    ).toEqual([
+      'route',
+      'service',
+      'success',
+      'authorization',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'isolation',
+    ]);
+  });
+
+  it('derives nothing for a namespace that is genuinely not on the floor', () => {
+    // The floor is still a LIST, not a wildcard, so a namespace nobody has added
+    // is reported as deriving nothing rather than silently inheriting the rules of
+    // a namespace it merely resembles. `share.` is not `shared.`.
+    expect(
+      derivedRequirements({
+        id: 'share.demo-op',
+        versionGuarded: true,
+        auditClass: 'privileged',
         path: '/demo/{thingId}',
       })
     ).toEqual([]);
@@ -269,12 +323,19 @@ describe('some other unrelated operation', () => {});
     const stripped = stripCoverageBlock(complete);
     expect(stripped).toContain("describe('iam.demo-op'");
     // The flag list only ever appears inside the COVERAGE-EVIDENCE block.
-    expect(stripped).not.toContain('success denial audit');
+    expect(stripped).not.toContain('route service authorization success denial audit');
   });
 
   it('parseProvidedFlags reads exactly the declared flags', () => {
     const flags = parseProvidedFlags(complete).get('iam.demo-op');
-    expect([...flags].sort()).toEqual(['audit', 'denial', 'success']);
+    expect([...flags].sort()).toEqual([
+      'audit',
+      'authorization',
+      'denial',
+      'route',
+      'service',
+      'success',
+    ]);
   });
 });
 
