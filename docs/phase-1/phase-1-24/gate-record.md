@@ -1,9 +1,14 @@
 # P1-24 — Backend Integration and Release Gate Record
 
-**Phase:** P1-24 — Backend Integration and Release Gate
-**Prerequisite:** P1-23 closed and promoted; `origin/develop` at
-`1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1`) before the feature merge
-**Decision:** recorded in §12 below.
+| Field              |                                                                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase ID**       | `P1-24`                                                                                                                                                                             |
+| **Phase title**    | Backend Integration and Release Gate                                                                                                                                                |
+| **Gate**           | `P1-G24` — Backend Release Gate                                                                                                                                                     |
+| **Final decision** | **Go — P1-24 Backend Integration and Release Gate Passed** (§12)                                                                                                                    |
+| **Depends on**     | the approved backend baseline through **P1-23**, closed and promoted: `docs/phase-1/phase-1-23/` carries both its gate record and its promotion record, and `main` carried its tree |
+| **Phase baseline** | `origin/develop` at `1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1`) before the feature merge, with `origin/main` on the identical tree                                 |
+| **Closed on**      | protected `develop` at `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66` (tree `c6601886`) — evidence in §12                                                                               |
 
 This is a **documentation-only** record. It changes no executable file, no test, no
 script, no workflow, no manifest, no lockfile, no Supabase file, no seed, no migration

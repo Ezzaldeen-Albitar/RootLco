@@ -54,6 +54,12 @@ tells a reader nothing they can act on.
 **27 of 27 Complete. 0 Pending. 0 Blocked.** Groups: Backend 14/14 · Security 4/4 ·
 QA 5/5 · DevOps 2/2 · Documentation 2/2.
 
+The **test and evidence reference** for each row is the group table further down this
+file — that is where the artifact, the suite and the result live, and duplicating them
+into the register would give two places to drift apart. This table is the register: the
+identifier, its status, what it serves, what it found, what it does not claim, and the
+SHA it was proved at.
+
 `P1-24-F-004` is attached to `P1-24-DO-001` rather than to a delivery task, and the
 reason is recorded rather than smoothed: it was surfaced by the phase's own CI on the
 first push of the feature branch, it lived in `.github/ci-baselines/` and
