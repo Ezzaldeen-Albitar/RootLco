@@ -37,11 +37,11 @@ function StateShell({
   messages,
 }: {
   readonly icon: Parameters<typeof Icon>[0]['name'];
-  readonly tone?: Tone;
+  readonly tone?: Tone | undefined;
   readonly title: string;
-  readonly description?: string;
-  readonly action?: ReactNode;
-  readonly correlationId?: string;
+  readonly description?: string | undefined;
+  readonly action?: ReactNode | undefined;
+  readonly correlationId?: string | undefined;
   readonly messages: Messages;
 }) {
   return (
@@ -101,9 +101,9 @@ export function EmptyState({
   action,
 }: {
   readonly messages: Messages;
-  readonly titleKey?: string;
-  readonly descriptionKey?: string;
-  readonly action?: ReactNode;
+  readonly titleKey?: string | undefined;
+  readonly descriptionKey?: string | undefined;
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <StateShell
@@ -121,7 +121,7 @@ export function NoResultsState({
   onClearFilters,
 }: {
   readonly messages: Messages;
-  readonly onClearFilters?: ReactNode;
+  readonly onClearFilters?: ReactNode | undefined;
 }) {
   return (
     <StateShell
@@ -140,8 +140,8 @@ export function ErrorState({
   action,
 }: {
   readonly messages: Messages;
-  readonly correlationId?: string;
-  readonly action?: ReactNode;
+  readonly correlationId?: string | undefined;
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <StateShell
@@ -161,7 +161,7 @@ export function PermissionDeniedState({
   correlationId,
 }: {
   readonly messages: Messages;
-  readonly correlationId?: string;
+  readonly correlationId?: string | undefined;
 }) {
   return (
     <StateShell
@@ -194,7 +194,7 @@ export function BackendUnavailableState({
   action,
 }: {
   readonly messages: Messages;
-  readonly action?: ReactNode;
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <StateShell
@@ -213,7 +213,7 @@ export function ConflictState({
   action,
 }: {
   readonly messages: Messages;
-  readonly action?: ReactNode;
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <StateShell
@@ -232,7 +232,7 @@ export function SessionExpiredState({
   action,
 }: {
   readonly messages: Messages;
-  readonly action?: ReactNode;
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <StateShell

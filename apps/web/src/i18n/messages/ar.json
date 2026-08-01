@@ -1,13 +1,11 @@
 {
   "app.skipToContent": "تخطَّ إلى المحتوى",
   "app.provisionalBrand": "مظهر مؤقّت — الهوية النهائية قيد الاعتماد",
-
   "shell.breadcrumbs": "مسار التنقّل",
   "shell.openNavigation": "فتح قائمة التنقّل",
   "shell.closeNavigation": "إغلاق قائمة التنقّل",
   "shell.collapseNavigation": "طيّ قائمة التنقّل",
   "shell.secondaryPanel": "لوحة مساندة",
-
   "nav.landmark": "الوحدات",
   "nav.planned": "مُخطّط",
   "nav.plannedHint": "هذه الوحدة معرّفة، ولم تُبنَ شاشاتها بعد.",
@@ -34,14 +32,12 @@
   "nav.administration": "الإدارة",
   "nav.settings": "الإعدادات",
   "nav.gallery": "معرض المكوّنات",
-
   "overview.title": "نظرة عامة",
   "overview.description": "هيكل التطبيق. تأتي شاشات الأعمال في مراحل لاحقة؛ المكتمل هنا هو الإطار الذي ستستخدمه كلّ واحدة منها.",
   "overview.shellTitle": "ما يوفّره هذا الإطار",
   "overview.shellBody": "قائمة جانبية مبنيّة على الإعدادات، وترويسة، ومسار تنقّل، وعنوان صفحة مع إجراءاته، ولوحة مساندة اختيارية، وحالات التحميل والفراغ والخطأ والمنع وعدم الوجود التي تحتاجها كلّ شاشة.",
   "overview.brandTitle": "هوية مؤقّتة",
   "overview.brandBody": "الاسم والشعار ولوحة الألوان جميعها مؤقّتة. استبدالها يغيّر الإعدادات والرموز فقط — ولا يقرأ أيّ مكوّن في هذا الإطار قيمة هوية.",
-
   "state.loading": "جارٍ التحميل",
   "state.correlationId": "المرجع:",
   "state.empty.title": "لا يوجد شيء بعد",
@@ -61,10 +57,28 @@
   "state.expired.title": "انتهت جلستك",
   "state.expired.description": "سجّل الدخول مرّة أخرى للمتابعة. ستُفقد التغييرات غير المحفوظة في هذه الصفحة.",
   "state.retry": "أعد المحاولة",
-
   "gallery.title": "معرض المكوّنات",
   "gallery.description": "كلّ المكوّنات المشتركة، في الاتجاهين، ببيانات ثابتة للعرض. لا تظهر هنا أيّ بيانات عملاء أو بيانات تشغيلية.",
   "gallery.tokens": "رموز التصميم",
   "gallery.states": "حالات التطبيق",
-  "gallery.navigation": "التنقّل"
+  "gallery.navigation": "التنقّل",
+  "table.rowActions": "إجراءات الصفّ",
+  "table.filters": "عوامل التصفية",
+  "table.removeFilter": "إزالة هذا العامل",
+  "table.clearFilters": "مسح كلّ عوامل التصفية",
+  "table.pagination": "تقسيم الصفحات",
+  "table.showing": "عرض",
+  "table.of": "من",
+  "table.rowsPerPage": "صفوف لكلّ صفحة",
+  "table.firstPage": "الصفحة الأولى",
+  "table.previousPage": "الصفحة السابقة",
+  "table.nextPage": "الصفحة التالية",
+  "table.lastPage": "الصفحة الأخيرة",
+  "table.sortAscending": "ترتيب تصاعدي",
+  "table.sortDescending": "ترتيب تنازلي",
+  "table.sortNone": "إلغاء الترتيب",
+  "table.search": "بحث",
+  "table.searchHint": "تبقى كلمات البحث في هذه النافذة ولا تُوضع في شريط العنوان أبداً.",
+  "table.columns": "الأعمدة",
+  "table.density": "الكثافة"
 }

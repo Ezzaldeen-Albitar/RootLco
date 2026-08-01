@@ -1,13 +1,11 @@
 {
   "app.skipToContent": "Skip to content",
   "app.provisionalBrand": "Provisional appearance — final brand pending",
-
   "shell.breadcrumbs": "Breadcrumb",
   "shell.openNavigation": "Open navigation",
   "shell.closeNavigation": "Close navigation",
   "shell.collapseNavigation": "Collapse navigation",
   "shell.secondaryPanel": "Supporting panel",
-
   "nav.landmark": "Modules",
   "nav.planned": "Planned",
   "nav.plannedHint": "This module is defined but its screens are not built yet.",
@@ -34,14 +32,12 @@
   "nav.administration": "Administration",
   "nav.settings": "Settings",
   "nav.gallery": "Component gallery",
-
   "overview.title": "Overview",
   "overview.description": "The application shell. Business screens arrive in later phases; what is complete here is the frame every one of them will use.",
   "overview.shellTitle": "What this frame provides",
   "overview.shellBody": "A sidebar driven by configuration, a header, breadcrumbs, a page title with actions, an optional supporting panel, and the loading, empty, error, denied and not-found states every screen needs.",
   "overview.brandTitle": "Provisional identity",
   "overview.brandBody": "The name, logo and palette are placeholders. Replacing them changes configuration and tokens only — no component in this frame reads a brand value.",
-
   "state.loading": "Loading",
   "state.correlationId": "Reference:",
   "state.empty.title": "Nothing here yet",
@@ -61,10 +57,28 @@
   "state.expired.title": "Your session has ended",
   "state.expired.description": "Sign in again to continue. Unsaved changes on this page will be lost.",
   "state.retry": "Try again",
-
   "gallery.title": "Component gallery",
   "gallery.description": "Every shared component, in both directions, with deterministic fixtures. No customer or operational data appears here.",
   "gallery.tokens": "Design tokens",
   "gallery.states": "Application states",
-  "gallery.navigation": "Navigation"
+  "gallery.navigation": "Navigation",
+  "table.rowActions": "Row actions",
+  "table.filters": "Filters",
+  "table.removeFilter": "Remove this filter",
+  "table.clearFilters": "Clear all filters",
+  "table.pagination": "Pagination",
+  "table.showing": "Showing",
+  "table.of": "of",
+  "table.rowsPerPage": "Rows per page",
+  "table.firstPage": "First page",
+  "table.previousPage": "Previous page",
+  "table.nextPage": "Next page",
+  "table.lastPage": "Last page",
+  "table.sortAscending": "Sort ascending",
+  "table.sortDescending": "Sort descending",
+  "table.sortNone": "Remove sorting",
+  "table.search": "Search",
+  "table.searchHint": "Search terms stay in this window and are never placed in the address bar.",
+  "table.columns": "Columns",
+  "table.density": "Density"
 }
