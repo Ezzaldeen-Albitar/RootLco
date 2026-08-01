@@ -1,0 +1,146 @@
+// =============================================================================
+// Colour tokens — PROVISIONAL
+// =============================================================================
+//
+// OIR-06 is OPEN: no visual identity is approved. Every value in this file is a
+// neutral, replaceable default chosen to be calm and legible, NOT a brand.
+//
+// This file is the ONLY place a raw colour literal may appear in the frontend.
+// `scripts/check-design-tokens.mjs` fails the build on a hex, rgb(), hsl() or
+// oklch() literal anywhere else under web/src. That check is what makes the
+// claim "the brand lives in one place" an architecture rather than an intention.
+//
+// Structure: a PRIMITIVE ramp (raw values, no meaning) feeds SEMANTIC tokens
+// (meaning, no raw values). Components consume semantic tokens only. Replacing
+// the brand means replacing the ramp and, at most, the primary mapping below —
+// never a component.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// 1. Primitive ramps — raw values, deliberately unnamed for meaning
+// -----------------------------------------------------------------------------
+
+$neutral: (
+  0: #ffffff,
+  25: #fcfcfd,
+  50: #f8f9fb,
+  100: #f1f3f7,
+  200: #e5e8ef,
+  300: #d3d8e3,
+  400: #a9b1c3,
+  500: #7c8598,
+  600: #5a6376,
+  700: #414959,
+  800: #2b3140,
+  900: #1a1f2b,
+  950: #0f131c,
+);
+
+// Provisional primary. Broad direction only: a calm, professional blue that
+// reads as software rather than as a brand statement. Replaceable wholesale.
+$primary: (
+  50: #eef4ff,
+  100: #dae6ff,
+  200: #bcd2ff,
+  300: #8eb5ff,
+  400: #598cfb,
+  500: #3366f2,
+  600: #2049d6,
+  700: #1a3aad,
+  800: #1b3389,
+  900: #1c2f6d,
+);
+
+$success: (
+  50: #ecfdf3,
+  100: #d1fae0,
+  500: #12a150,
+  600: #0d8a43,
+  700: #0a6d36,
+);
+
+$warning: (
+  50: #fffaeb,
+  100: #fef0c7,
+  500: #d99100,
+  600: #b97803,
+  700: #935c07,
+);
+
+$danger: (
+  50: #fef3f2,
+  100: #fee4e2,
+  500: #d92d20,
+  600: #b42318,
+  700: #912018,
+);
+
+$info: (
+  50: #eff8ff,
+  100: #d1e9ff,
+  500: #1570ef,
+  600: #175cd3,
+  700: #1849a9,
+);
+
+// -----------------------------------------------------------------------------
+// 2. Semantic tokens — meaning, expressed only through the ramps above
+// -----------------------------------------------------------------------------
+//
+// Every key here becomes a CSS custom property `--color-<key>`. Tailwind, the
+// vendored primitives and SCSS Modules all resolve the SAME property, so there
+// is exactly one runtime surface and no possibility of two of them drifting.
+
+$semantic: (
+  // surfaces
+  'app-background': map-get($neutral, 50),
+  'sidebar-background': map-get($neutral, 0),
+  'surface': map-get($neutral, 0),
+  'surface-subtle': map-get($neutral, 100),
+  'surface-raised': map-get($neutral, 0),
+  'overlay': rgba(15, 19, 28, 0.44),
+  'skeleton': map-get($neutral, 200),
+  // Print substrate. Paper is white regardless of the screen theme; naming it
+  // as a token keeps the print stylesheet free of raw values like every other
+  // layer, rather than making print the one exception nobody notices.
+  'paper': map-get($neutral, 0),
+
+  // text
+  'text-primary': map-get($neutral, 900),
+  'text-secondary': map-get($neutral, 600),
+  'text-muted': map-get($neutral, 500),
+  'text-inverse': map-get($neutral, 0),
+  'text-disabled': map-get($neutral, 400),
+
+  // borders
+  'border': map-get($neutral, 200),
+  'border-strong': map-get($neutral, 300),
+
+  // actions
+  'primary': map-get($primary, 500),
+  'primary-hover': map-get($primary, 600),
+  'primary-active': map-get($primary, 700),
+  'primary-subtle': map-get($primary, 50),
+  'on-primary': map-get($neutral, 0),
+  'accent': map-get($primary, 400),
+  'focus-ring': map-get($primary, 400),
+  'disabled': map-get($neutral, 200),
+
+  // status
+  'success': map-get($success, 500),
+  'success-subtle': map-get($success, 50),
+  'warning': map-get($warning, 500),
+  'warning-subtle': map-get($warning, 50),
+  'error': map-get($danger, 500),
+  'error-subtle': map-get($danger, 50),
+  'info': map-get($info, 500),
+  'info-subtle': map-get($info, 50),
+
+  // table — called out separately because the data table is the highest-traffic
+  // surface in an operational product and must be tunable without touching
+  // general surface tokens
+  'table-header': map-get($neutral, 50),
+  'table-row-hover': map-get($neutral, 50),
+  'table-row-selected': map-get($primary, 50),
+  'table-border': map-get($neutral, 200)
+);

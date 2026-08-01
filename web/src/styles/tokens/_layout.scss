@@ -1,0 +1,19 @@
+// Layout tokens — the shell's structural measurements.
+//
+// The sidebar widths and header height are tokens rather than component
+// constants because the shell, the sticky table header and the print stylesheet
+// all need to agree about them, and three copies of "240px" is how they stop
+// agreeing.
+$scale: (
+  'sidebar-expanded': 264px,
+  'sidebar-collapsed': 72px,
+  'header-height': 60px,
+  'page-gutter': 24px,
+  'page-gutter-compact': 16px,
+  'content-max-width': 1440px,
+  'control-height-sm': 32px,
+  'control-height-md': 38px,
+  'control-height-lg': 44px,
+  'table-row-height': 48px,
+  'table-row-height-compact': 40px,
+);

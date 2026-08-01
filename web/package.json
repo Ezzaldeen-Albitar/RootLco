@@ -1,0 +1,51 @@
+{
+  "name": "rootlco-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RootLco frontend application. Independent package boundary — see docs/phase-1/phase-1-25/frontend-architecture.md.",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "style:check": "stylelint \"src/**/*.scss\" --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate:tokens": "node scripts/check-design-tokens.mjs",
+    "validate:brand": "node scripts/check-brand-isolation.mjs"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "prettier": "^3.9.6",
+    "sass": "^1.102.0",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard-scss": "^17.0.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}

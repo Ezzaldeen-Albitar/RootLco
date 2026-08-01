@@ -1,0 +1,10 @@
+{
+  "app.skipToContent": "Skip to content",
+  "app.provisionalBrand": "Provisional appearance — final brand pending",
+  "proof.title": "Foundation proof",
+  "proof.tokens": "Design tokens",
+  "proof.tokensDescription": "These surfaces, colours and spacings resolve CSS custom properties emitted by the Sass token layer.",
+  "proof.tailwind": "Tailwind consuming tokens",
+  "proof.brand": "Brand configuration",
+  "proof.direction": "Direction"
+}

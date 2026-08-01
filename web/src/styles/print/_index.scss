@@ -1,0 +1,46 @@
+// Print foundation.
+//
+// P1-25 establishes the mechanism only. The invoice, receipt, reception and
+// delivery documents are later phases and are NOT designed here.
+
+@media print {
+  :root {
+    // Printing a dark surface wastes ink and reads badly, so the paper-facing
+    // surfaces collapse to the paper token. This is a REMAP of existing tokens,
+    // not a new value — print holds no raw colour, same rule as everywhere else.
+    --color-app-background: var(--color-paper);
+    --color-surface: var(--color-paper);
+    --color-surface-subtle: var(--color-paper);
+  }
+
+  body {
+    background: none;
+  }
+
+  // Interactive chrome has no meaning on paper.
+  [data-print='hide'],
+  nav,
+  button:not([data-print='keep']) {
+    display: none !important;
+  }
+
+  [data-print='document'] {
+    box-shadow: none;
+    border: 0;
+  }
+
+  // Avoid orphaned table headers across page breaks.
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  img {
+    break-inside: avoid;
+  }
+}
+
+@page {
+  size: A4;
+  margin: 16mm;
+}

@@ -1,0 +1,10 @@
+{
+  "app.skipToContent": "تخطَّ إلى المحتوى",
+  "app.provisionalBrand": "مظهر مؤقّت — الهوية النهائية قيد الاعتماد",
+  "proof.title": "إثبات الأساس",
+  "proof.tokens": "رموز التصميم",
+  "proof.tokensDescription": "تستمد هذه الأسطح والألوان والمسافات قيمها من خصائص CSS المخصّصة التي تُصدرها طبقة Sass.",
+  "proof.tailwind": "Tailwind يستهلك الرموز",
+  "proof.brand": "إعدادات الهوية",
+  "proof.direction": "الاتجاه"
+}

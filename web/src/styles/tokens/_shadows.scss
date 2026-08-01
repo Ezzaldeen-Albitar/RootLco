@@ -1,0 +1,15 @@
+// Shadow scale — deliberately shallow.
+//
+// The design direction is "soft boundaries and restrained shadows". Elevation
+// here is carried mostly by a hairline border plus a very low-alpha shadow;
+// heavy drop shadows read as consumer software, not as an operational tool used
+// for eight hours at a time.
+$scale: (
+  'none': none,
+  'xs': (0 1px 2px rgba(15, 19, 28, 0.04)),
+  'sm': (0 1px 2px rgba(15, 19, 28, 0.06), 0 1px 3px rgba(15, 19, 28, 0.04)),
+  'md': (0 2px 4px rgba(15, 19, 28, 0.05), 0 4px 8px rgba(15, 19, 28, 0.04)),
+  'lg': (0 4px 8px rgba(15, 19, 28, 0.06), 0 12px 20px rgba(15, 19, 28, 0.06)),
+  'overlay': (0 8px 16px rgba(15, 19, 28, 0.08), 0 24px 48px rgba(15, 19, 28, 0.12)),
+  'focus': (0 0 0 3px rgba(89, 140, 251, 0.4)),
+);

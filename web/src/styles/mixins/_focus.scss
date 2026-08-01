@@ -1,0 +1,17 @@
+@use '../tokens/shadows';
+
+/// The single focus treatment for the whole application.
+///
+/// :focus-visible rather than :focus so a pointer user does not see a ring on
+/// click while a keyboard user always does. Accessibility review is against
+/// this mixin, not against each component's own idea of focus.
+@mixin focus-ring {
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+}

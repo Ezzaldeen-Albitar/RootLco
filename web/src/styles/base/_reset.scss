@@ -1,0 +1,29 @@
+// Minimal reset. Tailwind's preflight handles most of it; this covers what the
+// application needs beyond preflight and nothing more.
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  // Never disable user zoom. Browser zoom at 200% is an accessibility
+  // requirement, not an edge case.
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-app-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+// The application renders both scripts; neither may be italicised by a default.
+[lang='ar'] {
+  font-style: normal;
+}
