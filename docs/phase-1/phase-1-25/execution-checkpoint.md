@@ -590,10 +590,115 @@ Full evidence: [workspace-normalization-evidence.md](workspace-normalization-evi
   Comparing them would put a false measurement in the record. The hosted
   `container-security` job owns that ratchet.
 
+## Stage 2, 3, 5 and 8 — shell, sidebar, data table, shared states — **COMPLETE**
+
+Commits `bd67e6d` (shell, sidebar, states) and `8f5075a5` (data table).
+
+### Stage 2 — dashboard shell
+
+`app/[locale]/(dashboard)/` with `layout`, `page`, `loading`, `error` and
+`not-found`. The group is parenthesised so it adds no URL segment — an operator's
+URL names what they are looking at, not the layout wrapping it.
+
+`AppShell` provides the sidebar region, header, main landmark, optional secondary panel,
+tablet drawer and collapse. `PageHeader` provides breadcrumbs, the single `h1`, a
+description and a page-actions slot.
+
+Decisions worth not re-deriving:
+
+- `#main` carries `tabIndex={-1}`. Without it the skip link scrolls to main but leaves
+  focus in the document, so the next Tab returns to the navigation the user just skipped.
+- The drawer moves focus in on open and **back to its trigger** on close.
+- The collapse preference is read through `useSyncExternalStore`
+  (`src/lib/use-persisted-flag.ts`), **not** `useState` + `useEffect`. `localStorage`
+  cannot be read during render, and the effect shape renders twice and visibly
+  un-collapses the sidebar for one frame on every load. `react-hooks/set-state-in-effect`
+  flagged it and the rule was right.
+- `app/[locale]/page.tsx` was **removed**: the overview replaces the spine proof page and
+  both resolved to `/[locale]`, which Next.js refuses.
+
+### Stage 3 — configuration-driven sidebar
+
+`src/config/navigation.ts`: 15 module definitions in 5 groups, each with a stable key,
+translation key, icon, route, required permission, status and scope.
+
+**Only `overview` and `gallery` are `status: 'available'`.** Everything else is
+`'planned'` and renders as visibly unavailable rather than as a link that 404s — an
+operator who clicks a module and lands on a missing page learns the navigation lies.
+
+`src/lib/permissions.ts` is usability-only and enforces two properties mechanically:
+**unknown means denied** (a capability set that failed to load yields an EMPTY sidebar, not
+a complete one), and **no role shortcuts** — no `isAdmin`, no tenant/company/branch read
+from client state, only explicit permission codes matched exactly.
+
+### Stage 5 — server-driven data table
+
+`src/components/data-table/`: `table-state.ts` (the contract) and `DataTable.tsx`.
+
+Nothing in the module sorts, filters or paginates an array. The URL rule is the
+security-relevant part and is enforced by **two independent rules**: a filter serialises
+only if its key is registered **and** its value is one the definition declares, plus a
+refused-key list for names like `vin`, `phone`, `plate`, `amount`, `sessionId`.
+`search` is inside the prohibition deliberately — it is the likeliest place for a
+customer's name to reach a proxy log — so it lives in memory and is never written or
+restored.
+
+A denied table renders **instead of** the rows, never over them.
+
+### Stage 8 — shared states
+
+Loading, skeleton, empty, no-results, error, permission-denied, not-found,
+backend-unavailable, conflict, session-expired. None renders a stack trace, SQL, an
+internal path or anything revealing whether a record the actor may not see exists. The
+error boundary shows `error.digest`, never `error.message`.
+
+### Stage 9 — i18n, partial
+
+Complete: both catalogues (87 keys), locale config, `lang`/`dir` applied server-side so
+there is no direction flash, and `tests/i18n.test.ts` proving key parity, no empty
+messages, no untranslated English left in the Arabic file, and namespaced keys.
+
+Not yet: the locale-switch control, and locale-safe date/time/number/money formatting.
+
+### Current totals
+
+```text
+verify:workspaces   exit 0
+Unit / component    1330 / 1330 across 60 files
+Web                 87 / 87 across 5 files
+Token gate          47 files / 0 raw values
+Brand isolation     47 files / 0 violations
+Brand-swap proof    6 / 6
+Stylelint           0 errors, 0 warnings
+Web build           green, /ar and /en prerender
+```
+
 ## Next action
 
-**Stage 2 — dashboard shell.** Locale-aware `(dashboard)` route group, responsive shell,
-header, breadcrumbs, page title and actions, secondary panel slot, skip link, landmarks,
-focus management, loading/error/not-found boundaries, tablet behaviour, reduced motion,
-RTL and LTR. Then Stage 3 (configuration-driven sidebar), Stage 4 (component gallery) and
-Stage 5 (the server-driven data table).
+Stages remaining, in the order they unblock each other:
+
+1. **Stage 4 — component gallery** at `/[locale]/gallery`. Everything built so far has no
+   visual proof surface, and the gallery is what the browser review (Stage 16) and the
+   print check (Stage 12) both run against. Build it next.
+2. **Stage 6 — form framework** (React Hook Form + Zod; decimal money as canonical strings,
+   never floating point).
+3. **Stage 7 — overlays**: dialog, alert dialog, drawer, sheet, popover, dropdown, tabs,
+   tooltip, toast, and the three confirmation kinds including required-reason.
+4. **Stage 10 — typed API client** against the approved OpenAPI baseline; readiness is the
+   reference integration. Enforce the import boundary: no `fetch` in shared components,
+   no web import of API or Supabase source.
+5. **Stage 9 remainder** — locale switcher, date/number/money formatting.
+6. **Stages 11–15** — accessibility automation, print foundation, frontend security (CSP,
+   upload preflight, session expiry), Playwright, then the full frontend CI wiring with
+   controlled failure rehearsals.
+7. **Stages 16–20** — browser-led review, performance baseline, adversarial review, the
+   P1-25 documentation package and task register (35 tasks), clean-room exact-SHA proof.
+8. **Stages 21–22** — feature PR to `develop`, hosted CI, merge commit, protected-branch
+   reverification.
+
+Exact next command:
+
+```bash
+cd "C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco-worktrees/p1-25"
+git status --short --branch     # expect clean on feature/p1-25-…
+```
