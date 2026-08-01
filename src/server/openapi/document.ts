@@ -232,10 +232,33 @@ function operationObject(operation: RegisteredOperation): JsonObject {
   };
 }
 
+/**
+ * The document's own `summary` is DERIVED, not written (P1-24-F-003).
+ *
+ * It used to read "Backend foundation (Phase 1-13) plus the authentication,
+ * authorization, and administration surface (Phase 1-14)". By P1-23 the document
+ * published 226 operations across nineteen modules, and its own description still
+ * named two phases — so a client reading the contract to decide what the API
+ * covers was told it was a fraction of its real size, and every gate stayed green
+ * because no check compares prose against the registry.
+ *
+ * Counting from `allOperations()` is the fix that cannot go stale again: the
+ * sentence is regenerated with the document, and the drift test that already
+ * guards the paths now guards this too.
+ */
+function describeSurface(operations: readonly RegisteredOperation[]): string {
+  const modules = [...new Set(operations.map((operation) => operation.module))].sort();
+  return (
+    `${operations.length} operations across ${modules.length} backend modules ` +
+    `(${modules.join(', ')}).`
+  );
+}
+
 /** Builds the full document from the registry. Deterministic: sorted by path. */
 export function buildOpenApiDocument(): JsonObject {
+  const operations = allOperations();
   const paths: JsonObject = {};
-  for (const operation of allOperations()) {
+  for (const operation of operations) {
     const fullPath = `${API_VERSION_PREFIX}${operation.path}`;
     const existing = (paths[fullPath] as JsonObject | undefined) ?? {};
     existing[operation.method.toLowerCase()] = operationObject(operation);
@@ -247,14 +270,14 @@ export function buildOpenApiDocument(): JsonObject {
     info: {
       title: `${DESCRIPTIVE_TITLE} — API`,
       version: API_CONTRACT_VERSION,
-      summary:
-        'Backend foundation (Phase 1-13) plus the authentication, authorization, and ' +
-        'administration surface (Phase 1-14).',
+      summary: describeSurface(operations),
       description:
-        'Shared components and conventions every later backend phase composes, and the identity ' +
-        'and access-administration operations built on them. Sessions are bearer tokens issued by ' +
-        'the authentication provider recorded in ADR-019; authorization is evaluated in the ' +
-        'database on every request and is never carried in a token. The product name is ' +
+        'Shared components and conventions every backend module composes, and the operations ' +
+        'built on them. Sessions are bearer tokens issued by the authentication provider ' +
+        'recorded in ADR-019; authorization is evaluated in the database on every request and is ' +
+        'never carried in a token. Money is an exact decimal string with an ISO-4217 code, never ' +
+        'a JSON number. Pages are opaque-cursor; offset paging is not offered. Every failure is ' +
+        'an RFC 9457 problem document carrying a stable catalog code. The product name is ' +
         'deliberately absent: it is pending owner approval (ADR-011).',
       contact: { name: VENDOR_NAME },
     },

@@ -170,47 +170,43 @@ decline into the new normal.
   Closed by `next` 16.2.10 → 16.2.12 plus `overrides` for `postcss` and `sharp`.
   **Production dependency advisories: Resolved through compatible patch upgrades.**
 
-**brace-expansion advisory: Open — upstream-blocked development-tooling
-exception with no proven production or runtime reachability.**
+**brace-expansion advisory: CLOSED on 2026-08-01. The waiver was removed and the
+tree carries zero advisories.**
 
-- One exact exception — `GHSA-mh99-v99m-4gvg` in `brace-expansion`. It matches
-  one advisory, one package, one affected range (`<=5.0.7`), one dependency-path
-  fingerprint (two resolved nodes) and one expiry (2026-10-31). There is no
-  package-wide or severity-wide waiver.
-- **Owner-approved on 2026-07-29** by the platform owner, with the seven-point
-  basis and the explicit scope limits recorded verbatim in the entry. Approval is
-  a **control**, not a note: `dependency-policy.mjs` requires
-  `approvalStatus: "approved"` with a named approver and an ISO date, and an
-  unapproved entry waives nothing.
-- The claim is cross-checked against a **mechanically derived proof**:
-  `npm ls brace-expansion --omit=dev --all` returns `(empty)`; the production
-  audit reports 0 vulnerabilities; nothing under `src/` or `scripts/` imports it;
-  every glob pattern evaluated in this repository comes from committed
-  configuration; and the built runner image contains **no resolvable
-  `node_modules/brace-expansion/`**, asserted by enumerating the actual image
-  filesystem on a hosted runner.
-- **The code is NOT absent from the image, and this PR does not claim it is.**
-  Node vendors brace-expansion into the `node` binary via esbuild, so a copy
-  ships inside any image containing a Node runtime and no build step removes it.
-  Absence was never achievable. The claim that is both true and sufficient is
-  narrower: the running application cannot **resolve or invoke** it. The
-  exception record keeps `finalContainerCodePresent: true` and
-  `finalContainerReachable: false` as separate fields so the two cannot be
-  collapsed, and AR-49 fixed the one place that had collapsed them.
-- Of the three resolved instances, **one is already patched** — `minimatch@10.2.5`
-  requires `^5.0.5`, so the top-level resolution is 5.0.8. Only 1.1.16 and 2.1.3
-  are affected.
-- The attempted override to `^5.0.8` broke ESLint with
-  `TypeError: expand is not a function`. Verified by execution, reverted
-  completely, and recorded in the exception so nobody retries it blindly. ESLint
-  is not weakened and no lint coverage is removed.
+- It closed the way the record said it would: **the gate failed and told us to
+  remove it.** The entry's own `removalCondition` said an exception that outlives
+  its cause is worse than none, and named the trigger — npm reporting a
+  non-semver-major `fixAvailable`.
+- All three exactness rules fired at once, each describing the same upstream
+  change from a different angle: the advisory was **re-scoped** from `<=5.0.7` to
+  `<1.1.17`; the dependency fingerprint **collapsed from two resolved nodes to
+  one**; and npm reported a **non-breaking fix**.
+- **Remediation:** `npm audit fix --package-lock-only` bumped
+  `node_modules/minimatch/node_modules/brace-expansion` from 1.1.16 to 1.1.18.
+  Lockfile only — `package.json` unchanged and **no override added**. The `^5.0.8`
+  override that broke ESLint in July stays reverted and must not return.
+- **Verified by execution, not inferred**, because the record insisted on that
+  after the override attempt: `npm run lint` clean and the unit tier 1285/1285
+  after `npm ci`. A 1.1.x patch keeps the v1 export shape `minimatch@3` calls.
+- `npm audit` now reports **0 vulnerabilities** across production and development.
+- The entry is retained under `removedAdvisories` rather than deleted, so the
+  waiver's history survives its removal.
+- **What remains true, and is not about the advisory:** the code is NOT absent
+  from the image and this repository does not claim it is. Node vendors
+  brace-expansion into the `node` binary via esbuild, so a copy ships inside any
+  image containing a Node runtime and no build step removes it. Absence was never
+  achievable; the claim that is both true and sufficient is narrower — the running
+  application cannot **resolve or invoke** it. AR-35, AR-37 and AR-43 are three
+  corrections in a row that arrived at that, and the reasoning is preserved in
+  [`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
 - Ten gate rules, each with a mutation test: remove the exception, broaden its
   range, omit the dependency path, claim production-safety without evidence,
   expire it, add an unwaived High, return an audit error object, make the package
   production-reachable, land a compatible patched version while keeping the
-  exception. Each makes the gate fail; deleting a rule makes its test fail.
-- Full evidence:
-  [`evidence/brace-expansion-reachability-proof.md`](evidence/brace-expansion-reachability-proof.md).
+  exception. Each makes the gate fail; deleting a rule makes its test fail. The
+  last of those is the one that fired here, so the rule set is now guarding an
+  **empty** exception list — the state it was built to make reachable.
+
 - Every action pinned to a full commit SHA with a version comment, enforced by
   `check-workflow-security.mjs` — **14 rules** (WFS-001…WFS-014), a count the
   report now carries so that "0 findings" cannot be mistaken for "0 rules ran".

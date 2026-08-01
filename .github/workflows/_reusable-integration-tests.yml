@@ -148,6 +148,15 @@ jobs:
       - name: P1-23 hostile mutation matrix
         run: npm run validate:p1-23-mutations
 
+      # P1-24 extends the same discipline to the properties THIS phase added or
+      # repaired: the route-layer authorization gate, the uniform denial document,
+      # the public-operation error pipeline, page bounds, and the financial blocker
+      # at the billing/delivery seam. Same harness, same rules — a red run only
+      # counts when it is an ASSERTION failure, and every target suite must be green
+      # before anything is mutated.
+      - name: P1-24 hostile mutation matrix
+        run: npm run validate:p1-24-mutations
+
       - name: Summarise the backend tier
         id: backend
         if: '!cancelled()'

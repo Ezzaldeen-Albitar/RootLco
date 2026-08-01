@@ -175,6 +175,34 @@ export const P1_22_PREFIXES = ['sal.', 'wty.'];
  * could write. Both hooks or neither.
  */
 export const P1_23_PREFIXES = ['rpt.'];
+/**
+ * P1-24 adds NO namespace. It adds the two that were left behind (P1-24-F-001).
+ *
+ * `iam.` and `meta.` are the ORIGINAL namespaces — P1-13 and P1-14 — and every
+ * namespace delivered after them joined the derived floor while these two stayed
+ * on the declared model the floor was invented to replace. Thirty-nine
+ * operations, 17% of the public surface, and the seventeen percent that decides
+ * who may do anything at all. The comment above `derivedRequirements` states the
+ * old position honestly ("the rest of the derived floor deliberately stays
+ * namespace-scoped… this is not a general re-interpretation of P1-14's evidence
+ * model") and that position was right for a feature phase. P1-24 is the
+ * integration and release gate, which is the phase whose job is exactly this.
+ *
+ * Measured against the floor at the P1-24 baseline `1c74454d`, all 39 failed it
+ * and fourteen carried no evidence flags at all. Nothing anywhere asserted that
+ * a caller lacking `iam.user.read` is refused `GET /iam/users`, or that
+ * `GET /iam/users/{userId}` with another tenant's real user id does not return
+ * that user. `tests/backend/p1-24-iam-route-depth.test.ts` supplies the missing
+ * evidence; this line is what stops it being deleted again.
+ *
+ * Both hooks, as the P1-23 note insists: the prefixes are listed here AND in the
+ * `parseProvidedFlags` alternation below — where, as it happens, `iam` and
+ * `meta` have been present since P1-15. That asymmetry is precisely how the gap
+ * stayed invisible: declarations for these namespaces PARSED fine, so a reader
+ * checking the alternation would conclude they were covered. Only
+ * `derivedRequirements` returning `[]` gave it away.
+ */
+export const P1_24_PREFIXES = ['iam.', 'meta.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -185,6 +213,7 @@ const DERIVED_PREFIXES = [
   ...P1_21_PREFIXES,
   ...P1_22_PREFIXES,
   ...P1_23_PREFIXES,
+  ...P1_24_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1058,12 +1087,16 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-access-administration.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'issued within/at/beyond authority; audit + event once; rollback leaves nothing',
   },
   'iam.grant-revoke': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'stale-version'],
     note: 'revocation immediate effect + stale-version conflict',
   },
@@ -1071,17 +1104,21 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-access-administration.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'isolation'],
     note: 'within-authority scope added; foreign-company widening refused',
   },
   'iam.grant-scope-remove': {
-    files: ['tests/backend/iam-access-administration.test.ts'],
+    files: [
+      'tests/backend/iam-access-administration.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success'],
     note: 'scope removed; DB backstop also proves last-scope removal cannot widen',
   },
   'iam.grant-scope-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'lists the scopes of a scoped grant',
   },
@@ -1089,17 +1126,21 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-access-administration.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial'],
     note: 'no self-limit; malformed money rejected',
   },
   'iam.approval-limit-end': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'window ended; permission-denied; wrong version refused',
   },
   'iam.approval-limit-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'listed and tenant-scoped',
   },
@@ -1108,17 +1149,21 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-operations.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: [],
     note: 'created and found in the list',
   },
   'iam.role-update': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
     note: 'renamed; permission-denied; tenant-B refused; wrong version refused',
   },
   'iam.role-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'listed, tenant-scoped',
   },
@@ -1126,43 +1171,53 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
   },
   'iam.role-permission-update': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'effect changed; permission-denied; wrong version refused',
   },
   'iam.role-permission-remove': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit'],
     note: 'mapping removed; DELETE policy refuses the unprivileged caller',
   },
   'iam.role-permission-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'listed',
   },
   'iam.permission-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'catalogue listed',
   },
   // --- User administration.
   'iam.user-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'cursor paginated, tenant-isolated',
   },
   'iam.user-detail': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'detail; cross-tenant not found',
   },
   'iam.user-update': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
     note: 'profile updated; permission-denied; tenant-B refused; wrong version refused',
   },
@@ -1170,33 +1225,40 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'lock revokes sessions + audits + one event; permission-denied; self refused',
   },
   'iam.user-session-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'listed for a user',
   },
   'iam.user-session-revoke-all': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency'],
     note: 'all revoked + audit + event; unprivileged revokes nothing; second call revokes zero',
   },
   // --- Organization settings.
   'iam.tenant-settings-read': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'read',
   },
   'iam.tenant-settings-update': {
-    files: ['tests/backend/iam-admin-writes.test.ts'],
+    files: [
+      'tests/backend/iam-admin-writes.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'stale-version'],
     note: 'updated + audit; permission-denied; wrong version refused',
   },
   'iam.company-settings-read': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'read in scope',
   },
@@ -1204,12 +1266,13 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'audit', 'isolation'],
     note: 'append-only version written + audit; out-of-scope company refused',
   },
   'iam.branch-settings-read': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'read in scope',
   },
@@ -1217,18 +1280,19 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'audit', 'isolation'],
     note: 'version written + audit; out-of-scope branch invisible and refused',
   },
   // --- Audit viewing.
   'iam.audit-event-list': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'bounded range; privileged read is itself audited',
   },
   'iam.audit-event-detail': {
-    files: ['tests/backend/iam-operations.test.ts'],
+    files: ['tests/backend/iam-operations.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'cross-tenant record not found',
   },
@@ -1237,12 +1301,16 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
   },
   'iam.invitation-cancel': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'invited → archived + audit + event; non-invitation refused',
   },
@@ -1250,39 +1318,55 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
     required: ['success', 'denial', 'audit', 'outbox'],
     note: 'accepted invitation activated + audit + event; unconfirmed refused',
   },
   // --- Authentication (provider-fake harness).
   'iam.auth-login': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
   },
   'iam.auth-logout': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'audit', 'idempotency'],
     note: 'session revoked + logout audit; double logout is a no-op',
   },
   'iam.auth-session': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success'],
     note: 'describeSession resolves identity, scope, permissions',
   },
   'iam.auth-password-reset': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial'],
     note: 'known → delivery; unknown → silent; non-allow-listed redirect refused',
   },
   'iam.auth-password-reset-completion': {
-    files: ['tests/backend/iam-auth-provider.test.ts'],
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
     required: ['success', 'denial', 'idempotency'],
     note: 'completes + invalidates prior sessions; replay refused; bounds enforced',
   },
   // --- Reference exemplar.
   'meta.ping': {
-    files: ['tests/backend/api-ping.test.ts'],
+    files: ['tests/backend/api-ping.test.ts', 'tests/backend/p1-24-iam-route-depth.test.ts'],
     required: [],
     note: 'end-to-end reference endpoint',
   },
