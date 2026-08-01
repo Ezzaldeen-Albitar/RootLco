@@ -10,6 +10,11 @@
  * Every test below is a mutation in disguise: each asserts that some way of
  * being blind produces No-Go rather than silence.
  */
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   evaluate,
@@ -757,5 +762,170 @@ describe('commit check-run enumeration', () => {
     const verdict = evaluateChecks([check('ci-gate', 'success')]);
     expect(verdict.ok).toBe(true);
     expect(verdict.warnings.join('\n')).toMatch(/AR-52 was a check from another app/);
+  });
+});
+
+/**
+ * SEC-CODEQL-033 — `js/http-to-file-access`, alert #33, medium.
+ *
+ * The finding: this script fetched a remote JSON body and wrote a report derived
+ * from it straight to disk with `writeFileSync`. That is the CWE-434 / CWE-912
+ * shape — a program persisting bytes the network chose — and it stood as an
+ * ACCEPTED DISMISSAL from 2026-07-29 on the argument that the content was
+ * sanitised and the path operator-supplied. Both halves of that argument were
+ * true. Neither removed the edge, and the dismissal was due to expire.
+ *
+ * The remediation removes the edge instead of arguing about it: the program no
+ * longer opens a file at all. Every test below is behavioural — none inspects
+ * source text, because a test that greps for `writeFileSync` passes against a
+ * rename and fails against a refactor.
+ */
+describe('SEC-CODEQL-033 — the program must not persist network-derived bytes', () => {
+  const SCRIPT = fileURLToPath(
+    new URL('../../scripts/ci/check-commit-checks.mjs', import.meta.url)
+  );
+
+  /** Runs the CLI in a private empty directory and reports what it left behind. */
+  const runIn = (args: string[]) => {
+    const dir = mkdtempSync(join(tmpdir(), 'sec-codeql-033-'));
+    try {
+      const result = spawnSync(process.execPath, [SCRIPT, ...args], {
+        cwd: dir,
+        encoding: 'utf8',
+        // No token: an invocation rejected on its arguments must be rejected
+        // before it ever reaches the network, so this must not matter.
+        env: { ...process.env, GH_TOKEN: '', GITHUB_TOKEN: '' },
+      });
+      return { ...result, files: readdirSync(dir), dir };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('refuses --json, and leaves no file behind', () => {
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40), '--json', 'out.json']);
+    expect(run.status, 'a retired flag must fail, not be ignored').toBe(2);
+    expect(run.stderr).toMatch(/--json was removed/);
+    expect(run.stderr).toMatch(/no longer writes to the filesystem/);
+    expect(run.files, 'nothing may be created for a rejected invocation').toEqual([]);
+  });
+
+  it('refuses --markdown, and leaves no file behind', () => {
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40), '--markdown', 'out.md']);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toMatch(/--markdown was removed/);
+    expect(run.files).toEqual([]);
+  });
+
+  it('fails a retired flag LOUDLY rather than silently printing to stdout', () => {
+    // The failure mode worse than removing the flag: accepting it, writing
+    // nothing, and letting the operator believe a file exists.
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40), '--json', 'out.json']);
+    expect(run.stdout.trim(), 'a rejected invocation must not also emit a report').toBe('');
+  });
+
+  it('rejects an unknown --format without touching the filesystem or the network', () => {
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40), '--format', 'xml']);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toMatch(/--format must be markdown or json/);
+    expect(run.files).toEqual([]);
+  });
+
+  it('validates arguments BEFORE requiring a token, so no request is made for a doomed run', () => {
+    // With no token, a token-first ordering would report the token error and the
+    // argument error would never surface. That ordering also means the program
+    // asks GitHub for a listing it is about to throw away.
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40), '--format', 'xml']);
+    expect(run.stderr).toMatch(/--format must be markdown or json/);
+    expect(run.stderr).not.toMatch(/GH_TOKEN/);
+  });
+
+  it('still refuses to run at all without a token', () => {
+    const run = runIn(['--repo', 'o/n', '--sha', 'a'.repeat(40)]);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toMatch(/GH_TOKEN/);
+    expect(run.files).toEqual([]);
+  });
+
+  it('still refuses without --repo and --sha', () => {
+    const run = runIn([]);
+    expect(run.status).toBe(2);
+    expect(run.stderr).toMatch(/usage:/);
+    expect(run.files).toEqual([]);
+  });
+});
+
+describe('SEC-CODEQL-033 — safeText neutralises what the C0/C1 rule does not', () => {
+  /** Code points that must never survive into a rendered report. */
+  const FORBIDDEN =
+    /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/;
+
+  it('strips RIGHT-TO-LEFT OVERRIDE — the Trojan Source character', () => {
+    // CVE-2021-42574. A check name carrying U+202E renders REVERSED, so the
+    // artifact a human reads shows something other than what the API returned.
+    // Measured surviving the C0/C1 rule before this was fixed.
+    const out = safeText(`ci-gate\u202Egnimialc\u202D`);
+    expect(out, 'a bidi override must not reach the report').not.toMatch(FORBIDDEN);
+    expect(out, 'the visible text is preserved, only the override is removed').toContain('ci-gate');
+  });
+
+  it('strips directional isolates and marks', () => {
+    for (const cp of ['\u2066', '\u2067', '\u2068', '\u2069', '\u200e', '\u200f', '\u061c']) {
+      expect(safeText(`a${cp}b`), `U+${cp.codePointAt(0)!.toString(16)} survived`).not.toMatch(
+        FORBIDDEN
+      );
+    }
+  });
+
+  it('strips zero-width characters, so two names cannot render identically', () => {
+    for (const cp of ['\u200b', '\u200c', '\u200d', '\u2060', '\ufeff']) {
+      expect(safeText(`ci${cp}gate`)).not.toMatch(FORBIDDEN);
+    }
+    // The removal is VISIBLE — the text does not silently close up into a
+    // different, legitimate-looking name.
+    expect(safeText('ci\u200bgate')).not.toBe('cigate');
+  });
+
+  it('strips U+2028 and U+2029, which terminate a line and split a table row', () => {
+    expect(safeText('a\u2028b')).not.toMatch(FORBIDDEN);
+    expect(safeText('a\u2029b')).not.toMatch(FORBIDDEN);
+  });
+
+  it('carries the hostile characters through evaluate() as well, not just safeText', () => {
+    // The sanitiser is only useful where the data actually flows.
+    const verdict = evaluateChecks([
+      {
+        name: 'ci-gate\u202Egnimialc',
+        status: 'completed',
+        conclusion: 'success',
+        app: { slug: 'github-actions\u200b' },
+        output: { title: 'ok\u2028injected' },
+        html_url: 'https://example.invalid/\ufeff',
+      },
+    ]);
+    for (const value of [
+      verdict.checks[0]?.name,
+      verdict.checks[0]?.app,
+      verdict.checks[0]?.title,
+      verdict.checks[0]?.url,
+    ]) {
+      expect(value ?? '').not.toMatch(FORBIDDEN);
+    }
+    // The rendered report is deliberately multi-line, so newline and tab are
+    // legitimate there; every OTHER forbidden code point still must not appear.
+    const RENDERED = new RegExp(
+      '[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c' +
+        '\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]'
+    );
+    expect(checksMarkdown(verdict, 'abc1234'), 'the rendered report too').not.toMatch(RENDERED);
+  });
+
+  it('does not regress the escaping order that a previous finding cost', () => {
+    // js/incomplete-sanitization: backslash MUST be escaped before pipe.
+    expect(safeText('a|b')).toBe('a\\|b');
+    expect(safeText('a\\|b')).toBe('a\\\\\\|b');
+    expect(safeText('x'.repeat(300), 20)).toHaveLength(21);
+    expect(safeText(null)).toBe('');
+    expect(safeText(undefined)).toBe('');
   });
 });

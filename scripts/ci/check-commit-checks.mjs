@@ -18,14 +18,26 @@
  * NO TOKEN IS EVER PRINTED. It is read from GH_TOKEN/GITHUB_TOKEN and used only
  * as an Authorization header.
  *
+ * THIS PROGRAM NEVER WRITES TO THE FILESYSTEM. That is a security invariant, not
+ * an omission — see `SEC-CODEQL-033`. It fetches a remote JSON body and renders a
+ * report from it; a program that also persists that remote content to disk is the
+ * CWE-434 / CWE-912 shape (`js/http-to-file-access`), and CodeQL reported exactly
+ * that against the `--markdown` write this script used to perform. The report goes
+ * to **stdout** and the operator redirects it if they want a file:
+ *
+ *   node scripts/ci/check-commit-checks.mjs --repo o/n --sha <sha> > checks.md
+ *
+ * Redirection is the operating system writing bytes the operator asked for, not
+ * this program taking bytes the network chose and persisting them. The capability
+ * is unchanged; the network-to-filesystem edge is gone.
+ *
  * Exit codes: 0 every check succeeded · 1 something is red, pending or
  * cancelled · 2 the check could not be performed.
  *
  * Usage:
  *   node scripts/ci/check-commit-checks.mjs --repo owner/name --sha <full-sha> \
- *     [--json out.json] [--markdown out.md] [--require CodeQL --require ci-gate]
+ *     [--format markdown|json] [--require CodeQL --require ci-gate]
  */
-import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /** Conclusions that are acceptable for a check that ran. */
@@ -50,6 +62,25 @@ export function safeText(value, max = 200) {
   const text = String(value)
     // Control characters, including the ESC that starts an ANSI sequence.
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    // Bidirectional overrides, invisible characters and the two Unicode line
+    // terminators. The C0/C1 rule above does NOT cover these, and every one of
+    // them was measured surviving it before this line existed:
+    //
+    //   U+202E RIGHT-TO-LEFT OVERRIDE — Trojan Source (CVE-2021-42574). A check
+    //     name carrying it renders REVERSED, so the artifact a human reads shows
+    //     something other than what the API returned. That is exactly the
+    //     property this function exists to provide, so its absence was a hole.
+    //   U+2066..U+2069 isolates, U+200E/U+200F marks, U+202A..U+202D embeddings —
+    //     the same class, weaker but the same effect.
+    //   U+200B..U+200D, U+2060, U+FEFF — zero-width. Two different check names
+    //     render identically, so 'is this the check I required?' stops being
+    //     answerable by looking at the report.
+    //   U+2028/U+2029 — line and paragraph separators. They terminate a line in
+    //     JavaScript and in several renderers, so one table cell becomes two rows.
+    //
+    // Replaced with a space, like the control characters above, so the removal is
+    // VISIBLE rather than silently closing the surrounding text up.
+    .replace(/[\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g, ' ')
     // BACKSLASH FIRST, then pipe. The other order is the defect CodeQL
     // reported as `js/incomplete-sanitization` the first time this function
     // ran: escaping `|` as `\|` without escaping `\` first means the input
@@ -187,6 +218,31 @@ async function main(argv) {
     process.exit(2);
   }
 
+  // Argument validation happens BEFORE the token read and before any network
+  // request. An invocation that is going to be rejected should not first ask
+  // GitHub for a check-run listing.
+  //
+  // A retired flag must fail LOUDLY. Accepting `--json out.json` and quietly
+  // printing to stdout instead would leave an operator believing a file exists
+  // when nothing was written — the failure mode that is worse than the flag
+  // simply being gone.
+  for (const retired of ['--json', '--markdown']) {
+    if (argv.includes(retired)) {
+      console.error(
+        `${retired} was removed: this program no longer writes to the filesystem ` +
+          '(SEC-CODEQL-033). Render to stdout and redirect instead, e.g. ' +
+          '`--format json > checks.json`.'
+      );
+      process.exit(2);
+    }
+  }
+
+  const format = one('--format') ?? 'markdown';
+  if (format !== 'markdown' && format !== 'json') {
+    console.error(`--format must be markdown or json, not \`${String(format)}\`.`);
+    process.exit(2);
+  }
+
   const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!token) {
     console.error(
@@ -246,11 +302,10 @@ async function main(argv) {
   const result = evaluate(checkRuns, { required: values('--require') });
   const markdown = toMarkdown(result, sha);
 
-  const jsonOut = one('--json');
-  if (jsonOut) writeFileSync(jsonOut, `${JSON.stringify({ sha, ...result }, null, 2)}\n`);
-  const mdOut = one('--markdown');
-  if (mdOut) writeFileSync(mdOut, `${markdown}\n`);
-  console.log(markdown);
+  // The ONLY output channel. The report is derived from a remote response, so it
+  // stays in memory and goes to stdout; if the operator wants it on disk, their
+  // shell writes it. See the header — this is SEC-CODEQL-033's invariant.
+  console.log(format === 'json' ? JSON.stringify({ sha, ...result }, null, 2) : markdown);
 
   for (const failure of result.failures) console.log(`::error::${failure}`);
   // `exitCode` rather than `exit()`: calling exit() while a fetch keep-alive
