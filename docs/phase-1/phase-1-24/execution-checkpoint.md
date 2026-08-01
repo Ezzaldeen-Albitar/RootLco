@@ -34,7 +34,11 @@ ones this phase is built on. Nothing was taken on trust.
 P1-23 is closed and promoted: `docs/phase-1/phase-1-23/` carries `gate-record.md` and
 `promotion-record.md`, `origin/develop` is an ancestor of `origin/main`, and the two
 trees are byte-identical. P1-25 has not started — no branch, no PR, no
-`docs/phase-1/phase-1-25`, no file mentioning it.
+`docs/phase-1/phase-1-25`, no P1-25 code anywhere. "No file mentioning it" was the
+original wording here and it was wrong: `src/app/page.tsx`, ADR-002, the ADR register,
+`phase-1-1/open-decisions.md`, the P1-13 plan and the OWASP ASVS matrix all defer
+frontend items to "Phase 1-25 onward". Those are pre-existing forward references, not
+work.
 
 ### Two names in the brief do not match the repository
 

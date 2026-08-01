@@ -377,8 +377,14 @@ most of them, and saying so is more useful than inventing artifacts.
   untouched throughout P1-24. Promotion is a separate founders' reserved decision
   (ADR-006) recorded in [`promotion-record.md`](promotion-record.md), not here.
 - **No release. No tag. No deployment. No customer-data migration.**
-- **No P1-25 work** — no branch, no PR, no `docs/phase-1/phase-1-25`, and no reference
-  in `src/`, `tests/`, `scripts/`, `.github/` or `supabase/`.
+- **No P1-25 work** — no branch, no pull request, no `docs/phase-1/phase-1-25`, and no
+  P1-25 code in `src/`, `tests/`, `scripts/`, `.github/` or `supabase/`. Stated
+  precisely, because the repository does mention the phase: `src/app/page.tsx` carries a
+  comment saying the placeholder page "is replaced when real frontend work begins
+  (Phase 1-25 onward)", and ADR-002, the ADR register, `phase-1-1/open-decisions.md`,
+  the P1-13 plan and the OWASP ASVS matrix all defer frontend items to "Phase 1-25
+  onward". Those are pre-existing **forward references**, none authored by P1-24 and
+  none an implementation. The earlier phrasing "no reference" was too strong.
 - **No migration was created**, and none may be created in this gate branch.
 - **Zoom Vehicle Inspection and Evaluation Services remains excluded** from Phase 1.
 - **Benzene remains a configurable first subscribed tenant and pilot**, never
