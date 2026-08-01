@@ -38,7 +38,7 @@ being written. It is recorded in §6 with the promotion result rather than guess
 | -------- | -------------------------------------- | ---------- | ------------------------------------------------------- |
 | **#151** | `76632b05` (**19/19** checks green)    | `38d1ec22` | the phase — integration, hardening and its evidence     |
 | **#152** | `2bf135e6` (**17** checks, ci-gate ✅) | `0b68b7c9` | the gate record — documentation only                    |
-| **#PR**  | this branch                            | §6         | canonical documentation completion — documentation only |
+| **#153** | `2f9e43f5`                             | §6         | canonical documentation completion — documentation only |
 
 `#152`'s seventeen checks are **11 success and 6 authorized documentation-only skips**.
 A skip is a recorded decision, not an absence: `scripts/ci/classify-changes.mjs` classified
