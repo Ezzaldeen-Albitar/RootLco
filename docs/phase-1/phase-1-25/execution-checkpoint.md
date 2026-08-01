@@ -186,6 +186,60 @@ the repository root**, plus the multi-stage Dockerfile and every path-pinned P1-
 evidence artifact already merged to `main`. It is a repository-wide change that needs its
 own dedicated run and a full clean-room re-verification of the 4,689-test backend baseline.
 
+## `apps/api` migration — ATTEMPTED, REVERTED, DIAGNOSED
+
+The backend move was attempted in full and **reverted to `e251f569` because it could not
+be finished green in one run**. Nothing broken was committed; the visible worktree is
+clean and at the last green pushed commit. The mechanical work is cheap to redo — the
+value below is the diagnosis, which turns the next attempt from exploration into execution.
+
+### What was done and proven to work
+
+| Step | Result |
+| --- | --- |
+| `git mv src apps/api/src` (449 files), `public`, `next.config.ts` | clean renames, **196 API routes preserved** |
+| `apps/api/package.json` as `@rootlco/api` with the 8 runtime deps | created |
+| `apps/api/tsconfig.json` with `@/*` → `./src/*` | created |
+| Root tsconfig scoped to `tests/` + `scripts/`, `@/*` → `apps/api/src/*`, excludes `apps` | done |
+| Root package split: coordinator, application deps moved out, `pg`/`zod` kept as explicit test deps | done |
+| Root scripts preserved by name and delegated (`dev`, `build`, `start`, `lint`) + `:api`/`:web` variants — 76 scripts | done |
+| Single root lockfile with **both** workspaces, 0 nested locks | done |
+| **API typecheck, WEB typecheck, ROOT typecheck all clean** | verified |
+| **`build:api` and `build:web` both compiled successfully** | verified |
+
+So the boundary itself is sound: the two applications compile independently and the
+workspace resolves.
+
+### The five failures that must be fixed for it to be green
+
+1. **Path double-prefixing.** `p1-24-operation-register` resolved
+   `apps/api/apps/api/src/app/api`. A blanket `'src/' → 'apps/api/src/'` replacement
+   compounds in scripts that already resolve relative to the application root. **The fix is
+   the centralised `scripts/lib/repository-paths.mjs` helper the brief asks for** —
+   `API_SRC_ROOT` exported once — not another sweep of literals.
+2. **ESLint: 2,863 errors.** `eslint.config.mjs` is at the repository root, so
+   `apps/api` linted with no config. Needs `apps/api/eslint.config.mjs` (extending the
+   root) before `lint:api` means anything.
+3. **`validate:operation-coverage`** — its expected-path constant still requires
+   `src/app/api/**/route.ts`; every operation now reports "registered outside".
+4. **`validate:authorization-coverage`** — reported `0 registered operations, 0 route
+   files` and could not read the audit-action catalog. Same root cause as (1) and (3).
+5. **19 unit tests across 12 files**, plus `format:check` on the newly generated JSON.
+   Ordinary fallout once (1)–(4) are correct.
+
+### Not yet attempted
+
+Dockerfile workspace-scoped install and API-only image proof, CI workflow path updates,
+CodeQL configuration, container-security re-proof, the backend/DB/RLS baseline
+(1301 / 1752 / 1636), dependency-equivalence comparison, and the runtime smoke test on
+separate ports.
+
+### Recommended order for the next run
+
+Build `scripts/lib/repository-paths.mjs` **first**, repoint the scripts through it rather
+than through literals, add `apps/api/eslint.config.mjs`, then move the tree, then fix the
+two coverage gates, then Docker and CI, then run the full baseline.
+
 ## Next action
 
 **Finish the topology normalization first** — move the root backend into `apps/api/` as `@rootlco/api`, repoint the 723 path references, update the Dockerfile and workflows, regenerate the path-pinned evidence, and re-run the full backend baseline. Only then **Wave 1 — dashboard shell**: locale-aware `(dashboard)` route group, responsive shell,
