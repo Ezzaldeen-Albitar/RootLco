@@ -11,6 +11,80 @@ deliverable is the mechanism that makes the proof repeatable. Where a task turne
 genuine gap, the gap is a finding with a fix and a regression test; where it did not,
 the row says "verified, no gap" rather than inventing a deliverable.
 
+## Task register — all 27, with the SHA each was verified at
+
+Every row below was verified on protected `develop` at
+**`0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66`** (tree `c6601886eddf36a4a67e4f6e62c78b449698a891`),
+the merge of gate Pull Request #152 — not on a branch, and not on the earlier feature
+merge. Where a row's evidence was first produced at an earlier SHA it was re-measured
+there; where a task turned up a defect the finding id is named, and where a task carries
+an accepted limitation it is named too, because a register that lists only successes
+tells a reader nothing they can act on.
+
+| Task            | Title                                   | Status       | Requirement   | Finding       | Limitation                                                                                  | Verified at |
+| --------------- | --------------------------------------- | ------------ | ------------- | ------------- | ------------------------------------------------------------------------------------------- | ----------- |
+| `P1-24-BE-001`  | API contract validation                 | **Complete** | `FR-INT-001`  | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-002`  | Domain integration testing              | **Complete** | `FR-INT-001`  | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-003`  | Transaction testing                     | **Complete** | `NFR-DAT-001` | —             | verification, no new artifact                                                               | `0b68b7c9`  |
+| `P1-24-BE-004`  | RLS testing                             | **Complete** | `NFR-SEC-001` | —             | verification, no new artifact                                                               | `0b68b7c9`  |
+| `P1-24-BE-005`  | Authorization testing                   | **Complete** | `FR-IAM-002`  | `P1-24-F-001` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-006`  | Error-path testing                      | **Complete** | `FR-INT-001`  | `P1-24-F-002` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-007`  | Concurrency testing                     | **Complete** | `NFR-DAT-001` | —             | verification, no new artifact                                                               | `0b68b7c9`  |
+| `P1-24-BE-008`  | Idempotency testing                     | **Complete** | `FR-INT-002`  | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-009`  | Performance verification                | **Complete** | `NFR-PERF-01` | —             | baseline recorded, no threshold claimed (`P1-OD-027`)                                       | `0b68b7c9`  |
+| `P1-24-BE-010`  | Audit verification                      | **Complete** | `FR-AUD-001`  | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-011`  | Event-delivery verification             | **Complete** | `FR-INT-001`  | —             | 3 of 50 events reserved, `implementedIn: null`                                              | `0b68b7c9`  |
+| `P1-24-BE-012`  | File-security verification              | **Complete** | `NFR-SEC-001` | —             | no malware scanner exists and none is claimed                                               | `0b68b7c9`  |
+| `P1-24-BE-013`  | OpenAPI completion                      | **Complete** | `FR-INT-001`  | `P1-24-F-003` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-BE-014`  | Backend documentation completion        | **Complete** | `NFR-MNT-001` | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-SEC-001` | Permission and resolved scope           | **Complete** | `NFR-SEC-001` | `P1-24-F-001` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-SEC-002` | Sensitive data, export, file access     | **Complete** | `NFR-SEC-001` | —             | verification, no new artifact                                                               | `0b68b7c9`  |
+| `P1-24-SEC-003` | Abuse cases and privilege escalation    | **Complete** | `NFR-SEC-001` | —             | company scope is guarded by two layers and neither is independently observable from the API | `0b68b7c9`  |
+| `P1-24-SEC-004` | Security audit coverage                 | **Complete** | `FR-AUD-001`  | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-QA-001`  | Unit and component coverage             | **Complete** | `NFR-MNT-001` | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-QA-002`  | API/contract and error-path coverage    | **Complete** | `FR-INT-001`  | `P1-24-F-001` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-QA-003`  | Tenant/company/branch isolation         | **Complete** | `NFR-SEC-001` | `P1-24-F-001` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-QA-004`  | Concurrency and idempotency             | **Complete** | `FR-INT-002`  | —             | verification, no new artifact                                                               | `0b68b7c9`  |
+| `P1-24-QA-005`  | Regression and evidence packaging       | **Complete** | `NFR-MNT-001` | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-DO-001`  | CI quality gate                         | **Complete** | `NFR-MNT-001` | `P1-24-F-004` | —                                                                                           | `0b68b7c9`  |
+| `P1-24-DO-002`  | Logging, monitoring, alert routing      | **Complete** | `NFR-OBS-001` | —             | nothing is deployed; no claim about production monitoring or alerting                       | `0b68b7c9`  |
+| `P1-24-DOC-001` | Contract, catalog and traceability sync | **Complete** | `NFR-MNT-001` | —             | —                                                                                           | `0b68b7c9`  |
+| `P1-24-DOC-002` | Operator and developer guidance         | **Complete** | `NFR-MNT-001` | —             | —                                                                                           | `0b68b7c9`  |
+
+**27 of 27 Complete. 0 Pending. 0 Blocked.** Groups: Backend 14/14 · Security 4/4 ·
+QA 5/5 · DevOps 2/2 · Documentation 2/2.
+
+`P1-24-F-004` is attached to `P1-24-DO-001` rather than to a delivery task, and the
+reason is recorded rather than smoothed: it was surfaced by the phase's own CI on the
+first push of the feature branch, it lived in `.github/ci-baselines/` and
+`tests/ci/dependency-gate.test.ts`, and `develop` would have failed identically that day.
+It is CI-gate work, not a backend delivery, and forcing it onto a backend row would
+misattribute it.
+
+## Where these requirement identifiers come from
+
+Requirement ids in this repository originate in the canonical Word documents, which live
+**outside** the repository by owner decision
+([`docs/governance/canonical-documents.md`](../../../governance/canonical-documents.md)).
+Some have a definition row in an in-repo traceability matrix and some do not, and this
+table says which is which rather than implying uniform provenance.
+
+| Requirement   | Defined in this repository?                                                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FR-IAM-002`  | **yes** — [`phase-1-13-traceability.md`](../../phase-1-13/phase-1-13-traceability.md) row, status PASS                                                                     |
+| `FR-INT-001`  | **yes** — same matrix, "Domain events published through the transactional outbox", PASS                                                                                    |
+| `FR-INT-002`  | **yes** — same matrix, "Idempotent critical commands", PASS                                                                                                                |
+| `FR-AUD-001`  | **yes** — same matrix, "…emit exactly one audit record", PASS                                                                                                              |
+| `NFR-PERF-01` | **yes** — [`phase-1-12-traceability.md`](../../phase-1-12/phase-1-12-traceability.md), status VALIDATED                                                                    |
+| `NFR-DAT-001` | **no definition row** — used earlier by the P1-11 financial-precision contract; resolves to the canonical documents                                                        |
+| `NFR-SEC-001` | **no definition row** — resolves to the canonical documents. Distinct from the two-digit `NFR-SEC-01/02/03` of the P1-12 database matrix, which are different requirements |
+| `NFR-MNT-001` | **no definition row** — resolves to the canonical documents                                                                                                                |
+| `NFR-OBS-001` | **no definition row** — resolves to the canonical documents                                                                                                                |
+
+The performance requirement is **`NFR-PERF-01`**, not `NFR-PERF-001`. The three-digit
+form appears nowhere in the repository except in this phase's own record of the
+correction.
+
 ## The mechanism most rows rest on
 
 The derived-evidence floor. What an operation owes is computed from its own
@@ -63,7 +137,7 @@ that way instead of as 226 individual claims.
 
 | Task                                           | Requirement                    | Artifact                                                                           | Result                                                           |
 | ---------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| P1-24-QA-001 Unit and component coverage       | NFR-MNT-001                    | `npm run test`                                                                     | 1285 tests, 58 files.                                            |
+| P1-24-QA-001 Unit and component coverage       | NFR-MNT-001                    | `npm run test`                                                                     | **1288 tests, 58 files** at `0b68b7c9`.                          |
 | P1-24-QA-002 API/contract and error paths      | FR-INT-001 · TC-API-001        | register + IAM route-depth suite                                                   | 226/226 operations classified Covered against the uniform floor. |
 | P1-24-QA-003 Tenant/company/branch isolation   | NFR-SEC-001 · TC-RLS-001       | IAM route-depth suite (real tenant-B rows) + journey (four domains, one aggregate) | **Gap found and closed** for `iam.`/`meta.`                      |
 | P1-24-QA-004 Concurrency and idempotency       | FR-INT-002 · TC-CON-001        | derived floor + existing concurrency suites + journey                              | Verified.                                                        |

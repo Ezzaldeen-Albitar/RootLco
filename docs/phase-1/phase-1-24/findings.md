@@ -71,7 +71,7 @@ silence.
 
 ### The fix
 
-- `tests/backend/p1-24-iam-route-depth.test.ts` — 87 assertions driving all 39
+- `tests/backend/p1-24-iam-route-depth.test.ts` — **88 tests** driving all 39
   operations from `new Request(...)` to `Response`, on the real `app_runtime`
   identity, under RLS, with nothing mocked. Denial for all 35 authenticated
   operations; `unauthenticated` for the 4 public ones; cross-tenant against **real

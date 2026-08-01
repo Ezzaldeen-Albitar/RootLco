@@ -56,6 +56,8 @@ is cited by its real id throughout.
 | `24ab9f0` | 12, 18 | hostile mutation matrix; event coverage matrix; CI wiring for both                                   |
 | `bef3940` | 16     | task traceability; checkpoint                                                                        |
 | `4ab5c3f` | 22     | F-004: closed the brace-expansion waiver; made the dependency gate testable with no exception        |
+| `76632b0` | 22     | F-004 written up; checkpoint closed — **the reviewed feature head merged as `38d1ec2`**              |
+| `2bf135e` | gate   | the gate record — documentation only; **merged as `0b68b7c9`**, protected `develop`                  |
 
 ## Findings
 
@@ -97,6 +99,9 @@ Two recorded non-findings, both measurement errors of mine, kept for the lesson.
 | 20   | clean-room exact-SHA reproof                      | complete                                              |
 | 21   | feature Pull Request preparation                  | complete — PR #151                                    |
 | 22   | hosted CI and PR readiness                        | complete                                              |
+| 23   | owner merge of PR #151, protected-SHA reproof     | complete — `38d1ec2`, 17/17                           |
+| 24   | gate record; PR #152; owner merge; reverification | complete — `0b68b7c9`, 17/17                          |
+| 25   | canonical documentation completion                | complete — this branch                                |
 
 ## Measured surface
 
@@ -122,23 +127,23 @@ not read as a coverage gap.
 
 ## Commands executed, with outcomes
 
-| Command                                             | Outcome                                                     |
-| --------------------------------------------------- | ----------------------------------------------------------- |
-| `node scripts/p1-24-operation-register.mjs --check` | OK — 226 operations, 0 reconciliation failures              |
-| `node scripts/p1-24-mutation-matrix.mjs`            | 6/6 CAUGHT, 0 survived, 0 stillborn                         |
-| `node scripts/check-operation-test-coverage.mjs`    | OK — 226 operations, 0 invocation-only                      |
-| `npm run validate:openapi`                          | OK — 195 paths, 226 operations, every operation guarded     |
-| `npm run validate:authorization-coverage`           | OK                                                          |
-| `node scripts/ci/check-workflow-security.mjs`       | 17 files, 14 rules, no findings                             |
-| `node scripts/ci/check-run-block-syntax.mjs`        | 129 blocks, 0 invalid                                       |
-| `npm run typecheck`                                 | clean                                                       |
-| `npm run lint`                                      | clean                                                       |
-| `npm run format:check`                              | clean                                                       |
-| `npm run validate:encoding`                         | OK                                                          |
-| `npm run test`                                      | 1285 / 1285                                                 |
-| `npm run test:backend`                              | 1739 / 1739 at `1d77396`; re-run at the final candidate SHA |
+| Command                                             | Outcome                                                 |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| `node scripts/p1-24-operation-register.mjs --check` | OK — 226 operations, 0 reconciliation failures          |
+| `node scripts/p1-24-mutation-matrix.mjs`            | 6/6 CAUGHT, 0 survived, 0 stillborn                     |
+| `node scripts/check-operation-test-coverage.mjs`    | OK — 226 operations, 0 invocation-only                  |
+| `npm run validate:openapi`                          | OK — 195 paths, 226 operations, every operation guarded |
+| `npm run validate:authorization-coverage`           | OK                                                      |
+| `node scripts/ci/check-workflow-security.mjs`       | 17 files, 14 rules, no findings                         |
+| `node scripts/ci/check-run-block-syntax.mjs`        | 129 blocks, 0 invalid                                   |
+| `npm run typecheck`                                 | clean                                                   |
+| `npm run lint`                                      | clean                                                   |
+| `npm run format:check`                              | clean                                                   |
+| `npm run validate:encoding`                         | OK                                                      |
+| `npm run test`                                      | 1285 / 1285 at `1d77396`; **1288 / 1288** at `0b68b7c9` |
+| `npm run test:backend`                              | 1739 / 1739 at `1d77396`; **1752 / 1752** at `0b68b7c9` |
 
-## Post-merge
+## Feature merge — Pull Request #151
 
 Feature PR **#151** merged by the owner on 2026-08-01T07:08:51Z as merge commit
 `38d1ec22ddaf3a6507c876e0a4ffff447de8b972`. First parent `1c74454d` (the protected
@@ -157,12 +162,36 @@ counterfactual re-run there.
 
 The full record is [`gate-record.md`](gate-record.md).
 
+## Gate merge — the event that closed the phase
+
+The gate-record Pull Request **#152** was merged by the owner on 2026-08-01T07:59:35Z as
+merge commit `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66`, first parent `38d1ec22` (the
+feature merge), second parent `2bf135e6` (the reviewed gate commit). Its tree
+`c6601886eddf36a4a67e4f6e62c78b449698a891` is **byte-identical** to the reviewed gate
+tree, and the merge changed **2 files** against the feature merge — both under
+`docs/phase-1/phase-1-24/`, **0** executable, test, script, workflow, manifest, Supabase,
+migration or generated-contract files.
+
+Protected merge-SHA CI on `0b68b7c9`: **17 checks, 17 success, 0 skipped, 0 failed**,
+including the `protected-gate` aggregate, across runs `30690845932` (CI) and
+`30690846041` (Protected branch verification).
+
+`#152` itself ran **17 checks — 11 success and 6 authorized documentation-only skips**,
+with `ci-gate` green. The skips are recorded decisions: `classify-changes.mjs` classified
+the change set as `docs` only, `ci-gate` re-read that classification from the uploaded
+artifact rather than a job output, and `evaluate-ci-gate.mjs` accepts a skipped job only
+where the classification says it was not required. `hosted-clean-room` is on the
+always-required list, so it ran on the documentation-only gate too.
+
+## Status
+
+**P1-G24 is closed on protected `develop` — Go.** Both closure conditions this phase set
+for itself are met and evidenced in [`gate-record.md`](gate-record.md) §12: the owner
+merged the gate Pull Request, and protected `develop` was re-verified afterwards for
+merge shape, tree identity and a green protected-branch CI run on the new merge SHA.
+
 ## Next action
 
-Wave 19 — finish the full local gate battery at the final candidate SHA, then the
-clean-room reproof (Wave 20), then push and open the feature Pull Request (Wave 21)
-and wait for hosted CI (Wave 22).
-
-**The owner gate is not recorded here and must not be.** P1-G24 remains Pending until
-the owner merges the feature PR and a separate post-merge process verifies protected
-`develop`.
+Promotion of the integrated `develop` into `main`, per ADR-006 §45 and §47 — a founders'
+reserved decision, prepared and recorded in [`promotion-record.md`](promotion-record.md).
+**P1-25 is not started**, and nothing in this phase starts it.
