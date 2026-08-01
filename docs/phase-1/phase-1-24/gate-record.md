@@ -410,9 +410,9 @@ partial or uncovered, and CodeQL reports 0 Critical and 0 High.
 
 When this record was written on the gate branch it refused to claim closure, and set two
 conditions instead. **Both are now met, and the evidence for each is recorded below
-rather than asserted.** The paragraph above is left as it was written — it describes the
-state at authoring, and rewriting history to look tidier is the failure this section
-exists to prevent.
+rather than asserted.** The paragraph above is kept word for word and labelled with when
+it was written, rather than quietly rewritten into the present tense: a record that
+edits away what it used to say is the failure this section exists to prevent.
 
 | Condition set by this record                                              | Met | Evidence                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

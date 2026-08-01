@@ -28,17 +28,19 @@ Because `develop` and `main` were byte-identical when P1-24 began, the promotion
 exactly P1-24 and the documentation that completes it, and nothing else. The delta is
 enumerated in §2 and classified file-by-file in the promotion pull request.
 
-**Why this file cannot name its own merge SHA.** The promotion source is the commit that
-merges the pull request containing this file, so that SHA does not exist while the file is
-being written. It is recorded in §6 with the promotion result rather than guessed here.
+**Why this file names neither its own head nor its own merge SHA.** Writing a SHA into
+this file changes the SHA, and the promotion source is the commit that merges the pull
+request containing it — a commit that does not exist while the file is being written.
+Both are recorded in §6 with the promotion result, read from the remote, rather than
+guessed here and quietly wrong.
 
 ## 2. Chain merged into develop
 
-| PR       | Head                                   | Merge      | Contents                                                |
-| -------- | -------------------------------------- | ---------- | ------------------------------------------------------- |
-| **#151** | `76632b05` (**19/19** checks green)    | `38d1ec22` | the phase — integration, hardening and its evidence     |
-| **#152** | `2bf135e6` (**17** checks, ci-gate ✅) | `0b68b7c9` | the gate record — documentation only                    |
-| **#153** | `2f9e43f5`                             | §6         | canonical documentation completion — documentation only |
+| PR       | Head                                            | Merge      | Contents                                                |
+| -------- | ----------------------------------------------- | ---------- | ------------------------------------------------------- |
+| **#151** | `76632b05` (**19/19** checks green)             | `38d1ec22` | the phase — integration, hardening and its evidence     |
+| **#152** | `2bf135e6` (**17** checks, ci-gate ✅)          | `0b68b7c9` | the gate record — documentation only                    |
+| **#153** | `docs/p1-24-canonical-documentation-completion` | §6         | canonical documentation completion — documentation only |
 
 `#152`'s seventeen checks are **11 success and 6 authorized documentation-only skips**.
 A skip is a recorded decision, not an absence: `scripts/ci/classify-changes.mjs` classified
