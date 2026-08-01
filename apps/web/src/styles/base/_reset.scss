@@ -9,7 +9,16 @@
 
 html {
   // Never disable user zoom. Browser zoom at 200% is an accessibility
-  // requirement, not an edge case.
+  // requirement, not an edge case. 100% means "do not adjust", so iOS Safari
+  // stops inflating text after an orientation change while the user's own zoom
+  // keeps working.
+  //
+  // The prefixed property is the ONE that iOS Safari implements; the unprefixed
+  // form is declared first so the prefix disappears on its own once Safari
+  // ships it. This is the documented exception the vendor-prefix rule asks for,
+  // and it is scoped to a single declaration rather than the file.
+  text-size-adjust: 100%;
+  /* stylelint-disable-next-line property-no-vendor-prefix -- iOS Safari implements only the prefixed form; see comment above. */
   -webkit-text-size-adjust: 100%;
 }
 

@@ -39,6 +39,13 @@ jobs:
       task: static-quality
       artifact-retention-days: 30
 
+  web-quality:
+    name: web-quality
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: web-quality
+      artifact-retention-days: 30
+
   unit-tests-coverage:
     name: unit-tests-coverage
     uses: ./.github/workflows/_reusable-node-quality.yml
@@ -121,6 +128,7 @@ jobs:
     timeout-minutes: 15
     needs:
       - static-quality
+      - web-quality
       - unit-tests-coverage
       - application-build
       - database-migration-replay

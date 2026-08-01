@@ -152,6 +152,16 @@ jobs:
       ref: ${{ needs.change-detection.outputs.head-sha }}
       base-ref: ${{ github.event.pull_request.base.ref }}
 
+  web-quality:
+    name: Web quality
+    needs: change-detection
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: web-quality
+      ref: ${{ needs.change-detection.outputs.sha }}
+    permissions:
+      contents: read
+
   unit-tests-coverage:
     name: unit-tests-coverage
     needs: change-detection
@@ -264,6 +274,7 @@ jobs:
     needs:
       - change-detection
       - static-quality
+      - web-quality
       - unit-tests-coverage
       - application-build
       - database-migration-replay

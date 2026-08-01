@@ -18,9 +18,17 @@
   }
 
   // Interactive chrome has no meaning on paper.
+  //
+  // `!important` is the documented exception here, not an accident. A printed
+  // invoice or reception document that leaks a "Delete" button onto the page is
+  // a correctness failure, and the elements being hidden carry utility classes
+  // and component styles whose `display` is set from higher-specificity
+  // selectors this stylesheet does not know about. Losing that race silently
+  // would only be discovered on paper, by a customer.
   [data-print='hide'],
   nav,
   button:not([data-print='keep']) {
+    /* stylelint-disable-next-line declaration-no-important -- print correctness must win over any component display rule; see comment above. */
     display: none !important;
   }
 
@@ -41,6 +49,6 @@
 }
 
 @page {
-  size: A4;
+  size: a4;
   margin: 16mm;
 }

@@ -11,13 +11,13 @@ $family-sans: (
   'Segoe UI',
   'Noto Sans Arabic',
   'Segoe UI Arabic',
-  Roboto,
+  'Roboto',
   'Helvetica Neue',
-  Arial,
+  'Arial',
   sans-serif
 );
 
-$family-mono: (ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', monospace);
+$family-mono: (ui-monospace, 'SFMono-Regular', 'SF Mono', 'Consolas', 'Liberation Mono', monospace);
 
 // Semantic sizes. Named for role, not for magnitude, so a later type revision
 // changes values here and nothing else.

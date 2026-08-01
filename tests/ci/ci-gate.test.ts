@@ -280,6 +280,9 @@ describe('ci-gate', () => {
       'secret-scan',
       'static-quality',
       'unit-tests-coverage',
+      // Added by P1-25. ALWAYS required: before it, hosted CI invoked zero web
+      // commands, so the web application's own lint had never run.
+      'web-quality',
     ]);
     const unconditional = (DECLARED_JOBS as Array<{ id: string; alwaysRequired: boolean }>)
       .filter((j) => j.alwaysRequired)

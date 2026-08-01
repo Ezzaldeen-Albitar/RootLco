@@ -6,7 +6,17 @@
 #   static-quality  formatting, types, lint, every repository gate, generated-file
 #                   drift, workflow security, test honesty. No database, no build.
 #   unit-coverage   the unit tier plus its coverage ratchet.
-#   build           the production build, its integrity, and the size ratchet.
+#   build           the API production build, its integrity, and the size ratchet.
+#   web-quality     every gate the web application owns: types, lint, Sass,
+#                   formatting, component tests, the design-token and brand
+#                   gates, and its production build.
+#
+# `web-quality` is a separate task and not a few extra steps inside
+# `static-quality` for the reason the whole split exists: the web application
+# failing its own lint and the repository failing its formatting are different
+# conversations, and `ci-gate` has to be able to tell them apart. It is also the
+# job that closes P1-25-F-015 — before it, hosted CI invoked ZERO web commands,
+# so every web gate was green in the only sense that nothing had ever run it.
 #
 # They are separate CALLS rather than one job because they are independent and
 # should run in parallel, and because `ci-gate` has to reason about them
@@ -55,6 +65,9 @@ on:
       standalone-bytes:
         description: Size of `.next/standalone` in bytes.
         value: ${{ jobs.node-quality.outputs.standalone-bytes }}
+      web-tests:
+        description: Number of web component tests executed.
+        value: ${{ jobs.node-quality.outputs.web-tests }}
 
 permissions:
   contents: read
@@ -76,6 +89,7 @@ jobs:
       openapi-paths: ${{ steps.contract.outputs.paths }}
       openapi-operations: ${{ steps.contract.outputs.operations }}
       standalone-bytes: ${{ steps.size.outputs.bytes }}
+      web-tests: ${{ steps.web-tests.outputs.total }}
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -100,9 +114,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${TASK}" in
-            static-quality | unit-coverage | build) printf 'task: %s\n' "${TASK}" ;;
+            static-quality | unit-coverage | build | web-quality) printf 'task: %s\n' "${TASK}" ;;
             *)
-              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build. A job that recognises no task would skip every step and report success."
+              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build, web-quality. A job that recognises no task would skip every step and report success."
               exit 1
               ;;
           esac
@@ -208,6 +222,19 @@ jobs:
           npm run validate:p1-23-inventory
           npm run validate:p1-24-register
           npm run validate:exact-money
+          npm run validate:run-block-syntax
+          npm run validate:crm-classification
+          npm run validate:veh-classification
+          npm run validate:aptrec-classification
+          npm run validate:wo-tech-dia-qms-classification
+          npm run validate:svc-quo-inv-classification
+          npm run validate:sal-wty-rpt-classification
+          npm run security:all
+          # Every quality command is registered, classified, and reachable from
+          # both the local aggregate and this workflow. Without it, a check can
+          # exist, be correct, and never once run — which is exactly how three
+          # gates rotted unnoticed before P1-25.
+          npm run validate:command-coverage
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -423,6 +450,74 @@ jobs:
           '
 
       # =======================================================================
+      # web-quality
+      # =======================================================================
+      - name: Web formatting, types and lint
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run format:check:web
+          npm run typecheck:web
+          npm run lint:web
+
+      - name: Web Sass policy
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # ADR-013 direction safety lives here. The rule that enforces it was
+          # declared with an invalid option shape until P1-25 and was therefore
+          # SKIPPED by Stylelint while the command still exited zero, so
+          # `style:check:web` alone is not sufficient evidence that it ran —
+          # `tests/stylelint-policy.test.ts` in the web tier proves the rules fire.
+          npm run style:check:web
+
+      - name: Web design-token and brand isolation gates
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run validate:web-tokens
+          npm run validate:web-brand
+
+      - name: Web component tier
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run test:web -- --reporter=default --reporter=json --outputFile=vitest-web.json
+
+      - name: Summarise the web tier
+        id: web-tests
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs \
+            --input apps/web/vitest-web.json --label web \
+            --json test-totals-web.json --markdown tests-web.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-web.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Web production build
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # `set -o pipefail` above is what makes `tee` safe: without it the
+          # pipeline reports tee's status and a failing build looks green.
+          npm run build:web 2>&1 | tee web-build.log
+
+      - name: The web build output carries no credential
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # A value inlined into a client bundle reaches every browser that loads
+          # the page and never existed as a tracked file, so no tracked-file
+          # scanner could ever have seen it.
+          node scripts/ci/scan-history.mjs --mode worktree \
+            --roots apps/web/.next --min-files 20 \
+            --json web-build-scan.json --markdown web-build-scan.md
+
+      # =======================================================================
       # evidence — uploaded even when a step above failed
       # =======================================================================
       - name: Job summary
@@ -464,6 +559,10 @@ jobs:
             build.log
             build-warnings.txt
             changed-files.txt
+            apps/web/vitest-web.json
+            test-totals-web.json
+            web-build-scan.json
+            web-build.log
             *.md
 
       - name: Upload the HTML coverage report

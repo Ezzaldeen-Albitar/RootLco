@@ -451,6 +451,97 @@ Install      npm ci from clean · 0 vulnerabilities in root, API and web trees
 Database     119 migrations · no 120 · supabase diff 0 · historical migration diff 0
 ```
 
+## Stage 1.1–1.2 — Stylelint and command coverage — **COMPLETE**
+
+### Web Stylelint: 99 errors → 0 errors, 0 warnings
+
+Classified before fixing. None of it was cosmetic:
+
+- **34 × `scss/no-global-function-names`** — `map-get()` is deprecated in Dart Sass
+  and slated for removal. Fixed at source with an explicit `@use 'sass:map'`.
+- **33 × modern colour notation** — legacy `rgba(r, g, b, a)` → `rgb(r g b / p%)`.
+- **9 × `scss/dollar-variable-empty-line-before`** — the standard preset forbids a blank
+  line between consecutive `$` declarations, which makes multi-line token maps unreadable.
+  Narrowed the rule's `except` list instead of deleting the blank lines, and documented it.
+- **15 × `scss/comment-no-empty`** — the repository's prose-comment style uses a bare `//`
+  as a separator inside a comment block. Root `.stylelintrc.json` had already decided this
+  and set the rule to `null`; the web copy had not. Aligned, not invented.
+- **5 × `value-keyword-case`** — proper-noun font families. Quoted them, which is both what
+  the linter wants and what the CSS spec prefers.
+- **1 × `property-no-vendor-prefix`** — `-webkit-text-size-adjust`, the only form iOS
+  Safari implements. Declared the unprefixed property too and scoped the disable to that
+  single line with the reason on it.
+- **1 × `declaration-no-important`** — genuinely new, because the rule had never been
+  enabled here. A printed invoice that leaks a "Delete" button is a correctness failure, so
+  the `!important` stays with a documented disable rather than losing a specificity race
+  that is only discoverable on paper.
+
+### **`P1-25-F-014` — a rule that was skipped, not passing**
+
+`apps/web/.stylelintrc.json` declared the ADR-013 direction guard as
+`declaration-property-value-disallowed-list` with `[{}]` as the value list. That is not a
+valid option shape, so Stylelint emitted `Invalid Option:` and **skipped the rule** — while
+the command still ran and still printed other findings.
+
+Two things were wrong at once: the option shape, and the rule itself. Banning physical
+_properties_ needs `property-disallowed-list`; `declaration-property-value-disallowed-list`
+bans _values_. The root config had both, correctly. The web config was a half-copy of it.
+
+So the single most important rule in this repository's styling standard — logical properties
+so Arabic RTL and English LTR both work — had **never once been enforced**, and a skipped
+rule is indistinguishable from a clean one in the output.
+
+Fixed both, and added `apps/web/tests/stylelint-policy.test.ts`: 28 cases that run the real
+configuration against deliberate violations and assert each is CAUGHT, plus the inverse
+cases so the guard cannot pass by rejecting everything, plus a case asserting the config
+reports **no invalid option** at all.
+
+### **`P1-25-F-015` — hosted CI invoked zero web commands**
+
+Not "the web checks were skipped on some paths". `lint:web`, `typecheck:web`,
+`style:check:web`, `test:web`, `build:web`, `format:check:web`, `validate:web-tokens` and
+`validate:web-brand` appeared in **no workflow at all**.
+
+`scripts/ci/check-command-coverage.mjs` is the answer, and it is a gate rather than a
+document. It reads every workspace manifest and every workflow, follows `npm run` edges
+transitively — including across `--workspace` boundaries — and fails when a **required**
+command is not reachable from `verify:workspaces` **or** is invoked by no workflow. Every
+script must be classified (`required` · `informational` · `interactive` · `environment`),
+and every register entry must name a script that still exists, so the register can neither
+omit a new command nor rot into a description of a repository that no longer exists.
+
+First run: **29/59 in CI, 39/59 locally**. Now **64/64 and 64/64**.
+
+Closing it required real work in both places:
+
+- Root gained `verify:policies`, `verify:repository`, `verify:api`, `verify:web`,
+  `verify:contracts`, `verify:inventories` and `verify:classifications`, composed by
+  `verify:workspaces`. Twenty validators had lived only in CI and had never been part of
+  what a developer runs before pushing.
+- `_reusable-node-quality.yml` gained a fourth task, **`web-quality`** — formatting, types,
+  lint, Sass, the token and brand gates, the component tier, the production build, and a
+  scan of the built client bundle for inlined credentials.
+- `web-quality` is wired into `pr-ci.yml`, `protected-develop-verification.yml`, both gate
+  `needs` lists, and `DECLARED_JOBS` as **`alwaysRequired: true`**. Not conditional on a
+  frontend change: the failure being closed is not "we missed an edit", it is that the
+  application's linter had never run, and a job that is skippable on a technicality rots
+  the same way.
+- The hosted clean room now runs `npm run verify:workspaces` — a fresh clone passing
+  exactly what a developer runs, which is the only honest form of that claim.
+
+**A trap worth recording:** collapsing the clean room's enumerated validator list into the
+aggregate broke `P1-22-DO-001`, which pins the literal string `npm run
+validate:p1-22-inventory` in that file as its DevOps evidence. The enumeration is therefore
+kept deliberately, and deliberately redundant — those anchors are how a closed phase proves
+its gate still runs, and folding them away would delete the evidence while leaving the
+claim. Only the expensive step, the production build, was de-duplicated.
+
+Two pinned counts moved with the work: `scripts/ci` 28 → 29, and `pr-ci.yml` 12 governed
+jobs → 13 (14 declared, 15 checks).
+
+**Verified:** `verify:workspaces` exit 0 · unit 1330/1330 across 60 files · web 34/34 ·
+Stylelint 0/0 · token gate 33/0 · brand gate 33/0 · command coverage 64/64 both dimensions.
+
 ## Next action
 
 **Docker + hosted CI + full backend/database/security proof.** Dockerfile workspace install

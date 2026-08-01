@@ -1,3 +1,5 @@
+@use 'sass:map';
+
 // =============================================================================
 // Colour tokens — PROVISIONAL
 // =============================================================================
@@ -21,7 +23,7 @@
 // -----------------------------------------------------------------------------
 
 $neutral: (
-  0: #ffffff,
+  0: #fff,
   25: #fcfcfd,
   50: #f8f9fb,
   100: #f1f3f7,
@@ -93,49 +95,49 @@ $info: (
 
 $semantic: (
   // surfaces
-  'app-background': map-get($neutral, 50),
-  'sidebar-background': map-get($neutral, 0),
-  'surface': map-get($neutral, 0),
-  'surface-subtle': map-get($neutral, 100),
-  'surface-raised': map-get($neutral, 0),
-  'overlay': rgba(15, 19, 28, 0.44),
-  'skeleton': map-get($neutral, 200),
+  'app-background': map.get($neutral, 50),
+  'sidebar-background': map.get($neutral, 0),
+  'surface': map.get($neutral, 0),
+  'surface-subtle': map.get($neutral, 100),
+  'surface-raised': map.get($neutral, 0),
+  'overlay': rgb(15 19 28 / 44%),
+  'skeleton': map.get($neutral, 200),
   // Print substrate. Paper is white regardless of the screen theme; naming it
   // as a token keeps the print stylesheet free of raw values like every other
   // layer, rather than making print the one exception nobody notices.
-  'paper': map-get($neutral, 0),
+  'paper': map.get($neutral, 0),
   // text
-  'text-primary': map-get($neutral, 900),
-  'text-secondary': map-get($neutral, 600),
-  'text-muted': map-get($neutral, 500),
-  'text-inverse': map-get($neutral, 0),
-  'text-disabled': map-get($neutral, 400),
+  'text-primary': map.get($neutral, 900),
+  'text-secondary': map.get($neutral, 600),
+  'text-muted': map.get($neutral, 500),
+  'text-inverse': map.get($neutral, 0),
+  'text-disabled': map.get($neutral, 400),
   // borders
-  'border': map-get($neutral, 200),
-  'border-strong': map-get($neutral, 300),
+  'border': map.get($neutral, 200),
+  'border-strong': map.get($neutral, 300),
   // actions
-  'primary': map-get($primary, 500),
-  'primary-hover': map-get($primary, 600),
-  'primary-active': map-get($primary, 700),
-  'primary-subtle': map-get($primary, 50),
-  'on-primary': map-get($neutral, 0),
-  'accent': map-get($primary, 400),
-  'focus-ring': map-get($primary, 400),
-  'disabled': map-get($neutral, 200),
+  'primary': map.get($primary, 500),
+  'primary-hover': map.get($primary, 600),
+  'primary-active': map.get($primary, 700),
+  'primary-subtle': map.get($primary, 50),
+  'on-primary': map.get($neutral, 0),
+  'accent': map.get($primary, 400),
+  'focus-ring': map.get($primary, 400),
+  'disabled': map.get($neutral, 200),
   // status
-  'success': map-get($success, 500),
-  'success-subtle': map-get($success, 50),
-  'warning': map-get($warning, 500),
-  'warning-subtle': map-get($warning, 50),
-  'error': map-get($danger, 500),
-  'error-subtle': map-get($danger, 50),
-  'info': map-get($info, 500),
-  'info-subtle': map-get($info, 50),
+  'success': map.get($success, 500),
+  'success-subtle': map.get($success, 50),
+  'warning': map.get($warning, 500),
+  'warning-subtle': map.get($warning, 50),
+  'error': map.get($danger, 500),
+  'error-subtle': map.get($danger, 50),
+  'info': map.get($info, 500),
+  'info-subtle': map.get($info, 50),
   // table — called out separately because the data table is the highest-traffic
   // surface in an operational product and must be tunable without touching
   // general surface tokens
-  'table-header': map-get($neutral, 50),
-  'table-row-hover': map-get($neutral, 50),
-  'table-row-selected': map-get($primary, 50),
-  'table-border': map-get($neutral, 200)
+  'table-header': map.get($neutral, 50),
+  'table-row-hover': map.get($neutral, 50),
+  'table-row-selected': map.get($primary, 50),
+  'table-border': map.get($neutral, 200)
 );
