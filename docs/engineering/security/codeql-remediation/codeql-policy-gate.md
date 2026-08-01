@@ -112,9 +112,17 @@ matches the whole name or any hyphen-separated part of it, and a test proves
 **2 — `js/http-to-file-access`, medium**, in the new
 `check-commit-checks.mjs`: unbounded GitHub API strings written into a report.
 GitHub's own CodeQL check reported that run **success** — it blocks only on high
-and critical. The repository ceiling of zero is what caught it. Content is now
-bounded by `safeText`; the residual flow is dismissed with a full reproduction,
-the only dismissal in the baseline.
+and critical. The repository ceiling of zero is what caught it. Content was
+bounded by `safeText` and the residual flow was dismissed with a full
+reproduction — the only dismissal the baseline ever carried.
+
+**That dismissal was withdrawn on 2026-08-01 because the finding was fixed**, four
+months before its expiry. Bounding the content never removed the edge: the program
+still fetched a remote body and persisted bytes derived from it, which is the
+CWE-434/912 shape the query names. It no longer writes to the filesystem at all —
+it renders to stdout and the operator redirects. The baseline now carries **zero**
+dismissals, and it had to, because the gate fails on an entry matching nothing.
+See [`SEC-CODEQL-033`](./sec-codeql-033-http-to-file-access.md).
 
 **3 — `js/incomplete-sanitization`, high**, in the fix for defect 2:
 `safeText` escaped pipes without escaping backslashes first, so the input `\|`

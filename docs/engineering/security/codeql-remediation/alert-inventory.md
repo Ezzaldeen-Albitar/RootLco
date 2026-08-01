@@ -104,9 +104,9 @@ text went out as a UUID and every request 422'd:
 
 Recorded because they exist, not because anything forced the disclosure.
 
-| Rule                     | File                                     | How it was found                                            | Disposition                                         |
-| ------------------------ | ---------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
-| `js/http-to-file-access` | `scripts/ci/check-commit-checks.mjs:196` | **this initiative's own new gate, on its first hosted run** | fixed — `safeText` bounds every HTTP-derived string |
+| Rule                     | File                                     | How it was found                                            | Disposition                                                                                                                                                                                                                    |
+| ------------------------ | ---------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `js/http-to-file-access` | `scripts/ci/check-commit-checks.mjs:196` | **this initiative's own new gate, on its first hosted run** | **superseded** — `safeText` bounded the content, but the network-to-file edge remained and became alert **#33**. Closed 2026-08-01 by removing the write entirely: [`SEC-CODEQL-033`](./sec-codeql-033-http-to-file-access.md) |
 
 GitHub's own `CodeQL` check reported **success** for that run: it blocks on high
 and critical, and this was medium. The repository-controlled ceiling of zero is
