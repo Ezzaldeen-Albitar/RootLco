@@ -16,31 +16,33 @@ the resulting `main` tree has been compared against `develop`.
 
 ## 1. State before promotion
 
-|                                    |                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------------------------------------- |
-| P1-24 phase baseline               | `1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1d7c2b28541014607186fcc44e3c2d982`) |
-| `origin/main`                      | `db54acf1d09a3a8c499b6ee17660871ab8c410f9` (tree `973f32c1d7c2b28541014607186fcc44e3c2d982`) |
-| develop/main at the phase baseline | trees **byte-identical** (`973f32c1`), 0 files differ                                        |
-| `origin/develop` after the gate    | `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66` (tree `c6601886eddf36a4a67e4f6e62c78b449698a891`) |
-| Promotion source                   | the merge of this documentation-completion pull request — recorded in §6                     |
+|                                    |                                                                                                                  |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| P1-24 phase baseline               | `1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1d7c2b28541014607186fcc44e3c2d982`)                     |
+| `origin/main`                      | `db54acf1d09a3a8c499b6ee17660871ab8c410f9` (tree `973f32c1d7c2b28541014607186fcc44e3c2d982`)                     |
+| develop/main at the phase baseline | trees **byte-identical** (`973f32c1`), 0 files differ                                                            |
+| `origin/develop` after the gate    | `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66` (tree `c6601886eddf36a4a67e4f6e62c78b449698a891`)                     |
+| Promotion source                   | `0e814d7611d960489b841cb4f71124e1b86a7d25` (tree `e4500e6c9236b1222bdbb4b75723801143dc3227`) — the merge of #153 |
 
 Because `develop` and `main` were byte-identical when P1-24 began, the promotion carries
 exactly P1-24 and the documentation that completes it, and nothing else. The delta is
 enumerated in §2 and classified file-by-file in the promotion pull request.
 
-**Why this file names neither its own head nor its own merge SHA.** Writing a SHA into
-this file changes the SHA, and the promotion source is the commit that merges the pull
-request containing it — a commit that does not exist while the file is being written.
-Both are recorded in §6 with the promotion result, read from the remote, rather than
-guessed here and quietly wrong.
+**Why this record is written in two passes.** Writing a SHA into a file changes that
+file's SHA, so a record cannot name the commit that carries it, and a promotion record
+cannot name the merge that promotes it. §1–§5 were therefore written and reviewed
+**before** the promotion, in #153, with §6 holding a literal placeholder; §6 and §7 were
+filled in **afterwards** from the remote. Every SHA above is now concrete because every
+one of them existed by the time this pass was written — none was predicted, except the
+resulting `main` tree, which was deliberately predicted first so §6 could check it.
 
 ## 2. Chain merged into develop
 
-| PR       | Head                                            | Merge      | Contents                                                |
-| -------- | ----------------------------------------------- | ---------- | ------------------------------------------------------- |
-| **#151** | `76632b05` (**19/19** checks green)             | `38d1ec22` | the phase — integration, hardening and its evidence     |
-| **#152** | `2bf135e6` (**17** checks, ci-gate ✅)          | `0b68b7c9` | the gate record — documentation only                    |
-| **#153** | `docs/p1-24-canonical-documentation-completion` | §6         | canonical documentation completion — documentation only |
+| PR       | Head                                   | Merge      | Contents                                                |
+| -------- | -------------------------------------- | ---------- | ------------------------------------------------------- |
+| **#151** | `76632b05` (**19/19** checks green)    | `38d1ec22` | the phase — integration, hardening and its evidence     |
+| **#152** | `2bf135e6` (**17** checks, ci-gate ✅) | `0b68b7c9` | the gate record — documentation only                    |
+| **#153** | `7f04e2d9` (**17** checks, ci-gate ✅) | `0e814d76` | canonical documentation completion — documentation only |
 
 `#152`'s seventeen checks are **11 success and 6 authorized documentation-only skips**.
 A skip is a recorded decision, not an absence: `scripts/ci/classify-changes.mjs` classified
@@ -117,5 +119,57 @@ afterwards.
 
 ## 6. Result — verified after the merge
 
-Recorded here after the promotion merge completes and the resulting `main` tree is
-compared against `develop`. The decision follows in §7.
+|                              |                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| Promotion pull request       | **#154** — `chore(release): promote develop to main — P1-24 Backend Integration and Release Gate` |
+| Base / head                  | `main` ← `develop` — direct promotion, no promotion branch                                        |
+| Reviewed promotion head      | `0e814d7611d960489b841cb4f71124e1b86a7d25`                                                        |
+| Promotion merge              | `5782f8ad5ad5b844b2868b2e17f49a9bc3ff337c`                                                        |
+| Parents                      | `db54acf1` (previous `main`) + `0e814d76` (`develop`) — a real merge commit                       |
+| Merge method                 | `merge` — the only method the ruleset permits                                                     |
+| Merged by                    | `Ezzaldeen-Albitar`, 2026-08-01T10:02:56Z                                                         |
+| `origin/main` tree           | `e4500e6c9236b1222bdbb4b75723801143dc3227`                                                        |
+| `origin/develop` tree        | `e4500e6c9236b1222bdbb4b75723801143dc3227`                                                        |
+| Predicted before merging     | `e4500e6c9236b1222bdbb4b75723801143dc3227` — **matched**                                          |
+| Trees byte-identical         | **yes** — `main..develop` 0 files, `develop..main` 0 files                                        |
+| `develop` ancestor of `main` | **yes** (`git merge-base --is-ancestor` exit 0)                                                   |
+| `main` ancestor of `develop` | **no** — `main` carries the promotion merge commits; this is the expected shape                   |
+| Migrations on `main`         | **119**, no `120`                                                                                 |
+| `docs/phase-1/phase-1-24/`   | present on `main`, **8 artifacts**, none lost in promotion                                        |
+| Tags                         | 1, `release-2-database-baseline` from P1-12 — **none created**                                    |
+| Releases                     | 0 — **none created**                                                                              |
+| Deployments                  | 0 — **none**                                                                                      |
+| Open pull requests           | 0 at the moment of promotion                                                                      |
+| `main` push CI               | **17 checks, 17 success, 0 skipped, 0 failed**, including `protected-gate`                        |
+
+`main` push CI run IDs: **`30694942442`** (CI) and **`30694942544`** (Protected branch
+verification), both `success`, both triggered by the push of the promotion merge itself —
+not inherited from the pull-request head.
+
+The tree was predicted with `git merge-tree --write-tree` **before** the merge was
+requested and written into the promotion pull request, then compared after. It matched, so
+the promotion introduced exactly what was measured and nothing else.
+
+## 7. Decision
+
+**Go — P1-24 promoted to `main`.**
+
+`main` now carries the Backend Integration and Release Gate: the phase, its gate record,
+and the canonical documentation that completes it. **No deployment was performed, no
+release was cut, no tag was created, no customer-data migration was run, and P1-25 is not
+started.**
+
+The chain, every link a merge commit and none a squash:
+
+```
+#151  76632b05 → 38d1ec22   the phase — integration, hardening and its evidence
+#152  2bf135e6 → 0b68b7c9   the gate record (documentation only)
+#153  7f04e2d9 → 0e814d76   canonical documentation completion (documentation only)
+#154  0e814d76 → 5782f8ad   promotion of develop into main
+```
+
+Two links follow this record, and they exist for a structural reason rather than an
+oversight: a promotion record cannot contain the SHA of the merge that promotes it. The
+pull request carrying this §6 and §7 into `develop` moves `develop` past `main` again, so a
+final synchronization restores tree identity. P1-23 needed exactly the same tail
+(#144 then #145), and this phase follows it rather than inventing a shorter one.
