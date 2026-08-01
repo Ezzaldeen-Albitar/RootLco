@@ -119,7 +119,7 @@ describe('replacing the provisional identity touches configuration only', () => 
 
     // The only files that changed are the two configuration files above.
     const changed = execFileSync('git', ['diff', '--name-only'], {
-      cwd: join(ROOT, '..'),
+      cwd: join(ROOT, '..', '..'),
       encoding: 'utf8',
     })
       .split('\n')
@@ -128,16 +128,16 @@ describe('replacing the provisional identity touches configuration only', () => 
 
     const componentEdits = changed.filter(
       (f) =>
-        f.startsWith('web/src/components/') ||
-        f.startsWith('web/app/') ||
-        f.startsWith('web/src/features/')
+        f.startsWith('apps/web/src/components/') ||
+        f.startsWith('apps/web/app/') ||
+        f.startsWith('apps/web/src/features/')
     );
 
     expect(
       componentEdits,
       'a brand swap must not require editing any component or route'
     ).toEqual([]);
-    expect(changed).toContain('web/src/config/brand.ts');
-    expect(changed).toContain('web/src/styles/tokens/_colors.scss');
+    expect(changed).toContain('apps/web/src/config/brand.ts');
+    expect(changed).toContain('apps/web/src/styles/tokens/_colors.scss');
   });
 });

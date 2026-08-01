@@ -36,8 +36,16 @@ WORKDIR /app
 # hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 # Copy only the manifests first so this layer is reused unless deps change.
+# The repository is an npm WORKSPACE. `npm ci` validates every workspace
+# manifest the lockfile references, so apps/web/package.json must be present
+# even though this image never builds the frontend — omitting it fails the
+# install outright rather than degrading quietly.
 COPY package.json package-lock.json ./
+COPY apps/web/package.json ./apps/web/
 # `npm ci` requires the lock file and installs exactly what it pins.
+# --workspace-root --workspace @rootlco/api would be ideal, but the API is still
+# the ROOT package at this migration step; installing the full graph keeps the
+# backend image byte-comparable with the pre-migration image.
 RUN npm ci
 
 # -----------------------------------------------------------------------------

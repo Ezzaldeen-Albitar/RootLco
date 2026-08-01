@@ -146,9 +146,49 @@ No dashboard shell, sidebar, data table, forms, overlays, gallery, Playwright ha
 accessibility automation, frontend CI job, or browser verification. No feature PR. Nothing
 merged. No P1-26 work of any kind. No migration; 119 unchanged.
 
+## Topology normalization — IN PROGRESS
+
+The owner corrected the target architecture: `apps/api` and `apps/web` as sibling
+applications under ONE npm workspace and ONE root lockfile. The independent `web/`
+package was an early architecture discovery, resolved before any downstream UI work — not
+a failure, and deliberately caught before the dashboard shell was built on top of it.
+
+**Done in this wave:**
+
+| Change                                                                     | State |
+| -------------------------------------------------------------------------- | ----- |
+| `web/` → `apps/web/` via `git mv` (history preserved, 50 files as renames) | done  |
+| Package renamed `@rootlco/web`                                             | done  |
+| Nested `web/package-lock.json` deleted                                     | done  |
+| Root declares `workspaces: ["apps/*"]`                                     | done  |
+| ONE root lockfile regenerated (12,230 lines, 0 nested locks)               | done  |
+| Security overrides (postcss/sharp/fast-uri) hoisted to root authority only | done  |
+| Dockerfile copies `apps/web/package.json` so workspace `npm ci` succeeds   | done  |
+| Root tsconfig excludes `apps` so the workspaces cannot typecheck each other | done  |
+
+**Two defects found by verification, not by review:**
+
+- **`P1-25-F-004`** — after adding `workspaces`, the ROOT `tsc` began compiling
+  `apps/web/**` and resolving `@/` to the backend `src/`, producing TS2307 on files that
+  build cleanly in their own workspace. Fixed by excluding `apps` from the root tsconfig.
+- **`P1-25-F-005`** — the brand-swap proof asserted `web/…` paths and ran `git diff` one
+  directory above the package. Both corrected for the `apps/` topology; still 6/6.
+
+**Verified after the move:** API (root) typecheck OK · web typecheck OK · web build green
+with `/ar` and `/en` · token gate 33/0 · brand gate 33/0 · web tests 6/6 · workspace-wide
+audit 0 advisories at every severity · 119 migrations unchanged · run-block syntax 130/0.
+
+**NOT yet done — the backend half.** `src/`, `public/`, `next.config.ts` and the vitest
+configs are still at the repository root; `apps/api/` does not exist yet. Measured cost of
+that move: **24 scripts hard-coding `src/`/`tests/` paths, 723 literal path occurrences,
+62 root npm scripts, 36 distinct `npm run` calls across workflows, 32 tests resolving from
+the repository root**, plus the multi-stage Dockerfile and every path-pinned P1-19…P1-24
+evidence artifact already merged to `main`. It is a repository-wide change that needs its
+own dedicated run and a full clean-room re-verification of the 4,689-test backend baseline.
+
 ## Next action
 
-**Wave 1 — dashboard shell**: locale-aware `(dashboard)` route group, responsive shell,
+**Finish the topology normalization first** — move the root backend into `apps/api/` as `@rootlco/api`, repoint the 723 path references, update the Dockerfile and workflows, regenerate the path-pinned evidence, and re-run the full backend baseline. Only then **Wave 1 — dashboard shell**: locale-aware `(dashboard)` route group, responsive shell,
 header, breadcrumbs, page-title and page-actions regions, landmarks, skip link, tablet
 behaviour. Then Wave 2, the configuration-driven sidebar.
 

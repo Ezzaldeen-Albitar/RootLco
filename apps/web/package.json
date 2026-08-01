@@ -1,5 +1,5 @@
 {
-  "name": "rootlco-web",
+  "name": "@rootlco/web",
   "version": "0.1.0",
   "private": true,
   "description": "RootLco frontend application. Independent package boundary — see docs/phase-1/phase-1-25/frontend-architecture.md.",
@@ -47,10 +47,5 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5",
     "vitest": "^3.2.4"
-  },
-  "overrides": {
-    "postcss": "^8.5.24",
-    "sharp": "^0.35.3",
-    "fast-uri": "^4.1.1"
   }
 }
