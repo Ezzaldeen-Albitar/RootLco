@@ -72,6 +72,56 @@ jobs:
               || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
           done
 
+      # ---------------------------------------------------------------------
+      # The frontend is an INDEPENDENT package with its own lockfile
+      # (web/package-lock.json). The audit above reads the ROOT tree only, so
+      # without this step the entire frontend dependency surface would be
+      # unaudited while the gate still reported clean — the exact shape of blind
+      # spot this repository keeps finding. P1-25 added the second lockfile, so
+      # P1-25 adds its audit in the same change.
+      #
+      # Same policy as the root tree: zero advisories, no waivers. The frontend
+      # does not get a lower bar for being newer.
+      # ---------------------------------------------------------------------
+      - name: Install the frontend dependency tree
+        run: npm ci --prefix web
+
+      - name: Audit the frontend dependency tree
+        run: |
+          set -euo pipefail
+          npm audit --prefix web --omit=dev --json > audit-web-production.json || printf ''
+          npm audit --prefix web --json > audit-web-full.json || printf ''
+          for file in audit-web-production.json audit-web-full.json; do
+            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "${file}" \
+              || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
+          done
+          # A report that parses but describes nothing is not evidence of a clean
+          # tree; assert the shape before trusting the count.
+          node -e '
+            const fs = require("node:fs");
+            let failed = 0;
+            for (const file of ["audit-web-production.json", "audit-web-full.json"]) {
+              const report = JSON.parse(fs.readFileSync(file, "utf8"));
+              if (report.error) {
+                console.error(`::error::npm audit reported an error for ${file}: ${report.error.summary ?? "unknown"}`);
+                process.exit(1);
+              }
+              const meta = report.metadata?.vulnerabilities;
+              if (!meta) {
+                console.error(`::error::${file} carries no vulnerability metadata; the audit cannot be read as clean.`);
+                process.exit(1);
+              }
+              const total = Object.values(meta).reduce((sum, n) => sum + n, 0);
+              console.log(`${file}: ${total} advisory/advisories ${JSON.stringify(meta)}`);
+              failed += total;
+            }
+            if (failed > 0) {
+              console.error("::error::the frontend dependency tree carries advisories. The web package has the same zero-waiver policy as the root package.");
+              process.exit(1);
+            }
+            console.log("Frontend dependency policy: pass");
+          '
+
       - name: Licence inventory
         run: node scripts/ci/licence-inventory.mjs --json licences.json
 
