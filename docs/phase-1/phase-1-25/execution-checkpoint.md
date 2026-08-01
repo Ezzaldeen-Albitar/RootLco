@@ -542,18 +542,58 @@ jobs → 13 (14 declared, 15 checks).
 **Verified:** `verify:workspaces` exit 0 · unit 1330/1330 across 60 files · web 34/34 ·
 Stylelint 0/0 · token gate 33/0 · brand gate 33/0 · command coverage 64/64 both dimensions.
 
+## Stage 1 — workspace normalization — **CLOSED**
+
+Full evidence: [workspace-normalization-evidence.md](workspace-normalization-evidence.md).
+
+| Proof                  | Result                                                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Web Stylelint          | 99 errors → **0 errors, 0 warnings**                                                                                                |
+| Command coverage       | **64/64** locally, **64/64** in hosted CI (was 39/59 and 29/59)                                                                     |
+| Docker                 | image builds, container starts, HEALTHCHECK `healthy`, uid 1001, no package manager, no web source, 36 runtime packages             |
+| Backend tier           | **1752/1752** across 75 files — identical to the pre-move value                                                                     |
+| Database / RLS tier    | **1636/1636** across 138 files — identical to the pre-move value                                                                    |
+| Schema hash            | `a677eb05…` — identical to the recorded baseline                                                                                    |
+| RLS matrix             | 113 tables, 1356 cells, pass · RLS disabled 0 · not forced 0 · SECURITY DEFINER 0                                                   |
+| `BYPASSRLS`            | `app_runtime`, `app_readonly`, `app_worker` — all false, none superuser                                                             |
+| Dependency equivalence | 0 upgrades, 0 downgrades, 0 added, 0 removed, 0 unexplained drift                                                                   |
+| Audits                 | 0 vulnerabilities in root, API and web · 0 waivers                                                                                  |
+| Runtime smoke          | API container serves `/api/v1/**` guarded; web serves `/en` LTR and `/ar` RTL with no secrets in client output and no cross-imports |
+| Migrations             | 119 · no 120 · historical diff 0 · `supabase/` diff 0                                                                               |
+
+### Findings from Stage 1
+
+- **`P1-25-F-014` (High)** — the `apps/web` Stylelint RTL guard was declared with an
+  invalid option shape, so Stylelint **skipped** it while the command still exited zero. The
+  most important rule in the styling standard had never once been enforced. Fixed, and
+  `apps/web/tests/stylelint-policy.test.ts` now proves each rule fires.
+- **`P1-25-F-015` (High)** — hosted CI invoked **zero** web commands. Closed by
+  `scripts/ci/check-command-coverage.mjs`, the `web-quality` CI job, and the clean room
+  now running the aggregate itself.
+- **`P1-25-F-016` (Medium)** — the Dockerfile never copied `apps/api/package.json`, so
+  `npm ci` would have failed outright against the workspace lockfile. It was broken, not
+  merely stale.
+- **`P1-25-F-017` (Low)** — the RLS matrix could not classify `_realtime` or
+  `supabase_functions`. Both are Supabase-managed and absent from the CI postgres
+  container. Classified with evidence: `_realtime.tenants` is the Realtime service's own
+  registry of Supabase _projects_ (one row, `realtime-dev`), **not** RootLco tenant data —
+  written down because misreading that table name is the obvious mistake.
+
+### Deliberately deferred, and why
+
+- **CodeQL full-tree figures.** CodeQL has no path filter, so both workspaces were always in
+  scope; only the repository's own SARIF policy needed its prefixes moved, which is done and
+  tested. A CodeQL _pull-request_ run is diff-informed and cannot establish the repository
+  ceiling, so Critical/High/Medium are read from the protected-branch push after merge.
+- **Container image-size ratchet.** The recorded baseline is an uncompressed Linux figure
+  from a hosted runner; this was a local Windows build with different platform binaries.
+  Comparing them would put a false measurement in the record. The hosted
+  `container-security` job owns that ratchet.
+
 ## Next action
 
-**Docker + hosted CI + full backend/database/security proof.** Dockerfile workspace install
-with an API-only image, CI and CodeQL path updates, the full backend tier (1752) and
-DB-RLS tier (1636), schema hash, container security, runtime smoke on separate ports, and
-the dependency-equivalence proof that lets the duplicated root dependencies be removed.
-
-Dashboard work stays blocked until that proof is complete.
-
-Exact next command:
-
-```bash
-cd "C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco-worktrees/p1-25"
-git status --short --branch     # expect clean on feature/p1-25-…
-```
+**Stage 2 — dashboard shell.** Locale-aware `(dashboard)` route group, responsive shell,
+header, breadcrumbs, page title and actions, secondary panel slot, skip link, landmarks,
+focus management, loading/error/not-found boundaries, tablet behaviour, reduced motion,
+RTL and LTR. Then Stage 3 (configuration-driven sidebar), Stage 4 (component gallery) and
+Stage 5 (the server-driven data table).
