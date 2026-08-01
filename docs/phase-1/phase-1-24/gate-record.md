@@ -1,9 +1,14 @@
 # P1-24 — Backend Integration and Release Gate Record
 
-**Phase:** P1-24 — Backend Integration and Release Gate
-**Prerequisite:** P1-23 closed and promoted; `origin/develop` at
-`1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1`) before the feature merge
-**Decision:** recorded in §12 below.
+| Field              |                                                                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase ID**       | `P1-24`                                                                                                                                                                             |
+| **Phase title**    | Backend Integration and Release Gate                                                                                                                                                |
+| **Gate**           | `P1-G24` — Backend Release Gate                                                                                                                                                     |
+| **Final decision** | **Go — P1-24 Backend Integration and Release Gate Passed** (§12)                                                                                                                    |
+| **Depends on**     | the approved backend baseline through **P1-23**, closed and promoted: `docs/phase-1/phase-1-23/` carries both its gate record and its promotion record, and `main` carried its tree |
+| **Phase baseline** | `origin/develop` at `1c74454debfe0d75f521d2641fba0c20b03cdfe0` (tree `973f32c1`) before the feature merge, with `origin/main` on the identical tree                                 |
+| **Closed on**      | protected `develop` at `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66` (tree `c6601886`) — evidence in §12                                                                               |
 
 This is a **documentation-only** record. It changes no executable file, no test, no
 script, no workflow, no manifest, no lockfile, no Supabase file, no seed, no migration
@@ -18,8 +23,11 @@ repeatable_ as the proof itself.
 
 ## 1. Protected merge evidence
 
-Every value below was read live from the remote after the owner merge, not carried
-forward from the feature report.
+Every value below was read live from the remote after the owner merge of the **feature**
+pull request, not carried forward from the feature report. They are a snapshot of that
+merge and are pinned to it — protected `develop` moved on when the gate pull request
+itself merged, and that later state is recorded in §12 and in
+[`promotion-record.md`](promotion-record.md) rather than by rewriting this table.
 
 |                                    |                                                                             |
 | ---------------------------------- | --------------------------------------------------------------------------- |
@@ -32,18 +40,19 @@ forward from the feature report.
 | Merge second parent                | `76632b05c95c9618b90394eb4899513b0d0c5042` — the reviewed feature           |
 | Merge method                       | merge commit — the only method the ruleset permits                          |
 | Merged by                          | `Ezzaldeen-Albitar` (owner), 2026-08-01T07:08:51Z                           |
-| Protected `develop` SHA            | `38d1ec22ddaf3a6507c876e0a4ffff447de8b972`                                  |
-| Protected `develop` tree           | `f7b06ecc5cf8072e0ed687933ce840834579d9f4`                                  |
+| Protected `develop` at this merge  | `38d1ec22ddaf3a6507c876e0a4ffff447de8b972`                                  |
+| Its tree                           | `f7b06ecc5cf8072e0ed687933ce840834579d9f4`                                  |
 | Reviewed feature contained         | **yes** — `merge-base --is-ancestor` exit 0                                 |
 | Tree identity                      | **byte-identical** — merge tree == reviewed feature tree                    |
-| Files added after the reviewed SHA | **0** — `git diff 76632b0 origin/develop` is empty                          |
+| Files added after the reviewed SHA | **0** — `git diff 76632b0 38d1ec2` is empty                                 |
 | `origin/main`                      | `db54acf1d09a3a8c499b6ee17660871ab8c410f9` — **untouched**, tree `973f32c1` |
-| Open PRs after merge               | 0                                                                           |
+| Open PRs after this merge          | 0                                                                           |
 | Remote branches                    | `develop`, `main` — the feature branch was auto-deleted on merge            |
 
 **No unreviewed executable change entered the merge.** The merge tree is byte-identical
-to the tree that was reviewed and CI-verified, so there is nothing on protected
-`develop` that PR #151 did not carry.
+to the tree that was reviewed and CI-verified, so nothing entered protected `develop`
+**at this merge** that PR #151 did not carry. What the gate merge added afterwards — two
+documentation files and nothing else — is measured in §12.
 
 ---
 
@@ -363,13 +372,24 @@ most of them, and saying so is more useful than inventing artifacts.
 
 - The feature Pull Request was **merged by the owner through the protected workflow**,
   as a merge commit — the only method the ruleset permits.
+- **This gate-record Pull Request (#152) was merged the same way**, by the owner, as a
+  merge commit, on 2026-08-01T07:59:35Z. Its evidence is §12 and
+  [`promotion-record.md`](promotion-record.md).
 - **No direct push to `develop`.** **No direct push to `main`.**
 - **No force-push** to any protected branch. The reviewed feature commit was not
   rewritten.
-- **No `main` promotion.** `origin/main` is `db54acf1`, tree `973f32c1`, untouched.
+- **No `main` promotion at this gate.** `origin/main` was `db54acf1`, tree `973f32c1`,
+  untouched throughout P1-24. Promotion is a separate founders' reserved decision
+  (ADR-006) recorded in [`promotion-record.md`](promotion-record.md), not here.
 - **No release. No tag. No deployment. No customer-data migration.**
-- **No P1-25 work** — no branch, no PR, no `docs/phase-1/phase-1-25`, and no reference
-  in `src/`, `tests/`, `scripts/`, `.github/` or `supabase/`.
+- **No P1-25 work** — no branch, no pull request, no `docs/phase-1/phase-1-25`, and no
+  P1-25 code in `src/`, `tests/`, `scripts/`, `.github/` or `supabase/`. Stated
+  precisely, because the repository does mention the phase: `src/app/page.tsx` carries a
+  comment saying the placeholder page "is replaced when real frontend work begins
+  (Phase 1-25 onward)", and ADR-002, the ADR register, `phase-1-1/open-decisions.md`,
+  the P1-13 plan and the OWASP ASVS matrix all defer frontend items to "Phase 1-25
+  onward". Those are pre-existing **forward references**, none authored by P1-24 and
+  none an implementation. The earlier phrasing "no reference" was too strong.
 - **No migration was created**, and none may be created in this gate branch.
 - **Zoom Vehicle Inspection and Evaluation Services remains excluded** from Phase 1.
 - **Benzene remains a configurable first subscribed tenant and pilot**, never
@@ -383,23 +403,35 @@ most of them, and saying so is more useful than inventing artifacts.
 
 **Decision: Go — P1-24 Backend Integration and Release Gate Passed**
 
-This is the **proposed technical decision** recorded on a documentation-only branch. It
+**As written on the gate branch, before that branch was merged:** this is the
+**proposed technical decision** recorded on a documentation-only branch. It
 rests on protected-SHA evidence: the merge tree is byte-identical to the reviewed tree,
 all 17 protected-branch checks are green on `38d1ec2`, a fresh clone at that SHA passes
 4676 tests with 0 failed and 0 skipped, the mutation matrix catches 6 of 6, migrations
 are unchanged at 119 with the schema hash unmoved, coverage is 226/226 with nothing
 partial or uncovered, and CodeQL reports 0 Critical and 0 High.
 
-**Formal phase closure has NOT occurred and must not be claimed here.** This record
-becomes the phase's decision only when:
+### Closure — the two conditions this record set, and how each was met
 
-1. the authorized owner merges the gate-record Pull Request into protected `develop`;
-   and
-2. protected `develop` is **re-verified after that merge** — merge shape, tree
-   identity, and a green protected-branch CI run on the new merge SHA.
+When this record was written on the gate branch it refused to claim closure, and set two
+conditions instead. **Both are now met, and the evidence for each is recorded below
+rather than asserted.** The paragraph above is kept word for word and labelled with when
+it was written, rather than quietly rewritten into the present tense: a record that
+edits away what it used to say is the failure this section exists to prevent.
 
-Until both are done, P1-G24 is a **proposal on a branch**, not a closure. Nothing in
-this repository should be read as recording P1-24 as closed before step 2 completes.
+| Condition set by this record                                              | Met | Evidence                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. the authorized owner merges this Pull Request into protected `develop` | ✅  | PR **#152**, merged by `Ezzaldeen-Albitar` 2026-08-01T07:59:35Z as merge commit `0b68b7c9a3d6eebacce88c40dc9951d9d99b5d66` — merge method `merge`, the only one the ruleset permits                                                                                                                             |
+| 2. protected `develop` re-verified after that merge — **merge shape**     | ✅  | first parent `38d1ec22` (the feature merge), second parent `2bf135e6` (the reviewed gate commit); two parents, not a squash                                                                                                                                                                                     |
+| 2. …**tree identity**                                                     | ✅  | merge tree `c6601886eddf36a4a67e4f6e62c78b449698a891` is **byte-identical** to the reviewed gate tree; the gate merge changed 2 files against the feature merge, both under `docs/phase-1/phase-1-24/`, and **0** executable, test, script, workflow, manifest, Supabase, migration or generated-contract files |
+| 2. …**a green protected-branch CI run on the new merge SHA**              | ✅  | **17 checks, 17 success, 0 skipped, 0 failed** on `0b68b7c9`, including the `protected-gate` aggregate — runs `30690845932` (CI) and `30690846041` (Protected branch verification)                                                                                                                              |
 
-Promotion of `develop` to `main` is a separate, founders' reserved decision (ADR-006)
-and is not part of this gate.
+**P1-G24 is therefore closed on protected `develop` with the decision above.** The
+phase's own numbers were re-measured at `0b68b7c9` rather than carried forward: unit
+**1288**, backend **1752**, database/RLS **1636**, total **4676**, 0 failed and 0
+skipped; migrations **119** with no `120`; schema hash unmoved; 226/226 operations
+Covered; mutation matrix 6/6.
+
+Promotion of `develop` to `main` remains a separate, founders' reserved decision
+(ADR-006). It is not part of this gate and is recorded in
+[`promotion-record.md`](promotion-record.md).
