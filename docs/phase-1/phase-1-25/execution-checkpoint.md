@@ -12,14 +12,14 @@ colour palette and Product Owner fidelity approval remain pending.
 
 ## Baseline (verified live, not recalled)
 
-|                       |                                                                 |
-| --------------------- | --------------------------------------------------------------- |
-| `P1_25_BASE_SHA`      | `cef7fdf296ac65e7f789231b06c718f0a7f2cf2a`                      |
-| `P1_25_BASE_TREE`     | `fb7a511a08f2720ed6fa41a3272fbeb8346817e0`                      |
-| Feature branch        | `feature/p1-25-frontend-architecture-design-system`             |
-| Protected `main` at start | `f085d82001a43de51725707426d5c10eb134c004`                  |
-| Migrations at start   | 119, no 120                                                     |
-| Starting condition    | **A — clean and ready to start P1-25**                          |
+|                           |                                                     |
+| ------------------------- | --------------------------------------------------- |
+| `P1_25_BASE_SHA`          | `cef7fdf296ac65e7f789231b06c718f0a7f2cf2a`          |
+| `P1_25_BASE_TREE`         | `fb7a511a08f2720ed6fa41a3272fbeb8346817e0`          |
+| Feature branch            | `feature/p1-25-frontend-architecture-design-system` |
+| Protected `main` at start | `f085d82001a43de51725707426d5c10eb134c004`          |
+| Migrations at start       | 119, no 120                                         |
+| Starting condition        | **A — clean and ready to start P1-25**              |
 
 ## Local execution location (machine-specific — see the note below)
 
@@ -28,11 +28,11 @@ colour palette and Product Owner fidelity approval remain pending.
 > record deliberately does not: the canonical architecture is `web/` relative to the
 > repository root, wherever that root happens to live.
 
-|                          |                                                                        |
-| ------------------------ | ---------------------------------------------------------------------- |
-| Owner checkout           | `C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco` — on `develop`  |
-| **Visible P1-25 worktree** | `C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco-worktrees/p1-25` |
-| Open in VS Code          | `code -n "C:\Users\Ezzaldeen\OneDrive\Desktop\1millions\RootLco-worktrees\p1-25"` |
+|                            |                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| Owner checkout             | `C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco` — on `develop`            |
+| **Visible P1-25 worktree** | `C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco-worktrees/p1-25`           |
+| Open in VS Code            | `code -n "C:\Users\Ezzaldeen\OneDrive\Desktop\1millions\RootLco-worktrees\p1-25"` |
 
 **All P1-25 implementation happens in the visible worktree.** It was relocated there on
 2026-08-01 from `…/AppData/Local/Temp/claude/p23`, a temporary path the owner could not
@@ -52,15 +52,15 @@ recommended; nothing in the repository depends on it either way.
 
 ## Commits
 
-| SHA       | Wave | Contents                                                                    |
-| --------- | ---- | --------------------------------------------------------------------------- |
+| SHA       | Wave | Contents                                                                                                                                       |
+| --------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `564e4ca` | 0–1  | ADR-020; `web/` spine; Sass tokens → CSS custom properties; Tailwind wired to them; brand abstraction; ar/en + RTL boot; token and brand gates |
-| `fc5ff67` | 1    | dependency-security extended to the `web/` lockfile; 3 HIGH advisories found and remediated |
+| `fc5ff67` | 1    | dependency-security extended to the `web/` lockfile; 3 HIGH advisories found and remediated                                                    |
 
 ## Architecture decided so far
 
-- **ADR-020** discharges ADR-002's Open styling decision, which required *"a superseding
-  or companion ADR before frontend implementation begins"*. Sass owns every design value;
+- **ADR-020** discharges ADR-002's Open styling decision, which required _"a superseding
+  or companion ADR before frontend implementation begins"_. Sass owns every design value;
   Tailwind holds only `var(--…)` references; shadcn primitives will be vendored, not
   installed.
 - **Topology: `web/` is an INDEPENDENT package** with its own `package.json` and
@@ -73,18 +73,18 @@ recommended; nothing in the repository depends on it either way.
 
 ## Completed tasks
 
-| Task           | Subject                                              | State        |
-| -------------- | ---------------------------------------------------- | ------------ |
-| `P1-25-FE-001` | `web/` application boundary and App Router scaffold  | **Complete** |
-| `P1-25-FE-002` | Sass token architecture + CSS custom-property emit   | **Complete** |
-| `P1-25-FE-003` | Tailwind wired to Sass-owned tokens (no own values)  | **Complete** |
-| `P1-25-FE-004` | Centralised brand configuration + `BrandMark`        | **Complete** |
-| `P1-25-FE-005` | Locale routing, `lang`/`dir` boot, ar/en catalogues  | **Complete** |
-| `P1-25-SEC-001`| Raw design-value enforcement gate                    | **Complete** |
-| `P1-25-SEC-002`| Brand-isolation enforcement gate                     | **Complete** |
-| `P1-25-SEC-003`| Frontend dependency tree audited to zero             | **Complete** |
-| `P1-25-DO-001` | Dependency-security gate extended to `web/`          | **Complete** |
-| `P1-25-QA-001` | Brand-replacement proof (behavioural)                | **Complete** |
+| Task            | Subject                                             | State        |
+| --------------- | --------------------------------------------------- | ------------ |
+| `P1-25-FE-001`  | `web/` application boundary and App Router scaffold | **Complete** |
+| `P1-25-FE-002`  | Sass token architecture + CSS custom-property emit  | **Complete** |
+| `P1-25-FE-003`  | Tailwind wired to Sass-owned tokens (no own values) | **Complete** |
+| `P1-25-FE-004`  | Centralised brand configuration + `BrandMark`       | **Complete** |
+| `P1-25-FE-005`  | Locale routing, `lang`/`dir` boot, ar/en catalogues | **Complete** |
+| `P1-25-SEC-001` | Raw design-value enforcement gate                   | **Complete** |
+| `P1-25-SEC-002` | Brand-isolation enforcement gate                    | **Complete** |
+| `P1-25-SEC-003` | Frontend dependency tree audited to zero            | **Complete** |
+| `P1-25-DO-001`  | Dependency-security gate extended to `web/`         | **Complete** |
+| `P1-25-QA-001`  | Brand-replacement proof (behavioural)               | **Complete** |
 
 **10 of 35.** Everything else is pending and is listed below rather than implied.
 
@@ -101,17 +101,17 @@ E2E, browser-review evidence.
 
 ## Verification at `fc5ff67`, re-run from the visible worktree
 
-| Check                             | Result                                                      |
-| --------------------------------- | ----------------------------------------------------------- |
-| `npm ci --prefix web`             | 600 packages, clean install from the committed lockfile     |
-| `npm run typecheck --prefix web`  | clean (TypeScript strict, `noUncheckedIndexedAccess`)       |
-| `npm run build --prefix web`      | green — `/ar` and `/en` both prerender                      |
-| `node scripts/check-design-tokens.mjs`   | 33 files, **0** raw values outside the token layer    |
-| `node scripts/check-brand-isolation.mjs` | 33 files, **0** violations                           |
-| `npm run test --prefix web`       | **6/6**, including the brand-replacement proof              |
-| `npm audit --prefix web`          | **0** advisories at every severity                          |
-| `npm audit` (root/backend)        | **0** advisories — unchanged                                |
-| Root/backend files changed        | **0** — `package.json`, `package-lock.json`, `src/`, `supabase/` |
+| Check                                    | Result                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------- |
+| `npm ci --prefix web`                    | 600 packages, clean install from the committed lockfile          |
+| `npm run typecheck --prefix web`         | clean (TypeScript strict, `noUncheckedIndexedAccess`)            |
+| `npm run build --prefix web`             | green — `/ar` and `/en` both prerender                           |
+| `node scripts/check-design-tokens.mjs`   | 33 files, **0** raw values outside the token layer               |
+| `node scripts/check-brand-isolation.mjs` | 33 files, **0** violations                                       |
+| `npm run test --prefix web`              | **6/6**, including the brand-replacement proof                   |
+| `npm audit --prefix web`                 | **0** advisories at every severity                               |
+| `npm audit` (root/backend)               | **0** advisories — unchanged                                     |
+| Root/backend files changed               | **0** — `package.json`, `package-lock.json`, `src/`, `supabase/` |
 
 Measured in the built CSS: **34 colour, 13 space, 7 radius, 5 duration, 11 layout**
 custom properties emitted by Sass, and Tailwind utilities compile to
@@ -119,11 +119,11 @@ custom properties emitted by Sass, and Tailwind utilities compile to
 
 ## Findings
 
-| ID             | Severity | Found by                        | State     |
-| -------------- | -------- | ------------------------------- | --------- |
-| `P1-25-F-001`  | Low      | the token gate, first run       | **Fixed** — three hard-coded `#ffffff` in the print stylesheet; fixed by adding a `paper` token rather than exempting print |
-| `P1-25-F-002`  | Medium   | the brand gate, first run       | **Fixed** — the locale layout and proof page imported `@/config/brand` directly, breaking the single-consumer rule the replacement promise depends on |
-| `P1-25-F-003`  | **High** | the extended dependency gate    | **Fixed** — 3 HIGH advisories in the `web/` production tree (postcss path traversal / arbitrary file read, CVSS 7.5; sharp libvips CVEs) reachable via `next@16.2.12`. npm proposed `next@9.3.3`, a seven-major downgrade. Remedied by mirroring the root's own `postcss`/`sharp`/`fast-uri` overrides; the direct `postcss` devDependency was raised to `^8.5.24` to resolve `EOVERRIDE` |
+| ID            | Severity | Found by                     | State                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------- | -------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-25-F-001` | Low      | the token gate, first run    | **Fixed** — three hard-coded `#ffffff` in the print stylesheet; fixed by adding a `paper` token rather than exempting print                                                                                                                                                                                                                                                               |
+| `P1-25-F-002` | Medium   | the brand gate, first run    | **Fixed** — the locale layout and proof page imported `@/config/brand` directly, breaking the single-consumer rule the replacement promise depends on                                                                                                                                                                                                                                     |
+| `P1-25-F-003` | **High** | the extended dependency gate | **Fixed** — 3 HIGH advisories in the `web/` production tree (postcss path traversal / arbitrary file read, CVSS 7.5; sharp libvips CVEs) reachable via `next@16.2.12`. npm proposed `next@9.3.3`, a seven-major downgrade. Remedied by mirroring the root's own `postcss`/`sharp`/`fast-uri` overrides; the direct `postcss` devDependency was raised to `^8.5.24` to resolve `EOVERRIDE` |
 
 All three were found by gates written in this phase, against code written in this phase.
 
@@ -155,15 +155,15 @@ a failure, and deliberately caught before the dashboard shell was built on top o
 
 **Done in this wave:**
 
-| Change                                                                     | State |
-| -------------------------------------------------------------------------- | ----- |
-| `web/` → `apps/web/` via `git mv` (history preserved, 50 files as renames) | done  |
-| Package renamed `@rootlco/web`                                             | done  |
-| Nested `web/package-lock.json` deleted                                     | done  |
-| Root declares `workspaces: ["apps/*"]`                                     | done  |
-| ONE root lockfile regenerated (12,230 lines, 0 nested locks)               | done  |
-| Security overrides (postcss/sharp/fast-uri) hoisted to root authority only | done  |
-| Dockerfile copies `apps/web/package.json` so workspace `npm ci` succeeds   | done  |
+| Change                                                                      | State |
+| --------------------------------------------------------------------------- | ----- |
+| `web/` → `apps/web/` via `git mv` (history preserved, 50 files as renames)  | done  |
+| Package renamed `@rootlco/web`                                              | done  |
+| Nested `web/package-lock.json` deleted                                      | done  |
+| Root declares `workspaces: ["apps/*"]`                                      | done  |
+| ONE root lockfile regenerated (12,230 lines, 0 nested locks)                | done  |
+| Security overrides (postcss/sharp/fast-uri) hoisted to root authority only  | done  |
+| Dockerfile copies `apps/web/package.json` so workspace `npm ci` succeeds    | done  |
 | Root tsconfig excludes `apps` so the workspaces cannot typecheck each other | done  |
 
 **Two defects found by verification, not by review:**
@@ -195,17 +195,17 @@ value below is the diagnosis, which turns the next attempt from exploration into
 
 ### What was done and proven to work
 
-| Step | Result |
-| --- | --- |
-| `git mv src apps/api/src` (449 files), `public`, `next.config.ts` | clean renames, **196 API routes preserved** |
-| `apps/api/package.json` as `@rootlco/api` with the 8 runtime deps | created |
-| `apps/api/tsconfig.json` with `@/*` → `./src/*` | created |
-| Root tsconfig scoped to `tests/` + `scripts/`, `@/*` → `apps/api/src/*`, excludes `apps` | done |
-| Root package split: coordinator, application deps moved out, `pg`/`zod` kept as explicit test deps | done |
-| Root scripts preserved by name and delegated (`dev`, `build`, `start`, `lint`) + `:api`/`:web` variants — 76 scripts | done |
-| Single root lockfile with **both** workspaces, 0 nested locks | done |
-| **API typecheck, WEB typecheck, ROOT typecheck all clean** | verified |
-| **`build:api` and `build:web` both compiled successfully** | verified |
+| Step                                                                                                                 | Result                                      |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `git mv src apps/api/src` (449 files), `public`, `next.config.ts`                                                    | clean renames, **196 API routes preserved** |
+| `apps/api/package.json` as `@rootlco/api` with the 8 runtime deps                                                    | created                                     |
+| `apps/api/tsconfig.json` with `@/*` → `./src/*`                                                                      | created                                     |
+| Root tsconfig scoped to `tests/` + `scripts/`, `@/*` → `apps/api/src/*`, excludes `apps`                             | done                                        |
+| Root package split: coordinator, application deps moved out, `pg`/`zod` kept as explicit test deps                   | done                                        |
+| Root scripts preserved by name and delegated (`dev`, `build`, `start`, `lint`) + `:api`/`:web` variants — 76 scripts | done                                        |
+| Single root lockfile with **both** workspaces, 0 nested locks                                                        | done                                        |
+| **API typecheck, WEB typecheck, ROOT typecheck all clean**                                                           | verified                                    |
+| **`build:api` and `build:web` both compiled successfully**                                                           | verified                                    |
 
 So the boundary itself is sound: the two applications compile independently and the
 workspace resolves.
@@ -223,7 +223,7 @@ workspace resolves.
 3. **`validate:operation-coverage`** — its expected-path constant still requires
    `src/app/api/**/route.ts`; every operation now reports "registered outside".
 4. **`validate:authorization-coverage`** — reported `0 registered operations, 0 route
-   files` and could not read the audit-action catalog. Same root cause as (1) and (3).
+files` and could not read the audit-action catalog. Same root cause as (1) and (3).
 5. **19 unit tests across 12 files**, plus `format:check` on the newly generated JSON.
    Ordinary fallout once (1)–(4) are correct.
 
@@ -239,6 +239,66 @@ separate ports.
 Build `scripts/lib/repository-paths.mjs` **first**, repoint the scripts through it rather
 than through literals, add `apps/api/eslint.config.mjs`, then move the tree, then fix the
 two coverage gates, then Docker and CI, then run the full baseline.
+
+## Wave A1 — path authority — **COMPLETE** (`d3f8e11`)
+
+The prerequisite the reverted attempt lacked. `scripts/lib/repository-paths.mjs` is now the
+only place that derives the repository root or spells `apps/api` / `apps/web`.
+
+**Root cause it closes.** Three validators located the repository three different ways —
+`p1-24-operation-register.mjs` from `import.meta.url/..`, and both
+`check-authorization-coverage.mjs` and `check-operation-test-coverage.mjs` from
+`process.cwd()`. Each was defensible alone; together the root had three definitions that
+agreed only by accident of invocation directory. Rewriting literals across 21 scripts then
+joined a base already carrying the prefix with a segment that now also carried it, giving
+`apps/api/apps/api/src/app/api`.
+
+**Design.** The root is derived from the MODULE's location, never from `process.cwd()` —
+cwd is a property of the caller, not of the repository, and CI changes directory routinely.
+`assertLayout()` refuses to return a directory that does not exist, so a missing tree can
+never be reported as "0 files found". `toRepositoryPath()` emits repository-relative POSIX
+paths so generated evidence cannot embed an absolute path.
+
+**Exports:** `REPOSITORY_ROOT`, `fromRoot`, `APPS_ROOT`, `API_ROOT`, `API_SRC_ROOT`,
+`API_APP_ROOT`, `API_ROUTES_ROOT`, `API_PUBLIC_ROOT`, `WEB_ROOT`, `WEB_SRC_ROOT`,
+`TESTS_ROOT`, `SCRIPTS_ROOT`, `SUPABASE_ROOT`, `DOCS_ROOT`, `GITHUB_ROOT`.
+
+**Tests: 6/6**, written before the move because the helper is what makes the move safe.
+The decisive one spawns real subprocesses from three different working directories and
+asserts identical resolution — a unit assertion cannot catch a cwd dependency, because the
+runner has one cwd. Another pins the exact double-prefix defect that caused the revert.
+
+**Unit tier after this wave: 1307/1307 across 59 files** (1301 baseline + 6). Root
+typecheck clean, encoding clean, format clean. No file moved; root `src/` untouched, 196
+API routes unchanged.
+
+> A known flake, already recorded: `tests/foundation/operation-coverage-gate.test.ts` needs
+> ~5–6 s against a 5 s budget and intermittently times out when all 59 files run
+> concurrently on a loaded machine. It passes in isolation and on a quiet run. Do not widen
+> the budget to hide it.
+
+## Remaining waves for `apps/api` — A2…A15
+
+**A2 — normalize validators onto the helper BEFORE moving.** `p1-24-operation-register`,
+`check-operation-test-coverage`, `check-authorization-coverage`, route inventory, OpenAPI
+discovery, coverage globs. Each needs a test proving it finds all 196 routes and 226
+operations and does not double-prefix.
+
+**A3 — API workspace tooling.** `apps/api/package.json` (`@rootlco/api`, the 8 runtime
+deps at existing versions), `apps/api/tsconfig.json` (`@/*` → `./src/*`), and
+**`apps/api/eslint.config.mjs` composing the root config** — its absence caused the 2,863
+lint errors last time.
+
+**A4 — the move.** `git mv src apps/api/src`, `public`, `next.config.ts`. Proven to work:
+449 files as renames, 196 routes preserved, both apps compiled.
+
+**A5 — resolvers.** Root vitest `@` → `apps/api/src`, coverage globs, the 19 test
+failures by root cause.
+
+**A6–A15** — formatting/generated artefacts, command compatibility matrix, pre-Docker
+verification, Dockerfile workspace install with an API-only image, CI + CodeQL paths, clean
+`npm ci`, full baseline (1752 backend / 1636 DB-RLS), runtime smoke on separate ports,
+dependency-equivalence proof, documentation.
 
 ## Next action
 
