@@ -901,22 +901,21 @@ describe('something else entirely', () => {});
 });
 
 describe('operation coverage gate — real registry and real files', () => {
+  // Scanned ONCE for the whole block. Each test used to repeat this, so the
+  // same 430 files were read three times for one answer and the file timed out
+  // whenever the rest of the suite was running beside it.
+  const registered = scanRegisteredOperations(ROOT);
+  const readFile = (rel: string) => {
+    const abs = join(ROOT, rel);
+    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  };
+
   it('every registered operation passes the strict gate', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
     const { failures } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
     expect(failures).toEqual([]);
   });
 
   it('every P1-15 operation is at operation depth, with nothing pending or unit-only', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
     const { counts } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
 
     // 21 from P1-15 plus the 5 P1-23 operations that share the `shared.`
@@ -936,11 +935,6 @@ describe('operation coverage gate — real registry and real files', () => {
   });
 
   it('classifies every registered operation as public API surface, so none is hidden', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
     const { counts, matrix } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
 
     expect(counts.internal).toBe(0);

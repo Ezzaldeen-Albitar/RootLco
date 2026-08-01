@@ -21,6 +21,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { API_SRC_PATH, WEB_SRC_PATH } from './lib/repository-paths.mjs';
 
 const RULES = [
   {
@@ -33,7 +34,8 @@ const RULES = [
       'CONTRIBUTING.md',
       'CODEOWNERS',
       '.github/pull_request_template.md',
-      'src/modules/README.md', // prohibitory prose
+      `${API_SRC_PATH}/modules/README.md`, // prohibitory prose
+      `${WEB_SRC_PATH}/i18n/config.ts`, // names the pilot tenant to explain why Arabic is listed first
       'supabase/seed.sql', // binding seed rules (prohibitory prose)
       'supabase/packages/pilot-provisioning.package.json', // controlled Class-3 data
       'docs/database/pilot-provisioning-runbook.md', // controlled operator procedure
@@ -52,7 +54,8 @@ const RULES = [
       '.github/pull_request_template.md',
       'supabase/seed.sql', // prohibitory prose
       'supabase/config.toml', // Supabase auth-provider name list (unrelated vendor key)
-      'src/styles/base/_reset.scss', // CSS comment about iOS text zoom (unrelated)
+      `${API_SRC_PATH}/styles/base/_reset.scss`, // CSS comment about iOS text zoom (unrelated)
+      `${WEB_SRC_PATH}/styles/base/_reset.scss`, // the same accessibility comment, in the web reset
       'scripts/check-scope-exclusions.mjs',
     ],
   },

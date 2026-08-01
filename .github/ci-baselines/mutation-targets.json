@@ -7,7 +7,7 @@
     {
       "id": "inventory-read-company-scope",
       "category": "RLS scope",
-      "file": "src/modules/inventory/data/inventory-repository.ts",
+      "file": "apps/api/src/modules/inventory/data/inventory-repository.ts",
       "find": "'b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3'",
       "replace": "'b.tenant_id = $1', 'b.company_id = $2', 'b.branch_id = $3' /* mutation: scope predicate under test */",
       "expectOccurrences": 2,
@@ -20,7 +20,7 @@
     {
       "id": "deferred-scope-target-required",
       "category": "authorization",
-      "file": "src/server/auth/authorization.ts",
+      "file": "apps/api/src/server/auth/authorization.ts",
       "find": "if (!operation.public && target.companyId === undefined && target.branchId === undefined) {",
       "replace": "if (false && !operation.public && target.companyId === undefined && target.branchId === undefined) {",
       "expectOccurrences": 1,
@@ -31,7 +31,7 @@
     {
       "id": "idempotency-fingerprint-comparison",
       "category": "idempotency",
-      "file": "src/server/http/idempotency.ts",
+      "file": "apps/api/src/server/http/idempotency.ts",
       "find": "if (existing.request_fingerprint !== input.fingerprint) {",
       "replace": "if (false && existing.request_fingerprint !== input.fingerprint) {",
       "expectOccurrences": 1,

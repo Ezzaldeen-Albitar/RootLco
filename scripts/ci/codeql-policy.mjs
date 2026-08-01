@@ -27,6 +27,7 @@
  *     [--json out.json] [--markdown out.md]
  */
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { API_SRC_PATH, WEB_SRC_PATH } from '../lib/repository-paths.mjs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -40,7 +41,7 @@ export const BLOCKING_SEVERITIES = Object.freeze(['critical', 'high']);
  * tooling findings are ignorable: an application High blocks unconditionally,
  * a tooling High blocks unless it carries a specific, expiring disposition.
  */
-export const APPLICATION_PREFIXES = Object.freeze(['src/']);
+export const APPLICATION_PREFIXES = Object.freeze([`${API_SRC_PATH}/`, `${WEB_SRC_PATH}/`]);
 
 /** Normalises a SARIF artifact location to a repo-relative POSIX path. */
 export function normalisePath(uri) {

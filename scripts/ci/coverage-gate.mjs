@@ -32,11 +32,12 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { relative, resolve } from 'node:path';
+import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 
 export const METRICS = ['lines', 'statements', 'functions', 'branches'];
 
 /** Normalises an absolute or relative v8 key to a repository-relative POSIX path. */
-export function normaliseKey(key, root = process.cwd()) {
+export function normaliseKey(key, root = REPOSITORY_ROOT) {
   if (key === 'total') return 'total';
   const rel = key.includes(':') || key.startsWith('/') ? relative(root, key) : key;
   return rel.replace(/\\/g, '/');
@@ -56,7 +57,7 @@ export function pct(entry) {
  * @param {object} baseline committed baseline document
  * @param {string[]} changedFiles repository-relative paths changed by the PR
  */
-export function evaluate(summary, baseline, changedFiles = [], root = process.cwd()) {
+export function evaluate(summary, baseline, changedFiles = [], root = REPOSITORY_ROOT) {
   const failures = [];
   const warnings = [];
 
@@ -138,8 +139,8 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
       criticalModules.push({ ...rule, matchedFiles: 0, measured: null, ok: false });
       continue;
     }
-    // A trailing separator, so `src/server/errors` cannot match
-    // `src/server/errors-legacy/`.
+    // A trailing separator, so `.../server/errors` cannot match
+    // `.../server/errors-legacy/`.
     const prefix = rule.pathPrefix.endsWith('/') ? rule.pathPrefix : `${rule.pathPrefix}/`;
     const matched = fileEntries.filter(
       ([key]) => key === rule.pathPrefix || key.startsWith(prefix)

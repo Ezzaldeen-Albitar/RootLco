@@ -104,6 +104,36 @@ describe('replacing the provisional identity touches configuration only', () => 
   });
 
   it('applies a different name, logo mode and primary colour without editing a component', () => {
+    // Every component and route the swap must not need to touch, captured as
+    // CONTENT before anything is mutated.
+    //
+    // The earlier form asked `git diff --name-only` what differed from HEAD.
+    // That cannot distinguish an edit this test made from an unrelated edit
+    // already sitting in the working tree, so the proof only held on a clean
+    // checkout and reported a false positive during any other work — which is
+    // exactly what it did during the workspace migration. Comparing content
+    // before and after answers the question that was actually being asked, and
+    // answers it whatever else is in progress.
+    const repositoryRoot = join(ROOT, '..', '..');
+    const watched = execFileSync('git', ['ls-files', '-z', '--', 'apps/web'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    })
+      .split('\0')
+      .filter(Boolean)
+      .filter(
+        (f) =>
+          f.startsWith('apps/web/src/components/') ||
+          f.startsWith('apps/web/app/') ||
+          f.startsWith('apps/web/src/features/')
+      );
+
+    // An empty watch list would make the assertion below vacuously true.
+    expect(watched.length, 'no component or route files were found to watch').toBeGreaterThan(0);
+    const beforeComponents = new Map(
+      watched.map((f) => [f, readFileSync(join(repositoryRoot, f), 'utf8')])
+    );
+
     snapshot(brandPath);
     snapshot(coloursPath);
 
@@ -117,26 +147,17 @@ describe('replacing the provisional identity touches configuration only', () => 
     const colours = readFileSync(coloursPath, 'utf8');
     writeFileSync(coloursPath, colours.replace('500: #3366f2', '500: #7a1fa2'));
 
-    // The only files that changed are the two configuration files above.
-    const changed = execFileSync('git', ['diff', '--name-only'], {
-      cwd: join(ROOT, '..', '..'),
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    const componentEdits = changed.filter(
-      (f) =>
-        f.startsWith('apps/web/src/components/') ||
-        f.startsWith('apps/web/app/') ||
-        f.startsWith('apps/web/src/features/')
+    const componentEdits = watched.filter(
+      (f) => readFileSync(join(repositoryRoot, f), 'utf8') !== beforeComponents.get(f)
     );
 
     expect(componentEdits, 'a brand swap must not require editing any component or route').toEqual(
       []
     );
-    expect(changed).toContain('apps/web/src/config/brand.ts');
-    expect(changed).toContain('apps/web/src/styles/tokens/_colors.scss');
+
+    // And the swap really happened, so the assertion above is not measuring an
+    // edit that was never applied.
+    expect(readFileSync(brandPath, 'utf8')).not.toBe(before);
+    expect(readFileSync(coloursPath, 'utf8')).not.toBe(colours);
   });
 });

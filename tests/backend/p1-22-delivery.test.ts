@@ -126,6 +126,7 @@ import { POST as COMPLETE_DELIVERY } from '@/app/api/v1/deliveries/[deliveryId]/
 import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as RECORD_PAYMENT } from '@/app/api/v1/payments/route';
 import { POST as ALLOCATE_PAYMENT } from '@/app/api/v1/payments/[paymentId]/allocations/route';
+import { API_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 let admin: Pool;
 
@@ -1236,7 +1237,7 @@ describe('sal.delivery-eligibility-read', () => {
     // validates the path, and it exports no write verb — so a body field could not be
     // read even if a client sent one.
     const source = readFileSync(
-      resolve(process.cwd(), 'src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts'),
+      resolve(API_ROOT, 'src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts'),
       'utf8'
     );
     expect(source.match(/z\s*\.object\(/g)).toHaveLength(1);

@@ -41,13 +41,13 @@ import {
   severityAtLeast,
 } from '@/modules/diagnostics';
 import { QC_CHECK_RESULTS, QC_OVERALL_RESULTS, qualityModule } from '@/modules/quality';
+import { API_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
-const ROOT = process.cwd();
 const MODULES = ['work-order', 'technician', 'diagnostics', 'quality'] as const;
 
 /** Every `.ts` file under a module, recursively. */
 function moduleFiles(moduleName: string): string[] {
-  const base = join(ROOT, 'src', 'modules', moduleName);
+  const base = join(API_SRC_ROOT, 'modules', moduleName);
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
@@ -158,7 +158,7 @@ describe('P1-19 module foundation', () => {
     expect(PERMITTED_CROSS_SCHEMA).toHaveLength(2);
     for (const entry of PERMITTED_CROSS_SCHEMA) {
       expect(entry.why.length).toBeGreaterThan(20);
-      const file = join(ROOT, 'src', 'modules', entry.module, 'data', entry.file);
+      const file = join(API_SRC_ROOT, 'modules', entry.module, 'data', entry.file);
       const code = readFileSync(file, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '');
@@ -308,7 +308,7 @@ describe('P1-19 module foundation', () => {
     // codes, so the catalog service must use the existing one.
     expect(ERROR_CODES).toContain('ERR-TRN-001');
     const service = readFileSync(
-      join(ROOT, 'src/modules/work-order/application/work-order-catalog-service.ts'),
+      join(API_SRC_ROOT, 'modules/work-order/application/work-order-catalog-service.ts'),
       'utf8'
     );
     expect(service).toContain("'ERR-TRN-001'");

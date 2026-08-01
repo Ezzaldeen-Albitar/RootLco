@@ -7,7 +7,7 @@
   "lastConfirmedNote": "That run measured lines 93.26, statements 93.26, functions 84.43, branches 93.41 — so functions sits 0.32 pp and branches 0.20 pp BELOW the recorded baseline, both inside the 0.5 pp tolerance. The numbers below were deliberately NOT lowered to match. Rewriting a floor down to whatever was last measured turns a ratchet into a rubber stamp: it would convert a real 0.32 pp decline into a new baseline of record and make the next 0.5 pp of decline free. The gate is passing on its own terms; if functions drifts a further 0.2 pp the gate goes red, and that is the mechanism doing its job rather than a fault to pre-empt. Raise these numbers when coverage genuinely rises; lower them only in a commit that says why.",
   "tolerancePercentagePoints": 0.5,
   "touchedFileMinimum": 60,
-  "touchedFileExemptPrefixes": ["src/app/", "src/styles/"],
+  "touchedFileExemptPrefixes": ["apps/api/src/app/", "apps/api/src/styles/"],
   "global": {
     "lines": 93.26,
     "statements": 93.26,
@@ -19,7 +19,7 @@
   "criticalModules": [
     {
       "id": "error-mapping",
-      "pathPrefix": "src/server/errors",
+      "pathPrefix": "apps/api/src/server/errors",
       "metric": "lines",
       "minimum": 95,
       "why": "decides which text reaches a caller; a leak here discloses SQL, paths or tenant data",
@@ -27,7 +27,7 @@
     },
     {
       "id": "http-validation-and-limits",
-      "pathPrefix": "src/server/http",
+      "pathPrefix": "apps/api/src/server/http",
       "metric": "lines",
       "minimum": 88,
       "why": "input validation, rate limiting and trusted-proxy handling are the outermost guard",
@@ -35,7 +35,7 @@
     },
     {
       "id": "db-concurrency-and-pagination",
-      "pathPrefix": "src/server/db",
+      "pathPrefix": "apps/api/src/server/db",
       "metric": "lines",
       "minimum": 90,
       "why": "optimistic-concurrency and pagination bugs corrupt data or truncate results silently",
@@ -43,7 +43,7 @@
     },
     {
       "id": "cache",
-      "pathPrefix": "src/server/cache",
+      "pathPrefix": "apps/api/src/server/cache",
       "metric": "lines",
       "minimum": 92,
       "why": "a cache that ignores tenant scope is a cross-tenant disclosure",
@@ -51,7 +51,7 @@
     },
     {
       "id": "observability",
-      "pathPrefix": "src/server/observability",
+      "pathPrefix": "apps/api/src/server/observability",
       "metric": "lines",
       "minimum": 86,
       "why": "correlation identifiers are how a workflow is reconstructed after an incident",
@@ -59,7 +59,7 @@
     },
     {
       "id": "worker-backoff",
-      "pathPrefix": "src/server/worker",
+      "pathPrefix": "apps/api/src/server/worker",
       "metric": "lines",
       "minimum": 95,
       "why": "outbox retry behaviour decides whether an event is delivered once, never, or forever",
@@ -67,7 +67,7 @@
     },
     {
       "id": "log-redaction",
-      "pathPrefix": "src/lib/logging",
+      "pathPrefix": "apps/api/src/lib/logging",
       "metric": "lines",
       "minimum": 72,
       "why": "the redaction path is the last thing between a credential and a public Actions log",
@@ -75,7 +75,7 @@
     },
     {
       "id": "environment-validation",
-      "pathPrefix": "src/config",
+      "pathPrefix": "apps/api/src/config",
       "metric": "lines",
       "minimum": 50,
       "why": "a missing or malformed environment value must fail at start, not at first request",

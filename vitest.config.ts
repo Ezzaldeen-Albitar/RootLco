@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import path from 'node:path';
+import { API_SRC_ROOT, API_SRC_PATH } from './scripts/lib/repository-paths.mjs';
 
 export default defineConfig({
   test: {
@@ -23,21 +23,27 @@ export default defineConfig({
       // paths are covered by `test:backend`, whose coverage is not merged here
       // because a merged number across two runners would overstate both.
       include: [
-        'src/config/**',
-        'src/lib/logging/**',
-        'src/server/errors/**',
-        'src/server/observability/**',
-        'src/server/cache/**',
-        'src/server/http/rate-limit.ts',
-        'src/server/http/trusted-proxy.ts',
-        'src/server/http/validation.ts',
-        'src/server/db/pagination.ts',
-        'src/server/db/concurrency.ts',
-        'src/server/worker/backoff.ts',
+        `${API_SRC_PATH}/config/**`,
+        `${API_SRC_PATH}/lib/logging/**`,
+        `${API_SRC_PATH}/server/errors/**`,
+        `${API_SRC_PATH}/server/observability/**`,
+        `${API_SRC_PATH}/server/cache/**`,
+        `${API_SRC_PATH}/server/http/rate-limit.ts`,
+        `${API_SRC_PATH}/server/http/trusted-proxy.ts`,
+        `${API_SRC_PATH}/server/http/validation.ts`,
+        `${API_SRC_PATH}/server/db/pagination.ts`,
+        `${API_SRC_PATH}/server/db/concurrency.ts`,
+        `${API_SRC_PATH}/server/worker/backoff.ts`,
       ],
     },
   },
+  // The repository-level tiers test the API application, so `@` resolves to the
+  // API's source here — and ONLY here. `apps/web` has its own runner, where the
+  // same specifier resolves into the web source. One alias, one meaning, per
+  // resolver. `@api` is the unambiguous spelling for anything written from now
+  // on; `@/` is kept because rewriting it across 131 test files would be a
+  // 131-file diff inside a migration whose whole value is that it is a rename.
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@api': API_SRC_ROOT, '@': API_SRC_ROOT },
   },
 });

@@ -11,7 +11,7 @@
  *
  * The register is derived, never authored. Its only inputs are:
  *
- *   - the `defineOperation({...})` literals in `src/app/api/**\/route.ts`
+ *   - the `defineOperation({...})` literals in `apps/api/src/app/api/**\/route.ts`
  *   - `docs/api/openapi.v1.json`            (the published contract)
  *   - `supabase/seeds/04_iam_permission_catalog.sql`  (permission codes)
  *   - `src/server/auth/audit-actions.ts`    (controlled audit actions)
@@ -60,16 +60,16 @@
  */
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { join, dirname, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, relative, sep } from 'node:path';
 import {
   MANIFEST,
   derivedRequirements,
   parseProvidedFlags,
 } from './check-operation-test-coverage.mjs';
+import { REPOSITORY_ROOT, API_SRC_ROOT, API_ROUTES_ROOT } from './lib/repository-paths.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api');
+const ROOT = REPOSITORY_ROOT;
+const API_ROOT = API_ROUTES_ROOT;
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-24', 'evidence');
 const REGISTER_MD = join(EVIDENCE, 'operation-register.md');
 const REGISTER_JSON = join(EVIDENCE, 'operation-register.json');
@@ -205,7 +205,7 @@ function readPermissionCodes() {
 }
 
 function readAuditActions() {
-  const source = readFileSync(join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'), 'utf8');
+  const source = readFileSync(join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts'), 'utf8');
   return new Set([...source.matchAll(/\bcode:\s*'([^']+)'/g)].map((m) => m[1]));
 }
 
@@ -226,7 +226,7 @@ function readAuditActions() {
  * than a quieter number.
  */
 function readEventCatalog() {
-  const source = readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8');
+  const source = readFileSync(join(API_SRC_ROOT, 'server', 'events', 'envelope.ts'), 'utf8');
   const entries = [];
   // One block per catalog entry: from a `code: 'EVT-…'` to the next one (or the end).
   const starts = [...source.matchAll(/\bcode:\s*'(EVT-[A-Z0-9-]+)'/g)];
@@ -260,7 +260,7 @@ function readEventCatalog() {
 }
 
 function readErrorCodes() {
-  const source = readFileSync(join(ROOT, 'src', 'server', 'errors', 'catalog.ts'), 'utf8');
+  const source = readFileSync(join(API_SRC_ROOT, 'server', 'errors', 'catalog.ts'), 'utf8');
   return new Set([...source.matchAll(/\bcode:\s*'(ERR-[A-Z0-9-]+)'/g)].map((m) => m[1]));
 }
 
@@ -297,11 +297,11 @@ function walkTs(directory, out = []) {
  * The remaining columns ARE per-event and are measured per event.
  */
 function measureEvents(events) {
-  const sourceFiles = walkTs(join(ROOT, 'src'));
+  const sourceFiles = walkTs(API_SRC_ROOT);
   const testFiles = walkTs(join(ROOT, 'tests'));
 
-  const publisherPath = join(ROOT, 'src', 'server', 'events', 'publisher.ts');
-  const catalogPath = join(ROOT, 'src', 'server', 'events', 'envelope.ts');
+  const publisherPath = join(API_SRC_ROOT, 'server', 'events', 'publisher.ts');
+  const catalogPath = join(API_SRC_ROOT, 'server', 'events', 'envelope.ts');
 
   // Every direct INSERT into the outbox outside the publisher, which would bypass
   // the transactional guarantee the whole pattern rests on.

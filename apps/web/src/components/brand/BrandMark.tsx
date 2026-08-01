@@ -12,8 +12,12 @@ export function BrandMark({ collapsed = false }: { readonly collapsed?: boolean 
   const mark = resolveBrandMark(brand);
 
   if (mark.kind === 'asset') {
-    // eslint-disable-next-line @next/next/no-img-element -- the approved asset is
-    // a static brand file; next/image adds no value and complicates print.
+    // The approved asset is a static brand file: next/image adds no value here
+    // and complicates print. The directive must sit on the line IMMEDIATELY
+    // above the element — with a wrapped reason underneath it, "next line" was
+    // the comment, so the suppression covered nothing and the warning it named
+    // was live the whole time.
+    // eslint-disable-next-line @next/next/no-img-element
     return <img src={mark.src} alt={mark.alt} height={24} />;
   }
 

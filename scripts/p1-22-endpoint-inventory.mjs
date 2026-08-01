@@ -80,9 +80,10 @@ import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prettier from 'prettier';
 import { escapeRegExp } from './ci/check-workflow-security.mjs';
+import { API_SRC_ROOT, API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
+const API_ROOT = join(API_SRC_ROOT, 'app', 'api', 'v1');
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-22', 'evidence');
 const OUTPUT = join(EVIDENCE, 'endpoint-inventory.md');
 const TRACEABILITY = join(EVIDENCE, 'task-traceability.md');
@@ -166,10 +167,10 @@ const TASKS = Object.freeze([
     'P1-22-BE-001',
     'Billing module foundation',
     [
-      ['symbol', 'src/modules/billing/index.ts', 'billingModule'],
-      ['symbol', 'src/modules/billing/domain/billing.ts', 'parseInvoiceAmount'],
-      ['symbol', 'src/modules/billing/domain/billing.ts', 'parseInstrumentAmount'],
-      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'BillingRepository'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/index.ts`, 'billingModule'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/domain/billing.ts`, 'parseInvoiceAmount'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/domain/billing.ts`, 'parseInstrumentAmount'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/data/billing-repository.ts`, 'BillingRepository'],
     ],
   ],
   [
@@ -179,7 +180,11 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-preview'],
       ['permission', 'sal.invoice.manage'],
       ['permission', 'sal.finance.view'],
-      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'previewInvoice'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/billing-read-service.ts`,
+        'previewInvoice',
+      ],
     ],
   ],
   [
@@ -189,7 +194,7 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-create'],
       ['audit', 'sal.invoice.created'],
       ['event', 'invoice.created'],
-      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'createInvoice'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/application/invoice-service.ts`, 'createInvoice'],
     ],
   ],
   [
@@ -200,9 +205,13 @@ const TASKS = Object.freeze([
       ['permission', 'sal.invoice.issue'],
       ['audit', 'sal.invoice.issued'],
       ['event', 'invoice.issued'],
-      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'issueInvoice'],
-      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'issueInvoice'],
-      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readNumberingConfig'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/application/invoice-service.ts`, 'issueInvoice'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/data/billing-repository.ts`, 'issueInvoice'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/billing-read-service.ts`,
+        'readNumberingConfig',
+      ],
     ],
   ],
   [
@@ -210,7 +219,11 @@ const TASKS = Object.freeze([
     'Invoice read and money visibility',
     [
       ['operation', 'sal.invoice-detail'],
-      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readInvoice'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/billing-read-service.ts`,
+        'readInvoice',
+      ],
     ],
   ],
   [
@@ -219,10 +232,14 @@ const TASKS = Object.freeze([
     [
       ['operation', 'sal.invoice-outstanding-read'],
       ['permission', 'sal.finance.view'],
-      ['symbol', 'src/modules/billing/application/billing-read-service.ts', 'readOutstanding'],
       [
         'symbol',
-        'src/modules/billing/application/billing-read-service.ts',
+        `${API_SRC_PATH}/modules/billing/application/billing-read-service.ts`,
+        'readOutstanding',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/billing-read-service.ts`,
         'openReceivableForWorkOrder',
       ],
     ],
@@ -234,8 +251,8 @@ const TASKS = Object.freeze([
       ['operation', 'sal.invoice-cancel'],
       ['audit', 'sal.invoice.voided'],
       ['event', 'invoice.voided'],
-      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'cancelInvoice'],
-      ['symbol', 'src/modules/billing/data/billing-repository.ts', 'voidInvoice'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/application/invoice-service.ts`, 'cancelInvoice'],
+      ['symbol', `${API_SRC_PATH}/modules/billing/data/billing-repository.ts`, 'voidInvoice'],
     ],
   ],
   [
@@ -248,9 +265,17 @@ const TASKS = Object.freeze([
       ['audit', 'sal.credit_note.requested'],
       ['audit', 'sal.credit_note.approved'],
       ['event', 'credit-note.issued'],
-      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'requestCreditNote'],
-      ['symbol', 'src/modules/billing/application/invoice-service.ts', 'approveCreditNote'],
-      ['symbol', 'src/modules/billing/domain/billing.ts', 'assertCurrencyMatches'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/invoice-service.ts`,
+        'requestCreditNote',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/billing/application/invoice-service.ts`,
+        'approveCreditNote',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/billing/domain/billing.ts`, 'assertCurrencyMatches'],
     ],
   ],
   [
@@ -258,9 +283,17 @@ const TASKS = Object.freeze([
     'Payments module foundation',
     [
       ['operation', 'sal.payment-method-list'],
-      ['symbol', 'src/modules/payments/index.ts', 'paymentsModule'],
-      ['symbol', 'src/modules/payments/application/payment-read-service.ts', 'listPaymentMethods'],
-      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertPaymentMethodIsTenantScoped'],
+      ['symbol', `${API_SRC_PATH}/modules/payments/index.ts`, 'paymentsModule'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/application/payment-read-service.ts`,
+        'listPaymentMethods',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/domain/payments.ts`,
+        'assertPaymentMethodIsTenantScoped',
+      ],
     ],
   ],
   [
@@ -271,8 +304,12 @@ const TASKS = Object.freeze([
       ['permission', 'sal.payment.record'],
       ['audit', 'sal.receipt.recorded'],
       ['event', 'receipt.recorded'],
-      ['symbol', 'src/modules/payments/application/payment-service.ts', 'recordPayment'],
-      ['symbol', 'src/modules/payments/domain/payments.ts', 'parsePaymentAmount'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/application/payment-service.ts`,
+        'recordPayment',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/payments/domain/payments.ts`, 'parsePaymentAmount'],
     ],
   ],
   [
@@ -283,10 +320,26 @@ const TASKS = Object.freeze([
       ['permission', 'sal.payment.allocate'],
       ['audit', 'sal.payment.allocated'],
       ['event', 'payment.allocated'],
-      ['symbol', 'src/modules/payments/application/payment-service.ts', 'allocatePayment'],
-      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationUsesPrimitive'],
-      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationCurrencyCoherent'],
-      ['symbol', 'src/modules/payments/domain/payments.ts', 'assertAllocationWithinBounds'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/application/payment-service.ts`,
+        'allocatePayment',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/domain/payments.ts`,
+        'assertAllocationUsesPrimitive',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/domain/payments.ts`,
+        'assertAllocationCurrencyCoherent',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/domain/payments.ts`,
+        'assertAllocationWithinBounds',
+      ],
     ],
   ],
   [
@@ -294,7 +347,11 @@ const TASKS = Object.freeze([
     'Receipt read',
     [
       ['operation', 'sal.receipt-detail'],
-      ['symbol', 'src/modules/payments/application/payment-read-service.ts', 'readReceipt'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/payments/application/payment-read-service.ts`,
+        'readReceipt',
+      ],
     ],
   ],
   [
@@ -304,8 +361,12 @@ const TASKS = Object.freeze([
       ['operation', 'sal.delivery-create'],
       ['permission', 'sal.delivery.manage'],
       ['audit', 'sal.delivery.created'],
-      ['symbol', 'src/modules/delivery/index.ts', 'deliveryModule'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'createDelivery'],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/index.ts`, 'deliveryModule'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'createDelivery',
+      ],
     ],
   ],
   [
@@ -313,9 +374,13 @@ const TASKS = Object.freeze([
     'Delivery eligibility composition',
     [
       ['operation', 'sal.delivery-eligibility-read'],
-      ['symbol', 'src/modules/delivery/application/delivery-read-service.ts', 'readEligibility'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'composeEligibility'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'BLOCKER_CODES'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-read-service.ts`,
+        'readEligibility',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'composeEligibility'],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'BLOCKER_CODES'],
     ],
   ],
   [
@@ -324,7 +389,11 @@ const TASKS = Object.freeze([
     [
       ['operation', 'sal.delivery-receiver-verify'],
       ['audit', 'sal.delivery.receiver_verified'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'verifyReceiver'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'verifyReceiver',
+      ],
     ],
   ],
   [
@@ -335,10 +404,22 @@ const TASKS = Object.freeze([
       ['operation', 'sal.delivery-signature-attach'],
       ['audit', 'sal.delivery.checklist_recorded'],
       ['audit', 'sal.delivery.signature_recorded'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'recordChecklistResult'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'attachSignature'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertChecklistResultShape'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertSignerRole'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'recordChecklistResult',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'attachSignature',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`,
+        'assertChecklistResultShape',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'assertSignerRole'],
     ],
   ],
   [
@@ -349,9 +430,13 @@ const TASKS = Object.freeze([
       ['permission', 'sal.delivery.complete'],
       ['audit', 'sal.delivery.completed'],
       ['event', 'vehicle.delivered'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'completeDelivery'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'withOverrides'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'assertEligible'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'completeDelivery',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'withOverrides'],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'assertEligible'],
     ],
   ],
   [
@@ -363,11 +448,19 @@ const TASKS = Object.freeze([
       ['permission', 'wty.warranty.issue'],
       ['audit', 'wty.warranty.issued'],
       ['event', 'warranty.issued'],
-      ['symbol', 'src/modules/warranty/index.ts', 'warrantyModule'],
-      ['symbol', 'src/modules/warranty/application/warranty-service.ts', 'generateWarranty'],
-      ['symbol', 'src/modules/warranty/application/warranty-service.ts', 'readWarranty'],
-      ['symbol', 'src/modules/warranty/domain/warranty.ts', 'assertPolicyActive'],
-      ['symbol', 'src/modules/warranty/domain/warranty.ts', 'assertWritableStatus'],
+      ['symbol', `${API_SRC_PATH}/modules/warranty/index.ts`, 'warrantyModule'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/warranty/application/warranty-service.ts`,
+        'generateWarranty',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/warranty/application/warranty-service.ts`,
+        'readWarranty',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/warranty/domain/warranty.ts`, 'assertPolicyActive'],
+      ['symbol', `${API_SRC_PATH}/modules/warranty/domain/warranty.ts`, 'assertWritableStatus'],
     ],
   ],
   [
@@ -401,9 +494,9 @@ const TASKS = Object.freeze([
     'Currency coherence and exact money',
     [
       ['symbol', 'scripts/ci/check-exact-money.mjs', 'MONEY_TREES'],
-      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'parseNonNegative'],
-      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'parsePositive'],
-      ['symbol', 'src/modules/pricing/domain/money.ts', 'assertSameCurrency'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/decimal.ts`, 'parseNonNegative'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/decimal.ts`, 'parsePositive'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/money.ts`, 'assertSameCurrency'],
     ],
   ],
   [
@@ -411,18 +504,26 @@ const TASKS = Object.freeze([
     'Receiver and signature privacy',
     [
       ['permission', 'sal.delivery.view'],
-      ['symbol', 'src/modules/delivery/domain/delivery.ts', 'SIGNER_ROLES'],
-      ['symbol', 'src/modules/delivery/application/delivery-service.ts', 'attachSignature'],
+      ['symbol', `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`, 'SIGNER_ROLES'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/delivery/application/delivery-service.ts`,
+        'attachSignature',
+      ],
     ],
   ],
   [
     'P1-22-SEC-004',
     'Numbering safety',
     [
-      ['symbol', 'src/modules/shared-services/domain/sequence-registry.ts', 'SEQUENCE_DEFINITIONS'],
       [
         'symbol',
-        'src/modules/shared-services/application/number-allocation-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/domain/sequence-registry.ts`,
+        'SEQUENCE_DEFINITIONS',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/shared-services/application/number-allocation-service.ts`,
         'isProvisioned',
       ],
     ],
@@ -734,7 +835,7 @@ function main() {
   // from the work-order side of a handover).
   const allModuleSources = [];
   {
-    const stack = [join(ROOT, 'src', 'modules')];
+    const stack = [join(API_SRC_ROOT, 'modules')];
     while (stack.length > 0) {
       const current = stack.pop();
       // `withFileTypes` answers "directory?" from the directory read itself,
@@ -750,7 +851,7 @@ function main() {
 
   const moduleSources = [];
   for (const name of PHASE_MODULES) {
-    const dir = join(ROOT, 'src', 'modules', name);
+    const dir = join(API_SRC_ROOT, 'modules', name);
     /**
      * A MISSING module directory FAILS the gate instead of being skipped.
      *
@@ -786,7 +887,7 @@ function main() {
     'utf8'
   );
   const auditCatalog = readFileSync(
-    join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'),
+    join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts'),
     'utf8'
   );
   /**
@@ -802,7 +903,7 @@ function main() {
    * a theoretical concern for this phase.
    */
   const eventCatalog = stripComments(
-    readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8')
+    readFileSync(join(API_SRC_ROOT, 'server', 'events', 'envelope.ts'), 'utf8')
   );
 
   // ---- 1. Permissions exist in the seed -----------------------------------

@@ -30,13 +30,13 @@ Operations: **20**. Published events: **8**.
 
 ## Published events
 
-| Event                | Producer                    | Source                                                 |
-| -------------------- | --------------------------- | ------------------------------------------------------ |
-| `invoice.created`    | `billing.invoice-service`   | `src/modules/billing/application/invoice-service.ts`   |
-| `invoice.issued`     | `billing.invoice-service`   | `src/modules/billing/application/invoice-service.ts`   |
-| `invoice.voided`     | `billing.invoice-service`   | `src/modules/billing/application/invoice-service.ts`   |
-| `credit-note.issued` | `billing.invoice-service`   | `src/modules/billing/application/invoice-service.ts`   |
-| `receipt.recorded`   | `payments.payment-service`  | `src/modules/payments/application/payment-service.ts`  |
-| `payment.allocated`  | `payments.payment-service`  | `src/modules/payments/application/payment-service.ts`  |
-| `vehicle.delivered`  | `delivery.delivery-service` | `src/modules/delivery/application/delivery-service.ts` |
-| `warranty.issued`    | `warranty.warranty-service` | `src/modules/warranty/application/warranty-service.ts` |
+| Event                | Producer                    | Source                                                          |
+| -------------------- | --------------------------- | --------------------------------------------------------------- |
+| `invoice.created`    | `billing.invoice-service`   | `apps/api/src/modules/billing/application/invoice-service.ts`   |
+| `invoice.issued`     | `billing.invoice-service`   | `apps/api/src/modules/billing/application/invoice-service.ts`   |
+| `invoice.voided`     | `billing.invoice-service`   | `apps/api/src/modules/billing/application/invoice-service.ts`   |
+| `credit-note.issued` | `billing.invoice-service`   | `apps/api/src/modules/billing/application/invoice-service.ts`   |
+| `receipt.recorded`   | `payments.payment-service`  | `apps/api/src/modules/payments/application/payment-service.ts`  |
+| `payment.allocated`  | `payments.payment-service`  | `apps/api/src/modules/payments/application/payment-service.ts`  |
+| `vehicle.delivered`  | `delivery.delivery-service` | `apps/api/src/modules/delivery/application/delivery-service.ts` |
+| `warranty.issued`    | `warranty.warranty-service` | `apps/api/src/modules/warranty/application/warranty-service.ts` |

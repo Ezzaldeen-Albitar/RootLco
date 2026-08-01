@@ -29,10 +29,15 @@ describe('change classification', () => {
     // `src/app/api/**` is the HTTP surface of the BACKEND, not a page. Classing
     // it as `frontend` meant an authorization-bearing route handler skipped
     // `database-security` — the job that runs the RLS matrix.
-    expect(classifyPath('src/app/api/v1/x/route.ts')).toBe('backend');
-    expect(classifyPath('src/app/page.tsx')).toBe('frontend');
-    expect(classifyPath('src/modules/inventory/x.ts')).toBe('backend');
-    expect(classifyPath('src/lib/logging/logger.ts')).toBe('appSource');
+    expect(classifyPath('apps/api/src/app/api/v1/x/route.ts')).toBe('backend');
+    expect(classifyPath('apps/api/src/app/page.tsx')).toBe('frontend');
+    expect(classifyPath('apps/api/src/modules/inventory/x.ts')).toBe('backend');
+    expect(classifyPath('apps/api/src/lib/logging/logger.ts')).toBe('appSource');
+    // The web application is frontend in its entirety — including its own
+    // scripts and tests, which must not be classed as repository tooling.
+    expect(classifyPath('apps/web/src/components/brand/BrandMark.tsx')).toBe('frontend');
+    expect(classifyPath('apps/web/scripts/check-design-tokens.mjs')).toBe('frontend');
+    expect(classifyPath('apps/web/tests/brand-replacement.test.ts')).toBe('frontend');
     expect(classifyPath('docs/engineering/ci-automation/README.md')).toBe('docs');
     expect(classifyPath('LICENSE')).toBe('other');
   });
@@ -107,7 +112,7 @@ describe('change classification', () => {
     // Without this, deleting `frontend`/`backend` from the CONDITIONAL_JOBS
     // trigger lists would skip every heavy job for a route-only change and no
     // test would notice.
-    const result = classify(['src/app/api/v1/inventory/items/route.ts']);
+    const result = classify(['apps/api/src/app/api/v1/inventory/items/route.ts']);
     for (const job of [
       'database-security',
       'integration-tests',

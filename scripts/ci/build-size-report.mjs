@@ -26,6 +26,7 @@
  * Exit codes: 0 pass · 1 integrity or ceiling failure · 2 IO error.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { API_APP_ROOT } from '../lib/repository-paths.mjs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -117,7 +118,7 @@ export function checkIntegrity(dir) {
 }
 
 /** Counts route handlers on disk so the manifest can be checked for completeness. */
-export function countSourceRoutes(appDir = 'src/app') {
+export function countSourceRoutes(appDir = API_APP_ROOT) {
   let count = 0;
   if (!existsSync(appDir)) return count;
   const walk = (current) => {

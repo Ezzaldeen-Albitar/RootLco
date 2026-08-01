@@ -6,7 +6,13 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
 
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts']),
+  // `apps/**` is ignored HERE and only here. Each application composes this
+  // policy from its own `eslint.config.mjs`, where flat-config `files` patterns
+  // resolve against that application's directory — which is what makes
+  // `src/**` below mean the right tree. Linting a workspace from the repository
+  // root would resolve those same patterns at the root, match nothing, and
+  // report a clean run over an unchecked application.
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts', 'apps/**']),
 
   {
     rules: {

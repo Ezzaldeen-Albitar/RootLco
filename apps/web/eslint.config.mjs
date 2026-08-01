@@ -1,14 +1,32 @@
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { FlatCompat } from '@eslint/eslintrc';
+/**
+ * The web application's ESLint entry point.
+ *
+ * It imports the Next.js flat configs DIRECTLY, the same way the repository's
+ * canonical config does. The earlier form went through `FlatCompat` and the
+ * eslintrc-era names `next/core-web-vitals` and `next/typescript`; under
+ * eslint-config-next 16 those are no longer valid eslintrc shareable configs,
+ * and the compatibility layer crashed inside its own error FORMATTER
+ * ("Converting circular structure to JSON") while trying to report that. The
+ * crash is why the real message was never visible.
+ *
+ * The failure had never been observed because `lint:web` was in no aggregate.
+ * It is now — an application whose linter has never successfully run is not a
+ * linted application.
+ *
+ * This config does NOT compose the repository root's, deliberately: the root
+ * policy carries the modular-monolith boundary rules (ADR-001), which describe
+ * the backend's module layering and mean nothing here.
+ */
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
 
-const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) });
+export default defineConfig([
+  ...nextVitals,
+  ...nextTs,
 
-const config = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
-  {
-    ignores: ['.next/**', 'node_modules/**', 'coverage/**'],
-  },
+  globalIgnores(['.next/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts']),
+
   {
     rules: {
       // A brand value or a design value reaching a component is an architecture
@@ -17,6 +35,4 @@ const config = [
       'react/no-danger': 'error',
     },
   },
-];
-
-export default config;
+]);

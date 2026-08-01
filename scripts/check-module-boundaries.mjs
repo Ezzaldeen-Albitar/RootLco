@@ -48,12 +48,13 @@
  */
 import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { REPOSITORY_ROOT, API_SRC_ROOT } from './lib/repository-paths.mjs';
 
 const args = process.argv.slice(2);
 const jsonOutput = args.includes('--json');
 const scanDirIndex = args.indexOf('--scan-dir');
-const ROOT = process.cwd();
-const SCAN_DIR = scanDirIndex >= 0 ? resolve(args[scanDirIndex + 1] ?? '') : resolve(ROOT, 'src');
+const ROOT = REPOSITORY_ROOT;
+const SCAN_DIR = scanDirIndex >= 0 ? resolve(args[scanDirIndex + 1] ?? '') : API_SRC_ROOT;
 
 if (scanDirIndex >= 0 && !args[scanDirIndex + 1]) {
   console.error('--scan-dir requires a directory argument');
@@ -256,7 +257,7 @@ const RULES = [
   {
     id: 'B3-foundation-must-not-depend-on-modules',
     describe:
-      'src/server, src/shared, src/lib and src/config are the foundation; dependencies point inward only.',
+      'server, shared, lib and config are the API application foundation; dependencies point inward only.',
     check: ({ file, specifier, target }) => {
       if (!/^(server|shared|lib|config)\//.test(file)) return null;
       if (!target || !/^modules(\/|$)/.test(target)) return null;

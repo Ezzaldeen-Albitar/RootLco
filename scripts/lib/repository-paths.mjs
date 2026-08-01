@@ -55,6 +55,7 @@ export const API_ROOT = join(APPS_ROOT, 'api');
 export const API_SRC_ROOT = join(API_ROOT, 'src');
 export const API_APP_ROOT = join(API_SRC_ROOT, 'app');
 export const API_ROUTES_ROOT = join(API_APP_ROOT, 'api');
+export const API_ROUTES_V1_ROOT = join(API_ROUTES_ROOT, 'v1');
 export const API_PUBLIC_ROOT = join(API_ROOT, 'public');
 
 export const WEB_ROOT = join(APPS_ROOT, 'web');
@@ -79,6 +80,41 @@ export const GITHUB_ROOT = fromRoot('.github');
 export function toRepositoryPath(absolutePath) {
   const relative = resolve(absolutePath).slice(REPOSITORY_ROOT.length);
   return relative.split(sep).join('/').replace(/^\//, '');
+}
+
+// --- repository-RELATIVE forms ----------------------------------------------
+//
+// A gate that classifies a git-changed path, or a manifest that names a tree,
+// works in repository-relative POSIX text, not in absolute paths. Those spellings
+// belong to the same authority: `'apps/api/src'` written by hand in twenty
+// scripts is the same defect as an absolute path derived twenty ways, and it is
+// how the first migration attempt produced `apps/api/apps/api`.
+//
+// Derived from the absolute constants above rather than written out again, so
+// the two forms cannot drift apart.
+
+/** `apps/api` — repository-relative, POSIX. */
+export const API_PATH = toRepositoryPath(API_ROOT);
+/** `apps/api/src` — repository-relative, POSIX. */
+export const API_SRC_PATH = toRepositoryPath(API_SRC_ROOT);
+/** `apps/api/src/app/api` — repository-relative, POSIX. */
+export const API_ROUTES_PATH = toRepositoryPath(API_ROUTES_ROOT);
+/** `apps/api/src/app/api/v1` — repository-relative, POSIX. */
+export const API_ROUTES_V1_PATH = toRepositoryPath(API_ROUTES_V1_ROOT);
+/** `apps/web` — repository-relative, POSIX. */
+export const WEB_PATH = toRepositoryPath(WEB_ROOT);
+/** `apps/web/src` — repository-relative, POSIX. */
+export const WEB_SRC_PATH = toRepositoryPath(WEB_SRC_ROOT);
+
+/**
+ * Repository-relative POSIX path under the API application's source root.
+ *
+ * `apiSrcPath('modules', 'billing')` → `apps/api/src/modules/billing`.
+ * Accepts pre-joined segments (`apiSrcPath('modules/billing')`) so existing
+ * tables of paths keep their readable one-line form.
+ */
+export function apiSrcPath(...segments) {
+  return [API_SRC_PATH, ...segments].join('/').replace(/\/+/g, '/');
 }
 
 /**

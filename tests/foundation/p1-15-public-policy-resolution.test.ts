@@ -29,9 +29,9 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { policyFor } from '@/server/http/route-handler';
 import { RATE_LIMIT_POLICIES } from '@/server/http/rate-limit';
+import { API_ROUTES_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 type Op = Parameters<typeof policyFor>[0];
 
@@ -101,7 +101,7 @@ describe('P1-15 / public rate-limit policy resolution', () => {
  * and the count assertion below is what stops it silently matching nothing.
  */
 function publicRegistrations(): Array<{ file: string; id: string; policy: string | undefined }> {
-  const root = fileURLToPath(new URL('../../src/app/api', import.meta.url));
+  const root = API_ROUTES_ROOT;
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir)) {

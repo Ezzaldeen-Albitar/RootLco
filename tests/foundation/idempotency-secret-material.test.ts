@@ -27,6 +27,7 @@ import { assertNoSecretMaterial, requestFingerprint } from '@/server/http/idempo
 import { AppFailure, isAppFailure } from '@/server/errors/app-failure';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { API_ROUTES_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const USER = '33333333-3333-4333-8333-333333333333';
@@ -241,7 +242,7 @@ describe('the fingerprint refuses secret material', () => {
  * knows every route unconditionally.
  */
 describe('no route declares idempotency alongside secret material', () => {
-  const ROUTES = join(__dirname, '../../src/app/api');
+  const ROUTES = API_ROUTES_ROOT;
 
   const routeFiles = (dir: string, out: string[] = []): string[] => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {

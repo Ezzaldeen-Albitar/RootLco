@@ -38,6 +38,7 @@
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { API_SRC_PATH } from '../lib/repository-paths.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
 const toPosix = (p) => p.split(sep).join('/');
@@ -47,18 +48,18 @@ const toPosix = (p) => p.split(sep).join('/');
  * balance — and nothing else, so the gate stays enforceable.
  */
 export const MONEY_TREES = Object.freeze([
-  'src/modules/billing',
-  'src/modules/payments',
-  'src/modules/delivery',
-  'src/modules/warranty',
-  'src/modules/pricing/domain',
-  'src/app/api/v1/invoices',
-  'src/app/api/v1/payments',
-  'src/app/api/v1/payment-methods',
-  'src/app/api/v1/credit-notes',
-  'src/app/api/v1/deliveries',
-  'src/app/api/v1/warranties',
-  'src/app/api/v1/work-orders/[workOrderId]/invoice-preview',
+  `${API_SRC_PATH}/modules/billing`,
+  `${API_SRC_PATH}/modules/payments`,
+  `${API_SRC_PATH}/modules/delivery`,
+  `${API_SRC_PATH}/modules/warranty`,
+  `${API_SRC_PATH}/modules/pricing/domain`,
+  `${API_SRC_PATH}/app/api/v1/invoices`,
+  `${API_SRC_PATH}/app/api/v1/payments`,
+  `${API_SRC_PATH}/app/api/v1/payment-methods`,
+  `${API_SRC_PATH}/app/api/v1/credit-notes`,
+  `${API_SRC_PATH}/app/api/v1/deliveries`,
+  `${API_SRC_PATH}/app/api/v1/warranties`,
+  `${API_SRC_PATH}/app/api/v1/work-orders/[workOrderId]/invoice-preview`,
 ]);
 
 /**

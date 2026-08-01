@@ -51,9 +51,10 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { METRICS } from '@/server/observability/metrics';
+import { REPOSITORY_ROOT, API_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
-const ROOT = process.cwd();
-const SRC = join(ROOT, 'src');
+const ROOT = REPOSITORY_ROOT;
+const SRC = API_SRC_ROOT;
 const toPosix = (p: string): string => p.split(sep).join('/');
 
 /**

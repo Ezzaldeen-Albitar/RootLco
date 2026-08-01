@@ -42,7 +42,7 @@ function classificationRequiringEverything() {
     jobs[job.id] = { required: true, reason: 'touched: appSource' };
   }
   return {
-    files: ['src/modules/inventory/x.ts'],
+    files: ['apps/api/src/modules/inventory/x.ts'],
     categories: ['appSource'],
     documentationOnly: false,
     jobs,

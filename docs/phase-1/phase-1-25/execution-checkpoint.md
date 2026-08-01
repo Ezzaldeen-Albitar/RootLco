@@ -342,11 +342,123 @@ application fails. Historical root command names keep their current meaning.
 **Verified:** `verify:workspaces` green · unit 1307/1307 across 59 files · web 6/6 · token
 gate 33/0 · brand gate 33/0 · all four path-authority validators green.
 
+## Waves A2–A5 — the API workspace move — **COMPLETE**, one atomic commit
+
+`apps/api` and `apps/web` are now real sibling applications under one npm workspace with
+one root lockfile. 451 tracked files moved as renames; 196 route files, 226 operations and
+195 OpenAPI paths preserved exactly.
+
+**Why one commit (finding `P1-25-F-006`, now resolved).** Validators pointed at
+`apps/api` and tests asserting the post-move shape cannot both be green while the backend
+sits at the repository root. A transitional fallback makes the validators pass and makes
+the tests fail — correctly, because those tests exist so a leftover fallback cannot survive
+unnoticed. So A2, A3, A4 and A5 landed together, and no dual-layout mode was ever committed.
+
+### What the move actually consisted of
+
+- **Path authority extended** with the repository-RELATIVE forms — `API_PATH`,
+  `API_SRC_PATH`, `API_ROUTES_PATH`, `API_ROUTES_V1_PATH`, `WEB_PATH`, `WEB_SRC_PATH`,
+  `apiSrcPath()` — each DERIVED from the absolute constants rather than written out again,
+  so the two forms cannot drift. A gate classifying a git-changed path needs the relative
+  form, and `'apps/api/src'` hand-written in twenty scripts is the same defect as an
+  absolute path derived twenty ways.
+- **24 executables normalized.** `process.cwd()` removed from
+  `check-authorization-coverage`, `check-operation-test-coverage`, `check-module-boundaries`,
+  `check-openapi`, `check-env-contract`, `check-idempotency-evidence`,
+  `check-route-registry-parity`, `coverage-gate` and `hostile-mutations`.
+- **Where a script carried a TABLE of application paths**, the table was left alone and its
+  BASE moved to the application root. Those literals were always application-relative, and
+  rewriting ~180 of them by hand is exactly the operation that produced
+  `apps/api/apps/api` the first time.
+- **`apps/api/package.json`** (`@rootlco/api`), **`tsconfig.json`** extending the root
+  policy and overriding only `paths`/`include`/`exclude`, **`eslint.config.mjs`**
+  COMPOSING the root policy, and a **`.prettierignore` with no `.prettierrc`** so prettier
+  resolves upward and the moved files keep the exact rules they were written under.
+- **Alias strategy.** Root resolver: `@api/*` is the canonical spelling, `@/*` kept
+  pointing at the same API source because rewriting it across 131 test files would be a
+  131-file diff inside a migration whose whole value is that it is a rename. `apps/web`
+  has its own resolver where `@/` means web source. One alias, one meaning, per resolver.
+- **Command ownership.** `dev`/`build`/`start`/`style:*` at the root now delegate to
+  `@rootlco/api`, so every existing caller keeps its meaning. `typecheck`/`lint`/`test`
+  stay repository-level. `:api` and `:web` variants added for both.
+
+### Findings closed by this commit
+
+- **`P1-25-F-006`** — resolved by landing A2–A5 atomically, with no permanent fallback.
+- **`P1-25-F-007`**, **`P1-25-F-008`** — remain resolved.
+
+### Findings opened by this commit
+
+- **`P1-25-F-009` — `security:scope-exclusions` had been RED since `apps/web` landed.**
+  Two hits outside the allow-list (`apps/web/src/i18n/config.ts`,
+  `apps/web/src/styles/base/_reset.scss`) — both legitimate, neither listed. Nothing caught
+  it because `security:all` was in no aggregate. Allow-list extended; `security:all` added
+  to `verify:workspaces`.
+- **`P1-25-F-010` — `lint:web` had NEVER successfully run.** `apps/web/eslint.config.mjs`
+  went through `FlatCompat` and the eslintrc-era names `next/core-web-vitals` /
+  `next/typescript`; under eslint-config-next 16 those are no longer valid eslintrc
+  shareable configs, and the compatibility layer crashed inside its own error FORMATTER
+  ("Converting circular structure to JSON") while trying to say so. Rewritten to import the
+  flat configs directly. `lint:web` added to the aggregate.
+- **`P1-25-F-011` — a suppression that suppressed nothing.** `BrandMark.tsx` carried
+  `eslint-disable-next-line @next/next/no-img-element` with the reason WRAPPED onto the
+  following line, so "next line" was the comment and the rule fired anyway. Directive moved
+  directly above the element.
+- **`P1-25-F-012` — the brand-swap proof could not run on a dirty tree.** It asked
+  `git diff --name-only` what differed from HEAD, which cannot distinguish an edit the
+  test made from an unrelated edit already present. Replaced with a content snapshot taken
+  BEFORE the mutation: same claim, tree-state independent, and non-vacuity is now asserted
+  (watch list must be non-empty, swap must really have applied). Mutation-tested — flipping
+  the comparison makes it fail and name the file.
+- **`P1-25-F-013` — the operation-coverage-gate flake had a cause, not just bad luck.**
+  Its three "real registry" tests each re-scanned the same 430 files inside the same 5 s
+  budget. Collapsed to one shared scan. No assertion changed and no budget was widened;
+  three consecutive full-tier runs are green.
+
+### Deliberately NOT done, and still red or unproven
+
+- **Dockerfile, hosted CI, CodeQL paths, container security, runtime smoke, full backend
+  and database/RLS tiers, dependency equivalence.** Out of scope for this execution by
+  instruction. The Dockerfile still copies `/app/.next` and `/app/public` from a root-built
+  application and has NOT been updated for the workspace layout.
+- **`apps/web` `style:check` is RED — 99 stylelint errors, 50 auto-fixable.** Another gate
+  that had never been run. Left for the web waves and deliberately NOT added to the
+  aggregate, so it cannot be mistaken for green.
+- **Duplicate dependency declarations.** `apps/api` declares the runtime it imports; the
+  root still declares the same versions for the repository-level test tiers. Removing the
+  root copies is a separate, verified step — an unverified removal breaks `npm test` in a
+  way no static check catches.
+- **`validate:canonical-docs` fails in this worktree** and is not a defect: the canonical
+  DOCX live beside the MAIN checkout, so `<repo-root>/../` resolves correctly there and not
+  from `RootLco-worktrees/p1-25`. Environmental, unchanged by this commit.
+- **Root `lint` prints "Pages directory cannot be found".** True and harmless — there is no
+  Next application at the repository root any more. Silencing it would mean either lying
+  about `rootDir` or disabling the rule for `apps/api` too, since that config composes this
+  one. Left visible.
+
+### Verified before commit
+
+```text
+Structure    apps/api + apps/web · root src//public//next.config.ts absent · 0 nested lockfiles
+Move         451 renames · 196 route files before and after · inventory diff 0 · 0 tracked symlinks
+Static       root/API/web typecheck · root+API lint · API style · format x3 · encoding · run-block
+Builds       API production build (199 manifest routes, standalone emitted) · web build, /ar + /en
+Validators   module-boundaries 430 files · authorization-coverage · operation-coverage 226/226
+             openapi 195 paths / 226 operations · p1-24 register · exact-money · p1-19..23 inventories
+Tests        unit/component 1313/1313 across 59 files (1307 + 6 new) · web 6/6 · 0 skipped
+Web          token gate 33/0 · brand gate 33/0 · brand-swap 6/6 · audit clean
+Install      npm ci from clean · 0 vulnerabilities in root, API and web trees
+Database     119 migrations · no 120 · supabase diff 0 · historical migration diff 0
+```
+
 ## Next action
 
-**Finish the topology normalization first** — move the root backend into `apps/api/` as `@rootlco/api`, repoint the 723 path references, update the Dockerfile and workflows, regenerate the path-pinned evidence, and re-run the full backend baseline. Only then **Wave 1 — dashboard shell**: locale-aware `(dashboard)` route group, responsive shell,
-header, breadcrumbs, page-title and page-actions regions, landmarks, skip link, tablet
-behaviour. Then Wave 2, the configuration-driven sidebar.
+**Docker + hosted CI + full backend/database/security proof.** Dockerfile workspace install
+with an API-only image, CI and CodeQL path updates, the full backend tier (1752) and
+DB-RLS tier (1636), schema hash, container security, runtime smoke on separate ports, and
+the dependency-equivalence proof that lets the duplicated root dependencies be removed.
+
+Dashboard work stays blocked until that proof is complete.
 
 Exact next command:
 

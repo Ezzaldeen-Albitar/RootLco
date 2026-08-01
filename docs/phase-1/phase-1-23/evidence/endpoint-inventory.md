@@ -4,15 +4,15 @@
 
 7 operations, derived from the route tree.
 
-| Operation                            | Module          | Scope  | Permissions                         | Audit action                             | Route file                                                                         |
-| ------------------------------------ | --------------- | ------ | ----------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------- |
-| `rpt.report-catalogue`               | reporting       | tenant | `rpt.report.read`                   | —                                        | `src/app/api/v1/reports/route.ts`                                                  |
-| `rpt.report-read`                    | reporting       | tenant | `rpt.report.read`                   | —                                        | `src/app/api/v1/reports/[reportCode]/route.ts`                                     |
-| `shared.document-read`               | shared-services | tenant | `shared.document.manage`            | —                                        | `src/app/api/v1/attachments/documents/[documentId]/route.ts`                       |
-| `shared.document-retention-evaluate` | shared-services | tenant | `shared.document.archive`           | `shared.document.retention_evaluated`    | `src/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route.ts` |
-| `shared.notification-delivery-list`  | shared-services | tenant | `shared.notification.delivery.read` | `shared.notification.delivery_inspected` | `src/app/api/v1/notifications/[notificationId]/deliveries/route.ts`                |
-| `shared.notification-list`           | shared-services | tenant | `shared.notification.read`          | —                                        | `src/app/api/v1/notifications/route.ts`                                            |
-| `shared.notification-read`           | shared-services | tenant | `shared.notification.read`          | —                                        | `src/app/api/v1/notifications/[notificationId]/route.ts`                           |
+| Operation                            | Module          | Scope  | Permissions                         | Audit action                             | Route file                                                                                  |
+| ------------------------------------ | --------------- | ------ | ----------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `rpt.report-catalogue`               | reporting       | tenant | `rpt.report.read`                   | —                                        | `apps/api/src/app/api/v1/reports/route.ts`                                                  |
+| `rpt.report-read`                    | reporting       | tenant | `rpt.report.read`                   | —                                        | `apps/api/src/app/api/v1/reports/[reportCode]/route.ts`                                     |
+| `shared.document-read`               | shared-services | tenant | `shared.document.manage`            | —                                        | `apps/api/src/app/api/v1/attachments/documents/[documentId]/route.ts`                       |
+| `shared.document-retention-evaluate` | shared-services | tenant | `shared.document.archive`           | `shared.document.retention_evaluated`    | `apps/api/src/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route.ts` |
+| `shared.notification-delivery-list`  | shared-services | tenant | `shared.notification.delivery.read` | `shared.notification.delivery_inspected` | `apps/api/src/app/api/v1/notifications/[notificationId]/deliveries/route.ts`                |
+| `shared.notification-list`           | shared-services | tenant | `shared.notification.read`          | —                                        | `apps/api/src/app/api/v1/notifications/route.ts`                                            |
+| `shared.notification-read`           | shared-services | tenant | `shared.notification.read`          | —                                        | `apps/api/src/app/api/v1/notifications/[notificationId]/route.ts`                           |
 
 ## Events
 

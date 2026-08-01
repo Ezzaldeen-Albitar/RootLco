@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import path from 'node:path';
+import { API_SRC_ROOT, API_SRC_PATH } from './scripts/lib/repository-paths.mjs';
 
 // Backend foundation harness (P1-13-BE-022).
 //
@@ -35,11 +35,11 @@ export default defineConfig({
       // The modules whose behaviour only exists once a real PostgreSQL is
       // attached. Anything measurable without a database belongs to the unit
       // tier's include list, not here.
-      include: ['src/modules/**', 'src/server/**'],
-      exclude: ['src/server/openapi/**', '**/*.d.ts'],
+      include: [`${API_SRC_PATH}/modules/**`, `${API_SRC_PATH}/server/**`],
+      exclude: [`${API_SRC_PATH}/server/openapi/**`, '**/*.d.ts'],
     },
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@api': API_SRC_ROOT, '@': API_SRC_ROOT },
   },
 });

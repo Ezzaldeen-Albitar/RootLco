@@ -38,9 +38,10 @@ import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prettier from 'prettier';
 import { escapeRegExp } from './ci/check-workflow-security.mjs';
+import { API_SRC_ROOT, API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
+const API_ROOT = join(API_SRC_ROOT, 'app', 'api', 'v1');
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-21', 'evidence');
 const OUTPUT = join(EVIDENCE, 'endpoint-inventory.md');
 const TRACEABILITY = join(EVIDENCE, 'task-traceability.md');
@@ -107,9 +108,13 @@ const TASKS = Object.freeze([
     [
       ['operation', 'inv.item-search'],
       ['permission', 'inv.item.read'],
-      ['symbol', 'src/modules/inventory/index.ts', 'inventoryModule'],
-      ['symbol', 'src/modules/inventory/application/inventory-read-service.ts', 'searchItems'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'listItems'],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/index.ts`, 'inventoryModule'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-read-service.ts`,
+        'searchItems',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'listItems'],
       ['test', 'tests/backend/p1-21-inventory-reads.test.ts', 'escapes LIKE metacharacters'],
       ['test', 'tests/backend/p1-21-inventory-reads.test.ts', 'excludes archived items by default'],
     ],
@@ -124,8 +129,16 @@ const TASKS = Object.freeze([
       ['permission', 'inv.adjustment.approve'],
       ['audit', 'inv.opening_batch.created'],
       ['audit', 'inv.opening_batch.approved'],
-      ['symbol', 'src/modules/inventory/application/inventory-intake-service.ts', 'approveBatch'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'approveOpeningBatch'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-intake-service.ts`,
+        'approveBatch',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
+        'approveOpeningBatch',
+      ],
       ['test', 'tests/backend/p1-21-inventory-intake.test.ts', 'mints stock only on approval'],
       ['test', 'tests/backend/p1-21-inventory-intake.test.ts', 'refuses approving an EMPTY batch'],
     ],
@@ -136,8 +149,16 @@ const TASKS = Object.freeze([
     [
       ['operation', 'inv.stock-availability-read'],
       ['permission', 'inv.stock.read'],
-      ['symbol', 'src/modules/inventory/application/inventory-read-service.ts', 'readAvailability'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'readAvailability'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-read-service.ts`,
+        'readAvailability',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
+        'readAvailability',
+      ],
       [
         'test',
         'tests/backend/p1-21-inventory-reads.test.ts',
@@ -154,8 +175,12 @@ const TASKS = Object.freeze([
       ['permission', 'inv.stock.operate'],
       ['audit', 'inv.stock.reserved'],
       ['event', 'stock.reserved'],
-      ['symbol', 'src/modules/inventory/application/inventory-stock-service.ts', 'reserve'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'reserveStock'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-stock-service.ts`,
+        'reserve',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'reserveStock'],
       ['test', 'tests/backend/p1-21-inventory-stock.test.ts', 'reserves stock, reduces available'],
       ['test', 'tests/backend/p1-21-inventory-stock.test.ts', 'reserves the exact final unit'],
     ],
@@ -167,8 +192,16 @@ const TASKS = Object.freeze([
       ['operation', 'inv.stock-reservation-release'],
       ['audit', 'inv.stock.reservation_released'],
       ['event', 'stock.reservation.released'],
-      ['symbol', 'src/modules/inventory/application/inventory-stock-service.ts', 'release'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'releaseReservation'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-stock-service.ts`,
+        'release',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
+        'releaseReservation',
+      ],
       [
         'test',
         'tests/backend/p1-21-inventory-stock.test.ts',
@@ -188,10 +221,22 @@ const TASKS = Object.freeze([
       ['operation', 'inv.stock-issue-create'],
       ['audit', 'inv.part.issued'],
       ['event', 'stock.movement.posted'],
-      ['symbol', 'src/modules/inventory/application/inventory-stock-service.ts', 'issue'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'issuePart'],
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'assertWorkOrderAcceptsParts'],
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'assertReservationMatchesIssue'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-stock-service.ts`,
+        'issue',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'issuePart'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`,
+        'assertWorkOrderAcceptsParts',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`,
+        'assertReservationMatchesIssue',
+      ],
       [
         'test',
         'tests/backend/p1-21-inventory-stock.test.ts',
@@ -215,8 +260,12 @@ const TASKS = Object.freeze([
     [
       ['operation', 'inv.stock-return-create'],
       ['audit', 'inv.part.returned'],
-      ['symbol', 'src/modules/inventory/application/inventory-stock-service.ts', 'returnPart'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'returnPart'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-stock-service.ts`,
+        'returnPart',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'returnPart'],
       [
         'test',
         'tests/backend/p1-21-inventory-stock.test.ts',
@@ -235,9 +284,17 @@ const TASKS = Object.freeze([
     [
       ['operation', 'inv.damaged-stock-create'],
       ['audit', 'inv.stock.damaged'],
-      ['symbol', 'src/modules/inventory/application/inventory-stock-service.ts', 'recordDamage'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'recordDamage'],
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'assertQuarantineDestination'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-stock-service.ts`,
+        'recordDamage',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'recordDamage'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`,
+        'assertQuarantineDestination',
+      ],
       [
         'test',
         'tests/backend/p1-21-inventory-stock.test.ts',
@@ -259,12 +316,12 @@ const TASKS = Object.freeze([
       ['audit', 'inv.customer_supplied_part.recorded'],
       [
         'symbol',
-        'src/modules/inventory/application/inventory-intake-service.ts',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-intake-service.ts`,
         'recordCustomerSuppliedPart',
       ],
       [
         'symbol',
-        'src/modules/inventory/data/inventory-repository.ts',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
         'recordCustomerSuppliedPart',
       ],
       [
@@ -288,12 +345,12 @@ const TASKS = Object.freeze([
       ['audit', 'inv.external_purchase.recorded'],
       [
         'symbol',
-        'src/modules/inventory/application/inventory-intake-service.ts',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-intake-service.ts`,
         'recordExternalPurchasePart',
       ],
       [
         'symbol',
-        'src/modules/inventory/data/inventory-repository.ts',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
         'recordExternalPurchaseCost',
       ],
       [
@@ -314,8 +371,12 @@ const TASKS = Object.freeze([
     [
       ['operation', 'inv.stock-movement-list'],
       ['audit', 'inv.movement_history.read'],
-      ['symbol', 'src/modules/inventory/application/inventory-read-service.ts', 'listMovements'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'listMovements'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-read-service.ts`,
+        'listMovements',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`, 'listMovements'],
       [
         'test',
         'tests/backend/p1-21-inventory-reads.test.ts',
@@ -372,8 +433,16 @@ const TASKS = Object.freeze([
       ['operation', 'inv.inventory-reconciliation-read'],
       ['permission', 'inv.audit.read'],
       ['audit', 'inv.reconciliation.performed'],
-      ['symbol', 'src/modules/inventory/application/inventory-read-service.ts', 'reconcile'],
-      ['symbol', 'src/modules/inventory/data/inventory-repository.ts', 'reconcileBalances'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/application/inventory-read-service.ts`,
+        'reconcile',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/data/inventory-repository.ts`,
+        'reconcileBalances',
+      ],
       [
         'test',
         'tests/backend/p1-21-inventory-reads.test.ts',
@@ -386,8 +455,16 @@ const TASKS = Object.freeze([
     'P1-21-BE-015',
     'Every movement has a valid business reference',
     [
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'MOVEMENT_REFERENCE_MATRIX'],
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'assertLegalMovementReference'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`,
+        'MOVEMENT_REFERENCE_MATRIX',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`,
+        'assertLegalMovementReference',
+      ],
       [
         'test',
         'tests/unit/p1-21-inventory-domain.test.ts',
@@ -607,7 +684,7 @@ const TASKS = Object.freeze([
       // Synchronization is a mechanical fact, not a prose claim: the domain
       // vocabulary is transcribed from the frozen CHECK constraints and the database
       // suite reads those constraints back out of pg_constraint to compare.
-      ['symbol', 'src/modules/inventory/domain/inventory.ts', 'MOVEMENT_TYPES'],
+      ['symbol', `${API_SRC_PATH}/modules/inventory/domain/inventory.ts`, 'MOVEMENT_TYPES'],
       [
         'test',
         'tests/db/p1-21-inventory-integrity.test.ts',
@@ -784,7 +861,7 @@ function main() {
   // emitted from a module this phase does not own (BE-013 writes from `work-order`).
   const allModuleSources = [];
   {
-    const stack = [join(ROOT, 'src', 'modules')];
+    const stack = [join(API_SRC_ROOT, 'modules')];
     while (stack.length > 0) {
       const current = stack.pop();
       // `withFileTypes` answers "directory?" from the directory read itself,
@@ -800,7 +877,7 @@ function main() {
 
   const moduleSources = [];
   for (const name of PHASE_MODULES) {
-    const dir = join(ROOT, 'src', 'modules', name);
+    const dir = join(API_SRC_ROOT, 'modules', name);
     if (!existsSync(dir)) continue;
     const stack = [dir];
     while (stack.length > 0) {
@@ -818,7 +895,7 @@ function main() {
     'utf8'
   );
   const auditCatalog = readFileSync(
-    join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'),
+    join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts'),
     'utf8'
   );
   /**
@@ -837,7 +914,7 @@ function main() {
    * give their sources; only this one read was raw.
    */
   const eventCatalog = stripComments(
-    readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8')
+    readFileSync(join(API_SRC_ROOT, 'server', 'events', 'envelope.ts'), 'utf8')
   );
 
   // ---- 1. Permissions exist in the seed -----------------------------------
