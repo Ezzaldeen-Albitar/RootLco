@@ -63,7 +63,7 @@ on:
         description: Operations in the committed OpenAPI document.
         value: ${{ jobs.node-quality.outputs.openapi-operations }}
       standalone-bytes:
-        description: Size of `.next/standalone` in bytes.
+        description: Size of `apps/api/.next/standalone` in bytes.
         value: ${{ jobs.node-quality.outputs.standalone-bytes }}
       web-tests:
         description: Number of web component tests executed.
@@ -431,7 +431,7 @@ jobs:
           # existed as a tracked file so no tracked-file scanner could see it.
           # The secret-scan job cannot do this — it does not build.
           node scripts/ci/scan-history.mjs --mode worktree \
-            --roots .next,public --min-files 20 \
+            --roots apps/api/.next,apps/api/public --min-files 20 \
             --json build-output-scan.json --markdown build-output-scan.md
 
       - name: Build output integrity and size ratchet
@@ -440,7 +440,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/ci/build-size-report.mjs \
-            --dir .next \
+            --dir apps/api/.next \
             --baseline .github/ci-baselines/build-size-baseline.json \
             --json build-size.json --markdown build.md
           node -e '
