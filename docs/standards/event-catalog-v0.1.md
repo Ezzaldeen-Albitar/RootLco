@@ -134,15 +134,17 @@ second registry: this document remains the place a name is reserved.
 `implementedIn` is the whole claim this table makes about what actually runs. Two of the names
 **in this table** still carry **`null`** — `document.accepted` and `message.delivery.changed` — and
 for those it means exactly what it says: **reserved only**. Nothing publishes them, nothing consumes
-them, and no payload schema for them exists yet.
+them, and no payload schema for them exists yet. P1-18 moved `appointment.changed` and
+`vehicle.checked-in` off `null` by adding real producers, and registered one new name,
+`reception.approved`.
 
 **In the code as a whole there are three**, not two. The third is `work-order.created`
 (`EVT-WOR-001`), which is absent from this table for the reason above — it is one of the forty
 names `ECR-P1-19-001` has not yet made authoritative. Its `implementedIn` is `null` because
 `wo.work_order_status_history` already records created, changed and closed as distinct facts, so the
-event stayed reserved rather than duplicating a ledger that exists. Recorded here so that "two" and
-the P1-24 gate record's "three" are not read as a contradiction: they count different sets. P1-18 moved `appointment.changed` and `vehicle.checked-in` off `null` by
-adding real producers, and registered one new name, `reception.approved`.
+event stayed reserved rather than duplicating a ledger that exists. Recorded here so that this
+table's "two" and the P1-24 gate record's "three" are not read as a contradiction: they count
+different sets.
 
 P1-18 Field 24 calls the check-in fact `reception.vehicle-checked-in.v1`, while Chapter 4 Table 4.5
 and the P1-08 boundary record allocate `vehicle.checked-in.v1` for the same fact. The **reserved
