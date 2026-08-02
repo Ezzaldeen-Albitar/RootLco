@@ -152,7 +152,9 @@ describe('the live repository', () => {
       'lint',
       'style:check',
       'test',
+      'test:e2e',
       'typecheck',
+      'validate:boundary',
       'validate:brand',
       'validate:tokens',
     ]);

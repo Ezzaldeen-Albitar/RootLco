@@ -471,12 +471,16 @@ jobs:
           # `tests/stylelint-policy.test.ts` in the web tier proves the rules fire.
           npm run style:check:web
 
-      - name: Web design-token and brand isolation gates
+      - name: Web design-token, brand and boundary gates
         if: inputs.task == 'web-quality'
         run: |
           set -euo pipefail
           npm run validate:web-tokens
           npm run validate:web-brand
+          # No fetch outside the API layer, no import of API server or Supabase
+          # source, no dangerouslySetInnerHTML. Each of those failures is
+          # invisible in review and compiles perfectly.
+          npm run validate:web-boundary
 
       - name: Web component tier
         if: inputs.task == 'web-quality'
@@ -505,6 +509,19 @@ jobs:
           # `set -o pipefail` above is what makes `tee` safe: without it the
           # pipeline reports tee's status and a failing build looks green.
           npm run build:web 2>&1 | tee web-build.log
+
+      - name: Install the browser the smoke needs
+        if: inputs.task == 'web-quality'
+        run: npm run test:e2e:install --workspace @rootlco/web
+
+      - name: Browser smoke across viewports and both directions
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # Against a real production build. Five projects: two desktop widths,
+          # a laptop width, a tablet width, and a reduced-motion context — an
+          # RTL layout defect is invisible in an LTR run and vice versa.
+          npm run test:web-e2e
 
       - name: The web build output carries no credential
         if: inputs.task == 'web-quality'
@@ -560,6 +577,7 @@ jobs:
             build-warnings.txt
             changed-files.txt
             apps/web/vitest-web.json
+            apps/web/playwright-report.json
             test-totals-web.json
             web-build-scan.json
             web-build.log

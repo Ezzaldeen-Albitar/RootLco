@@ -72,7 +72,12 @@ describe('message catalogues', () => {
       .filter(([key, value]) => {
         // Keys whose value is legitimately identical or non-linguistic are
         // exempted explicitly rather than by a heuristic.
-        if (key === 'state.correlationId') return false;
+        //
+        // `locale.en` is 'English' in BOTH catalogues on purpose: a language
+        // switcher names each language in its own script, so an Arabic reader
+        // looking for English finds the word they recognise. Translating it to
+        // 'الإنجليزية' would be a regression, not a fix.
+        if (key === 'state.correlationId' || key === 'locale.en') return false;
         return !arabicScript.test(String(value));
       })
       .map(([key]) => key);

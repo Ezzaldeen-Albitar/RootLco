@@ -180,6 +180,18 @@ export const REGISTER = Object.freeze([
   { name: 'format:check:web', owner: ROOT, tier: 'required', why: 'web formatting' },
   { name: 'validate:web-tokens', owner: ROOT, tier: 'required', why: 'design-token gate' },
   { name: 'validate:web-brand', owner: ROOT, tier: 'required', why: 'brand-isolation gate' },
+  {
+    name: 'validate:web-boundary',
+    owner: ROOT,
+    tier: 'required',
+    why: 'no fetch outside the API layer, no API or Supabase import, no unsafe HTML',
+  },
+  {
+    name: 'test:web-e2e',
+    owner: ROOT,
+    tier: 'required',
+    why: 'browser smoke across five viewport and direction projects',
+  },
 
   // --- root: environment-bound --------------------------------------------
   {
@@ -271,6 +283,19 @@ export const REGISTER = Object.freeze([
     owner: WEB,
     tier: 'required',
     why: 'reached through validate:web-brand',
+  },
+  {
+    name: 'validate:boundary',
+    owner: WEB,
+    tier: 'required',
+    why: 'reached through validate:web-boundary',
+  },
+  { name: 'test:e2e', owner: WEB, tier: 'required', why: 'reached through test:web-e2e' },
+  {
+    name: 'test:e2e:install',
+    owner: WEB,
+    tier: 'environment',
+    why: 'downloads a browser; the CI job installs it as its own step',
   },
   { name: 'dev', owner: WEB, tier: 'interactive', why: 'dev server' },
   { name: 'start', owner: WEB, tier: 'interactive', why: 'production server' },

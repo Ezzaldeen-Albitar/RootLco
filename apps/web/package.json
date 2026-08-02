@@ -8,34 +8,42 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "format:check": "prettier --check .",
+    "dev": "next dev",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint",
+    "start": "next start",
     "style:check": "stylelint \"src/**/*.scss\" --max-warnings 0",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "test:watch": "vitest",
-    "validate:tokens": "node scripts/check-design-tokens.mjs",
-    "validate:brand": "node scripts/check-brand-isolation.mjs"
+    "typecheck": "tsc --noEmit",
+    "validate:boundary": "node scripts/check-api-boundary.mjs",
+    "validate:brand": "node scripts/check-brand-isolation.mjs",
+    "validate:tokens": "node scripts/check-design-tokens.mjs"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.10.0",
     "next": "16.2.12",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-hook-form": "^7.84.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "axe-core": "^4.12.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "jsdom": "^25.0.1",
@@ -46,6 +54,7 @@
     "stylelint-config-standard-scss": "^17.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vitest-axe": "^1.0.0-pre.3"
   }
 }
