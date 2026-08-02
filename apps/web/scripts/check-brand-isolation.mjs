@@ -43,9 +43,18 @@ export const RULES = [
     what: 'renders "RootLco", which is the COMPANY not the product name (ADR-011)',
     allow: [join('src', 'config')],
   },
+  {
+    // The product-name placeholders are allowed ONLY in the brand
+    // configuration. Anywhere else — a component, a message catalogue — is a
+    // second product-name authority, which is what PRE-P126-F-004 records.
+    id: 'product-name-placeholder',
+    pattern: /\[SYSTEM NAME\]|\[SN\]|\[PRODUCT NAME — Pending Final Approval\]/,
+    what: 'hard-codes a product-name placeholder outside the brand configuration',
+    allow: BRAND_CONSUMERS,
+  },
 ];
 
-const EXTENSIONS = /\.(ts|tsx|scss)$/;
+const EXTENSIONS = /\.(ts|tsx|scss|json)$/;
 const SKIP_DIRS = new Set(['node_modules', '.next', 'coverage', 'scripts']);
 
 export function stripComments(source) {
@@ -57,8 +66,14 @@ function allowed(relPath, allow) {
   return allow.some((dir) => normalised.startsWith(dir + sep));
 }
 
+/**
+ * @param {string} relPath repository-relative, POSIX separators
+ * @param {string} source
+ * @returns {{ path: string, rule: string, what: string }[]}
+ */
 export function inspect(relPath, source) {
   const body = stripComments(source);
+  /** @type {{ path: string, rule: string, what: string }[]} */
   const findings = [];
   for (const rule of RULES) {
     if (allowed(relPath, rule.allow)) continue;

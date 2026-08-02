@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { brandIsProvisional } from '@/components/brand/theme';
 import { Icon } from '@/components/primitives/Icon';
 import { NAVIGATION } from '@/config/navigation';
 import type { Locale } from '@/i18n/config';
@@ -197,9 +198,18 @@ function AppHeader({
       </button>
 
       <div className="ms-auto flex items-center gap-2">
-        <span className="rounded-full bg-warning-subtle px-3 py-1 text-caption text-text-secondary">
-          {translate(messages, 'app.provisionalBrand')}
-        </span>
+        {/*
+          Rendered only WHILE the brand is provisional. It was unconditional
+          until this guard was added, which quietly falsified the phase's
+          central claim: flipping `isProvisional` to false would have left the
+          shipped product still announcing "final brand pending" in its header.
+          The notice is a statement about brand state, so brand state decides it.
+        */}
+        {brandIsProvisional ? (
+          <span className="rounded-full bg-warning-subtle px-3 py-1 text-caption text-text-secondary">
+            {translate(messages, 'app.provisionalBrand')}
+          </span>
+        ) : null}
       </div>
     </header>
   );

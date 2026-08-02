@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { brandIsProvisional } from '@/components/brand/theme';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -39,14 +40,22 @@ export default async function OverviewPage({
               {translate(messages, 'overview.shellBody')}
             </p>
           </section>
-          <section className="rounded-lg border border-border bg-surface p-5 shadow-xs">
-            <h2 className="text-section-title font-semibold text-text-primary">
-              {translate(messages, 'overview.brandTitle')}
-            </h2>
-            <p className="mt-2 text-body text-text-secondary">
-              {translate(messages, 'overview.brandBody')}
-            </p>
-          </section>
+          {/*
+            Shown only WHILE the brand is provisional. Like the header notice,
+            this card describes brand STATE, so brand state must decide whether
+            it renders — it was unconditional, which meant an approved brand
+            would still have shipped a card headed "Provisional identity".
+          */}
+          {brandIsProvisional ? (
+            <section className="rounded-lg border border-border bg-surface p-5 shadow-xs">
+              <h2 className="text-section-title font-semibold text-text-primary">
+                {translate(messages, 'overview.brandTitle')}
+              </h2>
+              <p className="mt-2 text-body text-text-secondary">
+                {translate(messages, 'overview.brandBody')}
+              </p>
+            </section>
+          ) : null}
         </div>
       </PageBody>
     </>
