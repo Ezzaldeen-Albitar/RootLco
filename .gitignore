@@ -69,3 +69,11 @@ tmp/
 .tmp/
 
 /apps/web/vitest-web.json
+
+# Playwright and vitest run artefacts. Diagnostics for one run; they embed
+# absolute developer paths and timings, and a committed one makes the clean
+# room fail on the shape of its own output.
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/playwright-report.json
+/apps/web/vitest-web.json
