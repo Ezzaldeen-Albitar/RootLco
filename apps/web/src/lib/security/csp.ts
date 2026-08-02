@@ -14,7 +14,7 @@
  *      nonce and does not run.
  *   3. No CSP at all, which is honest but worse.
  *
- * We use the nonce. **P1-25-F-022 is the record of getting this wrong first**:
+ * We use the nonce, generated per request in `src/proxy.ts`. **P1-25-F-022 is the record of getting this wrong first**:
  * the initial policy shipped `script-src 'self'` with no nonce, which blocked
  * Next's own bootstrap and broke every page. The browser smoke caught it because
  * it asserts an empty console — a screenshot would have shown a blank page and
@@ -46,9 +46,18 @@ export interface CspOptions {
   readonly nonce?: string | undefined;
   /** The API origin the client is allowed to call. */
   readonly apiOrigin?: string | undefined;
+  /**
+   * Development mode ONLY. React's dev tooling reconstructs call stacks with
+   * `eval()`, so the strict policy floods the dev console with a benign but
+   * alarming error ("React will never use eval() in production mode"). The
+   * concession is scoped to this flag, the flag is set from NODE_ENV in one
+   * place (src/proxy.ts), and the test suite proves the DEFAULT policy never
+   * carries it — a production page cannot receive it.
+   */
+  readonly dev?: boolean | undefined;
 }
 
-export function contentSecurityPolicy({ nonce, apiOrigin }: CspOptions = {}): string {
+export function contentSecurityPolicy({ nonce, apiOrigin, dev }: CspOptions = {}): string {
   const connect = ["'self'", apiOrigin].filter(Boolean).join(' ');
   // NO 'strict-dynamic'. It disables host allowlisting, which would require
   // every <script src> chunk to carry its own nonce — and Next stamps the nonce
@@ -56,7 +65,9 @@ export function contentSecurityPolicy({ nonce, apiOrigin }: CspOptions = {}): st
   // they are same-origin, and inline scripts still need the nonce. The
   // protection that matters is unchanged: an injected inline script has no
   // nonce, and an injected remote script is not same-origin.
-  const script = ["'self'", nonce ? `'nonce-${nonce}'` : null].filter(Boolean).join(' ');
+  const script = ["'self'", nonce ? `'nonce-${nonce}'` : null, dev ? "'unsafe-eval'" : null]
+    .filter(Boolean)
+    .join(' ');
 
   return [
     "default-src 'self'",

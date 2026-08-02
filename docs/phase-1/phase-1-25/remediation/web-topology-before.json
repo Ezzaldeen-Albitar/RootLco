@@ -1,0 +1,708 @@
+{
+  "headSha": "6cc453900cf5ac75a6072c2a9ce82c6bcea1bd19",
+  "treeSha": "f288f20327cec4a726733490c3782eb04896f895",
+  "trackedCount": 92,
+  "untrackedCount": 0,
+  "untracked": [],
+  "exactDuplicates": [],
+  "sameBasename": [
+    {
+      "base": "page.tsx",
+      "paths": [
+        "apps/web/app/[locale]/(dashboard)/gallery/page.tsx",
+        "apps/web/app/[locale]/(dashboard)/page.tsx",
+        "apps/web/app/page.tsx"
+      ]
+    },
+    {
+      "base": "layout.tsx",
+      "paths": [
+        "apps/web/app/[locale]/(dashboard)/layout.tsx",
+        "apps/web/app/[locale]/layout.tsx",
+        "apps/web/app/layout.tsx"
+      ]
+    },
+    {
+      "base": "_index.scss",
+      "paths": [
+        "apps/web/src/styles/base/_index.scss",
+        "apps/web/src/styles/mixins/_index.scss",
+        "apps/web/src/styles/print/_index.scss",
+        "apps/web/src/styles/themes/_index.scss",
+        "apps/web/src/styles/tokens/_index.scss"
+      ]
+    }
+  ],
+  "competingRootsAcrossRepository": [
+    {
+      "root": "app/",
+      "trackedFiles": 0
+    },
+    {
+      "root": "src/app/",
+      "trackedFiles": 0
+    },
+    {
+      "root": "web/",
+      "trackedFiles": 0
+    },
+    {
+      "root": "frontend/",
+      "trackedFiles": 0
+    },
+    {
+      "root": "client/",
+      "trackedFiles": 0
+    },
+    {
+      "root": "apps/frontend/",
+      "trackedFiles": 0
+    }
+  ],
+  "files": [
+    {
+      "path": "apps/web/.gitignore",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "24126558bcbab8bef49721d7647151c9f9390bc0",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/.prettierignore",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ac6671f0ed3a8782eb45317b6739408198ca769b",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/.prettierrc.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f05542db39932ee10f083f4a1678697bc3f2026e",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/.stylelintrc.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "a079ac386a9b96431ef724a6ca30eb218bf7f5c0",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/error.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "76f77294403a6a987d95432d3af484d123d2992b",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/gallery/page.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "12308b396ba0f128fd3a54eb745002efe864ef8a",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/layout.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "50abba39670a5094805438a5efc4a0ee3406fb98",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/loading.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ad98a6bd72ce01dd6599d0f14cc881405200784a",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/not-found.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6cb495e98e585977ef4b7eae236db84e07932a3c",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/(dashboard)/page.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9f05bfe7b4982437534d62cf91d8e27400b9eaa7",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/[locale]/layout.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "24b02032613b52458dac58188735234f7bf6bfbc",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/globals.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "7476492fffd12dc0ee7ee1d3136f22ffc62053f8",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/layout.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6957dc7b4fd0d047bc100dd6ad25896aa47fbaa4",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/app/page.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8b3402d90fa1974a8d245e3dd950b6d30e437882",
+      "role": "route (App Router — current root-level location)"
+    },
+    {
+      "path": "apps/web/e2e/foundation.spec.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "4a41f712f61fbb34a45b6f0015935ecae9c83549",
+      "role": "e2e suite"
+    },
+    {
+      "path": "apps/web/eslint.config.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "a24b5a687452e046924f3a0c5524e08bcef39526",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/middleware.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "85b3b05df0cf2b00f8e911f80ef447119006e5df",
+      "role": "middleware (nonce CSP)"
+    },
+    {
+      "path": "apps/web/next.config.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "e357c99395531bdacdb3c6193d04204e4f08b8b9",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/package.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6887657583ffb70be7220260507297dbf4dba02f",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/playwright.config.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "b24ebf30e8e4e6cc4318997564e1b2031ca371e0",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/postcss.config.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "2ef30fcf4272e19cf6a23d07b0544027954f9627",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/scripts/check-api-boundary.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "cf03b995e21059697694ee7cb9318b2131f2c550",
+      "role": "gate script"
+    },
+    {
+      "path": "apps/web/scripts/check-brand-isolation.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "577bf877f048b169a775b0f3fbe5524d077d285a",
+      "role": "gate script"
+    },
+    {
+      "path": "apps/web/scripts/check-design-tokens.mjs",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "7e54897e3871b4e33bf89cbf72bf333207ac5dd7",
+      "role": "gate script"
+    },
+    {
+      "path": "apps/web/src/components/brand/BrandMark.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "832bc8efbfee59d04f4948d0ec6b230f1fb6d8c8",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/brand/index.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9909041c2f1bfe6be838fc00a6c942a8d238eea3",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/brand/theme.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c97c8c42018a1dd855f385d8262ceb9bd0857e71",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/data-table/DataTable.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "5702ef1146ca8d859d3479ed6ae2e2edea768a9b",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/data-table/table-state.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "48319bd0b6b66a7e6f4ecbcbbe10c502e724003f",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/forms/Field.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "356e80bb4c679c3175044d201d2bd88b1d243728",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/forms/MoneyField.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "290db665b768fcad18aac89d3e2cec49dfece72e",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/gallery/GalleryClient.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "2c9ab8c8ae6fd4cbea0df0aa127c9a36ba7e4a20",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/gallery/fixtures.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "da5b6029c06c94c0fc57ff8382de564189b67969",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/overlays/Overlays.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "b8ad4fb36da858b7ca056999fab05f0478815bd5",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/primitives/Icon.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "bbf3e212bcbb80cf1b7d9ec567d53a911474a46e",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/print/PrintDocument.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "4e327dfac2430725cbbfaa767de549885cfa408b",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/shell/AppShell.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "7fad1cb7a6a2e698a134b37fb31fc68072c793f6",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/shell/LocaleSwitcher.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "a9282a1e26854d0d2e7316cf86971324cc1211f1",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/shell/PageHeader.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6b721f5b248ec16981971d5991a9a01d06cbaf7d",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/shell/Sidebar.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "31eda7cd8b9aab30777e2ed67bfa11e2428aa781",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/components/states/States.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "cec5d73790022015abed19c65792eff31904dc58",
+      "role": "component"
+    },
+    {
+      "path": "apps/web/src/config/brand.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6ac4940ee0a8b918a185dc0b2ce6c96e2a45ec8f",
+      "role": "config (runtime)"
+    },
+    {
+      "path": "apps/web/src/config/navigation.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ec7a4975f9bd71a4c1241c4350c4b049d113a8c9",
+      "role": "config (runtime)"
+    },
+    {
+      "path": "apps/web/src/i18n/config.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8d1d58b96f5bbf0a8a63a4d83def9465dc552269",
+      "role": "i18n"
+    },
+    {
+      "path": "apps/web/src/i18n/get-messages.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "fccd33396511007e4d2119b9862ebb6a18d1d376",
+      "role": "i18n"
+    },
+    {
+      "path": "apps/web/src/i18n/messages/ar.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "5e7079daafb97c2cc06e7dd15723f79fda0421d3",
+      "role": "i18n"
+    },
+    {
+      "path": "apps/web/src/i18n/messages/en.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9896eecfc0617788d0bae8be5c16d76bf0aba5dc",
+      "role": "i18n"
+    },
+    {
+      "path": "apps/web/src/lib/api/client.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "111e9a05720c1037e5ec76a10c57aad42823206d",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/env.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9c07706463ad0ee9955f6a5eac8d597380e9ce65",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/format.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "5e197f6496c68902d05539bcf2c50e2f0ba3a8ab",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/gallery-access.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "2f2e172f975952d0b9ba3589b51c9c5bb73a6aaa",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/money.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "420b3c49b4fd3bcca2e454cded7df22ba72207f0",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/permissions.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9cf71544034dfb9d70156fc154ccd35902f1d810",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/security/csp.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ff94393c3f93d78146773ee751bd0da2d3d6bcf2",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/lib/use-persisted-flag.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "e2cc75a43ae378e9e0497973660ed63bb551916f",
+      "role": "lib"
+    },
+    {
+      "path": "apps/web/src/styles/base/_accessibility.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "cf5a8a9b1b353d9f544b2605b4ace3ad0a309d74",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/base/_index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8729db52dabc34d7e41165d7e2e943a1c9d31100",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/base/_reset.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "af0a636e3bed3f181274d12a061e74d2a6d524cd",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/mixins/_focus.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "d21acffb5fbf56facda73d3d35237118f403bdc7",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/mixins/_index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c3eb48bde90cfe69756a414a9e7a9aee6a73e3e0",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/mixins/_responsive.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8be4173e9d5bc4fbf3dcfefcfeec438238ed458d",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/mixins/_rtl.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "dab231f50b8987914784e599411a86f97d663b89",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/mixins/_truncate.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "39e199b147c92691b1f0976e0985e4cf521da85f",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/print/_index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "d02f6fe691a95d1efce407130e1bd04176d654d4",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/themes/_index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c8a91fce44e4c2ef752f0c1f211985bcab3b6f0e",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/themes/_provisional.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "18667ab83a98899f6322eb686b208ed1e8bb9757",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_breakpoints.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "04c625823187e8a32771b8d00ae1b059b1c19c2d",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_colors.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f5d01d50e68b9b064f4abd30422c759c51755718",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "25cfc288aad86b6e247968c0109d917d3b6a96cd",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_layout.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "a16a8920697af4c6dcbc8c0e3417020217532e74",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_motion.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "4f0e24202266b665d2439b099d316aab91ed493a",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_radii.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "7644a250bee7aae071cd0337ae24251d0ba7ae83",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_shadows.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "48e0a9915f37e36d5f3f7127472d07ac4aa4e0e3",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_spacing.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9b1aab97bfcf15b46ff432158663d7d4c3eaca2d",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_typography.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "8b16229394f84509641807ae168a4086cca2b6fa",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/src/styles/tokens/_z-index.scss",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "49a377702e75db68a70ca034d4dcb91a5068cc29",
+      "role": "style"
+    },
+    {
+      "path": "apps/web/tailwind.config.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "edd9ed4feea331d2c69220408ee4ad7a4c1a0cb7",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/tests/api-client.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "17ca66a82f5464f3390e146c3fc64d65b0174cfe",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/brand-replacement.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "b5ca3039f9279cfb907575cb9b413560db2dc75f",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/gallery-and-print.dom.test.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "52d358c540601b967b1f1660faa736c96b9e98f3",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/i18n.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "720a5f56e1e4526970f858a9f79c99ab98cd0930",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/money.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "dd326b5d5beeafb239f1a361cac1aac7fb23fcde",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/navigation.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "6de113a905bc5aac4cd906d12db855aaae8297e3",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/overlays.dom.test.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ace65b87059e9261ce631b9d43f8f70d0f14dbe0",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/render.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "c9f9c518a1b5fea9defb28a019c06b3a2cca07b7",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/security.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "92114cfc643aec83a00b0c70403e9f42249648c0",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/setup.dom.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "9906a2a1b470c7835fd8212429b11e4276bbfa77",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/shell.dom.test.tsx",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "ca40e3e941277a2dbc58fa4f84775320658a13fe",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/stylelint-policy.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f44cb559eef8d48c1ce6283aec9914b16dee0943",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tests/table-state.test.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "f87c576fc8297748595679541b7e3c7f1a7c204b",
+      "role": "test suite"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "1ae8582c4890a98facd13e2fbe226ef81674626c",
+      "role": "workspace config"
+    },
+    {
+      "path": "apps/web/vitest.config.ts",
+      "mode": "100644",
+      "type": "blob",
+      "blob": "62cc147c1f3c86fc0b704f8aa536e436b1cabb03",
+      "role": "workspace config"
+    }
+  ]
+}

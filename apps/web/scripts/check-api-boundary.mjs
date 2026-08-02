@@ -97,7 +97,7 @@ function walk(dir, out = []) {
 
 function main() {
   const files = [];
-  for (const root of ['src', 'app']) {
+  for (const root of ['src']) {
     try {
       files.push(...walk(join(ROOT, root)));
     } catch (error) {
@@ -118,6 +118,11 @@ function main() {
     const rel = relative(ROOT, file).split(sep).join('/');
     return inspect(rel, readFileSync(file, 'utf8'));
   });
+
+  if (files.length === 0) {
+    console.error('API boundary: scanned 0 files — the scan roots no longer match the tree.');
+    process.exit(1);
+  }
 
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ inspected: files.length, findings }, null, 2));

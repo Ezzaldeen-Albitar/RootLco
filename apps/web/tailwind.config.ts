@@ -12,7 +12,7 @@ import type { Config } from 'tailwindcss';
  * shortcut, and `scripts/check-design-tokens.mjs` fails the build on one.
  */
 const config: Config = {
-  content: ['./app/**/*.{ts,tsx}', './src/**/*.{ts,tsx}'],
+  content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {

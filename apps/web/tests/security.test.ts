@@ -19,6 +19,16 @@ describe('content security policy', () => {
     apiOrigin: 'https://api.example.test',
   });
 
+  it('scopes the dev-only eval concession so production can never receive it', () => {
+    // React dev tooling needs eval(); the dev flag exists for that one purpose.
+    // The DEFAULT policy (what production serves) must never carry it, and the
+    // flag must be the only way in.
+    const dev = contentSecurityPolicy({ nonce: 'n', dev: true });
+    expect(dev).toContain("'unsafe-eval'");
+    const prod = contentSecurityPolicy({ nonce: 'n', dev: false });
+    expect(prod).not.toContain('unsafe-eval');
+  });
+
   it("never permits 'unsafe-eval'", () => {
     // The single difference between a CSP that stops an injected script and one
     // that does not.
@@ -153,7 +163,7 @@ describe('no unsafe HTML anywhere in the application', () => {
   it('never uses dangerouslySetInnerHTML', () => {
     // There is no reviewed sanitiser in P1-25 and no approved use case, so the
     // answer is zero rather than "carefully".
-    const roots = [join(__dirname, '..', 'src'), join(__dirname, '..', 'app')];
+    const roots = [join(__dirname, '..', 'src')];
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -174,7 +184,7 @@ describe('no unsafe HTML anywhere in the application', () => {
 
 describe('the client bundle carries no server secret', () => {
   it('references no server-only environment variable in source', () => {
-    const roots = [join(__dirname, '..', 'src'), join(__dirname, '..', 'app')];
+    const roots = [join(__dirname, '..', 'src')];
     const forbidden = [
       'SERVICE_ROLE',
       'SUPABASE_SERVICE',

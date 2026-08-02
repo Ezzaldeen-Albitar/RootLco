@@ -15,7 +15,7 @@ const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3210);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './tests/e2e',
   // Fail the run if a test was left focused. `test.only` committed by accident
   // silently reduces the suite to one case while still reporting success.
   forbidOnly: Boolean(process.env.CI),
@@ -33,6 +33,10 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
+    // The owner acceptance run uses the machine-installed Google Chrome
+    // (ROOTLCO_E2E_CHANNEL=chrome); CI runs the pinned Playwright chromium so
+    // the hosted result does not drift with the runner image Chrome version.
+    ...(process.env.ROOTLCO_E2E_CHANNEL ? { channel: process.env.ROOTLCO_E2E_CHANNEL } : {}),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

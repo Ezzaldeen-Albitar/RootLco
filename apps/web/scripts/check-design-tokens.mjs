@@ -80,7 +80,7 @@ function walk(dir, out = []) {
 }
 
 function main() {
-  const roots = ['src', 'app'].map((d) => join(ROOT, d));
+  const roots = ['src'].map((d) => join(ROOT, d));
   const files = roots.flatMap((d) => {
     try {
       return walk(d);
@@ -112,6 +112,10 @@ function main() {
   console.log(
     `Design tokens: ${files.length} file(s) inspected, ${findings.length} raw value(s) outside the token layer.`
   );
+  if (files.length === 0) {
+    console.error('Design tokens: scanned 0 files — the scan roots no longer match the tree.');
+    process.exit(1);
+  }
   process.exit(findings.length === 0 ? 0 : 1);
 }
 

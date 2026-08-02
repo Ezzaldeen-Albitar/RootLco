@@ -164,5 +164,10 @@
   "fixture.rowE": "سجلّ تجريبي هـ",
   "fixture.statusOpen": "مفتوح",
   "fixture.statusPending": "قيد الانتظار",
-  "fixture.statusClosed": "مغلق"
+  "fixture.statusClosed": "مغلق",
+  "gallery.readiness.title": "الاتصال بواجهة برمجة التطبيقات",
+  "gallery.readiness.ready": "واجهة برمجة التطبيقات متاحة وجاهزة.",
+  "gallery.readiness.degraded": "واجهة برمجة التطبيقات متاحة لكنها تعمل بقدرة منخفضة.",
+  "gallery.readiness.unavailable": "تعذّر الوصول إلى واجهة برمجة التطبيقات.",
+  "gallery.readiness.misconfigured": "إعداد الاتصال بواجهة برمجة التطبيقات غير مكتمل."
 }

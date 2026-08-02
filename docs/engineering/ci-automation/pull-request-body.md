@@ -60,13 +60,13 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **9 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **29 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **30 scripts in `scripts/ci`**,
 **11 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 
 The `scripts/ci` count moved from 27 to 28 in the Main Branch Governance and
 Ruleset Alignment gate, which added `check-promotion-source.mjs` — the gate that
-enforces ADR-006 §45 and §47, previously prose only. A branch ruleset cannot
+enforces ADR-006 §45 and §47, previously prose only. It moved from 29 to 30 in the P1-25 topology remediation, which added `check-web-topology.mjs` — one App Router root under `src`, the proxy convention, no nested lockfile, no tracked artefacts. A branch ruleset cannot
 express it, because rulesets constrain the TARGET ref and not where a pull
 request came from, so until that script existed a feature branch could open a
 pull request straight into `main` and every check would pass.

@@ -10,13 +10,19 @@ import { NONCE_HEADER, contentSecurityPolicy } from '@/lib/security/csp';
  * rather than `'unsafe-inline'`.
  *
  * The matcher deliberately excludes static assets. A hashed chunk under
- * `/_next/static` is immutable and cacheable, and running middleware on it would
+ * `/_next/static` is immutable and cacheable, and running the proxy on it would
  * give every asset a unique header for no benefit while defeating the CDN.
+ *
+ * Next 16 renamed this convention from `middleware` to `proxy` — the file
+ * lives at `src/proxy.ts` and must export a function named `proxy`. The
+ * installed Next errors outright if a `middleware` file coexists with this one.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll('-', '');
   const csp = contentSecurityPolicy({
     nonce,
+    // Dev-only: React's dev tooling needs eval(); production never gets this.
+    dev: process.env.NODE_ENV !== 'production',
     ...(process.env.NEXT_PUBLIC_API_BASE_URL
       ? { apiOrigin: process.env.NEXT_PUBLIC_API_BASE_URL }
       : {}),
@@ -38,7 +44,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: '/((?!_next/static|_next/image|favicon.ico).*)',
+      source: '/((?!_next/static|_next/image|favicon.ico|favicon.svg).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

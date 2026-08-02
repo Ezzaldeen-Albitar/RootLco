@@ -36,7 +36,7 @@ describe('gallery access', () => {
     // A 403 confirms the route exists. Read from the route source, because the
     // distinction is the whole point and a refactor could silently reverse it.
     const source = readFileSync(
-      join(__dirname, '..', 'app', '[locale]', '(dashboard)', 'gallery', 'page.tsx'),
+      join(__dirname, '..', 'src', 'app', '[locale]', '(dashboard)', 'gallery', 'page.tsx'),
       'utf8'
     );
     expect(source).toContain('if (!galleryEnabled()) notFound();');

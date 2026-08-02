@@ -22,9 +22,9 @@ const nextConfig: NextConfig = {
         source: '/:path*',
         headers: [
           // The CSP is NOT here: it carries a per-request nonce and therefore
-          // lives in middleware.ts. A static CSP header would be overwritten by
-          // the middleware anyway, and having two sources for one policy is how
-          // they drift.
+          // lives in src/proxy.ts (Next 16's name for middleware). A static CSP
+          // header would be overwritten by the proxy anyway, and having two
+          // sources for one policy is how they drift.
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           // Redundant with `frame-ancestors` for modern browsers, kept for the
