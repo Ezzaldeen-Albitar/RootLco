@@ -44,14 +44,18 @@ was measured, not inferred, and the gate's framework allowlist is empty as a res
 
 ## Regression suites
 
-| Tier                    | Result                              |
-| ----------------------- | ----------------------------------- |
-| Root unit / CI-contract | 1340 → **1385** (45 new gate tests) |
-| Web unit / component    | **235 / 235** unchanged             |
-| Web browser matrix      | **81 / 81** unchanged               |
-| Backend tier            | **1752 / 1752** unchanged           |
-| Database / RLS tier     | **1636 / 1636** unchanged           |
-| `verify:workspaces`     | **exit 0**                          |
+| Tier                    | Result                                                            |
+| ----------------------- | ----------------------------------------------------------------- |
+| Root unit / CI-contract | 1340 → **1401 / 1401** across 64 files (+61, the new gate suites) |
+| Web unit / component    | **236 / 236** across 12 files                                     |
+| Web browser matrix      | **81 / 81** across 5 projects                                     |
+| Backend tier            | **1752 / 1752** across 75 files                                   |
+| Database / RLS tier     | **1636 / 1636** across 138 files                                  |
+| `verify:workspaces`     | **exit 0**                                                        |
+
+Every number above was read from the run that produced it. The first draft of this
+table carried 1385 and "45 new tests" — both estimated rather than measured, and both
+wrong. Corrected before merge, which is the only reason it is worth writing down.
 
 Web behaviour is unchanged by construction: the only web file this remediation touches is
 `apps/web/package.json`, which gains the `style:lint` and `style:fix` scripts the API
@@ -59,7 +63,7 @@ used to own. No web source, no web test and no web configuration changed.
 
 ## The mutation suites are the point
 
-45 tests across three files, and they are not decoration — they caught a real defect
+61 tests across three files, and they are not decoration — they caught a real defect
 before it merged. `tests/ci/api-backend-only.test.ts` proved that the gate's five import
 rules matched nothing, because the gate stripped string literals before scanning and an
 import specifier _is_ a string literal. Without those tests the gate would have shipped
@@ -67,9 +71,9 @@ green, reporting success while enforcing five fewer rules than it claimed.
 
 | Suite                                  | Tests | Covers                                                                                                                                                                       |
 | -------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/ci/api-backend-only.test.ts`    | 32    | healthy tree with anti-vacuity counts · one mutation per violation class · rule-scope integrity · **four false-positive cases** · `stripNonCode` behaviour                   |
-| `tests/ci/generated-artifacts.test.ts` | 13    | healthy tree · one mutation per generated class · nested/absent lockfile · deleted ignore rule · the directory-does-not-cover-file case (`P1-25-F-025`) · empty-list vacuity |
-| `tests/ci/phase-ownership.test.ts`     | 16    | classification per bucket · both profiles · each forbidden bucket · unclassified file · empty-diff vacuity · unknown profile                                                 |
+| `tests/ci/api-backend-only.test.ts`    | 31    | healthy tree with anti-vacuity counts · one mutation per violation class · rule-scope integrity · **four false-positive cases** · `stripNonCode` behaviour                   |
+| `tests/ci/generated-artifacts.test.ts` | 16    | healthy tree · one mutation per generated class · nested/absent lockfile · deleted ignore rule · the directory-does-not-cover-file case (`P1-25-F-025`) · empty-list vacuity |
+| `tests/ci/phase-ownership.test.ts`     | 14    | classification per bucket · both profiles · each forbidden bucket · unclassified file · empty-diff vacuity · unknown profile                                                 |
 
 The four false-positive tests exist because the first draft flagged four lines of correct
 Backend code. They pin the domain variable named `document`, the domain property named

@@ -79,7 +79,7 @@ command-coverage gate caught this within one run of the change.
 
 | ID               | Severity | State                                                     |
 | ---------------- | -------- | --------------------------------------------------------- |
-| `PRE-P126-F-001` | Medium   | Fixed — 20 files removed, gate + 32 tests added           |
+| `PRE-P126-F-001` | Medium   | Fixed — 20 files removed, gate + 31 tests added           |
 | `PRE-P126-F-002` | High     | Fixed — rule scopes, caught by mutation tests pre-merge   |
 | `PRE-P126-F-003` | Medium   | Fixed by design — ESLint owns scope, gate asserts it      |
 | `PRE-P126-F-004` | Low      | **Open — carried to P1-26**, which owns the brand surface |

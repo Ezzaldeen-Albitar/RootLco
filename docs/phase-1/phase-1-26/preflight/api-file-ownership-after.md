@@ -82,7 +82,7 @@ and imply a coverage `static-quality` does not have.
 
 ## Regression coverage
 
-`tests/ci/api-backend-only.test.ts` — 32 tests. One healthy-tree test with anti-vacuity
+`tests/ci/api-backend-only.test.ts` — 31 tests. One healthy-tree test with anti-vacuity
 assertions on the counts; one mutation per violation class; and four false-positive tests
 pinning the cases the first draft got wrong (a domain variable named `document`, a domain
 property named `window`, browser words inside comments and strings, and the server-only
