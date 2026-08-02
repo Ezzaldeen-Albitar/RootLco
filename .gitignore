@@ -67,3 +67,5 @@ desktop.ini
 # Local evidence scratch (evidence is committed deliberately, not swept in) --
 tmp/
 .tmp/
+
+/apps/web/vitest-web.json

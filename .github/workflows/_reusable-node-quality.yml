@@ -223,12 +223,10 @@ jobs:
           npm run validate:p1-24-register
           npm run validate:exact-money
           npm run validate:run-block-syntax
-          npm run validate:crm-classification
-          npm run validate:veh-classification
-          npm run validate:aptrec-classification
-          npm run validate:wo-tech-dia-qms-classification
-          npm run validate:svc-quo-inv-classification
-          npm run validate:sal-wty-rpt-classification
+          # The six classification validators are NOT here. They open a
+          # PostgreSQL connection, and this job has no database — see
+          # P1-25-F-023. They run in the database-bearing job in ci.yml, which
+          # applies every migration first.
           npm run security:all
           # Every quality command is registered, classified, and reachable from
           # both the local aggregate and this workflow. Without it, a check can
@@ -493,7 +491,7 @@ jobs:
         if: inputs.task == 'web-quality'
         run: |
           set -euo pipefail
-          npm run test:web -- --reporter=default --reporter=json --outputFile=vitest-web.json
+          npm run test:web -- --reporter=default --reporter=json --outputFile.json=vitest-web.json
 
       - name: Summarise the web tier
         id: web-tests

@@ -104,35 +104,40 @@ export const REGISTER = Object.freeze([
     tier: 'environment',
     why: 'canonical DOCX live outside the repository',
   },
-  { name: 'validate:crm-classification', owner: ROOT, tier: 'required', why: 'CRM classification' },
+  {
+    name: 'validate:crm-classification',
+    owner: ROOT,
+    tier: 'environment',
+    why: 'CRM classification',
+  },
   {
     name: 'validate:veh-classification',
     owner: ROOT,
-    tier: 'required',
+    tier: 'environment',
     why: 'vehicle classification',
   },
   {
     name: 'validate:aptrec-classification',
     owner: ROOT,
-    tier: 'required',
+    tier: 'environment',
     why: 'appointment classification',
   },
   {
     name: 'validate:wo-tech-dia-qms-classification',
     owner: ROOT,
-    tier: 'required',
+    tier: 'environment',
     why: 'work-order classification',
   },
   {
     name: 'validate:svc-quo-inv-classification',
     owner: ROOT,
-    tier: 'required',
+    tier: 'environment',
     why: 'catalogue classification',
   },
   {
     name: 'validate:sal-wty-rpt-classification',
     owner: ROOT,
-    tier: 'required',
+    tier: 'environment',
     why: 'billing classification',
   },
 
@@ -152,8 +157,8 @@ export const REGISTER = Object.freeze([
   {
     name: 'verify:classifications',
     owner: ROOT,
-    tier: 'required',
-    why: 'domain classification validators',
+    tier: 'environment',
+    why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
   },
   {
     name: 'build',
