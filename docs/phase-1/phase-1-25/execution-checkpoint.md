@@ -839,3 +839,40 @@ configuration change: replacing the brand touches the brand module and the token
 
 **P1-26 has not started.** No P1-26 branch, no `docs/phase-1/phase-1-26/`, no business
 module, no Migration 120.
+
+## Topology and local-runtime remediation (2026-08-02, post-merge)
+
+P1-25 was reopened — still formally open, still no gate record — for one mandatory
+remediation: normalize the frontend topology and prove the applications run locally in
+the owner's own browser. Everything below lives on
+`remediation/p1-25-web-topology-local-runtime` and is documented in
+`docs/phase-1/phase-1-25/remediation/`.
+
+**The topology.** The App Router moved from `apps/web/app/` to `apps/web/src/app/`
+(`git mv`, ten files, history preserved). The CSP middleware became
+`apps/web/src/proxy.ts` with its export renamed to `proxy` — Next 16's convention,
+verified against the installed package's own constants
+(`PROXY_LOCATION_REGEXP = "(?:src/)?proxy"`); Next hard-errors if middleware and proxy
+files coexist. The Playwright suite moved under `tests/e2e/`. Every path-bearing
+config, gate, test and document followed in the same change.
+
+**The gate.** `scripts/ci/check-web-topology.mjs` (`validate:web-topology`, required
+tier, reachable from `verify:policies`) makes the topology permanent, with mutation
+tests proving it fails on: a reappearing root-level router, a nested lockfile, a second
+brand authority, a zero-match required path, a tracked Playwright report, a coexisting
+middleware file, an API-source import, a Supabase import. The three web gates now fail
+on a zero-file scan instead of passing vacuously.
+
+**What the old topology was hiding.** `app/globals.scss` sat outside the Stylelint
+scope (`src/**`) — the entry stylesheet was never linted, and failed its first lint on
+arrival. A file's location was silently deciding whether a gate applied to it.
+
+**The reference integration.** The gallery now renders an API readiness panel
+(`ApiReadinessPanel`, server-side through the one `ApiClient`, no CORS surface) that
+distinguishes ready / degraded / unavailable / misconfigured — the API/Web connection is
+something an owner can see, not something a document asserts.
+
+**The launcher.** `npm run dev:all` / `dev:status` / `dev:stop`
+(`scripts/dev/*.mjs`): API on 3000, web on 3100, PID-scoped lifecycle (never a
+name-based kill), readiness-polled startup, VS Code tasks in `.vscode/tasks.json`,
+env contracts in `apps/{api,web}/.env.example`.

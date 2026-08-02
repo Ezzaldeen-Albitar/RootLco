@@ -246,6 +246,11 @@ have changed either way.
 > `apps/web/tests/brand-replacement.test.ts` was never affected: it already guards
 > `apps/web/src/components/`, `apps/web/app/` and `apps/web/src/features/`, which is
 > why the automated proof stood while the prose describing it did not.
+>
+> **Superseded (2026-08-02, topology remediation):** the App Router has since MOVED to
+> `apps/web/src/app/` — the path references above describe the tree at `334cb209` and are
+> retained as history. The current topology and its gate are recorded in
+> [remediation/web-topology-after.md](remediation/web-topology-after.md).
 
 **What still passed against the swapped brand**
 
