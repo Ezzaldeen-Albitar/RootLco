@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "RootLco: Start Full Local Stack",
+      "type": "shell",
+      "command": "npm run dev:all",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "RootLco: Start API",
+      "type": "shell",
+      "command": "npm run dev:api",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "RootLco: Start Web",
+      "type": "shell",
+      "command": "npm run dev:web",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "RootLco: Check Local Stack",
+      "type": "shell",
+      "command": "npm run dev:status",
+      "problemMatcher": []
+    },
+    {
+      "label": "RootLco: Stop Local Stack",
+      "type": "shell",
+      "command": "npm run dev:stop",
+      "problemMatcher": []
+    },
+    {
+      "label": "RootLco: Run Web Tests",
+      "type": "shell",
+      "command": "npm run test:web",
+      "problemMatcher": []
+    },
+    {
+      "label": "RootLco: Run Full Verification",
+      "type": "shell",
+      "command": "npm run verify:workspaces",
+      "problemMatcher": []
+    }
+  ]
+}
