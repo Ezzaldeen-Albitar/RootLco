@@ -115,10 +115,20 @@ P1-25 is **not** formally closed while this task is pending, and P1-26 remains b
 | `P1-25-F-017` | Low      | Fixed — RLS matrix could not classify two Supabase platform schemas                   |
 | `P1-25-F-018` | Medium   | Fixed — gallery route was prerendered, freezing its runtime access flag at build time |
 | `P1-25-F-019` | Low      | Fixed — gallery flag was `NEXT_PUBLIC_`-prefixed and therefore build-time inlined     |
-| `P1-25-F-020` | Low      | Fixed — API client could not distinguish a cancellation from a timeout                |
+| `P1-25-F-020` | Medium   | Fixed — API client could not distinguish a cancellation from a timeout                |
 | `P1-25-F-021` | Low      | Fixed — reason-confirmation reset ran in an effect, briefly showing stale text        |
+| `P1-25-F-022` | High     | Fixed — CSP without a nonce blocked Next's own bootstrap; every page rendered blank   |
+| `P1-25-F-023` | Medium   | Fixed — six database-backed validators were run as static checks in a job with no DB  |
+| `P1-25-F-024` | Low      | Fixed — vitest reporter flags were dropped across two `npm run` layers; no report     |
+| `P1-25-F-025` | Low      | Fixed — a Playwright run report was tracked, so the clean room diffed its own output  |
 
 Earlier findings `P1-25-F-001` … `P1-25-F-013` are recorded in
 [execution-checkpoint.md](execution-checkpoint.md) and all remain resolved.
 
 **No Critical finding was raised. No High or Medium finding remains open.**
+
+Six of the last eight could not have been found by reading the code or by running the
+suite locally. `F-018` and `F-019` needed a running server with the flag set;
+`F-022` needed a real browser; `F-023` needed a machine _without_ a database;
+`F-024` and `F-025` needed the hosted runner. The browser review and the clean room
+are gates for that reason, not as ceremony.

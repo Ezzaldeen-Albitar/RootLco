@@ -660,45 +660,182 @@ messages, no untranslated English left in the Arabic file, and namespaced keys.
 
 Not yet: the locale-switch control, and locale-safe date/time/number/money formatting.
 
-### Current totals
+### Stage 9 remainder, and Stages 4, 6, 7, 10–20 — **COMPLETE**
+
+The locale switcher ships as a server-rendered pair of links, not a client control: a
+`<select>` that navigates on change is invisible to a keyboard user who is only
+arrowing through options, and it needs JavaScript to do the one thing it exists for.
+Locale-aware date, time, number and money formatting is in `src/lib/format.ts`, and
+money never passes through it as a number — see below.
+
+**Stage 4 — component gallery** at `/[locale]/gallery`. Every primitive, every state,
+every overlay, both directions. It is the surface the browser review and the print check
+run against, and it is **off unless `ROOTLCO_ENABLE_GALLERY` is set** — an internal
+proof surface is not a production route.
+
+**Stage 6 — form framework.** Field, label, description, error, fieldset, required
+marker, and the submit lifecycle. Errors are announced, not merely coloured; the first
+invalid field receives focus on a failed submit; the form is disabled during flight and
+the button says so.
+
+Money is the part worth not re-deriving. `src/lib/money.ts` treats a monetary amount as
+a **canonical decimal string** end to end and never converts it to a JavaScript number.
+The database column is `numeric(18,4)` — 14 integer digits and 4 decimals, 18
+significant digits in total, which is more than an IEEE-754 double carries. Parsing
+`"1234567890123.4567"` into a double and back does not return the same value, and an
+invoice that changes when it is displayed is a defect regardless of how small the change
+is. `compareMoney` walks digits. The single call to `globalThis.Number` in the whole
+money path is isolated in `displayNumber`, which formats the integer and fraction parts
+**separately** so no full amount is ever a double.
+
+**Stage 7 — overlays.** Dialog, drawer, tabs, toast region, and three confirmation kinds:
+plain, destructive, and required-reason. In a destructive confirmation **Cancel** takes
+initial focus, not the destructive action — a reflexive Enter should not delete anything.
+The required-reason dialog resets its text **during render** against a `wasOpen` flag
+rather than in an effect; resetting in an effect renders the previous invocation's reason
+for one frame, which is the kind of defect that only shows up on a slow machine
+(`P1-25-F-021`).
+
+**Stage 10 — typed API client.** `src/lib/api/client.ts`. `get` retries at most twice
+and only for `unavailable`, `network` and `timeout`. **`send` is never retried**,
+for any status, ever: the client cannot know whether a POST that timed out was applied,
+and the backend's idempotency keys are the mechanism for safe replay — a blind client
+retry is how a customer gets billed twice. Every request carries `x-correlation-id`.
+
+The import boundary is enforced mechanically by `apps/web/scripts/check-api-boundary.mjs`
+across five rules — no raw `fetch` outside `src/lib/api`, no web import of API source,
+no Supabase import in the web tree, no `server-only` module reached from a client
+component, no `dangerouslySetInnerHTML`. **37 files, 0 violations.**
+
+**Stages 11–15** — accessibility automation, print foundation, frontend security,
+Playwright, and the complete frontend CI wiring. **Stages 16–20** — browser-led review,
+performance baseline, adversarial review, this documentation package, and the clean-room
+proof.
+
+## Findings 018–025 — the second half
+
+`P1-25-F-001` … `P1-25-F-017` are recorded above. These eight came from the browser
+review, the adversarial pass and hosted CI.
+
+- **`P1-25-F-018` (Medium)** — the gallery was **prerendered**. `galleryEnabled()` was
+  evaluated at build time, so the `notFound()` decision was baked into a static page and
+  the environment variable had no effect at runtime. Setting the flag on a running server
+  did nothing. Fixed with `export const dynamic = 'force-dynamic'`. A feature flag that
+  is read once at build time is not a feature flag.
+- **`P1-25-F-019` (Low)** — the flag was named `NEXT_PUBLIC_ENABLE_GALLERY`. Next
+  **inlines** every `NEXT_PUBLIC_*` value into the client bundle at build time, so the
+  name promised a server-side switch while shipping a client-side constant. Renamed to
+  `ROOTLCO_ENABLE_GALLERY`, which is server-only by construction.
+- **`P1-25-F-020` (Medium)** — the API client could not tell a **timeout** from a
+  **caller cancellation**. Both arrive as an `AbortError` `DOMException`, so a
+  cancelled request was reported to the user as a backend timeout, and — worse — a
+  cancellation was eligible for the retry path that only timeouts should reach. Fixed with
+  an explicit `timedOutHere` flag set by our own timer plus a `TimeoutError` check.
+- **`P1-25-F-021` (Low)** — the required-reason dialog reset its text in an effect. See
+  Stage 7 above.
+- **`P1-25-F-022` (High)** — **the CSP broke every page.** The policy shipped
+  `script-src 'self'` with no nonce, which blocks Next's own inline bootstrap, so the
+  application rendered blank. The browser smoke caught it only because it asserts an empty
+  console; a screenshot would have shown a white page and the build would have taken the
+  blame.
+
+  The fix is a per-request nonce in `middleware.ts`, **not** `'unsafe-inline'`. The
+  cost is stated rather than hidden: a nonce is per-request, so the locale routes are
+  rendered per request instead of prerendered. Static delivery is traded for a policy that
+  actually holds — the right trade, because every operational screen from P1-26 onward is
+  authenticated and dynamic anyway, and a prerendered page with a disabled CSP is fast and
+  unprotected.
+
+  `'strict-dynamic'` was tried and removed on the same evidence. It disables host-based
+  allowlisting, so `'self'` stops applying and every `<script src>` chunk needs its own
+  nonce — which Next does not do; it nonces inline scripts only. The result was a page
+  whose bootstrap ran and whose chunks were all blocked.
+
+- **`P1-25-F-023` (Medium)** — six classification validators were added to
+  `static-quality`, a job with **no database**, and to the local aggregate. Both passed
+  on the developer machine because a Supabase stack happened to be running. This is the
+  exact "green because of the environment" trap this repository keeps finding, and it is
+  why the command register now carries an `environment` tier: a command that needs
+  PostgreSQL is not a static check, and calling it one moves the failure to whoever has a
+  clean machine. They run in the database-bearing job, which applies every migration
+  first.
+- **`P1-25-F-024` (Low)** — the web test report was never written. The reporter flags
+  were forwarded through **two** `npm run` layers, and the second `--` boundary dropped
+  them, so vitest ran on its default reporter and the summariser correctly refused to treat
+  a missing report as success. Replaced with explicit `test:ci` / `test:web-ci`
+  scripts: the flags now live where the command lives. (A bare `--outputFile` is also
+  ambiguous with multiple reporters and must be `--outputFile.json=`.)
+- **`P1-25-F-025` (Low)** — `apps/web/playwright-report.json` had been **committed**.
+  `.gitignore` carried `playwright-report/` for the directory but not the JSON file, so
+  a `git add -A` after a local browser run swept it in. The clean room then regenerated
+  it and correctly refused: _"A step modified a tracked file."_ A run report embeds
+  absolute developer paths and per-run timings, so a committed one guarantees a diff on
+  every subsequent run. The check was right and the artefact was wrong.
+
+### What these eight have in common
+
+Six of the eight were invisible to a local run and to code review. `F-018` and
+`F-019` needed a **running server with the flag set**; `F-022` needed a **real
+browser**; `F-023` needed a machine **without** a database; `F-024` and `F-025`
+needed the **hosted** runner. That is the whole argument for the browser review and the
+clean room being gates rather than optional extras.
+
+## Final local verification
+
+Run at the candidate head, in the visible worktree, with no services started by hand
+beyond the Supabase stack the database tier requires.
 
 ```text
-verify:workspaces   exit 0
-Unit / component    1330 / 1330 across 60 files
-Web                 87 / 87 across 5 files
-Token gate          47 files / 0 raw values
-Brand isolation     47 files / 0 violations
-Brand-swap proof    6 / 6
-Stylelint           0 errors, 0 warnings
-Web build           green, /ar and /en prerender
+verify:workspaces          exit 0
+Unit / component           1330 / 1330   60 files
+Web (vitest, 2 projects)    231 / 231    11 files
+Browser (Playwright)         81 / 81      5 projects, live nonce CSP, clean console
+Backend tier               1752 / 1752
+Database / RLS tier        1636 / 1636
+Stylelint                     0 errors, 0 warnings
+Design-token gate            59 files / 0 raw values
+Brand isolation              59 files / 0 violations
+API import boundary          37 files / 0 violations
+Command coverage             61 / 61 registered-and-invoked, both dimensions
+Migrations                  119, no 120, schema hash unchanged
+Dependency audit              0 vulnerabilities, 0 waivers
 ```
 
-## Next action
+The five Playwright projects are desktop-en 1440×900, desktop-ar 1440×900, laptop-en
+1280×800, tablet-ar 1024×768, and a reduced-motion project. They run at `workers: 1`
+and `retries: 0` — five projects sharing one server produced 11 flaky results at higher
+concurrency, and a retry would have hidden that rather than fixed it.
 
-Stages remaining, in the order they unblock each other:
+## Command coverage — the gate that makes a hidden check impossible
 
-1. **Stage 4 — component gallery** at `/[locale]/gallery`. Everything built so far has no
-   visual proof surface, and the gallery is what the browser review (Stage 16) and the
-   print check (Stage 12) both run against. Build it next.
-2. **Stage 6 — form framework** (React Hook Form + Zod; decimal money as canonical strings,
-   never floating point).
-3. **Stage 7 — overlays**: dialog, alert dialog, drawer, sheet, popover, dropdown, tabs,
-   tooltip, toast, and the three confirmation kinds including required-reason.
-4. **Stage 10 — typed API client** against the approved OpenAPI baseline; readiness is the
-   reference integration. Enforce the import boundary: no `fetch` in shared components,
-   no web import of API or Supabase source.
-5. **Stage 9 remainder** — locale switcher, date/number/money formatting.
-6. **Stages 11–15** — accessibility automation, print foundation, frontend security (CSP,
-   upload preflight, session expiry), Playwright, then the full frontend CI wiring with
-   controlled failure rehearsals.
-7. **Stages 16–20** — browser-led review, performance baseline, adversarial review, the
-   P1-25 documentation package and task register (35 tasks), clean-room exact-SHA proof.
-8. **Stages 21–22** — feature PR to `develop`, hosted CI, merge commit, protected-branch
-   reverification.
+`scripts/ci/check-command-coverage.mjs` holds a register of every npm script in the
+repository and tests **two** things: that each script is registered with a tier and a
+stated reason, and that every `required` script is actually **reachable from a workflow
+invocation**. It walks `npm run` edges transitively, so a command buried three
+aggregates deep still counts as invoked — and a command that no workflow can reach fails
+the build.
 
-Exact next command:
+This exists because of `P1-25-F-015`: hosted CI was invoking **zero** web commands while
+every one of them passed locally. The register currently holds **119** commands, **61**
+of them `required`, and reports **61 / 61** on both dimensions. The other tiers are
+`informational`, `interactive` (a watcher or a dev server, which CI must not run) and
+`environment` (needs a database or Docker — `P1-25-F-023`).
 
-```bash
-cd "C:/Users/Ezzaldeen/OneDrive/Desktop/1millions/RootLco-worktrees/p1-25"
-git status --short --branch     # expect clean on feature/p1-25-…
-```
+A check that exists and is correct has still never proven anything until something makes
+it run. This is that something.
+
+## Status
+
+P1-25's **technical** foundation is complete and verified. What remains is not technical:
+
+- the final logo,
+- the final colour palette,
+- Product Owner fidelity sign-off.
+
+The provisional brand is active and is **declared as provisional in the product itself**,
+not only in documentation. `tests/brand-replacement.test.ts` proves the swap is a
+configuration change: replacing the brand touches the brand module and the token file, and
+**no component file at all**.
+
+**P1-26 has not started.** No P1-26 branch, no `docs/phase-1/phase-1-26/`, no business
+module, no Migration 120.
