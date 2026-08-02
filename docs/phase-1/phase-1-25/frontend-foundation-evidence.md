@@ -215,7 +215,67 @@ than the spelling.
 
 ---
 
-## 11. What this phase does NOT claim
+## 11. Brand-replacement rehearsal — performed, not asserted
+
+Run on the merged `develop` commit `334cb209`, at tree `84b20dac`, and reverted
+afterwards. The tree is byte-identical before and after.
+
+`apps/web/tests/brand-replacement.test.ts` already proves the swap touches no component
+file, and it runs in CI. This rehearsal goes one step further, because a swap that
+type-checks but never reaches the rendered output is not a swap. The stand-in values were
+deliberately unmistakable — `SwapProofName` and a teal ramp — so that a stale build
+would be obvious rather than plausible. They are **not** a proposal for the final
+branding, which remains Owner input.
+
+**What changed on disk**
+
+```text
+ M apps/web/src/config/brand.ts            product name, short name, theme, isProvisional
+ M apps/web/src/styles/tokens/_colors.scss the primary ramp, all ten steps
+```
+
+Files changed under `apps/web/src/components/` or `apps/web/src/app/`: **0**.
+
+**What still passed against the swapped brand**
+
+```text
+Design tokens      60 files / 0 raw values outside the token layer
+Brand isolation    60 files / 0 violations
+API boundary       38 files / 0 violations
+typecheck:web      exit 0
+build:web          exit 0
+```
+
+**What reached the emitted output**
+
+```text
+"SwapProofName"    4 occurrences  (SSR chunk + client chunk)
+"[SYSTEM NAME]"    0 occurrences  (the placeholder is gone, not merely overridden)
+--color-primary        #15b79e    the new ramp's 500
+--color-primary-hover  #0e9384    600
+--color-primary-active #107569    700
+--color-primary-subtle #f0fdf9    50
+"3366f2"           0 occurrences  (the provisional blue is gone from the emitted CSS)
+```
+
+One correction worth keeping, because it is the sort of thing that produces a false
+negative: Next emits the stylesheet under `.next/static/chunks/`, **not**
+`.next/static/css/`. A grep scoped to the latter finds neither the old colour nor the
+new one and looks exactly like "the ramp does not reach the build".
+
+**Conclusion.** Replacing the brand is a change to two configuration files, plus the
+approved asset under `public/brand/` when `logoMode` becomes `'asset'`. It requires
+no component edit, no route edit, and no test edit, and the result reaches both the
+server-rendered HTML and the emitted stylesheet.
+
+**The provisional state is declared in the product, not only in this document.**
+`BrandMark` emits `data-provisional="true"` while `brand.isProvisional` holds, so the
+placeholder identity is machine-visible in the DOM and cannot be mistaken for an approved
+one during a review.
+
+---
+
+## 12. What this phase does NOT claim
 
 - **No business screen exists.** Thirteen of the fifteen navigation entries are
   `status: 'planned'` and render as visibly unavailable rather than as links that 404.
