@@ -4,11 +4,10 @@
 // Tailwind's layers must come after the reset so preflight does not override
 // the base layer.
 
-@use '../src/styles/tokens';
-@use '../src/styles/themes';
-@use '../src/styles/base';
-@use '../src/styles/print';
-
+@use '../styles/tokens';
+@use '../styles/themes';
+@use '../styles/base';
+@use '../styles/print';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

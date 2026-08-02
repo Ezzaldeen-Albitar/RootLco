@@ -164,5 +164,10 @@
   "fixture.rowE": "Fixture row E",
   "fixture.statusOpen": "Open",
   "fixture.statusPending": "Pending",
-  "fixture.statusClosed": "Closed"
+  "fixture.statusClosed": "Closed",
+  "gallery.readiness.title": "API connection",
+  "gallery.readiness.ready": "The API is reachable and ready.",
+  "gallery.readiness.degraded": "The API is reachable but running degraded.",
+  "gallery.readiness.unavailable": "The API could not be reached.",
+  "gallery.readiness.misconfigured": "The API connection is not configured."
 }

@@ -80,7 +80,7 @@ function walk(dir, out = []) {
 }
 
 function main() {
-  const files = ['src', 'app'].flatMap((d) => {
+  const files = ['src'].flatMap((d) => {
     try {
       return walk(join(ROOT, d));
     } catch {
@@ -107,6 +107,10 @@ function main() {
   console.log(
     `Brand isolation: ${files.length} file(s) inspected, ${findings.length} violation(s).`
   );
+  if (files.length === 0) {
+    console.error('Brand isolation: scanned 0 files — the scan roots no longer match the tree.');
+    process.exit(1);
+  }
   process.exit(findings.length === 0 ? 0 : 1);
 }
 

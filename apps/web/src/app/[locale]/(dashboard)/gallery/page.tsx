@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { ApiReadinessPanel } from '@/components/gallery/ApiReadinessPanel';
 import { GalleryClient } from '@/components/gallery/GalleryClient';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
@@ -46,6 +47,7 @@ export default async function GalleryPage({
         crumbs={[{ labelKey: 'nav.overview', href: `/${locale}` }, { labelKey: 'nav.gallery' }]}
       />
       <PageBody>
+        <ApiReadinessPanel messages={messages} />
         <GalleryClient locale={locale} messages={messages} />
       </PageBody>
     </>

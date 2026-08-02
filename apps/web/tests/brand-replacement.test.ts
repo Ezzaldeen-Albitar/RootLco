@@ -124,7 +124,7 @@ describe('replacing the provisional identity touches configuration only', () => 
       .filter(
         (f) =>
           f.startsWith('apps/web/src/components/') ||
-          f.startsWith('apps/web/app/') ||
+          f.startsWith('apps/web/src/app/') ||
           f.startsWith('apps/web/src/features/')
       );
 

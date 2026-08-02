@@ -89,6 +89,15 @@ export const REGISTER = Object.freeze([
   { name: 'validate:p1-23-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-24-register', owner: ROOT, tier: 'required', why: 'operation register' },
   { name: 'validate:command-coverage', owner: ROOT, tier: 'required', why: 'this gate' },
+  { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
+  { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
+  { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
+  {
+    name: 'validate:web-topology',
+    owner: ROOT,
+    tier: 'required',
+    why: 'one App Router root under src, proxy convention, no nested lockfile, no tracked artefacts',
+  },
   { name: 'security:all', owner: ROOT, tier: 'required', why: 'security gate aggregate' },
   { name: 'security:tracked-secrets', owner: ROOT, tier: 'required', why: 'committed secrets' },
   {

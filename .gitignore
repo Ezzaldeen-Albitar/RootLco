@@ -52,6 +52,8 @@ playwright-report/
 # Editors -------------------------------------------------------------------
 .vscode/*
 !.vscode/extensions.json
+# Shared tasks: the owner launches the local stack from Terminal -> Run Task.
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
@@ -77,3 +79,6 @@ tmp/
 /apps/web/playwright-report/
 /apps/web/playwright-report.json
 /apps/web/vitest-web.json
+
+# Local dev launcher state (PIDs of launcher-owned processes).
+/.local/
