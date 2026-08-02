@@ -89,12 +89,12 @@ Three inputs are required and none can be supplied by the implementation:
 
 Applying them touches four places and no component:
 
-| File                                           | What changes                                                    |
-| ---------------------------------------------- | --------------------------------------------------------------- |
-| `apps/web/src/config/brand.ts`                 | name, short name, logo mode, asset path, `isProvisional: false` |
-| `apps/web/src/styles/tokens/_colors.scss`      | the primitive ramps and, at most, the primary mapping           |
-| `apps/web/src/styles/themes/_provisional.scss` | renamed and remapped to the approved theme                      |
-| `apps/web/public/brand/`                       | the approved asset                                              |
+| File                                      | What changes                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/config/brand.ts`            | name, short name, logo mode, asset path, `isProvisional: false`                                          |
+| `apps/web/src/styles/tokens/_colors.scss` | the primitive ramps and, at most, the primary mapping                                                    |
+| `apps/web/src/styles/themes/`             | the approved theme is ADDED as a sibling `[data-theme='approved']`; the provisional layer is not renamed |
+| `apps/web/public/brand/`                  | the approved asset                                                                                       |
 
 `apps/web/tests/brand-replacement.test.ts` proves the claim by performing the swap and
 asserting that **no component or route file changes**, then restoring the provisional

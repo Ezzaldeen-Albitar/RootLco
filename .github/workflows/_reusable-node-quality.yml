@@ -241,6 +241,9 @@ jobs:
           # generated output out of it, and out of the repository at large.
           npm run validate:api-backend-only
           npm run validate:generated-artifacts
+          # OIR-01 is open, so both tiers hold a placeholder. This fails the
+          # moment one of them holds a real name and the other does not.
+          npm run validate:product-name
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
