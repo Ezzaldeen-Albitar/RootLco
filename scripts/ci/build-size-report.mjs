@@ -79,10 +79,18 @@ export function largestFiles(dir, limit = 15) {
 
 export function checkIntegrity(dir) {
   const failures = [];
-  const standaloneServer = join(dir, 'standalone', 'server.js');
-  if (!existsSync(standaloneServer)) {
+  // `output: standalone` preserves the repository shape, so in a workspace the
+  // entry point is `standalone/apps/api/server.js` rather than
+  // `standalone/server.js`. Both are accepted: the property being asserted is
+  // "a runnable server was emitted", not "it sits at one particular depth".
+  const standaloneCandidates = [
+    join(dir, 'standalone', 'server.js'),
+    join(dir, 'standalone', 'apps', 'api', 'server.js'),
+  ];
+  const standaloneServer = standaloneCandidates.find((candidate) => existsSync(candidate));
+  if (!standaloneServer) {
     failures.push(
-      '`.next/standalone/server.js` is missing. The Dockerfile `runner` stage copies exactly this file; ' +
+      'No standalone server entry point was emitted. The Dockerfile `runner` stage copies exactly this file; ' +
         'without it the production image builds and then fails at container start.'
     );
   }

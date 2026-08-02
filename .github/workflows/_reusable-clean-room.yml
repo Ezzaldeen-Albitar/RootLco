@@ -190,6 +190,13 @@ jobs:
       # It runs BEFORE the enumerated block below, so a broad failure is
       # reported by the aggregate rather than by whichever individual validator
       # happens to be listed first.
+      # The aggregate includes the browser smoke, so the clean room needs the
+      # browser. Installed as its own step rather than inside the aggregate: a
+      # download is not a verification, and folding it in would make a network
+      # failure look like a test failure.
+      - name: Install the browser the aggregate needs
+        run: npm run test:e2e:install --workspace @rootlco/web
+
       - name: The full workspace aggregate
         run: |
           set -euo pipefail

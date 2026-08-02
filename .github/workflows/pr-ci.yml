@@ -158,7 +158,7 @@ jobs:
     uses: ./.github/workflows/_reusable-node-quality.yml
     with:
       task: web-quality
-      ref: ${{ needs.change-detection.outputs.sha }}
+      ref: ${{ needs.change-detection.outputs.head-sha }}
     permissions:
       contents: read
 

@@ -368,7 +368,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
-            git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" > changed-files.txt
+            # Renames are EXCLUDED when the content is identical. The
+            # touched-file coverage floor exists to stop new or modified code
+            # shipping untested; a file that only moved introduces no new code,
+            # and failing it would make any large refactor unmergeable for a
+            # reason unrelated to coverage. A rename that also CHANGED content
+            # scores below R100 and is still counted.
+            git diff --name-status -M --diff-filter=ACMR "origin/${BASE_REF}...HEAD" \
+              | awk '/^R100/ { next } { print $NF }' > changed-files.txt
           else
             : > changed-files.txt
           fi

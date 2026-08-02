@@ -38,5 +38,20 @@ export default async function LocaleLayout({
   );
 }
 
+/**
+ * Rendered per REQUEST, not prerendered.
+ *
+ * The Content Security Policy carries a per-request nonce, and Next stamps that
+ * nonce on its inline bootstrap scripts only while it is rendering. A page
+ * generated at BUILD time has no nonce, so its bootstrap is blocked and the
+ * page arrives blank — see src/lib/security/csp.ts, finding P1-25-F-022.
+ *
+ * A nonce CSP and prerendering are therefore incompatible, and this phase
+ * chooses the policy. Every operational screen from P1-26 onward is
+ * authenticated and dynamic in any case; a prerendered page with a disabled CSP
+ * would be fast and unprotected.
+ */
+export const dynamic = 'force-dynamic';
+
 export const dynamicParams = false;
 export { DEFAULT_LOCALE };

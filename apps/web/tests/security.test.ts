@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { contentSecurityPolicy } from '../next.config';
+import { contentSecurityPolicy } from '@/lib/security/csp';
 import { FORBIDDEN_URL_KEYS, toSearchParams } from '@/components/data-table/table-state';
 import { NO_CAPABILITIES, hasPermission } from '@/lib/permissions';
 
@@ -13,7 +13,11 @@ import { NO_CAPABILITIES, hasPermission } from '@/lib/permissions';
  */
 
 describe('content security policy', () => {
-  const policy = contentSecurityPolicy();
+  // Built with a nonce, exactly as middleware does per request.
+  const policy = contentSecurityPolicy({
+    nonce: 'testnonce',
+    apiOrigin: 'https://api.example.test',
+  });
 
   it("never permits 'unsafe-eval'", () => {
     // The single difference between a CSP that stops an injected script and one
@@ -41,8 +45,11 @@ describe('content security policy', () => {
   it('uses no wildcard source', () => {
     // A wildcard connect-src lets an injected script exfiltrate anywhere.
     expect(policy).not.toMatch(/(^|\s)\*($|\s|;)/);
-    expect(policy).not.toContain('https:');
-    expect(policy).not.toContain('http:');
+    // A BARE scheme source — `https:` on its own — permits every host on that
+    // scheme and is a wildcard in all but spelling. A concrete origin such as
+    // `https://api.example.test` is exactly what we want, so the assertion has
+    // to distinguish the two rather than reject the substring.
+    expect(policy).not.toMatch(/(^|\s)https?:($|\s|;)/);
   });
 
   it('forbids framing and object embedding outright', () => {
@@ -53,7 +60,7 @@ describe('content security policy', () => {
   });
 
   it('restricts connect-src to self plus the configured API origin', () => {
-    const withApi = contentSecurityPolicy();
+    const withApi = contentSecurityPolicy({ apiOrigin: 'https://api.example.test' });
     const connect = withApi.split('; ').find((directive) => directive.startsWith('connect-src'));
     expect(connect).toContain("'self'");
     expect(connect).not.toContain('*');
@@ -72,7 +79,7 @@ describe('client authorisation is usability only', () => {
   it('has no role shortcut anywhere in the permission module', () => {
     const source = readFileSync(join(__dirname, '..', 'src', 'lib', 'permissions.ts'), 'utf8');
     const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/.*$/gm, '$1');
-    for (const shortcut of ['isAdmin', 'isOwner', "role ===", 'superuser', 'bypass']) {
+    for (const shortcut of ['isAdmin', 'isOwner', 'role ===', 'superuser', 'bypass']) {
       expect(code, `${shortcut} must not appear`).not.toContain(shortcut);
     }
   });
@@ -137,10 +144,7 @@ describe('nothing sensitive reaches browser storage', () => {
   });
 
   it('stores only a boolean under a namespaced key', () => {
-    const shell = readFileSync(
-      join(SRC, 'components', 'shell', 'AppShell.tsx'),
-      'utf8'
-    );
+    const shell = readFileSync(join(SRC, 'components', 'shell', 'AppShell.tsx'), 'utf8');
     expect(shell).toContain("const COLLAPSE_KEY = 'rootlco.shell.sidebarCollapsed'");
   });
 });

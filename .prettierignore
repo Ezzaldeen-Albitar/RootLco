@@ -23,3 +23,12 @@ docs/phase-1/phase-1-15/evidence/operation-test-matrix.json
 # permanent disagreement between two formatters, not a style preference.
 # Root orchestration runs each workspace check via format:check:all.
 apps/
+
+# Evidence the clean-room job writes into the workspace root while it runs.
+# Machine-generated, never committed, and not ours to format — checking them
+# made a passing clean room fail on the shape of its own output.
+clean-room-*.json
+clean-room-*.md
+workflow-security.json
+route-parity.json
+test-honesty.json

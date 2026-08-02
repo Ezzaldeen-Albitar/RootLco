@@ -75,22 +75,25 @@ jobs:
       # ---------------------------------------------------------------------
       # The frontend is an INDEPENDENT package with its own lockfile
       # (web/package-lock.json). The audit above reads the ROOT tree only, so
-      # without this step the entire frontend dependency surface would be
-      # unaudited while the gate still reported clean — the exact shape of blind
-      # spot this repository keeps finding. P1-25 added the second lockfile, so
-      # P1-25 adds its audit in the same change.
+      # without this the entire frontend dependency surface would be unaudited
+      # while the gate still reported clean — the exact shape of blind spot this
+      # repository keeps finding.
+      #
+      # The tree is installed ONCE, at the root: `apps/web` is an npm workspace
+      # and there is no second lockfile to install from. `--workspace` scopes
+      # the audit to the frontend's own dependency graph within that install.
+      # The earlier `--prefix web` form pointed at a directory that no longer
+      # exists and would have failed loudly rather than silently, which is the
+      # only good thing about it.
       #
       # Same policy as the root tree: zero advisories, no waivers. The frontend
       # does not get a lower bar for being newer.
       # ---------------------------------------------------------------------
-      - name: Install the frontend dependency tree
-        run: npm ci --prefix web
-
       - name: Audit the frontend dependency tree
         run: |
           set -euo pipefail
-          npm audit --prefix web --omit=dev --json > audit-web-production.json || printf ''
-          npm audit --prefix web --json > audit-web-full.json || printf ''
+          npm audit --workspace @rootlco/web --omit=dev --json > audit-web-production.json || printf ''
+          npm audit --workspace @rootlco/web --json > audit-web-full.json || printf ''
           for file in audit-web-production.json audit-web-full.json; do
             node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "${file}" \
               || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
