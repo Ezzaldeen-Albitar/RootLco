@@ -22,7 +22,7 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { STATE_FILE } from './dev-config.mjs';
+import { API_PORT, STATE_FILE, WEB_PORT } from './dev-config.mjs';
 
 /** @param {number} pid */
 function alive(pid) {
@@ -34,10 +34,22 @@ function alive(pid) {
   }
 }
 
-/** @param {number} port */
+/**
+ * Probes a CANONICAL port — one of the two compile-time constants in
+ * `dev-config.mjs`, never a value read from the state file.
+ *
+ * `js/file-access-to-http` (CodeQL, Medium) caught the first version doing the
+ * latter: `state.apiPort` came out of `dev-state.json` and flowed straight into
+ * a `fetch` URL, so a file this script does not own decided where it sent a
+ * request. The port authority already exists as a constant; reading it from a
+ * file was both the taint and the weaker design.
+ *
+ * @param {typeof API_PORT | typeof WEB_PORT} port
+ */
 async function answering(port) {
+  const url = port === API_PORT ? `http://127.0.0.1:${API_PORT}/` : `http://127.0.0.1:${WEB_PORT}/`;
   try {
-    await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2_000) });
+    await fetch(url, { signal: AbortSignal.timeout(2_000) });
     return true;
   } catch {
     return false;
@@ -55,10 +67,23 @@ if (state.launcher !== 'rootlco-dev') {
   process.exit(1);
 }
 
+// PIDs come from the state file — they are the whole point of it. PORTS come
+// from the configuration constants, so nothing this script sends a request to
+// is decided by file contents.
 const targets = [
-  ['api', state.apiPid, state.apiPort],
-  ['web', state.webPid, state.webPort],
+  ['api', state.apiPid, API_PORT],
+  ['web', state.webPid, WEB_PORT],
 ];
+
+for (const [name, , port] of targets) {
+  const recorded = name === 'api' ? state.apiPort : state.webPort;
+  if (recorded !== undefined && recorded !== port) {
+    console.error(
+      `state file records ${name} on port ${recorded}, but the configured port is ${port}. ` +
+        'Probing the configured port; the state file may be from an older launcher.'
+    );
+  }
+}
 
 for (const [name, pid] of targets) {
   if (!pid) continue;
