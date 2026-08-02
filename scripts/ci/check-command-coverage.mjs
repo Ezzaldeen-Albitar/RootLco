@@ -93,6 +93,22 @@ export const REGISTER = Object.freeze([
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
   {
+    name: 'validate:p1-26-readiness',
+    owner: ROOT,
+    tier: 'informational',
+    // A REPORTER, not a gate: "not ready" is the correct state while OIR-01 and
+    // OIR-06 are open, so it exits 0 either way. The P1-26 branch-creation step
+    // calls it with --assert-ready, which does fail. Its rule table is proven by
+    // tests/ci/p1-26-readiness.test.ts in the required unit tier.
+    why: 'derives P1-26 dependency readiness from the tree so the answer cannot go stale',
+  },
+  {
+    name: 'validate:product-name',
+    owner: ROOT,
+    tier: 'required',
+    why: 'one product name across both tiers — both pending, or both the same approved value',
+  },
+  {
     name: 'validate:api-backend-only',
     owner: ROOT,
     tier: 'required',

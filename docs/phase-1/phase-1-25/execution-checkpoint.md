@@ -837,7 +837,7 @@ not only in documentation. `tests/brand-replacement.test.ts` proves the swap is 
 configuration change: replacing the brand touches the brand module and the token file, and
 **no component file at all**.
 
-**P1-26 has not started.** No P1-26 branch, no `docs/phase-1/phase-1-26/`, no business
+**P1-26 has not started.** No P1-26 branch, no P1-26 business
 module, no Migration 120.
 
 ## Topology and local-runtime remediation (2026-08-02, post-merge)

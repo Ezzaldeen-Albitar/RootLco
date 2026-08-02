@@ -1,0 +1,50 @@
+{
+  "ready": false,
+  "items": [
+    {
+      "id": "P1-14 gate record",
+      "ready": true,
+      "detail": "docs/phase-1/phase-1-14/phase-1-14-owner-gate.md"
+    },
+    {
+      "id": "P1-15 gate record",
+      "ready": true,
+      "detail": "docs/phase-1/phase-1-15/phase-1-15-owner-gate.md"
+    },
+    {
+      "id": "P1-24 gate record",
+      "ready": true,
+      "detail": "docs/phase-1/phase-1-24/gate-record.md"
+    },
+    {
+      "id": "P1-25 gate record",
+      "ready": false,
+      "detail": "none under any convention in docs/phase-1/phase-1-25/"
+    },
+    {
+      "id": "OIR-01 product name",
+      "ready": false,
+      "detail": "systemName is still a placeholder"
+    },
+    {
+      "id": "OIR-06 visual identity",
+      "ready": false,
+      "detail": "brand.isProvisional is true — no approved identity"
+    },
+    {
+      "id": "approved logo asset",
+      "ready": false,
+      "detail": "apps/web/public/brand/ holds no logo asset"
+    },
+    {
+      "id": "no premature P1-26 branch",
+      "ready": true,
+      "detail": "none"
+    },
+    {
+      "id": "migration baseline",
+      "ready": true,
+      "detail": "119 migrations"
+    }
+  ]
+}
