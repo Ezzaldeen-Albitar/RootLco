@@ -67,6 +67,41 @@ describe('brand adapter', () => {
   });
 });
 
+describe('the provisional declaration is governed by brand state', () => {
+  // P1-25-F-026. The header notice and the overview card were rendered
+  // UNCONDITIONALLY, which quietly falsified the phase's central claim: an
+  // approved brand would still have shipped a product announcing "final brand
+  // pending". Both are now guarded on `brand.isProvisional`, and these tests
+  // exist so the guard cannot be removed without a red suite.
+  const SURFACES = ['src/components/shell/AppShell.tsx', 'src/app/[locale]/(dashboard)/page.tsx'];
+
+  it('guards every surface that renders provisional-state copy', () => {
+    for (const rel of SURFACES) {
+      const source = readFileSync(join(ROOT, rel), 'utf8');
+      expect(source, `${rel} must import the brand-state flag`).toContain('brandIsProvisional');
+      expect(
+        source.includes('brandIsProvisional ?'),
+        `${rel} must render its provisional notice conditionally`
+      ).toBe(true);
+    }
+  });
+
+  it('reads the flag through the brand layer, never by importing the config', () => {
+    // Importing @/config/brand into the shell would create a second brand
+    // consumer and the isolation gate would fail — the flag is exposed by
+    // components/brand/theme.ts precisely so it does not have to.
+    for (const rel of SURFACES) {
+      const source = readFileSync(join(ROOT, rel), 'utf8');
+      expect(source).not.toContain("from '@/config/brand'");
+    }
+  });
+
+  it('exposes the flag from the brand layer', () => {
+    const theme = readFileSync(join(ROOT, 'src/components/brand/theme.ts'), 'utf8');
+    expect(theme).toContain('brandIsProvisional');
+  });
+});
+
 describe('brand isolation is structural, not conventional', () => {
   it('has exactly one consumer of the brand configuration', () => {
     // If this number grows, the replacement promise is no longer true and the
