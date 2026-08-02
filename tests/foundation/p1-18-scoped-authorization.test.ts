@@ -59,6 +59,7 @@ import {
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { RequestContext } from '@/server/context/request-context';
+import { API_ROOT, API_ROUTES_V1_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 // ---------------------------------------------------------------------------
 // Fakes. The handle records every statement and the object it was issued on, so
@@ -604,8 +605,9 @@ describe('F8 · refusal aborts the transaction', () => {
 // sentence about a call can never stand in for the call.
 // ---------------------------------------------------------------------------
 
-const ROOT = process.cwd();
-const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
+// The tables below name files inside the API application, so they resolve
+// against the API application root rather than the repository root.
+const read = (relative: string): string => readFileSync(join(API_ROOT, relative), 'utf8');
 
 /**
  * Removes every `//` and block comment, leaving executable code.
@@ -744,7 +746,7 @@ interface RouteOperation {
 const DECLARATION = /export const (\w+)\s*=\s*defineOperation\(\{/g;
 
 function routeOperations(): readonly RouteOperation[] {
-  const base = join(ROOT, 'src', 'app', 'api', 'v1');
+  const base = API_ROUTES_V1_ROOT;
   const found: RouteOperation[] = [];
 
   for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {

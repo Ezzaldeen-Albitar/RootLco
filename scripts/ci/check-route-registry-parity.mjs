@@ -21,10 +21,16 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  API_ROUTES_ROOT,
+  API_ROUTES_V1_ROOT,
+  API_SRC_ROOT,
+  fromRoot,
+} from '../lib/repository-paths.mjs';
 
-export const API_ROOT = join('src', 'app', 'api');
-export const ROUTE_ROOT = join('src', 'app', 'api', 'v1');
-export const CONTRACT_TEST = join('tests', 'openapi-contract.test.ts');
+export const API_ROOT = API_ROUTES_ROOT;
+export const ROUTE_ROOT = API_ROUTES_V1_ROOT;
+export const CONTRACT_TEST = fromRoot('tests', 'openapi-contract.test.ts');
 
 /**
  * Routes outside `/api/v1`, which `scripts/check-openapi.mjs` forbids from the
@@ -51,7 +57,7 @@ export function discoverRoutes(root = ROUTE_ROOT) {
         continue;
       }
       if (entry.name !== 'route.ts' && entry.name !== 'route.tsx') continue;
-      const rel = relative('src', full)
+      const rel = relative(API_SRC_ROOT, full)
         .replace(/\\/g, '/')
         .replace(/\.tsx?$/, '');
       found.push(`@/${rel}`);

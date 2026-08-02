@@ -17,8 +17,9 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROUTE_TEMPLATES, internRouteTemplate } from '@/server/http/route-templates';
+import { API_ROUTES_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
-const API_ROOT = join(process.cwd(), 'src', 'app', 'api');
+const API_ROOT = API_ROUTES_ROOT;
 
 /** Every `path:` declared by a route module, read from disk. */
 function declaredTemplates(): string[] {

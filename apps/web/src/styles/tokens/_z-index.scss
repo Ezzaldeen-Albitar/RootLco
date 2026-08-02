@@ -1,0 +1,14 @@
+// Z-index scale. A named ladder, so stacking is decided once here rather than
+// negotiated with escalating magic numbers at each call site.
+$scale: (
+  'base': 0,
+  'raised': 10,
+  'sticky': 100,
+  'sidebar': 200,
+  'header': 300,
+  'dropdown': 400,
+  'overlay': 500,
+  'dialog': 600,
+  'toast': 700,
+  'tooltip': 800,
+);

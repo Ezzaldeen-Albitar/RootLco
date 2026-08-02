@@ -125,6 +125,7 @@ import { POST as CREATE_DELIVERY } from '@/app/api/v1/deliveries/route';
 import { GET as READ_ELIGIBILITY } from '@/app/api/v1/deliveries/[deliveryId]/eligibility/route';
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import { GET as READ_WARRANTY } from '@/app/api/v1/warranties/[warrantyId]/route';
+import { API_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 let admin: Pool;
 
@@ -1058,7 +1059,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
     // omitted a parameter that does not exist would assert nothing; this asserts the
     // absence itself, so a future edit that adds a filter must add the case with it.
     for (const relative of ROUTES) {
-      const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
+      const source = readFileSync(resolve(API_ROOT, relative), 'utf8');
       // The file really was read, or the three assertions below are vacuous.
       expect(source, `${relative} is empty`).toContain('defineOperation');
       expect(source.includes('requestedScope'), `${relative} passes requestedScope`).toBe(false);

@@ -48,6 +48,12 @@ export const DECLARED_JOBS = [
   { id: 'change-detection', alwaysRequired: true },
   { id: 'static-quality', alwaysRequired: true },
   { id: 'unit-tests-coverage', alwaysRequired: true },
+  // ALWAYS required, not conditional on a frontend change. The web gates are
+  // cheap, and the failure this closes was not "someone edited the web app and
+  // we missed it" — it was that hosted CI invoked zero web commands at all, so
+  // the application's lint had never run once in its life. A job that is
+  // skippable on a technicality is a job that can rot the same way.
+  { id: 'web-quality', alwaysRequired: true },
   { id: 'application-build', alwaysRequired: false },
   { id: 'database-migration-replay', alwaysRequired: false },
   { id: 'database-security', alwaysRequired: false },

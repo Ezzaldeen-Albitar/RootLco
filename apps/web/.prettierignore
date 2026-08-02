@@ -1,0 +1,9 @@
+.next
+node_modules
+coverage
+
+# Playwright run artefacts. Written by the browser smoke, gitignored, and not
+# ours to format.
+test-results
+playwright-report
+playwright-report.json

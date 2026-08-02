@@ -12,7 +12,7 @@
  * The check joins two sources that are maintained by different people at
  * different times, which is exactly why it catches drift:
  *
- *   src/app/api/v1/**\/route.ts             — who DECLARES idempotency
+ *   apps/api/src/app/api/v1/**\/route.ts    — who DECLARES idempotency
  *   operation-test-matrix.json `derived`    — who has replay evidence, derived
  *                                             from the tests that actually exist
  *
@@ -26,11 +26,12 @@
  * Exit codes: 0 pass · 1 an unproven promise · 2 IO error.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { API_ROUTES_V1_ROOT, fromRoot, toRepositoryPath } from '../lib/repository-paths.mjs';
 
-export const ROUTE_ROOT = join('src', 'app', 'api', 'v1');
-export const DEFAULT_MATRIX = join(
+export const ROUTE_ROOT = API_ROUTES_V1_ROOT;
+export const DEFAULT_MATRIX = fromRoot(
   'docs',
   'phase-1',
   'phase-1-14',
@@ -75,12 +76,7 @@ export function discoverDeclarations(root = ROUTE_ROOT) {
         continue;
       }
       if (entry.name !== 'route.ts' && entry.name !== 'route.tsx') continue;
-      out.push(
-        ...parseOperations(
-          readFileSync(full, 'utf8'),
-          relative(process.cwd(), full).replace(/\\/g, '/')
-        )
-      );
+      out.push(...parseOperations(readFileSync(full, 'utf8'), toRepositoryPath(full)));
     }
   };
   walk(root);

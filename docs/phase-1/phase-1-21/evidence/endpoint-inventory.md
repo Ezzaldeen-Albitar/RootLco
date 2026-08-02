@@ -24,9 +24,9 @@ Operations: **14**. Published events: **3**.
 
 ## Published events
 
-| Event                        | Producer                             | Source                                                          |
-| ---------------------------- | ------------------------------------ | --------------------------------------------------------------- |
-| `stock.movement.posted`      | `inventory.inventory-intake-service` | `src/modules/inventory/application/inventory-intake-service.ts` |
-| `stock.reserved`             | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |
-| `stock.reservation.released` | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |
-| `stock.movement.posted`      | `inventory.inventory-stock-service`  | `src/modules/inventory/application/inventory-stock-service.ts`  |
+| Event                        | Producer                             | Source                                                                   |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `stock.movement.posted`      | `inventory.inventory-intake-service` | `apps/api/src/modules/inventory/application/inventory-intake-service.ts` |
+| `stock.reserved`             | `inventory.inventory-stock-service`  | `apps/api/src/modules/inventory/application/inventory-stock-service.ts`  |
+| `stock.reservation.released` | `inventory.inventory-stock-service`  | `apps/api/src/modules/inventory/application/inventory-stock-service.ts`  |
+| `stock.movement.posted`      | `inventory.inventory-stock-service`  | `apps/api/src/modules/inventory/application/inventory-stock-service.ts`  |

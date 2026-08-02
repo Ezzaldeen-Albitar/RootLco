@@ -39,6 +39,7 @@
  * Exit codes: 0 proof produced · 1 the package is production-reachable · 2 IO error.
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { API_SRC_ROOT, SCRIPTS_ROOT } from '../lib/repository-paths.mjs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -118,7 +119,7 @@ export function derivePaths(lock, packageName, maxDepth = 12) {
 }
 
 /** Does any application source file import the package, directly? */
-export function findDirectImports(packageName, roots = ['src', 'scripts']) {
+export function findDirectImports(packageName, roots = [API_SRC_ROOT, SCRIPTS_ROOT]) {
   const hits = [];
   const pattern = new RegExp(
     `(?:from\\s+['"]|require\\(\\s*['"]|import\\(\\s*['"])${packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|['"])`

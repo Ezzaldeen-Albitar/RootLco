@@ -1,0 +1,59 @@
+// =============================================================================
+// Token index — the single emit point
+// =============================================================================
+//
+// Every token map is emitted here as a CSS custom property on :root. Nothing
+// else in the frontend emits custom properties. That is what lets Tailwind, the
+// vendored primitives and SCSS Modules consume ONE value each: they all read
+// `var(--…)`, and this file is the only writer.
+//
+// ADR-020: Sass is the token authority; Tailwind holds references, never values.
+// =============================================================================
+
+@use 'sass:map';
+@use 'colors';
+@use 'spacing';
+@use 'typography';
+@use 'radii';
+@use 'shadows';
+@use 'motion';
+@use 'layout';
+@use 'z-index';
+
+/// Emits one custom property per entry of a map.
+/// @param {String} $prefix - property prefix, e.g. `color`
+/// @param {Map} $tokens - the token map
+@mixin emit($prefix, $tokens) {
+  @each $name, $value in $tokens {
+    --#{$prefix}-#{$name}: #{$value};
+  }
+}
+
+:root {
+  @include emit('color', colors.$semantic);
+  @include emit('space', spacing.$scale);
+  @include emit('radius', radii.$scale);
+  @include emit('shadow', shadows.$scale);
+  @include emit('duration', motion.$durations);
+  @include emit('ease', motion.$easings);
+  @include emit('font-size', typography.$sizes);
+  @include emit('line-height', typography.$line-heights);
+  @include emit('font-weight', typography.$weights);
+  @include emit('layout', layout.$scale);
+  @include emit('z', z-index.$scale);
+
+  --font-family-sans: #{typography.$family-sans};
+  --font-family-mono: #{typography.$family-mono};
+}
+
+// Reduced motion is a token-level concern, not a per-component one. Collapsing
+// the duration tokens to zero here means every transition that uses a token
+// respects the preference automatically — including ones written later by
+// somebody who never read this file.
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    @each $name, $value in motion.$durations {
+      --duration-#{$name}: 0ms;
+    }
+  }
+}

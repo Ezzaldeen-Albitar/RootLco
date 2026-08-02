@@ -1,0 +1,82 @@
+{
+  "extends": ["stylelint-config-standard-scss"],
+  "rules": {
+    "property-disallowed-list": [
+      [
+        "margin-left",
+        "margin-right",
+        "padding-left",
+        "padding-right",
+        "border-left",
+        "border-right",
+        "left",
+        "right"
+      ],
+      {
+        "message": "Use CSS logical properties (margin-inline-*, padding-inline-*, border-inline-*, inset-inline-*) so Arabic RTL and English LTR both work without overrides. (ADR-013)"
+      }
+    ],
+    "declaration-property-value-disallowed-list": [
+      {
+        "/^text-align$/": ["left", "right"],
+        "/^float$/": ["left", "right"],
+        "/^clear$/": ["left", "right"]
+      },
+      {
+        "message": "Use logical values (start/end, inline-start/inline-end) so Arabic RTL and English LTR both work. (ADR-013)"
+      }
+    ],
+    "at-rule-disallowed-list": [
+      ["import"],
+      {
+        "message": "Sass @import is deprecated. Use @use / @forward. (ADR-013)"
+      }
+    ],
+    "declaration-no-important": [
+      true,
+      {
+        "message": "!important requires a documented reason. Add a stylelint-disable comment explaining why. (docs/standards/styling-and-sass.md)"
+      }
+    ],
+    "selector-max-id": 0,
+    "scss/load-no-partial-leading-underscore": true,
+    "scss/comment-no-empty": null,
+    "scss/dollar-variable-empty-line-before": [
+      "always",
+      {
+        "except": ["first-nested"],
+        "ignore": ["after-comment", "inside-single-line-block"]
+      }
+    ],
+    "scss/dollar-variable-pattern": null,
+    "custom-property-pattern": null,
+    "selector-class-pattern": null,
+    "no-descending-specificity": null,
+    "at-rule-no-unknown": [
+      true,
+      {
+        "ignoreAtRules": [
+          "tailwind",
+          "apply",
+          "layer",
+          "screen",
+          "use",
+          "forward",
+          "each",
+          "if",
+          "else",
+          "mixin",
+          "include",
+          "error"
+        ]
+      }
+    ],
+    "scss/at-rule-no-unknown": [
+      true,
+      {
+        "ignoreAtRules": ["tailwind", "apply", "layer", "screen"]
+      }
+    ]
+  },
+  "ignoreFiles": [".next/**", "node_modules/**"]
+}

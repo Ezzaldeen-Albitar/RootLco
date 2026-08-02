@@ -4,7 +4,6 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -13,7 +12,6 @@
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
-
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
@@ -28,16 +26,10 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@api/*": ["./apps/api/src/*"],
+      "@/*": ["./apps/api/src/*"]
     }
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "**/*.mts"
-  ],
-  "exclude": ["node_modules", ".next", "coverage"]
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
+  "exclude": ["node_modules", ".next", "coverage", "apps"]
 }

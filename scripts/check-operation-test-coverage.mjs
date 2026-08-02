@@ -70,6 +70,7 @@
 import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REPOSITORY_ROOT, API_SRC_PATH, API_ROUTES_PATH } from './lib/repository-paths.mjs';
 
 const toPosix = (p) => p.split(sep).join('/');
 
@@ -1936,13 +1937,19 @@ function literalAt(source, braceStart) {
 }
 
 /**
- * Scans every `defineOperation({...})` in `src`, returning a Map of
- * id -> facts. `surface` is derived from WHERE the registration lives: an
- * operation registered inside an App Router `route.ts` is reachable over HTTP
- * and is therefore public API surface; anything else is internal.
+ * Scans every `defineOperation({...})` in the API application's source tree,
+ * returning a Map of id -> facts. `surface` is derived from WHERE the
+ * registration lives: an operation registered inside an App Router `route.ts`
+ * is reachable over HTTP and is therefore public API surface; anything else is
+ * internal.
+ *
+ * `root` is the REPOSITORY root, not the application root — the returned
+ * `source` paths are repository-relative so the generated evidence means the
+ * same thing wherever it is read. The application sub-path comes from the path
+ * authority, never from a literal here.
  */
-export function scanRegisteredOperations(root) {
-  const src = join(root, 'src');
+export function scanRegisteredOperations(root = REPOSITORY_ROOT) {
+  const src = join(root, API_SRC_PATH);
   const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
@@ -1976,7 +1983,10 @@ export function scanRegisteredOperations(root) {
               public: literalTrue(literal, 'public'),
               idempotent: literalTrue(literal, 'idempotent'),
               versionGuarded: literalTrue(literal, 'versionGuarded'),
-              surface: /^src\/app\/api\/.*\/route\.tsx?$/.test(rel) ? 'public-api' : 'internal',
+              surface:
+                rel.startsWith(`${API_ROUTES_PATH}/`) && /\/route\.tsx?$/.test(rel)
+                  ? 'public-api'
+                  : 'internal',
               source: rel,
             });
           }
@@ -2390,7 +2400,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // acceptance evidence quietly.
     if (isDerived && operation.surface === 'internal' && !entry.internalReason) {
       failures.push(
-        `${id}: registered outside src/app/api/**/route.ts but carries no manifest internalReason`
+        `${id}: registered outside ${API_ROUTES_PATH}/**/route.ts but carries no manifest internalReason`
       );
     }
 
@@ -2510,7 +2520,7 @@ async function writeMatrix(path, payload) {
 }
 
 async function runCli() {
-  const ROOT = process.cwd();
+  const ROOT = REPOSITORY_ROOT;
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
     // Read first, interpret the failure: absent is legitimate here, unreadable

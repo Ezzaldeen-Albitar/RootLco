@@ -6,7 +6,17 @@
 #   static-quality  formatting, types, lint, every repository gate, generated-file
 #                   drift, workflow security, test honesty. No database, no build.
 #   unit-coverage   the unit tier plus its coverage ratchet.
-#   build           the production build, its integrity, and the size ratchet.
+#   build           the API production build, its integrity, and the size ratchet.
+#   web-quality     every gate the web application owns: types, lint, Sass,
+#                   formatting, component tests, the design-token and brand
+#                   gates, and its production build.
+#
+# `web-quality` is a separate task and not a few extra steps inside
+# `static-quality` for the reason the whole split exists: the web application
+# failing its own lint and the repository failing its formatting are different
+# conversations, and `ci-gate` has to be able to tell them apart. It is also the
+# job that closes P1-25-F-015 — before it, hosted CI invoked ZERO web commands,
+# so every web gate was green in the only sense that nothing had ever run it.
 #
 # They are separate CALLS rather than one job because they are independent and
 # should run in parallel, and because `ci-gate` has to reason about them
@@ -53,8 +63,11 @@ on:
         description: Operations in the committed OpenAPI document.
         value: ${{ jobs.node-quality.outputs.openapi-operations }}
       standalone-bytes:
-        description: Size of `.next/standalone` in bytes.
+        description: Size of `apps/api/.next/standalone` in bytes.
         value: ${{ jobs.node-quality.outputs.standalone-bytes }}
+      web-tests:
+        description: Number of web component tests executed.
+        value: ${{ jobs.node-quality.outputs.web-tests }}
 
 permissions:
   contents: read
@@ -76,6 +89,7 @@ jobs:
       openapi-paths: ${{ steps.contract.outputs.paths }}
       openapi-operations: ${{ steps.contract.outputs.operations }}
       standalone-bytes: ${{ steps.size.outputs.bytes }}
+      web-tests: ${{ steps.web-tests.outputs.total }}
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -100,9 +114,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${TASK}" in
-            static-quality | unit-coverage | build) printf 'task: %s\n' "${TASK}" ;;
+            static-quality | unit-coverage | build | web-quality) printf 'task: %s\n' "${TASK}" ;;
             *)
-              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build. A job that recognises no task would skip every step and report success."
+              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build, web-quality. A job that recognises no task would skip every step and report success."
               exit 1
               ;;
           esac
@@ -208,6 +222,17 @@ jobs:
           npm run validate:p1-23-inventory
           npm run validate:p1-24-register
           npm run validate:exact-money
+          npm run validate:run-block-syntax
+          # The six classification validators are NOT here. They open a
+          # PostgreSQL connection, and this job has no database — see
+          # P1-25-F-023. They run in the database-bearing job in ci.yml, which
+          # applies every migration first.
+          npm run security:all
+          # Every quality command is registered, classified, and reachable from
+          # both the local aggregate and this workflow. Without it, a check can
+          # exist, be correct, and never once run — which is exactly how three
+          # gates rotted unnoticed before P1-25.
+          npm run validate:command-coverage
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -341,7 +366,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
-            git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" > changed-files.txt
+            # Renames are EXCLUDED when the content is identical. The
+            # touched-file coverage floor exists to stop new or modified code
+            # shipping untested; a file that only moved introduces no new code,
+            # and failing it would make any large refactor unmergeable for a
+            # reason unrelated to coverage. A rename that also CHANGED content
+            # scores below R100 and is still counted.
+            git diff --name-status -M --diff-filter=ACMR "origin/${BASE_REF}...HEAD" \
+              | awk '/^R100/ { next } { print $NF }' > changed-files.txt
           else
             : > changed-files.txt
           fi
@@ -404,7 +436,7 @@ jobs:
           # existed as a tracked file so no tracked-file scanner could see it.
           # The secret-scan job cannot do this — it does not build.
           node scripts/ci/scan-history.mjs --mode worktree \
-            --roots .next,public --min-files 20 \
+            --roots apps/api/.next,apps/api/public --min-files 20 \
             --json build-output-scan.json --markdown build-output-scan.md
 
       - name: Build output integrity and size ratchet
@@ -413,7 +445,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/ci/build-size-report.mjs \
-            --dir .next \
+            --dir apps/api/.next \
             --baseline .github/ci-baselines/build-size-baseline.json \
             --json build-size.json --markdown build.md
           node -e '
@@ -421,6 +453,94 @@ jobs:
             const b = JSON.parse(fs.readFileSync("build-size.json", "utf8"));
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `bytes=${b.sizes.standaloneBytes}\n`);
           '
+
+      # =======================================================================
+      # web-quality
+      # =======================================================================
+      - name: Web formatting, types and lint
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run format:check:web
+          npm run typecheck:web
+          npm run lint:web
+
+      - name: Web Sass policy
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # ADR-013 direction safety lives here. The rule that enforces it was
+          # declared with an invalid option shape until P1-25 and was therefore
+          # SKIPPED by Stylelint while the command still exited zero, so
+          # `style:check:web` alone is not sufficient evidence that it ran —
+          # `tests/stylelint-policy.test.ts` in the web tier proves the rules fire.
+          npm run style:check:web
+
+      - name: Web design-token, brand and boundary gates
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run validate:web-tokens
+          npm run validate:web-brand
+          # No fetch outside the API layer, no import of API server or Supabase
+          # source, no dangerouslySetInnerHTML. Each of those failures is
+          # invisible in review and compiles perfectly.
+          npm run validate:web-boundary
+
+      - name: Web component tier
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # An explicit script, not flags forwarded through two npm layers —
+          # that is where they were being dropped, leaving vitest on its default
+          # reporter and the summariser with no report to read.
+          npm run test:web-ci
+
+      - name: Summarise the web tier
+        id: web-tests
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs \
+            --input apps/web/vitest-web.json --label web \
+            --json test-totals-web.json --markdown tests-web.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-web.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Web production build
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # `set -o pipefail` above is what makes `tee` safe: without it the
+          # pipeline reports tee's status and a failing build looks green.
+          npm run build:web 2>&1 | tee web-build.log
+
+      - name: Install the browser the smoke needs
+        if: inputs.task == 'web-quality'
+        run: npm run test:e2e:install --workspace @rootlco/web
+
+      - name: Browser smoke across viewports and both directions
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # Against a real production build. Five projects: two desktop widths,
+          # a laptop width, a tablet width, and a reduced-motion context — an
+          # RTL layout defect is invisible in an LTR run and vice versa.
+          npm run test:web-e2e
+
+      - name: The web build output carries no credential
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # A value inlined into a client bundle reaches every browser that loads
+          # the page and never existed as a tracked file, so no tracked-file
+          # scanner could ever have seen it.
+          node scripts/ci/scan-history.mjs --mode worktree \
+            --roots apps/web/.next --min-files 20 \
+            --json web-build-scan.json --markdown web-build-scan.md
 
       # =======================================================================
       # evidence — uploaded even when a step above failed
@@ -464,6 +584,11 @@ jobs:
             build.log
             build-warnings.txt
             changed-files.txt
+            apps/web/vitest-web.json
+            apps/web/playwright-report.json
+            test-totals-web.json
+            web-build-scan.json
+            web-build.log
             *.md
 
       - name: Upload the HTML coverage report

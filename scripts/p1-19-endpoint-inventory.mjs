@@ -20,9 +20,10 @@ import { readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prettier from 'prettier';
+import { API_SRC_ROOT } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
+const API_ROOT = join(API_SRC_ROOT, 'app', 'api', 'v1');
 const SEEDS = join(ROOT, 'supabase', 'seeds');
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-19', 'evidence');
 const OUTPUT = join(EVIDENCE, 'endpoint-inventory.md');
@@ -150,7 +151,7 @@ function seededPermissions() {
 
 /** The controlled audit-action catalog, keyed by code. */
 function auditCatalog() {
-  const source = readFileSync(join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'), 'utf8');
+  const source = readFileSync(join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts'), 'utf8');
   const catalog = new Map();
   for (const m of source.matchAll(
     /code:\s*'([^']+)',\s*class:\s*'([^']+)',\s*entityType:\s*'([^']+)'/g
@@ -166,7 +167,7 @@ function auditCatalog() {
  * so it is the field this script holds P1-19 to.
  */
 function eventCatalog() {
-  const source = readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8');
+  const source = readFileSync(join(API_SRC_ROOT, 'server', 'events', 'envelope.ts'), 'utf8');
   const entries = [];
   for (const m of source.matchAll(/code:\s*'(EVT-[^']+)',([\s\S]*?)(?=\n\s*\},)/g)) {
     const block = m[2];
@@ -206,7 +207,7 @@ function publishedEvents() {
     }
     return out;
   };
-  for (const file of walkTs(join(ROOT, 'src', 'modules'))) {
+  for (const file of walkTs(join(API_SRC_ROOT, 'modules'))) {
     const source = readFileSync(file, 'utf8');
     // Scoped to `publishEvent(` blocks. `recordSecurityEvent` also takes an
     // `eventType`, but it writes `iam.security_events` and is governed by a

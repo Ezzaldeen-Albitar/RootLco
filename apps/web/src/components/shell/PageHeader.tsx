@@ -1,0 +1,113 @@
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+import type { Locale } from '@/i18n/config';
+import type { Messages } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
+
+/**
+ * Breadcrumbs and the page header.
+ *
+ * Server components: neither holds state, and rendering them on the client
+ * would ship the whole navigation vocabulary to the browser for text that never
+ * changes after paint.
+ */
+
+export interface Crumb {
+  readonly labelKey: string;
+  /** Absolute href. The LAST crumb has none — it is the current page. */
+  readonly href?: string;
+}
+
+export function Breadcrumbs({
+  messages,
+  crumbs,
+}: {
+  readonly messages: Messages;
+  readonly crumbs: readonly Crumb[];
+}) {
+  if (crumbs.length === 0) return null;
+
+  return (
+    <nav aria-label={translate(messages, 'shell.breadcrumbs')}>
+      <ol className="flex flex-wrap items-center gap-1 text-supporting text-text-muted">
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1;
+          const label = translate(messages, crumb.labelKey as keyof Messages);
+          return (
+            <li key={crumb.labelKey} className="flex items-center gap-1">
+              {index > 0 ? (
+                // The separator is a logical `/` in the markup and is hidden
+                // from assistive technology, which reads the list structure
+                // instead. A CSS ::before separator would be announced by some
+                // screen readers and copied into the clipboard by all of them.
+                <span aria-hidden="true" className="text-text-disabled">
+                  /
+                </span>
+              ) : null}
+              {last || !crumb.href ? (
+                <span aria-current="page" className="text-text-secondary">
+                  {label}
+                </span>
+              ) : (
+                <Link
+                  href={crumb.href}
+                  className="rounded-sm hover:text-text-primary hover:underline"
+                >
+                  {label}
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+export interface PageHeaderProps {
+  readonly messages: Messages;
+  readonly locale: Locale;
+  readonly titleKey: string;
+  readonly descriptionKey?: string;
+  readonly crumbs?: readonly Crumb[];
+  /** Primary and secondary actions for this page. */
+  readonly actions?: ReactNode;
+}
+
+export function PageHeader({
+  messages,
+  titleKey,
+  descriptionKey,
+  crumbs = [],
+  actions,
+}: PageHeaderProps) {
+  return (
+    <div className="border-b border-border bg-surface px-6 py-5">
+      <Breadcrumbs messages={messages} crumbs={crumbs} />
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          {/*
+            The page title is the h1. There is exactly one per page and the
+            shell does not render another — the sidebar's group headings start
+            at h3 under a visually hidden h2 for the same reason. A document
+            with two h1s has no outline a screen-reader user can navigate.
+          */}
+          <h1 className="text-page-title font-semibold text-text-primary">
+            {translate(messages, titleKey as keyof Messages)}
+          </h1>
+          {descriptionKey ? (
+            <p className="mt-1 max-w-content text-body text-text-secondary">
+              {translate(messages, descriptionKey as keyof Messages)}
+            </p>
+          ) : null}
+        </div>
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/** Standard page body padding, so every screen agrees without repeating itself. */
+export function PageBody({ children }: { readonly children: ReactNode }) {
+  return <div className="px-6 py-6">{children}</div>;
+}

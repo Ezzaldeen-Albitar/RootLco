@@ -1,0 +1,24 @@
+// Motion tokens.
+//
+// Durations are short on purpose. Motion in this product exists to confirm that
+// an interaction was received, never to entertain: anything long enough to be
+// noticed as an animation is long enough to be in the way on the hundredth
+// repetition of the same task.
+//
+// tokens/_index.scss collapses every duration to 0ms under
+// prefers-reduced-motion, so a component that uses a token is compliant by
+// construction and one that hard-codes a duration is not — which is why the
+// token check rejects raw ms values outside this file.
+$durations: (
+  'instant': 80ms,
+  'fast': 120ms,
+  'base': 180ms,
+  'slow': 240ms,
+  'overlay': 200ms,
+);
+
+$easings: (
+  'standard': cubic-bezier(0.2, 0, 0.2, 1),
+  'enter': cubic-bezier(0, 0, 0.2, 1),
+  'exit': cubic-bezier(0.4, 0, 1, 1),
+);

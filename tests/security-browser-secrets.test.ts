@@ -138,5 +138,10 @@ describe('browser-exposed service-role scanner', () => {
     const r = runScanner(REPO_ROOT);
     expect(r.status).toBe(0);
     expect(r.output).toContain('OK');
-  });
+    // A real subprocess scanning every tracked file in the repository, so the
+    // cost grows with the tree — P1-25 added an entire web application and this
+    // began exceeding the default 5 s under full-suite load. Stated here rather
+    // than raised globally, so the budget cannot quietly cover a different test
+    // that has genuinely regressed.
+  }, 30_000);
 });

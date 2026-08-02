@@ -61,6 +61,7 @@ import {
   type RenderOptions,
   type TemplateContent,
 } from '@/modules/shared-services/domain/template-rendering';
+import { API_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 const OPTIONS: RenderOptions = { channel: 'email', maxRenderedChars: 10_000 };
 
@@ -591,7 +592,7 @@ describe('no filesystem path and no module is reachable through a value', () => 
     // imports nothing at all, so no filesystem or module API is even in scope for
     // a later edit to reach by accident.
     const source = readFileSync(
-      join(process.cwd(), 'src', 'modules', 'shared-services', 'domain', 'template-rendering.ts'),
+      join(API_SRC_ROOT, 'modules', 'shared-services', 'domain', 'template-rendering.ts'),
       'utf8'
     );
     expect(source).not.toMatch(/^\s*import\s/m);

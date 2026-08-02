@@ -64,6 +64,17 @@ export const NON_APPLICATION_SCHEMAS = {
   net: 'Supabase-managed, absent from a bare postgres container.',
   pgbouncer: 'Supabase-managed, absent from a bare postgres container.',
   cron: 'Supabase-managed, absent from a bare postgres container.',
+  supabase_functions:
+    'Supabase-managed, absent from a bare postgres container. Two tables, `hooks` and ' +
+    '`migrations`, both owned by the Edge Functions runtime. No RootLco migration creates ' +
+    'anything here.',
+  _realtime:
+    'Supabase-managed, absent from a bare postgres container. It carries a table named ' +
+    '`tenants` and a column named `tenant_external_id`, and NEITHER means a RootLco tenant — ' +
+    "they are the Realtime service's own registry of Supabase PROJECTS. Verified against the " +
+    'local stack: one row, `realtime-dev`, which is the project itself. Reading that name as ' +
+    'application multi-tenancy would be the obvious mistake here, so it is written down rather ' +
+    'than left to the next reader. No RootLco migration creates anything in this schema.',
 };
 
 /** Runtime roles the application actually connects as. */

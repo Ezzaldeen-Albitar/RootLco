@@ -25,6 +25,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { API_SRC_PATH, API_ROUTES_PATH, WEB_PATH } from '../lib/repository-paths.mjs';
 
 /**
  * Ordered category rules. First match wins, so put the specific patterns first.
@@ -32,11 +33,14 @@ import { pathToFileURL } from 'node:url';
  */
 export const CATEGORY_RULES = [
   { category: 'workflows', test: (p) => p.startsWith('.github/') },
-  // BEFORE `frontend`. `src/app/api/**` is the HTTP surface of the backend, not
-  // a page: an authorization-bearing route handler classified as `frontend`
-  // would skip `database-security`, which is the job that runs the RLS matrix —
-  // exactly the H6 class from P1-21.
-  { category: 'backend', test: (p) => p.startsWith('src/app/api/') },
+  // BEFORE `frontend`. The API application's `src/app/api/**` is the HTTP
+  // surface of the backend, not a page: an authorization-bearing route handler
+  // classified as `frontend` would skip `database-security`, which is the job
+  // that runs the RLS matrix — exactly the H6 class from P1-21.
+  { category: 'backend', test: (p) => p.startsWith(`${API_ROUTES_PATH}/`) },
+  // The web application is frontend in its entirety, including its own scripts
+  // and tests, so it is matched before the repository-wide `scripts/` rule.
+  { category: 'frontend', test: (p) => p.startsWith(`${WEB_PATH}/`) },
   { category: 'dependencies', test: (p) => p === 'package.json' || p === 'package-lock.json' },
   {
     category: 'docker',
@@ -46,7 +50,7 @@ export const CATEGORY_RULES = [
   { category: 'database', test: (p) => p.startsWith('supabase/') || p.startsWith('scripts/db/') },
   {
     category: 'openapi',
-    test: (p) => p.startsWith('docs/api/') || p.startsWith('src/server/openapi/'),
+    test: (p) => p.startsWith('docs/api/') || p.startsWith(`${API_SRC_PATH}/server/openapi/`),
   },
   {
     category: 'tests',
@@ -56,10 +60,17 @@ export const CATEGORY_RULES = [
   { category: 'scripts', test: (p) => p.startsWith('scripts/') },
   {
     category: 'frontend',
-    test: (p) => p.startsWith('src/app/') || p.startsWith('src/styles/') || p.endsWith('.scss'),
+    test: (p) =>
+      p.startsWith(`${API_SRC_PATH}/app/`) ||
+      p.startsWith(`${API_SRC_PATH}/styles/`) ||
+      p.endsWith('.scss'),
   },
-  { category: 'backend', test: (p) => p.startsWith('src/modules/') || p.startsWith('src/server/') },
-  { category: 'appSource', test: (p) => p.startsWith('src/') },
+  {
+    category: 'backend',
+    test: (p) =>
+      p.startsWith(`${API_SRC_PATH}/modules/`) || p.startsWith(`${API_SRC_PATH}/server/`),
+  },
+  { category: 'appSource', test: (p) => p.startsWith(`${API_SRC_PATH}/`) },
   {
     category: 'config',
     test: (p) =>

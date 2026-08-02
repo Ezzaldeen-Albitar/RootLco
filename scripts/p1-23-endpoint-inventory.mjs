@@ -78,9 +78,10 @@ import { writeFile } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { API_SRC_ROOT, API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
+const API_ROOT = join(API_SRC_ROOT, 'app', 'api', 'v1');
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-23', 'evidence');
 const OUTPUT = join(EVIDENCE, 'endpoint-inventory.md');
 const TRACEABILITY = join(EVIDENCE, 'task-traceability.md');
@@ -153,12 +154,12 @@ const TASKS = Object.freeze([
     [
       [
         'symbol',
-        'src/modules/shared-services/data/notification-read-repository.ts',
+        `${API_SRC_PATH}/modules/shared-services/data/notification-read-repository.ts`,
         'NotificationReadRepository',
       ],
       [
         'symbol',
-        'src/modules/shared-services/data/notification-read-repository.ts',
+        `${API_SRC_PATH}/modules/shared-services/data/notification-read-repository.ts`,
         'NOTIFICATION_ORDERING',
       ],
     ],
@@ -171,7 +172,7 @@ const TASKS = Object.freeze([
       ['permission', 'shared.notification.read'],
       [
         'symbol',
-        'src/modules/shared-services/application/notification-read-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/application/notification-read-service.ts`,
         'listMine',
       ],
       [
@@ -188,7 +189,7 @@ const TASKS = Object.freeze([
       ['operation', 'shared.notification-read'],
       [
         'symbol',
-        'src/modules/shared-services/application/notification-read-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/application/notification-read-service.ts`,
         'readMine',
       ],
     ],
@@ -213,7 +214,7 @@ const TASKS = Object.freeze([
       ['audit', 'shared.notification.delivery_inspected'],
       [
         'symbol',
-        'src/modules/shared-services/application/notification-read-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/application/notification-read-service.ts`,
         'readDeliveries',
       ],
     ],
@@ -235,7 +236,7 @@ const TASKS = Object.freeze([
     [
       [
         'symbol',
-        'src/modules/shared-services/data/document-read-repository.ts',
+        `${API_SRC_PATH}/modules/shared-services/data/document-read-repository.ts`,
         'DocumentReadRepository',
       ],
     ],
@@ -269,7 +270,7 @@ const TASKS = Object.freeze([
       ['audit', 'shared.document.retention_evaluated'],
       [
         'symbol',
-        'src/modules/shared-services/application/document-read-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/application/document-read-service.ts`,
         'evaluateRetention',
       ],
     ],
@@ -295,10 +296,10 @@ const TASKS = Object.freeze([
     'P1-23-BE-012',
     'Reporting module foundation',
     [
-      ['symbol', 'src/modules/reporting/index.ts', 'reportingModule'],
+      ['symbol', `${API_SRC_PATH}/modules/reporting/index.ts`, 'reportingModule'],
       [
         'symbol',
-        'src/modules/reporting/data/report-catalogue-repository.ts',
+        `${API_SRC_PATH}/modules/reporting/data/report-catalogue-repository.ts`,
         'ReportCatalogueRepository',
       ],
     ],
@@ -309,7 +310,11 @@ const TASKS = Object.freeze([
     [
       ['operation', 'rpt.report-catalogue'],
       ['permission', 'rpt.report.read'],
-      ['symbol', 'src/modules/reporting/application/report-catalogue-service.ts', 'listPublished'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/reporting/application/report-catalogue-service.ts`,
+        'listPublished',
+      ],
     ],
   ],
   [
@@ -317,7 +322,11 @@ const TASKS = Object.freeze([
     'Report definition read',
     [
       ['operation', 'rpt.report-read'],
-      ['symbol', 'src/modules/reporting/application/report-catalogue-service.ts', 'readByCode'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/reporting/application/report-catalogue-service.ts`,
+        'readByCode',
+      ],
     ],
   ],
 
@@ -464,7 +473,11 @@ const TASKS = Object.freeze([
     'Report execution limitation recorded',
     [
       ['doc', 'docs/phase-1/phase-1-23/contract-archaeology.md', 'executable'],
-      ['symbol', 'src/modules/reporting/application/report-catalogue-service.ts', 'executable'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/reporting/application/report-catalogue-service.ts`,
+        'executable',
+      ],
     ],
   ],
 ]);
@@ -553,7 +566,7 @@ for (const code of [...declaredPermissions].sort()) {
 // ---------------------------------------------------------------------------
 // check 2 — declared audit actions are in the controlled catalog
 // ---------------------------------------------------------------------------
-const auditCatalog = readIf(join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts')) ?? '';
+const auditCatalog = readIf(join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts')) ?? '';
 const declaredAudits = phaseOps.map((op) => op.audit).filter(Boolean);
 for (const action of declaredAudits) {
   if (!stripComments(auditCatalog).includes(`'${action}'`)) {
@@ -576,7 +589,7 @@ for (const op of phaseOps) {
 // check 4 — every phase operation is served by a module this phase owns
 // ---------------------------------------------------------------------------
 for (const dir of PHASE_MODULES) {
-  if (!existsSync(join(ROOT, 'src', 'modules', dir))) {
+  if (!existsSync(join(API_SRC_ROOT, 'modules', dir))) {
     fail(4, `PHASE_MODULES names src/modules/${dir}, which does not exist`);
   }
 }
@@ -597,7 +610,7 @@ function baseOperationIds() {
   try {
     const listing = execFileSync(
       'git',
-      ['ls-tree', '-r', '--name-only', BASE_REF, 'src/app/api/v1'],
+      ['ls-tree', '-r', '--name-only', BASE_REF, `${API_SRC_PATH}/app/api/v1`],
       {
         encoding: 'utf8',
         cwd: ROOT,

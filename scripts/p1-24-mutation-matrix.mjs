@@ -46,15 +46,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const ROUTE_HANDLER = 'src/server/http/route-handler.ts';
-const AUTHORIZATION = 'src/server/auth/authorization.ts';
-const VALIDATION = 'src/server/http/validation.ts';
-const DELIVERY_DOMAIN = 'src/modules/delivery/domain/delivery.ts';
-const ORG_SETTINGS = 'src/modules/iam/application/organization-settings-service.ts';
-const COMPANY_SETTINGS = 'src/app/api/v1/org/companies/[companyId]/settings/route.ts';
+const ROUTE_HANDLER = `${API_SRC_PATH}/server/http/route-handler.ts`;
+const AUTHORIZATION = `${API_SRC_PATH}/server/auth/authorization.ts`;
+const VALIDATION = `${API_SRC_PATH}/server/http/validation.ts`;
+const DELIVERY_DOMAIN = `${API_SRC_PATH}/modules/delivery/domain/delivery.ts`;
+const ORG_SETTINGS = `${API_SRC_PATH}/modules/iam/application/organization-settings-service.ts`;
+const COMPANY_SETTINGS = `${API_SRC_PATH}/app/api/v1/org/companies/[companyId]/settings/route.ts`;
 
 const IAM_ROUTES = 'tests/backend/p1-24-iam-route-depth.test.ts';
 const READ_SHAPE = 'tests/backend/p1-24-read-path-shape.test.ts';

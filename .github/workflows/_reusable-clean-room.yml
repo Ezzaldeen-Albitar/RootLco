@@ -177,6 +177,41 @@ jobs:
           fi
           echo "OK: schema hash unchanged across every suite"
 
+      # The clean room runs THE AGGREGATE — a fresh clone, installed from the
+      # committed lockfile alone, passing exactly what a developer runs.
+      #
+      # It covers both workspaces: types, lint, Sass, formatting, the unit and
+      # component tiers, the design-token and brand gates, both production
+      # builds, the contract validators, the phase inventories, the domain
+      # classifications and the security gates. Adding it here is what closed
+      # P1-25-F-015, where hosted CI invoked ZERO web commands and every web
+      # gate was therefore green in the only sense that nothing had run it.
+      #
+      # It runs BEFORE the enumerated block below, so a broad failure is
+      # reported by the aggregate rather than by whichever individual validator
+      # happens to be listed first.
+      # The aggregate includes the browser smoke, so the clean room needs the
+      # browser. Installed as its own step rather than inside the aggregate: a
+      # download is not a verification, and folding it in would make a network
+      # failure look like a test failure.
+      - name: Install the browser the aggregate needs
+        run: npm run test:e2e:install --workspace @rootlco/web
+
+      - name: The full workspace aggregate
+        run: |
+          set -euo pipefail
+          npm run verify:workspaces
+
+      # DELIBERATELY enumerated, and deliberately redundant with the aggregate.
+      #
+      # Several closed phases pin this exact text as their DevOps evidence — for
+      # example P1-22-DO-001 asserts that this file names
+      # `validate:p1-22-inventory`. Those anchors are how a closed phase proves
+      # its gate still runs, and collapsing them into the aggregate would delete
+      # the evidence while leaving the claim. The duplicated commands are all
+      # sub-second Node scripts; the one genuinely expensive step, the
+      # production build, is NOT repeated because the aggregate already builds
+      # both applications.
       - name: Contract, coverage and repository gates
         run: |
           set -euo pipefail
@@ -189,8 +224,10 @@ jobs:
           npm run validate:p1-21-inventory
           npm run validate:p1-22-inventory
           npm run validate:p1-23-inventory
+          npm run validate:p1-24-register
           npm run validate:exact-money
           npm run validate:encoding
+          npm run validate:command-coverage
           # See _reusable-node-quality.yml: the canonical documents are external
           # by design, so a runner can only verify the reference record.
           npm run validate:canonical-docs -- --record-only
@@ -205,9 +242,6 @@ jobs:
           npm run security:browser-secrets
           npm run security:scope-exclusions
           npm run validate:no-fake-data
-
-      - name: Production build
-        run: npm run build
 
       - name: Docker configuration and production image
         run: |

@@ -60,7 +60,7 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **9 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **28 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **29 scripts in `scripts/ci`**,
 **11 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 
@@ -78,10 +78,10 @@ The count is stated here rather than left to drift because
 `tests/ci/documented-counts.test.ts` reconciles it against the filesystem, and it
 failed on exactly this discrepancy rather than being noticed in review.
 
-`pr-ci.yml` declares **12 governed jobs plus `ci-gate` = 13**, which appear as
-**14 checks** on a pull request because `code-security` is a two-language matrix
+`pr-ci.yml` declares **13 governed jobs plus `ci-gate` = 14**, which appear as
+**15 checks** on a pull request because `code-security` is a two-language matrix
 (`javascript-typescript` and `actions`). All three numbers are correct and they
-are not interchangeable — `ci-gate` governs 12, the file declares 13, and 14
+are not interchangeable — `ci-gate` governs 13, the file declares 14, and 15
 report.
 
 `ci.yml` is retained and still runs. Its four job names are the current required
