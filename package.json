@@ -55,6 +55,7 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:web": "npm run test --workspace @rootlco/web",
+    "test:web-ci": "npm run test:ci --workspace @rootlco/web",
     "test:web-e2e": "npm run test:e2e --workspace @rootlco/web",
     "typecheck": "tsc --noEmit",
     "typecheck:api": "npm run typecheck --workspace @rootlco/api",

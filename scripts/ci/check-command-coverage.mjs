@@ -181,6 +181,12 @@ export const REGISTER = Object.freeze([
     why: 'convenience alias; verify:api and verify:web each run their own half',
   },
   { name: 'test:web', owner: ROOT, tier: 'required', why: 'web component tier' },
+  {
+    name: 'test:web-ci',
+    owner: ROOT,
+    tier: 'informational',
+    why: 'the same suite as test:web, with the reporters CI needs for evidence',
+  },
   { name: 'format:check:api', owner: ROOT, tier: 'required', why: 'API formatting' },
   { name: 'format:check:web', owner: ROOT, tier: 'required', why: 'web formatting' },
   { name: 'validate:web-tokens', owner: ROOT, tier: 'required', why: 'design-token gate' },
@@ -296,6 +302,12 @@ export const REGISTER = Object.freeze([
     why: 'reached through validate:web-boundary',
   },
   { name: 'test:e2e', owner: WEB, tier: 'required', why: 'reached through test:web-e2e' },
+  {
+    name: 'test:ci',
+    owner: WEB,
+    tier: 'informational',
+    why: 'the same suite as test, with the reporters CI needs for evidence',
+  },
   {
     name: 'test:e2e:install',
     owner: WEB,

@@ -491,7 +491,10 @@ jobs:
         if: inputs.task == 'web-quality'
         run: |
           set -euo pipefail
-          npm run test:web -- --reporter=default --reporter=json --outputFile.json=vitest-web.json
+          # An explicit script, not flags forwarded through two npm layers —
+          # that is where they were being dropped, leaving vitest on its default
+          # reporter and the summariser with no report to read.
+          npm run test:web-ci
 
       - name: Summarise the web tier
         id: web-tests

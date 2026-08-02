@@ -16,6 +16,7 @@
     "start": "next start",
     "style:check": "stylelint \"src/**/*.scss\" --max-warnings 0",
     "test": "vitest run",
+    "test:ci": "vitest run --reporter=default --reporter=json --outputFile.json=vitest-web.json",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:watch": "vitest",
