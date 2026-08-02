@@ -234,7 +234,18 @@ branding, which remains Owner input.
  M apps/web/src/styles/tokens/_colors.scss the primary ramp, all ten steps
 ```
 
-Files changed under `apps/web/src/components/` or `apps/web/src/app/`: **0**.
+Files changed under `apps/web/src/components/`, `apps/web/src/features/` or
+`apps/web/app/`: **0**. The whole diff was the two files above, so no route file could
+have changed either way.
+
+> **Correction, kept because the mistake is instructive.** This line first read
+> `apps/web/src/app/`. **That directory does not exist** — the App Router lives at
+> `apps/web/app/`, outside `src/`. The stated check therefore matched nothing and would
+> have passed no matter what a future swap touched. The conclusion was still true, because
+> the entire working-tree diff was two files, but a check that cannot fail is not evidence.
+> `apps/web/tests/brand-replacement.test.ts` was never affected: it already guards
+> `apps/web/src/components/`, `apps/web/app/` and `apps/web/src/features/`, which is
+> why the automated proof stood while the prose describing it did not.
 
 **What still passed against the swapped brand**
 
