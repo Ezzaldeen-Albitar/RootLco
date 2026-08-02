@@ -140,7 +140,11 @@ jobs:
           npm run format:check
           npm run lint
           npm run typecheck
-          npm run style:check
+          # No stylesheet gate here. apps/api holds no stylesheets after the
+          # pre-P1-26 boundary remediation, and apps/web's stylesheets are gated
+          # by the web-quality task (which also proves the Stylelint rules fire).
+          # Running it in both places would lint the same files twice and imply
+          # a coverage this job does not have.
 
       - name: YAML and JSON are parseable
         if: inputs.task == 'static-quality'
@@ -233,6 +237,10 @@ jobs:
           # exist, be correct, and never once run — which is exactly how three
           # gates rotted unnoticed before P1-25.
           npm run validate:command-coverage
+          # apps/api is the Backend. These two keep Frontend material and
+          # generated output out of it, and out of the repository at large.
+          npm run validate:api-backend-only
+          npm run validate:generated-artifacts
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'

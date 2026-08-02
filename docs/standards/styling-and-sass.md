@@ -18,6 +18,19 @@ This standard defines how styling is written, organised, named, and verified in 
 
 All colours currently in the codebase are neutral defaults pending brand approval. No visual identity has been approved (OIR-06, UI prototypes, remains open). This caveat applies everywhere colours are discussed in this document.
 
+> **Amendment (2026-08-02, pre-P1-26 API file-boundary remediation).** The Sass
+> architecture this document describes now lives in **`apps/web/src/styles/`**
+> only. `apps/api` held a copy from the Phase 1-1 scaffold; it styled one
+> verification page, nothing imported it after P1-25 built the real Frontend, and
+> a Backend workspace that renders no HTML has nothing to style. It was removed,
+> so the repository now has exactly one stylesheet authority instead of two.
+>
+> The command names are unchanged and still gating: `npm run style:check`,
+> `style:lint` and `style:fix` now resolve to the web workspace. What changed is
+> which workspace holds stylesheets, not the rules or how they are enforced.
+> `scripts/ci/check-api-backend-only.mjs` fails the build if a stylesheet
+> reappears under `apps/api`.
+
 ## 2. The stack today
 
 Installed and in use (verified versions):

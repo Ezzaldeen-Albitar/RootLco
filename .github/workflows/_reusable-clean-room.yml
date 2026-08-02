@@ -228,6 +228,8 @@ jobs:
           npm run validate:exact-money
           npm run validate:encoding
           npm run validate:command-coverage
+          npm run validate:api-backend-only
+          npm run validate:generated-artifacts
           # See _reusable-node-quality.yml: the canonical documents are external
           # by design, so a runner can only verify the reference record.
           npm run validate:canonical-docs -- --record-only

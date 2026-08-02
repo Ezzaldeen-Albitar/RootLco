@@ -93,6 +93,29 @@ export const REGISTER = Object.freeze([
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
   {
+    name: 'validate:api-backend-only',
+    owner: ROOT,
+    tier: 'required',
+    why: 'apps/api is Backend-only — no page, stylesheet, client component or tracked build output',
+  },
+  {
+    name: 'validate:generated-artifacts',
+    owner: ROOT,
+    tier: 'required',
+    why: 'no generated output tracked anywhere, one root lockfile, ignore rules intact',
+  },
+  {
+    name: 'validate:phase-ownership',
+    owner: ROOT,
+    tier: 'informational',
+    // Takes a profile and a base ref, so it is invoked per phase branch rather
+    // than from the repository-wide aggregate. P1-26's CI job runs it with the
+    // p1-26-frontend profile; the pre-P1-26 remediation runs it with
+    // api-boundary. Its rule table is proven by tests/ci/phase-ownership.test.ts,
+    // which runs in the required unit tier.
+    why: 'per-phase changed-file ownership; parameterised, so invoked by the phase job not the aggregate',
+  },
+  {
     name: 'validate:web-topology',
     owner: ROOT,
     tier: 'required',
@@ -181,7 +204,17 @@ export const REGISTER = Object.freeze([
   { name: 'lint:web', owner: ROOT, tier: 'required', why: 'web lint' },
   { name: 'typecheck:api', owner: ROOT, tier: 'required', why: 'API typecheck' },
   { name: 'typecheck:web', owner: ROOT, tier: 'required', why: 'web typecheck' },
-  { name: 'style:check', owner: ROOT, tier: 'required', why: 'API Sass' },
+  {
+    name: 'style:check',
+    owner: ROOT,
+    tier: 'informational',
+    // After the pre-P1-26 boundary remediation apps/api holds no stylesheets,
+    // so this root name now resolves to exactly the same stylelint run as
+    // `style:check:web`. ADR-013, CONTRIBUTING and the styling standard name
+    // it as the developer-facing gating form, so it keeps working — but the
+    // REQUIRED coverage is carried once, by style:check:web.
+    why: 'documented developer alias of style:check:web, which carries the required coverage',
+  },
   { name: 'style:check:web', owner: ROOT, tier: 'required', why: 'web Sass' },
   {
     name: 'style:check:all',
@@ -276,14 +309,12 @@ export const REGISTER = Object.freeze([
   { name: 'lint', owner: API, tier: 'required', why: 'reached through lint:api' },
   { name: 'typecheck', owner: API, tier: 'required', why: 'reached through typecheck:api' },
   { name: 'format:check', owner: API, tier: 'required', why: 'reached through format:check:api' },
-  { name: 'style:check', owner: API, tier: 'required', why: 'reached through style:check' },
+
   { name: 'dev', owner: API, tier: 'interactive', why: 'dev server' },
   { name: 'dev:container', owner: API, tier: 'interactive', why: 'dev server' },
   { name: 'start', owner: API, tier: 'interactive', why: 'production server' },
   { name: 'lint:fix', owner: API, tier: 'interactive', why: 'fix mode' },
   { name: 'format', owner: API, tier: 'interactive', why: 'fix mode' },
-  { name: 'style:lint', owner: API, tier: 'interactive', why: 'report mode' },
-  { name: 'style:fix', owner: API, tier: 'interactive', why: 'fix mode' },
 
   // --- web workspace --------------------------------------------------------
   { name: 'build', owner: WEB, tier: 'required', why: 'reached through build:web' },
@@ -291,6 +322,8 @@ export const REGISTER = Object.freeze([
   { name: 'typecheck', owner: WEB, tier: 'required', why: 'reached through typecheck:web' },
   { name: 'format:check', owner: WEB, tier: 'required', why: 'reached through format:check:web' },
   { name: 'style:check', owner: WEB, tier: 'required', why: 'reached through style:check:web' },
+  { name: 'style:lint', owner: WEB, tier: 'interactive', why: 'report mode' },
+  { name: 'style:fix', owner: WEB, tier: 'interactive', why: 'fix mode' },
   { name: 'test', owner: WEB, tier: 'required', why: 'reached through test:web' },
   {
     name: 'validate:tokens',

@@ -1,9 +1,0 @@
-// ============================================================================
-// Visibility utilities.
-// ============================================================================
-@use '../abstracts' as a;
-
-// Screen-reader-only content (skip links, icon labels).
-.u-visually-hidden {
-  @include a.visually-hidden;
-}
