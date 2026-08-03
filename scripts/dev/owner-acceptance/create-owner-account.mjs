@@ -27,7 +27,7 @@
  * Local only. Refuses to run against anything but a loopback development
  * database. See `context.mjs` for the three guards.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -67,9 +67,26 @@ const log = (message) => console.log(message);
  * `.env.*`. Values already present are never overwritten: an operator who set
  * something deliberately keeps it.
  */
+/**
+ * Reads a file, or returns null when it is absent.
+ *
+ * `existsSync` followed by `readFileSync` is a time-of-check/time-of-use race
+ * (`js/file-system-race`): the file can vanish, or be replaced by a symlink,
+ * between the two calls. Attempting the read and handling `ENOENT` is one
+ * syscall and has no window.
+ */
+function readIfPresent(path) {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 function ensureApiEnvironment(supabase, { databaseUrl }) {
   const path = join(REPO_ROOT, 'apps', 'api', '.env.local');
-  const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  const existing = readIfPresent(path) ?? '';
   const has = (name) => new RegExp(`^\\s*${name}\\s*=`, 'm').test(existing);
 
   const wanted = [
@@ -105,8 +122,8 @@ function ensureApiEnvironment(supabase, { databaseUrl }) {
  */
 function repairDatabaseUrl(usableRoles, databaseUrl) {
   const path = join(REPO_ROOT, 'apps', 'api', '.env.local');
-  if (!existsSync(path)) return null;
-  const existing = readFileSync(path, 'utf8');
+  const existing = readIfPresent(path);
+  if (existing === null) return null;
   const match = existing.match(/^\s*DATABASE_URL\s*=\s*(.+)$/m);
   if (!match) return null;
 
@@ -615,7 +632,10 @@ async function main() {
         null,
         2
       ) + '\n',
-      'utf8'
+      // Owner-readable only. The directory is git-ignored, but a credential
+      // sitting world-readable on disk is still a credential sitting
+      // world-readable on disk.
+      { encoding: 'utf8', mode: 0o600 }
     );
 
     log('');
@@ -626,10 +646,17 @@ async function main() {
     log(`  company settings  ${c.settings_a}`);
     log(`  Tenant B users    ${c.users_b}`);
     log('');
+    // The password is NOT printed.
+    //
+    // `js/clear-text-logging` is right: stdout goes to terminal scrollback, to
+    // any log the operator happens to be capturing, and to a CI transcript if
+    // this is ever run somewhere it should not be. The credential is written to
+    // one git-ignored file with the mode restricted, and the operator reads it
+    // from there — one place to find it, and one place to delete it.
     log(`  credentials written to .local/owner-acceptance-account.json (git-ignored)`);
     log(`  tenant id  ${IDS.tenantA}`);
     log(`  email      ${NAMES.ownerEmail}`);
-    log(`  password   ${password}`);
+    log(`  password   (in that file — deliberately not printed to stdout)`);
     log('');
     log('  LOCAL DEVELOPMENT ONLY — NOT A PRODUCTION ACCOUNT');
     log('');

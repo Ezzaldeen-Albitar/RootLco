@@ -31,7 +31,7 @@
  * the container with the generated key.
  */
 import { execSync } from 'node:child_process';
-import { rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -100,11 +100,20 @@ export function alignLocalJwtSigning({ project, log = () => {} }) {
 
   log(`  recreating ${container} without ${ASYMMETRIC_KEY_VAR} (${kept.length} settings kept)`);
 
-  // Environment goes through a file, not the command line: 70 values containing
-  // URLs, JSON and quotes would need shell-correct escaping on two platforms,
-  // and getting one wrong silently changes a setting rather than failing.
-  const envFile = join(tmpdir(), 'rootlco-gotrue-env.txt');
-  writeFileSync(envFile, kept.join('\n') + '\n', 'utf8');
+  // Environment goes through a file, not the command line: seventy values
+  // containing URLs, JSON and quotes would need shell-correct escaping on two
+  // platforms, and getting one wrong silently changes a setting rather than
+  // failing.
+  //
+  // The file is created in a fresh `mkdtemp` directory, never at a predictable
+  // path in the shared temp directory. A fixed name there is
+  // `js/insecure-temporary-file`: another user on the machine can pre-create it,
+  // or symlink it somewhere else, and this content includes the local JWT
+  // secret. `mkdtemp` gives a directory only this process can guess, created
+  // 0700, and the whole directory is removed afterwards.
+  const envDir = mkdtempSync(join(tmpdir(), 'rootlco-gotrue-'));
+  const envFile = join(envDir, 'env.txt');
+  writeFileSync(envFile, kept.join('\n') + '\n', { encoding: 'utf8', mode: 0o600 });
 
   try {
     sh(`docker rm -f ${container}`);
@@ -117,9 +126,9 @@ export function alignLocalJwtSigning({ project, log = () => {} }) {
     );
   } finally {
     try {
-      rmSync(envFile);
+      rmSync(envDir, { recursive: true, force: true });
     } catch {
-      log('  note: the temporary environment file could not be removed');
+      log(`  note: the temporary environment directory ${envDir} could not be removed`);
     }
   }
 

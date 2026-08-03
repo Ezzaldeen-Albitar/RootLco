@@ -92,6 +92,9 @@ two additions the earlier runs did not have: the acceptance guards are exercised
 inside the clean room, and the anonymous browser suite is counted to prove the
 new authenticated tier stays invisible without its flag.
 
+Candidate `66237c1443042bc3339d091ed5c17036fdf53d9b`, tree
+`0dfb725d3ff19ef9189f0b25eac086f6872b413e`.
+
 | Check | Result |
 | --- | --- |
 | Clone tree vs working tree | **identical** |
@@ -104,29 +107,52 @@ new authenticated tier stays invisible without its flag.
 | Repository policies | **exit 0** |
 | Formatting, all three scopes | **exit 0** |
 | `security:all` | **exit 0** |
-| Acceptance guard, `ROOTLCO_ENV` unset | **refused** |
-| Acceptance guard, non-loopback host | **refused** |
+| `npm audit --audit-level=high` | **exit 0** |
 | Root / CI-contract | **1479 / 1479**, 69 files |
+| Web typecheck · lint · stylelint | **exit 0** |
 | Web unit / component | **319 / 319**, 16 files |
-| `verify:api` · typecheck · lint · stylelint | **exit 0** |
+| `verify:api` | **exit 0** |
 | Production build | **exit 0** |
+| Acceptance guard, `ROOTLCO_ENV` unset | **exit 2 — refused** |
+| Acceptance guard, non-loopback host | **exit 2 — refused** |
 | Anonymous browser suite with `ROOTLCO_E2E_AUTH` unset | **110 tests in 1 file** — unchanged |
 | Git state at the end | **clean** |
 
-### The run that failed, and why it is recorded
+The guards being exercised *inside* the clean room is the addition that matters:
+it proves the local-only refusal is a property of the committed tree, not of the
+machine that happened to run it.
 
-The first attempt, at `3d2bcc48`, **failed** `security:all`: one credential-shaped
-value in `local-acceptance-account-runbook.md`. The same scan had passed on the
-working tree minutes earlier.
+### Two runs that failed first, and why both are recorded
+
+**At `3d2bcc48` — `security:all` failed.** One credential-shaped value in
+`local-acceptance-account-runbook.md`. The same scan had passed on the working
+tree minutes earlier.
 
 The difference is the whole point of a clean room. `check-tracked-secrets.mjs`
 reads **tracked** files; the runbook was still untracked when the local scan ran,
 so the local scan could not see it. In a fresh clone every file is tracked, so
-the clean room saw it immediately — and so did hosted CI.
-
-**A gate run before `git add` cannot see the file being added.** That is now
-written where the next person will read it, and the commit that fixed it stages
+the clean room saw it immediately — and so did hosted CI. **A gate run before
+`git add` cannot see the file being added.** The commit that fixed it stages
 before it verifies.
+
+**At `e0d3e54` — the web and API tiers failed.** A blanket
+`"brace-expansion": "^5.0.9"` override, added to clear a new advisory, produced
+`TypeError: expand is not a function`. Three `minimatch` majors in the tree
+depend on three different `brace-expansion` majors and only 4.0.0–5.0.8 are
+affected; forcing 5.x globally handed a v5 module to v1 and v2 consumers. The
+override is now scoped to the vulnerable range, and 1.1.18 and 2.1.4 resolve
+exactly as before.
+
+Both are kept because a clean room that only ever shows its green run is a
+record of a rehearsal, not of a test.
+
+### The clean room's own defect
+
+The first two runs also lost the middle of their own log: `cd apps/web` without a
+subshell left the final `git status` outside the repository, and npm's carriage
+returns overwrote earlier lines. The script now runs every `cd` in a subshell
+and strips `\r` from every step. A verification log that cannot be read is not
+evidence, and it took a third run to notice.
 
 ### A note on this record's own SHA
 

@@ -275,11 +275,31 @@ export function generatePassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   const groups = 4;
   const perGroup = 5;
-  const bytes = randomBytes(groups * perGroup);
-  const chars = [...bytes].map((b) => alphabet[b % alphabet.length]);
+  const length = groups * perGroup;
+
+  // Rejection sampling, not modulo.
+  //
+  // `byte % 57` is biased: 256 is not a multiple of 57, so the first
+  // 256 mod 57 = 28 characters of the alphabet come up more often than the
+  // rest. The bias is small, but it is real, it is measurable, and removing it
+  // costs nothing — `js/biased-cryptographic-random` is right to flag it.
+  //
+  // Bytes at or above the largest whole multiple of the alphabet size are
+  // discarded and redrawn, so every character is exactly equally likely.
+  const limit = Math.floor(256 / alphabet.length) * alphabet.length;
+  const chars = [];
+  while (chars.length < length) {
+    for (const byte of randomBytes(length)) {
+      if (byte >= limit) continue;
+      chars.push(alphabet[byte % alphabet.length]);
+      if (chars.length === length) break;
+    }
+  }
+
   const out = [];
-  for (let g = 0; g < groups; g += 1)
+  for (let g = 0; g < groups; g += 1) {
     out.push(chars.slice(g * perGroup, (g + 1) * perGroup).join(''));
+  }
   return out.join('-');
 }
 

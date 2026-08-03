@@ -13,7 +13,7 @@
  *
  * Prints no password and no token. Local only.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -89,12 +89,21 @@ async function main() {
   console.log('');
 
   // --- the part that proves the account is usable, not merely present --------
-  if (!existsSync(HANDOFF)) {
+  // Read and handle absence, rather than `existsSync` then read: the two-call
+  // form is a time-of-check/time-of-use race (`js/file-system-race`) and this
+  // file holds a credential.
+  let raw = null;
+  try {
+    raw = readFileSync(HANDOFF, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  if (raw === null) {
     report('live sign-in', false, 'no .local handoff file — run npm run acceptance:create-owner');
     finish();
     return;
   }
-  const handoff = JSON.parse(readFileSync(HANDOFF, 'utf8'));
+  const handoff = JSON.parse(raw);
   email = handoff.login?.email ?? email;
 
   let ready;
