@@ -81,11 +81,28 @@ export function evaluate(files, read, p26Branches = '') {
       : 'the brand is marked approved',
   });
 
-  const logo = files.some((f) => /^apps\/web\/public\/brand\/.+\.(?:svg|png|webp|avif)$/.test(f));
+  // The brand mark is RESOLVED when the configuration and the tree agree — which
+  // a wordmark satisfies without any file. The first version of this check
+  // demanded an asset unconditionally, so a wordmark brand could never satisfy
+  // it: a condition that cannot be met is not a gate, it is a wall.
+  const assetMode = brand !== null && /logoMode:\s*'asset'/.test(brand);
+  const hasAsset = files.some((f) =>
+    /^apps\/web\/public\/brand\/.+\.(?:svg|png|webp|avif)$/.test(f)
+  );
+  const markResolved = brand !== null && (assetMode ? hasAsset : nameDecided);
   items.push({
-    id: 'approved logo asset',
-    ready: logo,
-    detail: logo ? 'a brand asset is present' : 'apps/web/public/brand/ holds no logo asset',
+    id: 'brand mark resolved',
+    ready: markResolved,
+    detail:
+      brand === null
+        ? 'the brand configuration could not be read'
+        : assetMode
+          ? hasAsset
+            ? 'logoMode is asset and the asset is present'
+            : 'logoMode is asset but apps/web/public/brand/ holds none'
+          : nameDecided
+            ? 'logoMode is wordmark, rendered from the approved product name'
+            : 'logoMode is wordmark but no product name is configured',
   });
 
   const branches = p26Branches.trim();
