@@ -523,6 +523,19 @@ gate does not filter by**, having been told in the gate's own configuration that
 it does not. A partial fix that reports as a fix is worse than no fix, because
 the next run's failure reads as a regression rather than as the remainder.
 
+**And the branch's own CI proved the baseline's point in the same two runs.**
+
+| Head                              | `CodeQL` (GitHub's check) | `code-security` (this repository's policy gate) |
+| --------------------------------- | ------------------------- | ----------------------------------------------- |
+| `66237c1` — 7 findings, some HIGH | **failure**               | **failure**                                     |
+| `ecb8244` — 2 findings, none HIGH | **success**               | **failure**                                     |
+
+At `ecb8244` GitHub's own CodeQL check went **green with two open findings in the
+tree**, because it blocks on high and critical only. The one check most people
+would read as "CodeQL is happy" said exactly that, and was of no use at all. The
+repository's own gate — which counts every severity — is the only reason the two
+survivors were not merged.
+
 ### `js/file-access-to-http` — and why it was fixed rather than dismissed
 
 `status-owner-account.mjs` exists to answer "is the Owner account usable _right

@@ -230,6 +230,23 @@ the defect does not exist; the jsdom tier has no server. The single
 configuration a developer and the Product Owner actually use was the one no tier
 exercised.
 
+### And what the tooling built to find those five was itself hiding
+
+`F-051` — seven CodeQL findings, every one of them in the acceptance tooling this
+remediation added. Green in both clean-room runs, green in the running system,
+and invisible to every local check, because a security analyser is a fourth tier
+that none of the other three contains.
+
+Two of the seven then survived a fix round, because I enumerated the results by
+security severity and the repository's gate does not. On that run GitHub's own
+`CodeQL` check reported **success** with two open findings in the tree — it
+blocks on high and critical only — while the repository's `code-security` gate,
+which counts every severity, stayed red. The gate's own baseline file had
+predicted exactly that, in writing, before it happened.
+
+Tooling written to verify the product is product code, and it earns review on the
+same terms. It now has tests.
+
 ## 9. Resume point
 
 Wave 25 — the Owner handoff, then P1-26 closes if and only if the Product Owner

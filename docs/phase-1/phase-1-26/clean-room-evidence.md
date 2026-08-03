@@ -92,8 +92,8 @@ two additions the earlier runs did not have: the acceptance guards are exercised
 inside the clean room, and the anonymous browser suite is counted to prove the
 new authenticated tier stays invisible without its flag.
 
-Candidate `66237c1443042bc3339d091ed5c17036fdf53d9b`, tree
-`0dfb725d3ff19ef9189f0b25eac086f6872b413e`.
+Candidate `94bfd722cc379107785e2f8dd43cf715b15de63e`, tree
+`0aab19ac0f2d3016bf6e51c5b22aa552b9ec1b14`.
 
 | Check | Result |
 | --- | --- |
@@ -108,7 +108,7 @@ Candidate `66237c1443042bc3339d091ed5c17036fdf53d9b`, tree
 | Formatting, all three scopes | **exit 0** |
 | `security:all` | **exit 0** |
 | `npm audit --audit-level=high` | **exit 0** |
-| Root / CI-contract | **1479 / 1479**, 69 files |
+| Root / CI-contract | **1491 / 1491**, 70 files |
 | Web typecheck · lint · stylelint | **exit 0** |
 | Web unit / component | **319 / 319**, 16 files |
 | `verify:api` | **exit 0** |
@@ -117,6 +117,11 @@ Candidate `66237c1443042bc3339d091ed5c17036fdf53d9b`, tree
 | Acceptance guard, non-loopback host | **exit 2 — refused** |
 | Anonymous browser suite with `ROOTLCO_E2E_AUTH` unset | **110 tests in 1 file** — unchanged |
 | Git state at the end | **clean** |
+
+The root count moved from **1479** to **1491** because the acceptance tooling
+finally acquired tests of its own — twelve of them, over the password generator
+and the allow-list that stands between a file anyone could overwrite and an
+outbound sign-in request (`P1-26-F-051`).
 
 The guards being exercised *inside* the clean room is the addition that matters:
 it proves the local-only refusal is a property of the committed tree, not of the
@@ -146,6 +151,20 @@ exactly as before.
 Both are kept because a clean room that only ever shows its green run is a
 record of a rehearsal, not of a test.
 
+### And two runs the clean room could not have failed
+
+`P1-26-F-051` — seven CodeQL findings in the acceptance tooling — was **green in
+every clean-room run**, at `66237c1` and at `ecb8244` and at the candidate above.
+The clean room runs what the repository can run, and the repository cannot run
+CodeQL: it needs the hosted analysis.
+
+This is the third direction the same lesson has arrived from in this phase.
+`F-042` and `F-043` were green locally and red only in CI. `F-044` was green in
+all twenty CI checks and red only in the clean room. `F-045` through `F-049` were
+green in both and visible only by starting the system and looking at it. And
+`F-051` was green in both **and** in the running system, because a security
+analyser is a fourth tier that neither of the other three contains.
+
 ### The clean room's own defect
 
 The first two runs also lost the middle of their own log: `cd apps/web` without a
@@ -156,10 +175,15 @@ evidence, and it took a third run to notice.
 
 ### A note on this record's own SHA
 
-A record that names the SHA it measured cannot live inside that SHA. This one
-measured `b4794e7` and is committed after it, in a **documentation-only** commit
-that changes no file any tier above reads. The same convention was used for the
-`3e1f9e3` record it replaces.
+A record that names the SHA it measured cannot live inside that SHA. The wave-17
+record measured `b4794e7` and was committed after it, in a **documentation-only**
+commit that changes no file any tier above reads; the same convention was used
+for the `3e1f9e3` record it replaced, and again here for the remediation record
+measuring `94bfd72`.
+
+The documentation-only commit that carries this record is itself re-run through
+hosted CI before the merge, so the head that merges is a head every tier has
+measured — not one that inherits a green result from its parent.
 
 ### What the clean room did not run, and why
 

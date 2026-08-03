@@ -98,6 +98,47 @@ in. It was found by the local clean room and by nothing else. The reverse of
 Neither tier is a superset of the other. That is the argument for running both,
 and it is the reason this phase ran the clean room twice.
 
+### The Owner-acceptance remediation branch, run by run
+
+`remediation/p1-26-owner-acceptance-runtime`. Same discipline: every head is
+here, not only the last one.
+
+| Head      | Checks | Failing | What was wrong                                                                                     |
+| --------- | ------ | ------- | -------------------------------------------------------------------------------------------------- |
+| `3d2bcc4` | 20     | 7       | The forbidden credential literal in the runbook — `P1-26-F-042`'s shape, in the file forbidding it |
+| `e0d3e54` | 20     | 8       | A blanket `brace-expansion` override handed a v5 module to v1 and v2 consumers; the build broke    |
+| `66237c1` | 20     | 3       | Seven CodeQL findings in the acceptance tooling — `P1-26-F-051`                                    |
+| `ecb8244` | 20     | 2       | Two of those seven survived a fix round that filtered by severity                                  |
+
+Two failures cancelled the container and clean-room legs at `3d2bcc4` and
+`e0d3e54`; a cancelled leg is neither a pass nor a finding, and is counted as
+neither here.
+
+### The check that went green while the tree was not
+
+The most useful thing this branch's CI produced is the contrast between two
+checks on the same run.
+
+| Head      | `CodeQL` — GitHub's own check | `code-security` — this repository's policy gate |
+| --------- | ----------------------------- | ----------------------------------------------- |
+| `66237c1` | **failure**                   | **failure**                                     |
+| `ecb8244` | **success**                   | **failure**                                     |
+
+At `ecb8244` there were still **two open findings in the tree**, and GitHub's
+CodeQL check reported success — it blocks on high and critical only. Anyone
+reading the check name rather than the policy report would have concluded the
+security analysis was clean.
+
+The repository's gate counts every severity, which is the sole reason those two
+did not merge. The baseline file predicted this in writing before it happened:
+
+> The count deliberately includes medium and low, which is how the one dismissal
+> was caught at all — GitHub's own CodeQL check reported that run as SUCCESS,
+> because it blocks only on high and critical.
+
+A gate is worth the difference between what it measures and what the platform
+measures for you. Here that difference was two real findings.
+
 ## 2. `P1-26-DO-002` — logging, monitoring and alert routing
 
 ### What exists
