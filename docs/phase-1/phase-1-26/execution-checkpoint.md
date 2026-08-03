@@ -275,6 +275,23 @@ working, which is not how a real fix behaves.
 **Reproducibility is not validity.** A contaminated instrument produces
 consistent readings, and consistency was the entire basis on which I believed it.
 
+**`F-058`** — and then the same lesson from the other side. The lifecycle spawned
+the API with a pipe; `spawnSync` blocks the event loop, so nothing drained it,
+the buffer filled and the API froze mid-suite. Twenty-one authenticated tests
+failed as timeouts on a machine that genuinely was loaded. `api.log` settled it:
+it stopped at the startup probe, and a slow server keeps logging. After the fix,
+**97 / 97 on the same machine**.
+
+**A failure that resembles the environment you are already blaming deserves more
+scepticism, not less.**
+
+### The lifecycle, measured end to end
+
+`npm run acceptance:full-cycle` — 11 steps, all green:
+`1636 / 1636` clean → fixtures → **97 / 97** authenticated → reset → every
+counter zero → `1636 / 1636` again → no untracked file. Both invariants held and
+neither Database test was touched.
+
 ## 9. Resume point
 
 Wave 25 — the Owner handoff, then P1-26 closes if and only if the Product Owner

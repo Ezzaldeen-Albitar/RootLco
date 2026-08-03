@@ -534,6 +534,11 @@ that resembles the environment you are already blaming deserves more scepticism,
 not less.** Contention was real, so contention was believable, and it would have
 been recorded as the cause of a defect I had written.
 
+**Confirmed by re-measurement.** With the descriptor handed to the operating
+system, the same suite on the same machine reports **97 / 97 passed in 97
+seconds** — inside a lifecycle run whose Database tiers took nearly four minutes
+each on either side of it. Nothing about the load changed. The frozen server did.
+
 ---
 
 ## P1-26-F-057 — the acceptance fixtures and the clean-database invariant, resolved by ordering rather than by weakening either
@@ -579,9 +584,25 @@ that reset succeeded, names the failing step and exits non-zero — because
 fixtures left half-created are worse than either extreme: the next run starts
 from a state nobody described.
 
-**Measured on this tree.** Clean baseline **1636 / 1636** across 138 files, 119
-migrations, no Migration 120. Fixtures created. Authenticated tier green. Reset.
-Every counter zero. Post-reset **1636 / 1636**.
+**Measured on this tree, end to end, in one command:**
+
+| #   | Step                    | Result                                  |
+| --- | ----------------------- | --------------------------------------- |
+| 1   | `reset-before`          | ok · 4.0s                               |
+| 2   | `verify-clean-before`   | ok · 4.9s                               |
+| 3   | `db-rls-pre-acceptance` | **1636 / 1636** · 236.6s                |
+| 4   | `create-fixtures`       | ok · 5.2s                               |
+| 5   | `start-api`             | ready                                   |
+| 6   | `status-fixtures`       | ok — live sign-in, 14 of 14 permissions |
+| 7   | `build-web`             | ok · 20.4s                              |
+| 8   | `authenticated-browser` | **97 / 97** · 97.0s                     |
+| 9   | `reset-after`           | ok · 4.8s                               |
+| 10  | `verify-clean-after`    | every counter zero · 4.3s               |
+| 11  | `db-rls-post-reset`     | **1636 / 1636** · 236.9s                |
+| 12  | `git-clean`             | no untracked file appeared              |
+
+119 migrations, no Migration 120, before and after. The fixtures existed, the
+Database tier ran, and neither test was weakened to let them coexist.
 
 ### What "clean" had to be made to mean
 
