@@ -85,6 +85,49 @@ This run also **failed on its first attempt** — one root test, on a timeout
 rather than an assertion (`P1-26-F-044`). It is recorded rather than re-run into
 submission; the fix and the measurement that justifies it are in `findings.md`.
 
+## The Owner-acceptance remediation clean room
+
+Re-run from a fresh clone at the remediation candidate. The same discipline, with
+two additions the earlier runs did not have: the acceptance guards are exercised
+inside the clean room, and the anonymous browser suite is counted to prove the
+new authenticated tier stays invisible without its flag.
+
+| Check | Result |
+| --- | --- |
+| Clone tree vs working tree | **identical** |
+| Lockfiles / tracked generated output | **1** root lockfile · **0** files |
+| Migrations | **119** |
+| Brand assets tracked | **3** under `apps/web/public/brand/` |
+| Files named `Generated_*` | **0** |
+| Tracked `.local/` or credential file | **0** |
+| `npm ci` | **exit 0** |
+| Repository policies | **exit 0** |
+| Formatting, all three scopes | **exit 0** |
+| `security:all` | **exit 0** |
+| Acceptance guard, `ROOTLCO_ENV` unset | **refused** |
+| Acceptance guard, non-loopback host | **refused** |
+| Root / CI-contract | **1479 / 1479**, 69 files |
+| Web unit / component | **319 / 319**, 16 files |
+| `verify:api` · typecheck · lint · stylelint | **exit 0** |
+| Production build | **exit 0** |
+| Anonymous browser suite with `ROOTLCO_E2E_AUTH` unset | **110 tests in 1 file** — unchanged |
+| Git state at the end | **clean** |
+
+### The run that failed, and why it is recorded
+
+The first attempt, at `3d2bcc48`, **failed** `security:all`: one credential-shaped
+value in `local-acceptance-account-runbook.md`. The same scan had passed on the
+working tree minutes earlier.
+
+The difference is the whole point of a clean room. `check-tracked-secrets.mjs`
+reads **tracked** files; the runbook was still untracked when the local scan ran,
+so the local scan could not see it. In a fresh clone every file is tracked, so
+the clean room saw it immediately — and so did hosted CI.
+
+**A gate run before `git add` cannot see the file being added.** That is now
+written where the next person will read it, and the commit that fixed it stages
+before it verifies.
+
 ### A note on this record's own SHA
 
 A record that names the SHA it measured cannot live inside that SHA. This one
