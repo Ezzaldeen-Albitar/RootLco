@@ -11,9 +11,15 @@ import { useFormStatus } from 'react-dom';
  * redirects or throws, at which point the flag is never cleared and the form is
  * dead; the hook is owned by React and does not have that failure mode.
  *
- * `aria-disabled` is set alongside `disabled` deliberately: a disabled button is
- * removed from the tab order, so a keyboard user who was focused on it when the
- * request started loses their place. `aria-busy` announces why.
+ * `disabled` is what actually blocks the second submit, and it does remove the
+ * button from the tab order — `aria-disabled` beside it does not change that,
+ * and an earlier comment here claimed it did. What the two attributes buy is
+ * announcement: a screen reader says "dimmed" and, with `aria-busy`, that the
+ * control is working rather than broken (`P1-26-F-041`).
+ *
+ * Keeping the button focusable instead would need `aria-disabled` alone plus a
+ * submit handler that refuses while pending — more moving parts for a control
+ * that is disabled for the length of one request.
  */
 export function SubmitButton({
   label,

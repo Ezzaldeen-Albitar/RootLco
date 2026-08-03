@@ -7,12 +7,22 @@
  * `org.settings.read`, a code in no catalogue and no operation, and "unknown
  * means denied" hid it from every actor who has ever existed (`P1-26-F-011`).
  *
- * Every code below is:
- *   1. seeded in `supabase/seeds/04_iam_permission_catalog.sql`, and
- *   2. required by an operation this phase actually calls.
+ * Every code below is seeded in `supabase/seeds/04_iam_permission_catalog.sql`,
+ * and `apps/web/tests/administration.test.ts` asserts that — so a code that
+ * drifts out of the platform catalogue fails the build rather than hiding a
+ * screen.
  *
- * `apps/web/tests/administration.test.ts` asserts both, so a code that drifts out
- * of the catalogue fails the build rather than hiding a screen.
+ * **Not every code is referenced by a screen.** `grantManage` and
+ * `sensitiveView` are named because P1-26's operations declare them —
+ * `iam.grant-issue`, and the sensitive-value branch of the settings read — and
+ * because the phase that builds those screens will need them under the same
+ * name. An earlier version of this comment claimed every code was *required by
+ * an operation this phase calls*, which was two codes short of true
+ * (`P1-26-F-030`).
+ *
+ * The test asserts catalogue membership, which is what it can prove. It does not
+ * assert that every code is referenced, which would be a different and weaker
+ * claim dressed up as the same one.
  *
  * **These gate VISIBILITY, never access.** The server checks every request and
  * its denial is the only one that means anything. Hiding a control the actor

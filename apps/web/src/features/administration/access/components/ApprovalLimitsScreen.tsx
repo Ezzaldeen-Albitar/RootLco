@@ -13,7 +13,8 @@ import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { useServerTable } from '../../shared/use-server-table';
-import { listApprovalLimits, type ApprovalLimitRow, type RoleRow } from '../api';
+import { listApprovalLimits } from '../api';
+import type { ApprovalLimitRow, RoleRow } from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
 
 /**
@@ -92,7 +93,10 @@ export function ApprovalLimitsScreen({
       id: 'amount',
       headerKey: 'approvalLimits.column.amount',
       numeric: true,
-      cell: (row) => formatMoney({ amount: row.amount, currency: row.currency }, intlLocale(locale)),
+      // `currencyCode`, because that is what the API publishes on the read
+      // path even though the create body takes `currency` (P1-26-F-016).
+      cell: (row) =>
+        formatMoney({ amount: row.amount, currency: row.currencyCode }, intlLocale(locale)),
     },
     {
       id: 'effectiveFrom',
@@ -113,7 +117,11 @@ export function ApprovalLimitsScreen({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-supporting text-text-muted">{t('approvalLimits.completeList')}</p>
+        <p className="text-supporting text-text-muted">
+          {table.response && table.response.total === null
+            ? t('approvalLimits.mayBeTruncated')
+            : t('approvalLimits.completeList')}
+        </p>
         {canManage ? (
           <button
             type="button"
@@ -156,16 +164,19 @@ export function ApprovalLimitsScreen({
         }
       />
 
-      <CreateDialog
-        open={createOpen}
-        messages={messages}
-        roles={roles}
-        companyIds={companyIds}
-        onClose={() => {
-          setCreateOpen(false);
-          table.refresh();
-        }}
-      />
+      {/* Mounted only while open, so its action state cannot survive a close. */}
+      {createOpen ? (
+        <CreateDialog
+          open
+          messages={messages}
+          roles={roles}
+          companyIds={companyIds}
+          onClose={() => {
+            setCreateOpen(false);
+            table.refresh();
+          }}
+        />
+      ) : null}
 
       {ending ? (
         <Dialog

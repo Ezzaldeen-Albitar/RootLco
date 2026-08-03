@@ -347,7 +347,11 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             labelKey: 'nav.taxes',
             icon: 'settings',
             href: '/administration/taxes',
-            permission: 'org.tax.manage',
+            // The screen calls the company-settings operations, which require
+            // `org.company.read` and `org.settings.manage`. Gating it on
+            // `org.tax.manage` — which no operation it calls requires — is the
+            // same defect P1-26-F-011 recorded, repeated (P1-26-F-029).
+            permission: 'org.settings.manage',
             status: 'available',
             scope: 'company',
           },

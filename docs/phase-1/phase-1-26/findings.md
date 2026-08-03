@@ -31,10 +31,14 @@ current page and Previous/Next only, and hides First/Last because the last page
 of a cursor set is not knowable without walking it. `useCursorPages` retains the
 cursor for each visited page so Previous is exact.
 
-**Regression coverage.** `apps/web/tests/table-state.test.ts` and
-`apps/web/tests/data-table.dom.test.tsx` assert that a null total renders no
-count and no Last button, that Next is disabled when `hasMore` is false, and
-that the offset mode is unchanged.
+**Regression coverage.** `apps/web/tests/data-table.dom.test.tsx` asserts that a
+null total renders no count and neither First nor Last, that Next follows the
+server's `hasMore`, that the counted mode is unchanged, and that a loading table
+prints no total at all. `apps/web/tests/administration.test.ts` covers
+`pageCount(null, …)` and cursor invalidation.
+
+> That citation was wrong when it was first written: it named a file that did not
+> exist and assertions no test made (`P1-26-F-027`). The file exists now.
 
 ---
 
@@ -167,6 +171,278 @@ permission. A user without it cannot edit their own profile.
 refused. An actor holding the permission edits through the approved contract,
 with `If-Match`. The screen never pretends a self-service capability the
 platform does not have.
+
+---
+
+## How findings `F-015` … `F-041` were found
+
+An adversarial review of the complete P1-26 diff, run as six independent lenses —
+security, backend-contract fidelity, React/Next correctness, honesty,
+internationalisation and accessibility, and phase boundary — each followed by a
+verification pass whose instruction was to **refute** the claim, defaulting to
+refuted when uncertain. Thirty-three findings were raised; the ones below
+survived refutation and were then re-verified by hand against the source.
+
+It is worth saying what it caught that the rest of this phase's assurance did
+not. `verify:workspaces` was green. Typecheck, ESLint, 287 web tests, 1465 root
+tests, the production build and 106 browser assertions were all green. And
+**every user-administration command, every role and permission change, every
+approval limit and every settings write would have failed with HTTP 400 the first
+time a real operator touched them** — because none of them sent a header the
+backend requires and no local check could see the omission.
+
+---
+
+## P1-26-F-015 — every idempotent operation was called without its mandatory header
+
+**Severity:** Critical · **Status:** Fixed · **Area:** `apps/web/src/lib/api/client.ts`
+
+`apps/api/src/server/http/route-handler.ts` runs
+`operation.idempotent ? requireIdempotencyKey(request.headers) : null`
+unconditionally, **before permissions are evaluated**, and
+`requireIdempotencyKey` throws `ERR-INT-002` — HTTP 400 — when the header is
+absent.
+
+Ten operations in P1-26's surface declare `idempotent: true`: invitation create
+and activate, user status change, role create, role-permission add, grant issue,
+grant scope add, approval-limit create, and both settings writes.
+
+**Not one call site sent a key.** Inviting a user, activating an invitation,
+locking an account, creating a role, mapping a permission, adding an approval
+limit and saving any setting on any of the six settings-backed screens would have
+failed **100% of the time** — and the 400 maps through `kindFor` to `validation`,
+so the operator would have seen a generic "check the form" banner naming no
+field, on a form with nothing wrong with it.
+
+**Why nothing local caught it.** Every check in this phase is static or runs
+against the web tier alone. The header is required by the _other_ side of a
+boundary that no test in this repository crosses, because crossing it needs a
+real account in a real tenant and the no-fake-data policy forbids seeding one.
+This is precisely the gap `browser-evidence.md` §3 records — and it was not
+hypothetical.
+
+**Fix.** `ApiClient.send` attaches a generated key to every `POST` when the
+caller does not supply one. That is semantically correct **only because** of the
+rule directly above it in the same file: this client never retries a mutation, so
+one `send` is one logical attempt and a fresh key says exactly that. A caller
+wanting to re-present the same attempt passes its own key, which always wins.
+`PATCH` and `DELETE` are not marked idempotent anywhere in the contract and get
+no key.
+
+**Regression coverage.** `apps/web/tests/api-client.test.ts` asserts the header
+is present on POST, absent on GET, and that an explicit key is not overwritten.
+
+---
+
+## P1-26-F-016 — approval limits read a currency field the API does not publish
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/administration/access/api.ts`
+
+The create body takes `currency` (`approval-limits/route.ts`). The read returns
+**`currencyCode`** (`authorization-repository.ts`). The row type declared
+`currency`, so `formatMoney` received `undefined` and every amount rendered as
+`"1234.5000 undefined"` — no error, no warning, just a wrong cell.
+
+An asymmetric contract is the easiest kind to get wrong and the hardest to
+notice, because the write path works.
+
+---
+
+## P1-26-F-017 — the audit detail drawer invented all four field names
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/administration/audit/types.ts`
+
+Declared `field`, `value`, `previousValue`, `classification`. The API publishes
+`fieldName`, `oldValueMasked`, `newValueMasked`, `valueClassification`.
+
+Every detail row rendered blank-named and empty — **including for a caller
+holding `iam.sensitive.view`**, which is the reading the screen exists to serve.
+The type also invented an optional `createdAt` and a `result` the record does not
+have, and made `occurredAt` and `entityType` optional when both are required.
+
+A response shape is a contract. Guessing at it produces a screen that renders
+without erroring and shows nothing, which is the worst available failure.
+
+---
+
+## P1-26-F-018 — a server-truncated window was labelled "the complete list"
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/administration/access/api.ts`
+
+`access.listApprovalLimits` calls the repository with a hard **`200`** and the
+response carries no cursor, no `hasMore` and no count — nothing that says it
+stopped. The screen reported `items.length` as a total and printed _"This is the
+complete list for the current filters, not a page of it."_
+
+At 200 limits that sentence is false, and it is false in the direction that
+matters: an administrator checking whether a ceiling exists would be told they
+had seen everything.
+
+**Fix.** At the cap, `total` becomes `null` — the table's "no count published"
+mode — and the screen says the list may be incomplete and how to narrow it. This
+is the same defect as `P1-26-F-001` arrived at from the other direction, in the
+same phase, by the same author.
+
+---
+
+## P1-26-F-019 — changing the audit date range re-rendered the same rows
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/administration/shared/use-server-table.ts`
+
+The effect key was `ordering#page#generation`. The audit screen's date range
+lives outside `TableRequest`, so changing it produced a new `load` closure and
+**no key change** — the effect did not re-run. The operator changed the dates and
+watched the same rows sit there.
+
+Adding `load` to the dependency array is not the fix: an inline loader is a new
+function every render, which re-reads on every render.
+
+**Fix.** `useServerTable` takes an explicit `loadKey` for anything outside the
+request that changes what `load` returns. The audit screen passes its range.
+
+---
+
+## P1-26-F-020 — a dialog kept its success state after being closed
+
+**Severity:** High · **Status:** Fixed · **Area:** three screens
+
+`<InviteDialog open={inviteOpen}>` was always mounted; `Dialog` returns `null`
+when closed but the form inside kept its `useActionState`. After one successful
+invitation, reopening showed the previous success message and a Close button
+where the submit should be — **no second user could be invited without reloading
+the page.** The same shape existed on Create role and Add approval limit.
+
+**Fix.** Mounted only while open. Unmounting is what resets the state.
+
+---
+
+## P1-26-F-021 — a token delivered in the query string was never erased
+
+**Severity:** High · **Status:** Fixed · **Area:** `RecoveryTokenBridge.tsx`
+
+Only the fragment path called `history.replaceState`. A provider that delivers
+`?token=…` left the credential in the address bar for the life of the tab —
+copied with the URL, restored when the tab reopened, and visible to anything that
+reads it.
+
+That is the exposure the fragment handling exists to prevent, on the delivery
+shape the server _can_ see.
+
+---
+
+## P1-26-F-022 — a 403 on the session read deleted a valid cookie and locked the account out
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/authentication/api/session.ts`
+
+`GET /api/v1/auth/session` requires `iam.user.read`. `readSession` treated
+`unauthenticated` **and** `forbidden` identically: clear the cookie, redirect,
+report "your session ended".
+
+For an account that authenticates successfully and does not hold that permission
+this is an unbreakable loop — sign in, receive a valid cookie, load the
+dashboard, 403, cookie cleared, back to sign-in, for ever — while being told the
+session expired. The credentials are correct and the operator can never get in.
+
+**Fix.** Only a 401 clears the cookie. A 403 keeps it (destroying a valid
+credential because a permission is missing is the wrong remedy) and the sign-in
+page says the account is not permitted to open the application and needs an
+administrator — which is the actual problem.
+
+---
+
+## P1-26-F-023 — the session cookie's `Secure` attribute failed open
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/lib/env.ts`
+
+`secure: appEnv !== 'local'` is correct. `NEXT_PUBLIC_APP_ENV` **defaulted to
+`'local'`**, so a deployment that did not set it served the session cookie over
+plain HTTP, silently.
+
+A security attribute whose safe state depends on a variable being present is not
+a control.
+
+**Fix.** The schema defaults to `production`. The local runtime sets `local`
+explicitly, which is the right way round: the unsafe mode is the one you have to
+ask for.
+
+---
+
+## P1-26-F-024 — the table printed a fabricated total while loading
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/components/data-table/DataTable.tsx`
+
+`const total = response ? response.total : 0` put the table in **counted** mode
+before its first page arrived, so every cursor-paginated screen flashed
+"Showing 0–0 of 0" and "1 / 1".
+
+The line above it had just been rewritten to explain why `?? 0` was wrong. The
+replacement did the same thing for a different input.
+
+**Fix.** `response ? response.total : null`. No response and no published count
+are both "do not print a total".
+
+**Regression coverage.** `apps/web/tests/data-table.dom.test.tsx` — the file
+`P1-26-F-001` previously cited and which did not exist (`P1-26-F-027`).
+
+---
+
+## P1-26-F-027 — `P1-26-F-001` cited a test file that did not exist
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `docs/phase-1/phase-1-26/findings.md`
+
+The regression-coverage line named `apps/web/tests/data-table.dom.test.tsx` and
+assertions in `table-state.test.ts` that no test made. A finding record whose
+"proven by" line points at nothing is worse than one with no such line: it stops
+the next reader looking.
+
+**Fix.** The file now exists and makes those assertions.
+
+---
+
+## P1-26-F-028 — the money gate claimed a construct it did not match
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `scripts/ci/check-p1-26-frontend.mjs`
+
+The header said the rule catches `parseFloat`, `toFixed` **and `Number()`**. The
+pattern matched the first two. A documented rule a gate does not enforce is a
+worse defect than a narrow rule, because it is quoted as coverage.
+
+**Fix.** The header now says what the pattern does, and says why `Number()` is
+excluded: it is the ordinary way to read a page size or a record version and a
+regex cannot tell those from an amount. A test asserts the exclusion is
+deliberate.
+
+---
+
+## P1-26-F-029 — the Taxes entry repeated the exact defect `F-011` recorded
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `apps/web/src/config/navigation.ts`
+
+Gated on `org.tax.manage`. The screen's only operations are the company-settings
+read and write, which require `org.company.read` and `org.settings.manage`. An
+actor holding exactly what the screen needs would not see the entry.
+
+`org.tax.manage` **is** in the catalogue, so the catalogue-membership test passed
+— which is the limit of what that test can prove, and worth knowing.
+
+---
+
+## P1-26-F-030 · F-031 · F-032 · F-033 · F-034 · F-036 · F-037 · F-039 · F-040 · F-041
+
+Fixed together; each is small and each was a claim that outran the code.
+
+| ID      | What was wrong                                                                                                                                                                                                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `F-030` | `PERMISSIONS` claimed every code was required by an operation this phase **calls**; `grantManage` and `sensitiveView` are referenced by nothing. The comment now says what the test proves — catalogue membership — and no more.                                        |
+| `F-031` | The Users screen declared a `status` filter and rendered **no control that could apply one**. `filterDefinitions` only teaches the table to label and remove a chip. The server-side status path was unreachable. A select now applies it.                              |
+| `F-032` | `AccountMenu`'s comment listed "closes when focus leaves" among its properties while registering only `keydown` and `mousedown`. A keyboard user tabbing past the last item left the menu open behind them. The handler now exists.                                     |
+| `F-033` | Zod `.max()` bounds carried no message key, so Zod's own English sentence reached an Arabic screen — and bypassed the catalogue-completeness test entirely, because it is not a key.                                                                                    |
+| `F-034` | Profile rendered two-factor status with `field.active` / `permissions.effect.unset` — "Active" and "Not mapped" under "Two-factor authentication required". Its own keys now.                                                                                           |
+| `F-036` | `security-evidence.md` listed "Branch status" among shipped screen actions. The adapter exists; **no screen calls it.** An audit claim for an unreachable path.                                                                                                         |
+| `F-037` | `NETWORK_OWNER` was exported from the gate, documented as an enforced boundary and asserted by a test, while **no rule used it**. The boundary is enforced — by `check-api-boundary.mjs`. A second declaration that enforces nothing reads as a control and is scenery. |
+| `F-039` | `RecoveryTokenBridge` called `history.replaceState` inside `useSyncExternalStore`'s snapshot. A snapshot must be pure: React may call it during render, repeatedly, and may discard the render. Reading is now pure; erasing is an effect.                              |
+| `F-040` | An over-length display name reported "This field is required" under a field the operator had filled in.                                                                                                                                                                 |
+| `F-041` | `SubmitButton`'s comment claimed `aria-disabled` prevented the tab-order loss `disabled` causes. It does not. The comment now says what the attributes actually buy.                                                                                                    |
 
 ---
 

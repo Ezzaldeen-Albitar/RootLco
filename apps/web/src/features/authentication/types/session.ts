@@ -27,8 +27,15 @@ export interface SessionSummary {
 export type SessionProblem =
   /** No session cookie at all — the ordinary "not signed in" case. */
   | 'signed-out'
-  /** A cookie existed and the backend rejected it. */
+  /** A cookie existed and the backend rejected the TOKEN. The cookie is cleared. */
   | 'expired'
+  /**
+   * The token is valid and the account may not read its own session — it does
+   * not hold `iam.user.read`. The cookie is **kept**: it is a permissions
+   * problem for an administrator, not an expired credential, and clearing it
+   * produced an unbreakable sign-in loop (`P1-26-F-022`).
+   */
+  | 'forbidden'
   /** The backend could not be reached, or answered with something unusable. */
   | 'unavailable';
 

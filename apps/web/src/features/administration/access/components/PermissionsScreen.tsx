@@ -7,12 +7,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import {
-  readPermissionCatalogue,
-  type PermissionRow,
-  type RolePermissionRow,
-  type RoleRow,
-} from '../api';
+import { readPermissionCatalogue } from '../api';
+import type { PermissionRow, RolePermissionRow, RoleRow } from '../types';
 import { addRolePermissionAction, removeRolePermissionAction } from '../actions';
 
 /**

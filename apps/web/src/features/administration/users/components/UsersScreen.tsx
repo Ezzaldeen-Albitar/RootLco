@@ -2,7 +2,12 @@
 
 import { useActionState, useCallback, useState, useTransition } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { withSearch, type TableRequest } from '@/components/data-table/table-state';
+import {
+  withFilter,
+  withSearch,
+  withoutFilter,
+  type TableRequest,
+} from '@/components/data-table/table-state';
 import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
 import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
 import type { Locale } from '@/i18n/config';
@@ -84,6 +89,8 @@ export function UsersScreen({
     [messages]
   );
 
+  const statusFilter = table.request.filters.find((filter) => filter.key === 'status')?.value;
+
   const columns: readonly Column<UserRow>[] = [
     {
       id: 'displayName',
@@ -111,7 +118,11 @@ export function UsersScreen({
   const run = (task: () => Promise<ActionState>) => {
     startTransition(async () => {
       const result = await task();
-      setActionState(result);
+      // The attempt number is what makes FormFeedback remount and re-announce.
+      // A server action that always returns 1 renders an identical node the
+      // second time a row action fails, and the repeat is announced to nobody
+      // (P1-26-F-038). The COUNTER lives here, where the repeats happen.
+      setActionState({ ...result, attempt: (actionState.attempt ?? 0) + 1 });
       if (result.status === 'success') {
         setPending(null);
         table.refresh();
@@ -126,14 +137,43 @@ export function UsersScreen({
       ) : null}
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-full max-w-sm">
-          <TextField
-            label={t('users.searchLabel')}
-            description={t('users.searchHint')}
-            type="search"
-            value={table.request.search}
-            onChange={(event) => table.setRequest(withSearch(table.request, event.target.value))}
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full max-w-sm">
+            <TextField
+              label={t('users.searchLabel')}
+              description={t('users.searchHint')}
+              type="search"
+              value={table.request.search}
+              onChange={(event) => table.setRequest(withSearch(table.request, event.target.value))}
+            />
+          </div>
+          {/*
+            The control that applies the filter. `filterDefinitions` alone only
+            teaches the table how to LABEL a chip and how to remove one — it
+            renders nothing that can add one, so declaring a status filter with
+            no control left the whole server-side status path unreachable
+            (P1-26-F-031).
+          */}
+          <div className="w-48">
+            <SelectField
+              label={t('users.filter.status')}
+              value={statusFilter ?? ''}
+              placeholder={t('users.filter.all')}
+              onChange={(event) => {
+                const chosen = event.target.value;
+                const cleared = statusFilter
+                  ? withoutFilter(table.request, { key: 'status', value: statusFilter })
+                  : table.request;
+                table.setRequest(
+                  chosen ? withFilter(cleared, { key: 'status', value: chosen }) : cleared
+                );
+              }}
+              options={STATUS_FILTER.options.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
+              }))}
+            />
+          </div>
         </div>
         {canManage ? (
           <button
@@ -175,8 +215,16 @@ export function UsersScreen({
         )}
       />
 
-      <InviteDialog
-        open={inviteOpen}
+      {/*
+        MOUNTED ONLY WHILE OPEN. `Dialog` returns null when closed, but the form
+        inside kept its `useActionState` — so after one successful invitation,
+        reopening showed the previous success and a Close button where the submit
+        should be, and no second user could be invited without a reload
+        (P1-26-F-020). Unmounting is what resets it.
+      */}
+      {inviteOpen ? (
+        <InviteDialog
+        open
         // Closing always re-reads the list. An invitation that succeeded has
         // added a row; one that failed has not, and a re-read of an unchanged
         // list costs one request. That is cheaper than an auto-close, which
@@ -187,7 +235,8 @@ export function UsersScreen({
         }}
         messages={messages}
         roles={roles}
-      />
+        />
+      ) : null}
 
       {pending ? (
         <ReasonConfirmDialog

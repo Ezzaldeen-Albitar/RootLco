@@ -171,6 +171,28 @@ export class ApiClient {
    * (`ERR-CON-002`), which is the correct failure: an unguarded update is a
    * lost-update waiting to happen, so the guard is not optional and is not
    * defaulted here either.
+   *
+   * ## Why an idempotency key IS defaulted, when `If-Match` is not
+   *
+   * Every operation the backend marks `idempotent: true` **requires** an
+   * `Idempotency-Key` header: `route-handler.ts` calls `requireIdempotencyKey`
+   * unconditionally and answers `ERR-INT-002` (400) without one, *before*
+   * permissions are even evaluated. Ten operations in this application's surface
+   * are marked that way. Leaving the header to each call site meant every one of
+   * them failed 100% of the time, and the 400 surfaced as a generic validation
+   * banner naming no field — so the screen looked broken rather than
+   * misconfigured (finding `P1-26-F-015`).
+   *
+   * A generated key is **semantically correct here**, and only because of the
+   * rule directly above it: this client never retries a mutation. One `send` is
+   * therefore one logical attempt, and a fresh key per call says exactly that. A
+   * caller that genuinely wants to re-present the same attempt — the deliberate
+   * retry the backend's idempotency keys exist for — passes its own key, and
+   * that explicit key always wins.
+   *
+   * The default applies to `POST` only. `PATCH` and `DELETE` are not marked
+   * idempotent anywhere in the published contract, and sending a key they will
+   * never read would be noise.
    */
   async send<T>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -182,14 +204,19 @@ export class ApiClient {
       readonly ifMatch?: string | number;
     } = {}
   ): Promise<ApiResult<T>> {
-    return this.#request<T>(
-      method,
-      path,
-      body,
-      options.signal,
-      options.idempotencyKey,
-      options.ifMatch
-    );
+    const idempotencyKey =
+      options.idempotencyKey ?? (method === 'POST' ? this.#newIdempotencyKey() : undefined);
+    return this.#request<T>(method, path, body, options.signal, idempotencyKey, options.ifMatch);
+  }
+
+  /**
+   * A key the backend will accept: 8–200 characters, per `idempotency.ts`.
+   *
+   * A UUID is 36, so the bounds are met by construction rather than by a length
+   * check nobody would ever see fail.
+   */
+  #newIdempotencyKey(): string {
+    return globalThis.crypto.randomUUID();
   }
 
   async #request<T>(

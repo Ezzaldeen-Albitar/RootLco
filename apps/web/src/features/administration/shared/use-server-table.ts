@@ -66,9 +66,25 @@ export interface ServerTable<Row> {
 
 export function useServerTable<Row>(
   load: (request: TableRequest, cursor: string | null) => Promise<ServerPage<Row>>,
-  initial: TableRequest = INITIAL_REQUEST
+  options: {
+    readonly initial?: TableRequest;
+    /**
+     * Anything OUTSIDE the table request that changes what `load` returns.
+     *
+     * The audit screen's date range is the case this exists for. It lives in the
+     * screen, not in `TableRequest`, so changing it changed the `load` closure
+     * and nothing else — the effect key did not move, the effect did not re-run,
+     * and the operator changed the dates and watched the same rows sit there
+     * (finding `P1-26-F-019`).
+     *
+     * Including `load` in the dependency array is not the fix: a loader defined
+     * inline is a new function every render, which re-reads on every render.
+     * The caller states what actually varies.
+     */
+    readonly loadKey?: string;
+  } = {}
 ): ServerTable<Row> {
-  const [request, setRequest] = useState<TableRequest>(initial);
+  const [request, setRequest] = useState<TableRequest>(options.initial ?? INITIAL_REQUEST);
   const [generation, setGeneration] = useState(0);
   const [held, setHeld] = useState<{
     readonly key: string;
@@ -76,8 +92,8 @@ export function useServerTable<Row>(
   } | null>(null);
 
   const ordering = orderingKeyOf(request);
-  const cursors = useCursorPages(ordering);
-  const wanted = `${ordering}#${request.page}#${generation}`;
+  const cursors = useCursorPages(`${ordering}#${options.loadKey ?? ''}`);
+  const wanted = `${ordering}#${options.loadKey ?? ''}#${request.page}#${generation}`;
 
   useEffect(() => {
     let cancelled = false;

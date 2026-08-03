@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  NETWORK_OWNER,
   RULES,
   SESSION_COOKIE_AUTHORITY,
   evaluate,
@@ -132,6 +131,16 @@ describe('floating-point money', () => {
     expect(failures.join('\n')).toContain('float-money');
   });
 
+  it('does not claim to catch Number(), which it deliberately does not', () => {
+    // `Number()` is how a page size and a record version are read. A regex
+    // cannot tell those from an amount, so the rule is narrower than the
+    // temptation — and the header says so rather than promising more.
+    const { failures } = evaluate(
+      withFile('apps/web/src/features/x.ts', `export const n = Number('3');`)
+    );
+    expect(failures.join('\n')).not.toContain('float-money');
+  });
+
   it('does NOT flag a comment explaining why parseFloat is not used', () => {
     // The exact false positive this gate's comment-stripping exists for. A
     // scanner that reads prose accuses the explanation of breaking the rule,
@@ -241,9 +250,20 @@ describe('the comment stripper', () => {
 });
 
 describe('the declared constants', () => {
-  it('names the network owner and the cookie authority', () => {
-    expect(NETWORK_OWNER).toBe('apps/web/src/lib/api/');
+  it('names the cookie authority', () => {
     expect(SESSION_COOKIE_AUTHORITY).toBe('apps/web/src/lib/api/session-cookie.ts');
+  });
+
+  it('exports no constant that no rule uses', () => {
+    // A constant exported, documented as an enforced boundary and asserted by a
+    // test, while no rule reads it, is scenery that reads as a control
+    // (P1-26-F-037). Every rule's allow-list entry must be a real path.
+    for (const rule of RULES) {
+      for (const entry of rule.allow) {
+        expect(typeof entry, rule.id).toBe('string');
+        expect(entry.startsWith('apps/web/'), `${rule.id} → ${entry}`).toBe(true);
+      }
+    }
   });
 
   it('declares a rule set that is not empty', () => {

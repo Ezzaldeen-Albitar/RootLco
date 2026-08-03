@@ -5,6 +5,13 @@ import type { ApiFailureKind } from '@/lib/api/client';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage, ServerPageStatus } from '../shared/use-server-table';
 import { query, type CursorPage } from '../shared/api';
+import {
+  APPROVAL_LIMIT_SERVER_CAP,
+  type ApprovalLimitRow,
+  type PermissionRow,
+  type RolePermissionRow,
+  type RoleRow,
+} from './types';
 
 /**
  * Reads for roles, permissions and approval limits.
@@ -37,15 +44,6 @@ const STATUS_BY_KIND: Record<ApiFailureKind, ServerPageStatus> = {
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
-export interface RoleRow {
-  readonly id: string;
-  readonly roleCode: string;
-  readonly name: string;
-  readonly description: string | null;
-  readonly isSystem: boolean;
-  readonly recordVersion: number;
-}
-
 export async function listRoles(
   request: TableRequest,
   cursor: string | null
@@ -74,22 +72,6 @@ export async function allRoles(): Promise<readonly RoleRow[]> {
   if (!client) return [];
   const result = await client.get<CursorPage<RoleRow>>('/api/v1/iam/roles?limit=100');
   return result.ok ? result.data.items : [];
-}
-
-export interface PermissionRow {
-  readonly id: string;
-  readonly code: string;
-  readonly domain: string;
-  readonly riskLevel: string;
-  readonly description: string;
-}
-
-export interface RolePermissionRow {
-  readonly id: string;
-  readonly permissionCode?: string;
-  readonly code?: string;
-  readonly effect: 'allow' | 'deny';
-  readonly recordVersion?: number;
 }
 
 export interface PermissionCatalogue {
@@ -144,25 +126,19 @@ export async function readPermissionCatalogue(roleId: string | null): Promise<Pe
   };
 }
 
-export interface ApprovalLimitRow {
-  readonly id: string;
-  readonly companyId: string;
-  readonly roleId: string | null;
-  readonly userId: string | null;
-  readonly limitType: string;
-  readonly amount: string;
-  readonly currency: string;
-  readonly effectiveFrom: string;
-  readonly effectiveTo: string | null;
-  readonly recordVersion: number;
-}
-
 /**
  * Approval limits.
  *
- * The operation takes `companyId` and `userId` filters and **no cursor** — it
- * returns the complete list for those filters. So `total` is the list's own
- * length and `hasMore` is false: this is a whole set, and the screen says so.
+ * The operation takes `companyId` and `userId` filters and **no cursor**. Below
+ * the server's cap it returns the whole set, and the table is given a real total
+ * and pages it client-side — paging a complete set is arithmetic.
+ *
+ * **At** the cap the set may be truncated and there is no way to tell from the
+ * response. So `total` becomes `null`, which is the table's "the server
+ * publishes no count" mode, and the screen says the list may be incomplete. The
+ * alternative — printing 200 as if it were the total — is the exact failure the
+ * cursor work in this phase exists to prevent, arrived at from the other
+ * direction.
  */
 export async function listApprovalLimits(
   request: TableRequest,
@@ -189,13 +165,14 @@ export async function listApprovalLimits(
   }
 
   const all = result.data.items;
+  const maybeTruncated = all.length >= APPROVAL_LIMIT_SERVER_CAP;
   const start = (request.page - 1) * request.pageSize;
   return {
     status: 'ok',
     rows: all.slice(start, start + request.pageSize),
     nextCursor: null,
     hasMore: start + request.pageSize < all.length,
-    total: all.length,
+    total: maybeTruncated ? null : all.length,
     correlationId: result.correlationId,
   };
 }

@@ -10,7 +10,8 @@ import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { useServerTable } from '../../shared/use-server-table';
-import { listRoles, type RoleRow } from '../api';
+import { listRoles } from '../api';
+import type { RoleRow } from '../types';
 import { createRoleAction, updateRoleAction } from '../actions';
 
 /**
@@ -116,14 +117,17 @@ export function RolesScreen({
         }
       />
 
-      <CreateRoleDialog
-        open={createOpen}
-        messages={messages}
-        onClose={() => {
-          setCreateOpen(false);
-          table.refresh();
-        }}
-      />
+      {/* Mounted only while open, so its action state cannot survive a close. */}
+      {createOpen ? (
+        <CreateRoleDialog
+          open
+          messages={messages}
+          onClose={() => {
+            setCreateOpen(false);
+            table.refresh();
+          }}
+        />
+      ) : null}
 
       {archiving ? (
         <ConfirmDialog

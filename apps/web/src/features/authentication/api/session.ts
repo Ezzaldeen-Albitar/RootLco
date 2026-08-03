@@ -39,10 +39,31 @@ export async function readSession(): Promise<SessionState> {
     return { ok: true, session: result.data };
   }
 
-  if (result.kind === 'unauthenticated' || result.kind === 'forbidden') {
+  if (result.kind === 'unauthenticated') {
     await clearSession();
     return { ok: false, problem: 'expired', correlationId: result.correlationId };
   }
+
+  /*
+   * A 403 is NOT an expired session, and treating it as one was a lockout.
+   *
+   * `GET /api/v1/auth/session` requires `iam.user.read`. An account that
+   * authenticates successfully but does not hold that permission gets a 403 —
+   * and clearing the cookie on it produced an unbreakable loop: sign in, receive
+   * a valid cookie, load the dashboard, 403, cookie cleared, back to sign-in,
+   * for ever. The operator has correct credentials and cannot get in
+   * (finding `P1-26-F-022`).
+   *
+   * So the cookie is KEPT — it is valid, and destroying a valid credential
+   * because a permission is missing is the wrong remedy — and the sign-in page
+   * says the account cannot read its own session rather than that the session
+   * ended. That is a permissions problem for an administrator, and the message
+   * names it.
+   */
+  if (result.kind === 'forbidden') {
+    return { ok: false, problem: 'forbidden', correlationId: result.correlationId };
+  }
+
   return { ok: false, problem: 'unavailable', correlationId: result.correlationId };
 }
 

@@ -11,10 +11,16 @@ import { logoutAction } from '../actions/logout';
  * The account control in the header.
  *
  * A disclosure, not a modal: it closes on Escape, on a click outside, and when
- * focus leaves — and it returns focus to its trigger, so a keyboard user is not
- * dropped at the top of the document. Those are the same three properties the
- * shared overlay layer guarantees; the reason this does not use `Dialog` is that
- * a header menu must NOT trap focus or block the page behind it.
+ * focus leaves it — and Escape returns focus to its trigger, so a keyboard user
+ * is not dropped at the top of the document. The reason it does not use
+ * `Dialog` is that a header menu must NOT trap focus or block the page behind
+ * it.
+ *
+ * The focus-out handler is real. An earlier version of this comment listed it
+ * among the properties while registering only `keydown` and `mousedown`, so a
+ * keyboard user who tabbed past the last item left the menu open behind them
+ * (`P1-26-F-032`). `focusout` fires before focus lands, hence the
+ * `relatedTarget` check rather than reading `document.activeElement`.
  *
  * ## Sign out is a form, not a link
  *
@@ -54,11 +60,22 @@ export function AccountMenu({
     const onPointer = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const onFocusOut = (event: FocusEvent) => {
+      // `relatedTarget` is where focus is GOING. `document.activeElement` is
+      // still the old element while this fires, so reading it would never see
+      // focus leave.
+      const next = event.relatedTarget as Node | null;
+      if (next && containerRef.current?.contains(next)) return;
+      setOpen(false);
+    };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onPointer);
+    containerRef.current?.addEventListener('focusout', onFocusOut);
+    const container = containerRef.current;
     return () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onPointer);
+      container?.removeEventListener('focusout', onFocusOut);
     };
   }, [open]);
 

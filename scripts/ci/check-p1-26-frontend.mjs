@@ -11,9 +11,15 @@
  *      document. The session is a `httpOnly` cookie precisely so a cross-site
  *      scripting defect cannot read it; a single `localStorage.setItem` puts it
  *      back within reach and nothing fails.
- *   2. **No floating-point money.** `parseFloat`, `toFixed` and `Number()` on an
- *      amount each round silently, and the rounded value looks exactly like the
- *      right one.
+ *   2. **No floating-point money.** `parseFloat` and `toFixed` on an amount
+ *      each round silently, and the rounded value looks exactly like the right
+ *      one. `Number()` is deliberately NOT in this rule: it is the ordinary way
+ *      to read a page size or a record version, and a regex cannot tell those
+ *      from an amount. Claiming it in prose while matching two constructs was a
+ *      documented rule the gate did not enforce (finding `P1-26-F-028`), which
+ *      is worse than a narrower rule stated honestly. Money staying a decimal
+ *      string is proven where it can be proven: `apps/web/tests/money.test.ts`
+ *      and the exact-money surface check.
  *   3. **No redirect parameter in the authentication flow.** An open redirect on
  *      the page that completes a credential change is the highest-value one in
  *      any application: the visitor arrived from an email and is primed to trust
@@ -48,9 +54,6 @@ export const WEB_SRC = join('apps', 'web', 'src');
 
 /** The single file permitted to write or clear the session cookie. */
 export const SESSION_COOKIE_AUTHORITY = 'apps/web/src/lib/api/session-cookie.ts';
-
-/** The only directory permitted to perform network I/O. */
-export const NETWORK_OWNER = 'apps/web/src/lib/api/';
 
 export const RULES = [
   {

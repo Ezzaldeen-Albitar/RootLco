@@ -63,6 +63,14 @@ export function sessionCookieAttributes(appEnv: string): SessionCookieAttributes
     // A `secure` cookie is silently discarded over plain HTTP. The local
     // runtime is http://127.0.0.1, so forcing it there would break sign-in in
     // the one environment a developer uses to notice it is broken.
+    //
+    // It FAILS CLOSED: only the exact string `local` turns it off. An empty
+    // value, an unset variable, a typo, or a value this function has never heard
+    // of all produce a secure cookie. The earlier form derived the same result
+    // from a schema whose DEFAULT was `local` — so a deployment that forgot to
+    // set `NEXT_PUBLIC_APP_ENV` served the session over plain HTTP and nothing
+    // reported it (finding `P1-26-F-023`). A security attribute whose safe state
+    // depends on a variable being present is not a control.
     secure: appEnv !== 'local',
     path: '/',
   };

@@ -92,11 +92,11 @@ export default async function ProfilePage({
                 <Definition
                   label={translate(messages, 'profile.mfaRequired')}
                   hint={translate(messages, 'profile.mfaHint')}
-                  value={
-                    account.mfaRequired
-                      ? translate(messages, 'field.active')
-                      : translate(messages, 'permissions.effect.unset')
-                  }
+                  // Its own keys. Borrowing `field.active` and
+                  // `permissions.effect.unset` rendered "Active" / "Not mapped"
+                  // under "Two-factor authentication required", which is not
+                  // what either word means here (P1-26-F-034).
+                  value={translate(messages, account.mfaRequired ? 'profile.mfaOn' : 'profile.mfaOff')}
                 />
               ) : null}
             </dl>

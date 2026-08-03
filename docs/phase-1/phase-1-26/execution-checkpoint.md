@@ -59,16 +59,43 @@ the observation is not yet explained by reading the function. Recorded as
 
 ## 3. Wave status
 
-| Wave  | Scope                                                                          | State                                                  |
-| ----- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| 1     | Readiness, branch, baselines, architecture, contract archaeology, task records | **Complete**                                           |
-| 2     | Login, session expiration, session plumbing                                    | **Complete**                                           |
-| 3     | Forgot password, password reset, account activation                            | **Complete**                                           |
-| 4     | Invitation, profile                                                            | Profile complete; invitation lands with Users (wave 5) |
-| 5–9   | Administration screens                                                         | Not started                                            |
-| 10–13 | Security, QA, CI/DevOps, documentation                                         | Not started                                            |
-| 14–17 | Browser review, performance, adversarial review, clean room                    | Not started                                            |
-| 18–20 | Feature PR, protected merge, gate record                                       | Not started                                            |
+| Wave  | Scope                                                                          | State        |
+| ----- | ------------------------------------------------------------------------------ | ------------ |
+| 1     | Readiness, branch, baselines, architecture, contract archaeology, task records | **Complete** |
+| 2     | Login, session expiration, session plumbing                                    | **Complete** |
+| 3     | Forgot password, password reset, account activation                            | **Complete** |
+| 4     | Invitation, profile                                                            | **Complete** |
+| 5–9   | Administration screens — all eleven                                            | **Complete** |
+| 10–13 | Security, QA, CI/DevOps, documentation                                         | **Complete** |
+| 14    | Browser review, on pinned chromium and installed Chrome                        | **Complete** |
+| 15    | Performance and bundle baseline                                                | **Complete** |
+| 16    | Adversarial review and remediation                                             | **Complete** |
+| 17    | Exact-SHA clean room                                                           | In progress  |
+| 18–20 | Feature PR, protected merge, gate record                                       | Not started  |
+
+### Wave 16 is the one worth reading
+
+Six independent review lenses over the complete diff, each finding verified by a
+pass instructed to **refute** it. Thirty-three raised; the survivors are
+`P1-26-F-015` … `P1-26-F-041` in `findings.md`.
+
+It found a **critical** defect that every other form of assurance in this phase
+missed: ten operations declare `idempotent: true`, the backend requires an
+`Idempotency-Key` header for each of them, and **no call site sent one**. Every
+invitation, lifecycle change, role edit, permission mapping, approval limit and
+settings write would have failed with HTTP 400 the first time a real operator
+touched them — while `verify:workspaces`, 287 web tests, 1465 root tests, the
+production build and 106 browser assertions were all green.
+
+Nothing local could have caught it. The requirement lives on the far side of a
+boundary no test in this repository crosses, because crossing it needs a real
+account in a real tenant and the no-fake-data policy forbids seeding one. That
+gap is recorded in `browser-evidence.md` §3, and this is what it costs.
+
+Two more worth naming: a 403 on the session read cleared a valid cookie and
+produced an **unbreakable sign-in loop** for any account without
+`iam.user.read` (`F-022`), and the session cookie's `Secure` attribute **failed
+open** because its environment variable defaulted to `local` (`F-023`).
 
 ## 4. Ownership report — after wave 4
 
@@ -113,6 +140,26 @@ than forked — see `P1-26-F-001`.
 permission code that appears in no catalogue and no operation, so "unknown means
 denied" hid it from every actor who has ever existed. See `P1-26-F-011`.
 
-## 6. Resume point
+## 6. Decisions taken in waves 5–16
 
-Wave 5 — Organization settings and Users.
+**The shared table learned cursor pagination.** `TableResponse.total` is
+`number | null`; `null` renders as no count, no First and no Last. See
+`P1-26-F-001`, and `P1-26-F-018` and `P1-26-F-024` for the two places the same
+mistake reappeared from different directions inside this phase.
+
+**The API client attaches an idempotency key to every POST.** Semantically
+correct only because the client never retries a mutation — one `send` is one
+logical attempt. An explicit key always wins. See `P1-26-F-015`.
+
+**A 403 does not clear the session cookie.** Only a 401 does. Destroying a valid
+credential because a permission is missing produced an unbreakable sign-in loop.
+
+**`NEXT_PUBLIC_APP_ENV` defaults to `production`.** The unsafe mode is the one
+you have to ask for.
+
+**Five screens are settings-backed and say so on the page.** The key namespace is
+`P1-26-OD-001`, awaiting Owner ratification.
+
+## 7. Resume point
+
+Wave 17 — exact-SHA clean room, then the feature PR.

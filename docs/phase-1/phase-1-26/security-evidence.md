@@ -148,8 +148,13 @@ backend inside the same transaction as the change:
 | Create / end approval limit      | `iam.approval-limit-*`               | `iam.approval_limit.created`, `.ended` |
 | Tenant settings                  | `iam.tenant-settings-update`         | `org.tenant.settings_updated`          |
 | Company / branch settings        | `iam.*-settings-write`               | `org.*.settings_updated`               |
-| Branch status                    | `shared.branch-status-change`        | `org.branch.status_changed`            |
 | Reading the audit log            | `iam.audit-event-list`, `-detail`    | `iam.audit.viewed`                     |
+
+`shared.branch-status-change` is **not** in that table. An adapter for it
+exists (`changeBranchStatusAction`) and **no screen calls it** — listing it
+among shipped actions would have been an audit claim for a code path an operator
+cannot reach (`P1-26-F-036`). It is carried for the phase that builds the branch
+directory the control would need.
 
 **The Frontend creates no authoritative audit or domain event**, and does not
 reproduce transactional-outbox behaviour. It displays a correlation ID, which is

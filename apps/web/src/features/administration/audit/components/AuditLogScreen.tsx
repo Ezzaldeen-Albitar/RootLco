@@ -61,16 +61,18 @@ export function AuditLogScreen({
     [range.from, range.to]
   );
 
-  const table = useServerTable<AuditRow>(load);
+  // The range is what `load` closes over, so it is what must invalidate the
+  // held page. Without it the effect key never moved and changing the dates
+  // re-rendered the same rows (P1-26-F-019).
+  const table = useServerTable<AuditRow>(load, { loadKey: `${range.from}..${range.to}` });
 
   const columns: readonly Column<AuditRow>[] = [
     {
       id: 'occurredAt',
       headerKey: 'audit.column.occurredAt',
-      cell: (row) => {
-        const when = row.occurredAt ?? row.createdAt;
-        return when ? formatDateTime(when, locale) : '—';
-      },
+      // `occurredAt` is REQUIRED by the published record. There is no
+      // `createdAt` on it, and the fallback that read one was guesswork.
+      cell: (row) => formatDateTime(row.occurredAt, locale),
     },
     {
       id: 'actor',
@@ -90,17 +92,14 @@ export function AuditLogScreen({
     {
       id: 'entity',
       headerKey: 'audit.column.entity',
-      cell: (row) =>
-        row.entityType ? (
-          <span className="text-text-secondary">
-            {row.entityType}
-            {row.entityId ? (
-              <code className="ms-1 break-all font-mono text-caption">{row.entityId}</code>
-            ) : null}
-          </span>
-        ) : (
-          '—'
-        ),
+      cell: (row) => (
+        <span className="text-text-secondary">
+          {row.entityType}
+          {row.entityId ? (
+            <code className="ms-1 break-all font-mono text-caption">{row.entityId}</code>
+          ) : null}
+        </span>
+      ),
     },
     {
       id: 'correlationId',
@@ -176,13 +175,10 @@ export function AuditLogScreen({
             <Row label={t('audit.column.action')} value={detail.action} mono />
             <Row
               label={t('audit.column.occurredAt')}
-              value={
-                detail.occurredAt ?? detail.createdAt
-                  ? formatDateTime((detail.occurredAt ?? detail.createdAt) as string, locale)
-                  : '—'
-              }
+              value={formatDateTime(detail.occurredAt, locale)}
             />
-            <Row label={t('audit.column.entity')} value={detail.entityType ?? '—'} />
+            <Row label={t('audit.column.entity')} value={detail.entityType} />
+            <Row label={t('audit.column.actor')} value={detail.actorId ?? detail.actorKind} mono />
             <Row label={t('audit.column.correlationId')} value={detail.correlationId ?? '—'} mono />
 
             <div>
@@ -190,28 +186,36 @@ export function AuditLogScreen({
                 {t('audit.detail.details')}
               </dt>
               <dd className="mt-1">
-                {detail.details && detail.details.length > 0 ? (
+                {/*
+                  `details` ABSENT and `details` EMPTY are different facts:
+                  the caller may not read them, or the record has none. They
+                  render differently.
+                */}
+                {detail.details === undefined ? (
+                  <p className="text-body text-text-muted">{t('audit.detail.masked')}</p>
+                ) : detail.details.length === 0 ? (
+                  <p className="text-body text-text-muted">—</p>
+                ) : (
                   <ul className="flex flex-col gap-2">
                     {detail.details.map((entry) => (
-                      <li key={entry.field} className="rounded-md border border-border-subtle p-2">
-                        <p className="font-mono text-caption text-text-muted">{entry.field}</p>
+                      <li
+                        key={entry.fieldName}
+                        className="rounded-md border border-border-subtle p-2"
+                      >
+                        <p className="font-mono text-caption text-text-muted">{entry.fieldName}</p>
                         <p className="break-all text-supporting text-text-primary">
-                          {/*
-                            `undefined` and `null` are different facts: the value
-                            was withheld, or it genuinely had none. Rendering
-                            both as an empty cell would merge them.
-                          */}
-                          {entry.value === undefined ? (
-                            <span className="text-text-muted">{t('audit.detail.masked')}</span>
-                          ) : (
-                            (entry.value ?? '—')
-                          )}
+                          {entry.oldValueMasked !== null ? (
+                            <>
+                              <span className="text-text-muted line-through">
+                                {entry.oldValueMasked}
+                              </span>{' '}
+                            </>
+                          ) : null}
+                          {entry.newValueMasked ?? '—'}
                         </p>
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="text-body text-text-muted">—</p>
                 )}
                 <p className="mt-2 text-caption text-text-muted">{t('audit.detail.maskedHint')}</p>
               </dd>

@@ -65,7 +65,13 @@ const SECTIONS: readonly {
         labelKey: 'nav.numberingRules',
         permission: PERMISSIONS.settingsManage,
       },
-      { href: '/administration/taxes', labelKey: 'nav.taxes', permission: PERMISSIONS.taxManage },
+      {
+        href: '/administration/taxes',
+        labelKey: 'nav.taxes',
+        // See navigation.ts: the screen's operations require settings
+        // management, not `org.tax.manage` (P1-26-F-029).
+        permission: PERMISSIONS.settingsManage,
+      },
       {
         href: '/administration/currencies',
         labelKey: 'nav.currencies',

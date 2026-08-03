@@ -50,8 +50,18 @@ export const EMAIL_MAX = 320;
  */
 export const loginSchema = z.object({
   tenantId: z.string().regex(UUID, 'auth.login.error.tenantId'),
-  email: z.string().trim().min(EMAIL_MIN, 'auth.login.error.email').max(EMAIL_MAX),
-  password: z.string().min(1, 'auth.login.error.password').max(PASSWORD_MAX),
+  // EVERY bound carries a message key. A `.max()` with no message emits Zod's
+  // own English sentence, which reaches an Arabic screen untranslated and
+  // bypasses the catalogue completeness test entirely (P1-26-F-033).
+  email: z
+    .string()
+    .trim()
+    .min(EMAIL_MIN, 'auth.login.error.email')
+    .max(EMAIL_MAX, 'auth.login.error.emailLength'),
+  password: z
+    .string()
+    .min(1, 'auth.login.error.password')
+    .max(PASSWORD_MAX, 'auth.login.error.passwordLength'),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -64,7 +74,11 @@ export type LoginInput = z.infer<typeof loginSchema>;
  * tenant here would imply the answer depends on it.
  */
 export const forgotPasswordSchema = z.object({
-  email: z.string().trim().min(EMAIL_MIN, 'auth.forgot.error.email').max(EMAIL_MAX),
+  email: z
+    .string()
+    .trim()
+    .min(EMAIL_MIN, 'auth.forgot.error.email')
+    .max(EMAIL_MAX, 'auth.login.error.emailLength'),
 });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
@@ -82,7 +96,7 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
  */
 export const setPasswordSchema = z
   .object({
-    token: z.string().min(8, 'auth.reset.error.token').max(2048),
+    token: z.string().min(8, 'auth.reset.error.token').max(2048, 'auth.reset.error.token'),
     password: z
       .string()
       .min(PASSWORD_MIN, 'auth.reset.error.passwordLength')

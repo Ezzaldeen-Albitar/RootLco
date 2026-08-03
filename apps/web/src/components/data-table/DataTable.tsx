@@ -109,10 +109,13 @@ export function DataTable<Row>({
   }
 
   const rows = response?.rows ?? [];
-  // `?? 0` would turn "the server publishes no count" into "there are none",
-  // which is a different and much more confident claim. `undefined` (no response
-  // yet) and `null` (counted set unavailable) both mean "do not print a total".
-  const total = response ? response.total : 0;
+  // Three states, and only one of them has a number to print. `?? 0` would
+  // turn "the server publishes no count" into "there are none" — a different and
+  // much more confident claim — and `response ? … : 0` did the same thing while
+  // LOADING, so every cursor-paginated table flashed "Showing 0–0 of 0" and
+  // "1 / 1" before its first page arrived (finding P1-26-F-024). No response and
+  // no published count are both "do not print a total".
+  const total = response ? response.total : null;
   const pages = pageCount(total, request.pageSize);
   const hasMore = response?.hasMore ?? false;
   const rowHeight = density === 'compact' ? 'h-9' : 'h-11';

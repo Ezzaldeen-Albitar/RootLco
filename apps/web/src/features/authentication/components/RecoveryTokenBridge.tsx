@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { isTokenShaped } from '../api/recovery-token';
@@ -8,82 +8,76 @@ import { MissingToken } from './MissingToken';
 import { SetPasswordForm } from './SetPasswordForm';
 
 /**
- * Recovers a token that arrived in the URL **fragment**, and renders the form.
+ * Recovers a recovery token from the URL, erases it, and renders the form.
  *
  * ## Why this component has to exist
  *
- * A fragment is never sent to the server. When the identity provider delivers a
- * recovery link as `…/reset-password#access_token=…`, the server render sees no
- * token at all — so a server-only implementation would show "this link is not
- * complete" to every user of a provider that uses that shape.
+ * A URL fragment is never sent to the server. When the identity provider
+ * delivers a recovery link as `…/reset-password#access_token=…`, the server
+ * render sees no token at all — so a server-only implementation would show "this
+ * link is not complete" to every user of a provider that uses that shape.
  *
- * ## Why it renders the form rather than taking a render prop
+ * ## Only serialisable props cross the boundary
  *
- * It used to take `children: (token) => ReactNode`. That is a **function prop
- * crossing the Server-to-Client boundary**, which is not serialisable: the page
- * returned a 500 in the production build and the browser suite caught it. The
- * page now passes only serialisable values — a locale, a message catalogue, a
- * token or null, and message keys — and this component decides what to render.
+ * It used to take `children: (token) => ReactNode`. A function prop is not
+ * serialisable across Server-to-Client, and both credential pages returned a 500
+ * in the production build (`P1-26-F-013`). The page now passes values; this
+ * component decides what to render.
  *
- * ## Why `useSyncExternalStore` rather than an effect
+ * ## Reading is pure; erasing is an effect
  *
- * `window.location.hash` cannot be read during render: the server has no such
- * object, so the server HTML and the first client render would disagree and
- * React would discard the tree. The obvious workaround — render the fallback and
- * `setState` from an effect — is what `react-hooks/set-state-in-effect` catches,
- * and the rule is right: it renders twice, and the user sees "this link is not
- * complete" for a frame before the form appears. On a page reached from an email
- * that flash reads as a broken link.
+ * `useSyncExternalStore`'s snapshot must be a pure read — React may call it
+ * during render, more than once, and may discard the render entirely. An earlier
+ * version called `history.replaceState` inside it, which mutates browser state
+ * from the render phase (`P1-26-F-039`).
  *
- * ## What happens to the token
+ * So: the snapshot reads, and the effect erases. And it erases **both** forms.
+ * The first version only cleaned the fragment, which left a token delivered as
+ * `?token=…` sitting in the address bar for the life of the tab — the exact
+ * exposure the fragment handling existed to prevent, on the delivery shape the
+ * server *can* see (`P1-26-F-021`).
  *
- * The fragment is **erased from the address bar** with `history.replaceState` —
- * no navigation, no history entry — on the first read. That stops the credential
- * from being read back out of the address bar later, from being copied when the
- * user copies the URL, and from being restored when the tab is reopened.
+ * Erasing means: no navigation, no history entry, and it happens whether or not
+ * the token was usable — a malformed credential-shaped string in the address bar
+ * is still a credential-shaped string in the address bar.
  *
- * It is never written to storage, to a cookie, to a query parameter, or to any
- * log. It exists in memory for as long as the form is on screen.
+ * The token is never written to storage, a cookie, a log, or any returned state.
+ * It lives in memory for as long as the form is on screen.
  */
 
-/** The hash is read once per page load; nothing else can change it here. */
+/** The URL is read once per load; nothing else here can change it. */
 function subscribe(): () => void {
   return () => undefined;
 }
 
-let consumed: { readonly href: string; readonly token: string | null } | null = null;
+/** The parameter names providers use, in both the query and the fragment. */
+const TOKEN_KEYS = ['access_token', 'token', 'code'] as const;
 
 /**
- * Reads and erases the fragment, memoised per URL.
- *
- * `useSyncExternalStore` may call the snapshot more than once and requires the
- * value to be referentially stable between calls, or it loops. Erasing the
- * fragment makes the read destructive, so the result is cached against the href
- * it was taken from — the second call returns the same token rather than looking
- * at a hash that is no longer there.
+ * A PURE read of the fragment. No mutation, and stable across repeated calls
+ * because it derives its answer only from `window.location`.
  */
-function readTokenFromFragment(): string | null {
-  const href = window.location.pathname + window.location.search;
-  if (consumed && consumed.href === href) return consumed.token;
-
-  let token: string | null = null;
+function readFragmentToken(): string | null {
   const hash = window.location.hash.replace(/^#/, '');
-  if (hash.length > 0) {
-    const params = new URLSearchParams(hash);
-    for (const name of ['access_token', 'token', 'code']) {
-      const value = params.get(name);
-      if (value && isTokenShaped(value)) {
-        token = value;
-        break;
-      }
-    }
-    // Erased whether or not it was usable. A malformed fragment is still a
-    // credential-shaped string sitting in the address bar.
-    window.history.replaceState(null, '', href);
+  if (hash.length === 0) return null;
+  const params = new URLSearchParams(hash);
+  for (const name of TOKEN_KEYS) {
+    const value = params.get(name);
+    if (value && isTokenShaped(value)) return value;
   }
+  return null;
+}
 
-  consumed = { href, token };
-  return token;
+/**
+ * Whether the address bar still carries anything credential-shaped.
+ *
+ * Checked before rewriting so the effect does not push a redundant
+ * `replaceState` on every render pass.
+ */
+function urlCarriesToken(): boolean {
+  if (window.location.hash.replace(/^#/, '').length > 0) return true;
+  const query = new URLSearchParams(window.location.search);
+  return TOKEN_KEYS.some((name) => query.has(name));
 }
 
 export function RecoveryTokenBridge({
@@ -103,10 +97,19 @@ export function RecoveryTokenBridge({
 }) {
   const fragmentToken = useSyncExternalStore(
     subscribe,
-    () => (serverToken === null ? readTokenFromFragment() : serverToken),
-    // The server snapshot. It MUST NOT touch `window`, which does not exist here.
-    () => serverToken
+    // Client snapshot. Pure: it reads and returns, and returns the same value
+    // for the same URL.
+    () => readFragmentToken(),
+    // Server snapshot. It MUST NOT touch `window`, which does not exist here.
+    () => null
   );
+
+  useEffect(() => {
+    // Not a state update — a URL rewrite, which is exactly the kind of external
+    // synchronisation an effect is for. Both delivery shapes are cleaned.
+    if (!urlCarriesToken()) return;
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
 
   const token = serverToken ?? fragmentToken;
   if (token === null) return <MissingToken locale={locale} messages={messages} />;
@@ -121,9 +124,4 @@ export function RecoveryTokenBridge({
       doneBodyKey={doneBodyKey}
     />
   );
-}
-
-/** Test seam: clears the per-URL memo so a suite can exercise a fresh load. */
-export function resetRecoveryTokenMemo(): void {
-  consumed = null;
 }

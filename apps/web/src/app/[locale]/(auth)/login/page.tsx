@@ -27,6 +27,11 @@ const REASONS = {
   expired: 'auth.login.reason.expired',
   'signed-out': 'auth.login.reason.signedOut',
   unavailable: 'auth.login.reason.unavailable',
+  // The credentials were accepted and the account may not read its own session
+  // — it does not hold `iam.user.read`. Signing in again will not help, so the
+  // message says so rather than inviting an operator to try the same thing
+  // repeatedly (`P1-26-F-022`).
+  forbidden: 'auth.login.reason.forbidden',
 } as const;
 
 export default async function LoginPage({

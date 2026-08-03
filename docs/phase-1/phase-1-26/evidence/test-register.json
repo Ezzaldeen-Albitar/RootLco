@@ -1,0 +1,51 @@
+{
+  "base": {
+    "sha": "3598de624dbc181b742cc40700464115ba5c4fc6",
+    "rootUnit": {
+      "passed": 1440,
+      "total": 1440,
+      "files": 67
+    },
+    "web": {
+      "passed": 239,
+      "total": 239,
+      "files": 12
+    },
+    "backend": {
+      "passed": 1752,
+      "total": 1752,
+      "files": 75
+    },
+    "dbRls": {
+      "passed": 1636,
+      "total": 1636,
+      "files": 138
+    },
+    "dbRlsNote": "First run reported 1635/1636. Passes 3/3 in isolation and 1636/1636 as a tier on its own. Mechanism NOT established — recorded as P1-26-F-012."
+  },
+  "candidate": {
+    "sha": "55c2846da13a990d136a42287a8a4a3cf4207a46",
+    "tree": "7a848044238840c22185349cc04fec36f59523fa",
+    "policies": "exit 0",
+    "rootUnit": {
+      "passed": 1467,
+      "total": 1467,
+      "files": 68
+    },
+    "web": {
+      "passed": 313,
+      "total": 313,
+      "files": 16
+    },
+    "typecheck": "exit 0",
+    "lint": "exit 0",
+    "stylelint": "exit 0",
+    "build": {
+      "exit": 0,
+      "routes": 21,
+      "seconds": 29,
+      "staticBytes": "1.1 MB"
+    }
+  },
+  "skippedNote": "The 4 browser skips are one project-scoped reduced-motion test declining the four projects it does not apply to. It runs and passes in its own. No required executable test is skipped."
+}

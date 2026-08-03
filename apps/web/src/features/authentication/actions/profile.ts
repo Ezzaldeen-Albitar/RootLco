@@ -28,7 +28,14 @@ import { issueKeysByField } from '../schemas/credentials';
  */
 
 const schema = z.object({
-  displayName: z.string().trim().min(1, 'field.required').max(200, 'field.required'),
+  // Two different problems, two different messages. Reporting "this field is
+  // required" under a field the operator has filled in is a message that
+  // contradicts what they are looking at (P1-26-F-040).
+  displayName: z
+    .string()
+    .trim()
+    .min(1, 'field.required')
+    .max(200, 'profile.error.displayNameLength'),
   recordVersion: z.coerce.number().int().min(1),
 });
 
