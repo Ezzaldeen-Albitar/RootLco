@@ -133,9 +133,7 @@ const limitSchema = z
   })
   .refine(
     (value) =>
-      value.subject === 'role'
-        ? UUID.test(value.roleId ?? '')
-        : UUID.test(value.userId ?? ''),
+      value.subject === 'role' ? UUID.test(value.roleId ?? '') : UUID.test(value.userId ?? ''),
     { path: ['subject'], message: 'approvalLimits.error.subject' }
   );
 

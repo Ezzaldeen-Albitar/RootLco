@@ -170,9 +170,7 @@ export function PermissionsScreen({
                         <td className="px-3 py-2">
                           {mapping ? (
                             <span
-                              className={
-                                mapping.effect === 'allow' ? 'text-success' : 'text-error'
-                              }
+                              className={mapping.effect === 'allow' ? 'text-success' : 'text-error'}
                             >
                               {t(`permissions.effect.${mapping.effect}`)}
                             </span>
@@ -247,9 +245,7 @@ export function PermissionsScreen({
           description={t('permissions.confirm.removeBody')}
           confirmLabel={t('permissions.remove')}
           onCancel={() => setRemoving(null)}
-          onConfirm={() =>
-            mutate(() => removeRolePermissionAction(roleId, removing.mappingId))
-          }
+          onConfirm={() => mutate(() => removeRolePermissionAction(roleId, removing.mappingId))}
         />
       ) : null}
     </div>

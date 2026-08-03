@@ -2,11 +2,7 @@
 
 import { anonymousClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
-import {
-  forgotPasswordSchema,
-  issueKeysByField,
-  setPasswordSchema,
-} from '../schemas/credentials';
+import { forgotPasswordSchema, issueKeysByField, setPasswordSchema } from '../schemas/credentials';
 
 /**
  * Requesting a password reset, and completing one.

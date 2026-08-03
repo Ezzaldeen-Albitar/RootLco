@@ -197,6 +197,47 @@ easiest to break in the file that states it.
 
 ---
 
+## P1-26-F-043 — the root formatter cannot see the Frontend, and is named as though it can
+
+**Severity:** Low · **Status:** Fixed · **Area:** `apps/web` formatting, local
+verification routine
+
+Sixteen files under `apps/web` were unformatted. They failed hosted CI in two
+places at once — `Web quality / web-quality` and `hosted-clean-room` — which
+together failed `ci-gate`. Three red checks, one defect.
+
+`npm run format:check` at the repository root is `prettier --check .`, and it
+had been run locally, and it was green. It was green because
+[`.prettierignore`](../../../.prettierignore) excludes `apps/` outright: each
+workspace ships its own prettier configuration, and two formatters disagreeing
+over one file is a permanent conflict rather than a style preference. So the
+root command is structurally incapable of reporting on the Frontend, while
+carrying a name — and an argument, `.` — that reads as the whole repository.
+
+The workspace command has the **identical** name and the identical body,
+`prettier --check .`. Only the working directory differs, and the working
+directory is the entire difference in what gets checked.
+
+**Why it reached CI.** Nothing here was a repository defect except the sixteen
+files. `check-command-coverage.mjs` already classified `@rootlco/web
+::format:check` as _required_, already proved it reachable, and hosted CI duly
+ran it and caught the problem — the arrangement worked exactly as designed. What
+failed was the local proof: it used the root command and treated a green result
+as coverage it never had.
+
+`tests/ci/command-coverage.test.ts` now pins the arrangement — that `apps/` is
+excluded at the root, that the exclusion hides real source rather than an empty
+directory, that both commands share a name, and that `verify:web` and
+`verify:workspaces` are what actually reach the workspace formatter. Any future
+edit that quietly makes the root command look sufficient fails there.
+
+This is the second time in this phase that a command's _name_ was mistaken for
+its _scope_ — `F-042` was `verify:policies` not containing the secret scan. The
+lesson is the same one twice: reachability is a property of the graph, not of
+what a script is called.
+
+---
+
 ## How findings `F-015` … `F-041` were found
 
 An adversarial review of the complete P1-26 diff, run as six independent lenses —

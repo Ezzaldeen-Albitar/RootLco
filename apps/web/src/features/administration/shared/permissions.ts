@@ -54,10 +54,7 @@ export const ADMINISTRATION_PERMISSIONS: readonly AdministrationPermission[] = O
   Object.values(PERMISSIONS)
 );
 
-export function holds(
-  permissions: readonly string[],
-  code: AdministrationPermission
-): boolean {
+export function holds(permissions: readonly string[], code: AdministrationPermission): boolean {
   return permissions.includes(code);
 }
 

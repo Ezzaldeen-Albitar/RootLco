@@ -96,7 +96,10 @@ export default async function ProfilePage({
                   // `permissions.effect.unset` rendered "Active" / "Not mapped"
                   // under "Two-factor authentication required", which is not
                   // what either word means here (P1-26-F-034).
-                  value={translate(messages, account.mfaRequired ? 'profile.mfaOn' : 'profile.mfaOff')}
+                  value={translate(
+                    messages,
+                    account.mfaRequired ? 'profile.mfaOn' : 'profile.mfaOff'
+                  )}
                 />
               ) : null}
             </dl>
@@ -151,7 +154,13 @@ export default async function ProfilePage({
   );
 }
 
-function Panel({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
+function Panel({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: React.ReactNode;
+}) {
   return (
     <section className="rounded-xl border border-border-subtle bg-surface p-5 shadow-xs">
       <h2 className="text-section-title font-semibold text-text-heading">{title}</h2>

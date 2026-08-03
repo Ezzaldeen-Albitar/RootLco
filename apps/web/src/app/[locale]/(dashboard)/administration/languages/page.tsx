@@ -70,7 +70,9 @@ export default async function LanguagesPage({
                   key={code}
                   label={t(`locale.${code}`)}
                   value={t(
-                    DIRECTION[code] === 'rtl' ? 'languages.direction.rtl' : 'languages.direction.ltr'
+                    DIRECTION[code] === 'rtl'
+                      ? 'languages.direction.rtl'
+                      : 'languages.direction.ltr'
                   )}
                   hint={code}
                 />

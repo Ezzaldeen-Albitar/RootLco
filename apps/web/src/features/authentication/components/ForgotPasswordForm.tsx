@@ -29,10 +29,7 @@ export function ForgotPasswordForm({ messages }: { readonly messages: Messages }
 
   if (state.status === 'success') {
     return (
-      <div
-        role="status"
-        className="rounded-lg border border-success-border bg-success-subtle p-4"
-      >
+      <div role="status" className="rounded-lg border border-success-border bg-success-subtle p-4">
         <p className="text-body font-medium text-text-primary">
           {translate(messages, 'auth.forgot.submitted')}
         </p>

@@ -35,7 +35,8 @@ describe('the sign-in schema', () => {
   it('requires a workspace identifier that is a real UUID', () => {
     const bad = loginSchema.safeParse({ tenantId: 'not-a-uuid', email: 'a@b.co', password: 'x' });
     expect(bad.success).toBe(false);
-    if (!bad.success) expect(issueKeysByField(bad.error).tenantId).toBe('auth.login.error.tenantId');
+    if (!bad.success)
+      expect(issueKeysByField(bad.error).tenantId).toBe('auth.login.error.tenantId');
   });
 
   it('does NOT enforce a password length on sign-in', () => {

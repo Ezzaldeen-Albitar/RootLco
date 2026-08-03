@@ -43,10 +43,7 @@ export function AuditLogScreen({
   readonly initialFrom: string;
   readonly initialTo: string;
 }) {
-  const t = useCallback(
-    (key: string) => translate(messages, key as keyof Messages),
-    [messages]
-  );
+  const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
 
   const [range, setRange] = useState({ from: initialFrom, to: initialTo });
   const [detail, setDetail] = useState<AuditDetail | null>(null);
@@ -78,11 +75,7 @@ export function AuditLogScreen({
       id: 'actor',
       headerKey: 'audit.column.actor',
       cell: (row) =>
-        row.actorId ? (
-          <code className="break-all font-mono text-caption">{row.actorId}</code>
-        ) : (
-          '—'
-        ),
+        row.actorId ? <code className="break-all font-mono text-caption">{row.actorId}</code> : '—',
     },
     {
       id: 'action',

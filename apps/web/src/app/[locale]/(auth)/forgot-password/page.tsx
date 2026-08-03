@@ -19,10 +19,7 @@ export default async function ForgotPasswordPage({
       title={translate(messages, 'auth.forgot.title')}
       description={translate(messages, 'auth.forgot.description')}
       footer={
-        <Link
-          href={`/${locale}/login`}
-          className="text-primary underline-offset-2 hover:underline"
-        >
+        <Link href={`/${locale}/login`} className="text-primary underline-offset-2 hover:underline">
           {translate(messages, 'auth.backToLogin')}
         </Link>
       }

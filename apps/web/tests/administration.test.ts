@@ -32,14 +32,7 @@ import en from '../src/i18n/messages/en.json';
  */
 
 const WEB = join(__dirname, '..');
-const SEED = join(
-  WEB,
-  '..',
-  '..',
-  'supabase',
-  'seeds',
-  '04_iam_permission_catalog.sql'
-);
+const SEED = join(WEB, '..', '..', 'supabase', 'seeds', '04_iam_permission_catalog.sql');
 
 describe('permission codes', () => {
   const seed = readFileSync(SEED, 'utf8');

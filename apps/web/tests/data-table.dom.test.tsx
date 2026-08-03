@@ -2,7 +2,11 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { INITIAL_REQUEST, type TableRequest, type TableResponse } from '@/components/data-table/table-state';
+import {
+  INITIAL_REQUEST,
+  type TableRequest,
+  type TableResponse,
+} from '@/components/data-table/table-state';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
 
@@ -94,7 +98,7 @@ describe('the uncounted (cursor) mode', () => {
     expect(within(nav).queryByRole('button', { name: 'Last page' })).toBeNull();
   });
 
-  it("enables Next only while the server says there is more", async () => {
+  it('enables Next only while the server says there is more', async () => {
     const user = userEvent.setup();
     const onRequestChange = vi.fn();
     const { unmount } = renderTable(uncounted, { onRequestChange });

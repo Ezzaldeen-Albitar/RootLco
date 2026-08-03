@@ -36,13 +36,7 @@ import { orderingKeyOf, useCursorPages } from '@/components/data-table/use-curso
  * already moved past.
  */
 
-export type ServerPageStatus =
-  | 'ok'
-  | 'denied'
-  | 'expired'
-  | 'unavailable'
-  | 'error'
-  | 'not-found';
+export type ServerPageStatus = 'ok' | 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found';
 
 export interface ServerPage<Row> {
   readonly status: ServerPageStatus;

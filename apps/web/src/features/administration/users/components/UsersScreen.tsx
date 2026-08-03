@@ -62,8 +62,10 @@ const STATUS_FILTER = {
   ],
 } as const;
 
-type PendingAction =
-  | { readonly kind: 'lock' | 'unlock' | 'archive' | 'activate' | 'cancel' | 'revoke'; readonly user: UserRow };
+type PendingAction = {
+  readonly kind: 'lock' | 'unlock' | 'archive' | 'activate' | 'cancel' | 'revoke';
+  readonly user: UserRow;
+};
 
 export function UsersScreen({
   locale,
@@ -84,10 +86,7 @@ export function UsersScreen({
   const [actionState, setActionState] = useState<ActionState>(IDLE);
   const [running, startTransition] = useTransition();
 
-  const t = useCallback(
-    (key: string) => translate(messages, key as keyof Messages),
-    [messages]
-  );
+  const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
 
   const statusFilter = table.request.filters.find((filter) => filter.key === 'status')?.value;
 
@@ -224,17 +223,17 @@ export function UsersScreen({
       */}
       {inviteOpen ? (
         <InviteDialog
-        open
-        // Closing always re-reads the list. An invitation that succeeded has
-        // added a row; one that failed has not, and a re-read of an unchanged
-        // list costs one request. That is cheaper than an auto-close, which
-        // would take the confirmation off screen before it had been read.
-        onClose={() => {
-          setInviteOpen(false);
-          table.refresh();
-        }}
-        messages={messages}
-        roles={roles}
+          open
+          // Closing always re-reads the list. An invitation that succeeded has
+          // added a row; one that failed has not, and a re-read of an unchanged
+          // list costs one request. That is cheaper than an auto-close, which
+          // would take the confirmation off screen before it had been read.
+          onClose={() => {
+            setInviteOpen(false);
+            table.refresh();
+          }}
+          messages={messages}
+          roles={roles}
         />
       ) : null}
 

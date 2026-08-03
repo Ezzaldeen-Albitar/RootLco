@@ -3,10 +3,7 @@ import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
-import {
-  ContractNotice,
-  Panel,
-} from '@/features/administration/shared/components/ScreenStates';
+import { ContractNotice, Panel } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';

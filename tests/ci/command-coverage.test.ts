@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   AGGREGATE,
@@ -167,5 +169,82 @@ describe('the live repository', () => {
       (entry) => entry.tier === 'required' && !reached.has(key(entry.owner, entry.name))
     );
     expect(missing.map((entry) => `${entry.owner}::${entry.name}`)).toEqual([]);
+  });
+});
+
+/**
+ * `P1-26-F-043` — the root formatter cannot see a workspace, and is named as
+ * though it can.
+ *
+ * `npm run format:check` at the root is `prettier --check .`, which reads as
+ * "check the repository". It is not: `.prettierignore` excludes `apps/`
+ * outright, because each workspace ships its own prettier configuration and two
+ * formatters disagreeing over the same file is a permanent conflict, not a
+ * style preference.
+ *
+ * The consequence is that a green root `format:check` says nothing whatsoever
+ * about `apps/web`. Sixteen unformatted web files passed it and then failed
+ * hosted CI twice — once in `Web quality`, once inside the clean room, which
+ * runs the same command through `verify:workspaces`.
+ *
+ * The command graph was never wrong: `check-command-coverage.mjs` already
+ * required `@rootlco/web::format:check` and CI duly ran it. What was missing was
+ * anything stating that the root command is *not* a substitute for it. These
+ * cases are that statement, and they fail the moment either half of the
+ * arrangement moves.
+ */
+describe('formatter scope', () => {
+  const REPO = join(__dirname, '..', '..');
+  const scripts = readScripts();
+  const script = (owner: string, name: string) => scripts.get(key(owner, name)) ?? '';
+
+  const ignoreEntries = readFileSync(join(REPO, '.prettierignore'), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+
+  it('reads a real ignore file, so the exclusion below is not imagined', () => {
+    expect(ignoreEntries.length).toBeGreaterThan(5);
+    expect(ignoreEntries).toContain('node_modules');
+  });
+
+  it('excludes every workspace from the root formatter', () => {
+    expect(ignoreEntries).toContain('apps/');
+  });
+
+  it('hides real source by doing so — the exclusion is material, not cosmetic', () => {
+    // If `apps/web/src` were empty the assertion above would be technically true
+    // and practically meaningless. It is not empty: this is a live blind spot
+    // over the entire Frontend.
+    const webSource = join(REPO, 'apps', 'web', 'src');
+    expect(existsSync(webSource)).toBe(true);
+    expect(readdirSync(webSource).length).toBeGreaterThan(3);
+  });
+
+  it('gives the root and the workspace the SAME command name for different scopes', () => {
+    // The trap in one line. Both are `prettier --check .`; only the working
+    // directory differs, and the working directory is what decides coverage.
+    expect(script(ROOT, 'format:check')).toBe('prettier --check .');
+    expect(script(WEB, 'format:check')).toBe('prettier --check .');
+  });
+
+  it('names an aggregate that covers all three scopes', () => {
+    const all = script(ROOT, 'format:check:all');
+    expect(all).toContain('npm run format:check');
+    expect(all).toContain('npm run format:check:api');
+    expect(all).toContain('npm run format:check:web');
+  });
+
+  it('keeps each workspace formatter inside that workspace verification', () => {
+    // `verify:web` is what a local run must use. Dropping `format:check:web`
+    // from it would restore the blind spot while leaving the graph green.
+    expect(script(ROOT, 'verify:web')).toContain('npm run format:check:web');
+    expect(script(ROOT, 'verify:api')).toContain('npm run format:check:api');
+  });
+
+  it('reaches every workspace formatter from the full-workspace aggregate', () => {
+    const reached = reachableFrom(scripts, key(ROOT, 'verify:workspaces'));
+    expect(reached.has(key(WEB, 'format:check'))).toBe(true);
+    expect(reached.has(key('@rootlco/api', 'format:check'))).toBe(true);
   });
 });

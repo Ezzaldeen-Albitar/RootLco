@@ -54,9 +54,8 @@ export default async function UsersPage({
   // The invitation form offers roles only to someone who could grant them. The
   // backend bounds the choice by the inviter's own delegable authority anyway,
   // so an empty list here is a narrower offer, never a wider one.
-  const roles = canManage && holds(session.permissions, PERMISSIONS.roleRead)
-    ? await listGrantableRoles()
-    : [];
+  const roles =
+    canManage && holds(session.permissions, PERMISSIONS.roleRead) ? await listGrantableRoles() : [];
 
   return (
     <>
