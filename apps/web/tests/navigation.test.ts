@@ -42,10 +42,74 @@ describe('the navigation model', () => {
   });
 
   it('marks every module whose screens do not exist yet as planned', () => {
-    // P1-25 builds the frame. Anything claiming `available` here is claiming a
-    // screen exists, and only the overview and the gallery do.
+    // `available` is a claim that a screen exists. P1-25 built the frame, the
+    // overview and the gallery; P1-26 built authentication and administration.
+    // Everything else is still a route definition for a later phase and must
+    // render as visibly unavailable rather than as a link that 404s.
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
-    expect(available.sort()).toEqual(['gallery', 'overview']);
+    expect(available.sort()).toEqual([
+      'administration',
+      'administration.approvalLimits',
+      'administration.auditLog',
+      'administration.permissions',
+      'administration.roles',
+      'administration.users',
+      'gallery',
+      'overview',
+      'settings',
+      'settings.currencies',
+      'settings.languages',
+      'settings.numberingRules',
+      'settings.organization',
+      'settings.systemSettings',
+      'settings.taxes',
+    ]);
+  });
+
+  it('keeps every module without a screen marked planned', () => {
+    const planned = ALL.filter((entry) => entry.status === 'planned').map((e) => e.key);
+    // The business modules P1-27 and later deliver. If one of these ever turns
+    // `available` without a screen, the sidebar starts producing 404s.
+    expect(planned.sort()).toEqual([
+      'appointments',
+      'billing',
+      'catalog',
+      'customers',
+      'delivery',
+      'documents',
+      'inventory',
+      'notifications',
+      'reports',
+      'technicians',
+      'vehicles',
+      'work-orders',
+      'work-orders.diagnostics',
+      'work-orders.quality',
+    ]);
+  });
+
+  it('gates every P1-26 entry on a permission that exists in the platform catalogue', () => {
+    // `org.settings.read` was the previous Settings gate and is in NO catalogue
+    // and NO operation — so "unknown means denied" hid the entry from every
+    // actor who ever existed (finding P1-26-F-011). These are the codes seeded
+    // by supabase/seeds/04_iam_permission_catalog.sql that P1-26's operations
+    // actually require.
+    const CATALOGUE = new Set([
+      'iam.user.read',
+      'iam.role.read',
+      'iam.approval.manage',
+      'iam.audit.view',
+      'org.tenant.read',
+      'org.settings.manage',
+      'org.tax.manage',
+    ]);
+    const administration = NAVIGATION.find((group) => group.key === 'administration');
+    expect(administration).toBeDefined();
+    const entries = flattenNavigation([administration!]);
+    for (const entry of entries) {
+      if (entry.permission === null) continue;
+      expect(CATALOGUE.has(entry.permission), `${entry.key} → ${entry.permission}`).toBe(true);
+    }
   });
 
   it('requires a permission for every module except the two ungated ones', () => {

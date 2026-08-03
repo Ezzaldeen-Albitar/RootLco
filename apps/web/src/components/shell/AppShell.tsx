@@ -48,6 +48,15 @@ export interface AppShellProps {
   readonly children: ReactNode;
   /** Optional right-hand (inline-end) panel — filters, detail, activity. */
   readonly secondaryPanel?: ReactNode;
+  /**
+   * The account control in the header.
+   *
+   * Passed in rather than built here because it is rendered from the SESSION,
+   * and the session is resolved on the server. A client component that fetched
+   * it would have to render the header once without it — which is the flash
+   * this architecture exists to avoid.
+   */
+  readonly account?: ReactNode;
 }
 
 export function AppShell({
@@ -56,6 +65,7 @@ export function AppShell({
   capabilities = NO_CAPABILITIES,
   children,
   secondaryPanel,
+  account,
 }: AppShellProps) {
   const pathname = usePathname() ?? `/${locale}`;
   const [collapsed, setCollapsed] = usePersistedFlag(COLLAPSE_KEY, false);
@@ -137,6 +147,7 @@ export function AppShell({
           onToggleCollapsed={() => setCollapsed(!collapsed)}
           onOpenDrawer={() => setDrawerOpen(true)}
           drawerTriggerRef={drawerTriggerRef}
+          account={account}
         />
         <div className="flex min-h-0 flex-1">
           {/*
@@ -168,12 +179,14 @@ function AppHeader({
   onToggleCollapsed,
   onOpenDrawer,
   drawerTriggerRef,
+  account,
 }: {
   readonly messages: Messages;
   readonly collapsed: boolean;
   readonly onToggleCollapsed: () => void;
   readonly onOpenDrawer: () => void;
   readonly drawerTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  readonly account?: ReactNode;
 }) {
   return (
     <header className="sticky top-0 z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
@@ -210,6 +223,7 @@ function AppHeader({
             {translate(messages, 'app.provisionalBrand')}
           </span>
         ) : null}
+        {account}
       </div>
     </header>
   );

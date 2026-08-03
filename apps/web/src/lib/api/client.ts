@@ -72,6 +72,20 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
   readonly newCorrelationId?: () => string;
+  /**
+   * Headers sent with every request from this client.
+   *
+   * The reason this exists is `Authorization`. The backend is bearer-
+   * authenticated, and the token lives in a `httpOnly` cookie the browser cannot
+   * read — so the value is attached SERVER-SIDE, by `server-client.ts`, and a
+   * client constructed in the browser simply has none. Keeping it a construction
+   * parameter rather than a per-call argument means no call site can forget it
+   * and no call site can accidentally attach one it should not have.
+   *
+   * `content-type`, `accept`, the correlation ID, `if-match` and
+   * `idempotency-key` are owned by the request itself and always win.
+   */
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -114,12 +128,14 @@ export class ApiClient {
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
   readonly #newCorrelationId: () => string;
+  readonly #defaultHeaders: Readonly<Record<string, string>>;
 
   constructor(options: ApiClientOptions) {
     this.#baseUrl = assertBaseUrl(options.baseUrl);
     this.#fetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#newCorrelationId = options.newCorrelationId ?? (() => globalThis.crypto.randomUUID());
+    this.#defaultHeaders = options.defaultHeaders ?? {};
   }
 
   /**
@@ -147,14 +163,33 @@ export class ApiClient {
     return last as ApiFailure;
   }
 
-  /** A mutation. NEVER retried — see the module note. */
+  /**
+   * A mutation. NEVER retried — see the module note.
+   *
+   * `ifMatch` carries the record version a version-guarded operation requires.
+   * The backend refuses those operations outright when the header is absent
+   * (`ERR-CON-002`), which is the correct failure: an unguarded update is a
+   * lost-update waiting to happen, so the guard is not optional and is not
+   * defaulted here either.
+   */
   async send<T>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
-    options: { readonly signal?: AbortSignal; readonly idempotencyKey?: string } = {}
+    options: {
+      readonly signal?: AbortSignal;
+      readonly idempotencyKey?: string;
+      readonly ifMatch?: string | number;
+    } = {}
   ): Promise<ApiResult<T>> {
-    return this.#request<T>(method, path, body, options.signal, options.idempotencyKey);
+    return this.#request<T>(
+      method,
+      path,
+      body,
+      options.signal,
+      options.idempotencyKey,
+      options.ifMatch
+    );
   }
 
   async #request<T>(
@@ -162,7 +197,8 @@ export class ApiClient {
     path: string,
     body: unknown,
     signal?: AbortSignal,
-    idempotencyKey?: string
+    idempotencyKey?: string,
+    ifMatch?: string | number
   ): Promise<ApiResult<T>> {
     const correlationId = this.#newCorrelationId();
     const controller = new AbortController();
@@ -182,11 +218,16 @@ export class ApiClient {
     }
 
     const headers: Record<string, string> = {
+      // Construction-time headers first, so a request-owned header of the same
+      // name always wins. A default that could overwrite the correlation ID
+      // would break the one diagnostic a user is ever shown.
+      ...this.#defaultHeaders,
       accept: 'application/json',
       [CORRELATION_HEADER]: correlationId,
     };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
+    if (ifMatch !== undefined) headers['if-match'] = String(ifMatch);
 
     try {
       const response = await this.#fetch(`${this.#baseUrl}${path}`, {

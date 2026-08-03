@@ -2,7 +2,7 @@
   "name": "rootlco-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "RootLco — Root Link Company. Commercial Multi-Tenant Automotive CRM and ERP Platform ([PRODUCT NAME — Pending Final Approval]). Confidential and proprietary.",
+  "description": "RootLco — Root Link Company. Commercial Multi-Tenant Automotive CRM and ERP Platform. The product name is configured in apps/web/src/config/brand.ts and apps/api/src/shared/constants/app.ts, which scripts/ci/check-product-name-authority.mjs holds identical; the current working name is temporary. Confidential and proprietary.",
   "license": "UNLICENSED",
   "packageManager": "npm@11.13.0",
   "engines": {

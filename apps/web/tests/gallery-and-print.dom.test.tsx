@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -36,11 +36,23 @@ describe('gallery access', () => {
     // A 403 confirms the route exists. Read from the route source, because the
     // distinction is the whole point and a refactor could silently reverse it.
     const source = readFileSync(
-      join(__dirname, '..', 'src', 'app', '[locale]', '(dashboard)', 'gallery', 'page.tsx'),
+      // P1-26 moved the gallery into its own `(design)` route group: every
+      // screen under `(dashboard)` now requires a session, and the gallery
+      // deliberately does not — it renders fixtures only and its control is the
+      // environment gate asserted above.
+      join(__dirname, '..', 'src', 'app', '[locale]', '(design)', 'gallery', 'page.tsx'),
       'utf8'
     );
     expect(source).toContain('if (!galleryEnabled()) notFound();');
     expect(source).not.toMatch(/403|forbidden/i);
+  });
+
+  it('is the only route outside the authenticated group', () => {
+    // The reason the gallery may sit outside `(dashboard)` is that it holds no
+    // customer or business data. If a second screen ever appears in `(design)`,
+    // that reasoning has to be re-made rather than inherited.
+    const group = join(__dirname, '..', 'src', 'app', '[locale]', '(design)');
+    expect(readdirSync(group).sort()).toEqual(['gallery', 'layout.tsx']);
   });
 });
 
