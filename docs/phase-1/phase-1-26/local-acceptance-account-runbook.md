@@ -170,6 +170,32 @@ The database connection is built as an object, field by field, rather than as a
 connection URL carrying an inline password — so that string never exists to be
 found.
 
+### What the file's permissions actually are — `P1-26-F-053`
+
+The bootstrap writes it with `{ mode: 0o600 }`. **POSIX honours that. Windows
+ignores it**: Node does not translate a POSIX mode to an ACL, so the file simply
+inherits the directory's. Measured on the Owner's machine:
+
+```
+.local\owner-acceptance-account.json  <owner SID>:(I)(M)
+                                      NT AUTHORITY\SYSTEM:(I)(F)
+                                      BUILTIN\Administrators:(I)(F)
+```
+
+There is no `Everyone` entry, so it is **not** world-readable — but SYSTEM and
+any local administrator can read it, which is wider than `0600`. The mode
+argument is kept because it is correct where it works; it is documented here
+because a flag that is accepted and ignored reads exactly like a flag that works.
+
+To narrow it on Windows, and only if you want to:
+
+```powershell
+icacls .local\owner-acceptance-account.json /inheritance:r /grant:r "$env:USERNAME:(R,W)"
+```
+
+The simpler answer is `npm run acceptance:reset-owner` when acceptance is over:
+it deletes the file along with everything else it created.
+
 > This paragraph quoted the offending shape verbatim in its first version, and
 > the hosted scan failed on the sentence explaining why it must not appear —
 > the fourth time in this phase that a rule was broken inside the text stating
