@@ -32,6 +32,10 @@ yarn-error.log*
 
 # Next.js -------------------------------------------------------------------
 .next/
+# The development build directory. `next dev` and `next start` keep incompatible
+# manifests, and sharing one directory let a production build corrupt the dev
+# server — P1-26-F-055. The launcher isolates development here.
+.next-dev/
 out/
 build/
 dist/

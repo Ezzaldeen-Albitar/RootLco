@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BROWSER_HOST, PROBE_HOST, API_PORT, WEB_PORT } from '../../scripts/dev/dev-config.mjs';
+import {
+  BROWSER_HOST,
+  PROBE_HOST,
+  API_PORT,
+  DEV_DIST_DIR,
+  WEB_PORT,
+} from '../../scripts/dev/dev-config.mjs';
 
 /**
  * `P1-26-F-048` — the launcher must advertise `localhost`, never `127.0.0.1`.
@@ -75,5 +81,76 @@ describe('the local launcher advertises an origin Next will serve', () => {
     // point.
     const sample = `\`http://127.0.0.1:\${WEB_PORT}/en\``;
     expect(/`http:\/\/127\.0\.0\.1:\$\{WEB_PORT\}/.test(sample)).toBe(true);
+  });
+});
+
+/**
+ * `P1-26-F-055` — development and production must not share a build directory.
+ *
+ * `next dev`, `next build` and `next start` all default to `<app>/.next` and
+ * write incompatible manifests there. Running one after the other in the same
+ * checkout leaves the second reading the first one's output.
+ *
+ * It did real damage twice in one evening. It took the local stack down in the
+ * middle of the authenticated suite, because the browser tier's `next start` and
+ * the launcher's `next dev` were competing for one directory. Then it
+ * manufactured a defect that did not exist: with a production build left in
+ * `.next`, `next dev` answered **404** on the nested administration routes while
+ * `/administration` answered 307, so the sign-in redirect looked broken in
+ * development and correct in production. The routes were correct throughout. A
+ * fix was written and nearly shipped before the contradiction gave it away —
+ * removing a locale guard made a page that had been working start failing too,
+ * which is not how a real fix behaves.
+ *
+ * Nothing else can catch this class: every automated tier builds once and runs
+ * one server, so no suite ever switches modes in one directory. Only a person
+ * developing locally does, which is why the guard lives here.
+ */
+describe('development and production build directories are isolated', () => {
+  it('names a development directory that is not the production one', () => {
+    expect(DEV_DIST_DIR).toBe('.next-dev');
+    expect(DEV_DIST_DIR).not.toBe('.next');
+  });
+
+  it('the web config reads the directory from the environment, defaulting to .next', () => {
+    // The default must stay `.next` so `next build`, `next start`, Docker, the
+    // browser suite and CI are untouched. Only the dev launcher opts out.
+    const config = read('apps/web/next.config.ts');
+    expect(config).toMatch(/process\.env\.ROOTLCO_DIST_DIR\s*\?\?\s*'\.next'/);
+    expect(config).toMatch(/distDir/);
+  });
+
+  it('the launcher actually passes the isolated directory to the web server', () => {
+    // A configuration that reads an environment variable nobody sets is not
+    // isolation — it is a default with extra steps.
+    const source = read('scripts/dev/start-local.mjs');
+    expect(source).toMatch(/ROOTLCO_DIST_DIR:\s*DEV_DIST_DIR/);
+  });
+
+  it('clears a stale production build only after the ports are proven free', () => {
+    // Deleting a build directory a running server is reading would be a worse
+    // bug than the one being fixed. `assertPortFree` returning is the proof that
+    // nothing is listening, so the clear must come after both calls.
+    const source = read('scripts/dev/start-local.mjs');
+    const lastAssert = source.lastIndexOf('await assertPortFree');
+    const clear = source.indexOf('clearStaleProductionBuild(');
+    const callSite = source.indexOf("clearStaleProductionBuild('api')");
+    expect(lastAssert, 'the launcher must assert both ports are free').toBeGreaterThan(0);
+    expect(clear, 'the launcher must be able to clear a stale build').toBeGreaterThan(0);
+    expect(callSite, 'the API build directory must actually be checked').toBeGreaterThan(
+      lastAssert
+    );
+  });
+
+  it('discriminates a production build by a marker next dev never writes', () => {
+    // `BUILD_ID` is written by `next build` and never by `next dev`, so its
+    // presence is what distinguishes the two. Matching on the directory merely
+    // existing would delete a healthy dev cache on every start.
+    const source = read('scripts/dev/start-local.mjs');
+    expect(source).toMatch(/BUILD_ID/);
+  });
+
+  it('keeps the development directory out of Git', () => {
+    expect(read('.gitignore')).toMatch(/^\.next-dev\/$/m);
   });
 });

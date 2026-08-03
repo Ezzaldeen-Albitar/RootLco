@@ -101,24 +101,65 @@ green over an untested claim.
 
 Two Database tests assert the database holds **no business rows** — the runtime
 enforcement of the no-fake-data policy. The acceptance fixtures are business
-rows. Both cannot be true at once, and neither test is weakened to pretend
-otherwise (`P1-26-F-050`).
+rows. Both cannot be true at once, and **neither test is weakened to pretend
+otherwise** (`P1-26-F-050`, `P1-26-F-057`).
 
-So the order matters:
+The resolution is ordering, and it is a command rather than a habit:
 
 ```bash
-npm run test:db                  # requires a clean database
-npm run acceptance:create-owner  # for the Owner session
-npm run acceptance:reset-owner   # BEFORE running the Database tier again
+npm run acceptance:full-cycle
 ```
 
-Measured: clean **1636/1636** · with fixtures **1634/1636** · after reset
-**1636/1636**.
+Twelve steps, in the only sequence that keeps both invariants true:
+
+| #   | Step                    | What it proves                                                 |
+| --- | ----------------------- | -------------------------------------------------------------- |
+| 1   | `reset-before`          | start from nothing, whatever the last run left                 |
+| 2   | `verify-clean-before`   | the database is clean **by row count**, not by exit code       |
+| 3   | `db-rls-pre-acceptance` | the full tier passes on a clean database                       |
+| 4   | `create-fixtures`       | both tenants, five operators, three roles, ten settings        |
+| 5   | `start-api`             | after creation — the API's database login is created in step 4 |
+| 6   | `status-fixtures`       | the account signs in for real and resolves its permissions     |
+| 7   | `authenticated-browser` | the authenticated tier against real fixtures                   |
+| 8   | `reset-after`           | remove every fixture                                           |
+| 9   | `verify-clean-after`    | every named counter is zero                                    |
+| 10  | `db-rls-post-reset`     | the full tier passes again                                     |
+| 11  | `git-clean`             | no fixture data reached the working tree                       |
+
+Each step writes its log to `.local/acceptance-cycle/`. On failure the cycle
+preserves that log, attempts a reset, reports whether the reset succeeded, names
+the failing step and exits non-zero — fixtures left half-created are worse than
+either extreme, because the next run then starts from a state nobody described.
+
+Run the steps by hand only if you must:
+
+```bash
+npm run acceptance:reset-owner    # remove
+npm run acceptance:verify-reset   # PROVE removed — exit code is not proof
+npm run test:db                   # only ever on a clean database
+npm run acceptance:create-owner   # recreate for the Owner session
+```
+
+**`acceptance:verify-reset` is the one to remember.** The reset exiting zero
+means its statements succeeded, not that the right statements were chosen — the
+version that skipped a misnamed audit table exited zero while leaving the whole
+audit trail behind.
 
 Separately, running `npm run test:backend` and then `npm run test:db` without a
 reset between them produces well over a hundred failures on the Database tier's
 _own_ fixtures. That ordering dependency predates this phase; `npm run
 supabase:reset` clears it.
+
+## 5b. `next dev` and `next start` must not share a build directory
+
+They write incompatible manifests to `apps/web/.next`, and running one after the
+other leaves the second reading the first one's output (`P1-26-F-055`). It has
+taken the stack down mid-suite and, worse, manufactured a 404 on routes that were
+correct — half an hour went into diagnosing a phantom.
+
+The launcher now builds development into `.next-dev` via `ROOTLCO_DIST_DIR`, so
+the two can never collide. If you run `next dev` by hand, either use the launcher
+or clear `.next` first — and never clear it while a server is reading it.
 
 ## 6. Take it down
 

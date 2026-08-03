@@ -8,7 +8,30 @@ import type { NextConfig } from 'next';
  * docs/phase-1/phase-1-25/ for the architecture record.
  */
 
+/**
+ * The build directory, isolated per runtime mode — `P1-26-F-055`.
+ *
+ * `next dev`, `next build` and `next start` all default to `apps/web/.next`, and
+ * the development server and the production server keep incompatible manifests
+ * there. Running one after the other in the same checkout leaves the second one
+ * reading the first one's output.
+ *
+ * That is not theoretical. It took the local stack down mid-suite, and then it
+ * manufactured a defect that did not exist: with a production build left in
+ * `.next`, `next dev` answered **404** on nested administration routes while
+ * `/administration` answered 307. The routes were correct; the directory was
+ * contaminated. Half an hour went into diagnosing a phantom, and a code change
+ * was very nearly shipped for it.
+ *
+ * The launcher now sets `ROOTLCO_DIST_DIR=.next-dev`, so development and
+ * production never share a directory and neither can be corrupted by the other.
+ * The default is unchanged, so `next build`, `next start`, Docker, the browser
+ * suite and CI all behave exactly as before.
+ */
+const distDir = process.env.ROOTLCO_DIST_DIR ?? '.next';
+
 const nextConfig: NextConfig = {
+  distDir,
   reactStrictMode: true,
   poweredByHeader: false,
   sassOptions: {

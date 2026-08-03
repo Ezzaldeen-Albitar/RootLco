@@ -124,7 +124,32 @@ export const REGISTER = Object.freeze([
     name: 'acceptance:reset-owner',
     owner: ROOT,
     tier: 'interactive',
-    why: 'removes only the local acceptance fixtures, by deterministic identifier',
+    why: 'removes only the local acceptance fixtures, by catalogue-discovered dependency order',
+  },
+  {
+    name: 'acceptance:verify-reset',
+    owner: ROOT,
+    tier: 'interactive',
+    // The reset exiting zero means its statements succeeded, not that the right
+    // statements were chosen. This asks the database instead, and its ordering
+    // logic is proven by tests/ci/acceptance-discovery.test.ts in the required
+    // unit tier — so the part that can be tested without a database, is.
+    why: 'proves by row count that every acceptance fixture is gone before the Database tier runs',
+  },
+  {
+    name: 'acceptance:full-cycle',
+    owner: ROOT,
+    tier: 'interactive',
+    // The fixtures and the Database tier's clean-database tests are mutually
+    // exclusive. This is what keeps them apart in the one order where both stay
+    // true, so that neither test is ever weakened to accommodate the other.
+    why: 'runs the whole fixture lifecycle: clean, prove, create, verify, reset, prove, clean',
+  },
+  {
+    name: 'test:web-e2e-authenticated',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'the authenticated browser tier, which needs a live API and a real local account',
   },
   {
     name: 'validate:p1-26-readiness',
@@ -394,6 +419,15 @@ export const REGISTER = Object.freeze([
     why: 'reached through validate:web-boundary',
   },
   { name: 'test:e2e', owner: WEB, tier: 'required', why: 'reached through test:web-e2e' },
+  {
+    name: 'test:e2e:authenticated',
+    owner: WEB,
+    tier: 'interactive',
+    // Not `required`: it needs a live API, a live Supabase and a real local
+    // account, none of which a hosted runner is given. Requiring it in CI would
+    // mean requiring CI to hold a database and a credential it does not have.
+    why: 'the three authenticated projects; reached through test:web-e2e-authenticated',
+  },
   {
     name: 'test:ci',
     owner: WEB,

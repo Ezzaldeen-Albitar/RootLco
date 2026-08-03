@@ -2,14 +2,29 @@
 /**
  * Removes the local Owner-acceptance environment, and nothing else.
  *
- * Every delete is keyed on the deterministic identifiers in `context.mjs`. It
- * never truncates, never deletes by pattern, and never touches a row it did not
- * create. If the identifiers changed, this removes nothing rather than guessing
- * — a reset that deletes more than it made is worse than one that fails.
+ * Every delete is keyed on the two deterministic tenant identifiers in
+ * `context.mjs`. It never truncates, never deletes by pattern, and never touches
+ * a row outside those two synthetic workspaces. If the identifiers changed it
+ * removes nothing rather than guessing — a reset that deletes more than it made
+ * is worse than one that fails.
  *
- * Order is the reverse of creation because every foreign key here is
- * `ON DELETE RESTRICT`: the database will refuse a wrong order rather than
- * cascade, which is the behaviour that makes this safe to run.
+ * ## What changed, and why — `P1-26-F-056`
+ *
+ * This used to hold a hand-written list of seventeen tables, each delete wrapped
+ * in its own `SAVEPOINT` so a statement against a missing table could be rolled
+ * back without poisoning the transaction.
+ *
+ * Two things were wrong with that. The list had already been wrong once — it
+ * named `iam.audit_events`, which does not exist, so the step was skipped and a
+ * reset that reported success left the entire audit trail behind. And the
+ * savepoints made that survivable, which is to say invisible.
+ *
+ * Now the catalogue is asked first, outside any transaction: which tables are
+ * tenant-scoped, which of them actually hold acceptance rows, and in what order
+ * their foreign keys allow them to be emptied. The destructive transaction is
+ * generated from that answer, so every statement targets a table that was read
+ * seconds earlier and nothing is expected to fail. No savepoints, no catch-and-
+ * continue, and any error genuinely is one — it rolls the whole thing back.
  *
  * Local only.
  */
@@ -18,10 +33,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { GuardFailure, IDS, NAMES, assertLocalTarget, goTrue, readSupabase } from './context.mjs';
+import { MINIMUM_PLAUSIBLE_SCOPED_TABLES, surveyAcceptanceRows } from './discovery.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
+const BROWSER_STATE = join(REPO_ROOT, '.local', 'e2e');
 
 const TENANTS = [IDS.tenantA, IDS.tenantB];
 const EMAILS = [
@@ -44,76 +61,57 @@ async function main() {
   await client.connect();
 
   try {
-    await client.query('BEGIN');
+    // ---- discovery, outside the transaction --------------------------------
+    const survey = await surveyAcceptanceRows(client, TENANTS);
 
-    // Children first. Each statement names the tenants explicitly; none of them
-    // can reach a row outside the two synthetic workspaces.
-    const steps = [
-      ['grant scopes', `DELETE FROM iam.grant_scopes WHERE tenant_id = ANY($1::uuid[])`],
-      ['role grants', `DELETE FROM iam.role_grants WHERE tenant_id = ANY($1::uuid[])`],
-      ['role permissions', `DELETE FROM iam.role_permissions WHERE tenant_id = ANY($1::uuid[])`],
-      ['user sessions', `DELETE FROM iam.user_sessions WHERE tenant_id = ANY($1::uuid[])`],
-      ['login audit', `DELETE FROM iam.login_audit WHERE tenant_id = ANY($1::uuid[])`],
-      // The audit chain, innermost first. `audit_integrity_links` and
-      // `audit_record_details` both reference `audit_records`, so the parent
-      // cannot go first. The table is `audit_records`, not `audit_events` — the
-      // first version of this script used the wrong name and the step was
-      // silently skipped, which would have left the Owner's own audit trail
-      // behind after a reset that reported success.
-      [
-        'audit integrity links',
-        `DELETE FROM iam.audit_integrity_links WHERE tenant_id = ANY($1::uuid[])`,
-      ],
-      [
-        'audit record details',
-        `DELETE FROM iam.audit_record_details
-          WHERE audit_record_id IN (
-            SELECT id FROM iam.audit_records WHERE tenant_id = ANY($1::uuid[])
-          )`,
-      ],
-      ['audit records', `DELETE FROM iam.audit_records WHERE tenant_id = ANY($1::uuid[])`],
-      ['approval limits', `DELETE FROM iam.approval_limits WHERE tenant_id = ANY($1::uuid[])`],
-      ['user accounts', `DELETE FROM iam.user_accounts WHERE tenant_id = ANY($1::uuid[])`],
-      ['roles', `DELETE FROM iam.roles WHERE tenant_id = ANY($1::uuid[])`],
-      ['branch settings', `DELETE FROM org.branch_settings WHERE tenant_id = ANY($1::uuid[])`],
-      ['company settings', `DELETE FROM org.company_settings WHERE tenant_id = ANY($1::uuid[])`],
-      ['branches', `DELETE FROM org.branches WHERE tenant_id = ANY($1::uuid[])`],
-      ['companies', `DELETE FROM org.legal_companies WHERE tenant_id = ANY($1::uuid[])`],
-      [
-        'tenant status history',
-        `DELETE FROM org.tenant_status_history WHERE tenant_id = ANY($1::uuid[])`,
-      ],
-      ['tenants', `DELETE FROM org.tenants WHERE id = ANY($1::uuid[])`],
-    ];
-
-    for (const [label, sql] of steps) {
-      // Each delete runs inside its own SAVEPOINT.
-      //
-      // Without one, a single failing statement aborts the whole transaction and
-      // every statement after it fails with 25P02 — so a table that simply does
-      // not exist in this schema version would silently prevent the rest of the
-      // cleanup, and the script would report a long list of zeroes as success.
-      await client.query('SAVEPOINT step');
-      try {
-        const result = await client.query(sql, [TENANTS]);
-        await client.query('RELEASE SAVEPOINT step');
-        console.log(`  removed ${String(result.rowCount).padStart(4)}  ${label}`);
-      } catch (error) {
-        await client.query('ROLLBACK TO SAVEPOINT step');
-        await client.query('RELEASE SAVEPOINT step');
-        // A table absent from this schema version is reported, never swallowed:
-        // the reset must not claim to have cleaned something it could not reach.
-        if (error.code === '42P01') {
-          console.log(`  skipped        ${label} (no such table in this schema)`);
-          continue;
-        }
-        throw error;
-      }
+    if (survey.scannedTables < MINIMUM_PLAUSIBLE_SCOPED_TABLES) {
+      throw new GuardFailure(
+        `Fail closed: the catalogue scan found only ${survey.scannedTables} tenant-scoped ` +
+          `table(s), fewer than the ${MINIMUM_PLAUSIBLE_SCOPED_TABLES} this schema must have. ` +
+          'A scan that matches almost nothing reports a clean database whether or not it is ' +
+          'one, so this refuses rather than deleting from a set it cannot trust.'
+      );
     }
 
+    if (survey.cycle) {
+      throw new GuardFailure(
+        `Fail closed: foreign keys form a cycle across ${survey.cycle.join(', ')}. ` +
+          'Emptying them needs a deferred constraint or a deliberate strategy; picking an ' +
+          'order here would be a guess.'
+      );
+    }
+
+    console.log(`  scanned ${survey.scannedTables} tenant-scoped table(s)`);
+    console.log(`  ${survey.populated.length} hold acceptance rows (${survey.total} in total)`);
+    console.log('');
+
+    // ---- one transaction, nothing expected to fail -------------------------
+    await client.query('BEGIN');
+
+    let removed = 0;
+    for (const table of survey.ordered) {
+      const [schema, name] = table.split('.');
+      const result = await client.query(
+        `DELETE FROM "${schema}"."${name}" WHERE tenant_id = ANY($1::uuid[])`,
+        [TENANTS]
+      );
+      removed += result.rowCount;
+      console.log(`  removed ${String(result.rowCount).padStart(4)}  ${table}`);
+    }
+
+    // `org.tenants` is keyed by `id`, not `tenant_id`, so it is not in the
+    // tenant-scoped scan and must go last — every table above references it.
+    const tenants = await client.query(`DELETE FROM org.tenants WHERE id = ANY($1::uuid[])`, [
+      TENANTS,
+    ]);
+    removed += tenants.rowCount;
+    console.log(`  removed ${String(tenants.rowCount).padStart(4)}  org.tenants`);
+
     await client.query('COMMIT');
+    console.log('');
+    console.log(`  ${removed} row(s) removed in one transaction`);
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     await client.end();
@@ -124,8 +122,8 @@ async function main() {
   if (listed.ok && Array.isArray(listed.body?.users)) {
     for (const user of listed.body.users) {
       if (!EMAILS.some((e) => e.toLowerCase() === String(user.email).toLowerCase())) continue;
-      const removed = await goTrue(supabase, 'DELETE', `/admin/users/${user.id}`);
-      console.log(`  removed identity ${user.email} ${removed.ok ? '' : `(${removed.status})`}`);
+      const gone = await goTrue(supabase, 'DELETE', `/admin/users/${user.id}`);
+      console.log(`  removed identity ${user.email} ${gone.ok ? '' : `(${gone.status})`}`);
     }
   } else {
     console.log('  identity listing unavailable — GoTrue identities were NOT removed');
@@ -136,8 +134,17 @@ async function main() {
     console.log('  removed .local/owner-acceptance-account.json');
   }
 
+  // The browser storage state carries a live session cookie for the account
+  // being deleted. Leaving it behind means the next authenticated run starts
+  // with a credential for a user that no longer exists, and fails somewhere far
+  // from the cause.
+  if (existsSync(BROWSER_STATE)) {
+    rmSync(BROWSER_STATE, { recursive: true, force: true });
+    console.log('  removed .local/e2e (browser session state)');
+  }
+
   console.log('');
-  console.log('  Reset complete. Recreate with: npm run acceptance:create-owner');
+  console.log('  Reset complete. Prove it with: npm run acceptance:verify-reset');
 }
 
 main().catch((error) => {

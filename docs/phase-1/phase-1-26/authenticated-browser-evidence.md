@@ -58,6 +58,31 @@ case declining on projects whose screen exposes no dialog opener for this
 permission set; with the acceptance account's fourteen permissions the opener is
 present everywhere and every test executes.
 
+Re-measured a second time **inside `npm run acceptance:full-cycle`** —
+**97 / 97 in 97 seconds**, between two clean Database tiers of nearly four
+minutes each.
+
+### One run of this suite failed 21 tests, and the suite was not the problem
+
+Recorded because the wrong conclusion was very nearly the recorded one.
+
+Twenty-one tests failed as `Test timeout of 30000ms exceeded` and as redirects to
+`?reason=unavailable`. The machine was genuinely loaded — hosted CI, a production
+server and Chromium at once — so "slow machine" fitted every symptom, and the
+report to the Owner had already used the word contention.
+
+It was `P1-26-F-058`. The lifecycle had spawned the API with a **pipe**, and
+`spawnSync` blocks the event loop, so nothing drained it; the OS buffer filled,
+the API blocked on `write`, and the server froze mid-suite. The tests were
+reporting a dead API entirely accurately.
+
+`api.log` is what separated the two explanations. It stopped at the startup
+probe — **a slow server keeps logging; a blocked one stops.** After the fix the
+same suite on the same machine passes 97 / 97.
+
+**A failing test that agrees with your current theory of the machine is still a
+failing test.**
+
 ### An earlier figure in this document was measured on a different suite
 
 It read **197 passed · 0 failed · 4 skipped** and was presented alongside the
