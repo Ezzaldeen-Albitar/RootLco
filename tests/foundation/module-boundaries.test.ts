@@ -19,11 +19,25 @@
  * Fixtures are written to the OS temp directory rather than into the repository:
  * a violating file committed under `src/` would fail the very check it exercises.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/**
+ * Every case in this file spawns a Node subprocess, and the last one points it
+ * at the entire real source tree. The default five-second budget measures the
+ * machine's process scheduling under a sixty-eight-file parallel run, not the
+ * checker — and it duly failed the P1-26 clean room at exactly one case while
+ * the same case took 1.2 s when run alone, three times in a row, in the same
+ * clean room (`P1-26-F-044`).
+ *
+ * A timeout that a correct implementation can miss is a test that reports on
+ * load average. Thirty seconds is far above the observed worst case and still
+ * far below "hung", which is the only thing this bound should ever catch.
+ */
+vi.setConfig({ testTimeout: 30_000 });
 
 const CHECKER = join('scripts', 'check-module-boundaries.mjs');
 

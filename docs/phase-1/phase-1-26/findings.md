@@ -238,6 +238,44 @@ what a script is called.
 
 ---
 
+## P1-26-F-044 — a test bound that measured the machine, not the code
+
+**Severity:** Low · **Status:** Fixed · **Area:** `tests/foundation/module-boundaries.test.ts`,
+`tests/ci/canonical-documents.test.ts`
+
+The clean-room re-run at `72e3ca2` reported **1 failed / 1473 passed**. The
+failure was `module-boundary checker against the real source tree > exits zero
+with no violations`, and it was not an assertion — it was
+`Test timed out in 5000ms`.
+
+Every case in that file spawns a Node subprocess, and this one points it at the
+entire real source tree. Run alone in the same clean room, immediately
+afterwards, three times in a row, it took **1219 ms, 1598 ms and 1311 ms**. It
+exceeded five seconds only inside the full sixty-eight-file parallel run, where
+what is being measured is the machine's process scheduling.
+
+A timeout a correct implementation can miss is a test that reports on load
+average. The bound is now 30 s in both files — far above the observed worst case,
+far below "hung", which is the only thing this bound should ever catch.
+
+**Why the second file.** `tests/ci/canonical-documents.test.ts` spawns a
+subprocess in every case too, declares no bound either, and its slowest case
+takes **1079 ms** — against the 1219 ms that actually blew up. Same defect,
+fuse unlit. Two other subprocess-spawning suites,
+`tests/security-browser-secrets.test.ts` and `tests/ci/repository-paths.test.ts`,
+already carried exactly this 30 s bound, so this is a gap in an existing
+convention rather than a new one. `tests/ci/codeql-policy.test.ts` was left
+alone: 63 cases in 1761 ms is roughly 28 ms each, two orders of magnitude of
+headroom.
+
+**What this is not.** It is not a P1-26 defect — the file predates the phase and
+the checker it exercises is correct, which is what the three standalone runs
+show. It is recorded here because it failed a **required proof of this phase**
+and the alternative was to re-run until it went green and call the clean room
+clean. A flake that is known and unrecorded is worse than one that is neither.
+
+---
+
 ## How findings `F-015` … `F-041` were found
 
 An adversarial review of the complete P1-26 diff, run as six independent lenses —
