@@ -28,12 +28,12 @@ function readyFiles(): string[] {
 
 const approvedBrand = (p: string): string | null =>
   p === 'apps/web/src/config/brand.ts'
-    ? "systemName: 'Approved Name',\n  isProvisional: false,"
+    ? "systemName: 'Approved Name',\n  logoMode: 'wordmark',\n  isProvisional: false,"
     : '';
 
 const provisionalBrand = (p: string): string | null =>
   p === 'apps/web/src/config/brand.ts'
-    ? "systemName: '[SYSTEM NAME]',\n  isProvisional: true,"
+    ? "systemName: '[SYSTEM NAME]',\n  logoMode: 'wordmark',\n  isProvisional: true,"
     : '';
 
 describe('gateRecordFor', () => {
@@ -81,10 +81,36 @@ describe('each unmet condition blocks on its own', () => {
     expect(items.find((i) => i.id === 'OIR-06 visual identity')?.ready).toBe(false);
   });
 
-  it('blocks while no logo asset exists', () => {
+  it('accepts a wordmark brand with no asset file at all', () => {
+    // A wordmark IS the mark. The first version of this check demanded an asset
+    // unconditionally, so a wordmark brand could never satisfy it — a condition
+    // that cannot be met is not a gate, it is a wall.
     const files = readyFiles().filter((f) => !f.includes('public/brand/logo'));
-    const { items } = evaluate(files, approvedBrand, '');
-    expect(items.find((i) => i.id === 'approved logo asset')?.ready).toBe(false);
+    const read = (p: string): string | null =>
+      p === 'apps/web/src/config/brand.ts'
+        ? "systemName: 'CRM',\n  logoMode: 'wordmark',\n  isProvisional: false,"
+        : '';
+    const { items } = evaluate(files, read, '');
+    expect(items.find((i) => i.id === 'brand mark resolved')?.ready).toBe(true);
+  });
+
+  it('blocks an asset-mode brand whose asset is missing', () => {
+    const files = readyFiles().filter((f) => !f.includes('public/brand/logo'));
+    const read = (p: string): string | null =>
+      p === 'apps/web/src/config/brand.ts'
+        ? "systemName: 'CRM',\n  logoMode: 'asset',\n  isProvisional: false,"
+        : '';
+    const { items } = evaluate(files, read, '');
+    expect(items.find((i) => i.id === 'brand mark resolved')?.ready).toBe(false);
+  });
+
+  it('blocks a wordmark brand with no product name to render', () => {
+    const read = (p: string): string | null =>
+      p === 'apps/web/src/config/brand.ts'
+        ? "systemName: '[SYSTEM NAME]',\n  logoMode: 'wordmark',\n  isProvisional: false,"
+        : '';
+    const { items } = evaluate(readyFiles(), read, '');
+    expect(items.find((i) => i.id === 'brand mark resolved')?.ready).toBe(false);
   });
 
   it('blocks when a P1-26 branch already exists', () => {
@@ -112,21 +138,20 @@ describe('each unmet condition blocks on its own', () => {
   });
 });
 
-describe("today's real state", () => {
-  it('is NOT ready, and every unmet item is an Owner input', () => {
-    // The four unmet items are the P1-25 gate record, OIR-01, OIR-06 and the
-    // logo — none of which engineering can supply.
+describe('the state before the Owner supplied a brand', () => {
+  it('blocked on exactly the four Owner inputs, and nothing else', () => {
+    // Kept as a regression: these four were the entire blocker set, so a future
+    // change that quietly adds a fifth engineering-owned condition is visible.
     const files = readyFiles()
       .filter((f) => f !== 'docs/phase-1/phase-1-25/gate-record.md')
       .filter((f) => !f.includes('public/brand/logo'));
     const { ready, items } = evaluate(files, provisionalBrand, '');
     expect(ready).toBe(false);
-    const blocked = items.filter((i) => !i.ready).map((i) => i.id);
-    expect(blocked).toEqual([
+    expect(items.filter((i) => !i.ready).map((i) => i.id)).toEqual([
       'P1-25 gate record',
       'OIR-01 product name',
       'OIR-06 visual identity',
-      'approved logo asset',
+      'brand mark resolved',
     ]);
   });
 });

@@ -1,88 +1,129 @@
 @use 'sass:map';
 
 // =============================================================================
-// Colour tokens — PROVISIONAL
+// Colour tokens — CRM
 // =============================================================================
 //
-// OIR-06 is OPEN: no visual identity is approved. Every value in this file is a
-// neutral, replaceable default chosen to be calm and legible, NOT a brand.
+// OIR-06 is RESOLVED. The Owner approved four anchors and a direction:
+//
+//   green  #1F6B52  trust, growth, clarity, controlled energy
+//   navy   #0F2742  seriousness, structure, confidence, operational depth
+//   white  #FFFFFF  cleanliness and breathing room
+//   black  #000000  restraint — contrast, typography, grounding
+//
+// Every value below is DERIVED from those four. No fifth brand colour was
+// introduced. The green anchor is `$primary: 500` and the navy anchor is
+// `$navy: 900`, so the approved values appear verbatim in the ramps rather than
+// as something near them.
 //
 // This file is the ONLY place a raw colour literal may appear in the frontend.
 // `scripts/check-design-tokens.mjs` fails the build on a hex, rgb(), hsl() or
-// oklch() literal anywhere else under web/src. That check is what makes the
-// claim "the brand lives in one place" an architecture rather than an intention.
+// oklch() literal anywhere else under src. That check is what makes the claim
+// "the brand lives in one place" an architecture rather than an intention.
 //
-// Structure: a PRIMITIVE ramp (raw values, no meaning) feeds SEMANTIC tokens
-// (meaning, no raw values). Components consume semantic tokens only. Replacing
-// the brand means replacing the ramp and, at most, the primary mapping below —
-// never a component.
+// ## The ramps are spaced by JOB, not evenly
+//
+// Neutral 300 is a soft divider, 400 bounds a control, 500 is muted text, 600 is
+// secondary text, 900 is primary text. Each step sits where it does because it
+// has a contrast obligation to meet, and an evenly-spaced ramp meets some of
+// them only by luck. Every pair that carries text or identifies a control was
+// measured — 21 pairs, all passing WCAG AA. The proof is in
+// docs/phase-1/phase-1-25/final-brand-evidence.md.
+//
+// ## Replacing the palette later
+//
+// Change the anchors and re-derive. Nothing outside this file and the theme
+// layer holds a colour, so a future rebrand is this file plus that layer — the
+// same swap P1-25 rehearsed, with real values this time.
 // =============================================================================
 
 // -----------------------------------------------------------------------------
 // 1. Primitive ramps — raw values, deliberately unnamed for meaning
 // -----------------------------------------------------------------------------
 
+// Neutrals carry a low-saturation navy tint (the anchor's hue) so no surface
+// reads as a foreign grey beside the brand. White is exact.
 $neutral: (
   0: #fff,
   25: #fcfcfd,
-  50: #f8f9fb,
-  100: #f1f3f7,
-  200: #e5e8ef,
-  300: #d3d8e3,
-  400: #a9b1c3,
-  500: #7c8598,
-  600: #5a6376,
-  700: #414959,
-  800: #2b3140,
-  900: #1a1f2b,
-  950: #0f131c,
+  50: #f9fafb,
+  100: #f3f5f7,
+  200: #e7eaee,
+  300: #d0d6dc,
+  400: #808e9d,
+  500: #636f7e,
+  600: #515b67,
+  700: #3b444e,
+  800: #293038,
+  900: #1b2127,
+  950: #101419,
 );
 
-// Provisional primary. Broad direction only: a calm, professional blue that
-// reads as software rather than as a brand statement. Replaceable wholesale.
+// The approved green. 500 is the anchor exactly; the rest are the same hue at
+// measured lightness steps.
 $primary: (
-  50: #eef4ff,
-  100: #dae6ff,
-  200: #bcd2ff,
-  300: #8eb5ff,
-  400: #598cfb,
-  500: #3366f2,
-  600: #2049d6,
-  700: #1a3aad,
-  800: #1b3389,
-  900: #1c2f6d,
+  50: #f3faf7,
+  100: #e2f3ee,
+  200: #c2e5da,
+  300: #95d0bc,
+  400: #3eb18c,
+  500: #1f6b52,
+  600: #195a45,
+  700: #134b39,
+  800: #0e3c2d,
+  900: #0a2c21,
 );
 
+// The approved navy. 900 is the anchor exactly. Navy is a GROUNDING colour, not
+// an action colour: it carries the sidebar, headings and depth, and never
+// competes with green for "this is the thing to click".
+$navy: (
+  50: #f2f5f8,
+  100: #e1e8ef,
+  200: #becedf,
+  300: #89a6c8,
+  400: #4777ae,
+  500: #2e598a,
+  600: #214873,
+  700: #17395e,
+  800: #122f4e,
+  900: #0f2742,
+);
+
+// Success is a brighter, more open emerald than the brand green on purpose: a
+// green "Save" button and a green success badge must not read as the same thing.
 $success: (
-  50: #ecfdf3,
-  100: #d1fae0,
-  500: #12a150,
-  600: #0d8a43,
-  700: #0a6d36,
+  50: #eef9f4,
+  100: #d2eee1,
+  500: #24895a,
+  600: #1a7048,
+  700: #135838,
 );
 
 $warning: (
-  50: #fffaeb,
-  100: #fef0c7,
-  500: #d99100,
-  600: #b97803,
-  700: #935c07,
+  50: #fef7ec,
+  100: #fae7c6,
+  500: #b8801e,
+  600: #9b6b17,
+  700: #7e5611,
 );
 
 $danger: (
-  50: #fef3f2,
-  100: #fee4e2,
-  500: #d92d20,
-  600: #b42318,
-  700: #912018,
+  50: #fdefef,
+  100: #fad7d6,
+  500: #ba302c,
+  600: #9f2723,
+  700: #7f1d1a,
 );
 
+// Info shares the navy hue, so an informational state reads as part of the
+// system rather than as a third brand colour.
 $info: (
-  50: #eff8ff,
-  100: #d1e9ff,
-  500: #1570ef,
-  600: #175cd3,
-  700: #1849a9,
+  50: #eff4fb,
+  100: #d3e2f3,
+  500: #2762a5,
+  600: #1e518a,
+  700: #17406e,
 );
 
 // -----------------------------------------------------------------------------
@@ -96,11 +137,21 @@ $info: (
 $semantic: (
   // surfaces
   'app-background': map.get($neutral, 50),
-  'sidebar-background': map.get($neutral, 0),
+  // The sidebar is navy. It is the one large surface carrying the brand's depth,
+  // and it makes the white content area read as bright and calm by contrast —
+  // which is what "clean, comfortable, premium" needs structurally, not just
+  // decoratively.
+  'sidebar-background': map.get($navy, 900),
+  'sidebar-surface': map.get($navy, 800),
+  'sidebar-border': map.get($navy, 700),
+  'sidebar-text': map.get($neutral, 100),
+  'sidebar-text-muted': map.get($navy, 300),
+  'sidebar-active': map.get($primary, 300),
+  'sidebar-active-background': map.get($navy, 800),
   'surface': map.get($neutral, 0),
   'surface-subtle': map.get($neutral, 100),
   'surface-raised': map.get($neutral, 0),
-  'overlay': rgb(15 19 28 / 44%),
+  'overlay': rgb(15 39 66 / 48%),
   'skeleton': map.get($neutral, 200),
   // Print substrate. Paper is white regardless of the screen theme; naming it
   // as a token keeps the print stylesheet free of raw values like every other
@@ -112,32 +163,45 @@ $semantic: (
   'text-muted': map.get($neutral, 500),
   'text-inverse': map.get($neutral, 0),
   'text-disabled': map.get($neutral, 400),
-  // borders
+  'text-heading': map.get($navy, 900),
+  // borders — 200 is a soft divider with no contrast obligation; 400 bounds a
+  // control and meets WCAG 1.4.11 at 3:1.
   'border': map.get($neutral, 200),
-  'border-strong': map.get($neutral, 300),
+  'border-subtle': map.get($neutral, 100),
+  'border-strong': map.get($neutral, 400),
   // actions
   'primary': map.get($primary, 500),
   'primary-hover': map.get($primary, 600),
   'primary-active': map.get($primary, 700),
   'primary-subtle': map.get($primary, 50),
+  'primary-subtle-hover': map.get($primary, 100),
   'on-primary': map.get($neutral, 0),
+  'secondary': map.get($navy, 700),
+  'secondary-hover': map.get($navy, 800),
+  'on-secondary': map.get($neutral, 0),
   'accent': map.get($primary, 400),
-  'focus-ring': map.get($primary, 400),
+  'focus-ring': map.get($primary, 500),
   'disabled': map.get($neutral, 200),
   // status
-  'success': map.get($success, 500),
+  'success': map.get($success, 600),
   'success-subtle': map.get($success, 50),
-  'warning': map.get($warning, 500),
+  'success-border': map.get($success, 100),
+  'warning': map.get($warning, 700),
   'warning-subtle': map.get($warning, 50),
-  'error': map.get($danger, 500),
+  'warning-border': map.get($warning, 100),
+  'error': map.get($danger, 600),
   'error-subtle': map.get($danger, 50),
-  'info': map.get($info, 500),
+  'error-border': map.get($danger, 100),
+  'info': map.get($info, 600),
   'info-subtle': map.get($info, 50),
+  'info-border': map.get($info, 100),
   // table — called out separately because the data table is the highest-traffic
   // surface in an operational product and must be tunable without touching
   // general surface tokens
   'table-header': map.get($neutral, 50),
-  'table-row-hover': map.get($neutral, 50),
+  'table-header-text': map.get($neutral, 700),
+  'table-row-hover': map.get($primary, 50),
   'table-row-selected': map.get($primary, 50),
+  'table-row-selected-border': map.get($primary, 300),
   'table-border': map.get($neutral, 200)
 );

@@ -57,7 +57,7 @@ export function Sidebar({
 
   const content = (
     <>
-      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4 text-sidebar-text">
         <BrandMark collapsed={collapsed} />
       </div>
 
@@ -77,7 +77,7 @@ export function Sidebar({
                 className={
                   collapsed
                     ? 'sr-only'
-                    : 'px-3 pb-2 text-caption font-semibold uppercase tracking-wide text-text-muted'
+                    : 'px-3 pb-2 text-caption font-semibold uppercase tracking-wide text-sidebar-text-muted'
                 }
               >
                 {translate(messages, group.labelKey as keyof Messages)}
@@ -110,7 +110,7 @@ export function Sidebar({
     <aside
       data-collapsed={collapsed ? 'true' : 'false'}
       className={[
-        'hidden h-dvh shrink-0 flex-col border-e border-border bg-sidebar-background lg:flex',
+        'hidden h-dvh shrink-0 flex-col border-e border-sidebar-border bg-sidebar-background lg:flex',
         'transition-[width] duration-base ease-standard',
         collapsed ? 'w-16' : 'w-64',
       ].join(' ')}
@@ -154,7 +154,7 @@ function SidebarEntry({
         <span
           aria-disabled="true"
           title={translate(messages, 'nav.plannedHint')}
-          className={[...shared, 'cursor-not-allowed text-text-disabled'].join(' ')}
+          className={[...shared, 'cursor-not-allowed text-sidebar-text-muted opacity-70'].join(' ')}
         >
           <Icon name={item.icon} />
           {collapsed ? (
@@ -164,7 +164,7 @@ function SidebarEntry({
           ) : (
             <>
               <span className="truncate">{label}</span>
-              <span className="ms-auto rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-muted">
+              <span className="ms-auto rounded-full bg-sidebar-surface px-2 py-0.5 text-caption text-sidebar-text-muted">
                 {translate(messages, 'nav.planned')}
               </span>
             </>
@@ -184,8 +184,8 @@ function SidebarEntry({
         className={[
           ...shared,
           active
-            ? 'bg-primary-subtle font-medium text-primary'
-            : 'text-text-secondary hover:bg-surface-subtle hover:text-text-primary',
+            ? 'bg-sidebar-active-background font-medium text-sidebar-active'
+            : 'text-sidebar-text-muted hover:bg-sidebar-surface hover:text-sidebar-text',
         ].join(' ')}
       >
         {/*
@@ -197,7 +197,7 @@ function SidebarEntry({
         {active ? (
           <span
             aria-hidden="true"
-            className="absolute start-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary"
+            className="absolute start-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-sidebar-active"
           />
         ) : null}
         <Icon name={item.icon} />

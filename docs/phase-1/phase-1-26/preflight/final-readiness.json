@@ -23,18 +23,18 @@
     },
     {
       "id": "OIR-01 product name",
-      "ready": false,
-      "detail": "systemName is still a placeholder"
+      "ready": true,
+      "detail": "a real product name is configured"
     },
     {
       "id": "OIR-06 visual identity",
-      "ready": false,
-      "detail": "brand.isProvisional is true — no approved identity"
+      "ready": true,
+      "detail": "the brand is marked approved"
     },
     {
-      "id": "approved logo asset",
-      "ready": false,
-      "detail": "apps/web/public/brand/ holds no logo asset"
+      "id": "brand mark resolved",
+      "ready": true,
+      "detail": "logoMode is wordmark, rendered from the approved product name"
     },
     {
       "id": "no premature P1-26 branch",

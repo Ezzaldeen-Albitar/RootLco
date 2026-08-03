@@ -1,0 +1,19 @@
+// The APPROVED theme layer — CRM.
+//
+// OIR-06 is resolved. This is the theme `brand.primaryTheme` selects, and it is
+// a SIBLING of the provisional layer rather than a rename of it: the provisional
+// file said an approved identity "can later be added as a sibling file without
+// touching a single component", and keeping both makes that claim demonstrable
+// instead of merely historical.
+//
+// A theme layer may only REMAP semantic tokens. It may not introduce new raw
+// colours — those belong in tokens/_colors.scss, which the token check enforces.
+//
+// The block is intentionally empty of overrides. The approved palette is already
+// the DEFAULT emit in tokens/_colors.scss, so this layer has nothing to correct;
+// it exists to hold the seam open. A second brand — a tenant theme, a dark mode —
+// is added the same way, and `brand.primaryTheme` selects it.
+
+[data-theme='approved'] {
+  color-scheme: light;
+}

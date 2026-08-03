@@ -127,10 +127,10 @@ export function DataTable<Row>({
         itself `overflow-x: auto` cannot have a sticky header, and on a 1024px
         screen an operational table always has more columns than width.
       */}
-      <div className="overflow-x-auto rounded-lg border border-table-border bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-xs">
         <table className="w-full border-collapse text-table-cell">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
-          <thead className="sticky top-0 z-sticky bg-table-header">
+          <thead className="sticky top-0 z-sticky border-b border-table-border bg-table-header">
             <tr>
               {visibleColumns.map((column) => (
                 <HeaderCell
@@ -165,7 +165,7 @@ export function DataTable<Row>({
               rows.map((row) => (
                 <tr
                   key={rowId(row)}
-                  className={`${rowHeight} border-t border-table-border transition-colors duration-fast ease-standard hover:bg-table-row-hover`}
+                  className={`${rowHeight} border-t border-border-subtle transition-colors duration-fast ease-standard hover:bg-table-row-hover`}
                 >
                   {visibleColumns.map((column) => (
                     <td
@@ -239,7 +239,7 @@ function HeaderCell<Row>({
     return (
       <th
         scope="col"
-        className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-text-muted ${
+        className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
           column.numeric ? 'text-end' : 'text-start'
         }`}
       >
@@ -255,7 +255,7 @@ function HeaderCell<Row>({
       // sort. An arrow glyph alone conveys it to sighted users only, and a
       // `title` is not announced at all.
       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-      className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-text-muted ${
+      className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
         column.numeric ? 'text-end' : 'text-start'
       }`}
     >
