@@ -24,8 +24,8 @@
     "dbRlsNote": "First run reported 1635/1636. Passes 3/3 in isolation and 1636/1636 as a tier on its own. Mechanism NOT established — recorded as P1-26-F-012."
   },
   "candidate": {
-    "sha": "55c2846da13a990d136a42287a8a4a3cf4207a46",
-    "tree": "7a848044238840c22185349cc04fec36f59523fa",
+    "sha": "3e1f9e3ef56b4fc1320242f16951d8ae578d3f31",
+    "tree": "5bdb10d481efc6cb8a7aaddad190fadc8137af65",
     "policies": "exit 0",
     "rootUnit": {
       "passed": 1467,

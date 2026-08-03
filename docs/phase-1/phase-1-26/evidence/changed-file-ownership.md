@@ -8,19 +8,19 @@ The machine-readable form is `changed-file-ownership.json`.
 |               |                                            |
 | ------------- | ------------------------------------------ |
 | Base          | `3598de624dbc181b742cc40700464115ba5c4fc6` |
-| Candidate     | `55c2846da13a990d136a42287a8a4a3cf4207a46` |
-| Tree          | `7a848044238840c22185349cc04fec36f59523fa` |
-| Changed files | **94**                                     |
+| Candidate     | `3e1f9e3ef56b4fc1320242f16951d8ae578d3f31` |
+| Tree          | `5bdb10d481efc6cb8a7aaddad190fadc8137af65` |
+| Changed files | **119**                                    |
 
 ## Buckets
 
 | Bucket       | Files |
 | ------------ | ----- |
-| `docs`       | 12    |
+| `docs`       | 30    |
 | `rootConfig` | 1     |
 | `tests`      | 1     |
 | `tooling`    | 2     |
-| `web`        | 78    |
+| `web`        | 85    |
 
 ## Invariants
 
@@ -36,18 +36,36 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 
 ## Every changed file
 
-### `docs` — 12
+### `docs` — 30
 
 - `docs/engineering/ci-automation/pull-request-body.md`
+- `docs/phase-1/phase-1-26/accessibility-evidence.md`
 - `docs/phase-1/phase-1-26/administration-workflows.md`
 - `docs/phase-1/phase-1-26/api-contract-evidence.md`
 - `docs/phase-1/phase-1-26/architecture.md`
 - `docs/phase-1/phase-1-26/authentication-workflows.md`
+- `docs/phase-1/phase-1-26/browser-evidence.md`
+- `docs/phase-1/phase-1-26/ci-evidence.md`
+- `docs/phase-1/phase-1-26/concurrency-idempotency-evidence.md`
+- `docs/phase-1/phase-1-26/developer-guide.md`
+- `docs/phase-1/phase-1-26/evidence/changed-file-ownership.json`
+- `docs/phase-1/phase-1-26/evidence/changed-file-ownership.md`
+- `docs/phase-1/phase-1-26/evidence/index.md`
+- `docs/phase-1/phase-1-26/evidence/task-traceability.json`
+- `docs/phase-1/phase-1-26/evidence/task-traceability.md`
+- `docs/phase-1/phase-1-26/evidence/test-register.json`
+- `docs/phase-1/phase-1-26/evidence/test-register.md`
 - `docs/phase-1/phase-1-26/execution-checkpoint.md`
+- `docs/phase-1/phase-1-26/file-ownership.md`
 - `docs/phase-1/phase-1-26/findings.md`
+- `docs/phase-1/phase-1-26/isolation-evidence.md`
 - `docs/phase-1/phase-1-26/known-limitations.md`
 - `docs/phase-1/phase-1-26/open-decisions.md`
+- `docs/phase-1/phase-1-26/operator-guide.md`
+- `docs/phase-1/phase-1-26/performance-evidence.md`
 - `docs/phase-1/phase-1-26/permission-and-scope-standard.md`
+- `docs/phase-1/phase-1-26/qa-evidence.md`
+- `docs/phase-1/phase-1-26/risk-evidence.md`
 - `docs/phase-1/phase-1-26/security-evidence.md`
 - `docs/phase-1/phase-1-26/task-register.md`
 
@@ -64,7 +82,7 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 - `scripts/ci/check-command-coverage.mjs`
 - `scripts/ci/check-p1-26-frontend.mjs`
 
-### `web` — 78
+### `web` — 85
 
 - `apps/web/src/app/[locale]/(auth)/activate-account/page.tsx`
 - `apps/web/src/app/[locale]/(auth)/forgot-password/page.tsx`
@@ -83,6 +101,7 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 - `apps/web/src/app/[locale]/(dashboard)/administration/system-settings/page.tsx`
 - `apps/web/src/app/[locale]/(dashboard)/administration/taxes/page.tsx`
 - `apps/web/src/app/[locale]/(dashboard)/administration/users/page.tsx`
+- `apps/web/src/app/[locale]/(dashboard)/error.tsx`
 - `apps/web/src/app/[locale]/(dashboard)/layout.tsx`
 - `apps/web/src/app/[locale]/(dashboard)/profile/page.tsx`
 - `apps/web/src/app/[locale]/(design)/gallery/page.tsx`
@@ -97,6 +116,7 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 - `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`
 - `apps/web/src/features/administration/access/components/PermissionsScreen.tsx`
 - `apps/web/src/features/administration/access/components/RolesScreen.tsx`
+- `apps/web/src/features/administration/access/types.ts`
 - `apps/web/src/features/administration/audit/api.ts`
 - `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`
 - `apps/web/src/features/administration/audit/types.ts`
@@ -138,9 +158,14 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 - `apps/web/src/lib/api/client.ts`
 - `apps/web/src/lib/api/server-client.ts`
 - `apps/web/src/lib/api/session-cookie.ts`
+- `apps/web/src/lib/env.ts`
 - `apps/web/src/lib/forms/action-result.ts`
+- `apps/web/src/lib/observability/client-log.ts`
 - `apps/web/tests/administration.test.ts`
+- `apps/web/tests/api-client.test.ts`
 - `apps/web/tests/authentication.test.ts`
+- `apps/web/tests/data-table.dom.test.tsx`
 - `apps/web/tests/e2e/foundation.spec.ts`
 - `apps/web/tests/gallery-and-print.dom.test.tsx`
 - `apps/web/tests/navigation.test.ts`
+- `apps/web/tests/observability.test.ts`
