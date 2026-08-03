@@ -50,14 +50,17 @@ was in the label, not in the measurements.
 
 ## 3. What this remediation adds
 
-| Gap                                 | What closes it                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Owner logo assets unintegrated      | Both approved PNGs wired through the single brand authority — `logo-integration-evidence.md`            |
-| No usable account                   | A real local-only account with the full approved permission set — `local-acceptance-account-runbook.md` |
-| Screens never seen authenticated    | All eleven exercised against the real API in installed Chrome — `authenticated-browser-evidence.md`     |
-| No authenticated accessibility scan | axe over every authenticated route — `authenticated-accessibility-evidence.md`                          |
-| Cross-tenant behaviour unproven     | A second synthetic tenant with no membership — `cross-tenant-evidence.md`                               |
-| No Owner acceptance step            | A checklist and an explicit decision — `owner-acceptance-checklist.md`                                  |
+| Gap                                                    | What closes it                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Owner logo assets unintegrated                         | Both approved PNGs wired through the single brand authority — `logo-integration-evidence.md`            |
+| No usable account                                      | A real local-only account with the full approved permission set — `local-acceptance-account-runbook.md` |
+| Screens never seen authenticated                       | All eleven exercised against the real API in installed Chrome — `authenticated-browser-evidence.md`     |
+| No authenticated accessibility scan                    | axe over every authenticated route — `authenticated-accessibility-evidence.md`                          |
+| Cross-tenant behaviour unproven                        | A second synthetic tenant with no membership — `cross-tenant-evidence.md`                               |
+| No Owner acceptance step                               | A checklist and an explicit decision — `owner-acceptance-checklist.md`                                  |
+| Fixtures and the clean-database invariant in conflict  | An executable lifecycle that keeps both true — `npm run acceptance:full-cycle`, `P1-26-F-057`           |
+| A reset that could not be trusted                      | Catalogue-driven discovery over 232 tenant-scoped tables — `P1-26-F-056`                                |
+| Development and production sharing one build directory | Isolated `distDir`, and the phantom defect it had already produced — `P1-26-F-055`                      |
 
 ## 4. The boundary this remediation does not cross
 

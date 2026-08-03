@@ -47,6 +47,31 @@ export const BROWSER_HOST = 'localhost';
 /** The loopback literal, for server-to-server probes where origin is irrelevant. */
 export const PROBE_HOST = '127.0.0.1';
 
+/**
+ * The build directory `next dev` uses, isolated from the production one —
+ * `P1-26-F-055`.
+ *
+ * `next dev`, `next build` and `next start` all default to `<app>/.next` and
+ * write incompatible manifests into it. Running one after the other in the same
+ * checkout leaves the second reading the first one's output.
+ *
+ * That produced two real failures in a single evening. It took the local stack
+ * down in the middle of the authenticated suite, because the browser tier's
+ * `next start` and the launcher's `next dev` were fighting over one directory.
+ * Then it manufactured a defect that did not exist: with a production build left
+ * behind in `.next`, `next dev` answered **404** on the nested administration
+ * routes while `/administration` answered 307 — so the sign-in redirect appeared
+ * broken in development and correct in production. The routes were right the
+ * whole time. A fix was written and very nearly shipped before the contradiction
+ * gave it away: removing a locale guard made a page that had been fine start
+ * failing too, which is not how a real fix behaves.
+ *
+ * `apps/web/next.config.ts` reads this through `ROOTLCO_DIST_DIR`, defaulting to
+ * `.next` so `next build`, `next start`, Docker, the browser suite and CI are
+ * untouched. Only the development launcher opts into a separate directory.
+ */
+export const DEV_DIST_DIR = '.next-dev';
+
 export function repoRoot() {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }

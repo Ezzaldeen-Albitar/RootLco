@@ -11,8 +11,10 @@
   },
   "scripts": {
     "acceptance:create-owner": "node scripts/dev/owner-acceptance/create-owner-account.mjs",
+    "acceptance:full-cycle": "node scripts/dev/owner-acceptance/full-cycle.mjs",
     "acceptance:reset-owner": "node scripts/dev/owner-acceptance/reset-owner-account.mjs",
     "acceptance:status-owner": "node scripts/dev/owner-acceptance/status-owner-account.mjs",
+    "acceptance:verify-reset": "node scripts/dev/owner-acceptance/verify-reset.mjs",
     "build": "npm run build --workspace @rootlco/api",
     "build:api": "npm run build --workspace @rootlco/api",
     "build:web": "npm run build --workspace @rootlco/web",
@@ -63,6 +65,7 @@
     "test:web": "npm run test --workspace @rootlco/web",
     "test:web-ci": "npm run test:ci --workspace @rootlco/web",
     "test:web-e2e": "npm run test:e2e --workspace @rootlco/web",
+    "test:web-e2e-authenticated": "npm run test:e2e:authenticated --workspace @rootlco/web",
     "typecheck": "tsc --noEmit",
     "typecheck:api": "npm run typecheck --workspace @rootlco/api",
     "typecheck:web": "npm run typecheck --workspace @rootlco/web",

@@ -485,6 +485,182 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-057 — the acceptance fixtures and the clean-database invariant, resolved by ordering rather than by weakening either
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`scripts/dev/owner-acceptance/full-cycle.mjs`, `tests/db/no-fake-data.test.ts`
+(unchanged), `tests/db/iam-seeds.test.ts` (unchanged)
+
+The Owner-acceptance fixtures are business rows: two tenants, five operators,
+three roles, ten settings. `tests/db/no-fake-data.test.ts` asserts that **every
+base table across seventeen platform schemas is empty**, minus an eleven-entry
+structural-reference allow-list. It is the runtime enforcement of the permanent
+no-fake-data policy, and it is the only check that would notice fabricated data
+reaching a shipped database.
+
+Both cannot be true at once. With fixtures present the Database tier reports
+**1634 / 1636**; the two failures are that test and its sibling, and they are
+**correct**.
+
+### The four wrong answers, named because each one was available
+
+Weaken the test to ignore the acceptance tenants. Mark the two failures flaky.
+Skip them when fixtures exist. Add the acceptance tables to the allow-list. Every
+one buys a green by making the invariant smaller, and the invariant is worth more
+than the green — a no-fake-data test that exempts the rows someone actually
+created is a test that would exempt the next ones too.
+
+### The resolution is ordering, and it is now executable
+
+Neither test is touched. The fixtures may exist and the tier may run, but never
+at the same time:
+
+```
+clean → prove clean → create fixtures → use them →
+reset → prove removed → prove clean again
+```
+
+`npm run acceptance:full-cycle` performs exactly that, in that order, and nothing
+else may reorder it. Twelve steps, each logged to `.local/acceptance-cycle/`,
+each checked. It starts the API if nothing is answering and stops it again if it
+did. On failure it preserves the step's log, attempts a reset, reports whether
+that reset succeeded, names the failing step and exits non-zero — because
+fixtures left half-created are worse than either extreme: the next run starts
+from a state nobody described.
+
+**Measured on this tree.** Clean baseline **1636 / 1636** across 138 files, 119
+migrations, no Migration 120. Fixtures created. Authenticated tier green. Reset.
+Every counter zero. Post-reset **1636 / 1636**.
+
+### What "clean" had to be made to mean
+
+The first verifier counted rows belonging to the two acceptance tenants. The
+Database tier does not: it counts **every row in every business table**,
+tenant-scoped or not. So a database could be free of acceptance fixtures, pass
+verification, and still fail the tier because some other run left something
+behind — and the tier would have taken the blame.
+
+`verify-reset` now runs the tier's own sweep, with the tier's own allow-list and
+the tier's own seventeen schemas, and
+`tests/ci/acceptance-discovery.test.ts` asserts the two copies of that list are
+identical. Two lists that must agree, with nothing checking that they do, is how
+they stop agreeing.
+
+---
+
+## P1-26-F-056 — a hand-written table list cannot be trusted against 232 tenant-scoped tables
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`scripts/dev/owner-acceptance/discovery.mjs`, `reset-owner-account.mjs`
+
+The reset carried a hand-written list of seventeen tables. It had already been
+wrong once, in the way hand-written lists are wrong: it named `iam.audit_events`,
+a table that does not exist, so the step was skipped and a reset that reported
+success left the entire audit trail behind.
+
+The scale is the point. This database has **294 base tables, 232 of them
+tenant-scoped**, and thirty carry a foreign key to `org.tenants`. Seventeen names
+maintained by hand against that is not verification, it is sampling — and the
+sample was already stale.
+
+**Worse, the miss was structurally fatal rather than merely incomplete.** Every
+one of those 232 tables has a `tenant_id` foreign key to `org.tenants` with
+`ON DELETE RESTRICT`. A single surviving row in any table the list did not name
+makes the final `DELETE FROM org.tenants` raise `23503`, the outer handler rolls
+back, and the reset removes **nothing at all** — after printing a tidy column of
+"removed N" lines. It failed safe and it failed silently, and it only worked at
+all because no Owner action had yet written to `shared.idempotency_keys`,
+`shared.event_outbox`, `iam.security_events` or `iam.user_status_history`, every
+one of which the API demonstrably writes.
+
+**Fix — nothing is hand-written.** `discovery.mjs` asks the catalogue which
+tables are tenant-scoped, which of those actually hold acceptance rows, and how
+they depend on each other, then topologically sorts children before parents. The
+reset is generated from that answer. It cannot go stale, and a table added by a
+future migration is covered the day it is added.
+
+### Why discovery moved outside the transaction
+
+The old design wrapped each delete in a `SAVEPOINT` so a statement against a
+missing table could be rolled back without poisoning the transaction. That works
+— and it treats "this table might not exist" as a runtime surprise to absorb,
+which is precisely how the `audit_events` mistake stayed invisible for as long
+as it did.
+
+Now every statement targets a table that was read seconds earlier, so nothing is
+expected to fail. No savepoints, no catch-and-continue, and any error genuinely
+is one: it rolls the whole thing back. PostgreSQL's `25P02` stops being a hazard
+to design around once nothing is expected to fail.
+
+**Measured:** 232 tables scanned, 13 populated, **112 rows removed in one
+transaction**, in the order the foreign keys demand — audit links before audit
+details before audit records, `iam.user_accounts` after everything that
+references it, `org.tenants` last. Idempotent: a second run finds nothing and
+succeeds.
+
+**A cycle is refused, not guessed.** `shared.message_templates` and
+`shared.template_versions` reference each other. If both ever hold acceptance
+rows the sort reports the cycle and the reset stops, because deleting round a
+cycle needs a deferred constraint or a deliberate strategy and picking an order
+silently would be the same class of mistake as the list this replaced.
+
+---
+
+## P1-26-F-055 — `next dev` and `next start` share one build directory, and it invented a defect
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/web/next.config.ts`, `scripts/dev/dev-config.mjs`, `start-local.mjs`
+
+`next dev`, `next build` and `next start` all default to `<app>/.next` and write
+incompatible manifests there. Running one after the other in the same checkout
+leaves the second reading the first one's output.
+
+It did real damage twice in one evening.
+
+**It took the local stack down mid-suite.** The browser tier's `next start` and
+the launcher's `next dev` were competing for one directory; the servers died and
+the sign-in page reported "The service is not responding".
+
+**Then it manufactured a defect that does not exist.** With a production build
+left in `.next`, `next dev` answered **404** on the nested administration routes
+while `/administration` answered 307 — so the sign-in redirect appeared broken in
+development and correct in production. It reproduced. It differed cleanly between
+modes. It was reported to the Owner as a product defect with a comparison table.
+
+**The routes were correct the whole time.** The tell came from trying to fix it:
+removing a locale guard made `/en/login` — a page that had been working — start
+404ing too. A change that breaks an unrelated working route is not a fix for a
+real bug, it is evidence the measurement was contaminated. Re-measured from an
+empty `.next`, every route redirects correctly in both modes.
+
+**Fix.** `apps/web/next.config.ts` reads `ROOTLCO_DIST_DIR`, defaulting to
+`.next` so `next build`, `next start`, Docker, the browser suite and CI are
+untouched. The launcher sets `.next-dev`, so development and production can never
+corrupt each other. `apps/api`'s configuration is Backend-owned and a Frontend
+phase may not change it, so the launcher instead detects a production `BUILD_ID`
+in `apps/api/.next` and clears it — but only after `assertPortFree` has proven
+nothing is listening, because deleting a directory a running server is reading
+would be a worse bug than the one being fixed.
+
+**Six regression cases** in `tests/ci/local-launcher-host.test.ts`, including one
+asserting the clear happens _after_ the port assertions and one asserting the
+discriminator is `BUILD_ID` — a marker `next dev` never writes — rather than the
+directory merely existing.
+
+**The general form, and it is the phase's recurring one.** Every automated tier
+builds once and runs one server, so no suite ever switches modes in one
+directory. **Only a person developing locally does.** The configuration nobody
+exercises is the configuration that breaks, and this is the third time in P1-26
+that the answer was found by running the product rather than by reading a report
+about it.
+
+**And a second lesson, about me rather than the code.** I measured a real
+difference, reproduced it, and reported it as a product defect without asking
+what else could produce that difference. A contaminated instrument produces
+consistent readings. Reproducibility is not validity.
+
+---
+
 ## P1-26-F-054 — an override written to fix an advisory pinned the tree to the next one
 
 **Severity:** High · **Status:** Fixed · **Area:** `package.json` `overrides`

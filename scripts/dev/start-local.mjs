@@ -22,13 +22,14 @@
  *   not "the process exists".
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   API_PORT,
   API_READY_PATH,
   BROWSER_HOST,
+  DEV_DIST_DIR,
   PROBE_HOST,
   STATE_FILE,
   WEB_PORT,
@@ -36,6 +37,34 @@ import {
 } from './dev-config.mjs';
 
 const root = repoRoot();
+
+/**
+ * A production build sitting in the directory `next dev` is about to use.
+ *
+ * `BUILD_ID` is written by `next build` and never by `next dev`, so its presence
+ * is the discriminator. See `DEV_DIST_DIR` for what a mixed directory does.
+ *
+ * @param {string} dir
+ */
+const holdsProductionBuild = (dir) => existsSync(`${dir}/BUILD_ID`);
+
+/**
+ * Clears a contaminated development build directory — but only ever AFTER
+ * `assertPortFree` has proven no server is using it.
+ *
+ * `apps/web` is isolated by `ROOTLCO_DIST_DIR`, so this exists for `apps/api`,
+ * whose configuration is Backend-owned and which a Frontend phase may not
+ * change. Detecting the stale manifest and clearing it from the launcher side
+ * needs no `apps/api` edit and is the strategy the runbook records.
+ *
+ * @param {string} workspace
+ */
+function clearStaleProductionBuild(workspace) {
+  const dir = `${root}/apps/${workspace}/.next`;
+  if (!holdsProductionBuild(dir)) return null;
+  rmSync(dir, { recursive: true, force: true });
+  return dir;
+}
 
 function assertPortFree(port, owner) {
   return new Promise((resolve, reject) => {
@@ -54,10 +83,10 @@ function assertPortFree(port, owner) {
   });
 }
 
-function launch(name, args, port) {
+function launch(name, args, port, extraEnv = {}) {
   const child = spawn(process.execPath, args, {
     cwd: root,
-    env: { ...process.env, PORT: String(port), NEXT_TELEMETRY_DISABLED: '1' },
+    env: { ...process.env, PORT: String(port), NEXT_TELEMETRY_DISABLED: '1', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const prefix = `[${name}] `;
@@ -92,8 +121,21 @@ const nextBin = (ws) => `${root}/apps/${ws}/node_modules/next/dist/bin/next`;
 const nextEntry = (ws) =>
   existsSync(nextBin(ws)) ? nextBin(ws) : `${root}/node_modules/next/dist/bin/next`;
 
+// Ports first. Both checks passing is what makes the directory work below safe:
+// nothing is listening, so nothing is reading the build directory either.
 await assertPortFree(API_PORT, 'API');
 await assertPortFree(WEB_PORT, 'Web');
+
+const clearedApi = clearStaleProductionBuild('api');
+if (clearedApi) {
+  console.log(`Cleared a production build left in ${clearedApi} — see P1-26-F-055.`);
+  console.log('  Development and production write incompatible manifests to the same directory.');
+}
+if (holdsProductionBuild(`${root}/apps/web/.next`)) {
+  console.log(
+    `apps/web/.next holds a production build; development will use ${DEV_DIST_DIR} and leave it alone.`
+  );
+}
 
 const gallery = process.env.ROOTLCO_ENABLE_GALLERY ?? 'true';
 process.env.ROOTLCO_ENABLE_GALLERY = gallery;
@@ -104,10 +146,14 @@ const api = launch(
   [nextEntry('api'), 'dev', 'apps/api', '--port', String(API_PORT)],
   API_PORT
 );
+// The web tier builds into its own directory, so `next start` — the browser
+// suite, a production smoke, Docker — can never corrupt this server and this
+// server can never corrupt them.
 const web = launch(
   'web',
   [nextEntry('web'), 'dev', 'apps/web', '--port', String(WEB_PORT)],
-  WEB_PORT
+  WEB_PORT,
+  { ROOTLCO_DIST_DIR: DEV_DIST_DIR }
 );
 
 mkdirSync(`${root}/.local`, { recursive: true });
