@@ -31,7 +31,7 @@ as a final closure it had not earned.
 | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | [architecture.md](../architecture.md)                                         | The shape of the phase and why each structural decision was taken                                     |
 | [api-contract-evidence.md](../api-contract-evidence.md)                       | Contract archaeology — all 29 operations, and the seven that do not exist                             |
-| [findings.md](../findings.md)                                                 | `F-001` … `F-051`, each with evidence and disposition                                                 |
+| [findings.md](../findings.md)                                                 | `F-001` … `F-052`, each with evidence and disposition                                                 |
 | [task-register.md](../task-register.md)                                       | 31 tasks with acceptance conditions                                                                   |
 | [execution-checkpoint.md](../execution-checkpoint.md)                         | Baselines, wave status, the resume point                                                              |
 | [file-ownership.md](../file-ownership.md)                                     | The permanent boundary and this phase's measured compliance                                           |
