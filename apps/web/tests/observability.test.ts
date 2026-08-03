@@ -50,10 +50,30 @@ describe('redaction by key name', () => {
   });
 });
 
+/**
+ * A JWT-shaped string, BUILT rather than written.
+ *
+ * The tracked-secret scanner flagged the literal form of this fixture, and it
+ * was right to: a credential-shaped constant in a tracked file is one whether or
+ * not it is real, and a scanner that learns to ignore some of them stops being
+ * useful. Its own guidance is to construct synthetic values at runtime, so this
+ * assembles three base64url-ish segments and never stores the result anywhere.
+ *
+ * There is a small joke here worth not losing: the file asserting that a
+ * credential must never be written down was the file that wrote one down.
+ */
+function syntheticJwt(): string {
+  const segment = (seed: string, length: number) =>
+    Array.from({ length }, (_, index) => seed[(index * 7 + 3) % seed.length]).join('');
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return [segment(alphabet, 24), segment(alphabet, 32), segment(alphabet, 28)].join('.');
+}
+
 describe('redaction by value shape', () => {
   it('redacts a JWT whatever it is called', () => {
     // The shape that actually happens: `{ data: accessToken }`.
-    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r';
+    const jwt = syntheticJwt();
+    expect(jwt.split('.')).toHaveLength(3);
     expect(looksLikeCredential(jwt)).toBe(true);
     expect(redact({ data: jwt }).data).toBe('[redacted]');
   });
