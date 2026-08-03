@@ -100,8 +100,15 @@ test.describe('the eleven administration screens', () => {
 
     // And the rows must be the seeded operators, not an empty set rendered
     // confidently.
-    await expect(page.getByText('owner.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('reader.acceptance@crm.local')).toBeVisible();
+    //
+    // Scoped to the table body, and that scoping is the assertion, not tidiness.
+    // A page-wide `getByText('owner.acceptance@crm.local')` also matches the
+    // account menu in the sidebar, which renders the SIGNED-IN user's own
+    // address — so it would go green against a completely empty table. The
+    // check that exists to prove rows load must not be satisfiable by the
+    // identity of the person looking at them.
+    await expect(body.getByText('owner.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
+    await expect(body.getByText('reader.acceptance@crm.local')).toBeVisible();
   });
 
   test('the roles table finishes loading too', async ({ page }) => {
@@ -109,7 +116,7 @@ test.describe('the eleven administration screens', () => {
     const body = page.locator('table tbody');
     await expect(body).toBeVisible();
     await expect(body).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
-    await expect(page.getByText('acceptance_administrator')).toBeVisible({ timeout: 20_000 });
+    await expect(body.getByText('acceptance_administrator')).toBeVisible({ timeout: 20_000 });
   });
 
   test('no screen leaks a token or a session into browser storage', async ({ page }) => {

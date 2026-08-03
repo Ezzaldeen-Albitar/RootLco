@@ -45,15 +45,34 @@ bug.
 
 ## 3. Result
 
-| Run                                                                             | Result                                |
-| ------------------------------------------------------------------------------- | ------------------------------------- |
-| Authenticated suite, pinned chromium                                            | **197 passed · 0 failed · 4 skipped** |
-| Authenticated suite, **installed Google Chrome** (`ROOTLCO_E2E_CHANNEL=chrome`) | **197 passed · 0 failed · 4 skipped** |
-| Anonymous suite, flag unset                                                     | **110 tests in 1 file** — unchanged   |
+Measured on the tree that ships, with the authenticated projects run on their
+own so the figure is about them and nothing else.
 
-The 4 skips are one dialog case declining the projects whose screen exposes no
-dialog opener for the current permission set. No required executable test is
-skipped.
+| Run                                                                                 | Result                               |
+| ----------------------------------------------------------------------------------- | ------------------------------------ |
+| Authenticated tier — `authenticated-en`, `authenticated-ar`, `authenticated-tablet` | **97 passed · 0 failed · 0 skipped** |
+| Anonymous suite, flag unset                                                         | **110 tests in 1 file** — unchanged  |
+
+Nothing is skipped. The four skips the earlier figure carried were the dialog
+case declining on projects whose screen exposes no dialog opener for this
+permission set; with the acceptance account's fourteen permissions the opener is
+present everywhere and every test executes.
+
+### An earlier figure in this document was measured on a different suite
+
+It read **197 passed · 0 failed · 4 skipped** and was presented alongside the
+rows-actually-load assertions described in §4. Re-reading that run's log settles
+it: `administration.spec.ts:84` was the browser-storage test there, so **the rows
+assertions did not exist yet**. That run was 110 anonymous plus 91 authenticated;
+the authenticated tier is **97** tests now, the six added being the two rows
+assertions across three projects.
+
+The figure was true of the suite that produced it and untrue of the suite this
+document describes, and the two were one commit apart. `P1-26-F-052` records it,
+together with the assertion defect the re-measurement exposed.
+
+**A test count is evidence about the suite that produced it, not about the file
+it is written next to.**
 
 ## 4. Coverage
 

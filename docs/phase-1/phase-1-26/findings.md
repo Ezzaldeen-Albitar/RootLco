@@ -485,6 +485,53 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-052 — the assertion written to prove rows load could be satisfied by the signed-in user's own name
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/web/tests/e2e/authenticated/administration.spec.ts`,
+`authenticated-browser-evidence.md`
+
+`P1-26-F-048` — every table on every screen loading for ever — was caught by
+adding a test that the users table renders **rows**, not merely a shell. That
+test read:
+
+```ts
+await expect(page.getByText('owner.acceptance@crm.local')).toBeVisible();
+```
+
+**The sidebar account menu renders the signed-in user's own address.** So on the
+Users screen that string is on the page twice: once as the identity of the person
+looking, and once as a table cell. A page-wide match is satisfied by the first
+one, which is present whether or not a single row ever arrives — the assertion
+written to catch an empty table would have gone green against an empty table.
+
+It surfaced as a Playwright strict-mode violation rather than as a silent pass,
+which is luck, not design: strict mode fails on ambiguity, and had the sidebar
+rendered the display name instead of the address, this would have passed for ever
+while proving nothing.
+
+**Fix.** Both row assertions are scoped to `table tbody`. The scoping _is_ the
+assertion: a check that exists to prove rows load must not be satisfiable by the
+identity of the person reading them. The roles assertion is scoped the same way.
+
+### And the figure in the evidence document was measured on a different suite
+
+`authenticated-browser-evidence.md` reported **197 passed · 0 failed · 4
+skipped** and, in the same document, described the rows-actually-load assertions
+as part of what was measured. Re-reading the run log settles it: in that run
+`administration.spec.ts:84` was the browser-storage test. **The rows assertions
+did not exist yet.** The figure was true of the suite that ran and untrue of the
+suite the document describes, and the two were a commit apart.
+
+Both are now re-measured on the tree that ships, and the document carries the
+number from that run.
+
+The general form is worth keeping: **a test count is evidence about the suite
+that produced it, not about the file it is written next to.** A suite that grows
+after its figure is recorded leaves a number that reads as current and is not.
+
+---
+
 ## P1-26-F-051 — the acceptance tooling shipped seven CodeQL findings of its own, and the first fix round only cleared five
 
 **Severity:** High · **Status:** Fixed · **Area:**
