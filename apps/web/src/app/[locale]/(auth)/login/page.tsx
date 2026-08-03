@@ -4,6 +4,7 @@ import { LoginForm } from '@/features/authentication/components/LoginForm';
 import { readTenantHint } from '@/lib/api/session-cookie';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Sign in.
@@ -71,3 +72,6 @@ export default async function LoginPage({
     </AuthCard>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('auth.login.title');

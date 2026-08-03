@@ -14,6 +14,16 @@ export const brandTheme: string = brand.primaryTheme;
 export const brandIsProvisional: boolean = brand.isProvisional;
 
 /**
+ * The product name, for places that need it as TEXT rather than as a mark.
+ *
+ * The document title is the case this exists for: it is metadata, not markup,
+ * so `<BrandMark />` cannot supply it. Exposing it here keeps the routing layer
+ * from importing `@/config/brand`, which the isolation gate forbids and which
+ * would make the brand replaceable in one file plus one more.
+ */
+export const brandProductName: string = brand.systemName;
+
+/**
  * The href for the browser tab icon.
  *
  * Exposed here for the same reason as `brandTheme`: the root layout must declare

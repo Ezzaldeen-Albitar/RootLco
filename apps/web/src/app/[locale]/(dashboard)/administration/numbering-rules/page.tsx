@@ -3,6 +3,7 @@ import { requireSession } from '@/features/authentication/api/session';
 import { SettingsBackedScreen } from '@/features/administration/shared/components/SettingsBackedScreen';
 import { NUMBERING_KEYS, NUMBERING_PREFIX } from '@/features/administration/shared/settings-keys';
 import { isLocale } from '@/i18n/config';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Numbering rules.
@@ -35,3 +36,6 @@ export default async function NumberingRulesPage({
     />
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('numbering.title');

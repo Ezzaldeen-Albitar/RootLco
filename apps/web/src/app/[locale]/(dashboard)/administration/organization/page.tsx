@@ -12,6 +12,7 @@ import {
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Organization settings.
@@ -112,3 +113,6 @@ function toReadState<T>(read: {
     correlationId: read.correlationId,
   };
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('organization.title');

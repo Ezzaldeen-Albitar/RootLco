@@ -3,6 +3,7 @@ import { brandIsProvisional } from '@/components/brand/theme';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Overview.
@@ -65,3 +66,6 @@ export default async function OverviewPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('overview.title');

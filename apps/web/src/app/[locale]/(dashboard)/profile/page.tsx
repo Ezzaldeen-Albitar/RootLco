@@ -6,6 +6,7 @@ import { ProfileForm } from '@/features/authentication/components/ProfileForm';
 import { isUnrestrictedScope } from '@/features/authentication/types/session';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Your profile.
@@ -189,13 +190,17 @@ function Definition({
   readonly hint?: string;
   readonly mono?: boolean;
 }) {
+  // The hint is INSIDE the `<dd>`. A `<dl>` may contain only `<dt>`/`<dd>`
+  // groups and `<div>` wrappers, and a wrapper may hold only the group — a
+  // sibling `<p>` makes the list malformed (`P1-26-F-047`, serious). It is also
+  // where the hint belongs: it describes the value.
   return (
     <div>
       <dt className="text-label font-medium text-text-primary">{label}</dt>
       <dd className={`text-body text-text-secondary ${mono ? 'break-all font-mono' : ''}`}>
         {value}
+        {hint ? <span className="mt-1 block text-caption text-text-muted">{hint}</span> : null}
       </dd>
-      {hint ? <p className="mt-1 text-caption text-text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -224,3 +229,6 @@ function ReferenceList({
     </div>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('profile.title');

@@ -7,6 +7,7 @@ import { ContractNotice, Panel } from '@/features/administration/shared/componen
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * System settings.
@@ -104,3 +105,6 @@ export default async function SystemSettingsPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('systemSettings.title');

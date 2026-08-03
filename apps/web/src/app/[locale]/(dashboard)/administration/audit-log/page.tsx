@@ -7,6 +7,7 @@ import { AuditLogScreen } from '@/features/administration/audit/components/Audit
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Audit log.
@@ -70,3 +71,6 @@ export default async function AuditLogPage({
 function isoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('audit.title');

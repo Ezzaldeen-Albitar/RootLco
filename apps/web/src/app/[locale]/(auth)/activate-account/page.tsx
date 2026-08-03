@@ -4,6 +4,7 @@ import { RecoveryTokenBridge } from '@/features/authentication/components/Recove
 import { tokenFromQuery } from '@/features/authentication/api/recovery-token';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Account activation, from the invitee's side.
@@ -55,3 +56,6 @@ export default async function ActivateAccountPage({
     </AuthCard>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('auth.activate.title');
