@@ -2,7 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveBrandMark, type BrandConfig } from '../src/config/brand';
+import {
+  brand,
+  resolveBrandMark,
+  resolveBrandMarkSize,
+  resolveCompanyMark,
+  type BrandConfig,
+} from '../src/config/brand';
 
 /**
  * P1-25 brand-replacement proof.
@@ -64,6 +70,84 @@ describe('brand adapter', () => {
       isProvisional: false,
     };
     expect(resolveBrandMark(config).kind).toBe('wordmark');
+  });
+});
+
+/**
+ * The Owner-approved assets, wired in the P1-26 acceptance remediation.
+ *
+ * The load-bearing assertion in this block is the LAST one. The product symbol
+ * is abstract and safe to render as the product; the company wordmark reads
+ * "rootlco" and must never occupy the product's slot. `check-brand-isolation`
+ * enforces that for strings, but an image carries no string — so the separation
+ * has to be asserted here or it is enforced by nothing at all.
+ */
+describe('the approved brand assets', () => {
+  it('renders the product symbol, not text, in the live configuration', () => {
+    const mark = resolveBrandMark(brand);
+    expect(mark.kind).toBe('asset');
+    if (mark.kind === 'asset') {
+      expect(mark.src).toBe('/brand/crm-symbol.png');
+      // The accessible name is the PRODUCT name. An abstract monogram names
+      // nothing on its own, so the alt text is what makes the mark legible.
+      expect(mark.alt).toBe('CRM');
+    }
+  });
+
+  it('publishes the symbol intrinsic size, so the header cannot reflow', () => {
+    // An <img> with no declared ratio is laid out at zero until its bytes
+    // arrive, and the whole header jumps when they do.
+    expect(resolveBrandMarkSize(brand)).toEqual({ width: 302, height: 378 });
+  });
+
+  it('reports no size for a text mark, because there is no box to reserve', () => {
+    const config: BrandConfig = {
+      systemName: 'Approved Product',
+      systemShortName: 'AP',
+      logoMode: 'wordmark',
+      logoAsset: null,
+      primaryTheme: 'approved',
+      isProvisional: false,
+    };
+    expect(resolveBrandMarkSize(config)).toBeNull();
+  });
+
+  it('resolves the company mark with the company name as its accessible name', () => {
+    const company = resolveCompanyMark(brand);
+    expect(company).toEqual({
+      src: '/brand/rootlco-wordmark.png',
+      alt: 'RootLco',
+      width: 465,
+      height: 262,
+    });
+  });
+
+  it('returns null rather than degrading the company mark to text', () => {
+    // An absent attribution is absent. Only the PRODUCT name must always be
+    // legible, and that is `resolveBrandMark`'s responsibility, not this one's.
+    const config: BrandConfig = {
+      systemName: 'Approved Product',
+      systemShortName: 'AP',
+      logoMode: 'asset',
+      logoAsset: '/brand/x.png',
+      primaryTheme: 'approved',
+      isProvisional: false,
+    };
+    expect(resolveCompanyMark(config)).toBeNull();
+  });
+
+  it('never lets the COMPANY wordmark become the PRODUCT mark', () => {
+    // ADR-011: RootLco is the company. The isolation gate matches the string
+    // `RootLco` and an image contains no string, so this is the only thing
+    // standing between the company wordmark and the product's name slot.
+    const product = resolveBrandMark(brand);
+    const company = resolveCompanyMark(brand);
+    expect(company).not.toBeNull();
+    if (product.kind === 'asset' && company) {
+      expect(product.src).not.toBe(company.src);
+      expect(product.alt).not.toBe(company.alt);
+      expect(product.alt).toBe(brand.systemName);
+    }
   });
 });
 

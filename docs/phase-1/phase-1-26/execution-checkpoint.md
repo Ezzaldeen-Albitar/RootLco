@@ -2,6 +2,17 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
+> **CANONICAL STATUS: TECHNICAL GATE PASSED — OWNER MANUAL ACCEPTANCE PENDING**
+>
+> The technical gate (`gate-record.md`, P1-G26 Go, protected `develop`
+> `0ad993cc`) is preserved and accurate **as technical verification**. It was not
+> Owner acceptance, and it was recorded as a final closure it had not earned —
+> the phase's own final report listed five things it had not proven.
+>
+> P1-26 is reopened for Owner Acceptance Remediation. See
+> [owner-acceptance-remediation.md](owner-acceptance-remediation.md). Formal
+> closure is pending the Owner's explicit `OWNER ACCEPTANCE: PASS`.
+
 Updated after every coherent wave. This is the resume point: if execution stops,
 work continues from the first incomplete wave below.
 

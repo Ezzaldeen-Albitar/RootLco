@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { BrandMark } from '@/components/brand';
 import { brandIsProvisional } from '@/components/brand/theme';
 import { Icon } from '@/components/primitives/Icon';
 import { NAVIGATION } from '@/config/navigation';
@@ -199,6 +200,16 @@ function AppHeader({
       >
         <Icon name="overview" size={18} />
       </button>
+
+      {/*
+        Below `lg` the sidebar is a drawer, so the brand it carries is off
+        screen and the application is unnamed until the drawer is opened. The
+        header carries the compact mark for exactly that range and stands down
+        above it, because two marks on one screen is duplication, not branding.
+      */}
+      <span className="text-text-heading lg:hidden">
+        <BrandMark collapsed />
+      </span>
 
       <button
         type="button"
