@@ -265,16 +265,94 @@ export function readSupabase(repoRoot) {
 }
 
 /**
- * A strong password a human can retype without misreading it.
+ * The exact character set an acceptance password may contain.
  *
  * `0/O` and `1/l/I` are absent on purpose — the Owner will type this from a
  * terminal into a browser, and a password that is strong but unreadable gets
  * pasted into a chat window instead.
+ *
+ * Exported because it is two things at once: the alphabet `generatePassword`
+ * draws from, and the allow-list `reconstructPassword` re-checks a stored
+ * password against before anything is done with it.
+ */
+export const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+export const PASSWORD_GROUPS = 4;
+export const PASSWORD_GROUP_SIZE = 5;
+
+/** `XXXXX-XXXXX-XXXXX-XXXXX` — 20 characters and 3 separators. */
+export const PASSWORD_LENGTH = PASSWORD_GROUPS * PASSWORD_GROUP_SIZE + (PASSWORD_GROUPS - 1);
+
+/**
+ * Rebuilds a stored password out of the known alphabet, or refuses it.
+ *
+ * ## Why this exists — `js/file-access-to-http`
+ *
+ * `status-owner-account.mjs` reads `.local/owner-acceptance-account.json` and
+ * signs in with what it finds, which is a file read reaching an outbound
+ * request. The obvious defence is "the file is local", and that is exactly the
+ * assumption worth not granting: anything able to write that file would
+ * otherwise choose what the process transmits and where the transmitted value
+ * ends up in the Backend's logs.
+ *
+ * So nothing stored is forwarded verbatim. Each character is looked up in the
+ * constant alphabet and the *constant's* copy is emitted, the separators must
+ * sit at the exact positions this generator puts them, and the length is pinned.
+ * A value that is not a password this tooling could have produced does not
+ * become a shorter or stranger password — it throws.
+ *
+ * This is an allow-list, not a reformat: the output is provably a string over
+ * `PASSWORD_ALPHABET` in the documented shape, whatever the input was.
+ *
+ * @param {unknown} value the password as read from disk
+ * @returns {string} an identical password rebuilt from constants
+ */
+export function reconstructPassword(value) {
+  if (typeof value !== 'string') {
+    throw new GuardFailure(
+      `The stored password is ${value === undefined ? 'absent' : typeof value}, not a string. ` +
+        'Re-run `npm run acceptance:create-owner`.'
+    );
+  }
+  if (value.length !== PASSWORD_LENGTH) {
+    throw new GuardFailure(
+      `The stored password is ${value.length} characters, expected ${PASSWORD_LENGTH}. ` +
+        'Re-run `npm run acceptance:create-owner`.'
+    );
+  }
+
+  const out = [];
+  for (let i = 0; i < PASSWORD_LENGTH; i += 1) {
+    // Every (group size + 1)th position is a separator, and only a separator.
+    if ((i + 1) % (PASSWORD_GROUP_SIZE + 1) === 0) {
+      if (value[i] !== '-') {
+        throw new GuardFailure(
+          `The stored password has no group separator at position ${i + 1}. ` +
+            'Re-run `npm run acceptance:create-owner`.'
+        );
+      }
+      out.push('-');
+      continue;
+    }
+    const index = PASSWORD_ALPHABET.indexOf(value[i]);
+    if (index < 0) {
+      throw new GuardFailure(
+        `The stored password contains a character outside the acceptance alphabet at ` +
+          `position ${i + 1}. Re-run \`npm run acceptance:create-owner\`.`
+      );
+    }
+    // The alphabet's own character, not the file's.
+    out.push(PASSWORD_ALPHABET[index]);
+  }
+  return out.join('');
+}
+
+/**
+ * A strong password a human can retype without misreading it.
  */
 export function generatePassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const groups = 4;
-  const perGroup = 5;
+  const alphabet = PASSWORD_ALPHABET;
+  const groups = PASSWORD_GROUPS;
+  const perGroup = PASSWORD_GROUP_SIZE;
   const length = groups * perGroup;
 
   // Rejection sampling, not modulo.

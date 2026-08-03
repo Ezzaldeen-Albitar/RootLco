@@ -483,6 +483,170 @@ one local database and one fixture namespace; the ordering dependency is real
 and predates this phase. Recorded here because it was measured here, and routed
 to the tier that owns it.
 
+---
+
+## P1-26-F-051 — the acceptance tooling shipped seven CodeQL findings of its own, and the first fix round only cleared five
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`scripts/dev/owner-acceptance/`, `tests/ci/local-launcher-host.test.ts`
+
+CodeQL raised this branch from the recorded ceiling of **0** open findings to
+**7**. Every one was in code this remediation itself added. Every one was
+correct. None was waived, and the ceiling stayed at 0 — a finding this tooling
+introduced is this tooling's to fix, not the baseline's to absorb.
+
+| Query                                  | Where                         | What it was                                                             |
+| -------------------------------------- | ----------------------------- | ----------------------------------------------------------------------- |
+| `js/biased-cryptographic-random`       | `context.mjs`                 | `byte % 57` over `randomBytes`                                          |
+| `js/clear-text-logging`                | `create-owner-account.mjs`    | the generated password printed to stdout                                |
+| `js/insecure-temporary-file`           | `align-local-jwt.mjs`         | the JWT secret written to a fixed path in the shared temp directory     |
+| `js/file-system-race` ×2               | `create-owner-account.mjs`    | `existsSync` then read                                                  |
+| `js/file-access-to-http`               | `status-owner-account.mjs`    | the stored credential read from disk and forwarded to a sign-in request |
+| `js/template-syntax-in-string-literal` | `local-launcher-host.test.ts` | a quoted string containing `${WEB_PORT}`                                |
+
+### The part worth recording is that the first fix round cleared only five
+
+I enumerated the findings by **security severity**, fixed the five that came back
+HIGH, verified them, committed, and the gate failed again — `open findings rose
+to 2`. The two survivors carry no high security severity: one is medium, one has
+none at all.
+
+The baseline file warns about exactly this, in writing, in the field I had
+already read:
+
+> The count deliberately includes medium and low, which is how the one dismissal
+> was caught at all — GitHub's own CodeQL check reported that run as SUCCESS,
+> because it blocks only on high and critical.
+
+So the mistake was not missing a finding. It was **filtering by a severity the
+gate does not filter by**, having been told in the gate's own configuration that
+it does not. A partial fix that reports as a fix is worse than no fix, because
+the next run's failure reads as a regression rather than as the remainder.
+
+### `js/file-access-to-http` — and why it was fixed rather than dismissed
+
+`status-owner-account.mjs` exists to answer "is the Owner account usable _right
+now_", which it can only do by signing in for real, which means reading the
+stored password. That is a file read reaching an outbound request, and the
+tempting refutation is "the file is local".
+
+That refutation was refused. It is the same assumption the query exists to
+question, and the honest position is that anything able to write
+`.local/owner-acceptance-account.json` would otherwise be choosing what this
+process transmits and what lands in the Backend's request logs.
+
+Dismissing it was also not available on the merits. The baseline's schema
+requires a named human reviewer, a review date, an expiry, and a reproducible
+refutation of both source and sink. There is no reviewer to name — this
+remediation may not invent an Owner decision — and the sink is not safe in the
+general case. The one dismissal this repository ever carried was
+[withdrawn by removing the flow](../../engineering/security/codeql-remediation/sec-codeql-033-http-to-file-access.md),
+not renewed. So: removed the same way.
+
+**The fix is an allow-list, not a reformat.** The tenant id and the address now
+come from the fixture constants, and the file's copies are only _compared_
+against them and never forwarded. The password is rebuilt character by character
+out of `PASSWORD_ALPHABET`, emitting the constant's character rather than the
+file's, with the separator positions and the total length pinned. The output is
+provably a string over the acceptance alphabet in the documented shape whatever
+the input was — a value that is not a password this tooling could have generated
+throws instead of becoming a shorter or stranger one.
+
+`tests/ci/owner-acceptance-password.test.ts` pins it: 12 cases including a
+round trip against 50 generated passwords, rejection of ten smuggled characters
+(`/`, `:`, `"`, `\`, space, newline, `$`, `<`, and the ambiguous `O`), and a
+check that 400 draws cover all 57 alphabet characters — which is what would
+notice a rejection-sampling loop that dropped the alphabet's tail instead of
+redrawing.
+
+### `js/template-syntax-in-string-literal` — the query aimed at the one place the shape was the point
+
+`local-launcher-host.test.ts` proves its own regex is not vacuous by matching it
+against a sample containing the literal text `${WEB_PORT}`. In a quoted string
+that is precisely the defect the query names. The sample is now a template
+literal with the `$` escaped: identical text, correct construct, assertion
+unchanged.
+
+### The two that were the most instructive
+
+**The biased random.** 256 is not a multiple of the 57-character alphabet, so
+`byte % 57` made its first 28 characters appear more often than the remaining 29.
+The skew is small, entirely real, and free to remove: bytes at or above the
+largest whole multiple of the alphabet size are discarded and redrawn. This
+generates the Owner's password, which is exactly where "small and real" is not
+good enough.
+
+**The clear-text logging**, a genuine tension resolved in the safer direction.
+The Owner needs to read the password, so the first version printed it. But stdout
+reaches terminal scrollback, whatever log the operator happens to be capturing,
+and a CI transcript if the script is ever run somewhere it should not be. It is
+no longer printed at all: it is written to one git-ignored file at mode `0600` —
+a directory being ignored does not stop a credential sitting world-readable on
+disk — and read from there. One place to find it, one place to delete it.
+
+The temporary file mattered for its contents: the GoTrue environment export
+carries the local JWT signing secret, and it was written to a predictable path
+another user on the machine could pre-create or replace with a symlink. It now
+lives in a fresh `mkdtemp` directory at mode `0600`, removed afterwards. The two
+races are the ordinary kind with the ordinary fix — attempt the read and handle
+`ENOENT`, one syscall with no window.
+
+**Re-verified after both rounds:** reset → create both exit 0 with all fixtures
+reconciled; `status` reports READY with 14 of 14 permissions through a live
+sign-in; 17 tests across the two pinning files; lint, typecheck and Prettier
+clean; `security:all` 4 of 4 across 1822 tracked files.
+
+**The lesson, arriving from a new direction.** Tooling written to verify the
+product **is** product code. This tooling was reviewed by nothing until CodeQL
+read it, because it is imported by no application module, had no tests pointed at
+it, and runs only when a human runs it. Seven real weaknesses lived there for
+exactly as long as it took the first tier capable of seeing them to look — and
+then two of them survived a fix round because I read the results through a filter
+the gate does not use.
+
+**The biased random is the one worth understanding.** 256 is not a multiple of
+the 57-character alphabet, so `byte % 57` made its first 28 characters appear
+more often than the remaining 29. The skew is small, entirely real, and free to
+remove: bytes at or above the largest whole multiple of the alphabet size are now
+discarded and redrawn, so every character is exactly equally likely. This
+generates the Owner's password, which is precisely where "small and real" is not
+good enough.
+
+**The clear-text logging was a genuine tension, resolved in the safer
+direction.** The Owner needs to read the password, so the first version printed
+it. But stdout reaches terminal scrollback, whatever log the operator happens to
+be capturing, and a CI transcript if the script is ever run somewhere it should
+not be. It is no longer printed at all: it is written to one git-ignored file at
+mode `0600` — a directory being ignored does not stop a credential sitting
+world-readable on disk — and read from there. One place to find it, one place to
+delete it.
+
+**The temporary file mattered because of its contents.** The GoTrue environment
+export carries the local JWT signing secret, and it was written to a predictable
+path another user on the machine could pre-create or replace with a symlink. It
+now lives in a fresh `mkdtemp` directory at mode `0600`, removed afterwards.
+
+**The two races are the ordinary kind with the ordinary fix.** `existsSync`
+followed by `readFileSync` can be interrupted between the calls; attempting the
+read and handling `ENOENT` is one syscall with no window. The same pattern in
+`status-owner-account.mjs` was corrected as well — there, the file being raced is
+the one holding the credential.
+
+**Re-verified after the fixes:** reset → create both exit 0 with all fixtures
+reconciled; 14 of 14 permissions resolved through a live sign-in; 20 password
+draws all distinct, correctly shaped, and free of the ambiguous `0/O/1/l/I`
+characters the alphabet deliberately omits; lint, typecheck and Prettier clean;
+`security:all` 4 of 4 across 1822 tracked files; test-honesty scan clean.
+
+The lesson is the same one this phase keeps producing from a new direction:
+**tooling written to verify the product is product code.** It was reviewed by
+nothing until CodeQL read it, because it is not imported by any application
+module, has no unit tests pointed at it, and runs only when a human runs it. Five
+real weaknesses lived there for exactly as long as it took the first tier capable
+of seeing them to look.
+
+---
+
 An adversarial review of the complete P1-26 diff, run as six independent lenses —
 security, backend-contract fidelity, React/Next correctness, honesty,
 internationalisation and accessibility, and phase boundary — each followed by a

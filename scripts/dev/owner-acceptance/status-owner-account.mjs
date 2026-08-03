@@ -17,7 +17,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { ADMIN_PERMISSIONS, GuardFailure, IDS, NAMES, assertLocalTarget } from './context.mjs';
+import {
+  ADMIN_PERMISSIONS,
+  GuardFailure,
+  IDS,
+  NAMES,
+  assertLocalTarget,
+  reconstructPassword,
+} from './context.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
@@ -41,7 +48,7 @@ async function main() {
 
   const client = new pg.Client(target);
   await client.connect();
-  let email = NAMES.ownerEmail;
+  const email = NAMES.ownerEmail;
 
   try {
     const row = await client.query(
@@ -104,7 +111,32 @@ async function main() {
     return;
   }
   const handoff = JSON.parse(raw);
-  email = handoff.login?.email ?? email;
+
+  // Nothing read from that file is forwarded verbatim.
+  //
+  // `js/file-access-to-http` is right that a file read reaching an outbound
+  // request deserves a constraint, and "the file is local" is precisely the
+  // assumption not to grant: whatever can write it would otherwise choose what
+  // this process transmits. The tenant and the address come from the fixture
+  // constants and the file's copies are only compared against them, and the
+  // password is rebuilt out of the known alphabet, which refuses anything this
+  // tooling could not have generated.
+  const agrees = handoff.tenantId === IDS.tenantA && handoff.login?.email === NAMES.ownerEmail;
+  report(
+    'handoff matches fixtures',
+    agrees,
+    agrees ? 'tenant and address as provisioned' : 're-run npm run acceptance:create-owner'
+  );
+
+  let password;
+  try {
+    password = reconstructPassword(handoff.login?.password);
+  } catch (error) {
+    report('stored password shape', false, error.message);
+    finish();
+    return;
+  }
+  report('stored password shape', true, 'rebuilt from the acceptance alphabet');
 
   let ready;
   try {
@@ -121,9 +153,9 @@ async function main() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tenantId: handoff.tenantId,
-      email,
-      password: handoff.login.password,
+      tenantId: IDS.tenantA,
+      email: NAMES.ownerEmail,
+      password,
     }),
   });
   const loginBody = await login.json().catch(() => null);

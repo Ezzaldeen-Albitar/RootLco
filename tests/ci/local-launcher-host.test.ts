@@ -67,8 +67,13 @@ describe('the local launcher advertises an origin Next will serve', () => {
       expect(read(file).length, file).toBeGreaterThan(500);
     }
     // And the pattern it forbids is one that really can appear.
-    expect(/`http:\/\/127\.0\.0\.1:\$\{WEB_PORT\}/.test('`http://127.0.0.1:${WEB_PORT}/en`')).toBe(
-      true
-    );
+    //
+    // The sample is a template literal with the `$` escaped, so it is the exact
+    // text `http://127.0.0.1:${WEB_PORT}/en` without being a quoted string that
+    // merely looks interpolated — `js/template-syntax-in-string-literal` flags
+    // that shape, and here it would be flagging the one place the shape is the
+    // point.
+    const sample = `\`http://127.0.0.1:\${WEB_PORT}/en\``;
+    expect(/`http:\/\/127\.0\.0\.1:\$\{WEB_PORT\}/.test(sample)).toBe(true);
   });
 });
