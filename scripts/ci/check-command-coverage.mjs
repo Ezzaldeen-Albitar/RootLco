@@ -89,6 +89,18 @@ export const REGISTER = Object.freeze([
   { name: 'validate:p1-23-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-24-register', owner: ROOT, tier: 'required', why: 'operation register' },
   { name: 'validate:command-coverage', owner: ROOT, tier: 'required', why: 'this gate' },
+  {
+    name: 'validate:p1-26-frontend',
+    owner: ROOT,
+    tier: 'required',
+    // A real gate, not a reporter: it fails on a token in browser storage, on
+    // floating-point money, on a redirect parameter in the authentication flow,
+    // on a second session-cookie authority, on unsafe HTML, and on a
+    // `'use server'` module exporting anything but an async function. Its rules
+    // are proven by tests/ci/p1-26-frontend-gate.test.ts, which plants each
+    // violation and asserts the gate catches that one.
+    why: 'P1-26 frontend security and boundary rules',
+  },
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },

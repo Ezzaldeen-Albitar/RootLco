@@ -42,20 +42,43 @@ test.describe('locale routes', () => {
 
   test('the root redirects to a locale', async ({ page }) => {
     await page.goto('/');
-    await expect(page).toHaveURL(/\/(ar|en)$/);
+    // P1-26 made the overview an authenticated screen, so an anonymous visitor
+    // lands on that locale's sign-in page rather than on the overview itself.
+    await expect(page).toHaveURL(/\/(ar|en)\/login(\?.*)?$/);
   });
 });
 
-test.describe('the shell', () => {
-  test('has the landmarks a screen reader navigates by', async ({ page }) => {
-    await page.goto('/en');
-    await expect(page.getByRole('main')).toBeVisible();
-    await expect(page.getByRole('banner')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
+/**
+ * Authentication, from the outside.
+ *
+ * These run with NO session, which is the state that matters: an unauthenticated
+ * visitor must never receive protected markup, and must be told where to go
+ * instead of being left on a blank screen.
+ */
+test.describe('authentication', () => {
+  test('a protected route redirects to sign-in and never renders the shell', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/en/administration/users');
+    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out$/);
+
+    // The shell's navigation landmark belongs to the authenticated group. If it
+    // is present here, protected markup reached the browser before the redirect.
+    await expect(page.getByRole('navigation', { name: 'Modules' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the sign-in form labels every control and needs no mouse', async ({ page }) => {
+    await page.goto('/en/login');
+    await expect(page.getByLabel('Workspace identifier')).toBeVisible();
+    await expect(page.getByLabel('Email address')).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+    await expect(page.getByRole('link', { name: 'Forgotten your password?' })).toBeVisible();
   });
 
   test('the skip link is the first thing a keyboard reaches, and it works', async ({ page }) => {
-    await page.goto('/en');
+    await page.goto('/en/login');
     await page.keyboard.press('Tab');
     const skip = page.getByRole('link', { name: 'Skip to content' });
     await expect(skip).toBeFocused();
@@ -65,8 +88,43 @@ test.describe('the shell', () => {
     await expect(page.locator('#main')).toBeFocused();
   });
 
+  test('renders Arabic sign-in right to left with a clean console', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/login');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1, name: 'تسجيل الدخول' })).toBeVisible();
+    expect(console.errors).toEqual([]);
+  });
+
+  test('the reset link page refuses a request with no token', async ({ page }) => {
+    await page.goto('/en/reset-password');
+    await expect(page.getByText('This link is not complete')).toBeVisible();
+    // No form to submit: a password box that cannot possibly succeed is worse
+    // than none, because it takes the operator's time and then blames them.
+    await expect(page.getByLabel('New password')).toHaveCount(0);
+  });
+
   test('does not scroll horizontally at any reviewed width', async ({ page }) => {
-    await page.goto('/en');
+    await page.goto('/en/login');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+    );
+    expect(overflow, 'the page body must never scroll horizontally').toBe(false);
+  });
+});
+
+test.describe('the shell', () => {
+  // Asserted on the gallery, which is the surface that carries the shell without
+  // requiring a session (see the `(design)` route group).
+  test('has the landmarks a screen reader navigates by', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.getByRole('banner')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
+  });
+
+  test('does not scroll horizontally at any reviewed width', async ({ page }) => {
+    await page.goto('/en/gallery');
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
     );
@@ -74,11 +132,15 @@ test.describe('the shell', () => {
   });
 
   test('renders no planned module as a link', async ({ page }) => {
-    await page.goto('/en');
+    await page.goto('/en/gallery');
     const nav = page.getByRole('navigation', { name: 'Modules' });
     await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
-    // Every other module is planned, so it must not be clickable.
+    // Billing is still a P1-27-and-later module, so it must not be clickable.
     await expect(nav.getByRole('link', { name: 'Billing' })).toHaveCount(0);
+    // Administration IS built now, but it is permission-gated and this page
+    // renders with no capabilities — so it must be absent too. An entry visible
+    // to an actor holding nothing would mean the filter had stopped working.
+    await expect(nav.getByRole('link', { name: 'Users' })).toHaveCount(0);
   });
 });
 

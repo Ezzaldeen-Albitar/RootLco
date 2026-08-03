@@ -109,8 +109,12 @@ export function DataTable<Row>({
   }
 
   const rows = response?.rows ?? [];
-  const total = response?.total ?? 0;
+  // `?? 0` would turn "the server publishes no count" into "there are none",
+  // which is a different and much more confident claim. `undefined` (no response
+  // yet) and `null` (counted set unavailable) both mean "do not print a total".
+  const total = response ? response.total : 0;
   const pages = pageCount(total, request.pageSize);
+  const hasMore = response?.hasMore ?? false;
   const rowHeight = density === 'compact' ? 'h-9' : 'h-11';
 
   return (
@@ -210,6 +214,8 @@ export function DataTable<Row>({
         request={request}
         total={total}
         pages={pages}
+        hasMore={hasMore}
+        rowsOnPage={rows.length}
         onRequestChange={onRequestChange}
       />
     </div>
@@ -338,21 +344,38 @@ function FilterChips({
   );
 }
 
+/**
+ * Pagination, in two modes.
+ *
+ * **Counted** (`total` is a number): the full control — a range, a page count,
+ * First, Previous, Next, Last.
+ *
+ * **Uncounted** (`total` is `null`, every cursor-paginated backend list): the
+ * page number, Previous, and Next gated on the server's own `hasMore`. First and
+ * Last are absent, not disabled — a disabled Last implies there is a last page
+ * the interface could reach if only the button worked, and there is not.
+ */
 function Pagination({
   messages,
   request,
   total,
   pages,
+  hasMore,
+  rowsOnPage,
   onRequestChange,
 }: {
   readonly messages: Messages;
   readonly request: TableRequest;
-  readonly total: number;
-  readonly pages: number;
+  readonly total: number | null;
+  readonly pages: number | null;
+  readonly hasMore: boolean;
+  readonly rowsOnPage: number;
   readonly onRequestChange: (next: TableRequest) => void;
 }) {
-  const first = total === 0 ? 0 : (request.page - 1) * request.pageSize + 1;
-  const last = Math.min(request.page * request.pageSize, total);
+  const counted = total !== null && pages !== null;
+  const first = total === null || total === 0 ? 0 : (request.page - 1) * request.pageSize + 1;
+  const last = total === null ? 0 : Math.min(request.page * request.pageSize, total);
+  const atEnd = counted ? request.page >= (pages as number) : !hasMore;
 
   return (
     <nav
@@ -365,8 +388,18 @@ function Pagination({
         button and the numbers that changed are elsewhere in the document.
       */}
       <p aria-live="polite" className="text-supporting text-text-secondary">
-        {translate(messages, 'table.showing')} {first}–{last} {translate(messages, 'table.of')}{' '}
-        {total}
+        {counted ? (
+          <>
+            {translate(messages, 'table.showing')} {first}–{last} {translate(messages, 'table.of')}{' '}
+            {total}
+          </>
+        ) : (
+          // No "of N". Announcing a count the server never sent would be an
+          // invention, and this line is read aloud on every page change.
+          <>
+            {translate(messages, 'table.showing')} {rowsOnPage}
+          </>
+        )}
       </p>
 
       <div className="flex items-center gap-2">
@@ -385,13 +418,15 @@ function Pagination({
           </select>
         </label>
 
-        <PageButton
-          messages={messages}
-          labelKey="table.firstPage"
-          glyph="«"
-          disabled={request.page <= 1}
-          onClick={() => onRequestChange(withPage(request, 1))}
-        />
+        {counted ? (
+          <PageButton
+            messages={messages}
+            labelKey="table.firstPage"
+            glyph="«"
+            disabled={request.page <= 1}
+            onClick={() => onRequestChange(withPage(request, 1))}
+          />
+        ) : null}
         <PageButton
           messages={messages}
           labelKey="table.previousPage"
@@ -400,22 +435,24 @@ function Pagination({
           onClick={() => onRequestChange(withPage(request, request.page - 1))}
         />
         <span className="text-supporting text-text-secondary">
-          {request.page} / {pages}
+          {counted ? `${request.page} / ${pages}` : request.page}
         </span>
         <PageButton
           messages={messages}
           labelKey="table.nextPage"
           glyph="›"
-          disabled={request.page >= pages}
+          disabled={atEnd}
           onClick={() => onRequestChange(withPage(request, request.page + 1))}
         />
-        <PageButton
-          messages={messages}
-          labelKey="table.lastPage"
-          glyph="»"
-          disabled={request.page >= pages}
-          onClick={() => onRequestChange(withPage(request, pages))}
-        />
+        {counted ? (
+          <PageButton
+            messages={messages}
+            labelKey="table.lastPage"
+            glyph="»"
+            disabled={atEnd}
+            onClick={() => onRequestChange(withPage(request, pages as number))}
+          />
+        ) : null}
       </div>
     </nav>
   );

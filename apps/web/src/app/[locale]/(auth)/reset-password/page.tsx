@@ -1,8 +1,6 @@
 import { notFound } from 'next/navigation';
 import { AuthCard } from '@/features/authentication/components/AuthCard';
-import { MissingToken } from '@/features/authentication/components/MissingToken';
 import { RecoveryTokenBridge } from '@/features/authentication/components/RecoveryTokenBridge';
-import { SetPasswordForm } from '@/features/authentication/components/SetPasswordForm';
 import { tokenFromQuery } from '@/features/authentication/api/recovery-token';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -24,21 +22,19 @@ export default async function ResetPasswordPage({
       title={translate(messages, 'auth.reset.title')}
       description={translate(messages, 'auth.reset.description')}
     >
+      {/*
+        Only serialisable props cross this boundary. It used to take a render
+        prop, which is a FUNCTION crossing Server to Client — not serialisable,
+        and the page returned a 500 in the production build.
+      */}
       <RecoveryTokenBridge
+        locale={locale}
+        messages={messages}
         serverToken={serverToken}
-        fallback={<MissingToken locale={locale} messages={messages} />}
-      >
-        {(token) => (
-          <SetPasswordForm
-            locale={locale}
-            messages={messages}
-            token={token}
-            submitLabelKey="auth.reset.submit"
-            doneTitleKey="auth.reset.done"
-            doneBodyKey="auth.reset.doneDetail"
-          />
-        )}
-      </RecoveryTokenBridge>
+        submitLabelKey="auth.reset.submit"
+        doneTitleKey="auth.reset.done"
+        doneBodyKey="auth.reset.doneDetail"
+      />
     </AuthCard>
   );
 }

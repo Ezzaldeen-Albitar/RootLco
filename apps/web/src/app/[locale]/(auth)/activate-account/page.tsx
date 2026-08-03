@@ -1,8 +1,6 @@
 import { notFound } from 'next/navigation';
 import { AuthCard } from '@/features/authentication/components/AuthCard';
-import { MissingToken } from '@/features/authentication/components/MissingToken';
 import { RecoveryTokenBridge } from '@/features/authentication/components/RecoveryTokenBridge';
-import { SetPasswordForm } from '@/features/authentication/components/SetPasswordForm';
 import { tokenFromQuery } from '@/features/authentication/api/recovery-token';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -47,20 +45,13 @@ export default async function ActivateAccountPage({
       footer={translate(messages, 'auth.activate.note')}
     >
       <RecoveryTokenBridge
+        locale={locale}
+        messages={messages}
         serverToken={serverToken}
-        fallback={<MissingToken locale={locale} messages={messages} />}
-      >
-        {(token) => (
-          <SetPasswordForm
-            locale={locale}
-            messages={messages}
-            token={token}
-            submitLabelKey="auth.reset.submit"
-            doneTitleKey="auth.activate.done"
-            doneBodyKey="auth.activate.doneDetail"
-          />
-        )}
-      </RecoveryTokenBridge>
+        submitLabelKey="auth.reset.submit"
+        doneTitleKey="auth.activate.done"
+        doneBodyKey="auth.activate.doneDetail"
+      />
     </AuthCard>
   );
 }

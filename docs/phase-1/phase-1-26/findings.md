@@ -170,6 +170,58 @@ platform does not have.
 
 ---
 
+## P1-26-F-013 — a render prop crossed the Server-to-Client boundary and 500'd the reset page
+
+**Severity:** High · **Status:** Fixed · **Area:** `apps/web/src/features/authentication/components/RecoveryTokenBridge.tsx`
+
+`RecoveryTokenBridge` took `children: (token: string) => ReactNode` and was
+rendered from `/reset-password/page.tsx` and `/activate-account/page.tsx`, which
+are Server Components. **A function prop is not serialisable across that
+boundary.** Both pages returned a server error in the production build.
+
+**Why nothing caught it earlier.** Typecheck passes — the types are correct in
+TypeScript's model. ESLint passes. The unit suite passes, because it never
+renders the page. `next dev` masks the class of failure that only appears in a
+production build. The **browser suite** caught it: five projects failed the same
+assertion with "This page couldn't load" in the accessibility snapshot.
+
+**Fix.** The bridge now takes only serialisable props — a locale, a message
+catalogue, a token or null, and message keys — and renders `SetPasswordForm` or
+`MissingToken` itself. The page decides nothing about presentation and passes no
+behaviour.
+
+**Regression coverage.** `apps/web/tests/e2e/foundation.spec.ts`
+
+> "the reset link page refuses a request with no token" asserts the page renders
+> its no-token state, across all five browser projects. That is the assertion that
+> failed; it now guards the fix.
+
+---
+
+## P1-26-F-014 — a `'use server'` module may export only async functions
+
+**Severity:** High · **Status:** Fixed · **Area:** three feature modules
+
+`audit/api.ts` exported a constant, `organization/api.ts` exported a sync path
+helper, and `organization/actions.ts` exported a sync `coerce`. Turbopack rejects
+the **whole module** for any one of them.
+
+**Why the error is worse than it sounds.** The build reports it at the _importer_
+as "Export `listAuditEvents` doesn't exist in target module — the module has no
+exports at all", which sends a reader to the wrong file entirely. Eight reported
+errors traced to three causes.
+
+**Fix.** Types, constants and pure helpers moved to a `types.ts` beside each
+`'use server'` module, which now holds nothing but operations.
+
+**Regression coverage.** `scripts/ci/check-p1-26-frontend.mjs` fails on
+`export const`, `export let`, `export var`, `export class` or a non-async
+`export function` in any module carrying the directive, and
+`tests/ci/p1-26-frontend-gate.test.ts` proves each case — including that
+`export type` and `export interface` are permitted, because they are erased.
+
+---
+
 ## P1-26-F-011 — the Settings navigation entry was gated on a permission that does not exist
 
 **Severity:** Medium · **Status:** Fixed · **Area:** `apps/web/src/config/navigation.ts`

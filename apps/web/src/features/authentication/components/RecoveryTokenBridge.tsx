@@ -1,10 +1,14 @@
 'use client';
 
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { useSyncExternalStore } from 'react';
+import type { Locale } from '@/i18n/config';
+import type { Messages } from '@/i18n/get-messages';
 import { isTokenShaped } from '../api/recovery-token';
+import { MissingToken } from './MissingToken';
+import { SetPasswordForm } from './SetPasswordForm';
 
 /**
- * Recovers a token that arrived in the URL **fragment**.
+ * Recovers a token that arrived in the URL **fragment**, and renders the form.
  *
  * ## Why this component has to exist
  *
@@ -12,6 +16,14 @@ import { isTokenShaped } from '../api/recovery-token';
  * recovery link as `…/reset-password#access_token=…`, the server render sees no
  * token at all — so a server-only implementation would show "this link is not
  * complete" to every user of a provider that uses that shape.
+ *
+ * ## Why it renders the form rather than taking a render prop
+ *
+ * It used to take `children: (token) => ReactNode`. That is a **function prop
+ * crossing the Server-to-Client boundary**, which is not serialisable: the page
+ * returned a 500 in the production build and the browser suite caught it. The
+ * page now passes only serialisable values — a locale, a message catalogue, a
+ * token or null, and message keys — and this component decides what to render.
  *
  * ## Why `useSyncExternalStore` rather than an effect
  *
@@ -22,11 +34,6 @@ import { isTokenShaped } from '../api/recovery-token';
  * and the rule is right: it renders twice, and the user sees "this link is not
  * complete" for a frame before the form appears. On a page reached from an email
  * that flash reads as a broken link.
- *
- * `useSyncExternalStore` takes a SERVER snapshot used during SSR and hydration
- * and a client snapshot read afterwards, so React knows the two are allowed to
- * differ and commits the real value without a wasted render. It is the same
- * mechanism `usePersistedFlag` uses, for the same reason.
  *
  * ## What happens to the token
  *
@@ -49,8 +56,8 @@ let consumed: { readonly href: string; readonly token: string | null } | null = 
 /**
  * Reads and erases the fragment, memoised per URL.
  *
- * `useSyncExternalStore` may call the snapshot more than once, and it requires
- * the value to be referentially stable between calls or it loops. Erasing the
+ * `useSyncExternalStore` may call the snapshot more than once and requires the
+ * value to be referentially stable between calls, or it loops. Erasing the
  * fragment makes the read destructive, so the result is cached against the href
  * it was taken from — the second call returns the same token rather than looking
  * at a hash that is no longer there.
@@ -80,13 +87,19 @@ function readTokenFromFragment(): string | null {
 }
 
 export function RecoveryTokenBridge({
+  locale,
+  messages,
   serverToken,
-  children,
-  fallback,
+  submitLabelKey,
+  doneTitleKey,
+  doneBodyKey,
 }: {
+  readonly locale: Locale;
+  readonly messages: Messages;
   readonly serverToken: string | null;
-  readonly children: (token: string) => ReactNode;
-  readonly fallback: ReactNode;
+  readonly submitLabelKey: string;
+  readonly doneTitleKey: string;
+  readonly doneBodyKey: string;
 }) {
   const fragmentToken = useSyncExternalStore(
     subscribe,
@@ -96,8 +109,18 @@ export function RecoveryTokenBridge({
   );
 
   const token = serverToken ?? fragmentToken;
-  if (token !== null) return <>{children(token)}</>;
-  return <>{fallback}</>;
+  if (token === null) return <MissingToken locale={locale} messages={messages} />;
+
+  return (
+    <SetPasswordForm
+      locale={locale}
+      messages={messages}
+      token={token}
+      submitLabelKey={submitLabelKey}
+      doneTitleKey={doneTitleKey}
+      doneBodyKey={doneBodyKey}
+    />
+  );
 }
 
 /** Test seam: clears the per-URL memo so a suite can exercise a fresh load. */

@@ -48,11 +48,34 @@ export interface TableRequest {
   readonly search: string;
 }
 
+/**
+ * A page of rows as the server returned it.
+ *
+ * ## `total` is nullable, and that is the honest shape
+ *
+ * The backend paginates by CURSOR: `shared` list operations return
+ * `{ items, nextCursor, hasMore }` and publish **no count at all**
+ * (`apps/api/src/server/db/pagination.ts`). Counting a large filtered set on
+ * every page is exactly the query that falls over first, so the absence is a
+ * decision, not an omission.
+ *
+ * `total: null` means *the server does not publish a count*. The table then
+ * shows the current page with Previous and Next, and hides First, Last and the
+ * "showing x–y of z" range — because the last page of a cursor-paginated set is
+ * not knowable without walking it.
+ *
+ * The alternative was to invent a total: the current page's length, or a guess.
+ * That produces a pager which is correct on page one and lies from page two
+ * onward, and the lie is invisible in review because the type is satisfied.
+ */
 export interface TableResponse<Row> {
   readonly rows: readonly Row[];
-  readonly total: number;
+  /** `null` when the server publishes no count — see the note above. */
+  readonly total: number | null;
   readonly page: number;
   readonly pageSize: number;
+  /** The server's own end-of-set signal. Required whenever `total` is null. */
+  readonly hasMore?: boolean;
 }
 
 export const PAGE_SIZES = Object.freeze([10, 25, 50, 100]);
@@ -224,7 +247,15 @@ export function withSearch(request: TableRequest, search: string): TableRequest 
   return { ...request, search, page: 1 };
 }
 
-export function pageCount(total: number, pageSize: number): number {
+/**
+ * How many pages a counted set has.
+ *
+ * Returns `null` for an uncounted (cursor-paginated) set rather than a plausible
+ * number. A caller that renders `page / pages` has to handle the null, which is
+ * the point: there is no honest denominator to print.
+ */
+export function pageCount(total: number | null, pageSize: number): number | null {
+  if (total === null) return null;
   return total === 0 ? 1 : Math.ceil(total / pageSize);
 }
 
