@@ -33,7 +33,7 @@
  * Local only.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -50,16 +50,51 @@ const SKIP_BROWSER = process.env.ROOTLCO_CYCLE_SKIP_BROWSER === '1';
 /** @type {{step: string, code: number, log: string}[]} */
 const executed = [];
 
+/**
+ * npm's own JavaScript entry point, so npm can be run without a shell.
+ *
+ * `npm` on Windows is `npm.cmd`, and since the argument-injection fix in Node 18
+ * `spawn` refuses to execute a `.cmd` without `shell: true` — it fails with
+ * `EINVAL` and produces no output at all. Passing `shell: true` instead works
+ * but triggers `DEP0190`, because with a shell the argument array is
+ * concatenated rather than escaped.
+ *
+ * Running node against `npm-cli.js` avoids both: no shell, no `.cmd`, no
+ * concatenation. `npm_execpath` is set by npm itself, and this script is always
+ * reached through `npm run acceptance:full-cycle`.
+ *
+ * The middle attempt — dropping the shell but keeping the `.cmd` — is what
+ * happens when a deprecation warning is treated as a defect. It silenced the
+ * warning and broke every step, each failing in 0.0s with an empty log.
+ */
+const npmEntry = process.env.npm_execpath;
+
+/** Runs one step and records it. */
 function run(step, command, args, options = {}) {
   const started = Date.now();
   process.stdout.write(`  ${step.padEnd(38)} `);
-  const result = spawnSync(command, args, {
+
+  const useNpmEntry = command === 'npm' && npmEntry && npmEntry.endsWith('.js');
+  const executable = useNpmEntry ? process.execPath : command;
+  const argv = useNpmEntry ? [npmEntry, ...args] : args;
+
+  const result = spawnSync(executable, argv, {
     cwd: options.cwd ?? REPO_ROOT,
     env: { ...process.env, ...options.env },
     encoding: 'utf8',
-    shell: process.platform === 'win32',
+    // Only when npm could not be reached through its JS entry: a `.cmd` needs a
+    // shell, and a step that cannot run at all is worse than a deprecation.
+    shell: !useNpmEntry && command === 'npm' && process.platform === 'win32',
     maxBuffer: 64 * 1024 * 1024,
   });
+
+  if (result.error) {
+    console.log(`FAIL  0.0s  could not start: ${result.error.message}`);
+    const log = join(LOG_DIR, `${String(executed.length + 1).padStart(2, '0')}-${step}.log`);
+    writeFileSync(log, `failed to start: ${result.error.stack ?? result.error.message}\n`);
+    executed.push({ step, code: 1, log });
+    return { code: 1, output: '' };
+  }
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const log = join(LOG_DIR, `${String(executed.length + 1).padStart(2, '0')}-${step}.log`);
@@ -107,22 +142,36 @@ async function ensureApi() {
 
   const log = join(LOG_DIR, 'api.log');
   process.stdout.write('  starting the API (nothing was answering)…');
+  // The child writes STRAIGHT to a file descriptor — `P1-26-F-058`.
+  //
+  // Not `stdio: 'ignore'`: discarding the output is how a server that refuses to
+  // start becomes a timeout with no explanation, which already cost one
+  // diagnosis in this same function.
+  //
+  // And not `stdio: 'pipe'` either, which is the subtler trap and the one that
+  // actually bit. A pipe must be drained by THIS process's event loop, and every
+  // step below runs through `spawnSync`, which blocks that event loop for its
+  // entire duration. During the browser tier the API kept logging, nothing
+  // drained the pipe, the OS buffer filled, and the child blocked on write — so
+  // the API froze mid-run. Twenty-one authenticated tests then failed with
+  // `?reason=unavailable`, and every one of them looked like a timeout under
+  // load.
+  //
+  // Handing the descriptor to the OS removes the dependency entirely: nothing in
+  // this process has to be awake for the child to keep writing.
+  const fd = openSync(log, 'a');
   const child = spawn(
     process.execPath,
     [`${REPO_ROOT}/node_modules/next/dist/bin/next`, 'dev', 'apps/api', '--port', String(API_PORT)],
-    { cwd: REPO_ROOT, env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' }, stdio: 'pipe' }
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+      stdio: ['ignore', fd, fd],
+    }
   );
-
-  // The child's output goes to a file, never to /dev/null. Discarding it is how
-  // a server that refuses to start becomes a timeout with no explanation.
-  const transcript = [];
-  const capture = (chunk) => transcript.push(chunk.toString());
-  child.stdout.on('data', capture);
-  child.stderr.on('data', capture);
 
   for (let i = 0; i < 60; i += 1) {
     if (await apiAnswering()) {
-      writeFileSync(log, transcript.join(''));
       console.log(' ready');
       return { started: true, child };
     }
@@ -130,7 +179,6 @@ async function ensureApi() {
     await delay(2_000);
   }
 
-  writeFileSync(log, transcript.join(''));
   child.kill();
   console.log(' FAILED');
   throw new Error(
@@ -151,6 +199,13 @@ function summarise(output, pattern) {
 
 async function main() {
   assertLocalTarget();
+
+  // A previous run's logs are cleared, not merged into. Step files are numbered
+  // by position, so a shorter run leaves higher-numbered files from a longer one
+  // behind — and a reader looking at `06-authenticated-browser.log` would be
+  // reading the failure of a run that no longer exists. Evidence that mixes two
+  // runs is worse than no evidence.
+  rmSync(LOG_DIR, { recursive: true, force: true });
   mkdirSync(LOG_DIR, { recursive: true });
 
   console.log('Acceptance fixture lifecycle');
@@ -227,14 +282,33 @@ async function main() {
   for (const [name, execute] of steps) {
     const { code, output } = await execute();
 
-    if (name === 'git-clean' && output.trim() !== '') {
-      console.log('');
-      console.log('  The working tree is not clean after the cycle:');
-      for (const line of output.trim().split(/\r?\n/)) console.log(`    ${line}`);
-      console.log('  Fixture data must never reach Git. Investigate before continuing.');
-      releaseApi();
-      process.exitCode = 1;
-      return;
+    if (name === 'git-clean') {
+      // What this guards is fixture data reaching Git — and fixture data would
+      // arrive as NEW files, not as edits to tracked source. Failing on any
+      // modification at all also fails on the ordinary case of a developer with
+      // work in progress, which makes the whole cycle unusable during
+      // development and teaches people to skip it. A check nobody can afford to
+      // run is not a check.
+      const entries = output
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd())
+        .filter(Boolean);
+      const untracked = entries.filter((l) => l.startsWith('??'));
+      const modified = entries.filter((l) => !l.startsWith('??'));
+
+      if (untracked.length > 0) {
+        console.log('');
+        console.log('  Untracked files appeared during the cycle:');
+        for (const line of untracked) console.log(`    ${line}`);
+        console.log('  Fixture data must never reach the working tree. Investigate.');
+        releaseApi();
+        process.exitCode = 1;
+        return;
+      }
+      if (modified.length > 0) {
+        console.log(`      ${modified.length} tracked file(s) modified — work in progress, not`);
+        console.log('      fixture output; nothing untracked appeared.');
+      }
     }
 
     if (code !== 0) {

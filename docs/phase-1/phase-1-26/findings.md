@@ -485,6 +485,57 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-058 — a piped child process and a blocking `spawnSync` froze the API mid-suite
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`scripts/dev/owner-acceptance/full-cycle.mjs`
+
+The lifecycle starts the API as a long-lived child and then runs each step with
+`spawnSync`. The API was spawned with `stdio: 'pipe'` and its output collected by
+`data` listeners.
+
+**`spawnSync` blocks the event loop for its entire duration.** So while
+`build-web` ran for 28 seconds and the browser tier for minutes, nothing in this
+process was awake to drain the API's pipe. The OS buffer filled, the child
+blocked on `write`, and the API stopped answering **mid-suite**.
+
+**Twenty-one authenticated tests failed**, and this is the part worth keeping:
+they failed as `Test timeout of 30000ms exceeded` and as redirects to
+`/ar/login?reason=unavailable`. Every one of them looked exactly like a slow
+machine under load — which the machine genuinely was, running hosted CI, a
+production server and Chromium at the same time. The convenient reading was
+right there and it was wrong.
+
+What settled it was `api.log`: it contained the startup banner and the single
+readiness probe, and then nothing. A server that is merely slow keeps logging. A
+server whose stdout is blocked stops — and stops at exactly the moment the log
+ends.
+
+**Fix.** The child writes straight to a file descriptor, `stdio: ['ignore', fd,
+fd]`. Nothing in this process needs to be awake for the child to keep writing,
+so a blocking step cannot starve it.
+
+### The middle option was the trap
+
+Both obvious choices are wrong in opposite directions, and this function has now
+been bitten by each:
+
+|                   |                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `stdio: 'ignore'` | the API failed to start and the reason was discarded — a three-minute wait with no explanation |
+| `stdio: 'pipe'`   | the API started, then froze once the buffer filled, and blamed the tests                       |
+
+Only handing the descriptor to the operating system avoids both, because it
+removes this process from the path entirely.
+
+**The general form.** _A long-lived child and a blocking parent are incompatible
+unless the child's output bypasses the parent._ And more sharply: **a failure
+that resembles the environment you are already blaming deserves more scepticism,
+not less.** Contention was real, so contention was believable, and it would have
+been recorded as the cause of a defect I had written.
+
+---
+
 ## P1-26-F-057 — the acceptance fixtures and the clean-database invariant, resolved by ordering rather than by weakening either
 
 **Severity:** High · **Status:** Fixed · **Area:**
