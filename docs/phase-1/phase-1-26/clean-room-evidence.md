@@ -92,8 +92,8 @@ two additions the earlier runs did not have: the acceptance guards are exercised
 inside the clean room, and the anonymous browser suite is counted to prove the
 new authenticated tier stays invisible without its flag.
 
-Candidate `94bfd722cc379107785e2f8dd43cf715b15de63e`, tree
-`0aab19ac0f2d3016bf6e51c5b22aa552b9ec1b14`.
+Candidate `331785433c9cb6af2dba02b43c7a6caf7d41dfeb`, tree
+`0b98189d40d82476f1861454004e16fc7a391820`.
 
 | Check | Result |
 | --- | --- |
@@ -179,11 +179,17 @@ A record that names the SHA it measured cannot live inside that SHA. The wave-17
 record measured `b4794e7` and was committed after it, in a **documentation-only**
 commit that changes no file any tier above reads; the same convention was used
 for the `3e1f9e3` record it replaced, and again here for the remediation record
-measuring `94bfd72`.
+measuring `3317854`.
 
 The documentation-only commit that carries this record is itself re-run through
-hosted CI before the merge, so the head that merges is a head every tier has
-measured — not one that inherits a green result from its parent.
+hosted CI **and through the clean room** before the merge, so the head that
+merges is a head every tier has measured — not one that inherits a green result
+from its parent.
+
+The remediation clean room ran four times in total, at `66237c1`, `ecb8244`,
+`94bfd72` and `3317854`. Each re-run followed a change that any of the four
+tiers had rejected, and the record names the last one because it is the only one
+that describes the tree being merged.
 
 ### What the clean room did not run, and why
 

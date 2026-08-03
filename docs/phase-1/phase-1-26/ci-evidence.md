@@ -109,6 +109,10 @@ here, not only the last one.
 | `e0d3e54` | 20     | 8       | A blanket `brace-expansion` override handed a v5 module to v1 and v2 consumers; the build broke    |
 | `66237c1` | 20     | 3       | Seven CodeQL findings in the acceptance tooling — `P1-26-F-051`                                    |
 | `ecb8244` | 20     | 2       | Two of those seven survived a fix round that filtered by severity                                  |
+| `94bfd72` | 20     | 0       | **green** — all seven cleared                                                                      |
+| `9e05b64` | 20     | 0       | **green** — the evidence commit                                                                    |
+| `8404c5d` | —      | —       | superseded within minutes by `3317854`; not run to completion, and not counted                     |
+| `3317854` | 20     | 0       | **green** — the merge candidate                                                                    |
 
 Two failures cancelled the container and clean-room legs at `3d2bcc4` and
 `e0d3e54`; a cancelled leg is neither a pass nor a finding, and is counted as
