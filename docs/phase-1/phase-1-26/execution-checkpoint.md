@@ -198,7 +198,39 @@ The pattern in the first two is one thing said twice: a command's **name** was
 mistaken for its **scope**. Both are now pinned by tests, and the clean room runs
 the formatter and the secret scan it previously did not.
 
-## 8. Resume point
+## 8. Owner Acceptance Remediation — waves 21–25
 
-Wave 19 — merge the feature PR into protected `develop` with a merge commit,
-verify the protected SHA, then the P1-26 gate record.
+Reopened after the technical gate was recorded as a final closure it had not
+earned. See [owner-acceptance-remediation.md](owner-acceptance-remediation.md).
+
+| Wave | Scope                                                                        | State        |
+| ---- | ---------------------------------------------------------------------------- | ------------ |
+| 21   | Superseding status record; Owner logo assets integrated                      | **Complete** |
+| 22   | Local-only Owner acceptance account, Tenant A and Tenant B, fixtures         | **Complete** |
+| 23   | Authenticated browser suite, authenticated accessibility, cross-tenant proof | **Complete** |
+| 24   | Full verification, clean room, remediation PR, protected merge               | In progress  |
+| 25   | Owner handoff — servers and browser left running, credentials supplied       | Not started  |
+
+### What running the product actually found
+
+Five defects, none of which any existing tier could have caught, all found by
+starting the system and looking at it:
+
+- **`F-045`** — the local provider signed ES256 while the API verifies HMAC only.
+  Sign-in returned 200 and the next request 401. Every authentication test uses
+  a fake provider, so no suite had ever verified a token this provider signed.
+- **`F-046`** — **no page had a `<title>`**, on any route, in either language.
+- **`F-047`** — malformed definition lists on two screens.
+- **`F-048`** — **no client component ever ran locally.** Every table on every
+  screen sat empty for ever, and the application looked fully loaded.
+- **`F-049`** — the approved symbol was invisible on the navy surfaces.
+
+`F-048` is the one to remember. The browser suite runs a production build, where
+the defect does not exist; the jsdom tier has no server. The single
+configuration a developer and the Product Owner actually use was the one no tier
+exercised.
+
+## 9. Resume point
+
+Wave 25 — the Owner handoff, then P1-26 closes if and only if the Product Owner
+records `OWNER ACCEPTANCE: PASS`.

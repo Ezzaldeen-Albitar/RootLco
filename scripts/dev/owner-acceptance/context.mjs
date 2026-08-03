@@ -17,10 +17,16 @@
  *
  * ## Why the connection is built as an object
  *
- * `scripts/check-tracked-secrets.mjs` matches a `postgres://user:pass@host`
- * literal, and `scripts/ci/scan-history.mjs` re-checks the same pattern over
- * the entire history — a credential committed once fails forever. Building the
- * client config field by field means the string never exists.
+ * `scripts/check-tracked-secrets.mjs` matches a database connection URL that
+ * carries an inline password, and `scripts/ci/scan-history.mjs` re-checks the
+ * same pattern over the entire history — a credential committed once fails for
+ * ever. Building the client config field by field means that string never
+ * exists.
+ *
+ * This paragraph originally quoted the offending shape verbatim, and the scan
+ * duly failed on the sentence explaining why it must not appear. Third time in
+ * this phase that a rule was broken inside the file that states it; the lesson
+ * keeps being the same one, so it is written down again here.
  */
 import { randomBytes } from 'node:crypto';
 import { execSync } from 'node:child_process';

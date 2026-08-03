@@ -282,7 +282,206 @@ clean. A flake that is known and unrecorded is worse than one that is neither.
 
 ---
 
-## How findings `F-015` … `F-041` were found
+## P1-26-F-045 — the local stack could not authenticate anyone, and no test could have known
+
+**Severity:** High · **Status:** Fixed (local tooling) · **Routed** (durable fix)
+· **Area:** local identity provider
+
+Found by trying to sign in. `POST /auth/login` returned **200** with a token, and
+the very next request returned **401 `ERR-IAM-002`**.
+
+`apps/api/src/modules/iam/provider/token-verifier.ts` implements **HMAC only** and
+refuses asymmetric algorithms explicitly, as a stated design decision: _"the
+provider of record issues HS256, and an unexercised RSA path with an unfetched
+JWKS would be untested code on the authentication boundary."_
+
+Supabase CLI 2.110 issues **ES256**. When `GOTRUE_JWT_KEYS` is present GoTrue
+signs with that elliptic key and ignores `GOTRUE_JWT_SECRET`, so every access
+token the local provider minted was unverifiable by the API.
+
+**Nothing in this repository could have caught it.** Every authentication test
+runs against `FakeIdentityProvider` by design — _"a suite that needs a live
+provider is a suite that cannot run on a clean checkout"_ — so no suite has ever
+verified a token this provider actually signed. The local stack had been unable
+to authenticate anyone for as long as the CLI has defaulted to asymmetric keys,
+and it went unnoticed because nobody had signed in.
+
+**Fix, local.** `scripts/dev/owner-acceptance/align-local-jwt.mjs` recreates the
+GoTrue container without the asymmetric key so it falls back to the shared
+secret, and the bootstrap **fails** if the resulting token is not HS256 — a
+bootstrap that succeeds while every screen 403s is the failure being prevented.
+
+**Routed.** The durable fix is `supabase/config.toml` (`signing_keys_path`, or a
+pinned CLI). That file belongs to the Database phase, and a Frontend phase's
+ownership gate requires `SUPABASE_CHANGED_FILES=0`, so it is assigned to its
+owner rather than smuggled in here.
+
+---
+
+## P1-26-F-046 — no page had a title. Any page. Either language.
+
+**Severity:** High · **Status:** Fixed · **Area:** every route
+
+axe reported `document-title` — **serious** — on all fourteen authenticated
+routes. WCAG 2.4.2 (Page Titled, Level A).
+
+The application shipped with **no `<title>` element at all**.
+
+It survived the entire phase because nothing had ever scanned a rendered
+document. The jsdom tier renders components, not documents; the browser suite
+asserted on landmarks and console cleanliness. A missing title is invisible in
+both — and unmissable to anyone using a screen reader, or holding two tabs open,
+or looking at their browser history.
+
+**Fix.** The locale layout supplies a localised default and a `%s — CRM`
+template; nineteen routes each contribute their own name through
+`pageMetadata(key)`, using the **same message key their visible header already
+uses**, so the tab and the heading cannot disagree. The product name comes from
+the brand layer, so routing still never learns the identity.
+
+**Regression coverage.** The authenticated accessibility suite scans all fourteen
+routes in both locales and fails on any critical or serious violation.
+
+---
+
+## P1-26-F-047 — malformed definition lists on two screens
+
+**Severity:** Medium · **Status:** Fixed · **Area:** profile, languages
+
+axe reported `definition-list` — **serious**. The `Fact` and `Definition` helpers
+placed the hint `<p>` as a **sibling** of the `<dt>`/`<dd>` pair inside the
+`<dl>`'s wrapper `<div>`. A `<dl>` may contain only `<dt>`/`<dd>` groups and
+`<div>` wrappers, and a wrapper may hold only the group.
+
+**Fix.** The hint moved inside the `<dd>` — which is also where it belongs: it
+describes the value, so it should be read with the value rather than after it.
+
+---
+
+## P1-26-F-048 — no client component ever ran locally
+
+**Severity:** Critical (local runtime) · **Status:** Fixed · **Area:**
+`scripts/dev/`
+
+The most consequential finding of this remediation, and it was found by signing
+in and looking at a table.
+
+**Every server-driven list on every screen sat at `aria-busy="true"` with no rows,
+for ever.** The application rendered its navigation, headings, breadcrumbs and
+empty tables and looked entirely loaded. It was inert.
+
+Next 16 refuses cross-origin requests for its own development resources, and
+decides "cross-origin" by comparing the request `Host` with its own. `next dev`
+reports itself as `localhost`; the launcher advertised `127.0.0.1`. Different
+origins by that test — so the hot-reload WebSocket handshake was refused with
+`ERR_INVALID_HTTP_RESPONSE`, Next's development client retried it for ever, and
+while it retried the App Router client never became interactive. **No `useEffect`
+in any client component ran at all.**
+
+The address a developer or the Product Owner was told to open was precisely the
+address that does not work.
+
+**Why nothing caught it.** The browser suite runs `next start` against a
+production build, which has no development socket and works correctly. The jsdom
+tier has no server to be cross-origin from. The single configuration a person
+actually uses was the one configuration no tier exercised.
+
+**Fix.** The launcher advertises `localhost` and keeps the loopback literal for
+server-to-server probes, where origin is irrelevant. Pinned by
+`tests/ci/local-launcher-host.test.ts` — five cases, one of which fails if either
+script prints a browser URL on the loopback literal again, and one of which
+proves that pattern is genuinely matchable so the rule is not vacuous.
+
+**What was tried first, and why it is recorded.** `next.config.ts`'s
+`allowedDevOrigins` is the documented remedy and Next's own warning names it. On
+this version it made **every route answer 500** with a JSON parse failure inside
+the framework — reproduced twice, reverted both times. Serving the origin Next
+already trusts is the smaller and safer correction. The failed attempt is written
+down because the next person will read the same warning and try the same thing.
+
+**A consequence worth stating.** A React `unique key` warning in `AppHeader` is
+now visible in development. It is not new — no client component had ever
+executed, so no client-side warning could ever have surfaced. React strips it
+from production builds, which is why the browser suite's clean-console assertion
+passes. It is recorded rather than quietly absorbed.
+
+---
+
+## P1-26-F-049 — the approved symbol was invisible where the product identifies itself
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `BrandMark`
+
+The Owner's symbol is near-black artwork on transparency: legible on white, all
+but absent on the navy `#0F2742` used by the sidebar and the authentication
+panel — the two surfaces where the product names itself.
+
+**Fix.** `BrandMark` gains `onDark`, applied by those two surfaces.
+`brightness-0` flattens the artwork to pure black so `invert` reaches pure white
+whatever the source colour was; inverting alone yields a washed-out negative.
+Only the image is treated — the adjacent product name already takes its colour
+from the surface's own token.
+
+---
+
+## P1-26-F-050 — the acceptance fixtures and the Database tier cannot both be true at once
+
+**Severity:** Medium · **Status:** Accepted (documented ordering) · **Area:**
+local database state
+
+Two Database tests assert that the database contains **no business rows at all**:
+
+- `tests/db/iam-seeds.test.ts` — _"creates no user accounts and no role grants
+  (configuration only)"_
+- `tests/db/no-fake-data.test.ts` — _"all business tables start empty"_
+
+They are the **runtime** enforcement of the permanent no-fake-data policy, and
+they are correct. The acceptance fixtures are business rows. Both cannot hold at
+the same time.
+
+Measured, in three states:
+
+| Local database                         | Database tier                       |
+| -------------------------------------- | ----------------------------------- |
+| Clean (`supabase db reset`)            | **1636 / 1636**                     |
+| With the acceptance fixtures present   | **1634 / 1636** — exactly those two |
+| After `npm run acceptance:reset-owner` | **1636 / 1636**                     |
+
+**Disposition: an ordering, not a weakened assertion.** Neither test is changed,
+skipped or made conditional. Loosening them would delete the only runtime proof
+that the policy holds, in exchange for convenience. Instead the two states are
+declared mutually exclusive and the transition between them is a supported,
+reversible command:
+
+```
+npm run test:db                  # requires a clean database
+npm run acceptance:create-owner  # for the Owner session
+npm run acceptance:reset-owner   # before running the Database tier again
+```
+
+The reset is what makes this a disposition rather than an excuse: it removed
+every row it created — 2 tenants, 2 companies, 2 branches, 3 roles, 33 role
+permissions, 5 accounts, 3 grants, 1 grant scope, 10 settings, 5 identities and
+the handoff file — and the tier returned to 1636/1636.
+
+**Two defects found while proving it.**
+
+1. The reset ran every delete in one transaction with a `continue` on a missing
+   table. After a failed statement PostgreSQL rejects the rest with `25P02`, so
+   one absent table silently prevented the whole cleanup while the script
+   reported a list of zeroes as success. Each delete now runs inside its own
+   `SAVEPOINT`.
+2. It named `iam.audit_events`. The table is **`iam.audit_records`**, with
+   `audit_record_details` and `audit_integrity_links` referencing it. The step
+   was therefore skipped, and a reset that reported success would have left the
+   Owner's own audit trail behind. All three are now removed, innermost first.
+
+**A separate observation, not P1-26's to fix.** Running `npm run test:backend`
+and then `npm run test:db` in the same session, without a reset between them,
+produced **122** Database failures — foreign-key violations on the Database
+tier's _own_ fixtures. A clean reset returns it to 1636/1636. The two tiers share
+one local database and one fixture namespace; the ordering dependency is real
+and predates this phase. Recorded here because it was measured here, and routed
+to the tier that owns it.
 
 An adversarial review of the complete P1-26 diff, run as six independent lenses —
 security, backend-contract fidelity, React/Next correctness, honesty,

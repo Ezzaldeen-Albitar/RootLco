@@ -53,7 +53,25 @@ async function main() {
       ['role grants', `DELETE FROM iam.role_grants WHERE tenant_id = ANY($1::uuid[])`],
       ['role permissions', `DELETE FROM iam.role_permissions WHERE tenant_id = ANY($1::uuid[])`],
       ['user sessions', `DELETE FROM iam.user_sessions WHERE tenant_id = ANY($1::uuid[])`],
-      ['audit events', `DELETE FROM iam.audit_events WHERE tenant_id = ANY($1::uuid[])`],
+      ['login audit', `DELETE FROM iam.login_audit WHERE tenant_id = ANY($1::uuid[])`],
+      // The audit chain, innermost first. `audit_integrity_links` and
+      // `audit_record_details` both reference `audit_records`, so the parent
+      // cannot go first. The table is `audit_records`, not `audit_events` — the
+      // first version of this script used the wrong name and the step was
+      // silently skipped, which would have left the Owner's own audit trail
+      // behind after a reset that reported success.
+      [
+        'audit integrity links',
+        `DELETE FROM iam.audit_integrity_links WHERE tenant_id = ANY($1::uuid[])`,
+      ],
+      [
+        'audit record details',
+        `DELETE FROM iam.audit_record_details
+          WHERE audit_record_id IN (
+            SELECT id FROM iam.audit_records WHERE tenant_id = ANY($1::uuid[])
+          )`,
+      ],
+      ['audit records', `DELETE FROM iam.audit_records WHERE tenant_id = ANY($1::uuid[])`],
       ['approval limits', `DELETE FROM iam.approval_limits WHERE tenant_id = ANY($1::uuid[])`],
       ['user accounts', `DELETE FROM iam.user_accounts WHERE tenant_id = ANY($1::uuid[])`],
       ['roles', `DELETE FROM iam.roles WHERE tenant_id = ANY($1::uuid[])`],
@@ -69,13 +87,22 @@ async function main() {
     ];
 
     for (const [label, sql] of steps) {
+      // Each delete runs inside its own SAVEPOINT.
+      //
+      // Without one, a single failing statement aborts the whole transaction and
+      // every statement after it fails with 25P02 — so a table that simply does
+      // not exist in this schema version would silently prevent the rest of the
+      // cleanup, and the script would report a long list of zeroes as success.
+      await client.query('SAVEPOINT step');
       try {
         const result = await client.query(sql, [TENANTS]);
+        await client.query('RELEASE SAVEPOINT step');
         console.log(`  removed ${String(result.rowCount).padStart(4)}  ${label}`);
       } catch (error) {
-        // A table that does not exist in this schema version is reported, not
-        // swallowed: the reset must never claim to have cleaned something it
-        // could not reach.
+        await client.query('ROLLBACK TO SAVEPOINT step');
+        await client.query('RELEASE SAVEPOINT step');
+        // A table absent from this schema version is reported, never swallowed:
+        // the reset must not claim to have cleaned something it could not reach.
         if (error.code === '42P01') {
           console.log(`  skipped        ${label} (no such table in this schema)`);
           continue;
