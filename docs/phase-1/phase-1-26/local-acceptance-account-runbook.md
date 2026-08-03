@@ -166,5 +166,17 @@ run delete the Owner's account halfway through an acceptance session.
 `scripts/ci/scan-history.mjs` scans the whole history, so a credential committed
 once fails for ever.
 
-The database connection is built as an object field by field rather than as a
-`postgres://user:pass@host` string, so that string never exists to be found.
+The database connection is built as an object, field by field, rather than as a
+connection URL carrying an inline password — so that string never exists to be
+found.
+
+> This paragraph quoted the offending shape verbatim in its first version, and
+> the hosted scan failed on the sentence explaining why it must not appear —
+> the fourth time in this phase that a rule was broken inside the text stating
+> it.
+>
+> It passed **locally** for a reason worth knowing: `check-tracked-secrets.mjs`
+> reads **tracked** files, and the file was still untracked when the local scan
+> ran. A gate run before `git add` cannot see the thing being added. Run
+> `npm run security:all` **after** staging, or CI is the first thing that looks
+> at your new file.
