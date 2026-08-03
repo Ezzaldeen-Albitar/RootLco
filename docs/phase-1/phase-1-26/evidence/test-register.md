@@ -28,7 +28,7 @@ Measured before any P1-26 file was written.
 | Tier                          | Command                        | Result                                 |
 | ----------------------------- | ------------------------------ | -------------------------------------- |
 | Repository policies           | `npm run verify:policies`      | **exit 0** — 10 gates                  |
-| Root / CI-contract            | `npm run test:unit`            | **1467 / 1467**, 68 files              |
+| Root / CI-contract            | `npm run test:unit`            | **1474 / 1474**, 68 files              |
 | Web unit / component          | `npm run test:web`             | **313 / 313**, 16 files                |
 | Web typecheck                 | `npm run typecheck:web`        | exit 0                                 |
 | Web lint                      | `npm run lint:web`             | exit 0, 0 warnings                     |
@@ -51,7 +51,8 @@ reduced-motion assertion declines the four projects it does not apply to and run
 | `apps/web/tests/data-table.dom.test.tsx`       | counted mode, cursor mode, loading, denial                                    | a count nobody sent; a disabled Last that implies a reachable last page; rows painted under a denial                         |
 | `apps/web/tests/observability.test.ts`         | redaction by key and by value, route sanitising, adapter                      | a credential in a log, and specifically `{ data: accessToken }` where the key is innocent                                    |
 | `apps/web/tests/api-client.test.ts` (extended) | idempotency key, `If-Match`                                                   | **`P1-26-F-015`** — the header ten operations require and no call site sent                                                  |
-| `tests/ci/p1-26-frontend-gate.test.ts`         | 26 mutation tests                                                             | a gate that has never failed, and a scanner that reads comments                                                              |
+| `tests/ci/p1-26-frontend-gate.test.ts`         | 27 mutation tests                                                             | a gate that has never failed, and a scanner that reads comments                                                              |
+| `tests/ci/command-coverage.test.ts` (extended) | 7 cases on formatter scope                                                    | **`P1-26-F-043`** — a root command whose name reads as repository-wide while it is configured to skip every workspace        |
 
 ## Backend and Database at the candidate
 
@@ -65,6 +66,11 @@ and the clean-room run re-measures both from a fresh checkout — see
 
 The actual number, from the actual run, with the command beside it. Where a run
 disagreed with an earlier one — the DB tier, and the root count moving from 1440
-to 1467 as this phase added tests — both figures appear and the difference is
-explained. A register that silently carries forward a convenient number is a
-register nobody can use.
+to 1467 and then to 1474 as this phase added tests — every figure appears and the
+difference is explained. A register that silently carries forward a convenient
+number is a register nobody can use.
+
+The last seven are `tests/ci/command-coverage.test.ts`, added for
+`P1-26-F-043`: they pin the fact that the root formatter is configured to skip
+every workspace, so a green root `format:check` is not evidence about
+`apps/web` and cannot be substituted for `verify:web`.

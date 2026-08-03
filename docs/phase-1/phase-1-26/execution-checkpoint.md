@@ -70,8 +70,9 @@ the observation is not yet explained by reading the function. Recorded as
 | 14    | Browser review, on pinned chromium and installed Chrome                        | **Complete** |
 | 15    | Performance and bundle baseline                                                | **Complete** |
 | 16    | Adversarial review and remediation                                             | **Complete** |
-| 17    | Exact-SHA clean room                                                           | In progress  |
-| 18–20 | Feature PR, protected merge, gate record                                       | Not started  |
+| 17    | Exact-SHA clean room                                                           | **Complete** |
+| 18    | Feature PR and exact-head CI                                                   | **Complete** |
+| 19–20 | Protected merge, gate record                                                   | In progress  |
 
 ### Wave 16 is the one worth reading
 
@@ -97,9 +98,12 @@ produced an **unbreakable sign-in loop** for any account without
 `iam.user.read` (`F-022`), and the session cookie's `Secure` attribute **failed
 open** because its environment variable defaulted to `local` (`F-023`).
 
-## 4. Ownership report — after wave 4
+## 4. Ownership report — at the candidate
 
-Measured with `node scripts/ci/check-phase-ownership.mjs p1-26-frontend origin/develop`.
+Measured with
+`node scripts/ci/check-phase-ownership.mjs p1-26-frontend 3598de62…` at
+`b4794e79206396f220af28f523f0e90a6b186e8f`. **123 changed files, 0 violations**:
+`web=85 · docs=31 · tests=4 · tooling=2 · rootConfig=1`.
 
 ```
 APPS_API_CHANGED_FILES=0
@@ -112,6 +116,10 @@ NESTED_LOCKFILES=0
 CURRENT_FAILED_TESTS=0
 CURRENT_SKIPPED_TESTS=0
 ```
+
+The per-file listing is `evidence/changed-file-ownership.md`. The `apiSource`,
+`apiConfig`, `supabase` and `migrations` buckets do not merely read zero — no
+file classified into any of them, so they are absent from the report entirely.
 
 ## 5. Decisions taken in wave 1–4
 
@@ -160,6 +168,26 @@ you have to ask for.
 **Five screens are settings-backed and say so on the page.** The key namespace is
 `P1-26-OD-001`, awaiting Owner ratification.
 
-## 7. Resume point
+## 7. What waves 17–18 cost
 
-Wave 17 — exact-SHA clean room, then the feature PR.
+Three defects surfaced after the phase was "finished", each invisible to
+everything that had already run green:
+
+- **`F-042`** — a credential-shaped literal in the test that forbids logging
+  credentials. Caught by hosted CI, because `verify:policies` does not include
+  `security:all`.
+- **`F-043`** — sixteen unformatted `apps/web` files. Caught by hosted CI twice
+  over, because the root `format:check` is configured to skip `apps/` and cannot
+  see the Frontend at all.
+- **`F-044`** — a five-second test timeout that measured process scheduling.
+  Caught by the clean room, and by nothing else; hosted CI was 20/20 green at the
+  same tree.
+
+The pattern in the first two is one thing said twice: a command's **name** was
+mistaken for its **scope**. Both are now pinned by tests, and the clean room runs
+the formatter and the secret scan it previously did not.
+
+## 8. Resume point
+
+Wave 19 — merge the feature PR into protected `develop` with a merge commit,
+verify the protected SHA, then the P1-26 gate record.

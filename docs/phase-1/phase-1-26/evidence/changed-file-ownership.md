@@ -8,17 +8,17 @@ The machine-readable form is `changed-file-ownership.json`.
 |               |                                            |
 | ------------- | ------------------------------------------ |
 | Base          | `3598de624dbc181b742cc40700464115ba5c4fc6` |
-| Candidate     | `3e1f9e3ef56b4fc1320242f16951d8ae578d3f31` |
-| Tree          | `5bdb10d481efc6cb8a7aaddad190fadc8137af65` |
-| Changed files | **119**                                    |
+| Candidate     | `b4794e79206396f220af28f523f0e90a6b186e8f` |
+| Tree          | `c63871d7673fd385c217ccb2d120675a3509d454` |
+| Changed files | **123**                                    |
 
 ## Buckets
 
 | Bucket       | Files |
 | ------------ | ----- |
-| `docs`       | 30    |
+| `docs`       | 31    |
 | `rootConfig` | 1     |
-| `tests`      | 1     |
+| `tests`      | 4     |
 | `tooling`    | 2     |
 | `web`        | 85    |
 
@@ -36,7 +36,7 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 
 ## Every changed file
 
-### `docs` — 30
+### `docs` — 31
 
 - `docs/engineering/ci-automation/pull-request-body.md`
 - `docs/phase-1/phase-1-26/accessibility-evidence.md`
@@ -46,6 +46,7 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 - `docs/phase-1/phase-1-26/authentication-workflows.md`
 - `docs/phase-1/phase-1-26/browser-evidence.md`
 - `docs/phase-1/phase-1-26/ci-evidence.md`
+- `docs/phase-1/phase-1-26/clean-room-evidence.md`
 - `docs/phase-1/phase-1-26/concurrency-idempotency-evidence.md`
 - `docs/phase-1/phase-1-26/developer-guide.md`
 - `docs/phase-1/phase-1-26/evidence/changed-file-ownership.json`
@@ -73,9 +74,12 @@ an unclassified file: a file nobody predicted is exactly the one worth looking a
 
 - `package.json`
 
-### `tests` — 1
+### `tests` — 4
 
+- `tests/ci/canonical-documents.test.ts`
+- `tests/ci/command-coverage.test.ts`
 - `tests/ci/p1-26-frontend-gate.test.ts`
+- `tests/foundation/module-boundaries.test.ts`
 
 ### `tooling` — 2
 

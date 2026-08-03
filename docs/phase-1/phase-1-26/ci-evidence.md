@@ -38,7 +38,7 @@ PR #161 exists because a documented check named a directory that did not exist.
 
 ### Mutation coverage
 
-`tests/ci/p1-26-frontend-gate.test.ts` — **25 tests**. Each plants exactly one
+`tests/ci/p1-26-frontend-gate.test.ts` — **27 tests**. Each plants exactly one
 violation and asserts the gate catches _that_ one; a clean fixture asserts it does
 not cry wolf. It also proves:
 
@@ -67,6 +67,36 @@ edits to real files.
 | `check-design-tokens.mjs`                  | no raw colour outside the token layer                                                | 0 raw values             |
 | `check-command-coverage.mjs`               | every command classified and reachable                                               | 0 gaps                   |
 | `check-p1-26-frontend.mjs`                 | the rules above                                                                      | 0 failures               |
+
+### What hosted CI reported, including the runs that were red
+
+Exact-head runs on the feature branch. Only the last one matters for the merge;
+the others are here because a record that shows only the green run is a record of
+nothing.
+
+| Head      | Checks | Result                                                                                                       |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------ |
+| `9c4a37b` | 19     | **red** — `secret-scan`: a JWT-shaped literal in a test fixture (`P1-26-F-042`)                              |
+| `c6c20ce` | 20     | **red** — `Web quality`, `hosted-clean-room`, `ci-gate`: one formatting defect, three checks (`P1-26-F-043`) |
+| `72e3ca2` | 20     | **green** — 20 success, 0 failure                                                                            |
+
+`ci-gate` is the PR aggregate and `protected-gate` the push aggregate; a single
+job failure reddens the aggregate, which is why one defect produced three red
+checks at `c6c20ce`.
+
+`CodeQL` reported `neutral` at `c6c20ce` and `success` at `72e3ca2`. A neutral
+CodeQL result is not a pass — it means a docs-only path skip left no
+configuration to diff — and it is recorded as such rather than counted green.
+
+### What CI could not have caught
+
+`P1-26-F-044` — a five-second test timeout that measured process scheduling
+rather than the code — was **green in all 20 checks** at the tree it was present
+in. It was found by the local clean room and by nothing else. The reverse of
+`F-042` and `F-043`, which were green locally and found only by CI.
+
+Neither tier is a superset of the other. That is the argument for running both,
+and it is the reason this phase ran the clean room twice.
 
 ## 2. `P1-26-DO-002` — logging, monitoring and alert routing
 

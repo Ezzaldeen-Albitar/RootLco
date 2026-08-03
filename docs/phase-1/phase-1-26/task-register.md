@@ -103,7 +103,7 @@ offered, because no export operation exists.
 
 | ID             | Scope                                         | Disposition                           | Evidence                                                   |
 | -------------- | --------------------------------------------- | ------------------------------------- | ---------------------------------------------------------- |
-| `P1-26-DO-001` | CI quality gate with mutation tests           | **Complete**                          | `ci-evidence.md` §1 — 26 mutation tests                    |
+| `P1-26-DO-001` | CI quality gate with mutation tests           | **Complete**                          | `ci-evidence.md` §1 — 27 mutation tests                    |
 | `P1-26-DO-002` | Structured logging, monitoring, alert routing | **Complete with recorded limitation** | §2 — adapter boundary only; no external service is claimed |
 
 ## Documentation — 2 / 2

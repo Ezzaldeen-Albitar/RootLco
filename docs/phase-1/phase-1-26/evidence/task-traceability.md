@@ -53,7 +53,7 @@ The machine-readable form is `task-traceability.json`.
 
 | Task     | Proof                                                                                                                    |
 | -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `DO-001` | `tests/ci/p1-26-frontend-gate.test.ts` — 26 mutation tests; the gate caught its own author's violation during this phase |
+| `DO-001` | `tests/ci/p1-26-frontend-gate.test.ts` — 27 mutation tests; the gate caught its own author's violation during this phase |
 | `DO-002` | `observability.test.ts` — redaction by key and by value shape, route sanitising, adapter null until attached             |
 
 ## Documentation

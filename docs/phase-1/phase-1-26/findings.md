@@ -258,6 +258,12 @@ A timeout a correct implementation can miss is a test that reports on load
 average. The bound is now 30 s in both files — far above the observed worst case,
 far below "hung", which is the only thing this bound should ever catch.
 
+**How close it was.** In the clean-room run that verified the fix, the same case
+took **4808 ms** — 192 ms under the old five-second bound. It passed there only
+by the width of that margin, which is the clearest possible statement that the
+bound was measuring the wrong thing: two consecutive runs of identical, correct
+code landed on either side of it.
+
 **Why the second file.** `tests/ci/canonical-documents.test.ts` spawns a
 subprocess in every case too, declares no bound either, and its slowest case
 takes **1079 ms** — against the 1219 ms that actually blew up. Same defect,
