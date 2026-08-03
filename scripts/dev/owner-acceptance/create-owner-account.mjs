@@ -632,9 +632,15 @@ async function main() {
         null,
         2
       ) + '\n',
-      // Owner-readable only. The directory is git-ignored, but a credential
-      // sitting world-readable on disk is still a credential sitting
-      // world-readable on disk.
+      // Owner-readable only where the platform honours it. The directory is
+      // git-ignored, but a credential sitting readable on disk is still a
+      // credential sitting readable on disk.
+      //
+      // `P1-26-F-053`: on Windows, Node ignores this POSIX mode entirely. The
+      // file inherits the directory ACL, which grants SYSTEM and the local
+      // Administrators group in addition to the owner. That is narrower than
+      // world-readable and wider than 0600, and the runbook says so rather than
+      // letting the mode argument imply a guarantee this platform does not make.
       { encoding: 'utf8', mode: 0o600 }
     );
 

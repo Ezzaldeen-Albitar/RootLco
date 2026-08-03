@@ -485,6 +485,54 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-053 — `mode: 0o600` is not a protection on the platform the Owner uses
+
+**Severity:** Medium · **Status:** Fixed (record corrected; behaviour unchanged) ·
+**Area:** `scripts/dev/owner-acceptance/create-owner-account.mjs`,
+`local-acceptance-account-runbook.md`, `findings.md`
+
+`P1-26-F-051` moved the generated password out of stdout and into a git-ignored
+file, and recorded the fix as:
+
+> it is written to one git-ignored file at mode `0600` — a directory being
+> ignored does not stop a credential sitting world-readable on disk
+
+The code does pass `{ mode: 0o600 }`, and POSIX honours it. **Windows does not.**
+Node ignores the POSIX mode on Windows entirely; the file inherits the
+directory's ACL. Measured on the Owner's own machine at the merged tree:
+
+```
+.local\owner-acceptance-account.json  <owner SID>:(I)(M)
+                                      NT AUTHORITY\SYSTEM:(I)(F)
+                                      BUILTIN\Administrators:(I)(F)
+                                      3EZZ\Ezzaldeen:(I)(F)
+```
+
+No `Everyone` entry, so it is **not** world-readable — but it is readable by
+SYSTEM and by any local administrator, which is wider than `0600` and wider than
+the record implied. A reader of `F-051` would have concluded the credential was
+owner-only on this machine. It is not.
+
+**Why this is a finding rather than a footnote.** The sentence was written _about
+credential protection_, in the finding whose subject is credential protection, on
+the platform where the credential actually lives. Being accidentally right on
+Linux is not the same as being right. This phase was reopened for claims that
+were true in the abstract and untrue where it mattered.
+
+**Disposition.** The behaviour is unchanged — `0o600` is still correct and still
+enforced on POSIX, and there is no portable Node API that sets an equivalent
+Windows ACL. What changes is that the code comment and the runbook now state the
+platform difference, and the runbook tells the Owner how to restrict the file
+themselves with `icacls` if they want to, and that deleting it after acceptance
+is the simpler answer.
+
+**The general form.** A flag that is accepted, ignored and never verified reads
+exactly like a flag that works. `mode` on Windows, `allowedDevOrigins` in
+`F-048`, and the `@ts-expect-error` that suppressed nothing are the same shape:
+**a setting is not a control until something observes its effect.**
+
+---
+
 ## P1-26-F-052 — the assertion written to prove rows load could be satisfied by the signed-in user's own name
 
 **Severity:** High · **Status:** Fixed · **Area:**
@@ -640,9 +688,11 @@ good enough.
 The Owner needs to read the password, so the first version printed it. But stdout
 reaches terminal scrollback, whatever log the operator happens to be capturing,
 and a CI transcript if the script is ever run somewhere it should not be. It is
-no longer printed at all: it is written to one git-ignored file at mode `0600` —
-a directory being ignored does not stop a credential sitting world-readable on
+no longer printed at all: it is written to one git-ignored file requested at mode
+`0600` — a directory being ignored does not stop a credential sitting readable on
 disk — and read from there. One place to find it, one place to delete it.
+`P1-26-F-053` records that the mode is honoured on POSIX and **ignored on
+Windows**, and measures what the Owner's machine actually grants.
 
 The temporary file mattered for its contents: the GoTrue environment export
 carries the local JWT signing secret, and it was written to a predictable path
@@ -676,10 +726,15 @@ good enough.
 direction.** The Owner needs to read the password, so the first version printed
 it. But stdout reaches terminal scrollback, whatever log the operator happens to
 be capturing, and a CI transcript if the script is ever run somewhere it should
-not be. It is no longer printed at all: it is written to one git-ignored file at
-mode `0600` — a directory being ignored does not stop a credential sitting
-world-readable on disk — and read from there. One place to find it, one place to
-delete it.
+not be. It is no longer printed at all: it is written to one git-ignored file
+requested at mode `0600` — a directory being ignored does not stop a credential
+sitting readable on disk — and read from there. One place to find it, one place
+to delete it.
+
+> That mode is honoured on POSIX and **ignored on Windows**, where the file
+> inherits the directory ACL instead. `P1-26-F-053` measures what the Owner's
+> machine actually grants and corrects this sentence rather than leaving it to
+> imply a guarantee the platform does not make.
 
 **The temporary file mattered because of its contents.** The GoTrue environment
 export carries the local JWT signing secret, and it was written to a predictable
