@@ -46,7 +46,8 @@ export default async function AuthLayout({
         className="hidden flex-col justify-between bg-sidebar-background p-12 text-sidebar-text lg:flex"
       >
         <div className="text-sidebar-text">
-          <BrandMark />
+          {/* Navy panel — the dark symbol is inverted to stay legible. */}
+          <BrandMark onDark />
         </div>
         <p className="max-w-sm text-body-large text-sidebar-text-muted">
           {translate(messages, 'auth.shellTagline')}

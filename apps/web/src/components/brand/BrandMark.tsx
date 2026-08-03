@@ -17,7 +17,23 @@ import { brand, resolveBrandMark, resolveBrandMarkSize, resolveCompanyMark } fro
  * has nowhere to go. The accessible name is carried by the image in both states,
  * so the collapsed rail is not a nameless icon to a screen reader.
  */
-export function BrandMark({ collapsed = false }: { readonly collapsed?: boolean }) {
+export function BrandMark({
+  collapsed = false,
+  onDark = false,
+}: {
+  readonly collapsed?: boolean;
+  /**
+   * True on the navy surfaces — the sidebar and the authentication panel.
+   *
+   * The approved symbol is near-black artwork on transparency, which is legible
+   * on white and all but invisible on `#0F2742`. `brightness-0` flattens it to
+   * pure black first so `invert` lands on pure white whatever the source colour
+   * is; inverting alone would produce a washed-out negative of the original
+   * hues. Only the image is treated — the adjacent product name already takes
+   * its colour from the surface's own token.
+   */
+  readonly onDark?: boolean;
+}) {
   const mark = resolveBrandMark(brand);
   const size = resolveBrandMarkSize(brand);
 
@@ -38,7 +54,13 @@ export function BrandMark({ collapsed = false }: { readonly collapsed?: boolean 
           was live the whole time.
         */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mark.src} alt={mark.alt} width={width} height={height} />
+        <img
+          src={mark.src}
+          alt={mark.alt}
+          width={width}
+          height={height}
+          className={onDark ? 'brightness-0 invert' : undefined}
+        />
         {/*
           Hidden from assistive technology because the image alt already supplies
           the name. Rendering both would announce the product twice.

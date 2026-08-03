@@ -58,7 +58,8 @@ export function Sidebar({
   const content = (
     <>
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4 text-sidebar-text">
-        <BrandMark collapsed={collapsed} />
+        {/* The sidebar surface is navy, so the dark symbol needs inverting. */}
+        <BrandMark collapsed={collapsed} onDark />
       </div>
 
       <nav aria-labelledby={labelId} className="flex-1 overflow-y-auto px-2 py-4">

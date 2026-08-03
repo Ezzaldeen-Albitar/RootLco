@@ -81,6 +81,37 @@ test.describe('the eleven administration screens', () => {
     });
   }
 
+  test('the users table actually finishes loading and shows the operators', async ({ page }) => {
+    // The assertion this file was missing, and the reason it was missing is
+    // instructive: every other case here proves the screen RENDERS. None of
+    // them proved it renders *data*. A table stuck in its loading state
+    // satisfies "the route loads", "no console error", "no denial" and "no
+    // horizontal overflow" simultaneously, and looks completely broken to the
+    // person the phase is being accepted by.
+    await page.goto('/en/administration/users');
+
+    const body = page.locator('table tbody');
+    await expect(body).toBeVisible();
+
+    // `aria-busy` is how the table announces loading. It must CLEAR.
+    await expect(body, 'the table must stop being busy').toHaveAttribute('aria-busy', 'false', {
+      timeout: 20_000,
+    });
+
+    // And the rows must be the seeded operators, not an empty set rendered
+    // confidently.
+    await expect(page.getByText('owner.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('reader.acceptance@crm.local')).toBeVisible();
+  });
+
+  test('the roles table finishes loading too', async ({ page }) => {
+    await page.goto('/en/administration/roles');
+    const body = page.locator('table tbody');
+    await expect(body).toBeVisible();
+    await expect(body).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
+    await expect(page.getByText('acceptance_administrator')).toBeVisible({ timeout: 20_000 });
+  });
+
   test('no screen leaks a token or a session into browser storage', async ({ page }) => {
     await page.goto('/en/administration/users');
     const stored = await page.evaluate(() => ({

@@ -5,7 +5,15 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { API_PORT, API_READY_PATH, STATE_FILE, WEB_PORT, repoRoot } from './dev-config.mjs';
+import {
+  API_PORT,
+  API_READY_PATH,
+  BROWSER_HOST,
+  PROBE_HOST,
+  STATE_FILE,
+  WEB_PORT,
+  repoRoot,
+} from './dev-config.mjs';
 
 const root = repoRoot();
 
@@ -45,15 +53,18 @@ if (state) {
   console.log(`  API pid    ${state.apiPid} (${alive(state.apiPid) ? 'alive' : 'gone'})`);
   console.log(`  Web pid    ${state.webPid} (${alive(state.webPid) ? 'alive' : 'gone'})`);
 }
+// Probed over the loopback literal, PRINTED as the host a browser must use.
+// See BROWSER_HOST in dev-config.mjs — opening 127.0.0.1 in a browser leaves
+// every client component unhydrated.
+const api = (path) => `http://${PROBE_HOST}:${API_PORT}${path}`;
+const web = (path) => `http://${PROBE_HOST}:${WEB_PORT}${path}`;
+const shown = (port, path) => `http://${BROWSER_HOST}:${port}${path}`;
+
 console.log(
-  `  API        http://127.0.0.1:${API_PORT}${API_READY_PATH} -> ${await probe(`http://127.0.0.1:${API_PORT}${API_READY_PATH}`)}`
+  `  API        ${shown(API_PORT, API_READY_PATH)} -> ${await probe(api(API_READY_PATH))}`
 );
-console.log(
-  `  Web /en    http://127.0.0.1:${WEB_PORT}/en -> ${await probe(`http://127.0.0.1:${WEB_PORT}/en`)}`
-);
-console.log(
-  `  Web /ar    http://127.0.0.1:${WEB_PORT}/ar -> ${await probe(`http://127.0.0.1:${WEB_PORT}/ar`)}`
-);
-console.log(
-  `  Gallery    http://127.0.0.1:${WEB_PORT}/en/gallery -> ${await probe(`http://127.0.0.1:${WEB_PORT}/en/gallery`)}`
-);
+console.log(`  Web /en    ${shown(WEB_PORT, '/en')} -> ${await probe(web('/en'))}`);
+console.log(`  Web /ar    ${shown(WEB_PORT, '/ar')} -> ${await probe(web('/ar'))}`);
+console.log(`  Gallery    ${shown(WEB_PORT, '/en/gallery')} -> ${await probe(web('/en/gallery'))}`);
+console.log('');
+console.log(`  Open ${BROWSER_HOST} in the browser, never 127.0.0.1 — see dev-config.mjs.`);
