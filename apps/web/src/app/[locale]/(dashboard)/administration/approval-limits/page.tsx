@@ -7,6 +7,7 @@ import { ApprovalLimitsScreen } from '@/features/administration/access/component
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Approval limits.
@@ -69,3 +70,6 @@ export default async function ApprovalLimitsPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('approvalLimits.title');

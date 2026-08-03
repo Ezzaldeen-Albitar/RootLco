@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
-import { BrandMark } from '@/components/brand';
+import { BrandMark, CompanyMark } from '@/components/brand';
 import { LocaleSwitcher } from '@/components/shell/LocaleSwitcher';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -46,12 +46,22 @@ export default async function AuthLayout({
         className="hidden flex-col justify-between bg-sidebar-background p-12 text-sidebar-text lg:flex"
       >
         <div className="text-sidebar-text">
-          <BrandMark />
+          {/* Navy panel — the dark symbol is inverted to stay legible. */}
+          <BrandMark onDark />
         </div>
         <p className="max-w-sm text-body-large text-sidebar-text-muted">
           {translate(messages, 'auth.shellTagline')}
         </p>
-        <div />
+        {/*
+          The company attribution, in the slot that was previously an empty
+          spacer. The artwork is dark on transparency, so on this navy surface it
+          is inverted to white — `brightness-0` flattens it to black first so the
+          invert lands on pure white whatever the source colour was.
+        */}
+        <div className="flex items-center gap-3 text-sidebar-text-muted">
+          <span className="text-supporting">{translate(messages, 'brand.byCompany')}</span>
+          <CompanyMark className="opacity-80 brightness-0 invert" />
+        </div>
       </aside>
 
       <main id="main" tabIndex={-1} className="flex flex-col focus:outline-none">

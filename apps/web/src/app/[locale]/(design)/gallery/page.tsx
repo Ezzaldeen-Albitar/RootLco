@@ -5,6 +5,7 @@ import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { galleryEnabled } from '@/lib/gallery-access';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * The component gallery route.
@@ -53,3 +54,6 @@ export default async function GalleryPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('gallery.title');

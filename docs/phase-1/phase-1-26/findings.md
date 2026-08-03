@@ -282,7 +282,430 @@ clean. A flake that is known and unrecorded is worse than one that is neither.
 
 ---
 
-## How findings `F-015` … `F-041` were found
+## P1-26-F-045 — the local stack could not authenticate anyone, and no test could have known
+
+**Severity:** High · **Status:** Fixed (local tooling) · **Routed** (durable fix)
+· **Area:** local identity provider
+
+Found by trying to sign in. `POST /auth/login` returned **200** with a token, and
+the very next request returned **401 `ERR-IAM-002`**.
+
+`apps/api/src/modules/iam/provider/token-verifier.ts` implements **HMAC only** and
+refuses asymmetric algorithms explicitly, as a stated design decision: _"the
+provider of record issues HS256, and an unexercised RSA path with an unfetched
+JWKS would be untested code on the authentication boundary."_
+
+Supabase CLI 2.110 issues **ES256**. When `GOTRUE_JWT_KEYS` is present GoTrue
+signs with that elliptic key and ignores `GOTRUE_JWT_SECRET`, so every access
+token the local provider minted was unverifiable by the API.
+
+**Nothing in this repository could have caught it.** Every authentication test
+runs against `FakeIdentityProvider` by design — _"a suite that needs a live
+provider is a suite that cannot run on a clean checkout"_ — so no suite has ever
+verified a token this provider actually signed. The local stack had been unable
+to authenticate anyone for as long as the CLI has defaulted to asymmetric keys,
+and it went unnoticed because nobody had signed in.
+
+**Fix, local.** `scripts/dev/owner-acceptance/align-local-jwt.mjs` recreates the
+GoTrue container without the asymmetric key so it falls back to the shared
+secret, and the bootstrap **fails** if the resulting token is not HS256 — a
+bootstrap that succeeds while every screen 403s is the failure being prevented.
+
+**Routed.** The durable fix is `supabase/config.toml` (`signing_keys_path`, or a
+pinned CLI). That file belongs to the Database phase, and a Frontend phase's
+ownership gate requires `SUPABASE_CHANGED_FILES=0`, so it is assigned to its
+owner rather than smuggled in here.
+
+---
+
+## P1-26-F-046 — no page had a title. Any page. Either language.
+
+**Severity:** High · **Status:** Fixed · **Area:** every route
+
+axe reported `document-title` — **serious** — on all fourteen authenticated
+routes. WCAG 2.4.2 (Page Titled, Level A).
+
+The application shipped with **no `<title>` element at all**.
+
+It survived the entire phase because nothing had ever scanned a rendered
+document. The jsdom tier renders components, not documents; the browser suite
+asserted on landmarks and console cleanliness. A missing title is invisible in
+both — and unmissable to anyone using a screen reader, or holding two tabs open,
+or looking at their browser history.
+
+**Fix.** The locale layout supplies a localised default and a `%s — CRM`
+template; nineteen routes each contribute their own name through
+`pageMetadata(key)`, using the **same message key their visible header already
+uses**, so the tab and the heading cannot disagree. The product name comes from
+the brand layer, so routing still never learns the identity.
+
+**Regression coverage.** The authenticated accessibility suite scans all fourteen
+routes in both locales and fails on any critical or serious violation.
+
+---
+
+## P1-26-F-047 — malformed definition lists on two screens
+
+**Severity:** Medium · **Status:** Fixed · **Area:** profile, languages
+
+axe reported `definition-list` — **serious**. The `Fact` and `Definition` helpers
+placed the hint `<p>` as a **sibling** of the `<dt>`/`<dd>` pair inside the
+`<dl>`'s wrapper `<div>`. A `<dl>` may contain only `<dt>`/`<dd>` groups and
+`<div>` wrappers, and a wrapper may hold only the group.
+
+**Fix.** The hint moved inside the `<dd>` — which is also where it belongs: it
+describes the value, so it should be read with the value rather than after it.
+
+---
+
+## P1-26-F-048 — no client component ever ran locally
+
+**Severity:** Critical (local runtime) · **Status:** Fixed · **Area:**
+`scripts/dev/`
+
+The most consequential finding of this remediation, and it was found by signing
+in and looking at a table.
+
+**Every server-driven list on every screen sat at `aria-busy="true"` with no rows,
+for ever.** The application rendered its navigation, headings, breadcrumbs and
+empty tables and looked entirely loaded. It was inert.
+
+Next 16 refuses cross-origin requests for its own development resources, and
+decides "cross-origin" by comparing the request `Host` with its own. `next dev`
+reports itself as `localhost`; the launcher advertised `127.0.0.1`. Different
+origins by that test — so the hot-reload WebSocket handshake was refused with
+`ERR_INVALID_HTTP_RESPONSE`, Next's development client retried it for ever, and
+while it retried the App Router client never became interactive. **No `useEffect`
+in any client component ran at all.**
+
+The address a developer or the Product Owner was told to open was precisely the
+address that does not work.
+
+**Why nothing caught it.** The browser suite runs `next start` against a
+production build, which has no development socket and works correctly. The jsdom
+tier has no server to be cross-origin from. The single configuration a person
+actually uses was the one configuration no tier exercised.
+
+**Fix.** The launcher advertises `localhost` and keeps the loopback literal for
+server-to-server probes, where origin is irrelevant. Pinned by
+`tests/ci/local-launcher-host.test.ts` — five cases, one of which fails if either
+script prints a browser URL on the loopback literal again, and one of which
+proves that pattern is genuinely matchable so the rule is not vacuous.
+
+**What was tried first, and why it is recorded.** `next.config.ts`'s
+`allowedDevOrigins` is the documented remedy and Next's own warning names it. On
+this version it made **every route answer 500** with a JSON parse failure inside
+the framework — reproduced twice, reverted both times. Serving the origin Next
+already trusts is the smaller and safer correction. The failed attempt is written
+down because the next person will read the same warning and try the same thing.
+
+**A consequence worth stating.** A React `unique key` warning in `AppHeader` is
+now visible in development. It is not new — no client component had ever
+executed, so no client-side warning could ever have surfaced. React strips it
+from production builds, which is why the browser suite's clean-console assertion
+passes. It is recorded rather than quietly absorbed.
+
+---
+
+## P1-26-F-049 — the approved symbol was invisible where the product identifies itself
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `BrandMark`
+
+The Owner's symbol is near-black artwork on transparency: legible on white, all
+but absent on the navy `#0F2742` used by the sidebar and the authentication
+panel — the two surfaces where the product names itself.
+
+**Fix.** `BrandMark` gains `onDark`, applied by those two surfaces.
+`brightness-0` flattens the artwork to pure black so `invert` reaches pure white
+whatever the source colour was; inverting alone yields a washed-out negative.
+Only the image is treated — the adjacent product name already takes its colour
+from the surface's own token.
+
+---
+
+## P1-26-F-050 — the acceptance fixtures and the Database tier cannot both be true at once
+
+**Severity:** Medium · **Status:** Accepted (documented ordering) · **Area:**
+local database state
+
+Two Database tests assert that the database contains **no business rows at all**:
+
+- `tests/db/iam-seeds.test.ts` — _"creates no user accounts and no role grants
+  (configuration only)"_
+- `tests/db/no-fake-data.test.ts` — _"all business tables start empty"_
+
+They are the **runtime** enforcement of the permanent no-fake-data policy, and
+they are correct. The acceptance fixtures are business rows. Both cannot hold at
+the same time.
+
+Measured, in three states:
+
+| Local database                         | Database tier                       |
+| -------------------------------------- | ----------------------------------- |
+| Clean (`supabase db reset`)            | **1636 / 1636**                     |
+| With the acceptance fixtures present   | **1634 / 1636** — exactly those two |
+| After `npm run acceptance:reset-owner` | **1636 / 1636**                     |
+
+**Disposition: an ordering, not a weakened assertion.** Neither test is changed,
+skipped or made conditional. Loosening them would delete the only runtime proof
+that the policy holds, in exchange for convenience. Instead the two states are
+declared mutually exclusive and the transition between them is a supported,
+reversible command:
+
+```
+npm run test:db                  # requires a clean database
+npm run acceptance:create-owner  # for the Owner session
+npm run acceptance:reset-owner   # before running the Database tier again
+```
+
+The reset is what makes this a disposition rather than an excuse: it removed
+every row it created — 2 tenants, 2 companies, 2 branches, 3 roles, 33 role
+permissions, 5 accounts, 3 grants, 1 grant scope, 10 settings, 5 identities and
+the handoff file — and the tier returned to 1636/1636.
+
+**Two defects found while proving it.**
+
+1. The reset ran every delete in one transaction with a `continue` on a missing
+   table. After a failed statement PostgreSQL rejects the rest with `25P02`, so
+   one absent table silently prevented the whole cleanup while the script
+   reported a list of zeroes as success. Each delete now runs inside its own
+   `SAVEPOINT`.
+2. It named `iam.audit_events`. The table is **`iam.audit_records`**, with
+   `audit_record_details` and `audit_integrity_links` referencing it. The step
+   was therefore skipped, and a reset that reported success would have left the
+   Owner's own audit trail behind. All three are now removed, innermost first.
+
+**A separate observation, not P1-26's to fix.** Running `npm run test:backend`
+and then `npm run test:db` in the same session, without a reset between them,
+produced **122** Database failures — foreign-key violations on the Database
+tier's _own_ fixtures. A clean reset returns it to 1636/1636. The two tiers share
+one local database and one fixture namespace; the ordering dependency is real
+and predates this phase. Recorded here because it was measured here, and routed
+to the tier that owns it.
+
+---
+
+## P1-26-F-052 — the assertion written to prove rows load could be satisfied by the signed-in user's own name
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/web/tests/e2e/authenticated/administration.spec.ts`,
+`authenticated-browser-evidence.md`
+
+`P1-26-F-048` — every table on every screen loading for ever — was caught by
+adding a test that the users table renders **rows**, not merely a shell. That
+test read:
+
+```ts
+await expect(page.getByText('owner.acceptance@crm.local')).toBeVisible();
+```
+
+**The sidebar account menu renders the signed-in user's own address.** So on the
+Users screen that string is on the page twice: once as the identity of the person
+looking, and once as a table cell. A page-wide match is satisfied by the first
+one, which is present whether or not a single row ever arrives — the assertion
+written to catch an empty table would have gone green against an empty table.
+
+It surfaced as a Playwright strict-mode violation rather than as a silent pass,
+which is luck, not design: strict mode fails on ambiguity, and had the sidebar
+rendered the display name instead of the address, this would have passed for ever
+while proving nothing.
+
+**Fix.** Both row assertions are scoped to `table tbody`. The scoping _is_ the
+assertion: a check that exists to prove rows load must not be satisfiable by the
+identity of the person reading them. The roles assertion is scoped the same way.
+
+### And the figure in the evidence document was measured on a different suite
+
+`authenticated-browser-evidence.md` reported **197 passed · 0 failed · 4
+skipped** and, in the same document, described the rows-actually-load assertions
+as part of what was measured. Re-reading the run log settles it: in that run
+`administration.spec.ts:84` was the browser-storage test. **The rows assertions
+did not exist yet.** The figure was true of the suite that ran and untrue of the
+suite the document describes, and the two were a commit apart.
+
+Both are now re-measured on the tree that ships, and the document carries the
+number from that run.
+
+The general form is worth keeping: **a test count is evidence about the suite
+that produced it, not about the file it is written next to.** A suite that grows
+after its figure is recorded leaves a number that reads as current and is not.
+
+---
+
+## P1-26-F-051 — the acceptance tooling shipped seven CodeQL findings of its own, and the first fix round only cleared five
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`scripts/dev/owner-acceptance/`, `tests/ci/local-launcher-host.test.ts`
+
+CodeQL raised this branch from the recorded ceiling of **0** open findings to
+**7**. Every one was in code this remediation itself added. Every one was
+correct. None was waived, and the ceiling stayed at 0 — a finding this tooling
+introduced is this tooling's to fix, not the baseline's to absorb.
+
+| Query                                  | Where                         | What it was                                                             |
+| -------------------------------------- | ----------------------------- | ----------------------------------------------------------------------- |
+| `js/biased-cryptographic-random`       | `context.mjs`                 | `byte % 57` over `randomBytes`                                          |
+| `js/clear-text-logging`                | `create-owner-account.mjs`    | the generated password printed to stdout                                |
+| `js/insecure-temporary-file`           | `align-local-jwt.mjs`         | the JWT secret written to a fixed path in the shared temp directory     |
+| `js/file-system-race` ×2               | `create-owner-account.mjs`    | `existsSync` then read                                                  |
+| `js/file-access-to-http`               | `status-owner-account.mjs`    | the stored credential read from disk and forwarded to a sign-in request |
+| `js/template-syntax-in-string-literal` | `local-launcher-host.test.ts` | a quoted string containing `${WEB_PORT}`                                |
+
+### The part worth recording is that the first fix round cleared only five
+
+I enumerated the findings by **security severity**, fixed the five that came back
+HIGH, verified them, committed, and the gate failed again — `open findings rose
+to 2`. The two survivors carry no high security severity: one is medium, one has
+none at all.
+
+The baseline file warns about exactly this, in writing, in the field I had
+already read:
+
+> The count deliberately includes medium and low, which is how the one dismissal
+> was caught at all — GitHub's own CodeQL check reported that run as SUCCESS,
+> because it blocks only on high and critical.
+
+So the mistake was not missing a finding. It was **filtering by a severity the
+gate does not filter by**, having been told in the gate's own configuration that
+it does not. A partial fix that reports as a fix is worse than no fix, because
+the next run's failure reads as a regression rather than as the remainder.
+
+**And the branch's own CI proved the baseline's point in the same two runs.**
+
+| Head                              | `CodeQL` (GitHub's check) | `code-security` (this repository's policy gate) |
+| --------------------------------- | ------------------------- | ----------------------------------------------- |
+| `66237c1` — 7 findings, some HIGH | **failure**               | **failure**                                     |
+| `ecb8244` — 2 findings, none HIGH | **success**               | **failure**                                     |
+
+At `ecb8244` GitHub's own CodeQL check went **green with two open findings in the
+tree**, because it blocks on high and critical only. The one check most people
+would read as "CodeQL is happy" said exactly that, and was of no use at all. The
+repository's own gate — which counts every severity — is the only reason the two
+survivors were not merged.
+
+### `js/file-access-to-http` — and why it was fixed rather than dismissed
+
+`status-owner-account.mjs` exists to answer "is the Owner account usable _right
+now_", which it can only do by signing in for real, which means reading the
+stored password. That is a file read reaching an outbound request, and the
+tempting refutation is "the file is local".
+
+That refutation was refused. It is the same assumption the query exists to
+question, and the honest position is that anything able to write
+`.local/owner-acceptance-account.json` would otherwise be choosing what this
+process transmits and what lands in the Backend's request logs.
+
+Dismissing it was also not available on the merits. The baseline's schema
+requires a named human reviewer, a review date, an expiry, and a reproducible
+refutation of both source and sink. There is no reviewer to name — this
+remediation may not invent an Owner decision — and the sink is not safe in the
+general case. The one dismissal this repository ever carried was
+[withdrawn by removing the flow](../../engineering/security/codeql-remediation/sec-codeql-033-http-to-file-access.md),
+not renewed. So: removed the same way.
+
+**The fix is an allow-list, not a reformat.** The tenant id and the address now
+come from the fixture constants, and the file's copies are only _compared_
+against them and never forwarded. The password is rebuilt character by character
+out of `PASSWORD_ALPHABET`, emitting the constant's character rather than the
+file's, with the separator positions and the total length pinned. The output is
+provably a string over the acceptance alphabet in the documented shape whatever
+the input was — a value that is not a password this tooling could have generated
+throws instead of becoming a shorter or stranger one.
+
+`tests/ci/owner-acceptance-password.test.ts` pins it: 12 cases including a
+round trip against 50 generated passwords, rejection of ten smuggled characters
+(`/`, `:`, `"`, `\`, space, newline, `$`, `<`, and the ambiguous `O`), and a
+check that 400 draws cover all 57 alphabet characters — which is what would
+notice a rejection-sampling loop that dropped the alphabet's tail instead of
+redrawing.
+
+### `js/template-syntax-in-string-literal` — the query aimed at the one place the shape was the point
+
+`local-launcher-host.test.ts` proves its own regex is not vacuous by matching it
+against a sample containing the literal text `${WEB_PORT}`. In a quoted string
+that is precisely the defect the query names. The sample is now a template
+literal with the `$` escaped: identical text, correct construct, assertion
+unchanged.
+
+### The two that were the most instructive
+
+**The biased random.** 256 is not a multiple of the 57-character alphabet, so
+`byte % 57` made its first 28 characters appear more often than the remaining 29.
+The skew is small, entirely real, and free to remove: bytes at or above the
+largest whole multiple of the alphabet size are discarded and redrawn. This
+generates the Owner's password, which is exactly where "small and real" is not
+good enough.
+
+**The clear-text logging**, a genuine tension resolved in the safer direction.
+The Owner needs to read the password, so the first version printed it. But stdout
+reaches terminal scrollback, whatever log the operator happens to be capturing,
+and a CI transcript if the script is ever run somewhere it should not be. It is
+no longer printed at all: it is written to one git-ignored file at mode `0600` —
+a directory being ignored does not stop a credential sitting world-readable on
+disk — and read from there. One place to find it, one place to delete it.
+
+The temporary file mattered for its contents: the GoTrue environment export
+carries the local JWT signing secret, and it was written to a predictable path
+another user on the machine could pre-create or replace with a symlink. It now
+lives in a fresh `mkdtemp` directory at mode `0600`, removed afterwards. The two
+races are the ordinary kind with the ordinary fix — attempt the read and handle
+`ENOENT`, one syscall with no window.
+
+**Re-verified after both rounds:** reset → create both exit 0 with all fixtures
+reconciled; `status` reports READY with 14 of 14 permissions through a live
+sign-in; 17 tests across the two pinning files; lint, typecheck and Prettier
+clean; `security:all` 4 of 4 across 1822 tracked files.
+
+**The lesson, arriving from a new direction.** Tooling written to verify the
+product **is** product code. This tooling was reviewed by nothing until CodeQL
+read it, because it is imported by no application module, had no tests pointed at
+it, and runs only when a human runs it. Seven real weaknesses lived there for
+exactly as long as it took the first tier capable of seeing them to look — and
+then two of them survived a fix round because I read the results through a filter
+the gate does not use.
+
+**The biased random is the one worth understanding.** 256 is not a multiple of
+the 57-character alphabet, so `byte % 57` made its first 28 characters appear
+more often than the remaining 29. The skew is small, entirely real, and free to
+remove: bytes at or above the largest whole multiple of the alphabet size are now
+discarded and redrawn, so every character is exactly equally likely. This
+generates the Owner's password, which is precisely where "small and real" is not
+good enough.
+
+**The clear-text logging was a genuine tension, resolved in the safer
+direction.** The Owner needs to read the password, so the first version printed
+it. But stdout reaches terminal scrollback, whatever log the operator happens to
+be capturing, and a CI transcript if the script is ever run somewhere it should
+not be. It is no longer printed at all: it is written to one git-ignored file at
+mode `0600` — a directory being ignored does not stop a credential sitting
+world-readable on disk — and read from there. One place to find it, one place to
+delete it.
+
+**The temporary file mattered because of its contents.** The GoTrue environment
+export carries the local JWT signing secret, and it was written to a predictable
+path another user on the machine could pre-create or replace with a symlink. It
+now lives in a fresh `mkdtemp` directory at mode `0600`, removed afterwards.
+
+**The two races are the ordinary kind with the ordinary fix.** `existsSync`
+followed by `readFileSync` can be interrupted between the calls; attempting the
+read and handling `ENOENT` is one syscall with no window. The same pattern in
+`status-owner-account.mjs` was corrected as well — there, the file being raced is
+the one holding the credential.
+
+**Re-verified after the fixes:** reset → create both exit 0 with all fixtures
+reconciled; 14 of 14 permissions resolved through a live sign-in; 20 password
+draws all distinct, correctly shaped, and free of the ambiguous `0/O/1/l/I`
+characters the alphabet deliberately omits; lint, typecheck and Prettier clean;
+`security:all` 4 of 4 across 1822 tracked files; test-honesty scan clean.
+
+The lesson is the same one this phase keeps producing from a new direction:
+**tooling written to verify the product is product code.** It was reviewed by
+nothing until CodeQL read it, because it is not imported by any application
+module, has no unit tests pointed at it, and runs only when a human runs it. Five
+real weaknesses lived there for exactly as long as it took the first tier capable
+of seeing them to look.
+
+---
 
 An adversarial review of the complete P1-26 diff, run as six independent lenses —
 security, backend-contract fidelity, React/Next correctness, honesty,

@@ -3,6 +3,7 @@ import { requireSession } from '@/features/authentication/api/session';
 import { SettingsBackedScreen } from '@/features/administration/shared/components/SettingsBackedScreen';
 import { TAX_KEYS, TAX_PREFIX } from '@/features/administration/shared/settings-keys';
 import { isLocale } from '@/i18n/config';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Taxes.
@@ -37,3 +38,6 @@ export default async function TaxesPage({
     />
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('taxes.title');

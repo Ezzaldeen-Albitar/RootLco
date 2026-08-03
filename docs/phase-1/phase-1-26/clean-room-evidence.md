@@ -85,12 +85,111 @@ This run also **failed on its first attempt** — one root test, on a timeout
 rather than an assertion (`P1-26-F-044`). It is recorded rather than re-run into
 submission; the fix and the measurement that justifies it are in `findings.md`.
 
+## The Owner-acceptance remediation clean room
+
+Re-run from a fresh clone at the remediation candidate. The same discipline, with
+two additions the earlier runs did not have: the acceptance guards are exercised
+inside the clean room, and the anonymous browser suite is counted to prove the
+new authenticated tier stays invisible without its flag.
+
+Candidate `331785433c9cb6af2dba02b43c7a6caf7d41dfeb`, tree
+`0b98189d40d82476f1861454004e16fc7a391820`.
+
+| Check | Result |
+| --- | --- |
+| Clone tree vs working tree | **identical** |
+| Lockfiles / tracked generated output | **1** root lockfile · **0** files |
+| Migrations | **119** |
+| Brand assets tracked | **3** under `apps/web/public/brand/` |
+| Files named `Generated_*` | **0** |
+| Tracked `.local/` or credential file | **0** |
+| `npm ci` | **exit 0** |
+| Repository policies | **exit 0** |
+| Formatting, all three scopes | **exit 0** |
+| `security:all` | **exit 0** |
+| `npm audit --audit-level=high` | **exit 0** |
+| Root / CI-contract | **1491 / 1491**, 70 files |
+| Web typecheck · lint · stylelint | **exit 0** |
+| Web unit / component | **319 / 319**, 16 files |
+| `verify:api` | **exit 0** |
+| Production build | **exit 0** |
+| Acceptance guard, `ROOTLCO_ENV` unset | **exit 2 — refused** |
+| Acceptance guard, non-loopback host | **exit 2 — refused** |
+| Anonymous browser suite with `ROOTLCO_E2E_AUTH` unset | **110 tests in 1 file** — unchanged |
+| Git state at the end | **clean** |
+
+The root count moved from **1479** to **1491** because the acceptance tooling
+finally acquired tests of its own — twelve of them, over the password generator
+and the allow-list that stands between a file anyone could overwrite and an
+outbound sign-in request (`P1-26-F-051`).
+
+The guards being exercised *inside* the clean room is the addition that matters:
+it proves the local-only refusal is a property of the committed tree, not of the
+machine that happened to run it.
+
+### Two runs that failed first, and why both are recorded
+
+**At `3d2bcc48` — `security:all` failed.** One credential-shaped value in
+`local-acceptance-account-runbook.md`. The same scan had passed on the working
+tree minutes earlier.
+
+The difference is the whole point of a clean room. `check-tracked-secrets.mjs`
+reads **tracked** files; the runbook was still untracked when the local scan ran,
+so the local scan could not see it. In a fresh clone every file is tracked, so
+the clean room saw it immediately — and so did hosted CI. **A gate run before
+`git add` cannot see the file being added.** The commit that fixed it stages
+before it verifies.
+
+**At `e0d3e54` — the web and API tiers failed.** A blanket
+`"brace-expansion": "^5.0.9"` override, added to clear a new advisory, produced
+`TypeError: expand is not a function`. Three `minimatch` majors in the tree
+depend on three different `brace-expansion` majors and only 4.0.0–5.0.8 are
+affected; forcing 5.x globally handed a v5 module to v1 and v2 consumers. The
+override is now scoped to the vulnerable range, and 1.1.18 and 2.1.4 resolve
+exactly as before.
+
+Both are kept because a clean room that only ever shows its green run is a
+record of a rehearsal, not of a test.
+
+### And two runs the clean room could not have failed
+
+`P1-26-F-051` — seven CodeQL findings in the acceptance tooling — was **green in
+every clean-room run**, at `66237c1` and at `ecb8244` and at the candidate above.
+The clean room runs what the repository can run, and the repository cannot run
+CodeQL: it needs the hosted analysis.
+
+This is the third direction the same lesson has arrived from in this phase.
+`F-042` and `F-043` were green locally and red only in CI. `F-044` was green in
+all twenty CI checks and red only in the clean room. `F-045` through `F-049` were
+green in both and visible only by starting the system and looking at it. And
+`F-051` was green in both **and** in the running system, because a security
+analyser is a fourth tier that neither of the other three contains.
+
+### The clean room's own defect
+
+The first two runs also lost the middle of their own log: `cd apps/web` without a
+subshell left the final `git status` outside the repository, and npm's carriage
+returns overwrote earlier lines. The script now runs every `cd` in a subshell
+and strips `\r` from every step. A verification log that cannot be read is not
+evidence, and it took a third run to notice.
+
 ### A note on this record's own SHA
 
-A record that names the SHA it measured cannot live inside that SHA. This one
-measured `b4794e7` and is committed after it, in a **documentation-only** commit
-that changes no file any tier above reads. The same convention was used for the
-`3e1f9e3` record it replaces.
+A record that names the SHA it measured cannot live inside that SHA. The wave-17
+record measured `b4794e7` and was committed after it, in a **documentation-only**
+commit that changes no file any tier above reads; the same convention was used
+for the `3e1f9e3` record it replaced, and again here for the remediation record
+measuring `3317854`.
+
+The documentation-only commit that carries this record is itself re-run through
+hosted CI **and through the clean room** before the merge, so the head that
+merges is a head every tier has measured — not one that inherits a green result
+from its parent.
+
+The remediation clean room ran four times in total, at `66237c1`, `ecb8244`,
+`94bfd72` and `3317854`. Each re-run followed a change that any of the four
+tiers had rejected, and the record names the last one because it is the only one
+that describes the tree being merged.
 
 ### What the clean room did not run, and why
 

@@ -1,2 +1,2 @@
-export { BrandMark } from './BrandMark';
-export { brandTheme, brandIsProvisional } from './theme';
+export { BrandMark, CompanyMark } from './BrandMark';
+export { brandTheme, brandIsProvisional, brandIconHref } from './theme';

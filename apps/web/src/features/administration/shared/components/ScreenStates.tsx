@@ -98,7 +98,17 @@ export function Panel({
   );
 }
 
-/** A read-only label and value. Used wherever the platform offers no edit path. */
+/**
+ * A read-only label and value. Used wherever the platform offers no edit path.
+ *
+ * The hint lives INSIDE the `<dd>`, not beside it. A `<dl>` may only contain
+ * `<dt>`/`<dd>` groups and `<div>` wrappers, and a `<div>` wrapper may only
+ * contain the group — a sibling `<p>` makes the whole list malformed, which axe
+ * reports as the *serious* `definition-list` violation (`P1-26-F-047`).
+ *
+ * It is also the better markup: the hint describes the value, so it belongs
+ * with the value rather than floating after it in the reading order.
+ */
 export function Fact({
   label,
   value,
@@ -115,8 +125,8 @@ export function Fact({
       <dt className="text-label font-medium text-text-primary">{label}</dt>
       <dd className={`text-body text-text-secondary ${mono ? 'break-all font-mono' : ''}`}>
         {value}
+        {hint ? <span className="mt-1 block text-caption text-text-muted">{hint}</span> : null}
       </dd>
-      {hint ? <p className="mt-1 text-caption text-text-muted">{hint}</p> : null}
     </div>
   );
 }

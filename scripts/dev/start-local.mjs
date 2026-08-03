@@ -25,7 +25,15 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
-import { API_PORT, API_READY_PATH, STATE_FILE, WEB_PORT, repoRoot } from './dev-config.mjs';
+import {
+  API_PORT,
+  API_READY_PATH,
+  BROWSER_HOST,
+  PROBE_HOST,
+  STATE_FILE,
+  WEB_PORT,
+  repoRoot,
+} from './dev-config.mjs';
 
 const root = repoRoot();
 
@@ -141,19 +149,29 @@ web.on('exit', (code) => {
   }
 });
 
-const apiStatus = await waitFor(`http://127.0.0.1:${API_PORT}${API_READY_PATH}`, 'API');
-const webStatus = await waitFor(`http://127.0.0.1:${WEB_PORT}/en`, 'Web');
+// Probes are server-to-server, so the loopback literal is fine and avoids any
+// dependence on name resolution. The addresses PRINTED are what a browser will
+// open, and those must be `localhost` — see BROWSER_HOST.
+const apiStatus = await waitFor(`http://${PROBE_HOST}:${API_PORT}${API_READY_PATH}`, 'API');
+const webStatus = await waitFor(`http://${PROBE_HOST}:${WEB_PORT}/en`, 'Web');
+
+const webUrl = (path = '') => `http://${BROWSER_HOST}:${WEB_PORT}${path}`;
 
 console.log('');
 console.log('RootLco local stack is up.');
 console.log(
-  `  API   http://127.0.0.1:${API_PORT}  (readiness ${API_READY_PATH} -> HTTP ${apiStatus})`
+  `  API   http://${BROWSER_HOST}:${API_PORT}  (readiness ${API_READY_PATH} -> HTTP ${apiStatus})`
 );
-console.log(`  Web   http://127.0.0.1:${WEB_PORT}  (/en -> HTTP ${webStatus})`);
-console.log(`  en    http://127.0.0.1:${WEB_PORT}/en`);
-console.log(`  ar    http://127.0.0.1:${WEB_PORT}/ar`);
+console.log(`  Web   ${webUrl()}  (/en -> HTTP ${webStatus})`);
+console.log(`  en    ${webUrl('/en')}`);
+console.log(`  ar    ${webUrl('/ar')}`);
 console.log(
-  `  gallery ${gallery === 'true' ? `http://127.0.0.1:${WEB_PORT}/en/gallery` : 'disabled (set ROOTLCO_ENABLE_GALLERY=true)'}`
+  `  gallery ${gallery === 'true' ? webUrl('/en/gallery') : 'disabled (set ROOTLCO_ENABLE_GALLERY=true)'}`
+);
+console.log('');
+console.log(
+  `  Open ${BROWSER_HOST}, not 127.0.0.1: Next treats them as different origins in development` +
+    ' and refuses its own dev resources to the other one, which leaves every table loading for ever.'
 );
 console.log('');
 console.log('Stop with Ctrl+C here, or "npm run dev:stop" from another terminal.');

@@ -6,6 +6,7 @@ import { RolesScreen } from '@/features/administration/access/components/RolesSc
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Roles.
@@ -59,3 +60,6 @@ export default async function RolesPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('roles.title');

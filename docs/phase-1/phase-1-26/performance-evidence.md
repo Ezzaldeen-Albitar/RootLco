@@ -51,7 +51,19 @@ message catalogues and the component gallery.
 would not change what a first paint costs — the server render is the cost, and
 it is already per-request.
 
-**No `next/image`.** The brand is a wordmark; there is no image to optimise.
+**No `next/image`, now that the brand IS an image.** The Owner-acceptance
+remediation replaced the text wordmark with two approved PNGs — an 81 KB product
+symbol and a 47 KB company wordmark — and they are still rendered by a plain
+`<img>`. `next/image` earns its complexity on user-supplied or remote imagery
+with unknown dimensions; these are two static, versioned, same-origin files whose
+intrinsic sizes are declared in the brand configuration, so the optimiser has
+nothing left to decide. It would also add a runtime dependency to the print path,
+which must render without JavaScript.
+
+Both are served with explicit `width` and `height` derived from the configured
+intrinsic size, so the header reserves its box before the bytes arrive. That is
+the layout-shift protection `next/image` is usually reached for, obtained
+directly.
 
 **No virtualised table.** Page size is bounded at 100 by the backend contract's
 own maximum, so the largest render is 100 rows. Virtualising 100 rows costs more

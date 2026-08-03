@@ -9,6 +9,7 @@ import {
 } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * The administration hub.
@@ -163,3 +164,6 @@ export default async function AdministrationPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('admin.title');

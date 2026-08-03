@@ -11,6 +11,7 @@ import {
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { DIRECTION, LOCALES, isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 /**
  * Languages.
@@ -102,3 +103,6 @@ export default async function LanguagesPage({
     </>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('languages.title');

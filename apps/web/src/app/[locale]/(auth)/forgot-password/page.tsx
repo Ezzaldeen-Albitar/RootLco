@@ -4,6 +4,7 @@ import { AuthCard } from '@/features/authentication/components/AuthCard';
 import { ForgotPasswordForm } from '@/features/authentication/components/ForgotPasswordForm';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
+import { pageMetadata } from '@/lib/page-metadata';
 
 export default async function ForgotPasswordPage({
   params,
@@ -28,3 +29,6 @@ export default async function ForgotPasswordPage({
     </AuthCard>
   );
 }
+
+/** The document title. Same key as the visible header, so they cannot disagree. */
+export const generateMetadata = pageMetadata('auth.forgot.title');

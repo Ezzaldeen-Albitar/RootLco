@@ -19,6 +19,23 @@
 > verified there. A gate record that arrives with its own subject is a record of
 > an intention, not of a fact.
 
+> ## SUPERSEDED AS A FINAL CLOSURE — 2026-08-03
+>
+> Everything below is **preserved and accurate as a record of technical
+> verification**. Nothing in it is withdrawn or restated.
+>
+> What is withdrawn is its status as a **final** closure. The Product Owner
+> requires authenticated manual acceptance before any Frontend phase closes, and
+> §8 of this very record lists three things it did not prove — cross-tenant
+> behaviour, the eleven Administration screens in a browser, and an automated
+> accessibility scan of them — each blocked at the time by the no-fake-data
+> policy. The Owner has since authorised local-only synthetic acceptance data,
+> which removes the blocker rather than the requirement.
+>
+> Current canonical status:
+> **TECHNICAL GATE PASSED — OWNER MANUAL ACCEPTANCE PENDING**.
+> See [owner-acceptance-remediation.md](owner-acceptance-remediation.md).
+
 ---
 
 ## 1. What P1-26 delivered
