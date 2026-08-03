@@ -485,6 +485,49 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-054 — an override written to fix an advisory pinned the tree to the next one
+
+**Severity:** High · **Status:** Fixed · **Area:** `package.json` `overrides`
+
+`dependency-security` failed on a tree whose only difference from a green one was
+documentation. The advisory was **GHSA-7p8r-x3mc-p8w7**, `fast-uri` host
+confusion via a backslash authority introducer, HIGH, affecting
+`>=4.0.0 <4.1.2`. Newly published; nothing in this phase caused it.
+
+What makes it worth recording is where it was found:
+
+```json
+"overrides": {
+  "fast-uri": "^4.1.1"
+}
+```
+
+`ajv` asks for `^3.0.1`. Somebody had already overridden `fast-uri` to v4 —
+almost certainly to clear an earlier advisory against v3. **The override written
+to fix one advisory is what held the tree on the version of the next one.** A
+caret range would have allowed 4.1.2 on its own, but `npm ci` installs the
+lockfile exactly, and the lockfile said 4.1.1.
+
+**Fix.** The override moves to `^4.1.2` and the lockfile is refreshed —
+`package.json` and `package-lock.json`, six lines between them. Resolved:
+`ajv@8.20.0 → fast-uri@4.1.2`. Root audit and web audit both **0
+vulnerabilities**; typecheck, 1491 root tests, the production build and
+`verify:api` all still pass.
+
+**Why the override is bumped rather than removed.** Removing it would let `ajv`
+resolve `fast-uri@3.x`, which is a different tree and a different advisory
+history. The narrow change is the one whose blast radius can be reasoned about —
+the same reasoning that produced the range-scoped `brace-expansion` override in
+`F-051`'s round, after a blanket one broke three `minimatch` majors.
+
+**The general form.** _A pin is a standing decision that ages._ An override is
+written at a moment when it is the fix, and then silently becomes the thing
+holding a dependency still while the world moves. Every entry in an `overrides`
+block is a small piece of permanent maintenance, and the only reason this one was
+caught is that the audit gate has no waiver list.
+
+---
+
 ## P1-26-F-053 — `mode: 0o600` is not a protection on the platform the Owner uses
 
 **Severity:** Medium · **Status:** Fixed (record corrected; behaviour unchanged) ·
