@@ -14,13 +14,23 @@
  * The real script is executed as a child process rather than imported, because
  * exit codes are the contract CI depends on.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Same bound, same reason, as `tests/foundation/module-boundaries.test.ts`
+ * (`P1-26-F-044`): every case here spawns a Node subprocess, and the default
+ * five-second budget measures process scheduling under a parallel run rather
+ * than the script. The case that failed the clean room there took 1.2 s alone;
+ * the slowest here takes 1.1 s doing the same kind of work, so this is the same
+ * defect with the fuse unlit.
+ */
+vi.setConfig({ testTimeout: 30_000 });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(HERE, '../../scripts/validate-canonical-documents.mjs');

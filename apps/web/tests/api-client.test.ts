@@ -47,6 +47,86 @@ describe('base URL validation', () => {
   });
 });
 
+describe('the idempotency key', () => {
+  /**
+   * `P1-26-F-015`. Ten operations in this application's surface declare
+   * `idempotent: true`, and the backend's route handler calls
+   * `requireIdempotencyKey` unconditionally for each of them — **before**
+   * permissions are evaluated — answering `ERR-INT-002` (400) without one.
+   *
+   * No call site supplied a key, so every invitation, every lifecycle change,
+   * every role and permission edit, every approval limit and every settings
+   * write failed 100% of the time. Nothing local could see it: the requirement
+   * lives on the other side of a boundary no test in this repository crosses.
+   */
+  async function headersOf(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    options?: { readonly idempotencyKey?: string }
+  ): Promise<Headers> {
+    let seen: Headers | undefined;
+    const client = clientWith(async (_url, init) => {
+      seen = new Headers(init?.headers);
+      return respond(200, {});
+    });
+    await client.send(method, '/api/v1/x', { a: 1 }, options ?? {});
+    return seen as Headers;
+  }
+
+  it('is attached to every POST', async () => {
+    const headers = await headersOf('POST');
+    const key = headers.get('idempotency-key');
+    expect(key).toBeTruthy();
+    // 8–200 characters, per the backend's own bounds.
+    expect((key as string).length).toBeGreaterThanOrEqual(8);
+    expect((key as string).length).toBeLessThanOrEqual(200);
+  });
+
+  it('is a fresh key per call, because one send is one logical attempt', async () => {
+    // Correct only BECAUSE this client never retries a mutation. A caller that
+    // wants to re-present the same attempt passes its own key.
+    const first = (await headersOf('POST')).get('idempotency-key');
+    const second = (await headersOf('POST')).get('idempotency-key');
+    expect(first).not.toBe(second);
+  });
+
+  it('never overwrites a key the caller supplied', async () => {
+    const headers = await headersOf('POST', { idempotencyKey: 'caller-supplied-key' });
+    expect(headers.get('idempotency-key')).toBe('caller-supplied-key');
+  });
+
+  it('is NOT attached to PATCH or DELETE, which no operation marks idempotent', async () => {
+    expect((await headersOf('PATCH')).get('idempotency-key')).toBeNull();
+    expect((await headersOf('DELETE')).get('idempotency-key')).toBeNull();
+  });
+
+  it('is not attached to a read', async () => {
+    let seen: Headers | undefined;
+    const client = clientWith(async (_url, init) => {
+      seen = new Headers(init?.headers);
+      return respond(200, {});
+    });
+    await client.get('/api/v1/x');
+    expect(seen?.get('idempotency-key')).toBeNull();
+  });
+});
+
+describe('the If-Match guard', () => {
+  it('sends the version the caller supplied, and nothing when none is given', async () => {
+    let seen: Headers | undefined;
+    const client = clientWith(async (_url, init) => {
+      seen = new Headers(init?.headers);
+      return respond(200, {});
+    });
+    await client.send('PATCH', '/api/v1/x', { a: 1 }, { ifMatch: 7 });
+    expect(seen?.get('if-match')).toBe('7');
+
+    await client.send('PATCH', '/api/v1/x', { a: 1 });
+    // Never defaulted. The backend refusing an unguarded update is the correct
+    // failure; inventing a version here would turn the guard into a lost update.
+    expect(seen?.get('if-match')).toBeNull();
+  });
+});
+
 describe('successful requests', () => {
   it('returns typed data and the echoed correlation id', async () => {
     const fetchImpl = vi.fn(async () =>

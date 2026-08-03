@@ -1,0 +1,85 @@
+import { authorizedClient } from '@/lib/api/server-client';
+import type { ApiFailureKind } from '@/lib/api/client';
+
+/**
+ * The read helpers every administration screen shares.
+ *
+ * One place that turns "call an approved operation" into "a view state", so
+ * eleven screens do not each invent their own mapping from a 403 to a rendered
+ * outcome — and so none of them can accidentally render a denial as an empty
+ * list, which reads to an operator as "there is nothing here" when the truth is
+ * "you may not see it".
+ *
+ * Nothing in this file fetches. `authorizedClient()` is the only network owner,
+ * and it lives in `src/lib/api` because `check-api-boundary.mjs` says so.
+ */
+
+export type ReadFailureStatus = 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found';
+
+export type ReadState<T> =
+  | { readonly status: 'ok'; readonly data: T; readonly correlationId: string | null }
+  | { readonly status: ReadFailureStatus; readonly correlationId: string | null };
+
+const STATUS_BY_KIND: Record<ApiFailureKind, ReadFailureStatus> = {
+  unauthenticated: 'expired',
+  forbidden: 'denied',
+  'not-found': 'not-found',
+  conflict: 'error',
+  validation: 'error',
+  'rate-limited': 'unavailable',
+  server: 'error',
+  unavailable: 'unavailable',
+  timeout: 'unavailable',
+  cancelled: 'error',
+  network: 'unavailable',
+};
+
+/** A read through the caller's own session. */
+export async function readOperation<T>(path: string): Promise<ReadState<T>> {
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', correlationId: null };
+
+  const result = await client.get<T>(path);
+  if (result.ok) {
+    return { status: 'ok', data: result.data, correlationId: result.correlationId };
+  }
+  return { status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
+}
+
+/**
+ * A cursor page, exactly as the backend publishes one.
+ *
+ * `nextCursor` and `hasMore` are the server's own end-of-set signals. There is
+ * no `total`, and this type does not invent one — see `P1-26-F-001`.
+ */
+export interface CursorPage<T> {
+  readonly items: readonly T[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
+
+/** A list response that is a bare array under `items` — several operations are. */
+export interface ItemsOnly<T> {
+  readonly items: readonly T[];
+}
+
+/**
+ * Builds a query string, dropping anything undefined or empty.
+ *
+ * Values are encoded, never interpolated raw. An operator's search term reaches
+ * the backend as a parameter and reaches the address bar not at all — the
+ * table's own URL policy keeps free text out of history, proxy logs and the
+ * `Referer` header, and this is the other half of that: the term is sent, and it
+ * is sent safely.
+ */
+export function query(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    const text = String(value);
+    if (text.length === 0) continue;
+    search.set(key, text);
+  }
+  const rendered = search.toString();
+  return rendered.length > 0 ? `?${rendered}` : '';
+}

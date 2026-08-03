@@ -1,0 +1,69 @@
+{
+  "phase": "P1-26",
+  "base": "3598de624dbc181b742cc40700464115ba5c4fc6",
+  "candidate": "b4794e79206396f220af28f523f0e90a6b186e8f",
+  "tree": "c63871d7673fd385c217ccb2d120675a3509d454",
+  "totals": {
+    "frontend": {
+      "complete": 18,
+      "total": 18
+    },
+    "security": {
+      "complete": 4,
+      "total": 4
+    },
+    "qa": {
+      "complete": 5,
+      "total": 5
+    },
+    "devops": {
+      "complete": 2,
+      "total": 2
+    },
+    "documentation": {
+      "complete": 2,
+      "total": 2
+    },
+    "all": {
+      "complete": 31,
+      "total": 31
+    }
+  },
+  "findings": {
+    "total": 41,
+    "critical": {
+      "raised": 1,
+      "open": 0
+    },
+    "high": {
+      "raised": 11,
+      "open": 0
+    },
+    "medium": {
+      "raised": 17,
+      "open": 0,
+      "acceptedContractGaps": 7
+    },
+    "low": {
+      "raised": 12,
+      "open": 1
+    },
+    "openIds": ["P1-26-F-012"],
+    "note": "P1-26-F-012 is an unexplained DB/RLS observation in P1-5 shared services. It is not caused by P1-26, which changed no file that tier reads, and it is carried as an observation rather than closed as flaky."
+  },
+  "contractGaps": [
+    "P1-26-F-003 numbering rules — no operation",
+    "P1-26-F-004 taxes — no operation",
+    "P1-26-F-005 currencies — no operation",
+    "P1-26-F-006 languages — no catalogue operation",
+    "P1-26-F-007 platform system settings — no operation",
+    "P1-26-F-008 no company or branch directory",
+    "P1-26-F-009 no self-service profile update",
+    "P1-26-F-010 approval limits unpaginated"
+  ],
+  "notProven": [
+    "Cross-tenant behaviour end to end — needs two live accounts; the no-fake-data policy forbids seeding them. The Database tier is the authority.",
+    "The eleven administration screens in a browser — same reason.",
+    "An automated accessibility scan of those screens in a browser — same reason."
+  ]
+}

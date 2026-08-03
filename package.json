@@ -2,7 +2,7 @@
   "name": "rootlco-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "RootLco — Root Link Company. Commercial Multi-Tenant Automotive CRM and ERP Platform ([PRODUCT NAME — Pending Final Approval]). Confidential and proprietary.",
+  "description": "RootLco — Root Link Company. Commercial Multi-Tenant Automotive CRM and ERP Platform. The product name is configured in apps/web/src/config/brand.ts and apps/api/src/shared/constants/app.ts, which scripts/ci/check-product-name-authority.mjs holds identical; the current working name is temporary. Confidential and proprietary.",
   "license": "UNLICENSED",
   "packageManager": "npm@11.13.0",
   "engines": {
@@ -85,6 +85,7 @@
     "validate:p1-23-mutations": "node scripts/p1-23-mutation-matrix.mjs",
     "validate:p1-24-mutations": "node scripts/p1-24-mutation-matrix.mjs",
     "validate:p1-24-register": "node scripts/p1-24-operation-register.mjs --check",
+    "validate:p1-26-frontend": "node scripts/ci/check-p1-26-frontend.mjs",
     "validate:p1-26-readiness": "node scripts/ci/check-p1-26-readiness.mjs",
     "validate:phase-ownership": "node scripts/ci/check-phase-ownership.mjs",
     "validate:product-name": "node scripts/ci/check-product-name-authority.mjs",
@@ -106,7 +107,7 @@
     "verify:classifications": "npm run validate:crm-classification && npm run validate:veh-classification && npm run validate:aptrec-classification && npm run validate:wo-tech-dia-qms-classification && npm run validate:svc-quo-inv-classification && npm run validate:sal-wty-rpt-classification",
     "verify:contracts": "npm run validate:module-boundaries && npm run validate:authorization-coverage && npm run validate:operation-coverage && npm run validate:openapi && npm run validate:exact-money && npm run validate:p1-24-register",
     "verify:inventories": "npm run validate:p1-19-inventory && npm run validate:p1-20-inventory && npm run validate:p1-21-inventory && npm run validate:p1-22-inventory && npm run validate:p1-23-inventory",
-    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name",
+    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:p1-26-frontend",
     "verify:repository": "npm run typecheck && npm run lint && npm run format:check && npm run test:unit && npm run security:all",
     "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-brand && npm run validate:web-boundary && npm run build:web && npm run test:web-e2e",
     "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all"

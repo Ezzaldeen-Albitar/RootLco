@@ -72,6 +72,20 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
   readonly newCorrelationId?: () => string;
+  /**
+   * Headers sent with every request from this client.
+   *
+   * The reason this exists is `Authorization`. The backend is bearer-
+   * authenticated, and the token lives in a `httpOnly` cookie the browser cannot
+   * read — so the value is attached SERVER-SIDE, by `server-client.ts`, and a
+   * client constructed in the browser simply has none. Keeping it a construction
+   * parameter rather than a per-call argument means no call site can forget it
+   * and no call site can accidentally attach one it should not have.
+   *
+   * `content-type`, `accept`, the correlation ID, `if-match` and
+   * `idempotency-key` are owned by the request itself and always win.
+   */
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -114,12 +128,14 @@ export class ApiClient {
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
   readonly #newCorrelationId: () => string;
+  readonly #defaultHeaders: Readonly<Record<string, string>>;
 
   constructor(options: ApiClientOptions) {
     this.#baseUrl = assertBaseUrl(options.baseUrl);
     this.#fetch = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.#newCorrelationId = options.newCorrelationId ?? (() => globalThis.crypto.randomUUID());
+    this.#defaultHeaders = options.defaultHeaders ?? {};
   }
 
   /**
@@ -147,14 +163,60 @@ export class ApiClient {
     return last as ApiFailure;
   }
 
-  /** A mutation. NEVER retried — see the module note. */
+  /**
+   * A mutation. NEVER retried — see the module note.
+   *
+   * `ifMatch` carries the record version a version-guarded operation requires.
+   * The backend refuses those operations outright when the header is absent
+   * (`ERR-CON-002`), which is the correct failure: an unguarded update is a
+   * lost-update waiting to happen, so the guard is not optional and is not
+   * defaulted here either.
+   *
+   * ## Why an idempotency key IS defaulted, when `If-Match` is not
+   *
+   * Every operation the backend marks `idempotent: true` **requires** an
+   * `Idempotency-Key` header: `route-handler.ts` calls `requireIdempotencyKey`
+   * unconditionally and answers `ERR-INT-002` (400) without one, *before*
+   * permissions are even evaluated. Ten operations in this application's surface
+   * are marked that way. Leaving the header to each call site meant every one of
+   * them failed 100% of the time, and the 400 surfaced as a generic validation
+   * banner naming no field — so the screen looked broken rather than
+   * misconfigured (finding `P1-26-F-015`).
+   *
+   * A generated key is **semantically correct here**, and only because of the
+   * rule directly above it: this client never retries a mutation. One `send` is
+   * therefore one logical attempt, and a fresh key per call says exactly that. A
+   * caller that genuinely wants to re-present the same attempt — the deliberate
+   * retry the backend's idempotency keys exist for — passes its own key, and
+   * that explicit key always wins.
+   *
+   * The default applies to `POST` only. `PATCH` and `DELETE` are not marked
+   * idempotent anywhere in the published contract, and sending a key they will
+   * never read would be noise.
+   */
   async send<T>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
-    options: { readonly signal?: AbortSignal; readonly idempotencyKey?: string } = {}
+    options: {
+      readonly signal?: AbortSignal;
+      readonly idempotencyKey?: string;
+      readonly ifMatch?: string | number;
+    } = {}
   ): Promise<ApiResult<T>> {
-    return this.#request<T>(method, path, body, options.signal, options.idempotencyKey);
+    const idempotencyKey =
+      options.idempotencyKey ?? (method === 'POST' ? this.#newIdempotencyKey() : undefined);
+    return this.#request<T>(method, path, body, options.signal, idempotencyKey, options.ifMatch);
+  }
+
+  /**
+   * A key the backend will accept: 8–200 characters, per `idempotency.ts`.
+   *
+   * A UUID is 36, so the bounds are met by construction rather than by a length
+   * check nobody would ever see fail.
+   */
+  #newIdempotencyKey(): string {
+    return globalThis.crypto.randomUUID();
   }
 
   async #request<T>(
@@ -162,7 +224,8 @@ export class ApiClient {
     path: string,
     body: unknown,
     signal?: AbortSignal,
-    idempotencyKey?: string
+    idempotencyKey?: string,
+    ifMatch?: string | number
   ): Promise<ApiResult<T>> {
     const correlationId = this.#newCorrelationId();
     const controller = new AbortController();
@@ -182,11 +245,16 @@ export class ApiClient {
     }
 
     const headers: Record<string, string> = {
+      // Construction-time headers first, so a request-owned header of the same
+      // name always wins. A default that could overwrite the correlation ID
+      // would break the one diagnostic a user is ever shown.
+      ...this.#defaultHeaders,
       accept: 'application/json',
       [CORRELATION_HEADER]: correlationId,
     };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
+    if (ifMatch !== undefined) headers['if-match'] = String(ifMatch);
 
     try {
       const response = await this.#fetch(`${this.#baseUrl}${path}`, {
