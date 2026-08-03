@@ -10,6 +10,9 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
+    "acceptance:create-owner": "node scripts/dev/owner-acceptance/create-owner-account.mjs",
+    "acceptance:reset-owner": "node scripts/dev/owner-acceptance/reset-owner-account.mjs",
+    "acceptance:status-owner": "node scripts/dev/owner-acceptance/status-owner-account.mjs",
     "build": "npm run build --workspace @rootlco/api",
     "build:api": "npm run build --workspace @rootlco/api",
     "build:web": "npm run build --workspace @rootlco/web",

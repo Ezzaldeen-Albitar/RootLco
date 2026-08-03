@@ -104,6 +104,28 @@ export const REGISTER = Object.freeze([
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
+  // The Owner-acceptance tooling is `interactive` for the same reason `dev:*`
+  // is: it needs a running local Supabase and refuses every other target, so a
+  // hosted runner could not execute it even if a workflow asked. Requiring it
+  // in CI would mean requiring CI to hold a database it is not given.
+  {
+    name: 'acceptance:create-owner',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'creates the local-only Owner acceptance account and both synthetic tenants',
+  },
+  {
+    name: 'acceptance:status-owner',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'proves the local acceptance account can actually sign in and resolve its permissions',
+  },
+  {
+    name: 'acceptance:reset-owner',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'removes only the local acceptance fixtures, by deterministic identifier',
+  },
   {
     name: 'validate:p1-26-readiness',
     owner: ROOT,
