@@ -174,6 +174,29 @@ platform does not have.
 
 ---
 
+## P1-26-F-042 — the file forbidding written-down credentials wrote one down
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `apps/web/tests/observability.test.ts`
+
+The tracked-secret scanner failed the exact-head CI on a JWT-shaped **literal**
+used as a fixture in the test that asserts a credential must never reach a log.
+
+The scanner was right. A credential-shaped constant in a tracked file is one
+whether or not it is real, and a scanner taught to ignore some of them stops
+being worth running. Its own guidance says to construct synthetic values at
+runtime, which the fixture now does.
+
+**Why it reached CI.** `verify:policies` does **not** include `security:all` —
+the secret scan lives in `verify:repository`. Every local run during this phase
+was policies plus the test tiers, so the scan never executed until hosted CI ran
+it. Both were run before the fix was pushed, and `security:all` is now part of
+this phase's local routine.
+
+There is a joke here worth not losing, and a general point under it: a rule is
+easiest to break in the file that states it.
+
+---
+
 ## How findings `F-015` … `F-041` were found
 
 An adversarial review of the complete P1-26 diff, run as six independent lenses —
