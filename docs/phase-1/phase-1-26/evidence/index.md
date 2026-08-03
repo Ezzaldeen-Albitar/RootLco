@@ -8,31 +8,31 @@ Where every claim in this phase is proven, and where it is not.
 
 ## Canonical documents
 
-| Document                                                                      | What it holds                                                               |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [architecture.md](../architecture.md)                                         | The shape of the phase and why each structural decision was taken           |
-| [api-contract-evidence.md](../api-contract-evidence.md)                       | Contract archaeology — all 29 operations, and the seven that do not exist   |
-| [findings.md](../findings.md)                                                 | `F-001` … `F-041`, each with evidence and disposition                       |
-| [task-register.md](../task-register.md)                                       | 31 tasks with acceptance conditions                                         |
-| [execution-checkpoint.md](../execution-checkpoint.md)                         | Baselines, wave status, the resume point                                    |
-| [file-ownership.md](../file-ownership.md)                                     | The permanent boundary and this phase's measured compliance                 |
-| [permission-and-scope-standard.md](../permission-and-scope-standard.md)       | How every screen decides what to show, and why none of it is access control |
-| [authentication-workflows.md](../authentication-workflows.md)                 | Each authentication screen, step by step                                    |
-| [administration-workflows.md](../administration-workflows.md)                 | Each administration screen, and what it deliberately cannot do              |
-| [security-evidence.md](../security-evidence.md)                               | `SEC-001` … `SEC-004`                                                       |
-| [qa-evidence.md](../qa-evidence.md)                                           | `QA-001` … `QA-005`                                                         |
-| [isolation-evidence.md](../isolation-evidence.md)                             | What this phase proves about isolation, and what it does not                |
-| [concurrency-idempotency-evidence.md](../concurrency-idempotency-evidence.md) | `If-Match`, idempotency keys, duplicates                                    |
-| [accessibility-evidence.md](../accessibility-evidence.md)                     | Inherited properties, added properties, and the measured gap                |
-| [browser-evidence.md](../browser-evidence.md)                                 | Both browser runs, and what they do not cover                               |
-| [performance-evidence.md](../performance-evidence.md)                         | Measured build and bundle figures                                           |
-| [ci-evidence.md](../ci-evidence.md)                                           | The gate, its mutation coverage, and the monitoring boundary                |
-| [clean-room-evidence.md](../clean-room-evidence.md)                           | The exact-SHA proof                                                         |
-| [risk-evidence.md](../risk-evidence.md)                                       | RSK-20, RSK-27, RSK-31 disposition                                          |
-| [open-decisions.md](../open-decisions.md)                                     | `OD-001` … `OD-008` — what the Owner still owns                             |
-| [known-limitations.md](../known-limitations.md)                               | Eleven things this release does not do                                      |
-| [operator-guide.md](../operator-guide.md)                                     | For the person administering a workspace                                    |
-| [developer-guide.md](../developer-guide.md)                                   | For the next person adding a screen                                         |
+| Document                                                                      | What it holds                                                                                         |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [architecture.md](../architecture.md)                                         | The shape of the phase and why each structural decision was taken                                     |
+| [api-contract-evidence.md](../api-contract-evidence.md)                       | Contract archaeology — all 29 operations, and the seven that do not exist                             |
+| [findings.md](../findings.md)                                                 | `F-001` … `F-044`, each with evidence and disposition                                                 |
+| [task-register.md](../task-register.md)                                       | 31 tasks with acceptance conditions                                                                   |
+| [execution-checkpoint.md](../execution-checkpoint.md)                         | Baselines, wave status, the resume point                                                              |
+| [file-ownership.md](../file-ownership.md)                                     | The permanent boundary and this phase's measured compliance                                           |
+| [permission-and-scope-standard.md](../permission-and-scope-standard.md)       | How every screen decides what to show, and why none of it is access control                           |
+| [authentication-workflows.md](../authentication-workflows.md)                 | Each authentication screen, step by step                                                              |
+| [administration-workflows.md](../administration-workflows.md)                 | Each administration screen, and what it deliberately cannot do                                        |
+| [security-evidence.md](../security-evidence.md)                               | `SEC-001` … `SEC-004`                                                                                 |
+| [qa-evidence.md](../qa-evidence.md)                                           | `QA-001` … `QA-005`                                                                                   |
+| [isolation-evidence.md](../isolation-evidence.md)                             | What this phase proves about isolation, and what it does not                                          |
+| [concurrency-idempotency-evidence.md](../concurrency-idempotency-evidence.md) | `If-Match`, idempotency keys, duplicates                                                              |
+| [accessibility-evidence.md](../accessibility-evidence.md)                     | Inherited properties, added properties, and the measured gap                                          |
+| [browser-evidence.md](../browser-evidence.md)                                 | Both browser runs, and what they do not cover                                                         |
+| [performance-evidence.md](../performance-evidence.md)                         | Measured build and bundle figures                                                                     |
+| [ci-evidence.md](../ci-evidence.md)                                           | The gate, its mutation coverage, the monitoring boundary, and every hosted run including the red ones |
+| [clean-room-evidence.md](../clean-room-evidence.md)                           | The exact-SHA proof, and the attempt of it that failed                                                |
+| [risk-evidence.md](../risk-evidence.md)                                       | RSK-20, RSK-27, RSK-31 disposition                                                                    |
+| [open-decisions.md](../open-decisions.md)                                     | `OD-001` … `OD-008` — what the Owner still owns                                                       |
+| [known-limitations.md](../known-limitations.md)                               | Eleven things this release does not do                                                                |
+| [operator-guide.md](../operator-guide.md)                                     | For the person administering a workspace                                                              |
+| [developer-guide.md](../developer-guide.md)                                   | For the next person adding a screen                                                                   |
 
 ## Machine-readable
 
@@ -62,3 +62,19 @@ That third gap is not academic. Wave 16's adversarial review found that **every
 idempotent operation would have failed with HTTP 400** on first contact with a
 real backend (`P1-26-F-015`) — a defect no static check could see, sitting
 exactly in the space those three notes describe.
+
+## What green did not mean, three times
+
+Recorded here because it is the most transferable thing this phase learned.
+
+| Defect  | Green everywhere except                                                           |
+| ------- | --------------------------------------------------------------------------------- |
+| `F-015` | one adversarial review; every automated tier passed                               |
+| `F-042` | hosted CI's secret scan; `verify:policies` does not include it                    |
+| `F-043` | hosted CI's web-quality job; the root `format:check` cannot see `apps/web` at all |
+| `F-044` | the local clean room; all 20 hosted checks passed the same tree                   |
+
+`F-043` and `F-044` point in opposite directions — one was invisible locally and
+one was invisible to CI. **Neither tier is a superset of the other**, which is why
+this phase runs both and why the clean room now runs the formatter and the secret
+scan it originally did not.
