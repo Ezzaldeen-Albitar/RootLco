@@ -122,7 +122,7 @@ describe('brand isolation is structural, not conventional', () => {
   });
 });
 
-describe('replacing the provisional identity touches configuration only', () => {
+describe('replacing the identity touches configuration only', () => {
   const brandPath = join(ROOT, 'src/config/brand.ts');
   const coloursPath = join(ROOT, 'src/styles/tokens/_colors.scss');
   const originals = new Map<string, string>();
@@ -174,13 +174,15 @@ describe('replacing the provisional identity touches configuration only', () => 
 
     const before = readFileSync(brandPath, 'utf8');
     const swapped = before
-      .replace("systemName: '[SYSTEM NAME]'", "systemName: 'Owner Supplied Name'")
-      .replace("systemShortName: '[SN]'", "systemShortName: 'OSN'")
-      .replace("primaryTheme: 'provisional'", "primaryTheme: 'approved'");
+      .replace("systemName: 'CRM'", "systemName: 'Owner Supplied Name'")
+      .replace("systemShortName: 'CRM'", "systemShortName: 'OSN'")
+      .replace("primaryTheme: 'approved'", "primaryTheme: 'provisional'");
     writeFileSync(brandPath, swapped);
 
+    // A different hue entirely, so a stale build would be obvious rather than
+    // plausible. #1f6b52 is the approved green anchor.
     const colours = readFileSync(coloursPath, 'utf8');
-    writeFileSync(coloursPath, colours.replace('500: #3366f2', '500: #7a1fa2'));
+    writeFileSync(coloursPath, colours.replace('500: #1f6b52', '500: #7a1fa2'));
 
     const componentEdits = watched.filter(
       (f) => readFileSync(join(repositoryRoot, f), 'utf8') !== beforeComponents.get(f)

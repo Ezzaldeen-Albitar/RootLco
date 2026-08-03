@@ -169,5 +169,7 @@
   "gallery.readiness.ready": "The API is reachable and ready.",
   "gallery.readiness.degraded": "The API is reachable but running degraded.",
   "gallery.readiness.unavailable": "The API could not be reached.",
-  "gallery.readiness.misconfigured": "The API connection is not configured."
+  "gallery.readiness.misconfigured": "The API connection is not configured.",
+  "overview.identityTitle": "Visual identity",
+  "overview.identityBody": "The palette, typography and spacing are applied from one token layer. Every surface in this frame reads those tokens, so the identity can be changed centrally without editing a component."
 }

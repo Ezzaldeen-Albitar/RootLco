@@ -5,8 +5,17 @@
  * platform owner -- it is deliberately not used as the product name. See ADR-011.
  */
 
-/** Controlled placeholder. Do not replace until the owners approve a product name. */
-export const PRODUCT_NAME_PLACEHOLDER = '[PRODUCT NAME — Pending Final Approval]';
+/**
+ * The product name.
+ *
+ * "CRM" is the Owner-approved WORKING name and is expected to change. The
+ * constant keeps its name for continuity of every import site, and
+ * `scripts/ci/check-product-name-authority.mjs` enforces that this value and
+ * the web tier's `brand.systemName` are always the same string — a rename that
+ * updates one and not the other fails the build rather than shipping two
+ * identities.
+ */
+export const PRODUCT_NAME_PLACEHOLDER = 'CRM';
 
 /** Temporary descriptive title approved for interim use. */
 export const DESCRIPTIVE_TITLE = 'Commercial Multi-Tenant Automotive CRM and ERP Platform';

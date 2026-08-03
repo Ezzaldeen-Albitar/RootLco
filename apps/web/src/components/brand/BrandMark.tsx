@@ -23,7 +23,7 @@ export function BrandMark({ collapsed = false }: { readonly collapsed?: boolean 
 
   return (
     <span
-      className="inline-flex items-center gap-2 font-semibold text-text-primary"
+      className="inline-flex items-center gap-2 text-section-title font-semibold tracking-tight"
       data-provisional={brand.isProvisional ? 'true' : undefined}
     >
       {collapsed ? mark.shortText : mark.text}

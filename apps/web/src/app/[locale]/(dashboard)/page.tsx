@@ -32,8 +32,8 @@ export default async function OverviewPage({
       />
       <PageBody>
         <div className="grid gap-4 md:grid-cols-2">
-          <section className="rounded-lg border border-border bg-surface p-5 shadow-xs">
-            <h2 className="text-section-title font-semibold text-text-primary">
+          <section className="rounded-xl border border-border-subtle bg-surface p-5 shadow-xs">
+            <h2 className="text-section-title font-semibold text-text-heading">
               {translate(messages, 'overview.shellTitle')}
             </h2>
             <p className="mt-2 text-body text-text-secondary">
@@ -41,21 +41,25 @@ export default async function OverviewPage({
             </p>
           </section>
           {/*
-            Shown only WHILE the brand is provisional. Like the header notice,
-            this card describes brand STATE, so brand state must decide whether
-            it renders — it was unconditional, which meant an approved brand
-            would still have shipped a card headed "Provisional identity".
+            The copy follows brand STATE. While the brand is provisional it says
+            so; once approved it describes the identity instead. It used to say
+            "provisional" unconditionally, which would have shipped that claim
+            alongside an approved brand (P1-25-F-026).
           */}
-          {brandIsProvisional ? (
-            <section className="rounded-lg border border-border bg-surface p-5 shadow-xs">
-              <h2 className="text-section-title font-semibold text-text-primary">
-                {translate(messages, 'overview.brandTitle')}
-              </h2>
-              <p className="mt-2 text-body text-text-secondary">
-                {translate(messages, 'overview.brandBody')}
-              </p>
-            </section>
-          ) : null}
+          <section className="rounded-xl border border-border-subtle bg-surface p-5 shadow-xs">
+            <h2 className="text-section-title font-semibold text-text-heading">
+              {translate(
+                messages,
+                brandIsProvisional ? 'overview.brandTitle' : 'overview.identityTitle'
+              )}
+            </h2>
+            <p className="mt-2 text-body text-text-secondary">
+              {translate(
+                messages,
+                brandIsProvisional ? 'overview.brandBody' : 'overview.identityBody'
+              )}
+            </p>
+          </section>
         </div>
       </PageBody>
     </>

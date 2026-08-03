@@ -176,13 +176,13 @@ function AppHeader({
   readonly drawerTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   return (
-    <header className="sticky top-0 z-header flex h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-4">
+    <header className="sticky top-0 z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
       <button
         ref={drawerTriggerRef}
         type="button"
         onClick={onOpenDrawer}
         aria-label={translate(messages, 'shell.openNavigation')}
-        className="rounded-md p-2 text-text-secondary hover:bg-surface-subtle lg:hidden"
+        className="rounded-lg p-2 text-text-secondary transition-colors duration-150 hover:bg-primary-subtle hover:text-primary lg:hidden"
       >
         <Icon name="overview" size={18} />
       </button>
@@ -192,7 +192,7 @@ function AppHeader({
         onClick={onToggleCollapsed}
         aria-pressed={collapsed}
         aria-label={translate(messages, 'shell.collapseNavigation')}
-        className="hidden rounded-md p-2 text-text-secondary hover:bg-surface-subtle lg:inline-flex"
+        className="hidden rounded-lg p-2 text-text-secondary transition-colors duration-150 hover:bg-primary-subtle hover:text-primary lg:inline-flex"
       >
         <Icon name="overview" size={18} />
       </button>

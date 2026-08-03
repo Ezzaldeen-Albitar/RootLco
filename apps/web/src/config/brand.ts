@@ -1,8 +1,11 @@
 /**
  * Centralised brand configuration.
  *
- * The final product name, logo and colour palette are PENDING OWNER INPUT
- * (OIR-01/ASM-01 for the name, OIR-06 for the visual identity). This module is
+ * The product name is the Owner-approved working name "CRM" (OIR-01) and the
+ * palette is derived from the approved anchors (OIR-06, resolved). The name is
+ * TEMPORARILY approved and expected to change, which is exactly why it lives
+ * here: replacing it is this one field, not a search across the tree. This
+ * module is
  * the single place the frontend learns any of them.
  *
  * The rule this file exists to enforce: **no component may import a logo asset
@@ -43,12 +46,12 @@ export interface BrandConfig {
 }
 
 export const brand: BrandConfig = {
-  systemName: '[SYSTEM NAME]',
-  systemShortName: '[SN]',
+  systemName: 'CRM',
+  systemShortName: 'CRM',
   logoMode: 'wordmark',
   logoAsset: null,
-  primaryTheme: 'provisional',
-  isProvisional: true,
+  primaryTheme: 'approved',
+  isProvisional: false,
 };
 
 /**
