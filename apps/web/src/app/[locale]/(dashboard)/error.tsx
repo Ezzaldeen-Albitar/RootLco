@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { ErrorState } from '@/components/states/States';
-import { DEFAULT_LOCALE } from '@/i18n/config';
+import { localeFromPathname } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { report } from '@/lib/observability/client-log';
 
@@ -27,7 +28,20 @@ export default function DashboardError({
   readonly error: Error & { digest?: string };
   readonly reset: () => void;
 }) {
-  const messages = getMessages(DEFAULT_LOCALE);
+  /*
+   * The locale comes from the PATH, not from `DEFAULT_LOCALE`.
+   *
+   * An error boundary is a client component and Next gives it no `params`, so
+   * reading the default was the obvious thing to do — and it is exactly the
+   * defect recorded as `P1-26-F-059`, where the English interface announced its
+   * loading state in Arabic because `DEFAULT_LOCALE` is `'ar'`. Here it fails
+   * the other way: an Arabic operator who hits a route error gets an English
+   * page inside a `lang="ar" dir="rtl"` document.
+   *
+   * `loading.tsx` was fixed for this and its two siblings were not. Same fix,
+   * same reason (`P1-26-F-071`).
+   */
+  const messages = getMessages(localeFromPathname(usePathname()));
 
   useEffect(() => {
     // Not a setState — a report. The effect runs once per distinct error, so an

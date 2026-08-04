@@ -1,4 +1,7 @@
 {
+  "action.succeeded": "تم",
+  "action.failed": "لم تنجح العملية",
+  "action.reference": "المرجع",
   "app.skipToContent": "تخطَّ إلى المحتوى",
   "app.provisionalBrand": "مظهر مؤقّت — الهوية النهائية قيد الاعتماد",
   "brand.byCompany": "من",
@@ -88,6 +91,10 @@
   "overlay.working": "جارٍ التنفيذ…",
   "overlay.dismiss": "إخفاء",
   "overlay.notifications": "الإشعارات",
+  "overlay.tone.success": "نجاح:",
+  "overlay.tone.info": "معلومة:",
+  "overlay.tone.warning": "تحذير:",
+  "overlay.tone.error": "خطأ:",
   "overlay.reasonRequired": "السبب مطلوب.",
   "money.error.empty": "أدخل المبلغ.",
   "money.error.notDecimal": "أدخل مبلغاً عشرياً، مثال ١٢٥٠٫٠٠.",

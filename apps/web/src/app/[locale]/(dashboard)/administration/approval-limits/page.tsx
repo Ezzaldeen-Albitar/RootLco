@@ -58,7 +58,7 @@ export default async function ApprovalLimitsPage({
         descriptionKey="approvalLimits.description"
         crumbs={crumbs}
       />
-      <PageBody>
+      <PageBody fill>
         <ApprovalLimitsScreen
           locale={locale}
           messages={messages}

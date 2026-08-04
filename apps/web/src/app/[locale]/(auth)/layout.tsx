@@ -37,11 +37,34 @@ export default async function AuthLayout({
   const messages = getMessages(locale);
 
   return (
-    <div className="grid min-h-dvh grid-cols-1 bg-app-background lg:grid-cols-[1fr_minmax(28rem,36rem)]">
+    /*
+     * The authentication exception to the scroll contract.
+     *
+     * `body` does not scroll anywhere in this application, so this group has to
+     * own a scroll region of its own or a short viewport would simply clip the
+     * form. It owns exactly ONE: the form column. The decorative panel is
+     * `overflow-hidden` and never scrolls, so there are never two nested
+     * vertical scrollers competing for the same gesture.
+     *
+     * `h-dvh` rather than `min-h-dvh`: a floor lets the document grow, which is
+     * the whole defect this remediation exists to remove.
+     */
+    <div className="relative grid h-dvh grid-cols-1 overflow-hidden bg-app-background lg:grid-cols-[1fr_minmax(28rem,36rem)]">
       <AuthShowcase messages={messages} />
 
-      <main id="main" tabIndex={-1} className="flex flex-col focus:outline-none">
-        <div className="flex items-center justify-between p-4">
+      {/*
+        The one intentional scroll region on an authentication screen. On a tall
+        desktop nothing scrolls; at 420px, or with a software keyboard open, the
+        form scrolls inside this column and the language control above it stays
+        reachable because it scrolls WITH the form rather than being pinned off
+        screen.
+      */}
+      <main
+        id="main"
+        tabIndex={-1}
+        className="relative flex min-h-0 flex-col overflow-y-auto overscroll-contain focus:outline-none"
+      >
+        <div className="flex shrink-0 items-center justify-between p-4">
           <span className="text-text-heading lg:invisible">
             <BrandMark />
           </span>

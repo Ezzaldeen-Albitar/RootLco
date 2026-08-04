@@ -11,6 +11,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { NO_CAPABILITIES, visibleNavigation, type ActorCapabilities } from '@/lib/permissions';
 import { usePersistedFlag } from '@/lib/use-persisted-flag';
+import { LocaleSwitcher } from './LocaleSwitcher';
 import { Sidebar } from './Sidebar';
 
 /**
@@ -108,7 +109,7 @@ export function AppShell({
      * scrolling meaningful: the sidebar stays put, the header stays put, and the
      * main region scrolls inside its own box however many rows arrive.
      */
-    <div className="flex h-dvh overflow-hidden bg-app-background text-text-primary">
+    <div className="relative flex h-dvh overflow-hidden bg-app-background text-text-primary">
       <Sidebar
         locale={locale}
         messages={messages}
@@ -157,6 +158,7 @@ export function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader
+          locale={locale}
           messages={messages}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed(!collapsed)}
@@ -177,17 +179,49 @@ export function AppShell({
             here has nothing to overflow — the box grows instead and the page
             scrolls again, which is the defect this is fixing.
           */}
+          {/*
+            `relative` is what actually stops the document scrolling, and it is
+            the least obvious line in this file (`P1-26-F-069`).
+
+            `overflow-y-auto` clips descendants in FLOW. It does not clip an
+            absolutely positioned descendant whose containing block resolved past
+            this element — and while `main` was `position:static`, every
+            `.sr-only` element resolved its containing block to the INITIAL
+            containing block, i.e. the viewport. `.sr-only` is the standard
+            visually-hidden pattern and uses `position:absolute`, so each
+            screen-reader table caption was laid out at DOCUMENT coordinates.
+            `/administration/permissions` renders seventeen tables; the deepest
+            caption landed at y≈7200 and the document grew to 7075px against a
+            900px viewport — 6175px of blank overscroll produced entirely by
+            1px accessibility text.
+
+            Measured, not reasoned: `html`/`body` `height:100%; overflow:hidden`
+            changed nothing at all. `position:relative` here fixed it completely
+            while `main` kept its own scrolling (7136/836). `relative` with
+            `z-index:auto` creates a containing block WITHOUT creating a stacking
+            context, so nothing that has to escape — dropdown, dialog, toast —
+            is trapped by it, and `position:sticky` table headers still stick to
+            this scrollport because sticky follows the scrolling ancestor.
+          */}
           <main
             id="main"
             tabIndex={-1}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
+            data-scroll-region="main"
+            /*
+             * `flex flex-col` so a screen can opt into filling the scrollport
+             * (`PageBody fill`) instead of growing with its content. An ordinary
+             * screen is a single auto-height child and behaves exactly as it did
+             * under block layout; a `fill` screen becomes a flex child that can
+             * shrink, which is what lets a table's pager stay on screen.
+             */
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain focus:outline-none"
           >
             {children}
           </main>
           {secondaryPanel ? (
             <aside
               aria-label={translate(messages, 'shell.secondaryPanel')}
-              className="hidden w-80 shrink-0 overflow-y-auto border-s border-border bg-surface xl:block"
+              className="relative hidden w-80 shrink-0 overflow-y-auto overscroll-contain border-s border-border bg-surface xl:block"
             >
               {secondaryPanel}
             </aside>
@@ -199,6 +233,7 @@ export function AppShell({
 }
 
 function AppHeader({
+  locale,
   messages,
   collapsed,
   onToggleCollapsed,
@@ -206,6 +241,7 @@ function AppHeader({
   drawerTriggerRef,
   account,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly collapsed: boolean;
   readonly onToggleCollapsed: () => void;
@@ -214,7 +250,16 @@ function AppHeader({
   readonly account?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
+    // NOT `sticky`. It used to be, from when the document scrolled — and since
+    // the shell became exactly the viewport this header's containing block never
+    // scrolls, so `sticky top-0` had nothing to stick to and was inert.
+    // `shrink-0` inside a fixed-height column is what actually keeps it in place.
+    //
+    // Removing it matters beyond tidiness: an inert `sticky` invites the next
+    // person to "fix" a scrolling problem by adding `overflow` somewhere in the
+    // chain, which is how the containing-block contract gets broken. `z-header`
+    // stays — that is what keeps it above a table's `z-sticky` header.
+    <header className="z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
       <button
         ref={drawerTriggerRef}
         type="button"
@@ -254,10 +299,21 @@ function AppHeader({
           The notice is a statement about brand state, so brand state decides it.
         */}
         {brandIsProvisional ? (
-          <span className="rounded-full bg-warning-subtle px-3 py-1 text-caption text-text-secondary">
+          <span className="hidden rounded-full bg-warning-subtle px-3 py-1 text-caption text-text-secondary sm:inline">
             {translate(messages, 'app.provisionalBrand')}
           </span>
         ) : null}
+        {/*
+          The language control lives in the HEADER, not in the sidebar.
+          The sidebar collapses to a 16-unit rail and becomes a drawer below
+          `lg`, so a control placed there is unreachable in exactly the two
+          states where a user is most likely to be hunting for it. The header is
+          present, and identical, in every state.
+
+          It is the same component the sign-in screen uses. Two switchers would
+          be two chances for the route-preservation rule to be wrong.
+        */}
+        <LocaleSwitcher locale={locale} messages={messages} />
         {account}
       </div>
     </header>

@@ -70,7 +70,7 @@ export default async function UsersPage({
           { labelKey: 'nav.users' },
         ]}
       />
-      <PageBody>
+      <PageBody fill>
         <UsersScreen
           locale={locale}
           messages={messages}

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { carriableSearchParams } from '@/components/data-table/table-state';
 import { LOCALES, isLocale, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -19,31 +20,45 @@ import { translate } from '@/i18n/get-messages';
  *      screen they were reading.
  *   3. A link works without JavaScript and can be opened in a new tab.
  *
- * The query string is deliberately DROPPED. Table state is safe to publish by
- * construction, but re-attaching it here would mean this component has to know
- * which parameters are safe — a second place for that rule to be wrong. Losing
- * a page number on a language change is a smaller cost than a second
- * URL-safety policy.
+ * ## The query string is now PRESERVED, through the existing authority
+ *
+ * It used to be dropped, and the reason given was sound: re-attaching it here
+ * would have made this component a second opinion about which parameters are
+ * safe to publish. The fix is not to accept that cost but to remove the second
+ * opinion — `carriableSearchParams` lives in `table-state.ts`, beside the code
+ * that WRITES those parameters, and both sides of the rule move together.
+ *
+ * So an operator on page 3 of Users, sorted by name, switching to Arabic, stays
+ * on page 3 of Users sorted by name. Anything not on the allow-list is dropped,
+ * which is why a token or a customer name cannot ride along even if some future
+ * screen puts one in its URL.
  */
 export function LocaleSwitcher({
   locale,
   messages,
+  className,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** Lets the header and the auth card space it differently without a fork. */
+  readonly className?: string | undefined;
 }) {
   const pathname = usePathname() ?? `/${locale}`;
+  // `useSearchParams` returns a read-only instance; `carriableSearchParams`
+  // copies rather than mutating it.
+  const search = useSearchParams();
 
   return (
-    <nav aria-label={translate(messages, 'locale.switch')}>
+    <nav aria-label={translate(messages, 'locale.switch')} className={className}>
       <ul className="flex items-center gap-1">
         {LOCALES.map((candidate) => {
           const active = candidate === locale;
           return (
             <li key={candidate}>
               <Link
-                href={swapLocale(pathname, candidate)}
+                href={withCarriedQuery(swapLocale(pathname, candidate), search)}
                 hrefLang={candidate}
+                lang={candidate}
                 aria-current={active ? 'true' : undefined}
                 className={`rounded-md px-2 py-1 text-supporting transition-colors duration-fast ease-standard ${
                   active
@@ -59,6 +74,18 @@ export function LocaleSwitcher({
       </ul>
     </nav>
   );
+}
+
+/**
+ * Appends the carriable query parameters to a path.
+ *
+ * Pure and separately testable: given a path and any query, it returns what the
+ * link will point at, so "no secret survives a language change" is a unit test
+ * and not a browser observation.
+ */
+export function withCarriedQuery(path: string, search: URLSearchParams | string): string {
+  const carried = carriableSearchParams(search).toString();
+  return carried ? `${path}?${carried}` : path;
 }
 
 /**

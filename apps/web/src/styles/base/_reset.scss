@@ -7,6 +7,60 @@
   box-sizing: border-box;
 }
 
+// The document is not a scroll container.
+//
+// Every route group owns exactly one intentional scroll region inside itself:
+// `(dashboard)` and `(design)` through the application shell's `main`, `(auth)`
+// through its own form column. Nothing scrolls the document.
+//
+// Stated honestly: these two declarations did **not** fix the blank overscroll
+// this remediation was opened for. That was measured — `html`/`body` with
+// `height:100%; overflow:hidden` left `/administration/permissions` scrolling
+// 6175px, unchanged. The cause was an absolutely positioned descendant escaping
+// to the initial containing block, and the fix is the containing block declared
+// on each scroll container (see `AppShell`). These rules are the floor, not the
+// fix: they stop a NEW growth from reaching the viewport, and they are the
+// reason a regression shows up as clipped content rather than as silent
+// document scroll.
+html,
+body {
+  height: 100%;
+}
+
+// Scoped to the LOCALE layout's body, not to every body in the application.
+//
+// `body { overflow: hidden }` unscoped is a cliff, for a reason worth writing
+// down: per CSS Overflow §3.3 a `body` overflow value is PROPAGATED TO THE
+// VIEWPORT while `html` computes to `visible`, and `body` itself then computes
+// to `visible`. So it clips nothing inside body — it only removes the viewport's
+// scroll gesture. That is precisely why the bisection measured it inert: it
+// suppresses the scrollbar, not the 7075px of content.
+//
+// Applied globally it would also reach `app/page.tsx` and Next's built-in
+// not-found, which live OUTSIDE `[locale]` and have no `h-dvh` root with an
+// inner scroller. Content taller than the viewport there would become silently
+// unreachable — no scrollbar, no gesture — which is a worse failure than a
+// scrolling document and one no source test can see.
+//
+// The class is set in `app/[locale]/layout.tsx`, the one layout that renders a
+// `<body>` for a route group that owns its own scroll region.
+body.app-viewport {
+  overflow: hidden;
+}
+
+// Reserve the scrollbar's space whether or not it is showing.
+//
+// The Owner's platform is Windows 11, where scrollbars are classic and about
+// 15px wide rather than overlaid. Without this, navigating from a screen that
+// fits to one that does not makes the scroll region gain a scrollbar and shifts
+// every piece of content sideways — a visible jump on ordinary navigation, and
+// the same jump again when a dialog locks scrolling. `stable` also removes the
+// need for any RTL branch: the gutter is reserved on the correct side by the
+// writing mode.
+[data-scroll-region] {
+  scrollbar-gutter: stable;
+}
+
 html {
   // Never disable user zoom. Browser zoom at 200% is an accessibility
   // requirement, not an edge case. 100% means "do not adjust", so iOS Safari

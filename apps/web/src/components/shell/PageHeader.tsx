@@ -107,7 +107,27 @@ export function PageHeader({
   );
 }
 
-/** Standard page body padding, so every screen agrees without repeating itself. */
-export function PageBody({ children }: { readonly children: ReactNode }) {
-  return <div className="px-6 py-6">{children}</div>;
+/**
+ * Standard page body padding, so every screen agrees without repeating itself.
+ *
+ * `fill` opts a screen into taking the scrollport's remaining height rather than
+ * growing with its content. It is what lets a table shrink and scroll internally
+ * so its pager stays on screen, instead of the pager being pushed below the fold
+ * with the rows.
+ *
+ * It is opt-in rather than the default because most screens are prose, forms and
+ * cards that SHOULD grow and let `main` scroll — forcing them into a fixed-height
+ * box would give each of them its own inner scrollbar for no reason. Only the
+ * four table screens ask for it.
+ */
+export function PageBody({
+  children,
+  fill = false,
+}: {
+  readonly children: ReactNode;
+  readonly fill?: boolean;
+}) {
+  return (
+    <div className={fill ? 'flex min-h-0 flex-1 flex-col px-6 py-6' : 'px-6 py-6'}>{children}</div>
+  );
 }

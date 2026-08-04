@@ -18,9 +18,8 @@ import {
   Drawer,
   ReasonConfirmDialog,
   Tabs,
-  ToastRegion,
-  type ToastMessage,
 } from '@/components/overlays/Overlays';
+import { notify } from '@/components/notifications';
 import { Icon, ICON_NAMES } from '@/components/primitives/Icon';
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import {
@@ -79,7 +78,6 @@ export function GalleryClient({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [destructiveOpen, setDestructiveOpen] = useState(false);
   const [reasonOpen, setReasonOpen] = useState(false);
-  const [toasts, setToasts] = useState<readonly ToastMessage[]>([]);
   const [amount, setAmount] = useState('1250.0000');
   const [name, setName] = useState('');
   const [status, setStatus] = useState('open');
@@ -371,16 +369,22 @@ export function GalleryClient({
           </button>
           <button
             type="button"
+            /*
+             * Raises a real notification through the GLOBAL authority.
+             *
+             * The gallery used to keep its own `useState` list and render its
+             * own `ToastRegion`, which made it a second notification authority:
+             * a second stack, in a second place, each correct about its own
+             * state and wrong about the user's. The showcase now demonstrates
+             * the real thing, which is also the only way the showcase can be
+             * evidence of anything.
+             */
             onClick={() =>
-              setToasts((current) => [
-                ...current,
-                {
-                  id: `toast-${current.length + 1}`,
-                  tone: 'success',
-                  title: t('gallery.toastTitle'),
-                  description: t('gallery.toastBody'),
-                },
-              ])
+              notify({
+                tone: 'success',
+                title: t('gallery.toastTitle'),
+                description: t('gallery.toastBody'),
+              })
             }
             className={`${BUTTON} border border-border bg-surface text-text-secondary hover:bg-surface-subtle`}
           >
@@ -453,11 +457,13 @@ export function GalleryClient({
           confirmLabel={t('gallery.confirmReason')}
         />
 
-        <ToastRegion
-          messages={messages}
-          toasts={toasts}
-          onDismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
-        />
+        {/*
+          No `ToastRegion` here. There is exactly ONE in the application, mounted
+          by the locale layout above every route group — including this one — so
+          the button above raises a notification that appears in the same corner,
+          from the same component, as a real one. A second region here would be a
+          second authority, which is the thing the gate now forbids.
+        */}
       </Section>
 
       <Section title={t('gallery.states')}>

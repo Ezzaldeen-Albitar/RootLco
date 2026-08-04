@@ -493,6 +493,7 @@ jobs:
           set -euo pipefail
           npm run validate:web-tokens
           npm run validate:web-brand
+          npm run validate:notification-authority
           # No fetch outside the API layer, no import of API server or Supabase
           # source, no dangerouslySetInnerHTML. Each of those failures is
           # invisible in review and compiles perfectly.

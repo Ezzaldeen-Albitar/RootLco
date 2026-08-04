@@ -55,7 +55,7 @@ export default async function AuditLogPage({
         descriptionKey="audit.description"
         crumbs={crumbs}
       />
-      <PageBody>
+      <PageBody fill>
         <AuditLogScreen
           locale={locale}
           messages={messages}

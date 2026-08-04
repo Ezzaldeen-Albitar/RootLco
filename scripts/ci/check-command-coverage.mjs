@@ -315,6 +315,12 @@ export const REGISTER = Object.freeze([
   { name: 'validate:web-tokens', owner: ROOT, tier: 'required', why: 'design-token gate' },
   { name: 'validate:web-brand', owner: ROOT, tier: 'required', why: 'brand-isolation gate' },
   {
+    name: 'validate:notification-authority',
+    owner: ROOT,
+    tier: 'required',
+    why: 'exactly one toast authority, mounted once, and no competing library',
+  },
+  {
     name: 'validate:web-boundary',
     owner: ROOT,
     tier: 'required',

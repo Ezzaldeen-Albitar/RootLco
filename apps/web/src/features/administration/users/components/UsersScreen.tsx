@@ -14,6 +14,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { formatDate } from '@/lib/format';
+import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
@@ -122,6 +123,19 @@ export function UsersScreen({
       // second time a row action fails, and the repeat is announced to nobody
       // (P1-26-F-038). The COUNTER lives here, where the repeats happen.
       setActionState({ ...result, attempt: (actionState.attempt ?? 0) + 1 });
+
+      // The OPERATION result goes to the global notification authority, not into
+      // this screen's flow (`P1-26-F-070`). It used to render at the top of the
+      // page, which meant an operator who had scrolled a hundred rows down to
+      // lock an account was told the outcome somewhere they could not see. A
+      // toast is fixed to the viewport, so the answer arrives where the person
+      // is rather than where the form was.
+      //
+      // `invalid` is not raised here: field errors stay beside their fields, and
+      // `notifyActionResult` returns false for that status rather than leaving
+      // the decision to each caller.
+      notifyActionResult(result, messages);
+
       if (result.status === 'success') {
         setPending(null);
         table.refresh();
@@ -130,8 +144,14 @@ export function UsersScreen({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {actionState.status !== 'idle' && !pending ? (
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {/*
+        Kept for `invalid` ONLY. That is the one status whose message names a
+        control on this screen, so it belongs on this screen; every other outcome
+        is now a toast. Rendering both would say the same thing twice in two
+        places, which is how an interface teaches people to ignore one of them.
+      */}
+      {actionState.status === 'invalid' && !pending ? (
         <FormFeedback state={actionState} messages={messages} />
       ) : null}
 
