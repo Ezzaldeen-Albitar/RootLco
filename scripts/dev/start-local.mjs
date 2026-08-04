@@ -433,6 +433,18 @@ async function main() {
     }
 
     const toStart = [...plan.start, ...plan.recover];
+
+    // Belt and braces, and not decoration: the early returns above are what
+    // normally prevent a spawn, and a mutation test proved an earlier version of
+    // this file could lose one without any suite noticing. This makes the rule
+    // enforced at runtime rather than merely asserted about the source, so
+    // deleting a `return` produces a loud refusal instead of a second stack.
+    if (!maySpawn(plan.decision)) {
+      throw new Error(
+        `refusing to start anything on a ${plan.decision} verdict — this is a launcher bug, ` +
+          `not a machine problem. Plan: ${JSON.stringify(plan)}`
+      );
+    }
     if (plan.adopt.length > 0) {
       console.log('');
       console.log(

@@ -674,6 +674,18 @@ describe('the launcher control flow', () => {
     }
   });
 
+  it('enforces the spawn rule at RUNTIME, not only in this file', () => {
+    // The early returns are the normal protection. A mutation test proved an
+    // earlier version could lose one silently, so `maySpawn` is also consulted
+    // immediately before the launch loop — a source-scan assertion cannot save
+    // a launcher that ships with the branch deleted.
+    const guard = stripped.indexOf('if (!maySpawn(plan.decision))');
+    const spawnPoint = stripped.indexOf('children[tier] = launch(tier)');
+    expect(guard, 'the launcher must consult maySpawn before spawning').toBeGreaterThan(0);
+    expect(guard).toBeLessThan(spawnPoint);
+    expect(blockAfter(stripped, 'if (!maySpawn(plan.decision))')).toMatch(/throw new Error/);
+  });
+
   it('takes the lock before it surveys or spawns', () => {
     const lock = stripped.indexOf('acquireLock(');
     const spawnPoint = stripped.indexOf('children[tier] = launch(tier)');
