@@ -76,11 +76,14 @@ export {
 export type { VehicleCreateInput, VehicleUpdateInput } from './domain/vehicle-write';
 export {
   DUPLICATE_DECISIONS,
+  DUPLICATE_STATUSES,
   MAX_APPROVAL_REF,
   MAX_REASON,
   MIN_REASON,
   type DuplicateDecision,
+  type DuplicateStatus,
 } from './domain/vehicle-identity';
+export type { VehicleDuplicateCandidateEntry } from './data/vehicle-identity-repository';
 export {
   MAX_PLATE_RAW,
   MAX_TRANSFER_REASON,

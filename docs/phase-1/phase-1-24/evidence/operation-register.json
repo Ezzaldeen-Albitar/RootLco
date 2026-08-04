@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 236,
-    "openapiPaths": 196,
-    "openapiOperations": 236,
+    "operations": 238,
+    "openapiPaths": 198,
+    "openapiOperations": 238,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 153
   },
   "counts": {
-    "Covered": 236
+    "Covered": 238
   },
   "operations": [
     {
@@ -800,6 +800,42 @@
       "tests": ["tests/backend/p1-16-customer-identity.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/timeline/route.ts"
+    },
+    {
+      "id": "crm.duplicate-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customer-duplicates",
+      "permissions": ["crm.customer.duplicate.review"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customer-duplicates",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-17-duplicate-candidate-reads.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customer-duplicates/route.ts"
     },
     {
       "id": "crm.duplicate-review",
@@ -7739,6 +7775,42 @@
       "tests": ["tests/backend/p1-17-vehicle-history.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/[vehicleId]/documents/route.ts"
+    },
+    {
+      "id": "veh.vehicle-duplicate-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-duplicates",
+      "permissions": ["veh.vehicle.duplicate.review"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-duplicates",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-17-duplicate-candidate-reads.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-duplicates/route.ts"
     },
     {
       "id": "veh.vehicle-duplicate-review",

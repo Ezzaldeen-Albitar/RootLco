@@ -87,6 +87,7 @@ export type {
   ScanResult,
   VehicleLinkResult,
 } from './application/customer-identity-service';
+export type { DuplicateCandidateEntry } from './data/customer-identity-repository';
 export {
   CANDIDATE_THRESHOLD,
   DUPLICATE_DECISIONS,

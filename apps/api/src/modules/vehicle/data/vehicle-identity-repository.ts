@@ -14,7 +14,55 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  buildPage,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { MatchBasisElement } from '../domain/vehicle-identity';
+
+/**
+ * Duplicate-candidate queue ordering: most recently detected first.
+ *
+ * Not by score — a reviewer works a queue, and a queue that reorders itself
+ * would move a row out from under them mid-decision. The score is on every row
+ * for the screen to rank within a page.
+ */
+export const VEHICLE_DUPLICATE_CANDIDATE_ORDERING: OrderingContract = {
+  key: 'veh.duplicate_candidates:detected_at_desc',
+  direction: 'desc',
+};
+
+/**
+ * One candidate pair, with both vehicles' safe labels resolved.
+ *
+ * `matchBasis` is published, and it is safe by schema rather than by review:
+ * `veh.valid_match_basis` admits only the keys `basis`, `classification`,
+ * `weight` and `evidence`, restricts `basis` to a closed vocabulary, refuses to
+ * let a vin/plate/identifier collision be classified below `restricted`, and
+ * runs `veh.jsonb_no_raw_values` over any evidence object.
+ *
+ * So a caller learns WHICH signal fired — `vin_collision` — and never the VIN.
+ * That distinction is the whole point of a review screen: a reviewer has to know
+ * two vehicles collided on their VIN to judge the pair, and does not need to
+ * read either VIN to do it.
+ */
+export interface VehicleDuplicateCandidateEntry {
+  readonly id: string;
+  readonly vehicleIdA: string;
+  readonly displayNumberA: string | null;
+  readonly vehicleIdB: string;
+  readonly displayNumberB: string | null;
+  /** `numeric` on the wire as a string. Never narrowed to a float. */
+  readonly matchScore: string;
+  readonly matchBasis: unknown;
+  readonly status: string;
+  readonly detectedAt: string;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+}
 
 /** The state a merge needs to decide its outcome before touching the database. */
 export interface VehicleMergeState {
@@ -249,6 +297,82 @@ export class VehicleIdentityRepository extends Repository {
       ]
     );
     return { id: inserted.rows[0]?.id ?? '', created: true };
+  }
+
+  /**
+   * The tenant's vehicle duplicate-candidate queue, newest detection first.
+   *
+   * There was no read for this at all (`P1-27-INT-005`). A review screen could
+   * only see candidates by POSTing a scan — a privileged write that emits an
+   * audit record — so opening the queue would have written to the audit trail
+   * every time.
+   *
+   * `display_number` is the label, not the VIN: it is the non-sensitive business
+   * key, and `domain/vehicle-search.ts` keeps the VIN out of any projection that
+   * is not the vehicle read itself. A reviewer identifies the pair by its
+   * vehicle numbers and opens either vehicle to see more.
+   */
+  async listCandidates(
+    db: DbHandle,
+    page: PageRequest,
+    status: string | null
+  ): Promise<Page<VehicleDuplicateCandidateEntry>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, status];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'c.detected_at', id: 'c.id' },
+      VEHICLE_DUPLICATE_CANDIDATE_ORDERING,
+      3
+    );
+    values.push(...keyset.values);
+
+    const result = await this.run<{
+      id: string;
+      vehicle_id_a: string;
+      display_number_a: string | null;
+      vehicle_id_b: string;
+      display_number_b: string | null;
+      match_score: string;
+      match_basis: unknown;
+      status: string;
+      detected_at: Date;
+      reviewed_by: string | null;
+      reviewed_at: Date | null;
+    }>(
+      db,
+      `SELECT c.id, c.vehicle_id_a, a.display_number AS display_number_a,
+              c.vehicle_id_b, b.display_number AS display_number_b,
+              c.match_score, c.match_basis, c.status, c.detected_at,
+              c.reviewed_by, c.reviewed_at
+         FROM veh.duplicate_candidates c
+         LEFT JOIN veh.vehicles a
+                ON a.tenant_id = c.tenant_id AND a.id = c.vehicle_id_a
+         LEFT JOIN veh.vehicles b
+                ON b.tenant_id = c.tenant_id AND b.id = c.vehicle_id_b
+        WHERE c.tenant_id = $1
+          AND ($2::text IS NULL OR c.status = $2) ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      values
+    );
+    const rows = result.rows.map((row) => ({
+      id: row.id,
+      vehicleIdA: row.vehicle_id_a,
+      displayNumberA: row.display_number_a,
+      vehicleIdB: row.vehicle_id_b,
+      displayNumberB: row.display_number_b,
+      matchScore: row.match_score,
+      matchBasis: row.match_basis,
+      status: row.status,
+      detectedAt: row.detected_at.toISOString(),
+      reviewedBy: row.reviewed_by,
+      reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
+    }));
+    return buildPage(rows, page, VEHICLE_DUPLICATE_CANDIDATE_ORDERING, (row) => ({
+      sortValue: row.detectedAt,
+      id: row.id,
+    }));
   }
 
   async findCandidate(db: DbHandle, candidateId: string): Promise<DuplicateCandidateRow | null> {

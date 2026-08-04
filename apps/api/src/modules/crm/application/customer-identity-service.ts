@@ -24,8 +24,10 @@ import { pageRequest, type Page } from '@/server/db/pagination';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import {
+  DUPLICATE_CANDIDATE_ORDERING,
   TIMELINE_ORDERING,
   type CustomerIdentityRepository,
+  type DuplicateCandidateEntry,
   type HistoryEntry,
   type ScoreInput,
   type TimelineEntry,
@@ -263,6 +265,30 @@ export class CustomerIdentityService extends ApplicationService {
     // timeline, and hiding it would lose the record of how it got there.
     await this.requireReadableCustomer(db, customerId);
     return this.identity.timeline(db, customerId, pageRequest(TIMELINE_ORDERING, pageInput));
+  }
+
+  /**
+   * The tenant's duplicate-candidate queue.
+   *
+   * No parent to resolve: this is a tenant-wide queue, not a sub-resource of one
+   * customer, and RLS plus the explicit `tenant_id` predicate are what scope it.
+   * A caller who supplies a `status` filters the queue; one who does not sees
+   * every candidate including the dismissed and merged ones, because a reviewer
+   * auditing past decisions needs to see them.
+   */
+  async listCandidates(
+    db: DbHandle,
+    input: {
+      status?: string | undefined;
+      cursor?: string | undefined;
+      limit?: number | undefined;
+    }
+  ): Promise<Page<DuplicateCandidateEntry>> {
+    return this.identity.listCandidates(
+      db,
+      pageRequest(DUPLICATE_CANDIDATE_ORDERING, input),
+      input.status ?? null
+    );
   }
 
   /**

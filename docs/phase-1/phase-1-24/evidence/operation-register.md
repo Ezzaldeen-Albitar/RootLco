@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 236   |
+| Public operations        | 238   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 196   |
-| OpenAPI operations       | 236   |
+| OpenAPI paths            | 198   |
+| OpenAPI operations       | 238   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 104   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 236        |
+| Covered           | 238        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -35,7 +35,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | Domain          | Operations | Covered | Writes | Audited | Idempotent | Version-guarded |
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
 | billing         | 8          | 8       | 5      | 5       | 5          | 2               |
-| crm             | 27         | 27      | 15     | 15      | 15         | 0               |
+| crm             | 28         | 28      | 15     | 15      | 15         | 0               |
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
 | diagnostics     | 13         | 13      | 10     | 10      | 10         | 2               |
 | iam             | 38         | 38      | 24     | 22      | 10         | 6               |
@@ -50,7 +50,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
 | shared-services | 26         | 26      | 18     | 18      | 6          | 6               |
 | technician      | 6          | 6       | 3      | 3       | 1          | 2               |
-| vehicle         | 21         | 21      | 12     | 12      | 12         | 0               |
+| vehicle         | 22         | 22      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
 | work-order      | 26         | 26      | 15     | 16      | 13         | 8               |
 
@@ -77,6 +77,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `crm.customer-search`                  | GET    | `/api/v1/customers`                                                           | tenant  | `crm.customer.read`                                                  | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `crm.customer-status-set`              | PUT    | `/api/v1/customers/{customerId}/status`                                       | tenant  | `crm.customer.governance.manage`                                     | crm.customer.status_changed            | yes  | —   | audit authorization concurrency cross-tenant denial idempotency route service success                                         | Covered |
 | `crm.customer-timeline`                | GET    | `/api/v1/customers/{customerId}/timeline`                                     | tenant  | `crm.customer.read`                                                  | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `crm.duplicate-list`                   | GET    | `/api/v1/customer-duplicates`                                                 | tenant  | `crm.customer.duplicate.review`                                      | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `crm.duplicate-review`                 | POST   | `/api/v1/customer-duplicates/{candidateId}/review`                            | tenant  | `crm.customer.duplicate.review`                                      | crm.customer.duplicate_reviewed        | yes  | —   | audit authorization concurrency cross-tenant denial idempotency route service success                                         | Covered |
 | `crm.duplicate-scan`                   | POST   | `/api/v1/customers/{customerId}/duplicate-scans`                              | tenant  | `crm.customer.duplicate.review`                                      | crm.customer.duplicates_scanned        | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `crm.individual-create`                | POST   | `/api/v1/customers/individuals`                                               | tenant  | `crm.customer.create`                                                | crm.customer.created                   | yes  | —   | audit authorization cross-tenant denial idempotency outbox rollback route service success                                     | Covered |
@@ -249,6 +250,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `veh.vehicle-authorized-party-retire`  | POST   | `/api/v1/vehicles/{vehicleId}/authorized-parties/{relationshipId}/retirement` | tenant  | `veh.vehicle.relationship.manage`                                    | veh.vehicle.authorized_party_retired   | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `veh.vehicle-create`                   | POST   | `/api/v1/vehicles`                                                            | tenant  | `veh.vehicle.manage`                                                 | veh.vehicle.created                    | yes  | —   | audit authorization cross-tenant denial idempotency outbox rollback route service success                                     | Covered |
 | `veh.vehicle-document-list`            | GET    | `/api/v1/vehicles/{vehicleId}/documents`                                      | tenant  | `shared.document.manage`                                             | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `veh.vehicle-duplicate-list`           | GET    | `/api/v1/vehicle-duplicates`                                                  | tenant  | `veh.vehicle.duplicate.review`                                       | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `veh.vehicle-duplicate-review`         | POST   | `/api/v1/vehicle-duplicates/{candidateId}/review`                             | tenant  | `veh.vehicle.duplicate.review`                                       | veh.vehicle.duplicate_reviewed         | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `veh.vehicle-duplicate-scan`           | POST   | `/api/v1/vehicles/{vehicleId}/duplicate-scans`                                | tenant  | `veh.vehicle.duplicate.review`                                       | veh.vehicle.duplicates_scanned         | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `veh.vehicle-ev-profile-read`          | GET    | `/api/v1/vehicles/{vehicleId}/ev-profile`                                     | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |

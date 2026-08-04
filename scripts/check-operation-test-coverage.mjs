@@ -301,6 +301,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
   },
+  'veh.vehicle-duplicate-list': {
+    files: ['tests/backend/p1-16-17-duplicate-candidate-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the vehicle mirror of crm.duplicate-list, missing for the same reason (P1-27-INT-005). The pair is labelled by display_number, never by VIN, and match_basis publishes WHICH signal fired (vin_collision) and never the value — guaranteed by veh.valid_match_basis, which the suite proves still bites by attempting a raw-value insert and asserting the write is refused rather than only asserting the projection is clean',
+  },
   'veh.vehicle-duplicate-scan': {
     files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit'],
@@ -1110,6 +1115,11 @@ export const MANIFEST = {
     note: 'no_service blocks the customer in the same transaction with a status transition and block-history entry; a short reason is refused before anything is written',
   },
   // --- Identity: duplicates, merge, history, timeline, vehicle linkage. ----
+  'crm.duplicate-list': {
+    files: ['tests/backend/p1-16-17-duplicate-candidate-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the review queue had no read at all (P1-27-INT-005) — a screen could only see its candidates by POSTing a scan, a privileged write that emits an audit record, so opening the queue wrote to the audit trail. Tenant-wide rather than nested under one of the pair’s two members; both partners joined for display names; no status filter returns dismissed candidates too, because a reviewer auditing past decisions needs them. That listing writes NO audit record is asserted as a DELTA across the call',
+  },
   'crm.duplicate-scan': {
     files: ['tests/backend/p1-16-customer-identity.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit'],

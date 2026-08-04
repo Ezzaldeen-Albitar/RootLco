@@ -19,6 +19,45 @@ export const TIMELINE_ORDERING: OrderingContract = {
   direction: 'desc',
 };
 
+/**
+ * Duplicate-candidate queue ordering: most recently detected first.
+ *
+ * Not by score. A reviewer works a queue, and a queue that reorders itself as
+ * scores land would move a row out from under them mid-decision; `detected_at`
+ * is stable once written because the immutability trigger freezes the row's
+ * detection facts. The score is on every row for the screen to rank within a
+ * page.
+ */
+export const DUPLICATE_CANDIDATE_ORDERING: OrderingContract = {
+  key: 'crm.duplicate_candidates:detected_at_desc',
+  direction: 'desc',
+};
+
+/**
+ * One candidate pair, with both customers' display names resolved.
+ *
+ * `matchBasis` is published, and that is safe by schema rather than by review:
+ * `ck_duplicate_candidates_basis` calls `crm.jsonb_no_raw_value_keys`, which
+ * rejects a `value`/`raw`/`national_id`/`tax`/`registration`/`date_of_birth` key
+ * at any depth. So the basis can only ever carry which signals fired and how
+ * heavily — which is precisely the field-level comparison evidence a reviewer
+ * needs, and never the personal data that produced it.
+ */
+export interface DuplicateCandidateEntry {
+  readonly id: string;
+  readonly partnerIdA: string;
+  readonly displayNameA: string | null;
+  readonly partnerIdB: string;
+  readonly displayNameB: string | null;
+  /** `numeric` on the wire as a string. Never narrowed to a float. */
+  readonly matchScore: string;
+  readonly matchBasis: unknown;
+  readonly status: string;
+  readonly detectedAt: string;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+}
+
 export interface DuplicateCandidateRow {
   readonly id: string;
   readonly partnerIdA: string;
@@ -185,6 +224,92 @@ export class CustomerIdentityRepository extends Repository {
       ]
     );
     return { id: inserted.rows[0]?.id ?? '', created: true };
+  }
+
+  /**
+   * The tenant's duplicate-candidate queue, newest detection first.
+   *
+   * There was no read for this at all (`P1-27-INT-005`). A review screen could
+   * only see candidates by POSTing a scan — a privileged write that emits an
+   * audit record — so opening the queue would have written to the audit trail
+   * every time, and re-scanning is not a read.
+   *
+   * Both partners are LEFT JOINed for their display names because a queue of
+   * uuid pairs is not reviewable. The join is soft: a customer soft-deleted or
+   * merged after the pair was detected yields a null name beside a live id,
+   * which is the honest state — the candidate really does still reference it,
+   * and hiding the row would hide a decision somebody still owes.
+   */
+  async listCandidates(
+    db: DbHandle,
+    page: PageRequest,
+    status: string | null
+  ): Promise<Page<DuplicateCandidateEntry>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, status];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'c.detected_at', id: 'c.id' },
+      DUPLICATE_CANDIDATE_ORDERING,
+      3
+    );
+    values.push(...keyset.values);
+
+    const result = await this.run<{
+      id: string;
+      partner_id_a: string;
+      display_name_a: string | null;
+      partner_id_b: string;
+      display_name_b: string | null;
+      match_score: string;
+      match_basis: unknown;
+      status: string;
+      detected_at: Date;
+      reviewed_by: string | null;
+      reviewed_at: Date | null;
+    }>(
+      db,
+      // `$2 IS NULL OR status = $2` rather than an assembled predicate: the
+      // filter is one bound parameter either way, so no branch of this statement
+      // is built from caller input. `ix_duplicate_candidates_status` is
+      // (tenant_id, status), so the filtered form is index-eligible; the
+      // ordering is a sort over that narrowed set, which is a performance
+      // characteristic and not a correctness one.
+      `SELECT c.id, c.partner_id_a, a.display_name AS display_name_a,
+              c.partner_id_b, b.display_name AS display_name_b,
+              c.match_score, c.match_basis, c.status, c.detected_at,
+              c.reviewed_by, c.reviewed_at
+         FROM crm.duplicate_candidates c
+         LEFT JOIN crm.business_partners a
+                ON a.tenant_id = c.tenant_id AND a.id = c.partner_id_a
+         LEFT JOIN crm.business_partners b
+                ON b.tenant_id = c.tenant_id AND b.id = c.partner_id_b
+        WHERE c.tenant_id = $1
+          AND ($2::text IS NULL OR c.status = $2) ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      values
+    );
+    const rows = result.rows.map((row) => ({
+      id: row.id,
+      partnerIdA: row.partner_id_a,
+      displayNameA: row.display_name_a,
+      partnerIdB: row.partner_id_b,
+      displayNameB: row.display_name_b,
+      // `numeric` arrives as a string and stays one. A match score is a decimal
+      // the database froze at detection; parsing it to a float here would let a
+      // rounding artefact change which of two candidates a reviewer sees first.
+      matchScore: row.match_score,
+      matchBasis: row.match_basis,
+      status: row.status,
+      detectedAt: row.detected_at.toISOString(),
+      reviewedBy: row.reviewed_by,
+      reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
+    }));
+    return buildPage(rows, page, DUPLICATE_CANDIDATE_ORDERING, (row) => ({
+      sortValue: row.detectedAt,
+      id: row.id,
+    }));
   }
 
   async findCandidate(db: DbHandle, candidateId: string): Promise<DuplicateCandidateRow | null> {
