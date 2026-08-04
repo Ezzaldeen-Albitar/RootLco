@@ -174,7 +174,6 @@
   "gallery.readiness.misconfigured": "The API connection is not configured.",
   "overview.identityTitle": "Visual identity",
   "overview.identityBody": "The palette, typography and spacing are applied from one token layer. Every surface in this frame reads those tokens, so the identity can be changed centrally without editing a component.",
-
   "nav.users": "Users",
   "nav.roles": "Roles",
   "nav.permissions": "Permissions",
@@ -187,8 +186,13 @@
   "nav.languages": "Languages",
   "nav.systemSettings": "System settings",
   "nav.profile": "Your profile",
-
   "auth.shellTagline": "Sign in to continue.",
+  "auth.showcase.headline": "Manage your company from one connected workspace.",
+  "auth.showcase.point1": "Multiple companies and branches, ready from the first day.",
+  "auth.showcase.point2": "Secure role-based access for every employee.",
+  "auth.showcase.point3": "Arabic and English, right-to-left and left-to-right.",
+  "auth.showcase.secureLabel": "Secure by design",
+  "auth.showcase.secureBody": "Every action is attributed and recorded, so you can answer what changed, when, and by whom.",
   "auth.backToLogin": "Back to sign in",
   "auth.login.title": "Sign in",
   "auth.login.description": "Enter your workspace details to continue.",
@@ -212,7 +216,6 @@
   "auth.login.reason.signedOut": "You have been signed out.",
   "auth.login.reason.unavailable": "The service could not confirm your session. Sign in again.",
   "auth.login.reason.forbidden": "Your details are correct, but this account is not permitted to open the application. An administrator needs to grant it access.",
-
   "auth.forgot.title": "Reset your password",
   "auth.forgot.description": "Enter your email address and we will send a reset link if an account exists.",
   "auth.forgot.email": "Email address",
@@ -224,7 +227,6 @@
   "auth.forgot.error.email": "Enter your email address.",
   "auth.forgot.error.throttled": "Too many requests. Wait a short while before trying again.",
   "auth.forgot.error.unavailable": "The service is not responding. This is usually brief.",
-
   "auth.reset.title": "Choose a new password",
   "auth.reset.description": "This link can be used once. Choose a password you do not use anywhere else.",
   "auth.reset.password": "New password",
@@ -245,18 +247,15 @@
   "auth.reset.error.mismatch": "The two passwords do not match.",
   "auth.reset.error.throttled": "Too many attempts. Wait a short while before trying again.",
   "auth.reset.error.unavailable": "The service is not responding. This is usually brief.",
-
   "auth.activate.title": "Set up your account",
   "auth.activate.description": "Choose a password to finish setting up your account.",
   "auth.activate.done": "Your password is set",
   "auth.activate.doneDetail": "An administrator activates your account once your invitation is confirmed. You can sign in as soon as that happens.",
   "auth.activate.note": "Your access and workspace are set by your administrator, not on this page.",
-
   "auth.session.signOut": "Sign out",
   "auth.session.signingOut": "Signing out…",
   "auth.session.account": "Account",
   "auth.session.signedInAs": "Signed in as",
-
   "profile.title": "Your profile",
   "profile.description": "What the service knows about your account, and what you can change here.",
   "profile.identity": "Identity",
@@ -281,7 +280,6 @@
   "profile.saved": "Your profile was updated.",
   "profile.readOnly": "Only an administrator can change these details",
   "profile.readOnlyDetail": "The service has no self-service update for a profile. Ask an administrator to make the change for you.",
-
   "admin.title": "Administration",
   "admin.description": "People, access, and how this workspace is configured.",
   "admin.section.identity": "People and access",
@@ -320,7 +318,6 @@
   "admin.contractGap.settingsBacked": "This screen edits organization settings. The service publishes no dedicated operation for this area yet, so nothing here is assumed on your behalf — the values are exactly the ones you enter.",
   "admin.contractGap.noCatalogue": "The platform reference list behind this screen is not published by the service in this release.",
   "admin.contractGap.noDirectory": "The service publishes no company or branch directory, so references are shown rather than names.",
-
   "users.title": "Users",
   "users.description": "Everyone with an account in this workspace.",
   "users.column.displayName": "Name",
@@ -370,7 +367,6 @@
   "users.confirm.revokeSessions": "Sign this user out everywhere?",
   "users.confirm.revokeSessionsBody": "Every active session ends. They can sign in again straight away.",
   "users.notAccepted": "The invitation has not been accepted yet, so the account cannot be activated.",
-
   "roles.title": "Roles",
   "roles.description": "The named sets of permissions granted to people in this workspace.",
   "roles.column.name": "Role",
@@ -392,7 +388,6 @@
   "roles.confirm.archiveBody": "It stops being available to grant. Existing grants are not removed by this action.",
   "roles.systemLocked": "This role is built into the platform and cannot be changed.",
   "roles.managePermissions": "Permissions",
-
   "permissions.title": "Permissions",
   "permissions.description": "Every permission the platform defines, and how each role uses it.",
   "permissions.column.code": "Permission",
@@ -415,7 +410,6 @@
   "permissions.visibilityNotice": "What you see here is a convenience. Every request is checked by the service, and its decision is the one that applies.",
   "permissions.confirm.remove": "Remove this mapping?",
   "permissions.confirm.removeBody": "The role stops carrying this permission. People holding the role lose it immediately.",
-
   "approvalLimits.title": "Approval limits",
   "approvalLimits.description": "The most a role or a person may approve, per company.",
   "approvalLimits.column.subject": "Applies to",
@@ -448,7 +442,6 @@
   "approvalLimits.error.date": "Enter a date as YYYY-MM-DD.",
   "approvalLimits.completeList": "This is the complete list for the current filters, not a page of it.",
   "approvalLimits.mayBeTruncated": "The service returns at most 200 limits and does not say whether it stopped there, so this list may be incomplete. Narrow it by company to be sure.",
-
   "organization.title": "Organization",
   "organization.description": "Your workspace, and the settings each company and branch runs on.",
   "organization.tenant": "Workspace",
@@ -476,7 +469,6 @@
   "organization.branchStatus.inactive": "Inactive",
   "organization.branchStatus.change": "Change branch status",
   "organization.error.unknownReference": "That language or time zone is not registered on the platform.",
-
   "numbering.title": "Numbering rules",
   "numbering.description": "How reference numbers are formed, stored as organization settings.",
   "numbering.field.prefix": "Prefix",
@@ -492,7 +484,6 @@
   "numbering.error.startAt": "Enter a whole number of 1 or more.",
   "numbering.noPreview": "The service publishes no preview operation, so no example number is shown here.",
   "numbering.noGeneration": "Numbers are always allocated by the service. Nothing on this screen produces one.",
-
   "taxes.title": "Taxes",
   "taxes.description": "Tax configuration for a company, stored as organization settings.",
   "taxes.field.code": "Tax code",
@@ -504,7 +495,6 @@
   "taxes.error.rate": "Enter a rate between 0 and 100, with at most 4 decimal places.",
   "taxes.error.code": "Use up to 32 characters: letters, digits, hyphens or underscores.",
   "taxes.noJurisdiction": "No country or tax regime is assumed. Every value here is one your organization has decided.",
-
   "currencies.title": "Currencies",
   "currencies.description": "The currencies this workspace uses, stored as organization settings.",
   "currencies.field.code": "Currency code",
@@ -515,7 +505,6 @@
   "currencies.error.code": "Enter a three-letter ISO currency code, in capitals.",
   "currencies.error.duplicate": "That currency is already in the list.",
   "currencies.noRates": "No exchange rate is held or calculated here.",
-
   "languages.title": "Languages",
   "languages.description": "The languages this application serves, and the workspace default.",
   "languages.available": "Available in this application",
@@ -525,12 +514,10 @@
   "languages.default": "Workspace default",
   "languages.defaultHint": "Applies to new accounts and to anything the service renders on your behalf.",
   "languages.required": "Arabic and English are both served by this application and cannot be removed here.",
-
   "systemSettings.title": "System settings",
   "systemSettings.description": "Settings held at the workspace, company and branch levels.",
   "systemSettings.level": "Level",
   "systemSettings.noPlatformScope": "Platform-wide settings are not reachable from this application in this release.",
-
   "audit.title": "Audit log",
   "audit.description": "A read-only record of what happened in this workspace.",
   "audit.from": "From",
@@ -552,7 +539,6 @@
   "audit.readOnly": "Audit records cannot be changed or deleted from here.",
   "audit.viewedNotice": "Opening this screen is itself recorded.",
   "audit.noExport": "The service publishes no export operation for audit records, so none is offered here.",
-
   "form.retry": "Try again",
   "form.required": "Required",
   "form.optional": "Optional",

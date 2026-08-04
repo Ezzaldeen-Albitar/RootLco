@@ -133,8 +133,19 @@ export function DataTable<Row>({
         The scroll container, not the table, owns the overflow. A table that is
         itself `overflow-x: auto` cannot have a sticky header, and on a 1024px
         screen an operational table always has more columns than width.
+
+        It is also bounded VERTICALLY (`P1-26-F-064`). Without a bound the rows
+        push the page taller and taller: at the maximum page size of 100 that is
+        already several screens of scrolling with the filters and the pager left
+        far above and below. `max-h` keeps the pager reachable and makes the
+        sticky header do its job — a header that is sticky inside a container
+        that never scrolls has nothing to stick to.
+
+        `70dvh` rather than a pixel figure so it holds on a laptop and on a
+        large desktop alike, and the value is capped rather than fixed so a
+        five-row table is still five rows tall.
       */}
-      <div className="overflow-x-auto rounded-xl border border-border-subtle bg-surface shadow-xs">
+      <div className="max-h-[70dvh] overflow-auto rounded-xl border border-border-subtle bg-surface shadow-xs">
         <table className="w-full border-collapse text-table-cell">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-sticky border-b border-table-border bg-table-header">
