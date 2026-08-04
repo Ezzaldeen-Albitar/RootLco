@@ -25,7 +25,12 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
 
-  globalIgnores(['.next/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts']),
+  // `.next-dev/**` is where `next dev` builds, kept apart from `.next` so a
+  // development build and a production build cannot overwrite each other (see
+  // ROOTLCO_DIST_DIR). Omitting it linted ten thousand generated chunks — and
+  // never in CI, which has no development build, so only a developer running
+  // `npm run lint` after `npm run dev:all` ever saw it (P1-26-F-060).
+  globalIgnores(['.next/**', '.next-dev/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts']),
 
   {
     rules: {

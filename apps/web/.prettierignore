@@ -1,4 +1,10 @@
 .next
+# `next dev` builds here instead of `.next`, so that a development build and a
+# production build cannot overwrite each other (see ROOTLCO_DIST_DIR). It is a
+# build directory like any other and must be ignored like one — CI never has it
+# because CI never runs `next dev`, so only a developer ever sees the failure
+# (P1-26-F-060).
+.next-dev
 node_modules
 coverage
 

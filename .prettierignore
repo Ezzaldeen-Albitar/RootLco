@@ -1,5 +1,10 @@
 node_modules
 .next
+.next-dev
+# The repository's local-only directory: dev state, acceptance credentials, the
+# dedicated Chrome profile. Git-ignored, but Prettier and ESLint do not read
+# `.gitignore` and will happily walk a browser profile.
+.local
 out
 build
 dist

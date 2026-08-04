@@ -11,9 +11,39 @@
  * keep passing after they stopped being.
  */
 import { describe, it, expect } from 'vitest';
-import { checkBlock, neutraliseExpressions } from '../../scripts/ci/check-run-block-syntax.mjs';
+import {
+  checkBlock,
+  neutraliseExpressions,
+  resolveShell,
+  shellWorks,
+} from '../../scripts/ci/check-run-block-syntax.mjs';
 
 const APOSTROPHE = String.fromCharCode(39);
+
+describe('the shell these checks depend on', () => {
+  /**
+   * P1-26-F-061. Every assertion below is worthless if `bash -n` cannot parse
+   * anything, and on Windows that is the default state: `bash` on PATH is the
+   * WSL launcher, which starts, fails to exec `/bin/bash`, and exits 1. The
+   * three "this is valid shell" cases below then fail for a reason that has
+   * nothing to do with shell syntax.
+   */
+  it('finds a bash that can actually parse a script', () => {
+    const shell = resolveShell();
+    expect(shell, 'no working bash was found — every check below would be meaningless').not.toBe(
+      null
+    );
+    expect(shellWorks(shell)).toBe(true);
+  });
+
+  it('rejects a shell that starts but cannot run anything', () => {
+    // The distinction the old probe missed: not "can it be spawned" but "can it
+    // run a trivial script". A binary that exists and exits non-zero is not a
+    // usable shell.
+    expect(shellWorks('definitely-not-a-shell-rootlco')).toBe(false);
+    expect(shellWorks(process.execPath)).toBe(false);
+  });
+});
 
 describe('run-block shell syntax', () => {
   it('accepts an ordinary block', () => {
