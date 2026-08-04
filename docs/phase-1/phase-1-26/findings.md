@@ -485,6 +485,123 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-076 — Back did not return the operator to where they were
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/use-scroll-restoration.ts`
+
+**A regression caused by `P1-26-F-069`, not a pre-existing defect.** Browsers
+persist and restore `window.scrollY` for every history entry for free; they do
+not restore a `<div>`'s `scrollTop`, and no API asks them to. Moving the
+application's scroll from the document into `main` therefore bought a fixed
+document and lost scroll restoration.
+
+Measured with a client-side navigation in real Chrome:
+
+```
+scroll to 1500 · click a sidebar link · press Back  ->  0
+```
+
+**Three attempts, two of which looked right and were not.** Worth recording,
+because each failure mode is invisible from the code:
+
+1. **The history key was cached at mount.** A forward navigation is a
+   `pushState`, which fires none of the events this hook listens to, so the
+   cached key still named the entry the operator came _from_ and every position
+   was filed against the wrong entry. Indistinguishable from having no
+   restoration at all.
+2. **The retry was frame-counted.** At `popstate` the router has changed the URL
+   but has not yet painted the content — `main.scrollHeight` is still the short
+   page's — so `scrollTop = 1500` is clamped to the current height and becomes 0. Twelve frames (~200ms) expired before the rows arrived. The window is now
+   time-bounded and stops on the first value that sticks.
+3. **`sessionStorage` was refused by the P1-26 frontend gate**, correctly: _"a
+   session or token there is readable by any script"_. Following the gate
+   produced the better design rather than a weaker gate — this hook only ever
+   restores on `popstate`, which fires for same-document traversal only, so a
+   durable store could never have been read on the path where it would have
+   mattered. Module memory survives exactly the navigations that matter and is
+   discarded exactly when it would have been useless.
+
+Result: `left at 1500, returned to 1500`.
+
+---
+
+## P1-26-F-075 — the tablet drawer was the one navigation surface nothing measured
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/AppShell.tsx`
+
+The drawer is the entire navigation below `lg`. Every browser assertion in the
+suite ran at 1440, 1280 or 1024 wide and **900 tall** — and the drawer does not
+exist above `lg`, so the surface was structurally invisible to the tests meant to
+cover navigation. The 28-combination geometry baseline could not see it either:
+that is a page-load baseline, and the drawer only exists after a click.
+
+Its panel was a plain block with the close row and the navigation as siblings.
+The close row took 56px off the top while the `h-full` navigation beneath it
+still asked for the whole viewport, so the content ran past the bottom of the
+screen. It now uses the same `flex flex-col` + `shrink-0` + `min-h-0 flex-1`
+shape as the rest of the scroll contract, and it also gained `border-e`: it had
+only `shadow-overlay` to separate it from the page, and a shadow is dropped under
+forced colours and in print.
+
+**A correction to my own first report.** I initially recorded the last module as
+unreachable, from a probe that asked whether it was _visible_ without scrolling
+to it — which is not the same question, and is one a scroll container is
+supposed to answer "no" to. Re-measured properly, with `scrollIntoView` first,
+all six drawer properties now pass; what I can honestly claim is that the panel
+is explicitly bounded rather than relying on `h-full` inside a non-flex parent.
+The border was genuinely absent.
+
+---
+
+## P1-26-F-074 — `aria-modal="true"` on a drawer a keyboard could tab out of
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/AppShell.tsx`
+
+The navigation drawer declared `aria-modal="true"` — which tells assistive
+technology the rest of the page is inert — and had no focus trap. Measured: Tab
+from the last item inside the drawer landed on a control outside it.
+
+`Overlays.tsx` had solved this once, in `useDialogBehaviour`, for `Dialog` and
+`Drawer`. This drawer is hand-rolled because it renders a `Sidebar` rather than
+arbitrary children, and in being hand-rolled it inherited the styling and not the
+contract.
+
+The trap now matches the overlay one, including the selector, because "modal"
+has to mean the same thing everywhere or a keyboard user learns that some
+overlays hold focus and some do not.
+
+---
+
+## P1-26-F-073 — every page load below `lg` put focus on the hamburger
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/AppShell.tsx`
+
+```tsx
+useEffect(() => {
+  if (drawerOpen) drawerCloseRef.current?.focus();
+  else drawerTriggerRef.current?.focus({ preventScroll: true }); // <- on MOUNT too
+}, [drawerOpen]);
+```
+
+The effect's purpose was to return focus to the trigger when the drawer closes.
+It also runs on mount, where `drawerOpen` is already `false` — so it took the
+"closed" branch on **every page load** below `lg`. Measured at 900px:
+`activeElement` after load was `BUTTON[aria-label="Open navigation"]`.
+
+A keyboard user therefore started each page inside the chrome rather than at the
+top of the document, a screen reader announced "Open navigation, button" before
+the page said what it was, and the skip link — which exists to be the first stop
+— had already been passed.
+
+Fixed with a `hasOpened` ref, so focus returns only on the way back from a drawer
+that was actually opened.
+
+---
+
 ## P1-26-F-072 — a scrollable table region could not be scrolled by keyboard
 
 **Severity:** Medium · **Status:** Fixed · **Area:**

@@ -110,13 +110,29 @@ viewport or an open software keyboard must never clip the form. The decorative
 panel is `overflow-hidden` and never scrolls, so two nested vertical scrollers
 can never compete for one gesture.
 
-### Known limitation, recorded rather than discovered later
+### The debt this decision incurs, and how it is repaid
 
 Browsers persist and restore `window.scrollY` across history entries. They do
 **not** restore a `<div>`'s `scrollTop`. Moving the scroll into `main` therefore
-loses browser scroll restoration on Back and Forward. This is a real consequence
-of this decision, it is not fixed here, and it is written down so the next person
-does not have to rediscover it.
+loses browser scroll restoration on Back and Forward — measured, not assumed:
+scroll to 1500, follow a link, press Back, land at 0.
+
+`useScrollRestoration` repays it (`P1-26-F-076`). Three properties of that hook
+are load-bearing and none of them is obvious:
+
+- **The history key is recomputed on every record.** A forward navigation is a
+  `pushState` and fires no event, so a key cached at mount still names the entry
+  the operator came _from_.
+- **The restore window is time-bounded, not frame-bounded.** At `popstate` the
+  router has changed the URL but not painted the content, so `scrollTop` is
+  clamped to a shorter element and silently becomes 0.
+- **It holds positions in module memory, never in browser storage.** The P1-26
+  frontend gate refuses browser storage, correctly; and because the hook restores
+  only on `popstate` — same-document traversal — a durable store could never have
+  been read on the path where it would have mattered.
+
+A future scroll region that opts into `[data-scroll-region]` does **not** get
+restoration for free; it must call the hook.
 
 ## Decision 2 — one notification authority
 
