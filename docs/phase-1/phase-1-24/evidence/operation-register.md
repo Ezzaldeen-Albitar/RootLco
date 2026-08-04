@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 235   |
+| Public operations        | 236   |
 | Domains (modules)        | 19    |
 | OpenAPI paths            | 196   |
-| OpenAPI operations       | 235   |
+| OpenAPI operations       | 236   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 104   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 235        |
+| Covered           | 236        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -50,7 +50,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
 | shared-services | 26         | 26      | 18     | 18      | 6          | 6               |
 | technician      | 6          | 6       | 3      | 3       | 1          | 2               |
-| vehicle         | 20         | 20      | 12     | 12      | 12         | 0               |
+| vehicle         | 21         | 21      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
 | work-order      | 26         | 26      | 15     | 16      | 13         | 8               |
 
@@ -261,6 +261,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `veh.vehicle-ownership-transfer`       | POST   | `/api/v1/vehicles/{vehicleId}/ownerships`                                     | tenant  | `veh.vehicle.relationship.manage`                                    | veh.vehicle.ownership_changed          | yes  | —   | audit authorization cross-tenant denial idempotency outbox rollback route service success                                     | Covered |
 | `veh.vehicle-plate-assign`             | POST   | `/api/v1/vehicles/{vehicleId}/plates`                                         | tenant  | `veh.vehicle.manage`                                                 | veh.vehicle.plate_assigned             | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `veh.vehicle-plate-history`            | GET    | `/api/v1/vehicles/{vehicleId}/plates`                                         | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `veh.vehicle-read`                     | GET    | `/api/v1/vehicles/{vehicleId}`                                                | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `veh.vehicle-relationship-list`        | GET    | `/api/v1/vehicles/{vehicleId}/relationships`                                  | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `veh.vehicle-search`                   | GET    | `/api/v1/vehicles`                                                            | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `veh.vehicle-status-change`            | PATCH  | `/api/v1/vehicles/{vehicleId}/status`                                         | tenant  | `veh.vehicle.status.manage`                                          | veh.vehicle.status_changed             | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |

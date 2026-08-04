@@ -281,6 +281,11 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'bounded allow-listed read; VIN matches the generated normalized column exactly and a plate matches the active plate via a tenant-scoped subquery; a tenant-B vehicle is unreachable (cross-tenant); an invalid cursor, an oversized query and an unknown parameter are refused (denial); safe master projection only, no restricted identifier',
   },
+  'veh.vehicle-read': {
+    files: ['tests/backend/p1-17-vehicle-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the only operation that returns one vehicle; the route module exported PATCH and nothing else, so a profile screen could reach a vehicle’s plates and never learn its make (P1-27-INT-002). The projection is asserted as a KEY SET in both directions, because NFR-PRV-001 forbids projecting a restricted identifier and a field-by-field assertion cannot catch an addition. A merged vehicle is RETURNED with mergedIntoId, deliberately unlike the CRM customer read: the PATCH treats it as existing-but-frozen (409), so a 404 here would report a vehicle live work orders reference as missing. Publishes record_version and an ETag, which the PATCH has always demanded via If-Match and nothing ever supplied',
+  },
   'veh.vehicle-create': {
     files: ['tests/backend/p1-17-vehicle-create-update.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
