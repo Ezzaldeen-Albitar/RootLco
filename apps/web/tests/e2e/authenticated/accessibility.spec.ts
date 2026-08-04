@@ -167,4 +167,41 @@ test.describe('authenticated accessibility', () => {
     const focused = await page.evaluate(() => document.activeElement?.textContent?.trim() ?? '');
     expect(focused).toMatch(/skip to content|تخطَّ/i);
   });
+
+  /**
+   * P1-26-F-059 — the loading state announced the wrong language.
+   *
+   * The route-group `loading.tsx` is passed no props by Next, so it read
+   * DEFAULT_LOCALE, which is Arabic. Every English navigation announced
+   * "جارٍ التحميل" to a screen reader. axe cannot see this: the markup is
+   * valid, the contrast is fine, and `sr-only` text carries no language of its
+   * own to disagree with — the only witness is the word itself.
+   *
+   * The skeleton resolves in well under a second, so the API response is held
+   * open to keep it on screen long enough to read. Without that delay this test
+   * would pass by never observing the fallback at all.
+   */
+  for (const [locale, expected, wrong] of [
+    ['en', 'Loading', 'جارٍ التحميل'],
+    ['ar', 'جارٍ التحميل', 'Loading'],
+  ] as const) {
+    test(`the ${locale} loading state announces itself in ${locale}`, async ({ page }) => {
+      await page.route('**/api/**', async (route) => {
+        await new Promise((r) => setTimeout(r, 4000));
+        await route.continue();
+      });
+
+      await page.goto(`/${locale}/administration/users`, { waitUntil: 'commit' });
+
+      const status = page.locator('[role="status"] .sr-only').first();
+      await status.waitFor({ state: 'attached', timeout: 15000 });
+      const announced = ((await status.textContent()) ?? '').trim();
+
+      expect(
+        announced,
+        `the ${locale} interface announced its loading state as "${announced}"`
+      ).toBe(expected);
+      expect(announced).not.toBe(wrong);
+    });
+  }
 });

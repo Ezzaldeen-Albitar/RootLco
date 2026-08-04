@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { DEFAULT_LOCALE, DIRECTION, LOCALES, directionOf, isLocale } from '../src/i18n/config';
+import {
+  DEFAULT_LOCALE,
+  DIRECTION,
+  LOCALES,
+  directionOf,
+  isLocale,
+  localeFromPathname,
+} from '../src/i18n/config';
 
 /**
  * Translation completeness, as a gate rather than a review habit.
@@ -35,6 +42,24 @@ describe('locale configuration', () => {
     expect(isLocale('en')).toBe(true);
     for (const value of ['fr', 'AR', 'en-GB', '', '../en']) {
       expect(isLocale(value), value).toBe(false);
+    }
+  });
+
+  /**
+   * P1-26-F-059. The English interface announced its loading state in Arabic
+   * because the only caller that cannot read route params fell back to
+   * DEFAULT_LOCALE. The first assertion is the one that would have caught it.
+   */
+  it('reads the locale out of the pathname rather than defaulting', () => {
+    expect(localeFromPathname('/en/administration/users')).toBe('en');
+    expect(localeFromPathname('/ar/administration/users')).toBe('ar');
+    expect(localeFromPathname('/en')).toBe('en');
+    expect(localeFromPathname('/ar')).toBe('ar');
+  });
+
+  it('falls back to the default locale only when the path carries no locale', () => {
+    for (const value of ['/', '', '/administration', '/fr/administration', '/EN/x']) {
+      expect(localeFromPathname(value), value).toBe(DEFAULT_LOCALE);
     }
   });
 });

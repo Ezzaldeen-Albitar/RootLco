@@ -485,6 +485,154 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-061 — a shell that starts and cannot run anything passed the "is bash available" probe
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`scripts/ci/check-run-block-syntax.mjs`
+
+Surfaced while re-running the suite for the Owner handoff: three tests in
+`tests/ci/run-block-syntax.test.ts` failed — precisely the three asserting that
+**valid** shell is accepted. The one asserting invalid shell is rejected still
+passed, because everything was being rejected.
+
+**Cause, and it is not in the repository.** On Windows `bash` resolves to
+`C:\Windows\System32\bash.exe`, the WSL launcher. With no installed
+distribution it starts, fails to `execvpe(/bin/bash)`, prints that to stderr and
+exits 1. `spawnSync` therefore reports **no `error`** — the process started
+fine — and a status of 1, which `checkBlock` reads as "this block is not valid
+shell". Every one of the 139 blocks.
+
+**Why the guard did not catch it.** `main()` probed with
+`spawnSync('bash', ['-c', 'exit 0'])` and tested only `probe.error`. That
+distinguishes _cannot be started_ from _started_; it does not distinguish
+_started_ from _usable_. The comment above it states the right rule — "a check
+that cannot run must not report success" — and the code implemented a narrower
+one.
+
+It is worth being precise about the failure mode, because it is not the usual
+one. This did not go quiet; it went uniformly red. A gate that fails on
+everything communicates as little as one that passes on everything, and it is
+likelier to be worked around than investigated.
+
+**Fix.** `shellWorks(bash)` requires a trivial script to exit 0, not merely to
+launch. `resolveShell()` returns the first candidate that satisfies it — `bash`
+first, so a Linux runner is unaffected, then the Git Bash locations — resolved
+once per process. `checkBlock` returns `unavailable` with a named message when
+there is none, and `main()` exits 2 explaining that `bash` on Windows is the WSL
+launcher.
+
+**Regression coverage.** `tests/ci/run-block-syntax.test.ts` asserts a working
+shell is found, and — the assertion that encodes the actual lesson — that
+`shellWorks` rejects a binary that starts and exits non-zero, using the Node
+executable itself as the specimen.
+
+**Measured after:** the gate reports `139 multi-line run block(s) checked, 0
+invalid` on this machine, where it had been reporting all 139 invalid.
+
+---
+
+## P1-26-F-059 — the English interface announced its loading state in Arabic
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/app/[locale]/(dashboard)/loading.tsx`
+
+Found by the Owner-acceptance handoff itself, on the last pass before the
+environment was handed over — by opening a screen and reading what was on it.
+
+Every navigation inside the dashboard renders the route group's `loading.tsx`
+while the next screen resolves. It contains an `aria-live` status region whose
+`sr-only` text is the only thing a screen reader is given during that window. On
+`/en/administration/users`, with `<html lang="en">`, that text was
+**`جارٍ التحميل`**.
+
+**Why it was there.** Next passes a `loading.tsx` no props — not params, not
+anything; this was measured rather than assumed, by rendering one with
+`Object.keys(props)` and getting `[]`. With no route params, the file read
+`DEFAULT_LOCALE`, and `DEFAULT_LOCALE` is `'ar'` — deliberately, because Arabic
+is the pilot tenant's language and a locale list that puts English first tends to
+produce code treating RTL as the exception. The comment in the file was honest
+about the trade-off. It was wrong about the conclusion: the URL is also locale
+evidence, and it is available.
+
+**Why nothing caught it.** The `en` catalogue is complete — `state.loading` is
+`"Loading"` and the missing-key gate is green, because the key is not missing,
+it is unused. axe reports no violation: the markup is valid, the region is
+labelled, and `sr-only` text declares no language of its own for `lang` to
+disagree with. The 97 authenticated browser assertions wait for content, which
+means they wait for exactly this element to disappear. It is a sub-second
+fallback holding a screen-reader-only string — below the resolution of every
+tier this phase built.
+
+**Fix.** `localeFromPathname` in `apps/web/src/i18n/config.ts` resolves the
+locale from the first path segment, falling back to `DEFAULT_LOCALE` only when
+the path carries no locale. `loading.tsx` becomes a client component solely to
+call `usePathname`; it ships no context and no data, and the fallback still
+renders immediately.
+
+**Regression coverage.** `apps/web/tests/i18n.test.ts` covers the resolver
+directly, including the fallback cases. That alone would not have caught this —
+the bug was never in the resolver, it was in which locale the boundary passed —
+so `apps/web/tests/e2e/authenticated/accessibility.spec.ts` asserts in a real
+browser that the `/en` loading state announces `Loading` and the `/ar` one
+announces `جارٍ التحميل`. It holds the API response open for four seconds,
+because without that delay the skeleton resolves before it can be read and the
+test passes by observing nothing.
+
+**Measured before and after** in headless Chromium: before, both routes
+announced `جارٍ التحميل`; after, `/en` announces `Loading` and `/ar` is
+unchanged.
+
+The lesson is the one the Owner-acceptance rule exists to record. This phase's
+assurance can prove a string is present, that it is translated, and that the
+markup around it is correct. **It cannot notice that the wrong one of two valid
+translations was chosen** — that took someone opening the page.
+
+---
+
+## P1-26-F-060 — directories declared to Git and to nothing else
+
+**Severity:** Medium · **Status:** Fixed · **Area:** `apps/web/eslint.config.mjs`,
+`eslint.config.mjs`, `apps/web/.prettierignore`, `.prettierignore`
+
+`P1-26-F-055` split the development build into `.next-dev` so that `next dev` and
+`next start` could not overwrite each other. `.gitignore` was updated. Nothing
+else was.
+
+ESLint ignored `.next/**` and Prettier ignored `.next`; neither pattern matches
+`.next-dev`. After any `npm run dev:all`, `npm run lint` walked into the
+Turbopack output and reported **10,780 problems across generated chunks**, and
+`format:check` refused the same files.
+
+**Why CI stayed green through all of it.** CI never runs `next dev`, so the
+directory does not exist there, so the ignore list is never consulted and cannot
+be wrong. The gate could only fail on a developer's machine — and only after
+they had run the stack, which is precisely the moment they are least likely to
+suspect their linter.
+
+**The same omission one directory over.** Fixing that exposed a second: the root
+ESLint run then walked **`.local`**, the repository's own local-only directory,
+and reported **25,508 problems** — almost all of them inside the bundled scripts
+of the dedicated Chrome profile that the Owner-acceptance handoff creates there.
+`.local` has been in `.gitignore` since it was introduced. Neither ESLint nor
+Prettier reads `.gitignore`, and nobody had ever put a file they would parse into
+it before this remediation did.
+
+**Fix.** `.next-dev` added to both ESLint configurations and both
+`.prettierignore` files; `.local` added to the root ESLint configuration and the
+root `.prettierignore`. Stylelint needed no change: it globs `src/**/*.scss` and
+never leaves the source tree.
+
+**Regression coverage.** `tests/ci/local-launcher-host.test.ts` asserts each
+directory is named in each ignore list by file, plus a check that `DEV_DIST_DIR`
+is still `.next-dev` so the hard-coded patterns cannot outlive a rename.
+
+This is the same shape as `P1-26-F-050` and `P1-26-F-057` from a third
+direction: **a check that cannot fail in CI is a check that only ever fails on
+someone's machine**, and one that fails there noisily enough will simply stop
+being run.
+
+---
+
 ## P1-26-F-058 — a piped child process and a blocking `spawnSync` froze the API mid-suite
 
 **Severity:** High · **Status:** Fixed · **Area:**

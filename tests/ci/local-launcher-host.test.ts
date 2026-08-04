@@ -153,4 +153,43 @@ describe('development and production build directories are isolated', () => {
   it('keeps the development directory out of Git', () => {
     expect(read('.gitignore')).toMatch(/^\.next-dev\/$/m);
   });
+
+  /**
+   * P1-26-F-060. Introducing a second build directory told Git about it and
+   * nothing else. ESLint then linted ten thousand generated chunks and Prettier
+   * refused the same files — but only for a developer, because CI never runs
+   * `next dev` and so never has the directory to trip over. A gate that cannot
+   * fail in CI is a gate that only ever fails on someone's machine.
+   *
+   * Every tool that walks the workspace has to be told, so every tool is named
+   * here rather than trusting the one that happened to break first.
+   */
+  it.each([
+    ['apps/web/eslint.config.mjs', /'\.next-dev\/\*\*'/],
+    ['apps/web/.prettierignore', /^\.next-dev$/m],
+    ['.prettierignore', /^\.next-dev$/m],
+    ['eslint.config.mjs', /'\.next-dev\/\*\*'/],
+  ])('keeps the development build directory out of %s', (file, pattern) => {
+    expect(read(file), `${file} must ignore ${DEV_DIST_DIR}`).toMatch(pattern);
+  });
+
+  /**
+   * The same omission one directory over. `.local` holds dev state, the
+   * acceptance credentials and the dedicated Chrome profile; ESLint walked that
+   * profile's bundled scripts and reported 25,508 problems. Git ignores the
+   * directory, but neither ESLint nor Prettier reads `.gitignore`.
+   */
+  it.each([
+    ['eslint.config.mjs', /'\.local\/\*\*'/],
+    ['.prettierignore', /^\.local$/m],
+  ])('keeps the local-only directory out of %s', (file, pattern) => {
+    expect(read(file), `${file} must ignore .local`).toMatch(pattern);
+  });
+
+  it('names the same directory in every ignore list', () => {
+    // The assertions above hard-code `.next-dev`; if DEV_DIST_DIR is ever
+    // renamed they would silently keep passing against a directory nothing
+    // builds into any more.
+    expect(DEV_DIST_DIR).toBe('.next-dev');
+  });
 });

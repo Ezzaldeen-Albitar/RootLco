@@ -12,7 +12,22 @@ const eslintConfig = defineConfig([
   // `src/**` below mean the right tree. Linting a workspace from the repository
   // root would resolve those same patterns at the root, match nothing, and
   // report a clean run over an unchecked application.
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts', 'apps/**']),
+  // `.local/**` is the repository's designated local-only directory — dev state,
+  // acceptance credentials, the dedicated Chrome profile. It is git-ignored, but
+  // ESLint does not read `.gitignore`, so it walked a browser profile's bundled
+  // scripts and reported 25,508 problems in files no one here wrote. CI never
+  // has the directory, so the failure only ever reaches a developer
+  // (P1-26-F-060).
+  globalIgnores([
+    '.next/**',
+    '.next-dev/**',
+    '.local/**',
+    'out/**',
+    'build/**',
+    'coverage/**',
+    'next-env.d.ts',
+    'apps/**',
+  ]),
 
   {
     rules: {

@@ -23,3 +23,17 @@ export function isLocale(value: string): value is Locale {
 export function directionOf(locale: Locale): 'rtl' | 'ltr' {
   return DIRECTION[locale];
 }
+
+/**
+ * Resolve the locale from a pathname.
+ *
+ * For the places that genuinely cannot read route params. A `loading.tsx` is
+ * the case that forced this to exist: Next passes it no props at all, so the
+ * URL is the only locale evidence available to it. Falling back to
+ * DEFAULT_LOCALE there had made the English interface announce its loading
+ * state in Arabic (P1-26-F-059).
+ */
+export function localeFromPathname(pathname: string): Locale {
+  const segment = pathname.split('/').find((part) => part.length > 0) ?? '';
+  return isLocale(segment) ? segment : DEFAULT_LOCALE;
+}
