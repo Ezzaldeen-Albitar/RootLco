@@ -1,7 +1,15 @@
 /**
- * POST /api/v1/customers/{customerId}/restrictions (Phase 1-16, P1-16-BE-012).
+ * GET/POST /api/v1/customers/{customerId}/restrictions (Phase 1-16,
+ * P1-16-BE-012; GET added by the P1-16 remediation for `P1-27-INT-001`).
  *
- * Imposes a commercial or service restriction. The highest-privilege customer
+ * GET returns the restrictions in force today and requires only
+ * `crm.customer.read`, not the manage permission the POST carries. Imposing a
+ * refusal to serve and *knowing about* one are different authorities, and the
+ * person at the counter who must not start the work is exactly the person least
+ * likely to hold the higher grant. A restriction nobody can see does not
+ * restrict anything.
+ *
+ * POST imposes a commercial or service restriction. The highest-privilege customer
  * operation in the phase, so it carries its own permission rather than sharing
  * the general governance one: raising an advisory alert and refusing to serve
  * somebody are not the same authority.
@@ -14,13 +22,21 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { crmModule, MAX_REASON, MIN_REASON, RESTRICTION_TYPES } from '@/modules/crm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
+const Query = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
 const Body = z
   .object({
     restrictionType: z.enum(RESTRICTION_TYPES),
@@ -29,6 +45,19 @@ const Body = z
     approvalRef: z.string().min(1).max(120).nullable().optional(),
   })
   .strict();
+
+export const RESTRICTION_LIST_OPERATION = defineOperation({
+  id: 'crm.restriction-list',
+  module: 'crm',
+  method: 'GET',
+  path: '/customers/{customerId}/restrictions',
+  summary: 'List the restrictions in force against a customer.',
+  permissions: ['crm.customer.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
 
 export const RESTRICTION_IMPOSE_OPERATION = defineOperation({
   id: 'crm.restriction-impose',
@@ -44,6 +73,25 @@ export const RESTRICTION_IMPOSE_OPERATION = defineOperation({
   rateLimitPolicy: 'standard-command',
   cacheCategory: 'never',
 });
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ customerId: string }> }
+): Promise<Response> {
+  const params = parseOrFail(Params, await route.params, 'path');
+  return handleOperation(
+    RESTRICTION_LIST_OPERATION,
+    request,
+    async ({ db, request: raw }) => ({
+      body: await crmModule().customerRead.listRestrictions(
+        db,
+        params.customerId,
+        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+      ),
+    }),
+    { params }
+  );
+}
 
 export async function POST(
   request: Request,

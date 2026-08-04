@@ -1005,6 +1005,58 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'organization counterpart; proves the party-type discriminator comes from the path, so a company profile can never attach to an individual partner',
   },
+  // --- Reads: the nine operations the P1-16 remediation added. -------------
+  // Every customer sub-resource was write-only over HTTP and there was no route
+  // module for a customer at all, so nothing in the platform could return a
+  // customer or anything attached to one (`P1-27-INT-001`). The obligations
+  // below are what a read can get wrong invisibly: a tombstone resurrected, a
+  // stopped alert still shouting, a `date` shifted by a timezone, and a
+  // policy-shortened list presented as complete.
+  'crm.customer-read': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the only operation that returns a customer; publishes record_version and an ETag, which is the half of optimistic concurrency the write routes always demanded and nothing ever supplied; a merged customer answers the same 404 as an unknown id, which a plain tenant+id lookup would not (the row is redirected, not deleted)',
+  },
+  'crm.contact-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'excludes soft-deleted contact points — a resurrected phone number is a call to the wrong person; keyset page walked across a boundary with no gap and no repeat, and a cursor from another list is refused ERR-PAG-001',
+  },
+  'crm.address-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'excludes soft-deleted addresses; publishes line3, which the column carries and the POST cannot set (P1-16-A-01)',
+  },
+  'crm.preference-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'publishes record_version per row, which is what a client puts in If-Match on the preferences PUT; before this read no operation published it, so every preference write was an undetectable last-writer-wins race',
+  },
+  'crm.consent-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the whole append-only history, not a collapsed current answer; seq stays a string because it is bigint and is the only field that orders two decisions sharing effective_at to the microsecond',
+  },
+  'crm.note-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'reads shared.notes under the same (entity_type, entity_id) discriminator the write policy pins, so a note filed against another entity type never surfaces; sel_notes_tenant hides restricted notes SILENTLY, so the response carries includesRestricted — proven both ways, with and without iam.sensitive.view',
+  },
+  'crm.alert-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'both stop conditions, because active and effective_to are independent and reading one shows a caution already turned off; effective_from is read as ::text and asserted under TZ=Asia/Riyadh, so a Date-based implementation fails instead of passing on a UTC agent',
+  },
+  'crm.tag-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'joined to the segment for its label; excludes assignments to a soft-deleted segment and assignments whose validity has ended',
+  },
+  'crm.restriction-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'requires only crm.customer.read, not the manage permission the POST carries: imposing a refusal to serve and knowing about one are different authorities, and a restriction nobody at the counter can see does not restrict anything',
+  },
   // --- Profile components: the re-parenting and IDOR surface. --------------
   'crm.contact-add': {
     files: ['tests/backend/p1-16-customer-profile.test.ts'],
