@@ -986,7 +986,17 @@ describe('operation coverage gate — real registry and real files', () => {
       meta: 1,
       veh: 20,
     });
-  });
+    // 30 s, stated here rather than raised globally so it cannot quietly cover a
+    // different test that has genuinely regressed.
+    //
+    // This test opens and lexes every file the MANIFEST names — a real-filesystem
+    // walk over ~240 entries, not a unit computation — and the default 5 s budget
+    // is a measure of disk speed rather than of correctness. Under `--coverage`
+    // the instrumentation pushes it over, so the suite passed under `npm run
+    // test` and timed out under `npm run test:coverage` on the same tree. A test
+    // whose verdict depends on which command ran it is a flake, and the honest
+    // fix is a budget that matches the work rather than a retry.
+  }, 30_000);
 });
 
 /**
