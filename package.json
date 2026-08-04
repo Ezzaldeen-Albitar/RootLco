@@ -138,7 +138,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.20.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^3.2.4",
@@ -148,7 +148,7 @@
     "sass": "^1.102.0",
     "stylelint": "^17.14.1",
     "stylelint-config-standard-scss": "^17.0.0",
-    "supabase": "^2.110.0",
+    "supabase": "^2.111.0",
     "typescript": "^5",
     "vitest": "^3.2.4"
   },
