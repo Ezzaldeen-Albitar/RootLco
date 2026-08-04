@@ -18,7 +18,12 @@ import type { DbHandle } from '@/server/db/transaction';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
-import type { VehicleIdentityRepository } from '../data/vehicle-identity-repository';
+import { pageRequest, type Page } from '@/server/db/pagination';
+import {
+  VEHICLE_DUPLICATE_CANDIDATE_ORDERING,
+  type VehicleDuplicateCandidateEntry,
+  type VehicleIdentityRepository,
+} from '../data/vehicle-identity-repository';
 import {
   VehicleIdentityError,
   assertMergeable,
@@ -222,6 +227,29 @@ export class VehicleIdentityService extends ApplicationService {
     });
 
     return { vehicleId, compared: comparables.length, candidates };
+  }
+
+  /**
+   * The tenant's vehicle duplicate-candidate queue.
+   *
+   * No parent to resolve: this is a tenant-wide queue rather than a sub-resource
+   * of one vehicle, and RLS plus the explicit `tenant_id` predicate are what
+   * scope it. Without a `status` filter it returns dismissed and merged
+   * candidates too, because a reviewer auditing past decisions needs them.
+   */
+  async listCandidates(
+    db: DbHandle,
+    input: {
+      status?: string | undefined;
+      cursor?: string | undefined;
+      limit?: number | undefined;
+    }
+  ): Promise<Page<VehicleDuplicateCandidateEntry>> {
+    return this.identity.listCandidates(
+      db,
+      pageRequest(VEHICLE_DUPLICATE_CANDIDATE_ORDERING, input),
+      input.status ?? null
+    );
   }
 
   /**

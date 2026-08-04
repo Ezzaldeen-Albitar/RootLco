@@ -46,6 +46,18 @@ export const CANDIDATE_THRESHOLD = 80;
 /** Longest approval reference accepted for a merge. */
 export const MAX_APPROVAL_REF = 120;
 
+/**
+ * Values `ck_duplicate_candidates_status` accepts.
+ *
+ * The full set a candidate can be IN, which is deliberately wider than the set a
+ * reviewer can WRITE (`DUPLICATE_DECISIONS` below). This one exists so a queue
+ * read can be filtered by any real state — including `merged`, which nobody can
+ * set by review but which a reviewer auditing past decisions has to be able to
+ * look at.
+ */
+export const DUPLICATE_STATUSES = ['open', 'dismissed', 'merged'] as const;
+export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
+
 /** A review decision. Only `dismissed` is recordable — `merged` is set by the
  * merge operation, never by a reviewer, so a pair cannot be marked reconciled
  * without a merge actually happening. */
