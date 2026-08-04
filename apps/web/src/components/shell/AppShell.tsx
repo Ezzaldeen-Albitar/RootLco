@@ -13,6 +13,7 @@ import { NO_CAPABILITIES, visibleNavigation, type ActorCapabilities } from '@/li
 import { usePersistedFlag } from '@/lib/use-persisted-flag';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { Sidebar } from './Sidebar';
+import { useScrollRestoration } from './use-scroll-restoration';
 
 /**
  * The application shell.
@@ -42,6 +43,17 @@ import { Sidebar } from './Sidebar';
  */
 
 const COLLAPSE_KEY = 'rootlco.shell.sidebarCollapsed';
+
+/**
+ * What Tab can reach. Kept identical to the one in `Overlays.tsx`, deliberately.
+ *
+ * The navigation drawer is hand-rolled rather than built on `Drawer` because it
+ * renders a `Sidebar` rather than arbitrary children — but "modal" has to mean
+ * the same thing in both, or a keyboard user learns that some overlays trap
+ * focus and some do not.
+ */
+const FOCUSABLE_SELECTOR =
+  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 export interface AppShellProps {
   readonly locale: Locale;
@@ -74,23 +86,78 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerCloseRef = useRef<HTMLButtonElement | null>(null);
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const drawerPanelRef = useRef<HTMLDivElement | null>(null);
 
-  // Focus moves INTO the drawer when it opens and BACK to the trigger when it
-  // closes. Without the return trip a keyboard user is dropped at the top of the
-  // document every time they dismiss it.
+  // Has the drawer ever been open? Focus is returned to the trigger only after a
+  // real close.
+  //
+  // Without this the effect runs on MOUNT with `drawerOpen === false` and takes
+  // the "closed" branch, so every page load below `lg` moved focus to the
+  // hamburger button (`P1-26-F-073`). Measured, not inferred: at 900px the
+  // `activeElement` after load was `BUTTON[aria-label="Open navigation"]`.
+  //
+  // The cost is not cosmetic. A keyboard user starts each page inside the
+  // chrome rather than at the top of the document, a screen reader announces
+  // "Open navigation, button" before the page has a chance to say what it is,
+  // and the skip link — which is supposed to be the first stop — has already
+  // been passed.
+  const hasOpened = useRef(false);
+
   useEffect(() => {
-    if (drawerOpen) drawerCloseRef.current?.focus();
-    else drawerTriggerRef.current?.focus({ preventScroll: true });
+    if (drawerOpen) {
+      hasOpened.current = true;
+      drawerCloseRef.current?.focus();
+      return;
+    }
+    // Only on the way BACK from an open drawer, never on first render.
+    if (hasOpened.current) drawerTriggerRef.current?.focus({ preventScroll: true });
   }, [drawerOpen]);
 
+  // Escape closes, and Tab is TRAPPED inside.
+  //
+  // The drawer claims `aria-modal="true"`, and a modal that a keyboard can tab
+  // out of is lying to assistive technology: the page behind is announced as
+  // inert and is reachable anyway (`P1-26-F-074`). Measured: Tab from the last
+  // item inside the drawer landed on a control outside it.
+  //
+  // `Overlays.tsx` has solved this once, for Dialog and Drawer. This drawer is
+  // hand-rolled because it renders a `Sidebar` rather than arbitrary children,
+  // so it borrows the behaviour rather than reimplementing it.
   useEffect(() => {
     if (!drawerOpen) return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDrawerOpen(false);
+      if (event.key === 'Escape') {
+        setDrawerOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const panel = drawerPanelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === panel)) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [drawerOpen]);
+
+  // Repays the cost of moving the scroll out of the document (ADR-021): the
+  // browser restores `window.scrollY` for free and a `<div>`'s `scrollTop`
+  // never.
+  useScrollRestoration('main');
 
   const groups = visibleNavigation(NAVIGATION, capabilities);
 
@@ -126,13 +193,35 @@ export function AppShell({
             onClick={() => setDrawerOpen(false)}
             className="fixed inset-0 z-overlay bg-overlay"
           />
+          {/*
+            `flex flex-col` with a `shrink-0` close row and a `min-h-0 flex-1`
+            body, because the panel is exactly the viewport and the close row is
+            part of it.
+
+            It used to be a plain block with the close row and the navigation as
+            siblings: the row took 56px off the top and the `h-full` navigation
+            below it still asked for the WHOLE viewport, so the drawer's content
+            ran 98px past the bottom of the screen. Measured at 900x700 — fifteen
+            links, the last one's bottom at 798 against a 700px viewport — so the
+            last modules were simply unreachable (`P1-26-F-075`).
+
+            That is the same defect this phase exists to fix, in the one surface
+            the desktop measurements could not see, because the drawer does not
+            exist above `lg`.
+
+            `border-e` supplies a WIDTH. The panel previously had only
+            `shadow-overlay` to separate it from the page, and a shadow is
+            suppressed under forced colours and in print, so on Windows High
+            Contrast the drawer had no visible edge at all.
+          */}
           <div
+            ref={drawerPanelRef}
             role="dialog"
             aria-modal="true"
             aria-label={translate(messages, 'nav.landmark')}
-            className="fixed inset-y-0 start-0 z-dialog w-72 shadow-overlay"
+            className="fixed inset-y-0 start-0 z-dialog flex w-72 flex-col border-e border-border bg-sidebar-background shadow-overlay"
           >
-            <div className="flex justify-end p-2">
+            <div className="flex shrink-0 justify-end p-2">
               <button
                 ref={drawerCloseRef}
                 type="button"
@@ -143,15 +232,19 @@ export function AppShell({
                 <Icon name="overview" size={18} />
               </button>
             </div>
-            <Sidebar
-              locale={locale}
-              messages={messages}
-              groups={groups}
-              pathname={pathname}
-              collapsed={false}
-              withinDrawer
-              onNavigate={() => setDrawerOpen(false)}
-            />
+            {/* `min-h-0 flex-1` is what lets the navigation inside scroll
+                rather than run off the bottom of the panel. */}
+            <div className="min-h-0 flex-1">
+              <Sidebar
+                locale={locale}
+                messages={messages}
+                groups={groups}
+                pathname={pathname}
+                collapsed={false}
+                withinDrawer
+                onNavigate={() => setDrawerOpen(false)}
+              />
+            </div>
           </div>
         </div>
       ) : null}
