@@ -1,0 +1,135 @@
+{
+  "phase": "P1-27",
+  "title": "CRM and Vehicle Frontend",
+  "assessedAt": "2026-08-04",
+  "assessedAgainst": {
+    "protectedDevelop": "9c1ef5e1df7c505f9a4e54e437f69523118842a1",
+    "protectedMain": "f085d82001a43de51725707426d5c10eb134c004"
+  },
+  "verdict": "NOT READY",
+  "score": "14/16",
+  "branchCreated": false,
+  "reason": "Conditions 14 and 15 are complete as ACTIVITIES and their result is that the Backend read contracts P1-27 is scoped to consume do not exist. Thirteen of the twenty-nine Frontend tasks have no operation that returns the data they must display. Creating the feature branch would mean building screens against endpoints that are not there, which section 8 forbids and which no amount of Frontend care can repair.",
+  "conditions": [
+    {
+      "id": 1,
+      "condition": "P1-16 passed",
+      "state": "PASS",
+      "evidence": "docs/phase-1/phase-1-16 execution checkpoint; CRM backend closed GO"
+    },
+    {
+      "id": 2,
+      "condition": "P1-17 passed",
+      "state": "PASS",
+      "evidence": "docs/phase-1/phase-1-17 execution checkpoint; Vehicle backend closed GO"
+    },
+    {
+      "id": 3,
+      "condition": "P1-24 passed",
+      "state": "PASS",
+      "evidence": "P1-24 closed and promoted; main 88b9fa59 at the time"
+    },
+    {
+      "id": 4,
+      "condition": "P1-25 passed",
+      "state": "PASS",
+      "evidence": "P1-25 gate record; design system binding"
+    },
+    {
+      "id": 5,
+      "condition": "P1-26 passed with Owner acceptance",
+      "state": "PASS",
+      "evidence": "docs/phase-1/phase-1-26/closure-record.md — OWNER ACCEPTANCE: PASS, 2026-08-04, unconditional"
+    },
+    {
+      "id": 6,
+      "condition": "OIR-06 resolved",
+      "state": "PASS",
+      "evidence": "P1-25/P1-26 design foundations binding; ADR-020, ADR-021"
+    },
+    {
+      "id": 7,
+      "condition": "Product name CRM synchronized",
+      "state": "PASS",
+      "evidence": "0 placeholder forms remain in docs/**; validate:product-name green"
+    },
+    {
+      "id": 8,
+      "condition": "API Backend-only gate green",
+      "state": "PASS",
+      "evidence": "validate:api-backend-only — 196 handlers, 428 files, 0 failures"
+    },
+    {
+      "id": 9,
+      "condition": "Web Frontend-only gate green",
+      "state": "PASS",
+      "evidence": "validate:web-boundary, validate:web-topology green"
+    },
+    {
+      "id": 10,
+      "condition": "P1-27 ownership profile green",
+      "state": "PASS",
+      "evidence": "check-phase-ownership.mjs profile added for P1-27; forbids apiSource, supabase, migrations"
+    },
+    {
+      "id": 11,
+      "condition": "Expired-session work reconciled",
+      "state": "PASS",
+      "evidence": "PR #190 merged; develop 9c1ef5e1; P1-26-F-077 and P1-26-F-078 recorded"
+    },
+    {
+      "id": 12,
+      "condition": "Dirty worktrees zero",
+      "state": "PASS",
+      "evidence": "git status --porcelain empty; one worktree"
+    },
+    {
+      "id": 13,
+      "condition": "Ambiguous work zero",
+      "state": "PASS",
+      "evidence": "no untracked Owner work; no P1-27 or P1-28 branch or directory"
+    },
+    {
+      "id": 14,
+      "condition": "CRM contract archaeology complete",
+      "state": "COMPLETE — BLOCKING RESULT",
+      "evidence": "Every CRM customer sub-resource is WRITE-ONLY over HTTP. Verified from source: addresses POST, contacts POST, consents POST, preferences PUT, notes POST, alerts POST, tags POST, restrictions POST. Only timeline and history export GET. There is no customers/[customerId]/route.ts at all, so no operation returns a customer."
+    },
+    {
+      "id": 15,
+      "condition": "Vehicle contract archaeology complete",
+      "state": "COMPLETE — PARTIALLY BLOCKING RESULT",
+      "evidence": "Vehicle reads mostly exist: documents GET, ev-profile GET, history GET, odometer-readings GET, ownerships GET, plates GET, relationships GET. But vehicles/[vehicleId]/route.ts exports PATCH only — no vehicle detail read. No media route. No VIN validation contract."
+    },
+    {
+      "id": 16,
+      "condition": "Applicable open decisions dispositioned",
+      "state": "PARTIAL",
+      "evidence": "P1-OD-017 (vehicle duplicate and merge rules) and P1-OD-025 (vehicle document and media policy) remain open. Section 13 forbids a merge action while P1-OD-017 is unresolved, which blocks FE-016 and FE-028 independently of the contract gaps."
+    }
+  ],
+  "taskReadiness": {
+    "ready": ["FE-001", "FE-002", "FE-004", "FE-005", "FE-015", "FE-022", "FE-023", "FE-024"],
+    "underspecified": ["FE-003", "FE-017", "FE-018", "FE-021", "FE-025", "FE-026"],
+    "blocked": [
+      "FE-006",
+      "FE-007",
+      "FE-008",
+      "FE-009",
+      "FE-010",
+      "FE-011",
+      "FE-012",
+      "FE-013",
+      "FE-014",
+      "FE-016",
+      "FE-019",
+      "FE-020",
+      "FE-027",
+      "FE-028",
+      "FE-029"
+    ],
+    "counts": { "ready": 8, "underspecified": 6, "blocked": 15, "total": 29 }
+  },
+  "blockingFindings": ["P1-27-INT-001", "P1-27-INT-002", "P1-27-INT-003", "P1-27-INT-004"],
+  "ownerDecisionRequired": true
+}
