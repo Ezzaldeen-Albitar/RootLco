@@ -1,5 +1,13 @@
 /**
- * POST /api/v1/customers/{customerId}/tags (Phase 1-16, P1-16-BE-010).
+ * GET/POST /api/v1/customers/{customerId}/tags (Phase 1-16, P1-16-BE-010;
+ * GET added by the P1-16 remediation for `P1-27-INT-001`).
+ *
+ * GET returns the assignments in force today, joined to the segment so the
+ * response carries the label's `segmentCode` and `name` rather than a bare id a
+ * screen would have to resolve separately. Assignments pointing at a
+ * soft-deleted segment are excluded: the tenant retired that concept, and
+ * showing an assignment to a definition that no longer exists is worse than
+ * showing nothing.
  *
  * Tags are modelled as `crm.customer_segments` plus an assignment, because that
  * is what the frozen schema provides — and it is the better model: the segment
@@ -12,13 +20,21 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { crmModule, MAX_SEGMENT_CODE } from '@/modules/crm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
+const Query = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
 const Body = z
   .object({
     segmentCode: z.string().min(2).max(MAX_SEGMENT_CODE),
@@ -26,6 +42,19 @@ const Body = z
     name: z.string().min(1).max(120).nullable().optional(),
   })
   .strict();
+
+export const TAG_LIST_OPERATION = defineOperation({
+  id: 'crm.tag-list',
+  module: 'crm',
+  method: 'GET',
+  path: '/customers/{customerId}/tags',
+  summary: 'List the segment tags currently assigned to a customer.',
+  permissions: ['crm.customer.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
 
 export const TAG_ASSIGN_OPERATION = defineOperation({
   id: 'crm.tag-assign',
@@ -41,6 +70,25 @@ export const TAG_ASSIGN_OPERATION = defineOperation({
   rateLimitPolicy: 'standard-command',
   cacheCategory: 'never',
 });
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ customerId: string }> }
+): Promise<Response> {
+  const params = parseOrFail(Params, await route.params, 'path');
+  return handleOperation(
+    TAG_LIST_OPERATION,
+    request,
+    async ({ db, request: raw }) => ({
+      body: await crmModule().customerRead.listTags(
+        db,
+        params.customerId,
+        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+      ),
+    }),
+    { params }
+  );
+}
 
 export async function POST(
   request: Request,

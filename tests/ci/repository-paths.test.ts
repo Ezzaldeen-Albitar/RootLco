@@ -133,7 +133,10 @@ describe('the API application lives in the workspace', () => {
 
   it('discovers the whole route surface, and would notice one missing', () => {
     const routeFiles = walkRoutes(API_ROUTES_ROOT);
-    expect(routeFiles.length).toBe(196);
+    // 197 since the P1-16 remediation added `customers/[customerId]/route.ts`,
+    // the module that never existed — every other read it added was a GET on a
+    // route file that was already here.
+    expect(routeFiles.length).toBe(197);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -154,7 +157,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 226 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 235 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -167,7 +170,7 @@ describe('the API application lives in the workspace', () => {
 
     expect(new Set(results).size, 'discovery must not depend on cwd').toBe(1);
     const report = JSON.parse(results[0] ?? '{}');
-    expect(report.operations).toHaveLength(226);
+    expect(report.operations).toHaveLength(235);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

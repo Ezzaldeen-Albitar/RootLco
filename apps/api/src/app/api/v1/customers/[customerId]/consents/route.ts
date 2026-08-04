@@ -1,8 +1,16 @@
 /**
- * POST /api/v1/customers/{customerId}/consents (Phase 1-16, FR-CRM-004,
- * BR-CRM-002, P1-16-BE-007).
+ * GET/POST /api/v1/customers/{customerId}/consents (Phase 1-16, FR-CRM-004,
+ * BR-CRM-002, P1-16-BE-007; GET added by the P1-16 remediation for
+ * `P1-27-INT-001`).
  *
- * Records one consent decision. `POST` and never `PUT`: consent history is
+ * GET returns the consent HISTORY, newest first — not a current-state view. The
+ * table is append-only and the sequence of decisions is the record; collapsing it
+ * to "the current answer" in the API would throw away the evidence that makes a
+ * consent defensible. Each row carries `seq`, because two decisions written in
+ * one transaction share `effective_at` to the microsecond and `seq` is the only
+ * field that says which came second.
+ *
+ * POST records one consent decision. `POST` and never `PUT`: consent history is
  * append-only, and the sequence of decisions *is* the record. Overwriting the
  * previous decision would destroy the evidence that the customer once granted,
  * or once withdrew — which is exactly what a consent trail exists to preserve.
@@ -14,7 +22,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import {
   crmModule,
   CONSENT_KINDS,
@@ -27,6 +40,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
+const Query = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
 const Body = z
   .object({
     consentKind: z.enum(CONSENT_KINDS),
@@ -39,6 +55,19 @@ const Body = z
     contactPointId: schemas.uuid.nullable().optional(),
   })
   .strict();
+
+export const CONSENT_LIST_OPERATION = defineOperation({
+  id: 'crm.consent-list',
+  module: 'crm',
+  method: 'GET',
+  path: '/customers/{customerId}/consents',
+  summary: 'Read a customer’s consent history, newest first.',
+  permissions: ['crm.customer.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
 
 export const CONSENT_RECORD_OPERATION = defineOperation({
   id: 'crm.consent-record',
@@ -54,6 +83,25 @@ export const CONSENT_RECORD_OPERATION = defineOperation({
   rateLimitPolicy: 'standard-command',
   cacheCategory: 'never',
 });
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ customerId: string }> }
+): Promise<Response> {
+  const params = parseOrFail(Params, await route.params, 'path');
+  return handleOperation(
+    CONSENT_LIST_OPERATION,
+    request,
+    async ({ db, request: raw }) => ({
+      body: await crmModule().customerRead.listConsents(
+        db,
+        params.customerId,
+        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+      ),
+    }),
+    { params }
+  );
+}
 
 export async function POST(
   request: Request,

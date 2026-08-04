@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 226,
-    "openapiPaths": 195,
-    "openapiOperations": 226,
+    "operations": 235,
+    "openapiPaths": 196,
+    "openapiOperations": 235,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 153
   },
   "counts": {
-    "Covered": 226
+    "Covered": 235
   },
   "operations": [
     {
@@ -260,6 +260,78 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/addresses/route.ts"
     },
     {
+      "id": "crm.address-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/addresses",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/addresses",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/addresses/route.ts"
+    },
+    {
+      "id": "crm.alert-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/alerts",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/alerts",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/alerts/route.ts"
+    },
+    {
       "id": "crm.alert-raise",
       "domain": "crm",
       "method": "POST",
@@ -340,6 +412,42 @@
       "tests": ["tests/backend/p1-16-customer-creation.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/companies/route.ts"
+    },
+    {
+      "id": "crm.consent-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/consents",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/consents",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/consents/route.ts"
     },
     {
       "id": "crm.consent-record",
@@ -426,6 +534,42 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/contacts/route.ts"
     },
     {
+      "id": "crm.contact-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/contacts",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/contacts",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/contacts/route.ts"
+    },
+    {
       "id": "crm.customer-history",
       "domain": "crm",
       "method": "GET",
@@ -506,6 +650,42 @@
       "tests": ["tests/backend/p1-16-customer-identity.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/merge/route.ts"
+    },
+    {
+      "id": "crm.customer-read",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/route.ts"
     },
     {
       "id": "crm.customer-search",
@@ -788,6 +968,78 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/notes/route.ts"
     },
     {
+      "id": "crm.note-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/notes",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/notes",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/notes/route.ts"
+    },
+    {
+      "id": "crm.preference-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/preferences",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/preferences",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/preferences/route.ts"
+    },
+    {
       "id": "crm.preference-set",
       "domain": "crm",
       "method": "PUT",
@@ -870,6 +1122,42 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/restrictions/route.ts"
     },
     {
+      "id": "crm.restriction-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/restrictions",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/restrictions",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/restrictions/route.ts"
+    },
+    {
       "id": "crm.tag-assign",
       "domain": "crm",
       "method": "POST",
@@ -906,6 +1194,42 @@
       ],
       "missingEvidence": [],
       "tests": ["tests/backend/p1-16-customer-governance.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/tags/route.ts"
+    },
+    {
+      "id": "crm.tag-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/tags",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/tags",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-16-customer-read.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/tags/route.ts"
     },

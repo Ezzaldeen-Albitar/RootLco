@@ -13,13 +13,27 @@ import { CustomerRepository } from './data/customer-repository';
 import { CustomerProfileRepository } from './data/customer-profile-repository';
 import { CustomerGovernanceRepository } from './data/customer-governance-repository';
 import { CustomerIdentityRepository } from './data/customer-identity-repository';
+import { CustomerReadRepository } from './data/customer-read-repository';
 import { CustomerSearchService } from './application/customer-search-service';
 import { CustomerCreationService } from './application/customer-creation-service';
 import { CustomerProfileService } from './application/customer-profile-service';
 import { CustomerGovernanceService } from './application/customer-governance-service';
 import { CustomerIdentityService } from './application/customer-identity-service';
+import { CustomerReadService } from './application/customer-read-service';
 
 export type { CustomerSearchHit, CustomerSearchInput } from './application/customer-search-service';
+export type { ListQuery, NotePage } from './application/customer-read-service';
+export type {
+  AddressEntry,
+  AlertEntry,
+  ConsentEntry,
+  ContactPointEntry,
+  CustomerDetailRow,
+  NoteEntry,
+  PreferenceEntry,
+  RestrictionEntry,
+  TagEntry,
+} from './data/customer-read-repository';
 export type { CreatedCustomer } from './application/customer-creation-service';
 export type {
   ConsentRecorded,
@@ -117,6 +131,7 @@ export const crmModule = composeModule({
       customerProfile: new CustomerProfileService(new CustomerProfileRepository()),
       customerGovernance: new CustomerGovernanceService(new CustomerGovernanceRepository()),
       customerIdentity: new CustomerIdentityService(new CustomerIdentityRepository()),
+      customerRead: new CustomerReadService(new CustomerReadRepository()),
     };
   },
 });

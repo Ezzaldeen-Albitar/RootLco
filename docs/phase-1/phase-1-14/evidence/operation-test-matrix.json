@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 226,
-    "publicApi": 226,
+    "registered": 235,
+    "publicApi": 235,
     "internal": 0,
-    "withRequiredEvidence": 226,
+    "withRequiredEvidence": 235,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 26,
@@ -17,9 +17,9 @@
       "metadataOnly": 0
     },
     "p1_16": {
-      "registered": 18,
-      "publicApi": 18,
-      "operationDepth": 18,
+      "registered": 27,
+      "publicApi": 27,
+      "operationDepth": 27,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -365,6 +365,38 @@
       "unitOnly": false
     },
     {
+      "id": "crm.address-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/addresses",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.alert-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/alerts",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "crm.alert-raise",
       "surface": "public-api",
       "method": "POST",
@@ -438,6 +470,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.consent-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/consents",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -531,6 +579,22 @@
       "unitOnly": false
     },
     {
+      "id": "crm.contact-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/contacts",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "crm.customer-history",
       "surface": "public-api",
       "method": "GET",
@@ -598,6 +662,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -845,6 +925,38 @@
       "unitOnly": false
     },
     {
+      "id": "crm.note-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/notes",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.preference-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/preferences",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "crm.preference-set",
       "surface": "public-api",
       "method": "PUT",
@@ -931,6 +1043,22 @@
       "unitOnly": false
     },
     {
+      "id": "crm.restriction-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/restrictions",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "crm.tag-assign",
       "surface": "public-api",
       "method": "POST",
@@ -968,6 +1096,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.tag-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/tags",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-read.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
