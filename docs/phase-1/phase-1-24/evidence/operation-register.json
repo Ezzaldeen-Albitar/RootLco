@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 235,
+    "operations": 236,
     "openapiPaths": 196,
-    "openapiOperations": 235,
+    "openapiOperations": 236,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 153
   },
   "counts": {
-    "Covered": 235
+    "Covered": 236
   },
   "operations": [
     {
@@ -8207,6 +8207,42 @@
       "tests": ["tests/backend/p1-17-vehicle-registration.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/[vehicleId]/plates/route.ts"
+    },
+    {
+      "id": "veh.vehicle-read",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicles/{vehicleId}",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicles/{vehicleId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-17-vehicle-read.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicles/[vehicleId]/route.ts"
     },
     {
       "id": "veh.vehicle-relationship-list",

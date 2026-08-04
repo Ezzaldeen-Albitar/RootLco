@@ -1,8 +1,23 @@
 /**
- * PATCH /api/v1/vehicles/{vehicleId} — edit the vehicle master (Phase 1-17,
- * FR-VEH-001, P1-17-BE-003).
+ * GET/PATCH /api/v1/vehicles/{vehicleId} — read and edit the vehicle master
+ * (Phase 1-17, FR-VEH-001, P1-17-BE-003; GET added by the P1-17 remediation for
+ * `P1-27-INT-002`).
  *
- * A partial edit of descriptive master fields: VIN, catalog references, model
+ * GET returns one vehicle with its catalog labels resolved, the safe master
+ * projection only. Before it existed, search returned a page of hits and seven
+ * sub-resources returned their own lists, and nothing returned a single vehicle —
+ * so a profile screen could reach a vehicle's plates and never learn its make.
+ *
+ * It publishes `recordVersion`, which the handler also emits as an `ETag`. That
+ * is the half of optimistic concurrency that was missing: the PATCH below has
+ * always demanded `If-Match`, and no operation published the value to put in it.
+ *
+ * A merged vehicle is returned, with `mergedIntoId` set, rather than hidden — the
+ * PATCH treats a merged vehicle as existing-but-frozen (409, not 404), and a read
+ * that answered 404 would report a vehicle that live work orders still reference
+ * as missing.
+ *
+ * PATCH is a partial edit of descriptive master fields: VIN, catalog references, model
  * year, powertrain category, colour, and display number. A field that is absent is
  * left untouched; a nullable field set to `null` is cleared. Lifecycle, workshop
  * status, and merge state are deliberately *not* editable here — each is its own
@@ -43,6 +58,22 @@ const Body = z
   })
   .strict();
 
+export const VEHICLE_READ_OPERATION = defineOperation({
+  id: 'veh.vehicle-read',
+  module: 'vehicle',
+  method: 'GET',
+  path: '/vehicles/{vehicleId}',
+  summary: 'Read one vehicle master record, with its catalog labels.',
+  permissions: ['veh.vehicle.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  // The same policy `veh.vehicle-search` and the plate/ownership/odometer reads
+  // carry. Its key includes the operation, so a profile screen fanning out to
+  // several reads spends one request from each of several buckets.
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
 export const VEHICLE_UPDATE_OPERATION = defineOperation({
   id: 'veh.vehicle-update',
   module: 'vehicle',
@@ -57,6 +88,22 @@ export const VEHICLE_UPDATE_OPERATION = defineOperation({
   rateLimitPolicy: 'standard-command',
   cacheCategory: 'never',
 });
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ vehicleId: string }> }
+): Promise<Response> {
+  const params = parseOrFail(Params, await route.params, 'path');
+  return handleOperation(
+    VEHICLE_READ_OPERATION,
+    request,
+    async ({ db }) => {
+      const vehicle = await vehicleModule().vehicleRead.read(db, params.vehicleId);
+      return { body: vehicle, recordVersion: vehicle.recordVersion };
+    },
+    { params }
+  );
+}
 
 export async function PATCH(
   request: Request,

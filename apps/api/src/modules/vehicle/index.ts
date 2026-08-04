@@ -30,8 +30,11 @@ import { VehicleLifecycleRepository } from './data/vehicle-lifecycle-repository'
 import { VehicleLifecycleService } from './application/vehicle-lifecycle-service';
 import { VehicleHistoryRepository } from './data/vehicle-history-repository';
 import { VehicleHistoryService } from './application/vehicle-history-service';
+import { VehicleReadRepository } from './data/vehicle-read-repository';
+import { VehicleReadService } from './application/vehicle-read-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
+export type { VehicleDetailRow } from './application/vehicle-read-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
 export type { MergeResult, ScanResult, ReviewResult } from './application/vehicle-identity-service';
 export type {
@@ -114,5 +117,6 @@ export const vehicleModule = composeModule({
     vehicleOdometer: new VehicleOdometerService(new VehicleOdometerRepository()),
     vehicleLifecycle: new VehicleLifecycleService(new VehicleLifecycleRepository()),
     vehicleHistory: new VehicleHistoryService(new VehicleHistoryRepository()),
+    vehicleRead: new VehicleReadService(new VehicleReadRepository()),
   }),
 });
