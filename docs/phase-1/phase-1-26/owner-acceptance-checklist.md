@@ -18,6 +18,44 @@ answers.
 - The account, both workspaces and all the content are **local and synthetic**.
   Nothing here is production data and nothing here ships.
 
+## The four shared behaviours added by the shared-UX remediation
+
+These are the things you reported. They are the foundation every later screen
+inherits, so they are worth more of your attention than any single page.
+
+**Language**
+
+- [ ] The sign-in screen offers **English** and **العربية**, and switching works
+- [ ] The header offers the same two, on every authenticated screen
+- [ ] Switching language keeps you on the screen you were reading
+- [ ] Switching on a table keeps your page and sort — go to page 2, switch, check
+- [ ] Switching does not sign you out
+- [ ] The language control is still reachable with the sidebar collapsed
+
+**Notifications**
+
+- [ ] An operation result appears in the **top corner** — top-right in English,
+      top-left in Arabic
+- [ ] Scroll a long list to the bottom, then act on a row: the result is still
+      visible without scrolling back
+- [ ] A result never pushes the page taller or moves a table row
+- [ ] An error stays until you dismiss it; a confirmation clears itself
+
+**Scrolling** — the blank region you reported
+
+- [ ] Scroll to the bottom of **Permissions**: the page ends where the content
+      ends, with no empty space below it
+- [ ] The sidebar stays put while the content scrolls
+- [ ] With a short window, the sidebar scrolls **inside itself** and its last
+      item is reachable; the brand stays visible
+- [ ] A long table scrolls inside its own box and its pager stays on screen
+- [ ] Nothing scrolls sideways
+
+**Sign-in on a small window**
+
+- [ ] Make the window short (or use a phone): the form is still reachable and
+      the language control is still there
+
 ## Authentication
 
 - [ ] Sign in works with the supplied credentials
