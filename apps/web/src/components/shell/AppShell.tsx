@@ -94,7 +94,21 @@ export function AppShell({
   const groups = visibleNavigation(NAVIGATION, capabilities);
 
   return (
-    <div className="flex min-h-dvh bg-app-background text-text-primary">
+    /*
+     * The shell is EXACTLY the viewport, and nothing outside it scrolls.
+     *
+     * It used to be `min-h-dvh`, which lets the document grow with the content.
+     * Measured on `/en/administration/users`: viewport 900, document 991, so
+     * the page scrolled — and because the page scrolled, the sidebar (a fixed
+     * `h-dvh` box, not sticky) travelled up and off the screen with it. Its
+     * `overflow-y-auto` never engaged, because the nav was not the thing
+     * overflowing; the document was (`P1-26-F-064`).
+     *
+     * `h-dvh` + `overflow-hidden` here is what makes every inner region's own
+     * scrolling meaningful: the sidebar stays put, the header stays put, and the
+     * main region scrolls inside its own box however many rows arrive.
+     */
+    <div className="flex h-dvh overflow-hidden bg-app-background text-text-primary">
       <Sidebar
         locale={locale}
         messages={messages}
@@ -157,13 +171,23 @@ export function AppShell({
             document, so the next Tab returns to the navigation the user just
             skipped.
           */}
-          <main id="main" tabIndex={-1} className="min-w-0 flex-1 focus:outline-none">
+          {/*
+            `min-h-0` is not decoration. A flex child's default `min-height:auto`
+            refuses to shrink below its content, so without it `overflow-y-auto`
+            here has nothing to overflow — the box grows instead and the page
+            scrolls again, which is the defect this is fixing.
+          */}
+          <main
+            id="main"
+            tabIndex={-1}
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
+          >
             {children}
           </main>
           {secondaryPanel ? (
             <aside
               aria-label={translate(messages, 'shell.secondaryPanel')}
-              className="hidden w-80 shrink-0 border-s border-border bg-surface xl:block"
+              className="hidden w-80 shrink-0 overflow-y-auto border-s border-border bg-surface xl:block"
             >
               {secondaryPanel}
             </aside>

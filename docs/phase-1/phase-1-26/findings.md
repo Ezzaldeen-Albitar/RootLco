@@ -485,6 +485,112 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-065 — the running application's brand colour came from a test, not from the source
+
+**Severity:** High · **Status:** Fixed (artifact); **guard Open** · **Area:**
+`apps/web/tests/brand-replacement.test.ts`, local development builds
+
+The Owner's sign-in screen rendered its primary action button **purple**. The
+approved action colour is green `#1F6B52`.
+
+Measured, in this order, because the obvious conclusion was wrong twice:
+
+```
+browser  --color-primary            #7a1fa2   (purple)
+source   $primary 500               #1f6b52   (green)
+grep     "7a1fa2" across apps/web/src         0 hits
+sass     compiled from source, just now       --color-primary: #1f6b52
+built    .next-dev/.../globals.css            --color-primary: #7a1fa2
+                                              occurrences of #1f6b52: 0
+```
+
+So a **freshly built** stylesheet disagreed with the source it was built from.
+
+**Cause.** `brand-replacement.test.ts` proves the brand can be replaced by
+configuration alone. To do that it **writes to the real tracked source file**:
+
+```js
+writeFileSync(coloursPath, colours.replace('500: #1f6b52', '500: #7a1fa2'));
+```
+
+and restores it afterwards. Its own comment says the hue is deliberately unlike
+the brand "so a stale build would be obvious rather than plausible" — which is
+exactly what happened, only the stale build outlived the test that caused it.
+
+Running the web suite while `dev:all` is up gives Turbopack a window in which
+the file on disk is purple. It recompiles, caches the result by content hash,
+and the corrupted chunk survives the restore: the source goes back to green and
+nothing invalidates the artifact. A later `.next-dev` delete does not help
+either if the suite runs again afterwards.
+
+The give-away was that `--color-primary-active` (`$primary: 700`) stayed green
+while `--color-primary` and `--color-focus-ring` (`$primary: 500`) were purple —
+only the one entry the test rewrites.
+
+**Fix applied.** Stop the stack, delete `.next-dev`, restart with no suite
+running. Verified: `--color-primary: #1f6b52`, submit button
+`rgb(31, 107, 82)`.
+
+**Not yet fixed, and it should be.** Nothing prevents the recurrence. A test
+that mutates tracked source races every watching process, and the failure is
+silent, persistent, and looks like a design decision rather than a fault. The
+durable options are to copy the tree into a temporary directory and mutate the
+copy, or to refuse to run the mutating case while a launcher lock is held. Left
+open deliberately rather than fixed in passing, because it changes how a brand
+gate proves itself and deserves its own review.
+
+The lesson is one this phase keeps paying for from new directions: **a build
+artifact is evidence about the moment it was built, not about the source.** Two
+earlier findings — `P1-26-F-055`'s invented 404 and the corrupt
+`prerender-manifest.json` — are the same sentence with different nouns.
+
+---
+
+## P1-26-F-064 — the page scrolled, so the sidebar scrolled away with it
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/**`, `apps/web/src/components/data-table/**`
+
+The shell root was `min-h-dvh` — a floor, not a cap — so the document grew with
+the content. The desktop sidebar is a statically positioned `h-dvh` box, not a
+sticky one, so once the document was taller than the viewport the whole sidebar
+travelled up and off the screen. Its `overflow-y-auto` never engaged, because
+the nav was not what was overflowing; the document was.
+
+Measured on `/en/administration/users` at a 900px viewport:
+
+|                               | before      | after |
+| ----------------------------- | ----------- | ----- |
+| `document.scrollHeight`       | **991**     | 900   |
+| page scrolls                  | **true**    | false |
+| `main` computed `overflow-y`  | **visible** | auto  |
+| scrollable ancestor of `main` | **none**    | —     |
+
+**Fix.** The shell root is `h-dvh overflow-hidden`, so it is exactly the
+viewport and nothing outside it scrolls. `main` and the secondary panel each
+own `overflow-y-auto`, and both carry `min-h-0` — without it a flex child's
+default `min-height: auto` refuses to shrink below its content, so
+`overflow-y-auto` has nothing to overflow and the box grows instead, which
+reproduces the original defect one level down. The sidebar is `h-full min-h-0`
+rather than declaring its own `h-dvh`.
+
+The shared table body is additionally capped at `max-h-[70dvh]`. At the maximum
+page size of 100 rows the pager was several screens below the filters; a sticky
+header inside a container that never scrolls has nothing to stick to.
+
+**Verified in a real browser at three viewport heights.** At 560px and 420px the
+nav scrolls **internally** (`scrollHeight` 700 vs `clientHeight` 496/356), the
+page does not scroll, the brand block stays fixed, and the last navigation item
+is reachable.
+
+That last assertion was wrong the first time and said "unreachable". The probe
+used `querySelector('li:last-child a')`, which returns the FIRST match — in a
+nested navigation that is an early child item, not the bottom of the list. A
+false negative in a measurement is as damaging as a false positive: it very
+nearly bought a fix for a defect that did not exist.
+
+---
+
 ## P1-26-F-063 — a bind probe cannot see a listener on another address, so `dev:all` started a second stack
 
 **Severity:** High · **Status:** Fixed · **Area:** `scripts/dev/**`, root and

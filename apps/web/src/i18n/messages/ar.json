@@ -174,7 +174,6 @@
   "gallery.readiness.misconfigured": "إعداد الاتصال بواجهة برمجة التطبيقات غير مكتمل.",
   "overview.identityTitle": "الهوية البصرية",
   "overview.identityBody": "تُطبَّق لوحة الألوان والخطوط والمسافات من طبقة رموز واحدة. كل سطح في هذا الإطار يقرأ تلك الرموز، لذا يمكن تغيير الهوية مركزيًّا دون تعديل أيّ مكوّن.",
-
   "nav.users": "المستخدمون",
   "nav.roles": "الأدوار",
   "nav.permissions": "الصلاحيات",
@@ -187,8 +186,13 @@
   "nav.languages": "اللغات",
   "nav.systemSettings": "إعدادات النظام",
   "nav.profile": "ملفك الشخصي",
-
   "auth.shellTagline": "سجّل الدخول للمتابعة.",
+  "auth.showcase.headline": "أدِر شركتك من مساحة عمل واحدة مترابطة.",
+  "auth.showcase.point1": "جاهز لشركات وفروع متعددة منذ اليوم الأول.",
+  "auth.showcase.point2": "وصول آمن قائم على الأدوار لكل موظف.",
+  "auth.showcase.point3": "العربية والإنجليزية، من اليمين إلى اليسار ومن اليسار إلى اليمين.",
+  "auth.showcase.secureLabel": "آمن بحكم التصميم",
+  "auth.showcase.secureBody": "كل إجراء موثّق ومسجّل، لتعرف ما الذي تغيّر ومتى ومن قام به.",
   "auth.backToLogin": "العودة إلى تسجيل الدخول",
   "auth.login.title": "تسجيل الدخول",
   "auth.login.description": "أدخل بيانات مساحة العمل للمتابعة.",
@@ -212,7 +216,6 @@
   "auth.login.reason.signedOut": "تم تسجيل خروجك.",
   "auth.login.reason.unavailable": "تعذّر على الخدمة تأكيد جلستك. سجّل الدخول مجددًا.",
   "auth.login.reason.forbidden": "بياناتك صحيحة، لكن هذا الحساب غير مخوّل لفتح التطبيق. يلزم أن يمنحه المسؤول صلاحية الوصول.",
-
   "auth.forgot.title": "إعادة تعيين كلمة المرور",
   "auth.forgot.description": "أدخل بريدك الإلكتروني وسنرسل رابط إعادة التعيين إن كان هناك حساب.",
   "auth.forgot.email": "البريد الإلكتروني",
@@ -224,7 +227,6 @@
   "auth.forgot.error.email": "أدخل بريدك الإلكتروني.",
   "auth.forgot.error.throttled": "طلبات كثيرة. انتظر قليلًا قبل إعادة المحاولة.",
   "auth.forgot.error.unavailable": "الخدمة لا تستجيب. عادةً ما يكون ذلك مؤقتًا.",
-
   "auth.reset.title": "اختر كلمة مرور جديدة",
   "auth.reset.description": "يُستخدم هذا الرابط مرة واحدة. اختر كلمة مرور لا تستخدمها في مكان آخر.",
   "auth.reset.password": "كلمة المرور الجديدة",
@@ -245,18 +247,15 @@
   "auth.reset.error.mismatch": "كلمتا المرور غير متطابقتين.",
   "auth.reset.error.throttled": "محاولات كثيرة. انتظر قليلًا قبل إعادة المحاولة.",
   "auth.reset.error.unavailable": "الخدمة لا تستجيب. عادةً ما يكون ذلك مؤقتًا.",
-
   "auth.activate.title": "إعداد حسابك",
   "auth.activate.description": "اختر كلمة مرور لإكمال إعداد حسابك.",
   "auth.activate.done": "تم ضبط كلمة المرور",
   "auth.activate.doneDetail": "يُفعِّل المسؤول حسابك بعد تأكيد دعوتك. يمكنك تسجيل الدخول فور حدوث ذلك.",
   "auth.activate.note": "يحدّد المسؤول صلاحياتك ومساحة عملك، لا هذه الصفحة.",
-
   "auth.session.signOut": "تسجيل الخروج",
   "auth.session.signingOut": "جارٍ تسجيل الخروج…",
   "auth.session.account": "الحساب",
   "auth.session.signedInAs": "مسجَّل الدخول باسم",
-
   "profile.title": "ملفك الشخصي",
   "profile.description": "ما تعرفه الخدمة عن حسابك، وما يمكنك تغييره هنا.",
   "profile.identity": "الهوية",
@@ -281,7 +280,6 @@
   "profile.saved": "تم تحديث ملفك الشخصي.",
   "profile.readOnly": "لا يمكن تغيير هذه البيانات إلا بواسطة مسؤول",
   "profile.readOnlyDetail": "لا توفّر الخدمة تحديثًا ذاتيًّا للملف الشخصي. اطلب من المسؤول إجراء التغيير نيابةً عنك.",
-
   "admin.title": "الإدارة",
   "admin.description": "الأشخاص والصلاحيات وطريقة إعداد مساحة العمل هذه.",
   "admin.section.identity": "الأشخاص والصلاحيات",
@@ -320,7 +318,6 @@
   "admin.contractGap.settingsBacked": "تُحرِّر هذه الشاشة إعدادات المنشأة. لا تنشر الخدمة عملية مخصّصة لهذا المجال بعد، لذا لا يُفترَض هنا شيء نيابةً عنك — القيم هي بالضبط ما تُدخِله.",
   "admin.contractGap.noCatalogue": "قائمة المرجع المنصّية خلف هذه الشاشة غير منشورة من الخدمة في هذا الإصدار.",
   "admin.contractGap.noDirectory": "لا تنشر الخدمة دليلًا للشركات أو الفروع، لذا تظهر المراجع بدل الأسماء.",
-
   "users.title": "المستخدمون",
   "users.description": "كل من يملك حسابًا في مساحة العمل هذه.",
   "users.column.displayName": "الاسم",
@@ -370,7 +367,6 @@
   "users.confirm.revokeSessions": "إنهاء جلسات هذا المستخدم في كل الأجهزة؟",
   "users.confirm.revokeSessionsBody": "تنتهي كل جلسة نشطة. يمكنه تسجيل الدخول مرة أخرى فورًا.",
   "users.notAccepted": "لم تُقبَل الدعوة بعد، لذا لا يمكن تفعيل الحساب.",
-
   "roles.title": "الأدوار",
   "roles.description": "مجموعات الصلاحيات المسمّاة التي تُمنَح للأشخاص في مساحة العمل هذه.",
   "roles.column.name": "الدور",
@@ -392,7 +388,6 @@
   "roles.confirm.archiveBody": "يتوقّف عن كونه متاحًا للمنح. ولا يزيل هذا الإجراء المنح القائمة.",
   "roles.systemLocked": "هذا الدور مدمج في المنصّة ولا يمكن تغييره.",
   "roles.managePermissions": "الصلاحيات",
-
   "permissions.title": "الصلاحيات",
   "permissions.description": "كل صلاحية تعرّفها المنصّة، وكيف يستخدمها كل دور.",
   "permissions.column.code": "الصلاحية",
@@ -415,7 +410,6 @@
   "permissions.visibilityNotice": "ما تراه هنا للتيسير فقط. تتحقّق الخدمة من كل طلب، وقرارها هو المُعتمَد.",
   "permissions.confirm.remove": "إزالة هذا الربط؟",
   "permissions.confirm.removeBody": "يتوقّف الدور عن حمل هذه الصلاحية. ويفقدها حاملو الدور فورًا.",
-
   "approvalLimits.title": "حدود الاعتماد",
   "approvalLimits.description": "أقصى ما يمكن لدور أو لشخص اعتماده، لكل شركة.",
   "approvalLimits.column.subject": "ينطبق على",
@@ -448,7 +442,6 @@
   "approvalLimits.error.date": "أدخل التاريخ بالصيغة YYYY-MM-DD.",
   "approvalLimits.completeList": "هذه هي القائمة الكاملة للمرشّحات الحالية، وليست صفحة منها.",
   "approvalLimits.mayBeTruncated": "تُعيد الخدمة ٢٠٠ حد كحدّ أقصى ولا تُبيّن ما إذا كانت قد توقّفت عند ذلك، لذا قد تكون هذه القائمة غير مكتملة. ضيّق النطاق حسب الشركة للتأكّد.",
-
   "organization.title": "المنشأة",
   "organization.description": "مساحة عملك، والإعدادات التي تعمل بها كل شركة وكل فرع.",
   "organization.tenant": "مساحة العمل",
@@ -476,7 +469,6 @@
   "organization.branchStatus.inactive": "غير نشط",
   "organization.branchStatus.change": "تغيير حالة الفرع",
   "organization.error.unknownReference": "هذه اللغة أو المنطقة الزمنية غير مسجَّلة على المنصّة.",
-
   "numbering.title": "قواعد الترقيم",
   "numbering.description": "كيفية تكوين الأرقام المرجعية، وتُحفَظ ضمن إعدادات المنشأة.",
   "numbering.field.prefix": "بادئة",
@@ -492,7 +484,6 @@
   "numbering.error.startAt": "أدخل عددًا صحيحًا لا يقل عن ١.",
   "numbering.noPreview": "لا تنشر الخدمة عملية معاينة، لذا لا يظهر هنا مثال على الرقم.",
   "numbering.noGeneration": "تُصدِر الخدمة الأرقام دائمًا. ولا شيء في هذه الشاشة يُنتِج رقمًا.",
-
   "taxes.title": "الضرائب",
   "taxes.description": "إعداد الضرائب لشركة، ويُحفَظ ضمن إعدادات المنشأة.",
   "taxes.field.code": "رمز الضريبة",
@@ -504,7 +495,6 @@
   "taxes.error.rate": "أدخل نسبة بين ٠ و١٠٠، بحد أقصى ٤ منازل عشرية.",
   "taxes.error.code": "استخدم حتى ٣٢ محرفًا: أحرف أو أرقام أو شرطات.",
   "taxes.noJurisdiction": "لا تُفترَض أي دولة أو نظام ضريبي. كل قيمة هنا قرار اتخذته منشأتك.",
-
   "currencies.title": "العملات",
   "currencies.description": "العملات التي تستخدمها مساحة العمل هذه، وتُحفَظ ضمن إعدادات المنشأة.",
   "currencies.field.code": "رمز العملة",
@@ -515,7 +505,6 @@
   "currencies.error.code": "أدخل رمز عملة أيزو من ثلاثة أحرف لاتينية كبيرة.",
   "currencies.error.duplicate": "هذه العملة موجودة في القائمة أصلًا.",
   "currencies.noRates": "لا يُحفَظ هنا أي سعر صرف ولا يُحتسَب.",
-
   "languages.title": "اللغات",
   "languages.description": "اللغات التي يخدمها هذا التطبيق، ولغة مساحة العمل الافتراضية.",
   "languages.available": "المتاحة في هذا التطبيق",
@@ -525,12 +514,10 @@
   "languages.default": "الافتراضية لمساحة العمل",
   "languages.defaultHint": "تنطبق على الحسابات الجديدة وعلى ما تُنشئه الخدمة نيابةً عنك.",
   "languages.required": "يخدم هذا التطبيق العربية والإنجليزية معًا ولا يمكن إزالتهما من هنا.",
-
   "systemSettings.title": "إعدادات النظام",
   "systemSettings.description": "الإعدادات المحفوظة على مستوى مساحة العمل والشركة والفرع.",
   "systemSettings.level": "المستوى",
   "systemSettings.noPlatformScope": "إعدادات المنصّة العامة غير متاحة من هذا التطبيق في هذا الإصدار.",
-
   "audit.title": "سجل التدقيق",
   "audit.description": "سجل للقراءة فقط لما جرى في مساحة العمل هذه.",
   "audit.from": "من",
@@ -552,7 +539,6 @@
   "audit.readOnly": "لا يمكن تعديل سجلات التدقيق أو حذفها من هنا.",
   "audit.viewedNotice": "فتح هذه الشاشة يُسجَّل هو الآخر.",
   "audit.noExport": "لا تنشر الخدمة عملية تصدير لسجلات التدقيق، لذا لا يُتاح تصدير هنا.",
-
   "form.retry": "إعادة المحاولة",
   "form.required": "مطلوب",
   "form.optional": "اختياري",

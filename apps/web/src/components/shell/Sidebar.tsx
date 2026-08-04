@@ -62,7 +62,13 @@ export function Sidebar({
         <BrandMark collapsed={collapsed} onDark />
       </div>
 
-      <nav aria-labelledby={labelId} className="flex-1 overflow-y-auto px-2 py-4">
+      {/*
+        The scrolling region. `min-h-0` is what lets it actually shrink: a flex
+        child defaults to `min-height:auto` and refuses to go below its content,
+        so `overflow-y-auto` alone would grow the column instead of scrolling.
+        The brand block above is `shrink-0`, so it stays put while this moves.
+      */}
+      <nav aria-labelledby={labelId} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
         <h2 id={labelId} className="sr-only">
           {translate(messages, 'nav.landmark')}
         </h2>
@@ -111,7 +117,10 @@ export function Sidebar({
     <aside
       data-collapsed={collapsed ? 'true' : 'false'}
       className={[
-        'hidden h-dvh shrink-0 flex-col border-e border-sidebar-border bg-sidebar-background lg:flex',
+        // `h-full`, not `h-dvh`: the shell is now exactly the viewport, so the
+        // sidebar fills its column rather than declaring its own height and
+        // then sliding away when the document grows past it.
+        'hidden h-full min-h-0 shrink-0 flex-col border-e border-sidebar-border bg-sidebar-background lg:flex',
         'transition-[width] duration-base ease-standard',
         collapsed ? 'w-16' : 'w-64',
       ].join(' ')}
