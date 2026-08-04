@@ -57,6 +57,16 @@ describe('p1-26-frontend profile', () => {
     expect(failures.some((f) => f.startsWith(`${bucket}:`) && f.includes(path))).toBe(true);
   });
 
+  it('names the Backend remediation as the route for an API change', () => {
+    // The gate must not merely refuse — a refusal with no route is where a
+    // Backend change gets smuggled in instead of being separated.
+    const { failures } = evaluate(
+      [...FRONTEND_CHANGES, 'apps/api/src/modules/iam/application/authentication-service.ts'],
+      'p1-26-frontend'
+    );
+    expect(failures.some((f) => f.includes('Backend remediation'))).toBe(true);
+  });
+
   it('fails on an unclassified file rather than shrugging', () => {
     const { failures } = evaluate([...FRONTEND_CHANGES, 'weird/place/thing.bin'], 'p1-26-frontend');
     expect(failures.some((f) => f.includes('unclassified changed file'))).toBe(true);
@@ -98,8 +108,45 @@ describe('api-boundary profile', () => {
   });
 });
 
+describe('backend-login-contract profile', () => {
+  const BACKEND_CHANGES = [
+    'apps/api/src/modules/iam/application/authentication-service.ts',
+    'apps/api/src/modules/iam/provider/supabase-provider.ts',
+    'apps/api/src/app/api/v1/auth/login/route.ts',
+    'tests/backend/iam-auth-provider.test.ts',
+    'docs/phase-1/phase-1-26/login-identity-contract.md',
+    'scripts/ci/check-phase-ownership.mjs',
+  ];
+
+  it('permits the login-contract remediation to change API source, tests and docs', () => {
+    const { failures, counts } = evaluate(BACKEND_CHANGES, 'backend-login-contract');
+    expect(failures).toEqual([]);
+    expect(counts.apiSource).toBeGreaterThan(0);
+  });
+
+  it('forbids the Frontend half from riding along in the Backend change', () => {
+    // The point of a separate profile. A Backend profile that also permitted
+    // `web` would let both halves of a contract change land in one commit that
+    // neither the Frontend nor the Backend review would see whole — the same
+    // hole `p1-26-frontend` closes, merely pointing the other way.
+    const { failures } = evaluate(
+      [...BACKEND_CHANGES, 'apps/web/src/features/authentication/login/LoginForm.tsx'],
+      'backend-login-contract'
+    );
+    expect(failures.some((f) => f.startsWith('web:'))).toBe(true);
+  });
+
+  it.each([
+    ['a migration', 'supabase/migrations/0121_login.sql', 'migrations'],
+    ['the database', 'supabase/config.toml', 'supabase'],
+  ])('still forbids %s', (_label, path, bucket) => {
+    const { failures } = evaluate([...BACKEND_CHANGES, path], 'backend-login-contract');
+    expect(failures.some((f) => f.startsWith(`${bucket}:`) && f.includes(path))).toBe(true);
+  });
+});
+
 describe('profile declarations', () => {
-  it('declares both profiles with a reason and disjoint allow/forbid sets', () => {
+  it('declares every profile with a reason and disjoint allow/forbid sets', () => {
     for (const [name, profile] of Object.entries(PROFILES)) {
       expect(profile.why, `${name} states why it exists`).toBeTruthy();
       for (const bucket of profile.allowed) {

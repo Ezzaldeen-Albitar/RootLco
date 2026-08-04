@@ -18,11 +18,15 @@
  * measurably faster than "this password is wrong", which is the same oracle
  * again, delivered by stopwatch.
  *
- * **3. The tenant is a lookup key, never a grant.** `tenantId` arrives in the
- * request body and is used only to scope the account lookup. The account must
- * exist inside it, hold the provider subject the provider just verified, and be
- * active. A caller who guesses a tenant learns nothing, because the answer is
- * the same generic failure.
+ * **3. The tenant is a lookup key, never a grant.** It is now resolved
+ * server-side from the identity the provider verified, and `tenantId` in the
+ * request body is optional: supplying it asserts an expectation that is
+ * cross-checked, and omitting it is the normal case. Either way it only scopes
+ * the account lookup — the account must still exist inside that tenant, hold the
+ * provider subject the provider just verified, and be active. A caller who
+ * guesses a tenant learns nothing, because the answer is the same generic
+ * failure. See `resolveTenant` for why the database cannot answer this question
+ * and the provider must.
  *
  * **4. Nothing that could be a credential is written anywhere.** Passwords are
  * forwarded to the provider and never stored, logged, or echoed. Access and
@@ -67,6 +71,16 @@ import { toAppFailureFromProvider } from '../provider/provider-errors';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * The tenant an unresolvable login attempt runs against.
+ *
+ * A well-formed v4 UUID that no tenant holds, so `sel_user_accounts_tenant`
+ * matches nothing and the lookup returns no account — the same outcome as an
+ * unknown address inside a real tenant, reached by the same amount of work.
+ * Its absence from `org.tenants` is asserted by test rather than assumed.
+ */
+const UNRESOLVED_TENANT = '00000000-0000-4000-8000-000000000000';
+
 /** The single answer every authentication failure produces. */
 function authenticationFailed(): AppFailure {
   return new AppFailure('ERR-IAM-002', { message: 'Authentication failed' });
@@ -87,7 +101,15 @@ function pseudonymise(value: string | null): string | null {
 }
 
 export interface LoginRequest {
-  readonly tenantId: string;
+  /**
+   * Optional since the login-identity contract change.
+   *
+   * A caller that supplies it is asserting which tenant it expects; the value is
+   * cross-checked against the binding the provider reports and a disagreement is
+   * refused. A caller that omits it — every RootLco client — has the tenant
+   * resolved server-side. Either way it is a lookup key, never a grant.
+   */
+  readonly tenantId?: string | undefined;
   readonly email: string;
   readonly password: string;
 }
@@ -163,7 +185,7 @@ export class AuthenticationService extends ApplicationService {
   async login(input: LoginRequest, meta: RequestMetadata): Promise<LoginResult> {
     const config = backendConfig();
 
-    if (!UUID.test(input.tenantId)) {
+    if (input.tenantId !== undefined && !UUID.test(input.tenantId)) {
       // Same answer as every other failure. A malformed tenant must not be
       // distinguishable from a valid tenant with no matching account.
       this.noteFailure(meta, 'malformed-tenant');
@@ -185,7 +207,21 @@ export class AuthenticationService extends ApplicationService {
       providerReason = error instanceof ProviderFailure ? error.reason : 'unknown';
     }
 
-    const context = this.bootstrapContext(input.tenantId, meta.correlationId, 'iam.auth.login');
+    const resolved = await this.resolveTenant(input, session);
+
+    // Deliberately NOT an early return.
+    //
+    // Answering here would skip the transaction every other failure performs,
+    // making "this address is unknown to RootLco" measurably faster than "this
+    // password is wrong" — the same stopwatch oracle rule 2 above exists to
+    // prevent, reintroduced one layer up. An unresolved attempt instead proceeds
+    // against a tenant that cannot match, does the same work, and is denied as
+    // `no-account` exactly like an unknown address under a real tenant.
+    const context = this.bootstrapContext(
+      resolved ?? UNRESOLVED_TENANT,
+      meta.correlationId,
+      'iam.auth.login'
+    );
 
     const outcome = await withTransaction(context, async (db) => {
       await db.query("SELECT set_config('app.user_id', '', true)");
@@ -240,7 +276,13 @@ export class AuthenticationService extends ApplicationService {
     });
 
     if (outcome.kind === 'denied') {
-      this.noteFailure(meta, outcome.reason);
+      // The distinction an operator needs, kept out of the response. "No account
+      // in a tenant we could not resolve" and "no account in a real tenant" are
+      // the same answer to the caller and different facts in the log.
+      this.noteFailure(
+        meta,
+        resolved === null ? `${outcome.reason}:unresolved-tenant` : outcome.reason
+      );
       throw authenticationFailed();
     }
 
@@ -269,6 +311,74 @@ export class AuthenticationService extends ApplicationService {
         tenantId: outcome.account.tenantId,
       },
     };
+  }
+
+  /**
+   * Decides which tenant this attempt is scoped to, without asking the caller.
+   *
+   * The tenant cannot be resolved from the database: `sel_user_accounts_tenant`
+   * restricts SELECT on `iam.user_accounts` to `tenant_id =
+   * iam.current_tenant_id()`, and the platform holds zero `SECURITY DEFINER`
+   * routines by CI-asserted invariant. A lookup that does not yet know its tenant
+   * therefore has nowhere in the database it is permitted to run, and the
+   * provider is the only tenant-agnostic directory that exists.
+   *
+   * `app_metadata.tenant_id` is written by the service role at invitation and is
+   * not editable by the end user (ADR-019 §3), which is what makes it usable as a
+   * lookup key. `uq_user_accounts_provider_identity_active` is unique on
+   * `(identity_provider, provider_subject)` with **no tenant in the key**, so a
+   * verified subject resolves to exactly one account and therefore one tenant.
+   * The resolution is unambiguous by construction, not by convention.
+   *
+   * Resolving nothing returns null, and the caller answers with the same generic
+   * failure as everything else. Resolving a tenant grants nothing on its own: the
+   * account must still exist inside it, hold the subject the provider just
+   * verified, and be active.
+   */
+  private async resolveTenant(
+    input: LoginRequest,
+    session: ProviderSession | null
+  ): Promise<string | null> {
+    const bound = session ? session.tenantId : await this.directoryTenant(input.email);
+
+    if (bound !== null && UUID.test(bound)) {
+      // A caller that named a tenant must have named the one the identity is
+      // actually bound to. Steering the lookup at a different tenant is refused
+      // rather than silently ignored, so a client cannot probe bindings.
+      if (input.tenantId !== undefined && input.tenantId !== bound) return null;
+      return bound;
+    }
+
+    // The identity carries no binding — an identity created outside `invite`.
+    // Fall back to what the caller asserted, which is exactly the pre-change
+    // behaviour and is why existing callers keep working unchanged.
+    return input.tenantId ?? null;
+  }
+
+  /**
+   * Asks the provider directory which tenant an address belongs to.
+   *
+   * Reached only when the provider **refused** the credentials, so that the
+   * attempt can still be attributed to an account and written to
+   * `iam.login_audit`. Without it, dropping `tenantId` from the request would
+   * have silently turned off failure auditing — and with it the security-event
+   * threshold — for every wrong-password attempt.
+   *
+   * Both "address unknown here" and "password wrong" take this path, so it
+   * introduces no oracle between them, and the result is never revealed to the
+   * caller in any form.
+   *
+   * A directory fault is swallowed deliberately. The verdict is already failure;
+   * letting a lookup outage change the response would leak that the lookup
+   * happened at all.
+   */
+  private async directoryTenant(email: string): Promise<string | null> {
+    try {
+      const identity = await this.provider.findByEmail(email);
+      return identity?.tenantId ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

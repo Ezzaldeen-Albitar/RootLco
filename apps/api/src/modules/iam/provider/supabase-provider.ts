@@ -58,6 +58,17 @@ export interface SupabaseProviderOptions {
   readonly providerName: string;
 }
 
+/**
+ * How many identities a directory lookup will consider.
+ *
+ * A bound, stated rather than hidden. `filter` is a substring match, so an
+ * address that happens to be a substring of many others could in principle push
+ * the exact match past this page — in which case the lookup returns null and the
+ * attempt is recorded as unattributable, never as a different account. Failing
+ * to attribute is the safe direction; attributing to the wrong identity is not.
+ */
+const DIRECTORY_PAGE_SIZE = 200;
+
 /** Anything the SDK throws or returns as `{ error }`, narrowed safely. */
 interface SupabaseErrorish {
   readonly status?: unknown;
@@ -358,6 +369,68 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       );
     }
     return this.identityOf(bound.data.user);
+  }
+
+  /**
+   * Capability 12 — look an identity up by address.
+   *
+   * Goes to the GoTrue admin endpoint rather than through `auth.admin.listUsers`,
+   * because the SDK exposes only `page` and `perPage`: an SDK implementation
+   * would have to page through **every** identity in the project and match
+   * client-side, which is O(all users) on a path that runs on failed logins.
+   *
+   * GoTrue's `filter` is a **substring** match, not an equality test — measured,
+   * not assumed: filtering by `crm.local` returns every address containing it.
+   * So the filter is used only to narrow server-side, and the decision is made
+   * here by exact, case-insensitive comparison. A substring filter that matched
+   * many identities can therefore never return the wrong one; at worst it returns
+   * none, and the caller treats that exactly as "unattributable".
+   *
+   * The address is written through `URL`/`searchParams`, so it is escaped as a
+   * query *value* and cannot reach the host or the path.
+   */
+  async findByEmail(email: string): Promise<ProviderIdentity | null> {
+    const endpoint = new URL('/auth/v1/admin/users', this.options.url);
+    endpoint.searchParams.set('filter', email);
+    endpoint.searchParams.set('per_page', String(DIRECTORY_PAGE_SIZE));
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          apikey: this.options.serviceRoleKey,
+          Authorization: `Bearer ${this.options.serviceRoleKey}`,
+        },
+      });
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw translate(
+        { status: response.status },
+        new ProviderFailure('provider-rejected', 'Directory lookup was refused.')
+      );
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new ProviderFailure('provider-unavailable', 'Directory returned an unreadable body.');
+    }
+
+    const users = (payload as { users?: unknown }).users;
+    if (!Array.isArray(users)) return null;
+
+    const wanted = email.trim().toLowerCase();
+    const exact = users.find(
+      (candidate): candidate is User =>
+        typeof (candidate as User)?.email === 'string' &&
+        (candidate as User).email!.trim().toLowerCase() === wanted
+    );
+    return exact ? this.identityOf(exact) : null;
   }
 
   async findBySubject(subject: string): Promise<ProviderIdentity | null> {

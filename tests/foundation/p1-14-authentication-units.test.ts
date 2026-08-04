@@ -244,6 +244,55 @@ describe('the deterministic provider double', () => {
     ]);
   });
 
+  it('resolves an identity by address, case-insensitively, and reports its binding', async () => {
+    // Capability 12. The only tenant-agnostic directory RootLco has: the
+    // database cannot answer "which tenant owns this address" before a tenant is
+    // known, because SELECT on iam.user_accounts is restricted to the current
+    // tenant and no SECURITY DEFINER routine exists to sidestep it.
+    const fake = provider();
+    const tenant = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    fake.seed({
+      email: 'directory@example.test',
+      password: 'pw-correct',
+      confirmed: true,
+      tenantId: tenant,
+    });
+
+    const found = await fake.findByEmail('DIRECTORY@Example.TEST');
+    expect(found?.tenantId).toBe(tenant);
+    expect(found?.email).toBe('directory@example.test');
+  });
+
+  it('returns null for an address it does not hold, rather than inventing one', async () => {
+    const fake = provider();
+    fake.seed({ email: 'somebody@example.test', password: 'pw-correct', confirmed: true });
+    expect(await fake.findByEmail('nobody@example.test')).toBeNull();
+  });
+
+  it('reports a null binding for an identity created without one', async () => {
+    // An identity created outside `invite` carries no app_metadata.tenant_id.
+    // The directory must say so rather than substitute a default, because the
+    // caller falls back to a different path on null and would otherwise be
+    // handed a tenant nobody chose.
+    const fake = provider();
+    fake.seed({ email: 'unbound@example.test', password: 'pw-correct', confirmed: true });
+    const found = await fake.findByEmail('unbound@example.test');
+    expect(found).not.toBeNull();
+    expect(found?.tenantId).toBeNull();
+  });
+
+  it('reports an outage on a directory lookup rather than answering null', async () => {
+    // Null means "no such identity". An outage that returned null would be
+    // indistinguishable from that, and the caller would record an attempt as
+    // unattributable when in truth it never asked.
+    const fake = provider();
+    fake.seed({ email: 'directory@example.test', password: 'pw-correct', confirmed: true });
+    fake.outage = true;
+    const error = await fake.findByEmail('directory@example.test').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderFailure);
+    expect((error as ProviderFailure).reason).toBe('provider-unavailable');
+  });
+
   it('consumes a recovery token on first use, so a replayed link fails', async () => {
     const fake = provider();
     fake.seed({ email: 'reset@example.test', password: 'old-password', confirmed: true });
