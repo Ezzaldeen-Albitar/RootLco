@@ -195,3 +195,65 @@ export function buildPage<T>(
       : null;
   return { items, nextCursor, hasMore };
 }
+
+/**
+ * A `timestamptz` rendered with MICROSECOND precision, for a cursor.
+ *
+ * ## Why a JS `Date` cannot mint a timestamp cursor (`P1-27-INT-006`)
+ *
+ * `pg` decodes `timestamptz` into a JS `Date`, which holds milliseconds.
+ * PostgreSQL stores microseconds. The decoder computes
+ * `1000 * parseFloat('.123456')` = `123.456` and `Date.UTC` **truncates toward
+ * zero**, so `.toISOString()` returns a value STRICTLY EARLIER than the stored
+ * one whenever the sub-millisecond digits are non-zero.
+ *
+ * Put that value in a cursor and the descending keyset predicate
+ * `(sort, id) < ($v, $i)` compares `.123456 > .123000` on its FIRST element, so
+ * it is false and the `id` tie-break is never consulted. Every row sharing the
+ * boundary row's millisecond at a higher microsecond is **silently skipped** —
+ * not duplicated, skipped, which is the failure mode nobody notices.
+ *
+ * Measured, not reasoned: ten rows written at one instant, read at `limit=4`,
+ * returned 4 then **0** of the remaining 6. With the expression below: 4 then 6.
+ *
+ * A batch written in ONE transaction shares `transaction_timestamp()` to the
+ * microsecond by construction, so for any list whose rows are produced in bulk
+ * this is a certainty rather than a race.
+ *
+ * The rendered form (`2026-08-04T10:00:00.123456Z`) casts back to the exact
+ * stored value and is still parsed by `new Date(...)`, so widening it breaks no
+ * consumer.
+ *
+ * `column` is a code-controlled identifier — the same contract `keysetFragment`
+ * has. Never pass caller input.
+ */
+export function cursorTimestamp(column: string): string {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
+/**
+ * `buildPage` for a list whose cursor key is NOT a field of the published item.
+ *
+ * The caller pairs every item with the exact `(sortValue, id)` the next page's
+ * predicate must compare against — typically a `cursorTimestamp()` column that
+ * the response itself does not carry. Keeping the pair explicit is what stops a
+ * reader assuming the published timestamp and the cursor are the same string,
+ * which is precisely the assumption `P1-27-INT-006` was.
+ */
+export function buildPageWithCursors<T>(
+  rows: readonly { readonly item: T; readonly sortValue: string; readonly id: string }[],
+  request: PageRequest,
+  contract: OrderingContract
+): Page<T> {
+  const hasMore = rows.length > request.limit;
+  const kept = hasMore ? rows.slice(0, request.limit) : rows;
+  const last = kept[kept.length - 1];
+  return {
+    items: kept.map((row) => row.item),
+    nextCursor:
+      hasMore && last
+        ? encodeCursor({ k: contract.key, v: last.sortValue, i: last.id })
+        : null,
+    hasMore,
+  };
+}

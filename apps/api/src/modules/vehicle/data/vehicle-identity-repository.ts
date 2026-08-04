@@ -15,7 +15,8 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import {
-  buildPage,
+  buildPageWithCursors,
+  cursorTimestamp,
   keysetFragment,
   type OrderingContract,
   type Page,
@@ -337,6 +338,7 @@ export class VehicleIdentityRepository extends Repository {
       match_basis: unknown;
       status: string;
       detected_at: Date;
+      detected_at_cursor: string;
       reviewed_by: string | null;
       reviewed_at: Date | null;
     }>(
@@ -344,6 +346,7 @@ export class VehicleIdentityRepository extends Repository {
       `SELECT c.id, c.vehicle_id_a, a.display_number AS display_number_a,
               c.vehicle_id_b, b.display_number AS display_number_b,
               c.match_score, c.match_basis, c.status, c.detected_at,
+              ${cursorTimestamp('c.detected_at')} AS detected_at_cursor,
               c.reviewed_by, c.reviewed_at
          FROM veh.duplicate_candidates c
          LEFT JOIN veh.vehicles a
@@ -356,23 +359,28 @@ export class VehicleIdentityRepository extends Repository {
         ${keyset.limitClause}`,
       values
     );
+    // The cursor key is the MICROSECOND rendering, not the published millisecond
+    // one (`P1-27-INT-006`). A scan stamps its whole batch with one
+    // `transaction_timestamp()`, so a millisecond cursor loses the tail of a
+    // page every time rather than occasionally.
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        vehicleIdA: row.vehicle_id_a,
+        displayNumberA: row.display_number_a,
+        vehicleIdB: row.vehicle_id_b,
+        displayNumberB: row.display_number_b,
+        matchScore: row.match_score,
+        matchBasis: row.match_basis,
+        status: row.status,
+        detectedAt: row.detected_at.toISOString(),
+        reviewedBy: row.reviewed_by,
+        reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
+      },
+      sortValue: row.detected_at_cursor,
       id: row.id,
-      vehicleIdA: row.vehicle_id_a,
-      displayNumberA: row.display_number_a,
-      vehicleIdB: row.vehicle_id_b,
-      displayNumberB: row.display_number_b,
-      matchScore: row.match_score,
-      matchBasis: row.match_basis,
-      status: row.status,
-      detectedAt: row.detected_at.toISOString(),
-      reviewedBy: row.reviewed_by,
-      reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
     }));
-    return buildPage(rows, page, VEHICLE_DUPLICATE_CANDIDATE_ORDERING, (row) => ({
-      sortValue: row.detectedAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, VEHICLE_DUPLICATE_CANDIDATE_ORDERING);
   }
 
   async findCandidate(db: DbHandle, candidateId: string): Promise<DuplicateCandidateRow | null> {

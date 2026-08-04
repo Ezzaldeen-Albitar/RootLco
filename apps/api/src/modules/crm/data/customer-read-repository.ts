@@ -66,6 +66,8 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import {
   buildPage,
+  buildPageWithCursors,
+  cursorTimestamp,
   keysetFragment,
   type OrderingContract,
   type Page,
@@ -163,7 +165,16 @@ export interface AddressEntry {
   readonly city: string | null;
   readonly region: string | null;
   readonly postalCode: string | null;
-  readonly countryCode: string;
+  /**
+   * Nullable, because `crm.addresses.country_code` is.
+   *
+   * It was typed `string` on the first pass, which is a lie TypeScript would
+   * have believed: a consumer writing `countryCode.toUpperCase()` compiles and
+   * throws at runtime on any address whose country was never captured — and the
+   * POST that creates one accepts `countryCode` as optional, so such rows are
+   * ordinary rather than exotic.
+   */
+  readonly countryCode: string | null;
   readonly isPrimary: boolean;
   readonly status: string;
   readonly createdAt: string;
@@ -361,10 +372,12 @@ export class CustomerReadRepository extends Repository {
       status: string;
       verified_at: Date | null;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
       `SELECT id, channel, raw_value, normalized_value, label, is_primary,
-              status, verified_at, created_at
+              status, verified_at, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM crm.contact_points
         WHERE tenant_id = $1 AND partner_id = $2
           AND deleted_at IS NULL ${keyset.predicate}
@@ -373,20 +386,21 @@ export class CustomerReadRepository extends Repository {
       values
     );
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        channel: row.channel,
+        rawValue: row.raw_value,
+        normalizedValue: row.normalized_value,
+        label: row.label,
+        isPrimary: row.is_primary,
+        status: row.status,
+        verifiedAt: iso(row.verified_at),
+        createdAt: row.created_at.toISOString(),
+      },
+      sortValue: row.created_at_cursor,
       id: row.id,
-      channel: row.channel,
-      rawValue: row.raw_value,
-      normalizedValue: row.normalized_value,
-      label: row.label,
-      isPrimary: row.is_primary,
-      status: row.status,
-      verifiedAt: iso(row.verified_at),
-      createdAt: row.created_at.toISOString(),
     }));
-    return buildPage(rows, page, CONTACT_ORDERING, (row) => ({
-      sortValue: row.createdAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, CONTACT_ORDERING);
   }
 
   /** Addresses, newest first. Soft-deleted rows excluded, as for contacts. */
@@ -409,14 +423,16 @@ export class CustomerReadRepository extends Repository {
       city: string | null;
       region: string | null;
       postal_code: string | null;
-      country_code: string;
+      country_code: string | null;
       is_primary: boolean;
       status: string;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
       `SELECT id, address_type, line1, line2, line3, city, region, postal_code,
-              country_code, is_primary, status, created_at
+              country_code, is_primary, status, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM crm.addresses
         WHERE tenant_id = $1 AND partner_id = $2
           AND deleted_at IS NULL ${keyset.predicate}
@@ -425,23 +441,24 @@ export class CustomerReadRepository extends Repository {
       values
     );
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        addressType: row.address_type,
+        line1: row.line1,
+        line2: row.line2,
+        line3: row.line3,
+        city: row.city,
+        region: row.region,
+        postalCode: row.postal_code,
+        countryCode: row.country_code,
+        isPrimary: row.is_primary,
+        status: row.status,
+        createdAt: row.created_at.toISOString(),
+      },
+      sortValue: row.created_at_cursor,
       id: row.id,
-      addressType: row.address_type,
-      line1: row.line1,
-      line2: row.line2,
-      line3: row.line3,
-      city: row.city,
-      region: row.region,
-      postalCode: row.postal_code,
-      countryCode: row.country_code,
-      isPrimary: row.is_primary,
-      status: row.status,
-      createdAt: row.created_at.toISOString(),
     }));
-    return buildPage(rows, page, ADDRESS_ORDERING, (row) => ({
-      sortValue: row.createdAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, ADDRESS_ORDERING);
   }
 
   /**
@@ -471,10 +488,12 @@ export class CustomerReadRepository extends Repository {
       quiet_hours_note: string | null;
       record_version: number;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
       `SELECT id, channel, purpose, preferred, preferred_locale,
-              quiet_hours_note, record_version, created_at
+              quiet_hours_note, record_version, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM crm.communication_preferences
         WHERE tenant_id = $1 AND partner_id = $2 ${keyset.predicate}
         ${keyset.order}
@@ -482,19 +501,20 @@ export class CustomerReadRepository extends Repository {
       values
     );
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        channel: row.channel,
+        purpose: row.purpose,
+        preferred: row.preferred,
+        preferredLocale: row.preferred_locale,
+        quietHoursNote: row.quiet_hours_note,
+        recordVersion: row.record_version,
+        createdAt: row.created_at.toISOString(),
+      },
+      sortValue: row.created_at_cursor,
       id: row.id,
-      channel: row.channel,
-      purpose: row.purpose,
-      preferred: row.preferred,
-      preferredLocale: row.preferred_locale,
-      quietHoursNote: row.quiet_hours_note,
-      recordVersion: row.record_version,
-      createdAt: row.created_at.toISOString(),
     }));
-    return buildPage(rows, page, PREFERENCE_ORDERING, (row) => ({
-      sortValue: row.createdAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, PREFERENCE_ORDERING);
   }
 
   /**
@@ -527,38 +547,45 @@ export class CustomerReadRepository extends Repository {
       evidence_document_id: string | null;
       recorded_by: string;
       seq: string;
+      effective_at_cursor: string;
     }>(
       db,
       `SELECT id, consent_kind, channel, purpose, status, source,
               effective_at, contact_point_id, evidence_document_id,
-              recorded_by, seq
+              recorded_by, seq,
+              ${cursorTimestamp('effective_at')} AS effective_at_cursor
          FROM crm.consent_history
         WHERE tenant_id = $1 AND partner_id = $2 ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
       values
     );
+    // The acute case for `P1-27-INT-006` on the CRM side: two consent decisions
+    // about the same dimension tuple written in one transaction share
+    // `effective_at` to the microsecond — the very tie `seq` exists to break — so
+    // a millisecond cursor would drop whichever of them fell after a page edge.
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        consentKind: row.consent_kind,
+        channel: row.channel,
+        purpose: row.purpose,
+        status: row.status,
+        source: row.source,
+        effectiveAt: row.effective_at.toISOString(),
+        contactPointId: row.contact_point_id,
+        evidenceDocumentId: row.evidence_document_id,
+        recordedBy: row.recorded_by,
+        // `bigint` arrives from `pg` as a string and stays one: a consent sequence
+        // outliving `Number.MAX_SAFE_INTEGER` is unlikely, and silently truncating
+        // it if it ever did is not a trade worth making for a field the client only
+        // compares and displays.
+        seq: String(row.seq),
+      },
+      sortValue: row.effective_at_cursor,
       id: row.id,
-      consentKind: row.consent_kind,
-      channel: row.channel,
-      purpose: row.purpose,
-      status: row.status,
-      source: row.source,
-      effectiveAt: row.effective_at.toISOString(),
-      contactPointId: row.contact_point_id,
-      evidenceDocumentId: row.evidence_document_id,
-      recordedBy: row.recorded_by,
-      // `bigint` arrives from `pg` as a string and stays one: a consent sequence
-      // outliving `Number.MAX_SAFE_INTEGER` is unlikely, and silently truncating
-      // it if it ever did is not a trade worth making for a field the client only
-      // compares and displays.
-      seq: String(row.seq),
     }));
-    return buildPage(rows, page, CONSENT_ORDERING, (row) => ({
-      sortValue: row.effectiveAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, CONSENT_ORDERING);
   }
 
   /**
@@ -598,9 +625,11 @@ export class CustomerReadRepository extends Repository {
       author_id: string;
       edited_at: Date | null;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
-      `SELECT id, body, classification, visibility, author_id, edited_at, created_at
+      `SELECT id, body, classification, visibility, author_id, edited_at, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM shared.notes
         WHERE tenant_id = $1 AND entity_id = $2 AND entity_type = $3
           AND deleted_at IS NULL ${keyset.predicate}
@@ -609,18 +638,19 @@ export class CustomerReadRepository extends Repository {
       values
     );
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        body: row.body,
+        classification: row.classification,
+        visibility: row.visibility,
+        authorId: row.author_id,
+        editedAt: iso(row.edited_at),
+        createdAt: row.created_at.toISOString(),
+      },
+      sortValue: row.created_at_cursor,
       id: row.id,
-      body: row.body,
-      classification: row.classification,
-      visibility: row.visibility,
-      authorId: row.author_id,
-      editedAt: iso(row.edited_at),
-      createdAt: row.created_at.toISOString(),
     }));
-    return buildPage(rows, page, NOTE_ORDERING, (row) => ({
-      sortValue: row.createdAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, NOTE_ORDERING);
   }
 
   /**
@@ -718,13 +748,15 @@ export class CustomerReadRepository extends Repository {
       valid_from: string;
       valid_to: string | null;
       assigned_at: Date;
+      assigned_at_cursor: string;
       assigned_by: string;
     }>(
       db,
       `SELECT a.id, a.segment_id, s.segment_code, s.name,
               a.valid_from::text AS valid_from,
               a.valid_to::text AS valid_to,
-              a.assigned_at, a.assigned_by
+              a.assigned_at, a.assigned_by,
+              ${cursorTimestamp('a.assigned_at')} AS assigned_at_cursor
          FROM crm.partner_segment_assignments a
          JOIN crm.customer_segments s
            ON s.tenant_id = a.tenant_id AND s.id = a.segment_id
@@ -736,19 +768,20 @@ export class CustomerReadRepository extends Repository {
       values
     );
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        segmentId: row.segment_id,
+        segmentCode: row.segment_code,
+        name: row.name,
+        validFrom: row.valid_from,
+        validTo: row.valid_to,
+        assignedAt: row.assigned_at.toISOString(),
+        assignedBy: row.assigned_by,
+      },
+      sortValue: row.assigned_at_cursor,
       id: row.id,
-      segmentId: row.segment_id,
-      segmentCode: row.segment_code,
-      name: row.name,
-      validFrom: row.valid_from,
-      validTo: row.valid_to,
-      assignedAt: row.assigned_at.toISOString(),
-      assignedBy: row.assigned_by,
     }));
-    return buildPage(rows, page, TAG_ORDERING, (row) => ({
-      sortValue: row.assignedAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, TAG_ORDERING);
   }
 
   /**
