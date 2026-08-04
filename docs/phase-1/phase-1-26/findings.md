@@ -575,6 +575,24 @@ ever returns. **97 passed** across `authenticated-en`, `authenticated-ar` and
 
 ---
 
+**A verification trap this change walked straight into.** Three suites render the
+sign-in screen: the component tier (`test:web`), the **anonymous** browser smoke
+(`test:web-e2e`), and the **authenticated** browser tier
+(`test:web-e2e-authenticated`). Removing the field, I ran the first and the
+third, both green, and pushed. Hosted `web-quality` failed on the second:
+`foundation.spec.ts` asserted `getByLabel('Workspace identifier')` was **visible**,
+so deleting the field turned a passing assertion into a failing one.
+
+Nothing about running two of three suites feels like partial coverage while you
+are doing it — each one is a full green run, and the authenticated tier is the
+more impressive of the two. The rule that would have caught it is mechanical
+rather than intuitive: **when a screen changes, find every suite that renders
+that screen**, not every suite that sounds relevant. Both assertions are now
+inverted to `toHaveCount(0)`, so the field's return fails two suites instead of
+silently satisfying one.
+
+---
+
 ## P1-26-F-067 — resolving the tenant quietly reintroduced the oracle the file forbids
 
 **Severity:** Medium · **Status:** Fixed · **Area:**
