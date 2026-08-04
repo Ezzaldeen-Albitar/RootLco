@@ -224,15 +224,18 @@ describe('tabs', () => {
 });
 
 describe('toasts', () => {
-  it('announces politely from a region that already exists', () => {
-    // The region is rendered even when empty. A live region created at the
+  it('announces from live regions that already exist, at two politeness levels', () => {
+    // Both lists are rendered even when empty. A live region created at the
     // moment a message appears is silent — screen readers announce changes
     // WITHIN an existing region.
-    const { rerender } = renderLtr(
+    const { container, rerender } = renderLtr(
       <ToastRegion messages={messages} toasts={[]} onDismiss={vi.fn()} />
     );
     const region = screen.getByRole('region', { name: 'Notifications' });
-    expect(region).toHaveAttribute('aria-live', 'polite');
+    const polite = container.querySelector('[aria-live="polite"]');
+    const assertive = container.querySelector('[aria-live="assertive"]');
+    expect(polite, 'the polite list must exist before any message does').not.toBeNull();
+    expect(assertive, 'the assertive list must exist before any message does').not.toBeNull();
 
     rerender(
       <ToastRegion
@@ -242,6 +245,37 @@ describe('toasts', () => {
       />
     );
     expect(region).toHaveTextContent('Saved');
+    expect(polite).toHaveTextContent('Saved');
+    expect(assertive, 'a success must not interrupt').not.toHaveTextContent('Saved');
+  });
+
+  it('routes an error to the assertive region, so a failure does not queue', () => {
+    // A denial announced politely waits behind whatever is already speaking —
+    // usually the form the operator just submitted — and they act on stale
+    // information in the gap.
+    const { container } = renderLtr(
+      <ToastRegion
+        messages={messages}
+        toasts={[{ id: 'e', tone: 'error', title: 'Update failed' }]}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(container.querySelector('[aria-live="assertive"]')).toHaveTextContent('Update failed');
+    expect(container.querySelector('[aria-live="polite"]')).not.toHaveTextContent('Update failed');
+  });
+
+  it('names the tone for anyone who cannot see the colour', () => {
+    // Four tones distinguished only by border and background collapse to one
+    // appearance under Windows High Contrast, and to nothing at all for a
+    // screen-reader user.
+    renderLtr(
+      <ToastRegion
+        messages={messages}
+        toasts={[{ id: 'w', tone: 'warning', title: 'Careful' }]}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Warning:')).toBeInTheDocument();
   });
 
   it('dismisses by id', async () => {

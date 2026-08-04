@@ -485,6 +485,156 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-072 — a scrollable table region could not be scrolled by keyboard
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/components/data-table/DataTable.tsx`
+
+Surfaced by axe on `/ar/administration/users` the moment the table region became
+genuinely bounded:
+
+```
+scrollable-region-focusable (serious) — Scrollable region must have keyboard access
+  .max-h-\[70dvh\]
+```
+
+A region that scrolls and cannot receive focus cannot be scrolled by anyone using
+a keyboard: there is nothing to put the caret in, so the arrow keys act on
+whatever else has focus. The defect was always latent — bounding the region is
+what made it reachable by measurement.
+
+Fixed with `tabIndex={0}`, `role="region"` and the table's own caption as the
+accessible name, so a keyboard user can both reach the region and be told which
+table they have landed in.
+
+**Worth noticing about the order of events.** This is the second time in this
+remediation that fixing one thing exposed another that had been true all along.
+A latent defect is not found by looking harder at a working screen; it is found
+by changing the conditions until it has to show itself.
+
+---
+
+## P1-26-F-071 — the error and not-found boundaries spoke English inside Arabic
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/app/[locale]/(dashboard)/error.tsx`, `not-found.tsx`
+
+Both read `DEFAULT_LOCALE` rather than the locale of the page they were rendering
+inside:
+
+```tsx
+const messages = getMessages(DEFAULT_LOCALE); // error.tsx
+<NotFoundState messages={getMessages(DEFAULT_LOCALE)} />; // not-found.tsx
+```
+
+Next gives an error or not-found boundary no `params`, so reading the default is
+the obvious thing to do — and it is exactly `P1-26-F-059`, where the English
+interface announced its loading state in Arabic because `DEFAULT_LOCALE` is
+`'ar'`. Here it failed the other way: an Arabic operator hitting a route error or
+a missing page got an **English page inside a `lang="ar" dir="rtl"` document**.
+
+`loading.tsx` was fixed for this and its two siblings were not. The fix already
+existed three files away: `getMessages(localeFromPathname(usePathname()))`.
+
+**The lesson is about the shape of the fix, not the fix.** When a defect is
+caused by a pattern rather than by a line, correcting the one file that reported
+it leaves the pattern in place. The question to ask at the point of fixing is not
+"is this file right now" but "how many files did this".
+
+---
+
+## P1-26-F-070 — operation results were reported where the operator was not looking
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/web/src/features/administration/users/components/UsersScreen.tsx`
+
+The Users screen rendered its operation results inline, at the top of the page,
+through `FormFeedback`. An operator who had scrolled a hundred rows down to lock
+an account was told the outcome somewhere they could not see — and because the
+document did not scroll, the message was not merely above the fold, it was
+outside the scrollport entirely.
+
+`P1-26-F-038` had already established that the message must RE-announce on a
+repeat, and that was correct. What neither it nor the original design questioned
+is whether the message was anywhere the person could read.
+
+Operation results now go to the global notification authority, which is fixed to
+the viewport. `invalid` deliberately stays inline: it names a control on this
+screen, and moving it to a corner would make the operator translate "that did not
+work" back into "which box was wrong". The mapping lives in one place
+(`notifyActionResult`), so four screens cannot answer the same question four
+ways.
+
+---
+
+## P1-26-F-069 — six thousand pixels of blank page, produced by 1px of accessibility text
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/web/src/components/shell/AppShell.tsx`, `Sidebar.tsx`, `styles/base/_reset.scss`
+
+The Owner reported that scrolling past the end of a page continued into a blank
+region. Measured in real Chrome across 28 route × viewport combinations:
+
+```
+DOCUMENT_SCROLL_DEFECTS   5
+BLANK_OVERSCROLL_DEFECTS  5
+```
+
+concentrated almost entirely on one screen:
+
+```
+/en/administration/permissions @ 1440x900
+  documentElement.scrollHeight  7075
+  documentElement.clientHeight   900
+  scrollTop reached             6175   <- the document really moves
+```
+
+**Everything that looked responsible was innocent.** `html` computed to 900px,
+`body` to 900px, and the shell was already `h-dvh overflow-hidden`. `main` had
+`overflow-y: auto` and was correctly scrolling its own 7136px of content. The
+chain from `<body>` had no child taller than the viewport.
+
+The escaping elements were `<caption class="sr-only">` — the screen-reader table
+captions. `.sr-only` is the standard visually-hidden pattern and uses
+`position: absolute`; `main` was `position: static`; so each caption resolved its
+containing block to the **initial containing block** — the viewport — and was
+laid out at its static position in DOCUMENT coordinates. The permissions screen
+renders **seventeen** tables, and the deepest caption landed at y≈7200.
+
+`/users` renders one table, whose caption sits at y=374, which is why the defect
+looked like it belonged to a single page.
+
+**Bisected on the live page, each experiment on a fresh load:**
+
+```
+html { height:100%; overflow:hidden }    no effect — still 6175
+body { height:100%; overflow:hidden }    no effect
+html + body together                     no effect
+shell { position: relative }             DOCUMENT FIXED
+main  { position: relative }             DOCUMENT FIXED   (main still 7136/836)
+main  { contain: paint }                 DOCUMENT FIXED
+```
+
+The two declarations the specification asked for **are inert against this
+defect**. They are still in — scoped, and documented as the floor rather than the
+fix — but the fix is the containing block.
+
+`position: relative` was chosen over `contain: paint` for a reason that only
+appears one layer away: paint containment also establishes a containing block for
+`position: fixed` descendants, and every `Dialog` and `Drawer` is `fixed inset-0`
+rendered inline from a screen inside `main`. It would have fixed the scroll and
+clipped every modal to the scrollport.
+
+Result across the same 28 combinations: **0 and 0.**
+
+**What this cost, stated plainly.** Moving the scroll from the document into
+`main` loses browser scroll restoration on Back and Forward — browsers restore
+`window.scrollY`, never a `<div>`'s `scrollTop`. That is a real regression caused
+by this fix, it is not repaired here, and it is recorded in ADR-021 rather than
+left for somebody to find.
+
+---
+
 ## P1-26-F-068 — login asked for a tenant only the server could know
 
 **Severity:** High · **Status:** Fixed · **Area:**

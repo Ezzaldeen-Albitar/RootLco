@@ -1,4 +1,7 @@
 {
+  "action.succeeded": "Done",
+  "action.failed": "That did not work",
+  "action.reference": "Reference",
   "app.skipToContent": "Skip to content",
   "app.provisionalBrand": "Provisional appearance — final brand pending",
   "brand.byCompany": "by",
@@ -88,6 +91,10 @@
   "overlay.working": "Working…",
   "overlay.dismiss": "Dismiss",
   "overlay.notifications": "Notifications",
+  "overlay.tone.success": "Success:",
+  "overlay.tone.info": "Information:",
+  "overlay.tone.warning": "Warning:",
+  "overlay.tone.error": "Error:",
   "overlay.reasonRequired": "A reason is required.",
   "money.error.empty": "Enter an amount.",
   "money.error.notDecimal": "Enter a decimal amount, for example 1250.00.",

@@ -121,7 +121,10 @@ export function DataTable<Row>({
   const rowHeight = density === 'compact' ? 'h-9' : 'h-11';
 
   return (
-    <div className="flex flex-col gap-3">
+    // `min-h-0` so this column can shrink inside a `PageBody fill` parent. Without
+    // it the default `min-height:auto` refuses to go below the table's content
+    // and the pager is pushed out of the scrollport again.
+    <div className="flex min-h-0 flex-col gap-3">
       <FilterChips
         messages={messages}
         request={request}
@@ -144,8 +147,45 @@ export function DataTable<Row>({
         `70dvh` rather than a pixel figure so it holds on a laptop and on a
         large desktop alike, and the value is capped rather than fixed so a
         five-row table is still five rows tall.
+
+        `flex-initial min-h-0` is what turns "bounded" into "takes the remaining
+        height". The three flex values are chosen individually and none of them
+        is the obvious one:
+
+          grow 0   — a five-row table stays five rows tall. `flex-1` would set
+                     grow to 1 and stretch a short table into a tall empty card.
+          shrink 1 — when the scrollport is short, this box gives way BEFORE the
+                     pager does, so the pager stays on screen and the rows scroll
+                     inside here instead.
+          basis auto + min-height 0 — content decides the natural size, and the
+                     zero floor is what permits the shrink at all.
+
+        The `70dvh` cap stays for screens that have NOT opted into
+        `PageBody fill`: there the parent has no definite height, shrinking never
+        happens, and the cap is the only thing standing between a hundred rows
+        and a very long page.
       */}
-      <div className="max-h-[70dvh] overflow-auto rounded-xl border border-border-subtle bg-surface shadow-xs">
+      {/*
+        `tabIndex={0}` + `role="region"` + a name, because this box SCROLLS.
+
+        A region that scrolls and cannot be focused cannot be scrolled by
+        anybody using a keyboard: there is nothing to put the caret in, so the
+        arrow keys act on whatever else has focus. axe reports it as
+        `scrollable-region-focusable`, at serious impact, and it surfaced the
+        moment the region became genuinely bounded rather than growing with its
+        rows — the defect was always latent, the bound is what exposed it.
+
+        The name is the table's own caption, so a screen-reader user tabbing into
+        the region is told which table they have landed in rather than hearing
+        "region".
+      */}
+      <div
+        tabIndex={0}
+        role="region"
+        {...(caption ? { 'aria-label': caption } : {})}
+        data-scroll-region="table"
+        className="max-h-[70dvh] flex-initial overflow-auto rounded-xl border border-border-subtle bg-surface shadow-xs [min-height:0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
         <table className="w-full border-collapse text-table-cell">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-sticky border-b border-table-border bg-table-header">
@@ -404,8 +444,21 @@ function Pagination({
       <p aria-live="polite" className="text-supporting text-text-secondary">
         {counted ? (
           <>
-            {translate(messages, 'table.showing')} {first}–{last} {translate(messages, 'table.of')}{' '}
-            {total}
+            {/*
+              `bdi` because this range is WRONG in Arabic without it.
+              Under the bidirectional algorithm (UAX #9) the digits resolve as
+              numbers and the en dash between them is a neutral; rule N1 resolves
+              a neutral surrounded by numbers to the paragraph's right-to-left
+              level, so the two operands are reordered while each number keeps
+              its own digit order. "Showing 1–20 of 57" renders as "20–1" —
+              digits intact, meaning inverted, and it is not obviously a bug to
+              anyone reading quickly.
+
+              `bdi` isolates the range so it is laid out on its own, in both
+              directions, from one element and no RTL branch.
+            */}
+            {translate(messages, 'table.showing')} <bdi>{`${first}–${last}`}</bdi>{' '}
+            {translate(messages, 'table.of')} <bdi>{total}</bdi>
           </>
         ) : (
           // No "of N". Announcing a count the server never sent would be an
@@ -449,7 +502,10 @@ function Pagination({
           onClick={() => onRequestChange(withPage(request, request.page - 1))}
         />
         <span className="text-supporting text-text-secondary">
-          {counted ? `${request.page} / ${pages}` : request.page}
+          {/* Same bidi isolation as the range above: "1 / 3" reads "3 / 1" in
+              Arabic without it, and a page indicator that lies about which page
+              you are on is worse than none. */}
+          {counted ? <bdi>{`${request.page} / ${pages}`}</bdi> : request.page}
         </span>
         <PageButton
           messages={messages}

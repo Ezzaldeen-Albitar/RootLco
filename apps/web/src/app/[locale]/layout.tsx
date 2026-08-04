@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import { brandTheme } from '@/components/brand';
 import { brandProductName } from '@/components/brand/theme';
+import { NotificationHost } from '@/components/notifications';
 import { DEFAULT_LOCALE, LOCALES, directionOf, isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 
@@ -64,11 +65,35 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} dir={directionOf(locale)} data-theme={brandTheme}>
-      <body>
+      {/*
+        `app-viewport` is what makes the document a non-scrolling surface, and
+        it is deliberately a CLASS on this body rather than a rule on every
+        body: routes outside `[locale]` — the root page and Next's built-in
+        not-found — have no shell and no inner scroller, and would become
+        unreachable rather than scrollable. See `_reset.scss`.
+      */}
+      <body className="app-viewport">
         <a className="skip-link" href="#main">
           {translate(messages, 'app.skipToContent')}
         </a>
         {children}
+        {/*
+          The single notification authority, mounted ONCE and above every route
+          group — `(auth)`, `(dashboard)` and `(design)` all inherit it, so a
+          sign-in failure and a save failure are reported by the same component
+          in the same place.
+
+          It sits here rather than inside the shell because the shell is
+          `overflow:hidden`: a toast rendered within it would be clipped. As a
+          direct child of `<body>` with `position:fixed` it is measured against
+          the viewport, contributes no document height, and stays visible however
+          far `main` is scrolled.
+
+          It is placed AFTER `{children}` so it comes last in DOM order, which
+          means a keyboard user reaches the page content first and the
+          notification stack last rather than being interrupted by it.
+        */}
+        <NotificationHost messages={messages} />
       </body>
     </html>
   );

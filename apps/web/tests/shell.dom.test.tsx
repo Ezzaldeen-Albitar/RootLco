@@ -15,7 +15,13 @@ import { getMessages } from '@/i18n/get-messages';
 import { visibleNavigation } from '@/lib/permissions';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/en' }));
+// `useSearchParams` joined the mock when the locale switcher began preserving
+// safe query parameters. An empty instance is the honest default: these cases
+// assert the SWAP, and the carrying rule has its own tests below.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/en',
+  useSearchParams: () => new URLSearchParams(''),
+}));
 
 const messages = getMessages('en');
 const arabic = getMessages('ar');

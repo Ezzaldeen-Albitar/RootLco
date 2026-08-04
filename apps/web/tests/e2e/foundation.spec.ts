@@ -251,12 +251,32 @@ test.describe('the gallery', () => {
     await expect(alert.getByRole('button', { name: 'Refuse with a reason' })).toBeEnabled();
   });
 
-  test('a toast is announced from a live region', async ({ page }) => {
+  test('a toast is announced from a live region, at the right politeness', async ({ page }) => {
     await page.goto('/en/gallery');
     await page.getByRole('button', { name: 'Show a notification' }).click();
     const region = page.getByRole('region', { name: 'Notifications' });
-    await expect(region).toHaveAttribute('aria-live', 'polite');
+    // The politeness lives on the two lists INSIDE the region, not on the region
+    // itself: an error must interrupt and a confirmation must not, and one
+    // `aria-live` on the container cannot express both.
+    await expect(region.locator('[aria-live="polite"]')).toHaveCount(1);
+    await expect(region.locator('[aria-live="assertive"]')).toHaveCount(1);
     await expect(region).toContainText('Saved');
+    // A success is polite. Announcing it assertively would interrupt whatever a
+    // screen-reader user was in the middle of reading.
+    await expect(region.locator('[aria-live="polite"]')).toContainText('Saved');
+  });
+
+  test('the notification region is one authority, mounted outside the shell', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await expect(page.getByTestId('notification-region')).toHaveCount(1);
+    const placement = await page.getByTestId('notification-region').evaluate((el) => ({
+      position: getComputedStyle(el).position,
+      // Mounted as a direct child of <body>, so the shell's `overflow:hidden`
+      // cannot clip it and no ancestor transform can trap its `fixed`.
+      parentIsBody: el.parentElement?.tagName === 'BODY',
+    }));
+    expect(placement.position).toBe('fixed');
+    expect(placement.parentIsBody).toBe(true);
   });
 
   test('the money field keeps a decimal string exactly', async ({ page }) => {

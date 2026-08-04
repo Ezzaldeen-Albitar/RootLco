@@ -17,6 +17,40 @@
     background: none;
   }
 
+  // Undo the viewport scroll contract, or printing emits one screenful.
+  //
+  // On screen the application is exactly the viewport and every long region
+  // scrolls inside a bounded box. Paper has no viewport and cannot scroll: with
+  // `html, body { height: 100% }`, `body.app-viewport { overflow: hidden }`, a
+  // shell at `h-dvh overflow-hidden` and a table capped at `70dvh`, a printed
+  // operational screen would carry the first screenful and silently drop the
+  // rest — the failure only ever discovered on paper.
+  //
+  // `height: auto` is what lets each region grow to its content; `overflow:
+  // visible` is what lets that content reach the page. `max-height: none`
+  // releases the table cap specifically.
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+
+  main,
+  [data-scroll-region] {
+    max-height: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  // The notification region is a `div`, so the `nav`/`button` rule above does
+  // not reach it: a toast that happened to be open would print onto the
+  // document, with its dismiss control stripped and no way to tell it apart
+  // from real content.
+  [data-testid='notification-region'] {
+    /* stylelint-disable-next-line declaration-no-important -- same print-correctness rule as the chrome above. */
+    display: none !important;
+  }
+
   // Interactive chrome has no meaning on paper.
   //
   // `!important` is the documented exception here, not an accident. A printed

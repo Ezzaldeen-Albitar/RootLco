@@ -104,6 +104,7 @@
     "validate:upgrade-matrix": "node scripts/db/phase-upgrade-matrix.mjs",
     "validate:veh-classification": "node scripts/check-veh-classification.mjs",
     "validate:web-boundary": "npm run validate:boundary --workspace @rootlco/web",
+    "validate:notification-authority": "node scripts/ci/check-notification-authority.mjs",
     "validate:web-brand": "npm run validate:brand --workspace @rootlco/web",
     "validate:web-tokens": "npm run validate:tokens --workspace @rootlco/web",
     "validate:web-topology": "node scripts/ci/check-web-topology.mjs",
@@ -115,7 +116,7 @@
     "verify:inventories": "npm run validate:p1-19-inventory && npm run validate:p1-20-inventory && npm run validate:p1-21-inventory && npm run validate:p1-22-inventory && npm run validate:p1-23-inventory",
     "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:p1-26-frontend",
     "verify:repository": "npm run typecheck && npm run lint && npm run format:check && npm run test:unit && npm run security:all",
-    "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-brand && npm run validate:web-boundary && npm run build:web && npm run test:web-e2e",
+    "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-brand && npm run validate:notification-authority && npm run validate:web-boundary && npm run build:web && npm run test:web-e2e",
     "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all",
     "dev:verify-single-instance": "node scripts/dev/verify-single-instance.mjs"
   },

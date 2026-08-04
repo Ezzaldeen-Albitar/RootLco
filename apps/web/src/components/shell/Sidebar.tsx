@@ -68,7 +68,18 @@ export function Sidebar({
         so `overflow-y-auto` alone would grow the column instead of scrolling.
         The brand block above is `shrink-0`, so it stays put while this moves.
       */}
-      <nav aria-labelledby={labelId} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
+      {/*
+        `relative` for the same reason as `main`: this is a scroll container, and
+        a scroll container that is not a containing block lets every
+        `position:absolute` descendant — including `.sr-only` labels — resolve
+        against the viewport and extend the document (`P1-26-F-069`).
+        `overscroll-contain` stops a wheel gesture that reaches the end of the
+        navigation from chaining outward.
+      */}
+      <nav
+        aria-labelledby={labelId}
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-4"
+      >
         <h2 id={labelId} className="sr-only">
           {translate(messages, 'nav.landmark')}
         </h2>

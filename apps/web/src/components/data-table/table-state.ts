@@ -137,6 +137,39 @@ export function isForbiddenUrlKey(key: string): boolean {
 }
 
 /**
+ * The structural parameters a table publishes, as an allow-list.
+ *
+ * Filter keys are NOT here: they are validated against their own declared
+ * options in `toSearchParams`, which is a stronger check than a name can be.
+ */
+const CARRIABLE_KEYS: readonly string[] = ['page', 'pageSize', 'sort'];
+
+/**
+ * Filters a query string down to what is safe to carry across a navigation.
+ *
+ * Exists so the locale switcher can preserve where an operator was — page 3,
+ * sorted by name — without becoming a SECOND opinion about which parameters are
+ * safe. The rule lives here, next to the code that writes those parameters in
+ * the first place, and both sides of it move together.
+ *
+ * Deliberately an allow-list. A deny-list is a promise to have thought of every
+ * dangerous name in advance, and `FORBIDDEN_URL_KEYS` is evidence of how long
+ * such a list gets before it is still wrong. Anything unrecognised is dropped:
+ * losing a page number is a smaller cost than carrying a token.
+ */
+export function carriableSearchParams(search: string | URLSearchParams): URLSearchParams {
+  const source = typeof search === 'string' ? new URLSearchParams(search) : search;
+  const safe = new URLSearchParams();
+  for (const key of CARRIABLE_KEYS) {
+    const value = source.get(key);
+    // `isForbiddenUrlKey` is applied even to the allow-list, so the two rules
+    // can never disagree about a name that appears in both.
+    if (value !== null && value !== '' && !isForbiddenUrlKey(key)) safe.set(key, value);
+  }
+  return safe;
+}
+
+/**
  * Serialises the parts of the request that are safe to publish.
  *
  * Returns URLSearchParams containing page, pageSize, sort and registered

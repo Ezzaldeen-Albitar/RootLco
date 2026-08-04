@@ -51,7 +51,7 @@ export default async function RolesPage({
         descriptionKey="roles.description"
         crumbs={crumbs}
       />
-      <PageBody>
+      <PageBody fill>
         <RolesScreen
           messages={messages}
           canManage={holds(session.permissions, PERMISSIONS.roleManage)}

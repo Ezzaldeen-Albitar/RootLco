@@ -382,7 +382,12 @@ export interface ToastMessage {
   readonly id: string;
   readonly tone: ToastTone;
   readonly title: string;
-  readonly description?: string;
+  /**
+   * `| undefined` is explicit because `exactOptionalPropertyTypes` is on: a
+   * caller building this from an optional field passes `undefined` rather than
+   * omitting the key, and the type has to admit what the callers actually do.
+   */
+  readonly description?: string | undefined;
 }
 
 const TONE_CLASS: Record<ToastTone, string> = {
@@ -401,39 +406,109 @@ export function ToastRegion({
   readonly onDismiss: (id: string) => void;
   readonly messages: Messages;
 }) {
+  // Two politeness levels, one authority.
+  //
+  // A failure announced `polite` waits for whatever is already speaking — which,
+  // after a form submission, is usually the form. The user acts on stale
+  // information in the gap. Splitting by tone puts errors on `assertive` and
+  // everything else on `polite`, while keeping ONE component, ONE mount and one
+  // labelled region: two hosts would be two authorities, but two live children
+  // inside one host are just correct politeness.
+  const assertive = toasts.filter((toast) => toast.tone === 'error');
+  const polite = toasts.filter((toast) => toast.tone !== 'error');
+
   return (
-    // One live region that persists across toasts. Creating a live region at
-    // the moment a message appears is the classic mistake — screen readers
-    // announce changes WITHIN an existing region, so a region born with its
-    // content is silent.
+    // Live regions that persist across toasts. Creating a live region at the
+    // moment a message appears is the classic mistake — screen readers announce
+    // changes WITHIN an existing region, so a region born with its content is
+    // silent. Both lists below are therefore always rendered, empty or not.
     <div
       role="region"
-      aria-live="polite"
       aria-label={translate(messages, 'overlay.notifications')}
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-toast flex flex-col items-center gap-2 p-4"
+      data-testid="notification-region"
+      /*
+       * Pinned to the viewport's top inline-end corner: top-right in English,
+       * top-left in Arabic, from ONE declaration. `end-4` is
+       * `inset-inline-end`, so direction is the browser's job and not a second
+       * RTL branch that can drift from the first.
+       *
+       * Top rather than bottom, because the bottom of a bounded table region is
+       * exactly where pagination lives and a toast that covers the control the
+       * user is about to press is worse than no toast. It is also where a mobile
+       * keyboard appears.
+       *
+       * `fixed` keeps it out of layout entirely, so it cannot add document
+       * height, cannot move a table row, and stays put while `main` scrolls.
+       * `pointer-events-none` on the region with `pointer-events-auto` on each
+       * toast means the empty column never swallows a click meant for the page
+       * beneath it.
+       */
+      className="pointer-events-none fixed end-4 top-4 z-toast flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2 pt-[env(safe-area-inset-top)] pe-[env(safe-area-inset-right)]"
     >
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-md border p-3 shadow-md transition-opacity duration-base ease-standard ${TONE_CLASS[toast.tone]}`}
-        >
-          <div className="min-w-0 flex-1">
-            <p className="text-body font-medium text-text-primary">{toast.title}</p>
-            {toast.description ? (
-              <p className="text-supporting text-text-secondary">{toast.description}</p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => onDismiss(toast.id)}
-            aria-label={translate(messages, 'overlay.dismiss')}
-            className="shrink-0 rounded-md p-1 text-text-muted hover:text-text-primary"
-          >
-            <span aria-hidden="true">&times;</span>
-          </button>
-        </div>
-      ))}
+      <ol aria-live="assertive" className="contents">
+        {assertive.map((toast) => (
+          <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} messages={messages} />
+        ))}
+      </ol>
+      <ol aria-live="polite" className="contents">
+        {polite.map((toast) => (
+          <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} messages={messages} />
+        ))}
+      </ol>
     </div>
+  );
+}
+
+function ToastCard({
+  toast,
+  onDismiss,
+  messages,
+}: {
+  readonly toast: ToastMessage;
+  readonly onDismiss: (id: string) => void;
+  readonly messages: Messages;
+}) {
+  return (
+    <li
+      data-testid="notification"
+      data-tone={toast.tone}
+      /*
+       * `break-words` because a backend message is not length-checked by the
+       * interface, and a long unbroken token would otherwise widen the card past
+       * the viewport instead of wrapping.
+       *
+       * There is deliberately NO entrance transition. `prefers-reduced-motion`
+       * already collapses every duration token to zero, so an animation here
+       * would be honoured correctly — but a toast has nothing to animate FROM:
+       * it mounts at its final opacity and position. A `transition-opacity` with
+       * no opacity change is a class that documents an animation which does not
+       * exist, and this file has been burned by unproven claims before.
+       */
+      className={`pointer-events-auto flex w-full max-w-md items-start gap-3 break-words rounded-md border p-3 shadow-md ${TONE_CLASS[toast.tone]}`}
+    >
+      {/*
+        The tone, for anyone who cannot see the colour. Four tones distinguished
+        only by border and background collapse to one appearance under Windows
+        High Contrast, and to nothing at all for a screen-reader user.
+      */}
+      <span className="sr-only">
+        {translate(messages, `overlay.tone.${toast.tone}` as keyof Messages)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-body font-medium text-text-primary">{toast.title}</p>
+        {toast.description ? (
+          <p className="text-supporting text-text-secondary">{toast.description}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={() => onDismiss(toast.id)}
+        aria-label={translate(messages, 'overlay.dismiss')}
+        className="shrink-0 rounded-md p-1 text-text-muted hover:text-text-primary"
+      >
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </li>
   );
 }
 
