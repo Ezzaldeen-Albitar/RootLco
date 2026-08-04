@@ -23,7 +23,20 @@ const schema = z.object({
    * unsafe mode is the one you have to ask for.
    */
   NEXT_PUBLIC_APP_ENV: z.enum(['local', 'preview', 'production']).default('production'),
-  NEXT_PUBLIC_API_BASE_URL: z.string().url().default('http://127.0.0.1:3000'),
+  /**
+   * The canonical local API origin — `localhost`, never the loopback literal.
+   *
+   * This value is inlined into the client bundle, so it is the address the
+   * BROWSER calls, and `src/proxy.ts` also derives the CSP `connect-src` from
+   * it. With the literal here a page served from `http://localhost:3100` was
+   * told to call `http://127.0.0.1:3000`: a different origin by the same
+   * host-string comparison that `P1-26-F-048` is about, and a `connect-src`
+   * naming an origin the app is not served from (`P1-26-F-062`).
+   *
+   * `scripts/dev/dev-config.mjs` holds the same value as `API_ORIGIN`, and a
+   * test asserts the two agree.
+   */
+  NEXT_PUBLIC_API_BASE_URL: z.string().url().default('http://localhost:3000'),
 });
 
 export type PublicEnv = z.infer<typeof schema>;

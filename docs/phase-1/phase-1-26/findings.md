@@ -485,6 +485,94 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-062 — the launcher advertised `localhost` and configured `127.0.0.1`
+
+**Severity:** High · **Status:** Fixed · **Area:** `scripts/dev/**`,
+`apps/web/src/lib/env.ts`, `apps/web/playwright.config.ts`
+
+`P1-26-F-048` fixed the address the launcher **prints**. It did not fix the
+address the launcher **configures**, and the two disagreed for two more rounds.
+
+`start-local.mjs` set `NEXT_PUBLIC_API_BASE_URL` to `http://127.0.0.1:3000`.
+That value is inlined into the client bundle, so the browser — served from
+`http://localhost:3100`, exactly as instructed — was told to call a different
+origin. `src/proxy.ts` derives the CSP from it too, so the page served itself a
+`connect-src http://127.0.0.1:3000` naming an origin it is not served from. The
+same literal was written into `.local/owner-acceptance-account.json`, the file
+the Owner opens to find the address; printed back by
+`acceptance:status-owner`; defaulted in `apps/web/src/lib/env.ts`; shipped in
+`apps/web/.env.example`; and used as the base URL for **the entire browser
+suite**, which therefore spent every run testing an origin the Owner is told
+never to open.
+
+**Why the existing gate missed all of it.** `tests/ci/local-launcher-host.test.ts`
+forbade one pattern — a printed `` `http://127.0.0.1:${WEB_PORT}` `` — in two
+files. The launcher's defect used `API_PORT`, so the regex could not match it;
+and nothing under `scripts/dev/owner-acceptance/`, `apps/web/src/lib/` or the
+browser configuration was scanned at all. The gate was written to the shape of
+the one instance that had been found rather than to the rule it claimed.
+
+**The measurement that shaped the fix.** `§7` requires
+`next dev --hostname localhost`. Passing it naively would have broken the
+launcher outright, because **a hostname binds one address family**:
+
+```
+dns.lookup('localhost', {all:true}) -> [::1, 127.0.0.1]   (verbatim order)
+server.listen(port, 'localhost')    -> bound ::1
+fetch('http://127.0.0.1:port')      -> ECONNREFUSED
+fetch('http://localhost:port')      -> 200
+```
+
+Next 16 defaults to `0.0.0.0`, which answers on every loopback address at once —
+which is precisely why a launcher that configured one host and advertised
+another had worked well enough to ship. Pin the name and the readiness probes on
+the literal stop connecting, so `dev:all` would have waited its full 180-second
+timeout and then declared a perfectly healthy stack dead.
+
+So `PROBE_HOST` was deleted rather than corrected. Two constants that must
+always agree are one constant. Using one NAME everywhere is also what makes this
+portable: a name resolves the same way for the bind and for the probe on any
+machine, whereas a name for one and a literal for the other is a coin toss that
+lands differently on Windows and on a Linux runner.
+
+**The override no gate can see.** `apps/web/.env.local` is git-ignored, is read
+by Next in preference to every default, and on the Owner's machine still carried
+the stale literal. Correcting every tracked file would have looked like a
+complete fix and changed nothing that actually runs. The launcher now reports a
+contradiction between that file and the canonical origin — it warns rather than
+refuses, because pointing the web tier at a different API is a legitimate thing
+to want; doing it silently is not.
+
+**Fix.** `dev-config.mjs` publishes `DEV_HOST`, `API_HOST`, `WEB_HOST`,
+`API_ORIGIN` and `WEB_ORIGIN`; `BROWSER_HOST` is retained as another view of the
+same string and a test asserts they are all identical. Both tiers start with
+`--hostname localhost`. Probing, binding, printing, the handoff file, the
+acceptance status command, the schema default, the example env and the browser
+suite all derive from those two origins. `dev:all` and `dev:status` print the
+API, the readiness URL, the web origin and both login routes.
+
+**Regression coverage.** `tests/ci/local-launcher-host.test.ts` grew from 11
+cases to 24, and the decisive one now scans **eleven** authoritative files for
+`http://127.0.0.1:(3000|3100|3210)` with comments stripped, so the prose
+explaining the hazard is not mistaken for the hazard. Mutation-tested: putting
+either literal back — the launcher's `NEXT_PUBLIC_API_BASE_URL` or the schema
+default — fails it, and restoring them passes.
+
+**Also fixed, found by the sweep rather than by the symptom.** The captured
+browser session is now named after the origin it belongs to. Cookies are scoped
+by host string, so a jar captured against `127.0.0.1` presents nothing to
+`localhost`: the authenticated projects would have started "signed in", landed
+on `/en/login`, and failed as though authentication had regressed. Naming the
+file after the origin makes a stale jar impossible to reuse instead of merely
+unlikely.
+
+The lesson is narrower than "use localhost" and worth stating exactly: **fixing
+what a system says is not the same as fixing what it does.** `F-048` corrected
+the sentence and left the configuration, and every tier stayed green for two
+more rounds because no tier ever compared the two.
+
+---
+
 ## P1-26-F-061 — a shell that starts and cannot run anything passed the "is bash available" probe
 
 **Severity:** Medium · **Status:** Fixed · **Area:**
@@ -588,8 +676,18 @@ the English case in both projects, with the Arabic case passing — because the
 browser tier serves a production build and that build predated the fix. Against
 code containing the bug the test fails; against code without it, it passes. The
 Arabic case passing throughout is the control: on the old build every route
-announced Arabic, so only the English assertion could distinguish them. The tier
-went from 97 assertions to 101.
+announced Arabic, so only the English assertion could distinguish them.
+
+> **Corrected during `P1-26-F-062`.** That browser assertion was a flake, and
+> the accident above is exactly why it looked convincing. It held `**/api/**`
+> open to keep the skeleton on screen — but this application fetches on the
+> SERVER, so the browser issues no API request and the delay matched nothing.
+> The fallback appeared only when the server happened to be cold. It passed
+> alone and failed inside the full suite. The assertion now lives in
+> `apps/web/tests/loading-boundary.dom.test.tsx`, which renders the boundary
+> directly for each locale with no timing involved, and is mutation-tested:
+> restoring `DEFAULT_LOCALE` fails it. The authenticated tier is 96 as a result,
+> not 101 — a smaller number, and every one of them deterministic.
 
 The lesson is the one the Owner-acceptance rule exists to record. This phase's
 assurance can prove a string is present, that it is translated, and that the

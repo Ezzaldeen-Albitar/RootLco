@@ -22,16 +22,17 @@
  *   not "the process exists".
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
+  API_ORIGIN,
   API_PORT,
   API_READY_PATH,
-  BROWSER_HOST,
+  DEV_HOST,
   DEV_DIST_DIR,
-  PROBE_HOST,
   STATE_FILE,
+  WEB_ORIGIN,
   WEB_PORT,
   repoRoot,
 } from './dev-config.mjs';
@@ -66,6 +67,44 @@ function clearStaleProductionBuild(workspace) {
   return dir;
 }
 
+/**
+ * Reports an `apps/web/.env.local` that contradicts the canonical API origin.
+ *
+ * That file is git-ignored, so it is invisible to every gate in this repository
+ * — and Next reads it in preference to the schema default in
+ * `apps/web/src/lib/env.ts`. A stale one left over from before `P1-26-F-062`
+ * still says `http://127.0.0.1:3000`, which means the browser is handed the
+ * broken origin no matter what the launcher, the schema and the example file
+ * now agree on. Correcting the tracked defaults without noticing the untracked
+ * override would have looked like a complete fix and changed nothing that runs.
+ *
+ * It warns rather than refuses: pointing the web tier at a different API is a
+ * legitimate thing to want. What is not legitimate is it happening silently.
+ */
+function warnOnContradictingEnvLocal() {
+  const file = `${root}/apps/web/.env.local`;
+  if (!existsSync(file)) return;
+  let contents;
+  try {
+    contents = readFileSync(file, 'utf8');
+  } catch {
+    return;
+  }
+  const match = contents.match(/^\s*NEXT_PUBLIC_API_BASE_URL\s*=\s*(.+?)\s*$/m);
+  const configured = match?.[1]?.replace(/^["']|["']$/g, '');
+  if (!configured || configured === API_ORIGIN) return;
+
+  console.log('');
+  console.log('  !! apps/web/.env.local overrides the API origin the launcher configures.');
+  console.log(`       it says   ${configured}`);
+  console.log(`       canonical ${API_ORIGIN}`);
+  console.log('     That file is git-ignored, so nothing else in this repository can see it.');
+  console.log('     The browser will be told to call the address above, and if that is a');
+  console.log('     different origin from the page it will leave every table loading for ever.');
+  console.log('     Fix it or delete the line unless you meant it.');
+  console.log('');
+}
+
 function assertPortFree(port, owner) {
   return new Promise((resolve, reject) => {
     const probe = createServer();
@@ -79,7 +118,12 @@ function assertPortFree(port, owner) {
       )
     );
     probe.once('listening', () => probe.close(() => resolve()));
-    probe.listen(port, '127.0.0.1');
+    // Bound to the SAME host the servers are about to bind. This used to be the
+    // `127.0.0.1` literal, which was a real hole once the servers started
+    // binding by name: a stale RootLco server on `::1` left the literal free, so
+    // the check passed and `next dev` then failed with EADDRINUSE — the exact
+    // cryptic failure this function exists to replace.
+    probe.listen(port, DEV_HOST);
   });
 }
 
@@ -121,6 +165,8 @@ const nextBin = (ws) => `${root}/apps/${ws}/node_modules/next/dist/bin/next`;
 const nextEntry = (ws) =>
   existsSync(nextBin(ws)) ? nextBin(ws) : `${root}/node_modules/next/dist/bin/next`;
 
+warnOnContradictingEnvLocal();
+
 // Ports first. Both checks passing is what makes the directory work below safe:
 // nothing is listening, so nothing is reading the build directory either.
 await assertPortFree(API_PORT, 'API');
@@ -139,11 +185,22 @@ if (holdsProductionBuild(`${root}/apps/web/.next`)) {
 
 const gallery = process.env.ROOTLCO_ENABLE_GALLERY ?? 'true';
 process.env.ROOTLCO_ENABLE_GALLERY = gallery;
-process.env.NEXT_PUBLIC_API_BASE_URL ??= `http://127.0.0.1:${API_PORT}`;
+// The address the BROWSER is told to call. `NEXT_PUBLIC_*` is inlined into the
+// client bundle, so this is not a server setting: it is a literal baked into
+// the page. It used to be the loopback literal while the very same launcher
+// printed `localhost` — the page was served from one origin and instructed to
+// call another, which is also what put `127.0.0.1` into the CSP `connect-src`
+// that `src/proxy.ts` derives from this value (`P1-26-F-062`).
+process.env.NEXT_PUBLIC_API_BASE_URL ??= API_ORIGIN;
 
+// `--hostname` is passed explicitly to BOTH tiers. Next 16 defaults to
+// `0.0.0.0`, which answers on every loopback address and so hides a mismatch
+// between the host that is configured and the host that is advertised. Pinning
+// the canonical name means the wrong origin fails to connect at all instead of
+// half-working — see DEV_HOST in dev-config.mjs for the measurement.
 const api = launch(
   'api',
-  [nextEntry('api'), 'dev', 'apps/api', '--port', String(API_PORT)],
+  [nextEntry('api'), 'dev', 'apps/api', '--hostname', DEV_HOST, '--port', String(API_PORT)],
   API_PORT
 );
 // The web tier builds into its own directory, so `next start` — the browser
@@ -151,7 +208,7 @@ const api = launch(
 // server can never corrupt them.
 const web = launch(
   'web',
-  [nextEntry('web'), 'dev', 'apps/web', '--port', String(WEB_PORT)],
+  [nextEntry('web'), 'dev', 'apps/web', '--hostname', DEV_HOST, '--port', String(WEB_PORT)],
   WEB_PORT,
   { ROOTLCO_DIST_DIR: DEV_DIST_DIR }
 );
@@ -195,29 +252,40 @@ web.on('exit', (code) => {
   }
 });
 
-// Probes are server-to-server, so the loopback literal is fine and avoids any
-// dependence on name resolution. The addresses PRINTED are what a browser will
-// open, and those must be `localhost` — see BROWSER_HOST.
-const apiStatus = await waitFor(`http://${PROBE_HOST}:${API_PORT}${API_READY_PATH}`, 'API');
-const webStatus = await waitFor(`http://${PROBE_HOST}:${WEB_PORT}/en`, 'Web');
+// Probed on the SAME origin that is advertised. One name for the bind, the
+// probe and the printed address is what makes "it answers" mean "it answers
+// where you were told to open it".
+const apiStatus = await waitFor(`${API_ORIGIN}${API_READY_PATH}`, 'API');
+const webStatus = await waitFor(`${WEB_ORIGIN}/en`, 'Web');
 
-const webUrl = (path = '') => `http://${BROWSER_HOST}:${WEB_PORT}${path}`;
+const webUrl = (path = '') => `${WEB_ORIGIN}${path}`;
 
 console.log('');
 console.log('RootLco local stack is up.');
+console.log('');
+console.log('  API:');
+console.log(`    ${API_ORIGIN}`);
+console.log('');
+console.log('  API readiness:');
+console.log(`    ${API_ORIGIN}${API_READY_PATH}  -> HTTP ${apiStatus}`);
+console.log('');
+console.log('  Web:');
+console.log(`    ${WEB_ORIGIN}  (/en -> HTTP ${webStatus})`);
+console.log('');
+console.log('  English login:');
+console.log(`    ${webUrl('/en/login')}`);
+console.log('');
+console.log('  Arabic login:');
+console.log(`    ${webUrl('/ar/login')}`);
+console.log('');
 console.log(
-  `  API   http://${BROWSER_HOST}:${API_PORT}  (readiness ${API_READY_PATH} -> HTTP ${apiStatus})`
-);
-console.log(`  Web   ${webUrl()}  (/en -> HTTP ${webStatus})`);
-console.log(`  en    ${webUrl('/en')}`);
-console.log(`  ar    ${webUrl('/ar')}`);
-console.log(
-  `  gallery ${gallery === 'true' ? webUrl('/en/gallery') : 'disabled (set ROOTLCO_ENABLE_GALLERY=true)'}`
+  `  Gallery: ${gallery === 'true' ? webUrl('/en/gallery') : 'disabled (set ROOTLCO_ENABLE_GALLERY=true)'}`
 );
 console.log('');
 console.log(
-  `  Open ${BROWSER_HOST}, not 127.0.0.1: Next treats them as different origins in development` +
-    ' and refuses its own dev resources to the other one, which leaves every table loading for ever.'
+  `  Both tiers are bound to ${DEV_HOST}, so that is the only address that answers.` +
+    ' Next treats it and the loopback literal as different origins in development and refuses' +
+    ' its own dev resources to the other one, which leaves every table loading for ever.'
 );
 console.log('');
 console.log('Stop with Ctrl+C here, or "npm run dev:stop" from another terminal.');

@@ -46,6 +46,7 @@ import {
   goTrue,
   readSupabase,
 } from './context.mjs';
+import { API_ORIGIN, WEB_ORIGIN } from '../dev-config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
@@ -614,8 +615,15 @@ async function main() {
         {
           warning: 'LOCAL DEVELOPMENT ONLY — NOT A PRODUCTION ACCOUNT. Never commit this file.',
           createdAt: new Date().toISOString(),
-          apiBaseUrl: 'http://127.0.0.1:3000',
-          webBaseUrl: 'http://127.0.0.1:3100',
+          // Derived, never written by hand. These two lines carried the
+          // loopback literal — so the handoff file the Owner opens to find the
+          // address handed them the one origin that leaves every table loading
+          // for ever, while the launcher printed `localhost` two commands
+          // earlier (`P1-26-F-062`). The literals also duplicated the port
+          // authority, so a port change here would have gone unnoticed.
+          apiBaseUrl: API_ORIGIN,
+          webBaseUrl: WEB_ORIGIN,
+          loginUrl: `${WEB_ORIGIN}/en/login`,
           tenantId: IDS.tenantA,
           tenant: NAMES.tenantNameA,
           company: NAMES.companyNameA,
