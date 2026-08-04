@@ -445,7 +445,9 @@ describe('iam.auth-login — tenant resolved without a caller-supplied tenantId'
       .catch((e: unknown) => e);
     expect((error as AppFailure).code).toBe('ERR-IAM-002');
     expect(
-      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [acct.id])
+      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [
+        acct.id,
+      ])
     ).toBe(1);
     expect(await countRows(admin, 'iam.user_sessions', 'user_id = $1', [acct.id])).toBe(0);
   });
@@ -558,7 +560,9 @@ describe('iam.auth-login — tenant resolved without a caller-supplied tenantId'
     // The known account was reached and audited; the unknown one had nothing to
     // audit. Same answer, same path, different evidence — which is the point.
     expect(
-      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [acct.id])
+      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [
+        acct.id,
+      ])
     ).toBe(1);
   });
 

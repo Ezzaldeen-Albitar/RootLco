@@ -505,7 +505,7 @@ field, and a human being was expected to type
 **Why the Frontend could not fix it.** Faking it in the client means hard-coding
 a tenant, or shipping a directory of tenants to an unauthenticated page — the
 second is an enumeration oracle handed out at the door. The field existed because
-the *contract* demanded it, so the contract is what had to change.
+the _contract_ demanded it, so the contract is what had to change.
 
 **Why the database could not answer it either.** The obvious fix — look the
 address up and read its tenant — cannot run:
@@ -572,8 +572,8 @@ wrong password, no tenantId    → provider:invalid-credentials
 Both answer the caller identically. They do **not** cost the same. An unknown
 address skipped the transaction entirely, which is precisely the short-circuit
 rule 2 in that file's own header exists to forbid — "short-circuiting on a
-missing account would make *this address is unknown here* measurably faster than
-*this password is wrong*" — reintroduced one layer above where the rule was
+missing account would make _this address is unknown here_ measurably faster than
+_this password is wrong_" — reintroduced one layer above where the rule was
 written, by the change that was supposed to respect it.
 
 Fixed by removing the early return. An unresolvable attempt now runs the same
@@ -608,7 +608,7 @@ bcrypt hash when the address exists and returns immediately when it does not.
 This qualifies a claim the codebase makes about itself. Rule 2 in
 `authentication-service.ts` says the provider is always asked so that failure
 latency does not depend on whether the address is known. RootLco does always ask
-— but the provider short-circuits *internally*, so the property the rule is
+— but the provider short-circuits _internally_, so the property the rule is
 reaching for was never actually delivered, before this phase or after it.
 
 Stated plainly: the endpoint's resistance to address enumeration rests on the
@@ -2035,7 +2035,7 @@ whole tier passed **1763 / 1763** with no change to any file in between.
 
 That non-determinism is what rules the login-contract change out as the cause: a
 defect introduced by a code change does not disappear when the same code is run
-again. What it rules *in* is that this is not one test's bug — two independent
+again. What it rules _in_ is that this is not one test's bug — two independent
 outbox tests, in two tiers, now show load-dependent claim behaviour that nobody
 has explained. The disposition is unchanged and the observation is recorded
 rather than smoothed over, because a second sighting is evidence and dropping it
