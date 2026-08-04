@@ -15,9 +15,6 @@ import { z } from 'zod';
  * named beside it, so a divergence is a visible edit rather than a discovery.
  */
 
-/** `schemas.uuid` on `POST /api/v1/auth/login`. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 /**
  * Bounds from `CredentialPolicy.assertPasswordBounds` — 8 to 200 characters.
  *
@@ -36,11 +33,15 @@ export const EMAIL_MAX = 320;
 /**
  * The login form.
  *
- * `tenantId` is required because the contract requires it. It is a **lookup
- * key, never a grant** — the account must exist inside it and hold the provider
- * subject that just authenticated, and a caller who guesses one gets the same
- * generic failure as a wrong password. Collecting it is therefore not a
- * disclosure.
+ * **Two fields.** There is no tenant here and there must not be one: the tenant
+ * is resolved server-side from the identity the provider verifies, because
+ * `POST /api/v1/auth/login` no longer requires it (`P1-26-F-068`). Asking a
+ * person to type a UUID was never a product; it was a contract leaking through
+ * the interface.
+ *
+ * Reintroducing it would mean either hard-coding a tenant here or shipping a
+ * directory of tenants to an unauthenticated page — and the second is an
+ * enumeration oracle handed out at the door.
  *
  * The password is bounded only at 1 here, not at 8: an existing account may
  * predate any bound, and refusing to *submit* a short password would tell the
@@ -49,7 +50,6 @@ export const EMAIL_MAX = 320;
  * password *creation* validates strength bounds.
  */
 export const loginSchema = z.object({
-  tenantId: z.string().regex(UUID, 'auth.login.error.tenantId'),
   // EVERY bound carries a message key. A `.max()` with no message emits Zod's
   // own English sentence, which reaches an Arabic screen untranslated and
   // bypasses the catalogue completeness test entirely (P1-26-F-033).

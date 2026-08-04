@@ -70,11 +70,33 @@ test.describe('authentication', () => {
 
   test('the sign-in form labels every control and needs no mouse', async ({ page }) => {
     await page.goto('/en/login');
-    await expect(page.getByLabel('Workspace identifier')).toBeVisible();
+    // Two fields, and deliberately no third. The Workspace UUID was removed once
+    // the tenant became resolvable server-side (`P1-26-F-068`); asserting its
+    // ABSENCE here is what makes this suite fail if it ever returns.
+    await expect(page.getByLabel('Workspace identifier')).toHaveCount(0);
     await expect(page.getByLabel('Email address')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
     await expect(page.getByRole('link', { name: 'Forgotten your password?' })).toBeVisible();
+  });
+
+  test('the password can be revealed and is hidden until it is', async ({ page }) => {
+    await page.goto('/en/login');
+    const password = page.getByLabel('Password');
+    await expect(password).toHaveAttribute('type', 'password');
+
+    const toggle = page.getByRole('button', { name: 'Show password' });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await toggle.click();
+
+    await expect(password).toHaveAttribute('type', 'text');
+    // The control renames itself to the action it now offers, and `aria-pressed`
+    // carries the state — so the state is announced, not merely implied.
+    const pressed = page.getByRole('button', { name: 'Hide password' });
+    await expect(pressed).toHaveAttribute('aria-pressed', 'true');
+
+    await pressed.click();
+    await expect(password).toHaveAttribute('type', 'password');
   });
 
   test('the skip link is the first thing a keyboard reaches, and it works', async ({ page }) => {

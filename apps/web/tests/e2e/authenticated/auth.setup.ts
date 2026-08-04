@@ -30,33 +30,33 @@ const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
  */
 function credentials() {
   const fromEnv = {
-    tenantId: process.env.ROOTLCO_E2E_TENANT_ID,
     email: process.env.ROOTLCO_E2E_EMAIL,
     password: process.env.ROOTLCO_E2E_PASSWORD,
   };
-  if (fromEnv.tenantId && fromEnv.email && fromEnv.password) return fromEnv;
+  if (fromEnv.email && fromEnv.password) return fromEnv;
 
   if (!existsSync(HANDOFF)) {
     throw new Error(
-      'No credentials. Set ROOTLCO_E2E_TENANT_ID / ROOTLCO_E2E_EMAIL / ROOTLCO_E2E_PASSWORD, ' +
+      'No credentials. Set ROOTLCO_E2E_EMAIL / ROOTLCO_E2E_PASSWORD, ' +
         'or run: npm run acceptance:create-owner'
     );
   }
   const handoff = JSON.parse(readFileSync(HANDOFF, 'utf8'));
   return {
-    tenantId: handoff.tenantId,
     email: handoff.login.email,
     password: handoff.login.password,
   };
 }
 
 setup('sign in and persist the session', async ({ page, context }) => {
-  const { tenantId, email, password } = credentials();
+  // No tenant. The suite signs in exactly the way an operator does, which is the
+  // only way this test can notice if the Workspace field ever comes back.
+  const { email, password } = credentials();
 
   await page.goto('/en/login');
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByLabel('Workspace identifier')).toHaveCount(0);
 
-  await page.getByLabel('Workspace identifier').fill(tenantId);
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();

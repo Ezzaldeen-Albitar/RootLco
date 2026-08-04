@@ -551,6 +551,46 @@ wrong password, no tenantId    401  Authentication required
 unknown address, no tenantId   401  Authentication required
 ```
 
+**The failure-audit chain, proved by delta rather than by reading the code.** A
+single wrong-password request carrying **no tenant at all**, against the live
+stack:
+
+```
+iam.login_audit failure rows for the account   BEFORE  5
+POST /api/v1/auth/login {email, password}      ->  401
+iam.login_audit failure rows for the account   AFTER   6      delta 1
+```
+
+That one row can only exist if the GoTrue directory lookup returned the identity,
+`app_metadata.tenant_id` resolved the tenant, the RLS context was built from it,
+and the account was found — the whole chain, end to end, with nothing in the
+request naming a tenant.
+
+**The Frontend half**, merged separately under `p1-26-frontend`: the Workspace
+field, its hint, its UUID validation and the `rootlco.tenantHint` cookie are
+gone, and `auth-setup` now signs in the way an operator does — real Chrome, real
+Server Action, no tenant — asserting the field is absent so the suite fails if it
+ever returns. **97 passed** across `authenticated-en`, `authenticated-ar` and
+`authenticated-tablet`.
+
+---
+
+**A verification trap this change walked straight into.** Three suites render the
+sign-in screen: the component tier (`test:web`), the **anonymous** browser smoke
+(`test:web-e2e`), and the **authenticated** browser tier
+(`test:web-e2e-authenticated`). Removing the field, I ran the first and the
+third, both green, and pushed. Hosted `web-quality` failed on the second:
+`foundation.spec.ts` asserted `getByLabel('Workspace identifier')` was **visible**,
+so deleting the field turned a passing assertion into a failing one.
+
+Nothing about running two of three suites feels like partial coverage while you
+are doing it — each one is a full green run, and the authenticated tier is the
+more impressive of the two. The rule that would have caught it is mechanical
+rather than intuitive: **when a screen changes, find every suite that renders
+that screen**, not every suite that sounds relevant. Both assertions are now
+inverted to `toHaveCount(0)`, so the field's return fails two suites instead of
+silently satisfying one.
+
 ---
 
 ## P1-26-F-067 — resolving the tenant quietly reintroduced the oracle the file forbids

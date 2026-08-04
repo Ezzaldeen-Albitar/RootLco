@@ -29,21 +29,29 @@ import en from '../src/i18n/messages/en.json';
  * the attributes that make it unreadable by page script.
  */
 
+/** Still used by the scope tests below; the sign-in form no longer has one. */
 const UUID = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
 
 describe('the sign-in schema', () => {
-  it('requires a workspace identifier that is a real UUID', () => {
-    const bad = loginSchema.safeParse({ tenantId: 'not-a-uuid', email: 'a@b.co', password: 'x' });
-    expect(bad.success).toBe(false);
-    if (!bad.success)
-      expect(issueKeysByField(bad.error).tenantId).toBe('auth.login.error.tenantId');
+  it('asks for an address and a password, and nothing else', () => {
+    // The Workspace UUID is gone. The server resolves the tenant from the
+    // identity the provider verifies (`P1-26-F-068`), so a person signs in with
+    // what a person knows. Asserted on the SHAPE rather than on one rejected
+    // value, because a field that came back under a different name would still
+    // be a UUID on the sign-in form.
+    expect(Object.keys(loginSchema.shape)).toEqual(['email', 'password']);
+  });
+
+  it('accepts a sign-in with no tenant of any kind', () => {
+    const result = loginSchema.safeParse({ email: 'a@b.co', password: 'x' });
+    expect(result.success).toBe(true);
   });
 
   it('does NOT enforce a password length on sign-in', () => {
     // An existing account may predate any bound. Refusing to submit a short
     // password would tell the operator their own stored credential is invalid
     // when the truth is that it is simply wrong, or the account is not active.
-    const result = loginSchema.safeParse({ tenantId: UUID, email: 'a@b.co', password: 'x' });
+    const result = loginSchema.safeParse({ email: 'a@b.co', password: 'x' });
     expect(result.success).toBe(true);
   });
 
@@ -89,7 +97,7 @@ describe('the sign-in schema', () => {
   });
 
   it('produces translation KEYS, never sentences', () => {
-    const result = loginSchema.safeParse({ tenantId: '', email: '', password: '' });
+    const result = loginSchema.safeParse({ email: '', password: '' });
     expect(result.success).toBe(false);
     if (!result.success) {
       for (const key of Object.values(issueKeysByField(result.error))) {

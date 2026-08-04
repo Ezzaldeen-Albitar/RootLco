@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { anonymousClient } from '@/lib/api/server-client';
-import { writeSession, writeTenantHint } from '@/lib/api/session-cookie';
+import { writeSession } from '@/lib/api/session-cookie';
 import { env } from '@/lib/env';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
 import { DEFAULT_LOCALE, isLocale, type Locale } from '@/i18n/config';
@@ -13,8 +13,8 @@ import { issueKeysByField, loginSchema } from '../schemas/credentials';
  *
  * ## Everything that could distinguish one failure from another is removed
  *
- * The backend answers wrong password, unknown address, unknown tenant, an
- * account that is `invited`, `locked` or `archived`, a disabled provider
+ * The backend answers wrong password, unknown address, an unresolvable tenant,
+ * an account that is `invited`, `locked` or `archived`, a disabled provider
  * identity and a tenant mismatch with **one** code and one message, deliberately
  * (`authentication-service.ts` §1). It would be trivially easy to undo that here
  * — a friendlier "no account with that address", a different message for a
@@ -54,7 +54,6 @@ export async function loginAction(previous: ActionState, form: FormData): Promis
   const locale = localeFrom(form.get('locale'));
 
   const parsed = loginSchema.safeParse({
-    tenantId: String(form.get('tenantId') ?? ''),
     email: String(form.get('email') ?? ''),
     password: String(form.get('password') ?? ''),
   });
@@ -93,7 +92,11 @@ export async function loginAction(previous: ActionState, form: FormData): Promis
   }
 
   await writeSession(result.data.accessToken, result.data.expiresAt, env.NEXT_PUBLIC_APP_ENV);
-  await writeTenantHint(parsed.data.tenantId, env.NEXT_PUBLIC_APP_ENV);
+  // No tenant hint is written. The cookie existed for one purpose — prefilling
+  // the Workspace field — and that field is gone: the server resolves the tenant
+  // from the verified identity. Writing a tenant UUID into the browser for no
+  // reader is storage with no purpose, which is the kind that outlives its
+  // justification.
 
   // A redirect, not a rendered dashboard. It replaces the sign-in entry in
   // history, so Back after signing in does not return to a form that is now
