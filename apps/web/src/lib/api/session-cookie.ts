@@ -135,10 +135,15 @@ export async function writeTenantHint(tenantId: string, appEnv: string): Promise
 /**
  * Clears the session.
  *
- * Called on sign-out, on an expired session, and on any 401 from a
- * server-rendered read. Clearing on 401 is what stops the redirect loop: a
- * cookie that is present but rejected would otherwise send the operator to the
- * dashboard, back to sign-in, and around again.
+ * Two callers, and both are contexts Next permits to write a cookie: the
+ * sign-out Server Action, and the session-ended Route Handler that a rejected
+ * token is redirected through.
+ *
+ * **Never call this from a render.** `cookies().delete()` throws
+ * `Cookies can only be modified in a Server Action or Route Handler` inside a
+ * Server Component, which is an HTTP 500 on the page rather than a failed
+ * sign-out. `readSession` did exactly that on every 401 (`P1-26-F-077`); it now
+ * reports the problem and lets the handler do this.
  */
 export async function clearSession(): Promise<void> {
   const store = await cookies();

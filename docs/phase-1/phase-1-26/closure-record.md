@@ -58,7 +58,7 @@ Numbers, not adjectives. Each was produced by running the thing named.
 | tier                                         | result                                                                                      |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | root unit / integration                      | **1601 / 1601**                                                                             |
-| web component                                | **357 / 357**                                                                               |
+| web component                                | **341 / 341** committed — see the correction below                                          |
 | anonymous browser                            | **146**                                                                                     |
 | authenticated browser, real installed Chrome | **157**                                                                                     |
 | hosted CI on the accepted head               | **18 success · 2 correctly skipped · 0 failure**                                            |
@@ -67,6 +67,26 @@ Numbers, not adjectives. Each was produced by running the thing named.
 | scroll restoration                           | left at 1500, returned to 1500                                                              |
 | findings recorded                            | **63**                                                                                      |
 | migrations                                   | **119**, unchanged by this phase                                                            |
+
+### Correction — the web figure, made after acceptance
+
+This record first said **357 / 357**. The committed tree carried **341**, in 18
+files. The difference is `apps/web/tests/session.test.ts` — 16 tests belonging to
+the expired-session work, deliberately excluded from every P1-26 merge and still
+**untracked** in the working tree, which vitest runs like any other file.
+
+So the figure shown at acceptance was a working-tree number presented as a
+committed-tree number. Nothing was accepted that does not exist: the 341
+committed tests passed, hosted CI ran them on the committed tree and was green,
+and the extra 16 were real tests of real code that had not been merged yet.
+
+Corrected here rather than quietly, because this phase's own register already
+holds the rule it broke — _a test count is evidence about the suite that produced
+it, not about the file it is written next to_. Recorded as `P1-26-F-078`.
+
+The expired-session work was reconciled immediately afterwards and merged as
+`P1-26-F-077`, at which point 357 became the true committed figure. The
+correction and the merge are the same change.
 
 ## 4. What this closure does NOT do
 

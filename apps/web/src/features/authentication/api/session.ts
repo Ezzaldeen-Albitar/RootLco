@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { authorizedClient } from '@/lib/api/server-client';
-import { clearSession } from '@/lib/api/session-cookie';
 import type { Locale } from '@/i18n/config';
+import { SESSION_ENDED_SEGMENT } from './session-ended';
 import type { SessionState, SessionSummary } from '../types/session';
 
 /**
@@ -15,11 +15,19 @@ import type { SessionState, SessionSummary } from '../types/session';
  * and hiding it afterwards changes none of that. Here the check happens before
  * a single byte of protected output exists, so there is nothing to flash.
  *
- * ## Every failure clears the cookie
+ * ## Reading a session MUTATES NOTHING
  *
- * A rejected token that stays in the jar produces the classic loop: the
- * dashboard redirects to sign-in, sign-in sees a cookie and bounces back, and
- * the browser spins. Clearing on failure is what makes the redirect terminal.
+ * This module used to call `clearSession()` on a 401, from inside a Server
+ * Component render. Next forbids cookie mutation during a render, so the render
+ * threw `Cookies can only be modified in a Server Action or Route Handler` and
+ * every protected route answered **HTTP 500 to the one visitor who most needed a
+ * redirect** — the operator whose session had just expired (`P1-26-F-077`). The
+ * signed-out path hid it: with no cookie at all `authorizedClient()` returns
+ * null and the function returns before reaching the mutation, so the ordinary
+ * "not signed in" case redirected correctly and the broken one was the rarer.
+ *
+ * Clearing a rejected token is still right — see `session-ended.ts` — but it is
+ * done by a Route Handler, which is a context Next permits to write cookies.
  */
 
 const SESSION_PATH = '/api/v1/auth/session';
@@ -39,8 +47,10 @@ export async function readSession(): Promise<SessionState> {
     return { ok: true, session: result.data };
   }
 
+  // The token was rejected. The cookie is NOT cleared here — this runs inside a
+  // render, where Next forbids it. `requireSession` sends this case through the
+  // session-ended Route Handler, which clears it legally.
   if (result.kind === 'unauthenticated') {
-    await clearSession();
     return { ok: false, problem: 'expired', correlationId: result.correlationId };
   }
 
@@ -74,10 +84,24 @@ export async function readSession(): Promise<SessionState> {
  * `redirect()` throws, which is how Next unwinds — the `never` return type is
  * what makes a caller's `const session = await requireSession(...)` correctly
  * typed as a `SessionSummary` and not as a union.
+ *
+ * ## Exactly one problem takes the long way round
+ *
+ * A REJECTED token should not stay in the jar, and only a rejected token should
+ * be thrown away. So `expired` — and nothing else — goes via the session-ended
+ * Route Handler, which clears the cookie and then lands on sign-in with the same
+ * `reason=expired` this function would have sent directly.
+ *
+ * The other three go straight to sign-in with their cookie untouched, and each
+ * for its own reason: `signed-out` has no cookie to clear, `unavailable` means
+ * the backend could not answer and destroying a good session over a hiccup would
+ * turn an outage into a re-authentication, and `forbidden` is the lockout
+ * recorded below — the credential is VALID and clearing it was `P1-26-F-022`.
  */
 export async function requireSession(locale: Locale): Promise<SessionSummary> {
   const state = await readSession();
   if (state.ok) return state.session;
+  if (state.problem === 'expired') redirect(`/${locale}/${SESSION_ENDED_SEGMENT}`);
   // The reason is a fixed enum, not free text and not an identifier. It changes
   // which sentence the sign-in page shows; it names no user and no record.
   redirect(`/${locale}/login?reason=${state.problem}`);
