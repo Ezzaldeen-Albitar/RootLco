@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import { AuthCard } from '@/features/authentication/components/AuthCard';
 import { LoginForm } from '@/features/authentication/components/LoginForm';
-import { readTenantHint } from '@/lib/api/session-cookie';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -51,8 +50,6 @@ export default async function LoginPage({
   const reasonKey =
     rawReason && rawReason in REASONS ? REASONS[rawReason as keyof typeof REASONS] : null;
 
-  const tenantHint = await readTenantHint();
-
   return (
     <AuthCard
       title={translate(messages, 'auth.login.title')}
@@ -67,7 +64,7 @@ export default async function LoginPage({
             {translate(messages, reasonKey)}
           </p>
         ) : null}
-        <LoginForm locale={locale} messages={messages} tenantHint={tenantHint} />
+        <LoginForm locale={locale} messages={messages} />
       </div>
     </AuthCard>
   );

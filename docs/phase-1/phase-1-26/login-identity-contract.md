@@ -1,9 +1,10 @@
 # Email-only sign-in — contract specification and integration finding
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
-**Status:** **IMPLEMENTED (Backend).** The contract change described below is
-merged; `tenantId` is optional and the tenant is resolved server-side. Recorded
-as `P1-26-F-068`, with `P1-26-F-067` and `P1-26-F-066` found while proving it.
+**Status:** **IMPLEMENTED (Backend and Frontend).** `tenantId` is optional, the
+tenant is resolved server-side, and the Login screen asks for an address and a
+password. Recorded as `P1-26-F-068`, with `P1-26-F-067` and `P1-26-F-066` found
+while proving it.
 
 Sections 1–3 are retained as written, as the specification the change was built
 against. Section 7 records what was actually built and how it was verified —
@@ -145,23 +146,49 @@ archaeology, and each is a Backend or Database concern, not a Frontend one.
   payment instrument on any plan or subscription table. The `sal` schema's
   invoices are the garage's customer billing, not the tenant's SaaS bill.
 
-## 6. Frontend work that is ready and waiting
+## 6. Frontend work — **applied**
 
-Written against the contract above, to be applied on the P1-26 branch once the
-Backend change is merged:
+Written against the contract above and applied once the Backend change was
+merged. Status against the original list:
 
-1. Remove the `tenantId` field, its label, its hint and its UUID validation from
-   `LoginForm` and `credentials.ts`.
-2. Stop sending `tenantId` from the login Server Action.
-3. Retire the `rootlco.tenantHint` cookie — it exists only to prefill the field.
-4. Keep the catalogue keys but retire `auth.login.tenantId*` and
-   `auth.login.error.tenantId`; replace the description with one that no longer
-   says "workspace details".
-5. Add the deferred usability controls the same pass: password visibility
-   toggle, and distinct states for locked / invitation-pending once the Backend
-   publishes them.
+1. **Done.** The `tenantId` field, its label, its hint and its UUID validation
+   are gone from `LoginForm` and `credentials.ts`. `loginSchema.shape` is now
+   exactly `['email', 'password']`, asserted on the shape rather than on one
+   rejected value — a field returning under a different name would still be a
+   UUID on the sign-in form.
+2. **Done.** The Server Action sends `{ email, password }`.
+3. **Done in effect.** Nothing writes or reads `rootlco.tenantHint`. The
+   `readTenantHint` / `writeTenantHint` helpers remain in
+   `lib/api/session-cookie.ts` with no caller — see the carried item below.
+4. **Done.** `auth.login.tenantId`, `auth.login.tenantIdHint` and
+   `auth.login.error.tenantId` are retired; `auth.login.description` no longer
+   says "workspace details". Both catalogues 544 → 543 keys.
+5. **Partly done.** The password visibility toggle is in, defaulting to hidden,
+   carrying `aria-pressed`, and keeping `autoComplete="current-password"` in both
+   modes so a password manager still fills the form. Distinct locked /
+   invitation-pending states are **not** in, and cannot be: the Backend answers
+   every one of those with the same `ERR-IAM-002`, deliberately, and publishing
+   the difference to an unauthenticated screen would undo the non-enumeration
+   property the whole endpoint is built around. That item was wrong as written
+   and is withdrawn rather than carried.
 
-None of this is speculative UI: each line has a Backend fact behind it.
+**Carried.** `readTenantHint` / `writeTenantHint` are now unused exports. They
+were left in place because that file was being edited concurrently by separate
+in-flight work, and editing another change's working tree is how two correct
+changes become one broken one. Removing them is a follow-up.
+
+### Verified in the real browser
+
+`auth-setup` signs in the way an operator does — no tenant, real Chrome, real
+Server Action, real API, real Supabase — and asserts the Workspace field is
+absent so the suite fails if it ever returns:
+
+```
+97 passed (2.2m)   authenticated-en · authenticated-ar · authenticated-tablet
+```
+
+That run also re-proved the eleven administration screens, cross-tenant
+isolation, and that no token reaches browser storage.
 
 ## 7. What was actually built, and where it differs from section 3
 

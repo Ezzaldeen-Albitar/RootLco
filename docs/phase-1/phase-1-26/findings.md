@@ -551,6 +551,28 @@ wrong password, no tenantId    401  Authentication required
 unknown address, no tenantId   401  Authentication required
 ```
 
+**The failure-audit chain, proved by delta rather than by reading the code.** A
+single wrong-password request carrying **no tenant at all**, against the live
+stack:
+
+```
+iam.login_audit failure rows for the account   BEFORE  5
+POST /api/v1/auth/login {email, password}      ->  401
+iam.login_audit failure rows for the account   AFTER   6      delta 1
+```
+
+That one row can only exist if the GoTrue directory lookup returned the identity,
+`app_metadata.tenant_id` resolved the tenant, the RLS context was built from it,
+and the account was found — the whole chain, end to end, with nothing in the
+request naming a tenant.
+
+**The Frontend half**, merged separately under `p1-26-frontend`: the Workspace
+field, its hint, its UUID validation and the `rootlco.tenantHint` cookie are
+gone, and `auth-setup` now signs in the way an operator does — real Chrome, real
+Server Action, no tenant — asserting the field is absent so the suite fails if it
+ever returns. **97 passed** across `authenticated-en`, `authenticated-ar` and
+`authenticated-tablet`.
+
 ---
 
 ## P1-26-F-067 — resolving the tenant quietly reintroduced the oracle the file forbids
