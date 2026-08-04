@@ -582,6 +582,15 @@ test passes by observing nothing.
 announced `جارٍ التحميل`; after, `/en` announces `Loading` and `/ar` is
 unchanged.
 
+The new assertion then proved itself by accident, which is better evidence than
+proving itself on purpose. Its first run in the authenticated tier **failed** —
+the English case in both projects, with the Arabic case passing — because the
+browser tier serves a production build and that build predated the fix. Against
+code containing the bug the test fails; against code without it, it passes. The
+Arabic case passing throughout is the control: on the old build every route
+announced Arabic, so only the English assertion could distinguish them. The tier
+went from 97 assertions to 101.
+
 The lesson is the one the Owner-acceptance rule exists to record. This phase's
 assurance can prove a string is present, that it is translated, and that the
 markup around it is correct. **It cannot notice that the wrong one of two valid
