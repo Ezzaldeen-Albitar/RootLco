@@ -29,11 +29,16 @@ export const dynamic = 'force-dynamic';
 
 const LoginBody = z.object({
   /**
-   * A lookup key, never a grant. The account must exist inside this tenant with
-   * the provider subject that just authenticated, or the request is denied with
-   * the same generic failure as a wrong password.
+   * Optional. A lookup key, never a grant.
+   *
+   * Clients sign in with an address and a password; the tenant is resolved
+   * server-side from the identity the provider verifies. A caller that still
+   * sends one is asserting which tenant it expects — the value is cross-checked
+   * against the binding the provider reports, and a disagreement is denied with
+   * the same generic failure as a wrong password. Kept optional rather than
+   * removed so existing callers keep working while they migrate.
    */
-  tenantId: schemas.uuid,
+  tenantId: schemas.uuid.optional(),
   email: z.string().min(3).max(320),
   password: z.string().min(1).max(200),
 });

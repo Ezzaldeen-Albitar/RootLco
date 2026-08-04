@@ -73,6 +73,20 @@ export const PROFILES = {
       supabase: 'the boundary remediation must not change the database',
     },
   },
+  'backend-login-contract': {
+    why: 'the login-identity Backend remediation P1-26 is blocked on',
+    allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      // `web` is forbidden ON PURPOSE. A Backend profile that also permitted
+      // Frontend would let the two halves of this contract change land in one
+      // unreviewed commit — which is the same hole `p1-26-frontend` exists to
+      // close, merely pointing the other way. The Frontend half is a separate
+      // change under `p1-26-frontend`, against a Backend contract already merged.
+      web: 'the login-contract remediation is Backend-only — the Frontend half is a separate change',
+      migrations: 'the login-contract remediation must not change a migration',
+      supabase: 'the login-contract remediation must not change the database',
+    },
+  },
 };
 
 /**

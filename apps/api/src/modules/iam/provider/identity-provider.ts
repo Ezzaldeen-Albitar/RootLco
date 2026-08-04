@@ -4,7 +4,7 @@
  * ADR-019 selects Supabase Auth as the authentication and session provider and
  * requires that no application service, domain service, repository, or Route
  * Handler depend on a provider SDK type. This interface is that boundary: it
- * declares the eleven capabilities the phase needs, in RootLco's own vocabulary,
+ * declares the twelve capabilities the phase needs, in RootLco's own vocabulary,
  * with RootLco's own error model.
  *
  * Three rules the port exists to make structural rather than advisory:
@@ -119,7 +119,7 @@ export interface PasswordResetRequest {
 }
 
 /**
- * The eleven capabilities Phase 1-14 needs from an authentication provider.
+ * The twelve capabilities Phase 1-14 needs from an authentication provider.
  *
  * Adapters implement all of them or fail closed on the ones the concrete
  * provider does not support — never silently succeed. `supportsDisable` exists
@@ -160,6 +160,23 @@ export interface IdentityProvider {
   confirmIdentity(subject: string): Promise<ProviderIdentity>;
   /** 11. Disable or re-enable provider sign-in for an identity. */
   setDisabled(subject: string, disabled: boolean): Promise<ProviderIdentity>;
+  /**
+   * 12. Look an identity up by address. Returns null when it does not exist.
+   *
+   * The provider is RootLco's only tenant-agnostic directory, and this capability
+   * exists because there is no second option. `iam.user_accounts` cannot serve
+   * the role: `sel_user_accounts_tenant` restricts SELECT to
+   * `tenant_id = iam.current_tenant_id()`, and the platform holds zero
+   * `SECURITY DEFINER` routines by CI-asserted invariant — so a lookup that does
+   * not yet know its tenant has nowhere in the database it is allowed to run.
+   *
+   * Called on the **failure** path of login only, so an attempt the provider
+   * refused can still be attributed to an account and audited. It is never called
+   * on a successful login (the session already carries the binding), and its
+   * result is never revealed to the caller in any form — see ADR-019 rule 3 and
+   * the enumeration note on `AuthenticationService.login`.
+   */
+  findByEmail(email: string): Promise<ProviderIdentity | null>;
 }
 
 /**
@@ -211,6 +228,9 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
     this.fail();
   }
   async setDisabled(): Promise<ProviderIdentity> {
+    this.fail();
+  }
+  async findByEmail(): Promise<ProviderIdentity | null> {
     this.fail();
   }
 }

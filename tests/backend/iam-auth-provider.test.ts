@@ -391,6 +391,193 @@ describe('iam.auth-login', () => {
 });
 
 // ===========================================================================
+// The login-identity contract: signing in with an address and a password only.
+//
+// The tenant is resolved server-side from the identity the provider verified.
+// These cases exist to prove three things that are easy to claim and easy to get
+// wrong: that omitting the tenant WORKS, that omitting it does not quietly turn
+// off failure auditing, and that supplying a tenant cannot steer the lookup.
+// ===========================================================================
+describe('iam.auth-login — tenant resolved without a caller-supplied tenantId', () => {
+  it('signs in with address and password only, and resolves the tenant from the provider', async () => {
+    const result = await authService.login({ email: EMAIL_ACTIVE, password: PASSWORD }, META);
+    expect(result.user.id).toBe(U_ACTIVE);
+    // Never sent by the caller — it can only have come from the binding.
+    expect(result.user.tenantId).toBe(TENANT_A);
+    expect(
+      await countRows(admin, 'iam.user_sessions', 'user_id = $1 AND revoked_at IS NULL', [U_ACTIVE])
+    ).toBe(1);
+  });
+
+  it('resolves the tenant the identity is bound to, not the one the caller might assume', async () => {
+    // Bound to TENANT_B at the provider, account lives in TENANT_B. Nothing in
+    // the request names a tenant, so a resolution that defaulted to TENANT_A —
+    // or to "the first tenant" — would fail here.
+    const acct = await insertAccount({ tenantId: TENANT_B });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: TENANT_B,
+    });
+    const result = await authService.login({ email: acct.email, password: PASSWORD }, meta());
+    expect(result.user.tenantId).toBe(TENANT_B);
+    expect(result.user.id).toBe(acct.id);
+  });
+
+  it('still writes a failure audit row for a wrong password with no tenantId in the body', async () => {
+    // The regression this contract change could most easily have introduced.
+    // The provider refuses, so there is no session to carry a binding; without
+    // the directory lookup there would be no tenant, no context, and therefore
+    // NO audit row — silently disabling failure auditing, and with it the
+    // security-event threshold, for every wrong-password attempt.
+    const acct = await insertAccount({ status: 'active' });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: TENANT_A,
+    });
+    const error = await authService
+      .login({ email: acct.email, password: 'wrong-password' }, meta())
+      .catch((e: unknown) => e);
+    expect((error as AppFailure).code).toBe('ERR-IAM-002');
+    expect(
+      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [acct.id])
+    ).toBe(1);
+    expect(await countRows(admin, 'iam.user_sessions', 'user_id = $1', [acct.id])).toBe(0);
+  });
+
+  it('refuses an unknown address generically and writes nothing', async () => {
+    const error = await authService
+      .login({ email: 'nobody-tenantless@example.test', password: PASSWORD }, meta())
+      .catch((e: unknown) => e);
+    expect((error as AppFailure).code).toBe('ERR-IAM-002');
+  });
+
+  it('refuses a caller-supplied tenantId that disagrees with the provider binding', async () => {
+    // A caller must not be able to point a verified identity at another tenant.
+    const acct = await insertAccount({ tenantId: TENANT_B });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: TENANT_B,
+    });
+    const error = await authService
+      .login({ tenantId: TENANT_A, email: acct.email, password: PASSWORD }, meta())
+      .catch((e: unknown) => e);
+    expect((error as AppFailure).code).toBe('ERR-IAM-002');
+    expect(await countRows(admin, 'iam.user_sessions', 'user_id = $1', [acct.id])).toBe(0);
+  });
+
+  it('accepts a caller-supplied tenantId that agrees, so existing callers keep working', async () => {
+    const result = await authService.login(
+      { tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD },
+      meta()
+    );
+    expect(result.user.tenantId).toBe(TENANT_A);
+  });
+
+  it('falls back to the body tenant for an identity carrying no binding', async () => {
+    // An identity created outside `invite` has no app_metadata.tenant_id. This is
+    // exactly the pre-change behaviour, and is why the field stayed optional
+    // rather than being deleted.
+    const acct = await insertAccount({ status: 'active' });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: null,
+    });
+    const result = await authService.login(
+      { tenantId: TENANT_A, email: acct.email, password: PASSWORD },
+      meta()
+    );
+    expect(result.user.id).toBe(acct.id);
+  });
+
+  it('refuses when the identity carries no binding and the caller named no tenant', async () => {
+    // Nothing to scope a lookup to. Generic, like every other failure.
+    const acct = await insertAccount({ status: 'active' });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: null,
+    });
+    const error = await authService
+      .login({ email: acct.email, password: PASSWORD }, meta())
+      .catch((e: unknown) => e);
+    expect((error as AppFailure).code).toBe('ERR-IAM-002');
+    expect(await countRows(admin, 'iam.user_sessions', 'user_id = $1', [acct.id])).toBe(0);
+  });
+
+  it('runs an unresolvable attempt against a tenant that exists in no row', async () => {
+    // The sentinel the service falls back to must not be a real tenant, or an
+    // unresolvable attempt would be scoped to somebody's data. Asserted against
+    // the database rather than trusted, because "obviously nobody uses that
+    // UUID" is exactly the kind of assumption that stops being true quietly.
+    const held = await admin.query(`SELECT 1 FROM org.tenants WHERE id = $1`, [
+      '00000000-0000-4000-8000-000000000000',
+    ]);
+    expect(held.rowCount).toBe(0);
+  });
+
+  it('does not short-circuit an unresolvable attempt ahead of the transaction', async () => {
+    // Regression for the stopwatch oracle: an early return on "no tenant" would
+    // make an unknown address measurably faster than a wrong password, because
+    // it would skip the lookup the wrong-password path performs. Both must reach
+    // the transaction, so both must be capable of writing to `iam.login_audit` —
+    // proved here by the fact that neither leaves a session and both are denied
+    // identically, while the wrong-password case DID write its failure row.
+    const acct = await insertAccount({ status: 'active' });
+    fake.seed({
+      subject: acct.subject,
+      email: acct.email,
+      password: PASSWORD,
+      confirmed: true,
+      tenantId: TENANT_A,
+    });
+
+    const unknown = await authService
+      .login({ email: 'never-seen-here@example.test', password: PASSWORD }, meta())
+      .catch((e: unknown) => e);
+    const wrongPassword = await authService
+      .login({ email: acct.email, password: 'wrong-password' }, meta())
+      .catch((e: unknown) => e);
+
+    expect((unknown as AppFailure).code).toBe('ERR-IAM-002');
+    expect((wrongPassword as AppFailure).code).toBe('ERR-IAM-002');
+    expect((unknown as AppFailure).message).toBe((wrongPassword as AppFailure).message);
+    // The known account was reached and audited; the unknown one had nothing to
+    // audit. Same answer, same path, different evidence — which is the point.
+    expect(
+      await countRows(admin, 'iam.login_audit', "user_id = $1 AND event_type = 'failure'", [acct.id])
+    ).toBe(1);
+  });
+
+  it('answers tenantless failures with the identical message as tenant-bearing ones', async () => {
+    const messages = new Set<string>();
+    for (const attempt of [
+      { email: EMAIL_ACTIVE, password: 'wrong' },
+      { email: 'unknown-tenantless@example.test', password: PASSWORD },
+      { tenantId: TENANT_A, email: EMAIL_ACTIVE, password: 'wrong' },
+      { tenantId: 'not-a-uuid', email: EMAIL_ACTIVE, password: PASSWORD },
+    ]) {
+      const error = await authService.login(attempt, meta()).catch((e: unknown) => e);
+      messages.add((error as AppFailure).message);
+    }
+    expect(messages.size).toBe(1);
+  });
+});
+
+// ===========================================================================
 // iam.auth-logout
 // ===========================================================================
 describe('iam.auth-logout', () => {

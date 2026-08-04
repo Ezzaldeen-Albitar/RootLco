@@ -485,6 +485,145 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-068 — login asked for a tenant only the server could know
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/api/src/app/api/v1/auth/login`, `apps/api/src/modules/iam`
+
+The Owner's acceptance checklist requires signing in with an address and a
+password. The endpoint would not allow it:
+
+```
+POST /api/v1/auth/login  { email, password }
+  → 422  violations: [{ path: "body.tenantId", rule: "invalid_type" }]
+```
+
+`tenantId` was a mandatory UUID. So the Login screen carried a **Workspace UUID**
+field, and a human being was expected to type
+`c0000000-0000-4000-8000-00000000000a` from memory. No product ships that.
+
+**Why the Frontend could not fix it.** Faking it in the client means hard-coding
+a tenant, or shipping a directory of tenants to an unauthenticated page — the
+second is an enumeration oracle handed out at the door. The field existed because
+the *contract* demanded it, so the contract is what had to change.
+
+**Why the database could not answer it either.** The obvious fix — look the
+address up and read its tenant — cannot run:
+
+```
+sel_user_accounts_tenant  SELECT  {app_readonly,app_runtime}
+  USING (tenant_id = iam.current_tenant_id())
+```
+
+A lookup that does not yet know its tenant is refused by the policy, and the
+platform holds **zero** `SECURITY DEFINER` routines by CI-asserted invariant, so
+there is nothing to sidestep it with. The database structurally cannot resolve a
+tenant before a tenant is known.
+
+**What can.** The identity provider, and only it. Two properties make the
+resolution sound rather than convenient:
+
+- `app_metadata.tenant_id` is written by the service role at invitation and is
+  **not editable by the end user** (ADR-019 §3).
+- `uq_user_accounts_provider_identity_active` is unique on
+  `(identity_provider, provider_subject)` with **no tenant in the key**, so a
+  verified subject resolves to exactly one account, and therefore one tenant.
+
+Measured against the live database before the design was chosen, not after:
+
+```
+accounts 5 · auth_users 5 · with_tenant 5 · mismatched 0
+duplicate provider subjects 0 · duplicate addresses (global) 0
+```
+
+`tenantId` is now **optional**. Supplying it asserts an expectation that is
+cross-checked against the binding and refused on disagreement, so a caller can
+never steer a verified identity at another tenant; omitting it is the normal
+case. Existing callers keep working unchanged.
+
+Verified against the real provider through the running API, not only the double:
+
+```
+email + password ONLY          200  tenant=c0000000-0000-4000-8000-00000000000a
+correct tenantId supplied      200  tenant=c0000000-0000-4000-8000-00000000000a
+WRONG tenantId supplied        401  Authentication required
+wrong password, no tenantId    401  Authentication required
+unknown address, no tenantId   401  Authentication required
+```
+
+---
+
+## P1-26-F-067 — resolving the tenant quietly reintroduced the oracle the file forbids
+
+**Severity:** Medium · **Status:** Fixed · **Area:**
+`apps/api/src/modules/iam/application/authentication-service.ts`
+
+Found by reading the test logs of the fix for `F-068`, not by a failing
+assertion — every test was green.
+
+The first implementation answered early when no tenant could be resolved:
+
+```
+unknown address, no tenantId   → unresolved-tenant   (before any transaction)
+wrong password, no tenantId    → provider:invalid-credentials
+                                 (directory + transaction + audit write)
+```
+
+Both answer the caller identically. They do **not** cost the same. An unknown
+address skipped the transaction entirely, which is precisely the short-circuit
+rule 2 in that file's own header exists to forbid — "short-circuiting on a
+missing account would make *this address is unknown here* measurably faster than
+*this password is wrong*" — reintroduced one layer above where the rule was
+written, by the change that was supposed to respect it.
+
+Fixed by removing the early return. An unresolvable attempt now runs the same
+transaction against a sentinel tenant that no row holds, is denied as
+`no-account`, and reaches the same code path as every other failure. The
+operator-facing distinction survives in the log as `no-account:unresolved-tenant`;
+the caller sees one answer.
+
+The sentinel's absence from `org.tenants` is asserted by a test rather than
+assumed, because "obviously nobody uses that UUID" is exactly the kind of
+assumption that stops being true without anyone noticing.
+
+---
+
+## P1-26-F-066 — the login endpoint's enumeration defence is the throttle, not the clock
+
+**Severity:** Low · **Status:** Accepted (recorded; not RootLco's to fix) ·
+**Area:** identity provider (GoTrue), `iam.auth-login`
+
+While verifying `F-067` I measured whether the remaining latency gap was mine.
+It is not — it is the provider's, and it is much larger than anything RootLco
+adds. Eight samples per cell, every attempt with a wrong password:
+
+```
+GoTrue direct  — known address     min 126  median 148  max 222  ms
+GoTrue direct  — unknown address   min  19  median  19  max  22  ms
+```
+
+A **7.8×** difference, before RootLco executes a single line. GoTrue verifies a
+bcrypt hash when the address exists and returns immediately when it does not.
+
+This qualifies a claim the codebase makes about itself. Rule 2 in
+`authentication-service.ts` says the provider is always asked so that failure
+latency does not depend on whether the address is known. RootLco does always ask
+— but the provider short-circuits *internally*, so the property the rule is
+reaching for was never actually delivered, before this phase or after it.
+
+Stated plainly: the endpoint's resistance to address enumeration rests on the
+`auth-adjacent` rate limit, not on uniform latency. That defence is real and was
+observed working during this measurement — the probe was cut off with `429`
+after a handful of attempts, which is why the RootLco-side cells are absent
+above. A timing attack that is throttled after a few tries is not a practical
+oracle.
+
+Not fixed here: closing it means dummy-hashing unknown addresses inside GoTrue,
+which is upstream of this codebase. Recorded so the next person reading rule 2
+does not mistake an aspiration for a guarantee.
+
+---
+
 ## P1-26-F-065 — the running application's brand colour came from a test, not from the source
 
 **Severity:** High · **Status:** Fixed (artifact); **guard Open** · **Area:**
@@ -1879,6 +2018,28 @@ an integration observation for the owning phase, re-measured at the P1-26
 candidate SHA, and reported with its actual result rather than the convenient
 one. Hosted CI runs the tiers as separate jobs, which is the configuration under
 which the suite passes.
+
+**Second observation — the sibling tier, during the login-contract remediation.**
+The **backend** tier reported **1761 / 1763**, failing two cases in
+`tests/backend/outbox-worker.test.ts`:
+
+```
+never hands the same row to two concurrently claiming workers
+becomes claimable again once the lease expires
+```
+
+A different file, in a different tier, from the one above — but the same subject
+(outbox claim exclusivity under concurrency) and the same behaviour. Measured
+afterwards: the file passes **8 / 8** in isolation, and an immediate re-run of the
+whole tier passed **1763 / 1763** with no change to any file in between.
+
+That non-determinism is what rules the login-contract change out as the cause: a
+defect introduced by a code change does not disappear when the same code is run
+again. What it rules *in* is that this is not one test's bug — two independent
+outbox tests, in two tiers, now show load-dependent claim behaviour that nobody
+has explained. The disposition is unchanged and the observation is recorded
+rather than smoothed over, because a second sighting is evidence and dropping it
+would leave the next person to find it for the third time.
 
 ---
 

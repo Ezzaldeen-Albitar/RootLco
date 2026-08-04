@@ -1,8 +1,17 @@
 # Email-only sign-in — contract specification and integration finding
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
-**Status:** SPECIFIED, NOT IMPLEMENTED. Blocks the Owner-acceptance checklist
-item "the Login screen does not ask for a Workspace UUID".
+**Status:** **IMPLEMENTED (Backend).** The contract change described below is
+merged; `tenantId` is optional and the tenant is resolved server-side. Recorded
+as `P1-26-F-068`, with `P1-26-F-067` and `P1-26-F-066` found while proving it.
+
+Sections 1–3 are retained as written, as the specification the change was built
+against. Section 7 records what was actually built and how it was verified —
+including where the built thing differs from what section 3 proposed.
+
+**Still not delivered:** the multi-company selector of section 4. That remains a
+Database change, for the reason given there, and is not made possible by this
+one.
 
 ---
 
@@ -153,3 +162,78 @@ Backend change is merged:
    publishes them.
 
 None of this is speculative UI: each line has a Backend fact behind it.
+
+## 7. What was actually built, and where it differs from section 3
+
+Merged on the Backend remediation branch, under the `backend-login-contract`
+ownership profile. `apps/web`, `supabase/` and every migration are forbidden by
+that profile and unchanged by the branch.
+
+### The resolution, and why it is sound
+
+The tenant comes from the identity provider, because nothing else can supply it:
+
+```
+sel_user_accounts_tenant  SELECT  {app_readonly,app_runtime}
+  USING (tenant_id = iam.current_tenant_id())
+```
+
+A lookup that does not yet know its tenant is refused by that policy, and there
+are zero `SECURITY DEFINER` routines to sidestep it. The provider is therefore
+RootLco's only tenant-agnostic directory — not a preference, the only option.
+
+Two properties make it trustworthy rather than merely convenient:
+`app_metadata.tenant_id` is service-role-only and not editable by the end user
+(ADR-019 §3), and `uq_user_accounts_provider_identity_active` is unique on
+`(identity_provider, provider_subject)` with **no tenant in the key**, so a
+verified subject resolves to exactly one account and therefore one tenant.
+
+### Three things section 3 did not anticipate
+
+**1. Dropping `tenantId` would have silently disabled failure auditing.** When
+the provider refuses a password there is no session, so there is no binding, so
+there is no tenant, so there is no context — and `iam.login_audit` cannot be
+written. Wrong-password attempts would have stopped being recorded, taking the
+security-event threshold with them, with every test still green.
+
+Fixed by adding a **twelfth provider capability**, `findByEmail`, reached only on
+the failure path. It is used solely to attribute an attempt for audit; its result
+never reaches the caller, and a directory outage is swallowed because the verdict
+is already failure. Section 3 listed "audit event" as a deliverable without
+noticing it was the hard part.
+
+**2. Section 3's ordering requirement was not satisfiable as written.** It says
+account state "must stay enforced ahead of any tenant resolution". It cannot be:
+the account cannot be read until a tenant scopes the read. The invariant that
+actually matters — that `invited | locked | archived` are enforced and are
+indistinguishable from a wrong password — holds, and is covered by test. The
+sequencing clause was wrong and is corrected here rather than quietly ignored.
+
+**3. There was no OpenAPI change to make.** `docs/api/openapi.v1.json` records
+operations from the operation registry — id, summary, security, responses,
+`x-*` extensions — and carries no request-body schema for `iam.auth-login`. The
+"OpenAPI entry" deliverable had nothing to write, which is a fact about the
+artifact, not an omission.
+
+### Verified
+
+Against the real Supabase provider through the running API:
+
+```
+email + password ONLY          200  tenant=c0000000-0000-4000-8000-00000000000a
+correct tenantId supplied      200  tenant=c0000000-0000-4000-8000-00000000000a
+WRONG tenantId supplied        401  Authentication required
+wrong password, no tenantId    401  Authentication required
+unknown address, no tenantId   401  Authentication required
+malformed tenantId             422  body.tenantId:invalid_format
+```
+
+Against the deterministic double, covering what the live probe cannot reach
+safely: cross-tenant resolution, the tenantless failure-audit row, an identity
+with no binding, and message uniformity across tenant-bearing and tenantless
+failures.
+
+Two findings came out of proving it: `P1-26-F-067` (the first implementation
+reintroduced the short-circuit oracle its own file header forbids) and
+`P1-26-F-066` (the endpoint's enumeration defence is the rate limit, not latency
+uniformity — the provider's own sign-in is 7.8× faster for an unknown address).

@@ -288,6 +288,14 @@ export class FakeIdentityProvider implements IdentityProvider {
     return record ? this.toIdentity(record) : null;
   }
 
+  async findByEmail(email: string): Promise<ProviderIdentity | null> {
+    this.assertUp();
+    // `byEmail` already lower-cases, which matches the `citext` semantics of
+    // `iam.user_accounts.email` and GoTrue's own case-insensitive addresses.
+    const record = this.byEmail(email);
+    return record ? this.toIdentity(record) : null;
+  }
+
   async confirmIdentity(subject: string): Promise<ProviderIdentity> {
     this.assertUp();
     const record = this.identities.get(subject);
