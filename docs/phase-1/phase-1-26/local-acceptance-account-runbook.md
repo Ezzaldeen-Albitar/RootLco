@@ -85,6 +85,104 @@ scoped to the host string that set it.
 both tiers are now started with `--hostname localhost` it is not served either.
 That is deliberate: the wrong origin fails to connect instead of half-working.
 
+## 3b. The local stack is single-instance
+
+`npm run dev:all` may be run as many times as you like. The first run starts the
+stack; every later run finds it, proves it belongs to this checkout, repairs the
+state file and prints:
+
+```
+RootLco local stack is already running.
+```
+
+and exits **0**. **"Already running" is a success, not an error.** Nothing is
+started, no credential is touched, and no fixture is reset.
+
+| Command                              | Does                                                  |
+| ------------------------------------ | ----------------------------------------------------- |
+| `npm run dev`                        | the same as `dev:all` — it used to start only the API |
+| `npm run dev:all`                    | start, or adopt what is already running               |
+| `npm run dev:status`                 | verify and report; changes nothing                    |
+| `npm run dev:stop`                   | stop only verified RootLco processes                  |
+| `npm run dev:api` / `dev:web`        | one tier, on its pinned port                          |
+| `npm run dev:verify-single-instance` | prove the whole contract on this machine              |
+
+### How it decides
+
+Before anything is started the launcher asks the operating system which process
+holds 3000 and 3100, then walks each listener's **parent chain** looking for a
+`next dev apps/<tier>` belonging to this checkout. It reaches one of four
+verdicts — adopt, start, repair the partial case, or refuse — and the adopt path
+returns before the code that spawns anything.
+
+It walks the parent chain because the process holding the port is not the one
+that was started:
+
+```
+pid 24628  node .../next/dist/server/lib/start-server.js     <- holds :3000
+  parent 6120   node .../bin/next dev apps/api --hostname localhost --port 3000
+    parent 13284  node scripts/dev/start-local.mjs
+```
+
+The listener's own command line names neither the workspace nor the repository.
+
+### Why it never falls back to 3001 or 3101
+
+Both workspace commands pin `--hostname localhost --port <port>`, and the
+launcher refuses a conflict rather than moving. A RootLco server on 3001 is not
+a working stack, it is a second stack the Owner cannot tell apart from the first.
+
+### If a port belongs to something else
+
+The launcher prints the port, the owning pid, the process name, its command line
+and the addresses it holds, then exits non-zero. **It never kills a process it
+cannot prove it started.** Inspect it yourself:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 3000,3100 |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" |
+  Select-Object ProcessId, Name, CommandLine
+```
+
+### IPv4, IPv6 and why a "free" port was not free
+
+A hostname binds one address family. On Windows `localhost` resolves to `::1`
+first, so the stack listens on `[::1]:3000` and `[::1]:3100`.
+
+The previous launcher decided a port was free by binding it — and a bind probe
+only conflicts with a listener holding the **same** address. Measured against a
+live stack on `::1`: binding `127.0.0.1`, `0.0.0.0` and `::` all succeeded, and
+only binding `localhost` failed. So the check passed, Next spawned, Next binds
+exclusively and died `EADDRINUSE`, and the readiness probe then got its 200 from
+the server that was already there (`P1-26-F-063`). Ports are now identified by
+listener, never by bind.
+
+### Every route 404s in development, but the server is clearly up
+
+A damaged `.next-dev` — seen twice: once as a corrupt `prerender-manifest.json`
+and once as `/en/login` answering 404 on every request while the API was fine.
+It is a cache, so deleting it costs a recompile and nothing else:
+
+```powershell
+npm run dev:stop
+Remove-Item apps/web/.next-dev -Recurse -Force
+npm run dev:all
+```
+
+The launcher clears a stale **production** build out of the way automatically;
+it does not delete a development cache, because a healthy one is expensive to
+rebuild and deleting it on a hunch would be the wrong default.
+
+### Stale state and stale locks
+
+`.local/dev-state.json` describes a stack; `.local/dev-launch.lock` describes a
+launcher. Either can go stale independently, so neither is taken as proof of the
+other. A lock whose launcher is dead is reclaimed automatically; a lock naming a
+different checkout is never adopted. `dev:status` reports both, and a state file
+that disagrees with the live processes is reported as disagreeing rather than
+believed.
+
 ### Troubleshooting
 
 **Every table sits loading, or sign-in redirects back to the login page.** You

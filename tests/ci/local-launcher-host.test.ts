@@ -108,14 +108,19 @@ describe('the local launcher advertises an origin Next will serve', () => {
     expect(Object.keys(devConfig)).not.toContain('PROBE_HOST');
   });
 
-  it('starts both tiers on an explicit hostname rather than a default bind', () => {
+  it('starts every tier on an explicit hostname rather than a default bind', () => {
     // Next 16 defaults to 0.0.0.0. A default bind answers on every loopback
     // address at once, which is exactly what let the configured host and the
     // advertised host disagree without anything failing.
+    //
+    // Both tiers used to spell their argv out separately, so this counted two
+    // occurrences. `P1-26-F-063` gave them one shared `tierArgs`, so the right
+    // assertion is that the single builder pins the host and that both tiers go
+    // through it.
     const launcher = code('scripts/dev/start-local.mjs');
-    const hostnameFlags = launcher.match(/'--hostname'/g) ?? [];
-    expect(hostnameFlags.length, 'both the API and the web tier must pin a hostname').toBe(2);
     expect(launcher).toMatch(/'--hostname',\s*DEV_HOST/);
+    expect(launcher).toMatch(/export function tierArgs/);
+    expect(launcher).toMatch(/spawn\(process\.execPath,\s*tierArgs\(tier\)/);
   });
 
   it('agrees with the API origin the web tier defaults to', () => {
@@ -132,10 +137,11 @@ describe('the local launcher advertises an origin Next will serve', () => {
         /WEB_ORIGIN|API_ORIGIN/
       );
     }
-    // The launcher must name the login route the Owner is told to open.
+    // The launcher must name the login route the Owner is told to open. Built
+    // from WEB_ORIGIN now rather than written as a bare literal.
     const launcher = code('scripts/dev/start-local.mjs');
-    expect(launcher).toContain("'/en/login'");
-    expect(launcher).toContain("'/ar/login'");
+    expect(launcher).toMatch(/\/en\/login/);
+    expect(launcher).toMatch(/\/ar\/login/);
   });
 
   it('points the browser suite at the canonical host', () => {
@@ -244,19 +250,24 @@ describe('development and production build directories are isolated', () => {
     expect(source).toMatch(/ROOTLCO_DIST_DIR:\s*DEV_DIST_DIR/);
   });
 
-  it('clears a stale production build only after the ports are proven free', () => {
+  it('clears a stale production build only for a tier it is about to start', () => {
     // Deleting a build directory a running server is reading would be a worse
-    // bug than the one being fixed. `assertPortFree` returning is the proof that
-    // nothing is listening, so the clear must come after both calls.
-    const source = read('scripts/dev/start-local.mjs');
-    const lastAssert = source.lastIndexOf('await assertPortFree');
-    const clear = source.indexOf('clearStaleProductionBuild(');
-    const callSite = source.indexOf("clearStaleProductionBuild('api')");
-    expect(lastAssert, 'the launcher must assert both ports are free').toBeGreaterThan(0);
-    expect(clear, 'the launcher must be able to clear a stale build').toBeGreaterThan(0);
-    expect(callSite, 'the API build directory must actually be checked').toBeGreaterThan(
-      lastAssert
-    );
+    // bug than the one being fixed.
+    //
+    // The old proof was "after `assertPortFree` returned". That check is gone —
+    // it was the `P1-26-F-063` defect, since a bind probe cannot see a listener
+    // on another address. The stronger guarantee replacing it: the clear happens
+    // inside the loop over the tiers the plan says to START, so a tier that is
+    // being ADOPTED is never touched.
+    const source = code('scripts/dev/start-local.mjs');
+    const decision = source.indexOf('planLocalStack(survey)');
+    const loop = source.indexOf('for (const tier of toStart)');
+    const clear = source.indexOf('clearStaleProductionBuild(tier)');
+    expect(decision, 'the launcher must decide before it clears anything').toBeGreaterThan(0);
+    expect(loop, 'the clear must be driven by the tiers being started').toBeGreaterThan(decision);
+    expect(clear, 'the clear must happen inside that loop').toBeGreaterThan(loop);
+    // And it must never be reachable for an adopted stack.
+    expect(source.indexOf("=== 'ADOPT_EXISTING'")).toBeLessThan(clear);
   });
 
   it('discriminates a production build by a marker next dev never writes', () => {

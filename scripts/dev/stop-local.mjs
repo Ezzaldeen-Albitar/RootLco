@@ -1,128 +1,180 @@
 #!/usr/bin/env node
 /**
- * Stops the processes the RootLco launcher started.
+ * Stops the RootLco local stack — and nothing else.
  *
- * Never a name-based kill: the owner's editor tooling is also node.exe, and
- * `taskkill /IM node.exe` would take it down too. Only PIDs this launcher
- * recorded, and only after checking they are still alive.
+ * Never a name-based kill: the owner's editor tooling is also `node.exe`, and
+ * `taskkill /IM node.exe` would take it down too.
  *
- * ## Why it verifies rather than assuming
+ * ## Why it no longer trusts the state file alone
  *
- * The first version printed "stopped" whenever `process.kill` did not throw,
- * and cleared the state file regardless. That produced a real failure: a
- * launcher parent died while its Next dev children kept the ports, so the
- * recorded PIDs were gone, `dev:stop` reported success, and the servers went on
- * serving. A stop command that cannot tell "stopped" from "was never mine to
- * stop" is the same defect class as a check that measures nothing.
+ * The previous version killed the pids the state file recorded. Two ways that
+ * is wrong, both seen on this machine: the recorded pid is the `next dev`
+ * parent while the LISTENER is its child, so killing the parent could leave the
+ * port held; and a launcher that died leaves a state file describing pids that
+ * may since have been reused by something unrelated.
  *
- * So it now reports one of three honest outcomes per process — stopped, already
- * gone, or still alive after the signal — and if a recorded port is still
- * answering at the end it says so and exits non-zero, naming the port rather
- * than pretending the stack is down.
+ * So the ports are interrogated, ownership is proved through the process tree,
+ * and the whole owned chain is stopped — then the ports are re-checked. A
+ * `process.kill` that does not throw is not evidence; a free port is.
  */
-import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { API_ORIGIN, API_PORT, STATE_FILE, WEB_ORIGIN, WEB_PORT } from './dev-config.mjs';
+import { rmSync } from 'node:fs';
+import { API_PORT, LOCK_FILE, STATE_FILE, WEB_PORT, repoRoot } from './dev-config.mjs';
+import {
+  classifyPort,
+  listenersOnPorts,
+  processTable,
+  DiscoveryFailure,
+} from './process-discovery.mjs';
+import { pidAlive } from './launcher-lock.mjs';
+import { readState } from './runtime-state.mjs';
 
-/** @param {number} pid */
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+const root = repoRoot();
+
+function survey() {
+  const listeners = listenersOnPorts([API_PORT, WEB_PORT]);
+  const table = processTable();
+  return {
+    listeners,
+    table,
+    api: classifyPort({ port: API_PORT, listeners, table, repoRootPath: root, workspace: 'api' }),
+    web: classifyPort({ port: WEB_PORT, listeners, table, repoRootPath: root, workspace: 'web' }),
+  };
+}
+
+let current;
+try {
+  current = survey();
+} catch (error) {
+  if (error instanceof DiscoveryFailure) {
+    console.error('Cannot determine which processes hold the canonical ports:');
+    console.error(`  ${error.message}`);
+    console.error('Refusing to kill anything on a guess.');
+    process.exit(2);
+  }
+  throw error;
+}
+
+const refusals = [];
+const targets = [];
+
+for (const [tier, port] of [
+  ['api', API_PORT],
+  ['web', WEB_PORT],
+]) {
+  const info = current[tier];
+  if (info.state === 'free') {
+    console.log(`${tier}: port ${port} is already free.`);
+    continue;
+  }
+  if (info.state === 'unrelated') {
+    refusals.push({ tier, port, info });
+    continue;
+  }
+  // The listener AND the `next dev` parent, plus the launcher that owns both if
+  // it is still alive — stopping the parent alone can orphan the listener.
+  for (const pid of [info.pid, info.ownerPid]) {
+    if (Number.isInteger(pid) && pid > 0 && !targets.some((t) => t.pid === pid)) {
+      targets.push({ pid, tier });
+    }
   }
 }
 
-/**
- * Probes a CANONICAL port — one of the two compile-time constants in
- * `dev-config.mjs`, never a value read from the state file.
- *
- * `js/file-access-to-http` (CodeQL, Medium) caught the first version doing the
- * latter: `state.apiPort` came out of `dev-state.json` and flowed straight into
- * a `fetch` URL, so a file this script does not own decided where it sent a
- * request. The port authority already exists as a constant; reading it from a
- * file was both the taint and the weaker design.
- *
- * @param {typeof API_PORT | typeof WEB_PORT} port
- */
-async function answering(port) {
-  // The canonical origins, not a hand-written literal. This file was the one
-  // launcher script that did not consume the host authority, and once the
-  // servers bound by name a probe on the literal would have been refused —
-  // reporting the stack cleanly stopped while it was still serving, which is
-  // precisely the false "stopped" this function was rewritten to prevent.
-  const url = port === API_PORT ? `${API_ORIGIN}/` : `${WEB_ORIGIN}/`;
-  try {
-    await fetch(url, { signal: AbortSignal.timeout(2_000) });
-    return true;
-  } catch {
-    return false;
-  }
+// The launcher process itself, but only when the state file names it AND it is
+// still alive AND it belongs to this checkout. Otherwise it respawns children
+// the moment they die.
+const { state } = readState(STATE_FILE);
+if (state?.launcherPid && state.checkout === root && pidAlive(state.launcherPid)) {
+  targets.unshift({ pid: state.launcherPid, tier: 'launcher' });
 }
 
-if (!existsSync(STATE_FILE)) {
-  console.log('No launcher state file — nothing this script is allowed to stop.');
-  process.exit(0);
-}
-
-const state = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
-if (state.launcher !== 'rootlco-dev') {
-  console.error('State file was not written by the RootLco launcher; refusing to act on it.');
-  process.exit(1);
-}
-
-// PIDs come from the state file — they are the whole point of it. PORTS come
-// from the configuration constants, so nothing this script sends a request to
-// is decided by file contents.
-const targets = [
-  ['api', state.apiPid, API_PORT],
-  ['web', state.webPid, WEB_PORT],
-];
-
-for (const [name, , port] of targets) {
-  const recorded = name === 'api' ? state.apiPort : state.webPort;
-  if (recorded !== undefined && recorded !== port) {
+if (refusals.length > 0) {
+  for (const { tier, port, info } of refusals) {
+    console.error('');
+    console.error(`REFUSING to stop port ${port} (${tier}).`);
+    console.error(`  owning pid   ${info.pid}`);
+    console.error(`  process      ${info.name}`);
+    console.error(`  command line ${info.command}`);
+    console.error(`  addresses    ${info.addresses.join(', ')}`);
     console.error(
-      `state file records ${name} on port ${recorded}, but the configured port is ${port}. ` +
-        'Probing the configured port; the state file may be from an older launcher.'
+      `  This is not a RootLco server from ${root}, so it is not this script's to kill.`
     );
   }
+  console.error('');
 }
 
-for (const [name, pid] of targets) {
-  if (!pid) continue;
-  if (!alive(pid)) {
-    console.log(`${name} (pid ${pid}) was already gone`);
+for (const { pid, tier } of targets) {
+  if (!pidAlive(pid)) {
+    console.log(`${tier}: pid ${pid} was already gone.`);
     continue;
   }
   try {
     process.kill(pid);
-  } catch {
-    // It exited between the check and the signal — the next probe settles it.
+    console.log(`${tier}: signalled pid ${pid}.`);
+  } catch (error) {
+    console.log(`${tier}: could not signal pid ${pid} (${error.code ?? error.message}).`);
   }
-  await delay(400);
-  console.log(alive(pid) ? `${name} (pid ${pid}) did NOT stop` : `stopped ${name} (pid ${pid})`);
 }
 
-// The ports are the truth. A recorded PID being gone does not mean the port is
-// free — that is exactly the case this check exists for.
-const stillUp = [];
-for (const [name, , port] of targets) {
-  if (port && (await answering(port))) stillUp.push(`${name} on ${port}`);
+// A signal is a request. Proof is the port.
+//
+// Only the LISTENERS are re-read in the loop. Reading the whole process table
+// each time — which the first version did, once per listener per attempt —
+// spawns a PowerShell process per iteration and turns a two-second wait into
+// minutes.
+let free = false;
+for (let attempt = 0; attempt < 60; attempt += 1) {
+  await delay(250);
+  let remaining;
+  try {
+    remaining = listenersOnPorts([API_PORT, WEB_PORT]);
+  } catch {
+    break;
+  }
+  if (remaining.length === 0) {
+    free = true;
+    break;
+  }
+  // Something still holds a port. Only now is it worth asking who.
+  let table;
+  try {
+    table = processTable();
+  } catch {
+    break;
+  }
+  const stillOurs = remaining.filter((listener) => {
+    const tier = listener.port === API_PORT ? 'api' : 'web';
+    return (
+      classifyPort({
+        port: listener.port,
+        listeners: [listener],
+        table,
+        repoRootPath: root,
+        workspace: tier,
+      }).state === 'owned'
+    );
+  });
+  if (stillOurs.length === 0) {
+    free = true;
+    break;
+  }
 }
 
-if (stillUp.length > 0) {
+rmSync(LOCK_FILE, { force: true });
+
+if (!free) {
   console.error('');
-  console.error(`Still answering after stop: ${stillUp.join(', ')}.`);
-  console.error(
-    'These are NOT processes this launcher recorded, so it will not kill them — it has no way ' +
-      'to prove they are yours. Find the owner of the port and stop it deliberately:'
-  );
-  for (const [, , port] of targets) if (port) console.error(`  netstat -ano | findstr :${port}`);
-  console.error('The launcher state file has been left in place so the PIDs remain visible.');
+  console.error('A RootLco listener is still holding a canonical port after being signalled.');
+  console.error('  The launcher state file has been left in place so the pids remain visible.');
+  console.error('  Inspect it: npm run dev:status -- --diagnostic');
   process.exit(1);
 }
 
 rmSync(STATE_FILE, { force: true });
-console.log('launcher state cleared');
+console.log('');
+console.log(
+  refusals.length > 0
+    ? 'RootLco processes stopped. The unrelated port owner above was left running.'
+    : 'RootLco local stack stopped; ports 3000 and 3100 are free.'
+);
+process.exit(refusals.length > 0 ? 1 : 0);

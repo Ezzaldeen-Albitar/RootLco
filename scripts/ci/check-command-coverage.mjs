@@ -104,6 +104,12 @@ export const REGISTER = Object.freeze([
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
+  {
+    name: 'dev:verify-single-instance',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'starts and stops real servers to prove two dev:all runs cannot duplicate the stack',
+  },
   // The Owner-acceptance tooling is `interactive` for the same reason `dev:*`
   // is: it needs a running local Supabase and refuses every other target, so a
   // hosted runner could not execute it even if a workflow asked. Requiring it

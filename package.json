@@ -19,9 +19,9 @@
     "build:api": "npm run build --workspace @rootlco/api",
     "build:web": "npm run build --workspace @rootlco/web",
     "db:apply-migrations": "node scripts/db/apply-migrations.mjs",
-    "dev": "npm run dev --workspace @rootlco/api",
+    "dev": "node scripts/dev/start-local.mjs",
     "dev:all": "node scripts/dev/start-local.mjs",
-    "dev:api": "npm run dev --workspace @rootlco/api",
+    "dev:api": "npm run dev --workspace @rootlco/api -- --hostname localhost --port 3000",
     "dev:container": "npm run dev:container --workspace @rootlco/api",
     "dev:down": "npm run supabase:stop && docker compose down",
     "dev:logs": "docker compose logs -f web",
@@ -29,7 +29,7 @@
     "dev:status": "node scripts/dev/status-local.mjs",
     "dev:stop": "node scripts/dev/stop-local.mjs",
     "dev:up": "docker compose up -d --build && npm run supabase:start",
-    "dev:web": "npm run dev --workspace @rootlco/web",
+    "dev:web": "npm run dev --workspace @rootlco/web -- --hostname localhost --port 3100",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "format:check:all": "npm run format:check && npm run format:check:api && npm run format:check:web",
@@ -116,7 +116,8 @@
     "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:p1-26-frontend",
     "verify:repository": "npm run typecheck && npm run lint && npm run format:check && npm run test:unit && npm run security:all",
     "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-brand && npm run validate:web-boundary && npm run build:web && npm run test:web-e2e",
-    "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all"
+    "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all",
+    "dev:verify-single-instance": "node scripts/dev/verify-single-instance.mjs"
   },
   "comment:overrides": "Security overrides. Each entry forces a PATCHED version of a transitive dependency whose direct parent still pins a vulnerable range, so `npm audit` reports zero HIGH/CRITICAL rather than a permanently ignored baseline. Remove an entry only when the parent's own pin has caught up. See docs/engineering/ci-automation/security-model.md.",
   "overrides": {

@@ -15,6 +15,16 @@ export const WEB_PORT = 3100;
 export const API_READY_PATH = '/api/v1/health/ready';
 
 /**
+ * The web route used to decide "is the web tier serving?".
+ *
+ * `/en` is a redirect for an anonymous caller, and a redirect is a perfectly
+ * good answer from a server that is up — but it is also what a half-configured
+ * proxy returns, so it is a weak witness. `/en/login` renders a real page for
+ * anyone and returns 200.
+ */
+export const WEB_READY_PATH = '/en/login';
+
+/**
  * The host the BROWSER must use — and it must be `localhost`, not `127.0.0.1`
  * (`P1-26-F-048`).
  *
@@ -129,3 +139,13 @@ export function repoRoot() {
 }
 
 export const STATE_FILE = resolve(repoRoot(), '.local', 'dev-state.json');
+
+/**
+ * The single-instance lock (`P1-26-F-063`).
+ *
+ * Beside the state file and equally ignored, but a different thing: the state
+ * file describes a stack, the lock describes a LAUNCHER. One can be valid while
+ * the other is stale, which is why they are separate and why neither is taken
+ * as proof of the other.
+ */
+export const LOCK_FILE = resolve(repoRoot(), '.local', 'dev-launch.lock');
