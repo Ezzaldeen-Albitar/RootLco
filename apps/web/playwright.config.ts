@@ -1,5 +1,5 @@
-import { resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_BASE_URL, E2E_HOST, E2E_PORT, E2E_STORAGE_STATE } from './tests/e2e/origin';
 
 /**
  * Browser smoke for the FOUNDATION only.
@@ -12,8 +12,12 @@ import { defineConfig, devices } from '@playwright/test';
  * Projects cover the viewports the Product Owner named plus both directions,
  * because an RTL layout defect is invisible in an LTR run and vice versa.
  */
-const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3210);
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+// The origin, the port and the captured-session path all come from
+// `tests/e2e/origin.ts`, which `auth.setup.ts` reads too — see that file for
+// why one statement of the origin matters more than it looks.
+const PORT = E2E_PORT;
+const HOST = E2E_HOST;
+const BASE_URL = E2E_BASE_URL;
 
 /**
  * The authenticated tier, added by the P1-26 Owner-acceptance remediation.
@@ -37,8 +41,16 @@ const AUTH_DIR = /authenticated[\\/]/;
  * `.gitignore` anchors that directory with a leading slash, so `/.local/`
  * ignores only the root one — an `apps/web/.local/` would be tracked, and what
  * it would carry is a live session cookie.
+ *
+ * The filename carries the ORIGIN because a cookie jar belongs to one. Cookies
+ * are scoped by host string, so a jar captured against `127.0.0.1` presents
+ * nothing at all to `localhost`: the authenticated projects would start
+ * "signed in", land on `/en/login`, and fail as though authentication had
+ * regressed. Naming the file after the origin means changing the origin cannot
+ * silently reuse a jar belonging to a different one — the state is simply
+ * absent and `auth.setup` captures a fresh one.
  */
-const STORAGE_STATE = resolve(process.cwd(), '..', '..', '.local', 'e2e', 'owner-state.json');
+const STORAGE_STATE = E2E_STORAGE_STATE;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -162,7 +174,7 @@ export default defineConfig({
   webServer: {
     // `next start` against a real production build, not `next dev`. A dev server
     // hides the hydration and bundle problems this smoke exists to catch.
-    command: `npx next start -p ${PORT}`,
+    command: `npx next start --hostname ${HOST} -p ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

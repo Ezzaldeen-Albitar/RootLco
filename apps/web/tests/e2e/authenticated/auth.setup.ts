@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect, test as setup } from '@playwright/test';
+import { E2E_STORAGE_STATE, REPO_ROOT } from '../origin';
 
 /**
  * Signs in through the real user interface and keeps the session.
@@ -16,9 +17,9 @@ import { expect, test as setup } from '@playwright/test';
  * remaining specs able to start already signed in.
  */
 
-// Playwright runs with the config directory as cwd, which is `apps/web`.
-const REPO_ROOT = resolve(process.cwd(), '..', '..');
-const STATE = join(REPO_ROOT, '.local', 'e2e', 'owner-state.json');
+// The path this writes and the path the projects read must be the same string.
+// It is stated once, in `tests/e2e/origin.ts`, and imported by both.
+const STATE = E2E_STORAGE_STATE;
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
 
 /**

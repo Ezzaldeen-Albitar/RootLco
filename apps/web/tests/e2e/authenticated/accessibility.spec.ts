@@ -169,39 +169,17 @@ test.describe('authenticated accessibility', () => {
   });
 
   /**
-   * P1-26-F-059 — the loading state announced the wrong language.
+   * `P1-26-F-059`'s browser assertion used to live here, and it was a flake.
    *
-   * The route-group `loading.tsx` is passed no props by Next, so it read
-   * DEFAULT_LOCALE, which is Arabic. Every English navigation announced
-   * "جارٍ التحميل" to a screen reader. axe cannot see this: the markup is
-   * valid, the contrast is fine, and `sr-only` text carries no language of its
-   * own to disagree with — the only witness is the word itself.
+   * It held `**​/api/**` open to keep the skeleton on screen long enough to read
+   * the announcement. But this application fetches on the SERVER — the browser
+   * issues no API request at all — so the delay matched nothing and the loading
+   * fallback appeared only when the server happened to be cold. It passed alone
+   * and failed inside the full suite, which is the signature of a test whose
+   * subject arrives by luck.
    *
-   * The skeleton resolves in well under a second, so the API response is held
-   * open to keep it on screen long enough to read. Without that delay this test
-   * would pass by never observing the fallback at all.
+   * The assertion now lives in `tests/loading-boundary.dom.test.tsx`, which
+   * renders the boundary directly for each locale and has no timing at all. The
+   * component was the thing that was wrong; that is the thing to render.
    */
-  for (const [locale, expected, wrong] of [
-    ['en', 'Loading', 'جارٍ التحميل'],
-    ['ar', 'جارٍ التحميل', 'Loading'],
-  ] as const) {
-    test(`the ${locale} loading state announces itself in ${locale}`, async ({ page }) => {
-      await page.route('**/api/**', async (route) => {
-        await new Promise((r) => setTimeout(r, 4000));
-        await route.continue();
-      });
-
-      await page.goto(`/${locale}/administration/users`, { waitUntil: 'commit' });
-
-      const status = page.locator('[role="status"] .sr-only').first();
-      await status.waitFor({ state: 'attached', timeout: 15000 });
-      const announced = ((await status.textContent()) ?? '').trim();
-
-      expect(
-        announced,
-        `the ${locale} interface announced its loading state as "${announced}"`
-      ).toBe(expected);
-      expect(announced).not.toBe(wrong);
-    });
-  }
 });

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { E2E_API_ORIGIN } from '../origin';
 
 /**
  * Cross-tenant isolation, end to end, with a real session.
@@ -23,7 +24,8 @@ const BRANCH_B = 'c1100000-0000-4000-8000-00000000000b';
 const TENANT_B_USER = 'c2000000-0000-4000-8000-00000000000e';
 const TENANT_B_NAME = 'CRM Isolation Tenant B';
 
-const API = process.env.ROOTLCO_API_BASE_URL ?? 'http://127.0.0.1:3000';
+// Stated once, in `tests/e2e/origin.ts`, alongside the browser origin.
+const API = E2E_API_ORIGIN;
 const HANDOFF = join(resolve(process.cwd(), '..', '..'), '.local', 'owner-acceptance-account.json');
 
 /** Signs in as the Tenant A owner and returns a real bearer token. */

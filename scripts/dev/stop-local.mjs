@@ -22,7 +22,7 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { API_PORT, STATE_FILE, WEB_PORT } from './dev-config.mjs';
+import { API_ORIGIN, API_PORT, STATE_FILE, WEB_ORIGIN, WEB_PORT } from './dev-config.mjs';
 
 /** @param {number} pid */
 function alive(pid) {
@@ -47,7 +47,12 @@ function alive(pid) {
  * @param {typeof API_PORT | typeof WEB_PORT} port
  */
 async function answering(port) {
-  const url = port === API_PORT ? `http://127.0.0.1:${API_PORT}/` : `http://127.0.0.1:${WEB_PORT}/`;
+  // The canonical origins, not a hand-written literal. This file was the one
+  // launcher script that did not consume the host authority, and once the
+  // servers bound by name a probe on the literal would have been refused —
+  // reporting the stack cleanly stopped while it was still serving, which is
+  // precisely the false "stopped" this function was rewritten to prevent.
+  const url = port === API_PORT ? `${API_ORIGIN}/` : `${WEB_ORIGIN}/`;
   try {
     await fetch(url, { signal: AbortSignal.timeout(2_000) });
     return true;

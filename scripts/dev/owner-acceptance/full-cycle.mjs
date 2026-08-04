@@ -38,7 +38,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { GuardFailure, assertLocalTarget } from './context.mjs';
-import { API_PORT, API_READY_PATH, PROBE_HOST } from '../dev-config.mjs';
+import { API_ORIGIN, API_PORT, API_READY_PATH, DEV_HOST } from '../dev-config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
@@ -107,7 +107,10 @@ function run(step, command, args, options = {}) {
 
 const npm = (script) => ['run', script];
 
-const apiUrl = `http://${PROBE_HOST}:${API_PORT}${API_READY_PATH}`;
+// The canonical origin, which is also the one this URL is reported at when the
+// API does not answer — an operator reading that message must be shown the
+// address they can actually open.
+const apiUrl = `${API_ORIGIN}${API_READY_PATH}`;
 
 async function apiAnswering() {
   try {
@@ -162,7 +165,18 @@ async function ensureApi() {
   const fd = openSync(log, 'a');
   const child = spawn(
     process.execPath,
-    [`${REPO_ROOT}/node_modules/next/dist/bin/next`, 'dev', 'apps/api', '--port', String(API_PORT)],
+    [
+      `${REPO_ROOT}/node_modules/next/dist/bin/next`,
+      'dev',
+      'apps/api',
+      // Pinned to the same host the readiness probe above uses. A default bind
+      // would answer on every loopback address and hide a disagreement between
+      // the two.
+      '--hostname',
+      DEV_HOST,
+      '--port',
+      String(API_PORT),
+    ],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },

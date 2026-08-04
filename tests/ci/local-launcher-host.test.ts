@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import * as devConfig from '../../scripts/dev/dev-config.mjs';
 import {
-  BROWSER_HOST,
-  PROBE_HOST,
+  API_HOST,
+  API_ORIGIN,
   API_PORT,
+  BROWSER_HOST,
   DEV_DIST_DIR,
+  DEV_HOST,
+  WEB_HOST,
+  WEB_ORIGIN,
   WEB_PORT,
 } from '../../scripts/dev/dev-config.mjs';
 
@@ -36,51 +41,163 @@ import {
 const ROOT = join(__dirname, '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
+/**
+ * Comments are stripped before any forbidden-pattern scan.
+ *
+ * Every file below EXPLAINS the hazard, and the explanation necessarily names
+ * the address being forbidden. A scanner that cannot tell prose from code would
+ * be satisfied only by deleting the reasoning.
+ */
+const code = (rel: string) =>
+  read(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|\s)\/\/.*$/gm, '$1')
+    .replace(/(^|\n)\s*#.*$/gm, '$1');
+
+/**
+ * Everything that is allowed to state a local origin.
+ *
+ * The previous version of this gate scanned two files for one pattern — a
+ * printed `http://127.0.0.1:${WEB_PORT}` in `start-local.mjs` or
+ * `status-local.mjs`. That is why `P1-26-F-062` survived it in five separate
+ * places at once: the launcher's `NEXT_PUBLIC_API_BASE_URL` used the API port,
+ * not the web port; and nothing under `scripts/dev/owner-acceptance/`,
+ * `apps/web/src/lib/`, or the browser configuration was scanned at all.
+ */
+const ACTIVE_ORIGIN_AUTHORITIES = [
+  'scripts/dev/dev-config.mjs',
+  'scripts/dev/start-local.mjs',
+  'scripts/dev/status-local.mjs',
+  'scripts/dev/stop-local.mjs',
+  'scripts/dev/owner-acceptance/full-cycle.mjs',
+  'scripts/dev/owner-acceptance/create-owner-account.mjs',
+  'scripts/dev/owner-acceptance/status-owner-account.mjs',
+  'apps/web/src/lib/env.ts',
+  'apps/web/.env.example',
+  'apps/web/playwright.config.ts',
+  'apps/web/tests/e2e/origin.ts',
+];
+
 describe('the local launcher advertises an origin Next will serve', () => {
-  it('names localhost as the browser host', () => {
-    expect(BROWSER_HOST).toBe('localhost');
+  it('names localhost as the one development host', () => {
+    expect(DEV_HOST).toBe('localhost');
+    // One value, several names. They existed separately once and drifted.
+    expect(API_HOST).toBe(DEV_HOST);
+    expect(WEB_HOST).toBe(DEV_HOST);
+    expect(BROWSER_HOST).toBe(DEV_HOST);
   });
 
-  it('keeps the loopback literal for server-to-server probes only', () => {
-    // Probes are not subject to the origin rule and should not depend on name
-    // resolution, so they stay on the literal.
-    expect(PROBE_HOST).toBe('127.0.0.1');
-    expect(BROWSER_HOST).not.toBe(PROBE_HOST);
-  });
-
-  it('still agrees with the ports the web tier defaults to', () => {
-    // A launcher that advertises the right host on the wrong port is no better.
+  it('publishes the canonical origins the whole repository derives from', () => {
+    expect(API_ORIGIN).toBe('http://localhost:3000');
+    expect(WEB_ORIGIN).toBe('http://localhost:3100');
     expect(API_PORT).toBe(3000);
     expect(WEB_PORT).toBe(3100);
-    expect(read('apps/web/src/lib/env.ts')).toContain(`127.0.0.1:${API_PORT}`);
   });
 
-  it('prints no bare 127.0.0.1 URL for a human to open', () => {
-    // The decisive assertion. A printed `http://127.0.0.1:<web port>` is the
-    // defect itself: it is an instruction to open the broken origin.
+  /**
+   * The constant that had to go.
+   *
+   * `PROBE_HOST = '127.0.0.1'` was defensible while the servers bound
+   * `0.0.0.0`, which answers on every loopback address. Once they are started
+   * with `--hostname localhost` they bind ONE address family — measured as
+   * `::1` on the Owner's machine — and a probe on the literal is refused
+   * outright, so the launcher waits its whole readiness timeout and then
+   * reports a stack that is running perfectly as dead.
+   */
+  it('no longer offers a second host constant to disagree with', () => {
+    expect(Object.keys(devConfig)).not.toContain('PROBE_HOST');
+  });
+
+  it('starts both tiers on an explicit hostname rather than a default bind', () => {
+    // Next 16 defaults to 0.0.0.0. A default bind answers on every loopback
+    // address at once, which is exactly what let the configured host and the
+    // advertised host disagree without anything failing.
+    const launcher = code('scripts/dev/start-local.mjs');
+    const hostnameFlags = launcher.match(/'--hostname'/g) ?? [];
+    expect(hostnameFlags.length, 'both the API and the web tier must pin a hostname').toBe(2);
+    expect(launcher).toMatch(/'--hostname',\s*DEV_HOST/);
+  });
+
+  it('agrees with the API origin the web tier defaults to', () => {
+    // A launcher that advertises the right host while the bundle is built for
+    // another one is the defect, not the fix.
+    expect(read('apps/web/src/lib/env.ts')).toContain(API_ORIGIN);
+    expect(read('apps/web/.env.example')).toContain(`NEXT_PUBLIC_API_BASE_URL=${API_ORIGIN}`);
+  });
+
+  it('recommends localhost in what dev:all and dev:status actually print', () => {
     for (const file of ['scripts/dev/start-local.mjs', 'scripts/dev/status-local.mjs']) {
-      const source = read(file)
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|\s)\/\/.*$/gm, '$1');
-      expect(source, `${file} must not print a browser URL on the loopback literal`).not.toMatch(
-        /`http:\/\/127\.0\.0\.1:\$\{WEB_PORT\}/
+      const source = code(file);
+      expect(source, `${file} must build its printed URLs from the canonical origins`).toMatch(
+        /WEB_ORIGIN|API_ORIGIN/
+      );
+    }
+    // The launcher must name the login route the Owner is told to open.
+    const launcher = code('scripts/dev/start-local.mjs');
+    expect(launcher).toContain("'/en/login'");
+    expect(launcher).toContain("'/ar/login'");
+  });
+
+  it('points the browser suite at the canonical host', () => {
+    expect(code('apps/web/tests/e2e/origin.ts')).toContain("E2E_HOST = 'localhost'");
+    // And the production server it drives is pinned to the same host, so the
+    // suite cannot pass against an address the base URL does not name.
+    expect(code('apps/web/playwright.config.ts')).toMatch(/--hostname \$\{HOST\}/);
+  });
+
+  it('states no active local origin on the loopback literal', () => {
+    // The decisive assertion, and it is decisive only because the list above is
+    // wider than the two files the previous version looked at.
+    for (const file of ACTIVE_ORIGIN_AUTHORITIES) {
+      expect(code(file), `${file} must not name a local origin on 127.0.0.1`).not.toMatch(
+        /http:\/\/127\.0\.0\.1:(3000|3100|3210)/
       );
     }
   });
 
   it('scans real files, so the rule above is not vacuous', () => {
-    for (const file of ['scripts/dev/start-local.mjs', 'scripts/dev/status-local.mjs']) {
-      expect(read(file).length, file).toBeGreaterThan(500);
+    // A path list that has gone stale scans nothing and reports clean. Each
+    // entry must exist and carry real content.
+    expect(ACTIVE_ORIGIN_AUTHORITIES.length).toBeGreaterThanOrEqual(11);
+    for (const file of ACTIVE_ORIGIN_AUTHORITIES) {
+      expect(code(file).length, `${file} is missing or empty`).toBeGreaterThan(120);
     }
     // And the pattern it forbids is one that really can appear.
-    //
-    // The sample is a template literal with the `$` escaped, so it is the exact
-    // text `http://127.0.0.1:${WEB_PORT}/en` without being a quoted string that
-    // merely looks interpolated — `js/template-syntax-in-string-literal` flags
-    // that shape, and here it would be flagging the one place the shape is the
-    // point.
-    const sample = `\`http://127.0.0.1:\${WEB_PORT}/en\``;
-    expect(/`http:\/\/127\.0\.0\.1:\$\{WEB_PORT\}/.test(sample)).toBe(true);
+    expect(/http:\/\/127\.0\.0\.1:(3000|3100|3210)/.test('http://127.0.0.1:3100/en')).toBe(true);
+    // Comment stripping must not be so eager that it hides real code.
+    expect(code('scripts/dev/dev-config.mjs')).toContain('export const DEV_HOST');
+  });
+
+  /**
+   * The override no gate can see.
+   *
+   * `apps/web/.env.local` is git-ignored and Next reads it in preference to the
+   * schema default, so a stale one silently reinstates the whole defect on a
+   * machine where every tracked file is correct. The launcher cannot fix
+   * someone's own file, but it must not let it happen quietly.
+   */
+  it('notices an untracked .env.local that contradicts the canonical API origin', () => {
+    const launcher = code('scripts/dev/start-local.mjs');
+    expect(launcher).toContain('apps/web/.env.local');
+    expect(launcher).toMatch(/NEXT_PUBLIC_API_BASE_URL\\s\*=/);
+    // Compared against the canonical origin, not a literal spelled out again.
+    expect(launcher).toMatch(/configured === API_ORIGIN/);
+    // And the check must run before the servers are launched, or the warning
+    // scrolls past underneath a Next boot log.
+    const guard = launcher.indexOf('warnOnContradictingEnvLocal()');
+    const launch = launcher.indexOf("launch(\n  'api'");
+    expect(guard, 'the guard must be called').toBeGreaterThan(0);
+    if (launch > 0) expect(guard).toBeLessThan(launch);
+  });
+
+  it('leaves the loopback security guards accepting every loopback form', () => {
+    // Widening what a guard ACCEPTS is not the same decision as choosing what to
+    // ADVERTISE. These must keep accepting all three, or a legitimate local
+    // database target starts being refused.
+    const guard = read('scripts/dev/owner-acceptance/context.mjs');
+    for (const form of ['127.0.0.1', 'localhost', '::1']) {
+      expect(guard, `the loopback allow-set must still accept ${form}`).toContain(`'${form}'`);
+    }
   });
 });
 

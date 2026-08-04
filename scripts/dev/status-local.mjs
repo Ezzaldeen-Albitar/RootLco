@@ -6,12 +6,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import {
-  API_PORT,
+  API_ORIGIN,
   API_READY_PATH,
-  BROWSER_HOST,
-  PROBE_HOST,
+  DEV_HOST,
   STATE_FILE,
-  WEB_PORT,
+  WEB_ORIGIN,
   repoRoot,
 } from './dev-config.mjs';
 
@@ -53,18 +52,16 @@ if (state) {
   console.log(`  API pid    ${state.apiPid} (${alive(state.apiPid) ? 'alive' : 'gone'})`);
   console.log(`  Web pid    ${state.webPid} (${alive(state.webPid) ? 'alive' : 'gone'})`);
 }
-// Probed over the loopback literal, PRINTED as the host a browser must use.
-// See BROWSER_HOST in dev-config.mjs — opening 127.0.0.1 in a browser leaves
-// every client component unhydrated.
-const api = (path) => `http://${PROBE_HOST}:${API_PORT}${path}`;
-const web = (path) => `http://${PROBE_HOST}:${WEB_PORT}${path}`;
-const shown = (port, path) => `http://${BROWSER_HOST}:${port}${path}`;
+// The URL probed and the URL printed are now the same string. They used to
+// differ — probe on the loopback literal, print `localhost` — which meant this
+// command could report a healthy stack at an address that was never tested.
+const api = (path) => `${API_ORIGIN}${path}`;
+const web = (path) => `${WEB_ORIGIN}${path}`;
 
-console.log(
-  `  API        ${shown(API_PORT, API_READY_PATH)} -> ${await probe(api(API_READY_PATH))}`
-);
-console.log(`  Web /en    ${shown(WEB_PORT, '/en')} -> ${await probe(web('/en'))}`);
-console.log(`  Web /ar    ${shown(WEB_PORT, '/ar')} -> ${await probe(web('/ar'))}`);
-console.log(`  Gallery    ${shown(WEB_PORT, '/en/gallery')} -> ${await probe(web('/en/gallery'))}`);
+console.log(`  API        ${api(API_READY_PATH)} -> ${await probe(api(API_READY_PATH))}`);
+console.log(`  Web        ${WEB_ORIGIN} -> ${await probe(web('/en'))}`);
+console.log(`  en login   ${web('/en/login')} -> ${await probe(web('/en/login'))}`);
+console.log(`  ar login   ${web('/ar/login')} -> ${await probe(web('/ar/login'))}`);
+console.log(`  Gallery    ${web('/en/gallery')} -> ${await probe(web('/en/gallery'))}`);
 console.log('');
-console.log(`  Open ${BROWSER_HOST} in the browser, never 127.0.0.1 — see dev-config.mjs.`);
+console.log(`  Open ${DEV_HOST} in the browser, never 127.0.0.1 — see dev-config.mjs.`);

@@ -59,10 +59,67 @@ npm run dev:all                 # API 3000 · Web 3100
 npm run acceptance:status-owner # proves the account can actually sign in
 ```
 
-**Open `http://localhost:3100`, never `http://127.0.0.1:3100`.** They are
-different origins to Next's development server, and the wrong one leaves every
-table loading for ever — `P1-26-F-048`, and the launcher now prints the right
-one.
+## 3a. `localhost` is the canonical local hostname
+
+|                       |                                                               |
+| --------------------- | ------------------------------------------------------------- |
+| Web origin            | `http://localhost:3100`                                       |
+| API origin            | `http://localhost:3000`                                       |
+| API readiness         | `http://localhost:3000/api/v1/health/ready`                   |
+| English login         | `http://localhost:3100/en/login`                              |
+| Arabic login          | `http://localhost:3100/ar/login`                              |
+| Start · status · stop | `npm run dev:all` · `npm run dev:status` · `npm run dev:stop` |
+
+All of these come from `API_ORIGIN` and `WEB_ORIGIN` in
+`scripts/dev/dev-config.mjs`. Nothing else states them.
+
+**Why the name and not `127.0.0.1`.** A browser decides same-origin by comparing
+host STRINGS, not by resolving them. `localhost` and `127.0.0.1` are therefore
+two origins even though they reach one interface, and three separate mechanisms
+act on that difference: Next refuses its own development resources across it
+(`P1-26-F-048`, which leaves every table loading for ever), the CSP
+`connect-src` is derived from the configured API origin, and a session cookie is
+scoped to the host string that set it.
+
+`127.0.0.1` still resolves — it is simply not the canonical origin, and since
+both tiers are now started with `--hostname localhost` it is not served either.
+That is deliberate: the wrong origin fails to connect instead of half-working.
+
+### Troubleshooting
+
+**Every table sits loading, or sign-in redirects back to the login page.** You
+are almost certainly on the wrong origin. Check the address bar; then check
+`apps/web/.env.local`, which is git-ignored, is read in preference to every
+default, and is invisible to every gate in this repository. `npm run dev:all`
+warns when it contradicts the canonical API origin (`P1-26-F-062`).
+
+**`dev:all` reports a port in use but nothing seems to be running.** A previous
+launcher parent died and left its Next children holding the ports. `dev:status`
+reports the recorded PIDs and whether they are alive; `dev:stop` kills only
+processes this launcher started and exits non-zero if a port is still answering
+afterwards rather than claiming success.
+
+**Confirm what a process is really doing** — the printed URL is a claim, the
+command line is the evidence:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Select-Object ProcessId, CommandLine
+netstat -ano | Select-String ':3000|:3100'
+```
+
+Both tiers must show `--hostname localhost`. Note that a hostname binds **one**
+address family: on Windows `localhost` resolves to `::1` first, so `netstat`
+shows `[::1]:3100` and a probe of `127.0.0.1:3100` is refused. That is the fix
+working, not a fault.
+
+**Development and production build directories.** `next dev` builds into
+`.next-dev` (`ROOTLCO_DIST_DIR`), `next build`/`next start` into `.next`. They
+write incompatible manifests, so never point them at one directory — a
+production build left in `.next` once made `next dev` invent a 404 that did not
+exist (`P1-26-F-055`). The launcher clears a contaminated directory only after
+proving both ports are free, and both directories are ignored by Git, ESLint and
+Prettier.
 
 ## 4. What `create-owner` does
 

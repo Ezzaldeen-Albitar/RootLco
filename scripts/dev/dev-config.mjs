@@ -1,11 +1,11 @@
 /**
  * The one place the local topology is written down.
  *
- * API on 3000 because the web tier's default API base is
- * `http://127.0.0.1:3000` (`apps/web/src/lib/env.ts`) — the two values must
- * agree, and this file plus that schema are the complete list of places the
- * port lives. Web on 3100: out of the way of the API, of Supabase (54321–54324)
- * and of the Playwright web server (3210).
+ * API on 3000 because the web tier's default API base is `API_ORIGIN` below
+ * (`apps/web/src/lib/env.ts`) — the two values must agree, and this file plus
+ * that schema are the complete list of places the port lives. Web on 3100: out
+ * of the way of the API, of Supabase (54321–54324) and of the Playwright web
+ * server (3210).
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -37,15 +37,67 @@ export const API_READY_PATH = '/api/v1/health/ready';
  * all. The single configuration people actually use was the one nothing
  * exercised — it was found by signing in and looking at a table.
  *
+ * Fixing the PRINTED address was only half of it. The launcher went on
+ * *configuring* the loopback literal — `NEXT_PUBLIC_API_BASE_URL`, the browser's
+ * API address and the source of the CSP `connect-src` — and so did the Owner's
+ * own handoff file, the acceptance status command and the entire browser suite.
+ * The address was advertised one way and configured another for a further two
+ * rounds (`P1-26-F-062`). One name, everywhere, is the only version of this that
+ * stays true.
+ *
  * `next.config.ts`'s `allowedDevOrigins` is the documented alternative and was
  * tried first: on this Next version it made every route answer 500 with a JSON
  * parse failure inside the framework, twice, reproducibly. Serving the origin
  * Next already trusts is the smaller and safer correction.
  */
-export const BROWSER_HOST = 'localhost';
+export const DEV_HOST = 'localhost';
 
-/** The loopback literal, for server-to-server probes where origin is irrelevant. */
-export const PROBE_HOST = '127.0.0.1';
+/**
+ * There is deliberately no second host constant any more.
+ *
+ * There used to be: `PROBE_HOST = '127.0.0.1'`, on the reasoning that a
+ * server-to-server readiness probe is not subject to any origin rule and should
+ * not depend on name resolution. That reasoning was sound only while the
+ * servers bound `0.0.0.0`, which answers on every loopback address at once and
+ * so forgave the mismatch.
+ *
+ * The servers are now started with `--hostname localhost` (`P1-26-F-062`),
+ * because relying on a default bind is exactly the "configured one way,
+ * advertised another" shape this whole finding is about. **A hostname binds one
+ * address family, not both.** Measured on the Owner's machine:
+ *
+ *     dns.lookup('localhost', {all:true}) -> [::1, 127.0.0.1]   (verbatim order)
+ *     server.listen(port, 'localhost')    -> bound ::1
+ *     fetch('http://127.0.0.1:port')      -> ECONNREFUSED
+ *     fetch('http://localhost:port')      -> 200
+ *
+ * So a probe on the literal against a server bound by name does not merely
+ * bypass an origin check — it cannot connect at all, and the launcher waits its
+ * full readiness timeout before failing. The two constants had to agree, and a
+ * pair of values that must always agree is one value.
+ *
+ * Using ONE NAME everywhere is also what makes this portable. A name resolves
+ * the same way for the bind and for the probe on any machine, so it does not
+ * matter which family wins; a name for one and a literal for the other is a
+ * coin toss that lands differently on Windows and on a Linux runner.
+ *
+ * Loopback SECURITY GUARDS are a different thing entirely and still accept
+ * `127.0.0.1`, `localhost` and `::1` — see `owner-acceptance/context.mjs`.
+ * Widening what a guard accepts is not the same as choosing what to advertise.
+ */
+export const API_HOST = DEV_HOST;
+export const WEB_HOST = DEV_HOST;
+
+/** The canonical local origins. Everything that names an address derives from these. */
+export const API_ORIGIN = `http://${API_HOST}:${API_PORT}`;
+export const WEB_ORIGIN = `http://${WEB_HOST}:${WEB_PORT}`;
+
+/**
+ * Retained name for the host a browser must open, now one of several views of
+ * `DEV_HOST`. A test asserts every host constant is the same string, so they
+ * cannot drift back apart.
+ */
+export const BROWSER_HOST = DEV_HOST;
 
 /**
  * The build directory `next dev` uses, isolated from the production one —

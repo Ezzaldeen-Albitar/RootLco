@@ -25,11 +25,16 @@ import {
   assertLocalTarget,
   reconstructPassword,
 } from './context.mjs';
+import { API_ORIGIN } from '../dev-config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
-const API = process.env.ROOTLCO_API_BASE_URL ?? 'http://127.0.0.1:3000';
+// Both a configured base URL and a string this script prints back to the Owner
+// ("API at ${API} is not reachable — start it with: npm run dev:all"). It
+// defaulted to the loopback literal, so the address the Owner was shown here
+// disagreed with the one `dev:all` had just printed (`P1-26-F-062`).
+const API = process.env.ROOTLCO_API_BASE_URL ?? API_ORIGIN;
 
 const mark = (ok) => (ok ? 'yes' : 'NO');
 let failures = 0;
