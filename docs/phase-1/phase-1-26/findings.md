@@ -485,6 +485,101 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-078 — the accepted web test count included sixteen tests that were not in the tree
+
+**Severity:** Medium · **Status:** Fixed (corrected) · **Area:** `closure-record.md`,
+this register
+
+The P1-26 closure record states **web component 357 / 357**. The committed tree
+carried **341**, in 18 files. Measured, by moving one file aside and re-running:
+
+```
+with    apps/web/tests/session.test.ts present   18 files → wait, 19 files  357
+without it                                       18 files          341
+```
+
+`session.test.ts` was **untracked** — part of the expired-session work deliberately
+excluded from every P1-26 merge — and vitest runs untracked files like any other.
+So every "357" reported during the remediation, including the one the Owner was
+shown at acceptance, was a working-tree number presented as a committed-tree
+number.
+
+**Nothing was accepted that does not exist.** The 341 committed tests all passed,
+hosted CI ran them on the committed tree and was green, and the extra 16 were
+real tests of real code that simply had not been merged yet. The error is in the
+_provenance_ of the figure, not in the figure's honesty about passing.
+
+It is the trap this phase already recorded once, in its own words: **a test count
+is evidence about the suite that produced it, not about the file it is written
+next to** — and it was written next to a closure record. Recording it against my
+own number rather than somebody else's is the only version of that lesson worth
+having.
+
+Corrected in `closure-record.md` with a visible note rather than a silent edit.
+Merging the expired-session work makes 357 the true committed figure, which is
+why the correction and the merge are the same change.
+
+---
+
+## P1-26-F-077 — an expired session answered HTTP 500 to the one person who needed a redirect
+
+**Severity:** High · **Status:** Fixed · **Area:**
+`apps/web/src/features/authentication/api/session.ts`,
+`api/session-ended.ts`, `app/[locale]/(auth)/session-ended/route.ts`,
+`lib/api/session-cookie.ts`
+
+`readSession` called `clearSession()` when the backend rejected a token. That call
+ran **inside a Server Component render**, where Next forbids cookie mutation, so
+the render threw
+
+```
+Cookies can only be modified in a Server Action or Route Handler
+```
+
+and every protected route answered **500** — to the operator whose session had
+just expired, and to nobody else.
+
+**The control that made it survive is the interesting part.** With no cookie at
+all, `authorizedClient()` returns null and the function returns _before_ reaching
+the mutation. So the ordinary signed-out path was correct, and only the rarer
+expired path was broken — which is the state no suite held and the state a
+developer almost never reaches by hand.
+
+Fixed by moving the clearing to a Route Handler, which is one of the two contexts
+Next's own error message names. `readSession` now mutates nothing; `requireSession`
+sends **`expired` and nothing else** through `/{locale}/session-ended`, which
+clears the cookie and lands on `/{locale}/login?reason=expired`. The visible
+destination is unchanged.
+
+`403`, `unavailable` and `signed-out` keep their cookie, each for its own reason —
+and `403` especially, because clearing a **valid** credential was `P1-26-F-022`.
+
+Reproduced and re-verified against the running application, not only in jsdom
+(where Next's cookie API is mocked away and this defect is invisible):
+
+```
+protected route, STALE cookie    307 -> /en/session-ended
+session-ended, same-origin       307 -> /en/login?reason=expired   SET-COOKIE
+session-ended, CROSS-SITE        307 -> /en/login?reason=expired   no cookie cleared
+session-ended, unknown locale    404
+protected route, NO cookie       307 -> /en/login?reason=signed-out
+```
+
+Clearing a cookie on `GET` is reachable cross-site — `<img src=".../session-ended">`
+would sign an operator out — so `mayEndSession` gates on `Sec-Fetch-Site`. A
+**missing** header clears, deliberately: the header is absent only for non-browser
+callers, a forgery needs a browser to carry the victim's cookie, and refusing
+there would have silently disabled the clearing for every check that proves it
+happens.
+
+**This finding was originally written as `P1-26-F-063` by the parallel session
+that produced the work.** That number was already taken by the bind-probe finding,
+recorded here while this work sat uncommitted. Two different defects under one
+identifier is the kind of thing that is never noticed and never recoverable, so
+the four citations were renumbered to `F-077` on the way in.
+
+---
+
 ## P1-26-F-076 — Back did not return the operator to where they were
 
 **Severity:** Medium · **Status:** Fixed · **Area:**

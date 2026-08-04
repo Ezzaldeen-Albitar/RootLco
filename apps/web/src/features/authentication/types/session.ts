@@ -11,7 +11,11 @@ import type { PermissionCode } from '@/config/navigation';
  * `companyIds` and `branchIds` are the resolved scope. An **empty** array means
  * unrestricted within the tenant — not "no access". That distinction is easy to
  * invert and expensive when inverted, so it is stated here and asserted in
- * `apps/web/tests/session.test.ts`.
+ * `apps/web/tests/authentication.test.ts` — which is where the scope assertion
+ * has always lived. This used to point at `session.test.ts`, which did not exist
+ * at the time, so the reference read as evidence of a check nobody could open.
+ * That file exists now and covers the expired-session redirect; it does not hold
+ * this assertion, and the pointer names the file that does.
  */
 export interface SessionSummary {
   readonly userId: string;
@@ -27,7 +31,12 @@ export interface SessionSummary {
 export type SessionProblem =
   /** No session cookie at all — the ordinary "not signed in" case. */
   | 'signed-out'
-  /** A cookie existed and the backend rejected the TOKEN. The cookie is cleared. */
+  /**
+   * A cookie existed and the backend rejected the TOKEN. The cookie is cleared
+   * — but by the session-ended Route Handler that `requireSession` redirects
+   * through, never by the read itself: a render may not write a cookie, and
+   * doing it anyway made every expired session an HTTP 500 (`P1-26-F-063`).
+   */
   | 'expired'
   /**
    * The token is valid and the account may not read its own session — it does
