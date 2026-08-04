@@ -251,9 +251,7 @@ export function buildPageWithCursors<T>(
   return {
     items: kept.map((row) => row.item),
     nextCursor:
-      hasMore && last
-        ? encodeCursor({ k: contract.key, v: last.sortValue, i: last.id })
-        : null,
+      hasMore && last ? encodeCursor({ k: contract.key, v: last.sortValue, i: last.id }) : null,
     hasMore,
   };
 }
