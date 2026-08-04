@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "next dev --hostname localhost --port 3100",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint",

@@ -485,6 +485,98 @@ to the tier that owns it.
 
 ---
 
+## P1-26-F-063 — a bind probe cannot see a listener on another address, so `dev:all` started a second stack
+
+**Severity:** High · **Status:** Fixed · **Area:** `scripts/dev/**`, root and
+workspace `dev` commands
+
+The Owner ran `npm run dev:all` and got `EADDRINUSE :::3000` and
+`:::3100`. A later run printed **`RootLco local stack is up.`** and then killed
+both of its own children with the same error. `npm run dev` then reported
+`Port 3000 is in use by process 8296, using available port 3001 instead`.
+
+**The root cause is one line, and it is not a missing branch.** The launcher
+decided a port was free by binding it:
+
+```js
+createServer().listen(port, HOST); // error => in use
+```
+
+A bind probe only conflicts with a listener holding the **same address**.
+Measured against the live stack, which was bound to `::1`:
+
+```
+bind 127.0.0.1 -> SUCCEEDED   (judged "free")
+bind 0.0.0.0   -> SUCCEEDED   (judged "free")
+bind ::        -> SUCCEEDED   (judged "free")
+bind localhost -> EADDRINUSE  (the only one that saw it)
+```
+
+So the check passed. Next then bound with exclusive semantics and died. And the
+readiness probe — which fetches a URL — was answered **200 by the incumbent
+server**, so the launcher printed success over two corpses. Three steps, each
+locally reasonable, composing into a confident lie.
+
+`npm run dev` was a separate defect with the same consequence: it ran
+`npm run dev --workspace @rootlco/api`, and that workspace's script was a bare
+`next dev` with no port. Next found 3000 busy and moved the API to **3001**,
+where it looked like a working stack and was not.
+
+**Fix.**
+
+1. **Ports are identified, not probed.** `process-discovery.mjs` asks the
+   operating system which process holds each port. Ownership is proved by
+   walking the **parent chain** — necessary, because the listener's own command
+   line names neither the repository nor the workspace:
+   `start-server.js` ← `next dev apps/api …` ← `start-local.mjs`.
+2. **One enumerated decision before anything is spawned** —
+   `START_NEW` · `ADOPT_EXISTING` · `REPAIR_PARTIAL` · `REFUSE_UNRELATED` — in a
+   pure function, so all seven contract states are testable as data.
+3. **Readiness is bound to the child that should be serving it.** `waitFor`
+   fails if the child exited, so a dead child can no longer borrow the
+   incumbent's 200.
+4. **An atomic lock** (`openSync(file, 'wx')`, never test-then-write) stops two
+   launchers racing; a second run still reports the stack as already running
+   rather than reporting lock contention, because that is the question asked.
+5. **Ports are pinned everywhere**: root `dev` now runs the full launcher, and
+   both workspace `dev` scripts carry `--hostname localhost --port <port>`.
+   Production `start` was deliberately left alone — pinning `localhost` there
+   would make the Docker container unreachable through its published port.
+
+**Two things this cost, both worth recording.**
+
+`Get-CimInstance Win32_Process | ConvertTo-Json` produces **invalid JSON** on a
+real machine: an unescaped control character inside some unrelated process's
+command line, measured at position 110350. `JSON.parse` threw, discovery failed,
+and `dev:stop` and `dev:status` both exited 2. The process table is now a
+delimited format using ASCII US, which removes the escaping problem instead of
+trying to survive it.
+
+And `dev:stop` re-read the entire process table once per listener per 250 ms
+poll — a PowerShell process per iteration. The listeners are now re-read in the
+loop and the table only when something is still holding a port.
+
+**Regression coverage.** `tests/ci/local-stack-single-instance.test.ts`, 68
+cases, none of which needs a port or a process. Mutation-tested: eight real
+defects reintroduced, eight caught. One mutation was **MISSED** first time —
+deleting the adopt path's early return — because the assertion only proved _a_
+`return` existed somewhere between the branch and the spawn, and other returns
+satisfied it. It now extracts the balanced block and asserts its **last
+statement** is `return;`.
+
+**Proven on the machine**, not inferred: `npm run dev:verify-single-instance`
+runs the reported sequence end to end and reports **22/22** — stop, start,
+second `dev:all` adopts with identical listener pids and no `EADDRINUSE`, no
+3001, no 3101, truthful status, safe stop that frees both ports, and a clean
+restart with new pids.
+
+The lesson is about the shape of the question. **"Is this port free?" has no
+true answer** — a port is held by a process, on an address, and the useful
+question is "who holds it, and is it mine". A boolean was the wrong return type,
+and every downstream mistake followed from it.
+
+---
+
 ## P1-26-F-062 — the launcher advertised `localhost` and configured `127.0.0.1`
 
 **Severity:** High · **Status:** Fixed · **Area:** `scripts/dev/**`,
