@@ -135,3 +135,17 @@ Defects:
 
 **Silence is not Pass.** P1-26 stays at _TECHNICAL GATE PASSED — OWNER MANUAL
 ACCEPTANCE PENDING_ until you answer.
+
+---
+
+## Answered — 2026-08-04
+
+```
+OWNER ACCEPTANCE: PASS
+```
+
+Unconditional, at protected `develop` `02eb4842`. No conditions attached, no
+defects reported. P1-26 is **CLOSED**; see `closure-record.md`.
+
+This checklist is retained as it stood at acceptance, unedited, so that what was
+asked can still be compared with what was answered.

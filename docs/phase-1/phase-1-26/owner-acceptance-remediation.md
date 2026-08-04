@@ -2,7 +2,13 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status: TECHNICAL GATE PASSED — OWNER MANUAL ACCEPTANCE PENDING**
+**Status: CLOSED — OWNER ACCEPTANCE: PASS, 2026-08-04**
+
+The Product Owner tested the running application by hand and returned
+`OWNER ACCEPTANCE: PASS`. That is the condition §5 of this record set, it is the
+only thing that could close this phase, and it has been met.
+
+The closure record is `closure-record.md`.
 
 ---
 
@@ -74,7 +80,7 @@ The permanent no-fake-data policy is unchanged and still holds, because it is a
 policy about what **ships**, and nothing here ships. `check-no-fake-data.mjs`
 scans tracked files; no tracked file gains a business record.
 
-## 5. Closure condition
+## 5. Closure condition — MET
 
 P1-26 closes when, and only when, the Product Owner responds with:
 
@@ -85,6 +91,16 @@ OWNER ACCEPTANCE: PASS
 A conditional pass or a fail is recorded with its conditions or defects and
 remediated before closure. **Silence is not Pass.**
 
-Until then the canonical status of this phase is:
+**On 2026-08-04 the Product Owner returned exactly that**, against protected
+`develop` `02eb4842`, after testing the running application by hand. Unconditional:
+no conditions were attached and no defects were reported.
 
-**TECHNICAL GATE PASSED — OWNER MANUAL ACCEPTANCE PENDING**
+The canonical status of this phase is therefore:
+
+**CLOSED — OWNER ACCEPTANCE: PASS**
+
+The condition was never relaxed to reach it. It was asked four separate times
+across the remediation and answered once, by the Owner, at the end — which is the
+whole point of a rule that says silence is not Pass.
+
+See `closure-record.md` for what was accepted and what remains open.
