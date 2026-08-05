@@ -329,3 +329,47 @@ flag.** `P1-OD-025` must decide accepted types, size limits and storage before
 one can exist. `MEDIA_STATUS` is `'blocked-on-p1-od-025'` rather than a boolean:
 a feature flag implies something to switch on, and there is nothing behind this
 one. The test asserts no export matches `/upload|media|attach/i`.
+
+## Wave 13 — security tasks `SEC-001` … `SEC-004`
+
+**Every absence sweep failed on its first run, and the code was correct.** The
+sweeps that assert no merge caller, no duplicate-scan caller and no upload path
+matched the **docblocks explaining why those operations are absent**. A raw-text
+sweep cannot distinguish "calls `veh.vehicle-merge`" from "records that
+`veh.vehicle-merge` is never called", and this phase's central discipline is
+writing refusals down — so the naive sweep would have forced the explanations to
+be deleted to stay green, destroying the only durable record of the decision.
+
+The sweeps now strip comments first. That creates a second-order risk that
+matters more than the first: a stripper that removed too much would make **every**
+absence sweep in the file pass on an empty string, and all six would go green
+while measuring nothing. So the stripper carries its own positive control — a
+sample containing the forbidden names in a line comment and a docblock, and the
+same names in a string literal and a URL. The comments must vanish and the code
+must survive. Alongside it, the fixture assertion requires more than twenty of
+the collected files to still contain the word `export` after stripping.
+
+`//` is only treated as a comment start when it is not preceded by `:`, so
+`https://` inside a string literal is not truncated — which is exactly the case
+the positive control pins.
+
+**Two URL policies exist and they are not the same list.** `FORBIDDEN_URL_KEYS`
+governs the **browser** address bar, which becomes history, proxy logs and the
+`Referer` header, so it refuses `vin`, `plate`, `phone`, `email` and every
+free-text search term. `query()` builds the **API** path — one TLS hop to the
+backend — where a VIN search criterion has to travel or `FE-017` cannot work at
+all. The first draft of `SEC-002` asserted that `query()` refused `vin`, which
+would have been a confident test for a change that breaks vehicle search. Reading
+`query()` before asserting about it is what caught that.
+
+**`query()` now throws on a client-asserted scope.** `tenantId`, `companyId` and
+`branchId` (and their snake_case forms) were previously prevented only by
+convention plus a source sweep. Dropping them silently would let a caller believe
+it had asserted a scope that never left the process, so the builder throws at the
+moment of the mistake. No code path constructs one, so this can only fire in
+development or under test — never for an operator.
+
+**Mutation verification.** Six planted violations, six caught: a merge caller
+reappearing, a duplicate-scan caller reappearing, `console.log` reaching a
+feature module, a route losing its permission gate, `dangerouslySetInnerHTML`
+appearing, and the scope refusal being disabled.

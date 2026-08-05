@@ -89,6 +89,15 @@ export interface ItemsOnly<T> {
 export function query(params: Record<string, string | number | undefined | null>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
+    if (SCOPE_KEYS.has(key)) {
+      // Not dropped silently. Dropping would let a caller believe it had
+      // asserted a scope that never left the process; throwing says so at the
+      // moment of the mistake. No code path constructs one today, so this can
+      // only fire in development or under test — never for an operator.
+      throw new Error(
+        `${key} must not be sent from the client. Scope is resolved server-side from the session.`
+      );
+    }
     if (value === undefined || value === null) continue;
     const text = String(value);
     if (text.length === 0) continue;
@@ -97,3 +106,28 @@ export function query(params: Record<string, string | number | undefined | null>
   const rendered = search.toString();
   return rendered.length > 0 ? `?${rendered}` : '';
 }
+
+/**
+ * Scope names the client must never assert — `P1-27-SEC-001`.
+ *
+ * Every operation this platform publishes resolves tenant, company and branch
+ * server-side from the session. A client-supplied scope is at best ignored and
+ * at worst believed, so the one place a query string is built refuses the names
+ * outright rather than trusting every call site to remember.
+ *
+ * This is deliberately NOT the same list as `FORBIDDEN_URL_KEYS`. That one
+ * governs the **browser** address bar, which becomes history, proxy logs and the
+ * `Referer` header, so it refuses `vin`, `plate`, `phone` and every free-text
+ * search term. This one governs the **API** path — one TLS hop to the backend —
+ * where a VIN search criterion has to travel or vehicle search cannot work.
+ * Merging the two lists would either leak search terms into history or break
+ * `FE-017`.
+ */
+const SCOPE_KEYS = new Set([
+  'tenantId',
+  'companyId',
+  'branchId',
+  'tenant_id',
+  'company_id',
+  'branch_id',
+]);

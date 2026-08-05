@@ -167,6 +167,6 @@ every one of these operations.
 
 ## Remaining
 
-Frontend **29 / 29** · Security 0 / 4 · QA 0 / 5 · DevOps 0 / 2 · Documentation 0 / 2.
+Frontend **29 / 29** · Security **4 / 4** · QA 0 / 5 · DevOps 0 / 2 · Documentation 0 / 2.
 
 `P1-27` closes only on an explicit `OWNER ACCEPTANCE: PASS`.
