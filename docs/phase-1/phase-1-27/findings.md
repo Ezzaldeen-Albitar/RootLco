@@ -786,3 +786,32 @@ Mutation-verified: deleting `'supabase/.temp/**'` from the list fails the test.
 The first mutation attempt reported SURVIVED and was wrong — the file uses LF
 line endings and the CRLF pattern never matched, so nothing was mutated. A
 mutation that does not change the file proves only that the file was not changed.
+
+### The regression test tripped a different gate, and the gate was right
+
+`check-test-honesty.mjs` failed the first push of this fix with
+`TH-003: test file declares no test`, on a file that plainly declares eleven.
+
+The cause is the same class the fix is about. That gate strips comments before
+counting tests, with `/\/\*[\s\S]*?\*\//g`. A glob literal such as `'.next/**'`
+contains the two characters that open a block comment, so it opened one that ran
+to the next closing pair further down the file — swallowing every `it()` between
+them. From where the gate stood, the file really did declare no test.
+
+**The gate was not changed.** It guards 293 test files, and a smarter stripper is
+a change with that blast radius which deserves its own verification rather than
+being made in passing inside an unrelated remediation. The test file assembles
+the glob suffix from two constants instead, so the two characters never appear
+adjacent in its source and the runtime value is byte-identical to the config it
+compares against.
+
+This is now the **fourth** time in P1-27 that a text scanner could not tell code
+from prose about code: the security sweeps, the P1-27 frontend gate, the ignore
+test asserting against its own comment, and now a glob literal read as a comment
+opener. Recorded as a limitation of `check-test-honesty.mjs` rather than fixed
+here — the next phase should harden that stripper deliberately, the way
+`check-p1-27-frontend.mjs` did with its `selfTest()`.
+
+Local evidence after the change: test-honesty exit 0 across 293 files,
+`verify:repository` exit 0, the ignore test 11/11, and deleting
+`'supabase/.temp/**'` from the config still fails it.

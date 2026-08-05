@@ -47,18 +47,36 @@ const IGNORE_LIST = (() => {
 })();
 
 /**
+ * The recursive-glob suffix, assembled rather than written.
+ *
+ * Writing it literally puts the two characters that open a block comment into
+ * this file, and `check-test-honesty.mjs` strips comments with
+ * `/\/\*[\s\S]*?\*\//g` before counting tests. A glob literal therefore opens a
+ * comment that runs to the next occurrence of the closing pair — swallowing
+ * every `it()` between them and making the gate report, correctly from where it
+ * stands, that this file declares no test (`TH-003`).
+ *
+ * The gate is not wrong to be naive here; it guards 293 files and a smarter
+ * stripper is a change with that blast radius, made deliberately and verified on
+ * its own. So this file keeps the two characters apart instead, and the runtime
+ * value is byte-identical to the glob in the config.
+ */
+const STAR = '*';
+const ANY = `/${STAR}${STAR}`;
+
+/**
  * Directories that exist only on a developer machine, each created by a command
  * this repository documents. Every one must be ignored by the root config.
  */
 const LOCALLY_GENERATED: readonly { glob: string; createdBy: string }[] = [
-  { glob: '.next/**', createdBy: 'next build' },
-  { glob: '.next-dev/**', createdBy: 'next dev' },
-  { glob: '.local/**', createdBy: 'the dev launcher and acceptance bootstrap' },
-  { glob: 'coverage/**', createdBy: 'vitest --coverage' },
-  { glob: 'out/**', createdBy: 'next export' },
-  { glob: 'build/**', createdBy: 'a workspace build' },
-  { glob: 'supabase/.temp/**', createdBy: 'supabase start' },
-  { glob: 'supabase/.branches/**', createdBy: 'supabase branching' },
+  { glob: `.next${ANY}`, createdBy: 'next build' },
+  { glob: `.next-dev${ANY}`, createdBy: 'next dev' },
+  { glob: `.local${ANY}`, createdBy: 'the dev launcher and acceptance bootstrap' },
+  { glob: `coverage${ANY}`, createdBy: 'vitest --coverage' },
+  { glob: `out${ANY}`, createdBy: 'next export' },
+  { glob: `build${ANY}`, createdBy: 'a workspace build' },
+  { glob: `supabase/.temp${ANY}`, createdBy: 'supabase start' },
+  { glob: `supabase/.branches${ANY}`, createdBy: 'supabase branching' },
 ];
 
 describe('the root ESLint config ignores every locally generated tree', () => {
@@ -81,15 +99,22 @@ describe('the root ESLint config ignores every locally generated tree', () => {
     // Its contents are CLI-version-dependent — `pgdelta`, `start-secrets` and
     // `cli-latest` today. Naming a file would fix one machine and break on the
     // next Supabase CLI release.
-    expect(IGNORE_LIST).toContain("'supabase/.temp/**'");
+    expect(IGNORE_LIST).toContain(`'supabase/.temp${ANY}'`);
     expect(IGNORE_LIST).not.toContain('start-secrets');
-    expect(IGNORE_LIST).not.toContain('main/index.ts');
+    expect(IGNORE_LIST).not.toContain('index.ts');
   });
 
   it('still lints the source it is supposed to lint', () => {
     // The opposite failure: an ignore list wide enough to be quiet everywhere.
-    for (const forbidden of ["'src/**'", "'scripts/**'", "'tests/**'", "'**/*'", "'*'"]) {
-      expect(IGNORE_LIST, `${forbidden} would silence real code`).not.toContain(forbidden);
+    const forbidden = [
+      `'src${ANY}'`,
+      `'scripts${ANY}'`,
+      `'tests${ANY}'`,
+      `'${STAR}${STAR}/${STAR}'`,
+      `'${STAR}'`,
+    ];
+    for (const glob of forbidden) {
+      expect(IGNORE_LIST, `${glob} would silence real code`).not.toContain(glob);
     }
   });
 });
