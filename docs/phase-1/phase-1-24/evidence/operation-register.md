@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 238   |
+| Public operations        | 243   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 198   |
-| OpenAPI operations       | 238   |
+| OpenAPI paths            | 203   |
+| OpenAPI operations       | 243   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 104   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 238        |
+| Covered           | 243        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -50,7 +50,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
 | shared-services | 26         | 26      | 18     | 18      | 6          | 6               |
 | technician      | 6          | 6       | 3      | 3       | 1          | 2               |
-| vehicle         | 22         | 22      | 12     | 12      | 12         | 0               |
+| vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
 | work-order      | 26         | 26      | 15     | 16      | 13         | 8               |
 
@@ -246,6 +246,11 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `tech.labor-session-stop`              | POST   | `/api/v1/labor-sessions/{sessionId}/stop`                                     | branch  | `tech.labor.record`                                                  | tech.labor.session_stopped             | —    | yes | audit authorization cross-tenant denial isolation outbox route service stale-version success                                  | Covered |
 | `tech.technician-available`            | GET    | `/api/v1/technicians/available`                                               | branch  | `tech.technician.read`                                               | —                                      | —    | —   | authorization denial isolation route service success                                                                          | Covered |
 | `tech.technician-queue`                | GET    | `/api/v1/technicians/{technicianProfileId}/queue`                             | branch  | `tech.technician.read`                                               | —                                      | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `veh.catalogue-body-type-list`         | GET    | `/api/v1/vehicle-catalogue/body-types`                                        | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization denial route service success                                                                                    | Covered |
+| `veh.catalogue-make-list`              | GET    | `/api/v1/vehicle-catalogue/makes`                                             | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization denial route service success                                                                                    | Covered |
+| `veh.catalogue-model-list`             | GET    | `/api/v1/vehicle-catalogue/makes/{makeId}/models`                             | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `veh.catalogue-powertrain-type-list`   | GET    | `/api/v1/vehicle-catalogue/powertrain-types`                                  | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization denial route service success                                                                                    | Covered |
+| `veh.catalogue-trim-list`              | GET    | `/api/v1/vehicle-catalogue/models/{modelId}/trims`                            | tenant  | `veh.vehicle.read`                                                   | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `veh.vehicle-authorized-party-add`     | POST   | `/api/v1/vehicles/{vehicleId}/authorized-parties`                             | tenant  | `veh.vehicle.relationship.manage`                                    | veh.vehicle.authorized_party_added     | yes  | —   | audit authorization cross-tenant denial idempotency outbox route service success                                              | Covered |
 | `veh.vehicle-authorized-party-retire`  | POST   | `/api/v1/vehicles/{vehicleId}/authorized-parties/{relationshipId}/retirement` | tenant  | `veh.vehicle.relationship.manage`                                    | veh.vehicle.authorized_party_retired   | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `veh.vehicle-create`                   | POST   | `/api/v1/vehicles`                                                            | tenant  | `veh.vehicle.manage`                                                 | veh.vehicle.created                    | yes  | —   | audit authorization cross-tenant denial idempotency outbox rollback route service success                                     | Covered |

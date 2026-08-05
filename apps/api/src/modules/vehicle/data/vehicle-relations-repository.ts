@@ -8,7 +8,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import {
   AUTHORIZATION_SCHEMA_VERSION,
   RELATIONSHIP_ORDERING,
@@ -127,33 +133,41 @@ export class VehicleRelationsRepository extends Repository {
       valid_to: string | null;
       allowed_actions: string[] | null;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
+      // `valid_from`/`valid_to` are `date` and are read `::text` so a day is
+      // never shifted by a timezone. The cursor is a `timestamptz` and needs the
+      // opposite treatment — full microsecond precision (`P1-27-INT-008`).
       `SELECT id, partner_id, relationship_role, valid_from::text AS valid_from,
               valid_to::text AS valid_to,
               CASE WHEN authorization_scope IS NULL THEN NULL
                    ELSE ARRAY(SELECT jsonb_array_elements_text(authorization_scope -> 'allowed_actions'))
               END AS allowed_actions,
-              created_at
+              created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM veh.vehicle_relationships
         WHERE tenant_id = $1 AND vehicle_id = $2 ${keyset.predicate}
         ${keyset.order} ${keyset.limitClause}`,
       [context.principal.tenantId, vehicleId, ...keyset.values]
     );
-    return buildPage(
+    return buildPageWithCursors(
       result.rows.map((r) => ({
+        item: {
+          id: r.id,
+          partnerId: r.partner_id,
+          relationshipRole: r.relationship_role,
+          validFrom: r.valid_from,
+          validTo: r.valid_to,
+          active: r.valid_to === null,
+          allowedActions: r.allowed_actions,
+          createdAt: r.created_at.toISOString(),
+        },
+        sortValue: r.created_at_cursor,
         id: r.id,
-        partnerId: r.partner_id,
-        relationshipRole: r.relationship_role,
-        validFrom: r.valid_from,
-        validTo: r.valid_to,
-        active: r.valid_to === null,
-        allowedActions: r.allowed_actions,
-        createdAt: r.created_at.toISOString(),
       })),
       page,
-      RELATIONSHIP_ORDERING,
-      (hit) => ({ sortValue: hit.createdAt, id: hit.id })
+      RELATIONSHIP_ORDERING
     );
   }
 }

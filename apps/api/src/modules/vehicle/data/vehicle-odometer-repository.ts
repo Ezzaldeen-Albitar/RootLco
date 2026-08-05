@@ -9,7 +9,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import { ODOMETER_ORDERING, type OdometerReadingPlan } from '../domain/vehicle-odometer';
 
 export interface OdometerReadingHit {
@@ -89,30 +95,38 @@ export class VehicleOdometerRepository extends Repository {
       anomaly_flag: boolean;
       correction_of: string | null;
       correction_reason: string | null;
+      observed_at_cursor: string;
     }>(
       db,
+      // `value` and `value_km` are already cast `::text` because they are
+      // `numeric` and must not pass through a float. The cursor needed the same
+      // care for the opposite reason — see `P1-27-INT-008`.
       `SELECT id, value::text AS value, unit, value_km::text AS value_km, observed_at,
-              capture_method, anomaly_flag, correction_of, correction_reason
+              capture_method, anomaly_flag, correction_of, correction_reason,
+              ${cursorTimestamp('observed_at')} AS observed_at_cursor
          FROM veh.odometer_readings
         WHERE tenant_id = $1 AND vehicle_id = $2 ${keyset.predicate}
         ${keyset.order} ${keyset.limitClause}`,
       [context.principal.tenantId, vehicleId, ...keyset.values]
     );
-    return buildPage(
+    return buildPageWithCursors(
       result.rows.map((r) => ({
+        item: {
+          id: r.id,
+          value: r.value,
+          unit: r.unit,
+          valueKm: r.value_km,
+          observedAt: r.observed_at.toISOString(),
+          captureMethod: r.capture_method,
+          anomalyFlag: r.anomaly_flag,
+          correctionOf: r.correction_of,
+          correctionReason: r.correction_reason,
+        },
+        sortValue: r.observed_at_cursor,
         id: r.id,
-        value: r.value,
-        unit: r.unit,
-        valueKm: r.value_km,
-        observedAt: r.observed_at.toISOString(),
-        captureMethod: r.capture_method,
-        anomalyFlag: r.anomaly_flag,
-        correctionOf: r.correction_of,
-        correctionReason: r.correction_reason,
       })),
       page,
-      ODOMETER_ORDERING,
-      (hit) => ({ sortValue: hit.observedAt, id: hit.id })
+      ODOMETER_ORDERING
     );
   }
 }
