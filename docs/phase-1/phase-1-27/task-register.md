@@ -182,6 +182,14 @@ every one of these operations.
 
 ## Remaining
 
-Frontend **29 / 29** · Security **4 / 4** · QA **5 / 5** · DevOps 0 / 2 · Documentation 0 / 2.
+Frontend **29 / 29** · Security **4 / 4** · QA **5 / 5** · DevOps **2 / 2** ·
+Documentation **2 / 2**. Implementation total **42 / 42**.
 
-`P1-27` closes only on an explicit `OWNER ACCEPTANCE: PASS`.
+**This is not closure.** Every task has a commit, a test that names it and
+mutations the suite caught, and none of that is Owner acceptance. `P1-27` closes
+only when the Owner runs the real application against the real backend and
+returns an explicit `OWNER ACCEPTANCE: PASS` — and only then does the
+documentation-only `P1-G27` gate record get written.
+
+Silence is not Pass. P1-26 was closed once on unproven claims and had to be
+reopened; that is why this sentence is here.
