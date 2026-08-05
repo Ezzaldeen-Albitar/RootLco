@@ -1,0 +1,515 @@
+'use client';
+
+import { useActionState, useId, useState } from 'react';
+import type { Messages } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { Locale } from '@/i18n/config';
+import type { ActionState } from '@/lib/forms/action-result';
+import { changeVehicleStatusAction, updateVehicleAction } from '../profile-api';
+import {
+  MAX_COLOR,
+  MAX_DISPLAY_NUMBER,
+  MAX_VIN_INPUT,
+  VEHICLE_LIFECYCLE_STATUSES,
+  WORKSHOP_STATUSES,
+} from '../contract';
+import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
+import { VinField } from './VinField';
+
+/**
+ * Vehicle profile (`FE-019`).
+ *
+ * ## A merged vehicle is shown, and shown as frozen
+ *
+ * `veh.vehicle-read` returns merged vehicles deliberately — the update route
+ * treats them as existing-but-frozen (409, not 404), so hiding one would report
+ * a vehicle that live work orders still reference as missing. Every write
+ * control is withdrawn and the reason is stated, rather than left to fail.
+ *
+ * ## Two permissions, two panels
+ *
+ * Editing the description needs `veh.vehicle.manage`; changing the lifecycle
+ * needs `veh.vehicle.status.manage`. Showing both to anyone who holds one would
+ * be wrong in the direction that always matters.
+ *
+ * ## `If-Match` is not sent
+ *
+ * No vehicle operation is `versionGuarded`, so the header is ignored at best and
+ * a 428 at worst. `recordVersion` is displayed as a record fact, and the screen
+ * states plainly that a concurrent edit by another operator is not detected —
+ * because it is not, and implying otherwise would be worse than saying so.
+ */
+
+interface Props {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+  readonly canEdit: boolean;
+  readonly canChangeStatus: boolean;
+}
+
+export function VehicleProfileScreen({
+  locale,
+  messages,
+  vehicle,
+  canEdit,
+  canChangeStatus,
+}: Props) {
+  const frozen = isFrozen(vehicle);
+
+  return (
+    <div className="flex min-h-0 flex-col gap-4">
+      <ProfileHeader locale={locale} messages={messages} vehicle={vehicle} frozen={frozen} />
+      <Overview messages={messages} vehicle={vehicle} />
+
+      {frozen ? (
+        // Nothing editable. Said once, here, instead of letting six controls
+        // each discover their own 409.
+        <p
+          role="status"
+          className="rounded-lg border border-border bg-surface p-4 text-body text-text-secondary"
+        >
+          {translate(messages, 'vehicles.profile.frozenNote')}
+        </p>
+      ) : (
+        <>
+          {canEdit ? <EditPanel locale={locale} messages={messages} vehicle={vehicle} /> : null}
+          {canChangeStatus ? <StatusPanel messages={messages} vehicle={vehicle} /> : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ProfileHeader({
+  locale,
+  messages,
+  vehicle,
+  frozen,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+  readonly frozen: boolean;
+}) {
+  const make = labelFor(vehicle.makeId, vehicle.makeName);
+  const model = labelFor(vehicle.modelId, vehicle.modelName);
+
+  // "Toyota Camry 2019" when it can be assembled, and the reference otherwise.
+  // Never a uuid, and never a half-title like "2019" on its own.
+  const title =
+    make.kind === 'value' || model.kind === 'value'
+      ? [make.kind === 'value' ? make.name : null, model.kind === 'value' ? model.name : null]
+          .filter(Boolean)
+          .join(' ')
+      : (vehicle.displayNumber ?? vehicle.vin ?? translate(messages, 'vehicles.profile.untitled'));
+
+  return (
+    <header className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="text-page-title font-semibold text-text-primary">{title}</h1>
+        {vehicle.modelYear === null ? null : (
+          <span className="text-body text-text-secondary" dir="ltr">
+            {vehicle.modelYear}
+          </span>
+        )}
+        {vehicle.displayNumber ? (
+          <code className="font-mono text-caption text-text-secondary" dir="ltr">
+            {vehicle.displayNumber}
+          </code>
+        ) : null}
+        {frozen ? (
+          <span className="rounded-md bg-status-warning/15 px-2 py-0.5 text-caption text-status-warning">
+            {translate(messages, 'vehicles.profile.frozenBadge')}
+          </span>
+        ) : null}
+      </div>
+
+      <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4">
+        <Fact
+          messages={messages}
+          labelKey="crm.customers.column.status"
+          value={translateDynamic(messages, `vehicles.lifecycle.${vehicle.lifecycleStatus}`)}
+        />
+        <Fact
+          messages={messages}
+          labelKey="vehicles.column.workshop"
+          value={translateDynamic(messages, `vehicles.workshop.${vehicle.workshopStatus}`)}
+        />
+        <Fact
+          messages={messages}
+          labelKey="vehicles.column.powertrain"
+          value={translateDynamic(messages, `vehicles.powertrain.${vehicle.powertrainCategory}`)}
+        />
+        <Fact
+          messages={messages}
+          labelKey="vehicles.profile.recordVersion"
+          value={<span dir="ltr">{vehicle.recordVersion}</span>}
+        />
+      </dl>
+
+      {vehicle.mergedIntoId ? (
+        <p className="mt-3 text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'vehicles.profile.mergedInto')}{' '}
+          <code className="font-mono text-caption" dir="ltr">
+            {vehicle.mergedIntoId}
+          </code>
+        </p>
+      ) : null}
+    </header>
+  );
+}
+
+function Overview({
+  messages,
+  vehicle,
+}: {
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+}) {
+  const catalogue = [
+    ['vehicles.column.make', labelFor(vehicle.makeId, vehicle.makeName)],
+    ['vehicles.column.model', labelFor(vehicle.modelId, vehicle.modelName)],
+    ['vehicles.column.trim', labelFor(vehicle.trimId, vehicle.trimName)],
+    ['vehicles.column.bodyType', labelFor(vehicle.bodyTypeId, vehicle.bodyTypeName)],
+    [
+      'vehicles.column.powertrainType',
+      labelFor(vehicle.powertrainTypeId, vehicle.powertrainTypeName),
+    ],
+  ] as const;
+
+  return (
+    <dl className="grid gap-x-6 gap-y-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
+      <Fact
+        messages={messages}
+        labelKey="vehicles.column.vin"
+        value={
+          vehicle.vin ? (
+            <span className="font-mono text-caption" dir="ltr">
+              {vehicle.vin}
+            </span>
+          ) : (
+            <Muted messages={messages} messageKey="vehicles.column.noVin" />
+          )
+        }
+      />
+      {catalogue.map(([labelKey, label]) => (
+        <Fact
+          key={labelKey}
+          messages={messages}
+          labelKey={labelKey}
+          value={
+            label.kind === 'value' ? (
+              label.name
+            ) : (
+              // Two DIFFERENT facts. A null name beside a non-null id means the
+              // catalogue row is not visible to this caller; a null id means
+              // nothing was ever recorded. The contract offers no flag, so this
+              // is the most that can be said honestly.
+              <Muted
+                messages={messages}
+                messageKey={
+                  label.kind === 'unset'
+                    ? 'vehicles.profile.notRecorded'
+                    : 'vehicles.profile.catalogueNotVisible'
+                }
+              />
+            )
+          }
+        />
+      ))}
+      <Fact
+        messages={messages}
+        labelKey="vehicles.create.color"
+        value={
+          vehicle.color ?? <Muted messages={messages} messageKey="vehicles.profile.notRecorded" />
+        }
+      />
+    </dl>
+  );
+}
+
+/** `veh.vehicle.manage`. Only changed fields are sent. */
+function EditPanel({
+  locale,
+  messages,
+  vehicle,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+}) {
+  const formId = useId();
+  const [values, setValues] = useState<Record<string, string>>({
+    vin: vehicle.vin ?? '',
+    color: vehicle.color ?? '',
+    displayNumber: vehicle.displayNumber ?? '',
+    modelYear: vehicle.modelYear === null ? '' : String(vehicle.modelYear),
+  });
+
+  const [state, submit, pending] = useActionState(
+    async (previous: ActionState) => {
+      // Only what actually changed. An absent field leaves the column untouched
+      // and an explicit null CLEARS it, so sending every field would wipe the
+      // ones the operator did not touch.
+      const changed: Record<string, string | number | null> = {};
+
+      const original: Record<string, string> = {
+        vin: vehicle.vin ?? '',
+        color: vehicle.color ?? '',
+        displayNumber: vehicle.displayNumber ?? '',
+        modelYear: vehicle.modelYear === null ? '' : String(vehicle.modelYear),
+      };
+
+      for (const [key, value] of Object.entries(values)) {
+        const trimmed = value.trim();
+        if (trimmed === (original[key] ?? '')) continue;
+        if (trimmed === '') {
+          // Cleared deliberately — an explicit null, which the route accepts and
+          // which is a different request from omitting the field.
+          changed[key] = null;
+        } else if (key === 'modelYear') {
+          if (!/^\d+$/.test(trimmed)) continue;
+          changed[key] = Number(trimmed);
+        } else {
+          changed[key] = trimmed;
+        }
+      }
+
+      return updateVehicleAction(vehicle.id, changed, previous);
+    },
+    { status: 'idle' } as ActionState
+  );
+
+  const set = (name: string, value: string) =>
+    setValues((current) => ({ ...current, [name]: value }));
+
+  return (
+    <form action={submit} className="rounded-lg border border-border bg-surface p-4">
+      <h2 className="text-section-title font-medium text-text-primary">
+        {translate(messages, 'vehicles.profile.editHeading')}
+      </h2>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <VinField
+          messages={messages}
+          id={`${formId}-vin`}
+          value={values.vin ?? ''}
+          onChange={(v) => set('vin', v)}
+          excludeVehicleId={vehicle.id}
+          maxLength={MAX_VIN_INPUT}
+        />
+        <Text
+          messages={messages}
+          id={`${formId}-number`}
+          name="displayNumber"
+          labelKey="vehicles.column.reference"
+          value={values.displayNumber ?? ''}
+          onChange={set}
+          maxLength={MAX_DISPLAY_NUMBER}
+        />
+        <Text
+          messages={messages}
+          id={`${formId}-color`}
+          name="color"
+          labelKey="vehicles.create.color"
+          value={values.color ?? ''}
+          onChange={set}
+          maxLength={MAX_COLOR}
+        />
+        <Text
+          messages={messages}
+          id={`${formId}-year`}
+          name="modelYear"
+          labelKey="vehicles.column.modelYear"
+          value={values.modelYear ?? ''}
+          onChange={set}
+          maxLength={4}
+        />
+      </div>
+
+      <p className="mt-3 text-caption text-text-muted" lang={locale}>
+        {/* Said out loud. No vehicle operation is versionGuarded, so a
+            concurrent edit by another operator is NOT detected. */}
+        {translate(messages, 'vehicles.profile.noConcurrencyNote')}
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+        >
+          {pending ? translate(messages, 'form.pending') : translate(messages, 'form.submit')}
+        </button>
+        <Outcome messages={messages} state={state} />
+      </div>
+    </form>
+  );
+}
+
+/** `veh.vehicle.status.manage` — a different permission from the edit above. */
+function StatusPanel({
+  messages,
+  vehicle,
+}: {
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+}) {
+  const formId = useId();
+  const [state, submit, pending] = useActionState(
+    changeVehicleStatusAction.bind(null, vehicle.id),
+    { status: 'idle' } as ActionState
+  );
+
+  return (
+    <form action={submit} className="rounded-lg border border-border bg-surface p-4">
+      <h2 className="text-section-title font-medium text-text-primary">
+        {translate(messages, 'vehicles.profile.statusHeading')}
+      </h2>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor={`${formId}-lifecycle`} className="block text-caption text-text-secondary">
+            {translate(messages, 'crm.customers.column.status')}
+          </label>
+          <select
+            id={`${formId}-lifecycle`}
+            name="lifecycleStatus"
+            defaultValue=""
+            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+          >
+            <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
+            {VEHICLE_LIFECYCLE_STATUSES.filter(
+              // `merged` is a state a vehicle REACHES through `veh.vehicle-merge`.
+              // Offering it here would let an operator declare a merge that never
+              // happened, with no survivor for `mergedIntoId` to point at.
+              (status) => status !== 'merged'
+            ).map((status) => (
+              <option key={status} value={status}>
+                {translateDynamic(messages, `vehicles.lifecycle.${status}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor={`${formId}-workshop`} className="block text-caption text-text-secondary">
+            {translate(messages, 'vehicles.column.workshop')}
+          </label>
+          <select
+            id={`${formId}-workshop`}
+            name="workshopStatus"
+            defaultValue=""
+            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+          >
+            <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
+            {WORKSHOP_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {translateDynamic(messages, `vehicles.workshop.${status}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md border border-border px-4 py-2 text-body text-text-primary disabled:opacity-60"
+        >
+          {pending
+            ? translate(messages, 'form.pending')
+            : translate(messages, 'vehicles.profile.applyStatus')}
+        </button>
+        <Outcome messages={messages} state={state} />
+      </div>
+    </form>
+  );
+}
+
+function Outcome({
+  messages,
+  state,
+}: {
+  readonly messages: Messages;
+  readonly state: ActionState;
+}) {
+  if (state.status === 'idle' || !state.messageKey) return null;
+  const failed = state.status !== 'success';
+  return (
+    <p
+      role={failed ? 'alert' : 'status'}
+      className={`text-body ${failed ? 'text-status-danger' : 'text-status-success'}`}
+    >
+      {translateDynamic(messages, state.messageKey)}
+      {state.correlationId ? (
+        <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
+      ) : null}
+    </p>
+  );
+}
+
+function Fact({
+  messages,
+  labelKey,
+  value,
+}: {
+  readonly messages: Messages;
+  readonly labelKey: string;
+  readonly value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-caption text-text-secondary">{translateDynamic(messages, labelKey)}</dt>
+      <dd className="text-body text-text-primary">{value}</dd>
+    </div>
+  );
+}
+
+function Muted({
+  messages,
+  messageKey,
+}: {
+  readonly messages: Messages;
+  readonly messageKey: string;
+}) {
+  return <span className="text-text-muted">{translateDynamic(messages, messageKey)}</span>;
+}
+
+function Text({
+  messages,
+  id,
+  name,
+  labelKey,
+  value,
+  onChange,
+  maxLength,
+}: {
+  readonly messages: Messages;
+  readonly id: string;
+  readonly name: string;
+  readonly labelKey: string;
+  readonly value: string;
+  readonly onChange: (name: string, value: string) => void;
+  readonly maxLength: number;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-caption text-text-secondary">
+        {translateDynamic(messages, labelKey)}
+      </label>
+      <input
+        id={id}
+        name={name}
+        type="text"
+        dir="auto"
+        value={value}
+        onChange={(event) => onChange(name, event.target.value)}
+        maxLength={maxLength}
+        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+      />
+    </div>
+  );
+}

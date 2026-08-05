@@ -72,14 +72,15 @@ later write answer 409 with nothing on screen explaining why.
 
 ## Open, and NOT this phase's to fix
 
-| id              | owner        | subject                                                                                                                                                                 |
-| --------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**                        |
-| `P1-27-INT-006` | other phases | **10 pre-existing cursor sites** still mint from a JS `Date` — was 16; the six in the vehicle module were closed by `P1-27-INT-008` because Waves 7–12 call all of them |
-| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                                       |
-| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document                 |
-| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                                     |
-| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                |
+| id              | owner        | subject                                                                                                                                                                                                  |
+| --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**                                                         |
+| `P1-27-INT-006` | other phases | **10 pre-existing cursor sites** still mint from a JS `Date` — was 16; the six in the vehicle module were closed by `P1-27-INT-008` because Waves 7–12 call all of them                                  |
+| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                                                                        |
+| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document                                                  |
+| `P1-27-INT-009` | P1-17        | **`recordVersion` is published and an ETag emitted, and no vehicle write consumes either.** Neither vehicle PATCH is `versionGuarded`, so concurrent edits are last-writer-wins from a client's position |
+| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                                                                      |
+| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                                                 |
 
 **None of these blocks a P1-27 screen.** `INT-004` affects a generated document,
 not a runtime response. The **remaining 10** cursor sites are in operations P1-27
@@ -94,6 +95,33 @@ been read, and it survived because nothing re-checked it when the waves that cal
 those operations came into view. They were closed by `P1-27-INT-008` on the P1-17
 branch, which is the route §15 prescribes; the ten that remain have been checked
 against the Wave 7–21 operation list rather than assumed.
+
+### `P1-27-INT-009`, and the claim of this phase's own that it corrects
+
+`veh.vehicle-read` publishes `recordVersion` and the handler emits it as an
+`ETag`. **Neither vehicle PATCH is registered `versionGuarded: true`** — verified
+by grepping every route module under `apps/api/src/app/api/v1/vehicles`, which
+contains the string zero times, while work orders, appointments, assignments,
+deliveries and invoices all use it.
+
+So `handleOperation` never requires `If-Match` and never compares it. A PATCH
+sent without one succeeds; a well-formed one is ignored; a malformed one is a
+**428 from `parseIfMatch` even though the operation is unguarded**.
+`VehicleWriteService.update` re-reads `record_version` inside its own transaction
+and uses it in the `WHERE`, so a torn write is impossible — but a client cannot
+learn that somebody else changed the record between its read and its write. From
+an operator's position that is **last-writer-wins**, and the edit panel says so
+in as many words rather than implying a protection that is not there.
+
+**This corrects a claim made by this phase.** PR #193's docblock called
+`recordVersion` "the half of optimistic concurrency that was missing", which
+reads as though publishing it completed the mechanism. It did not: the other half
+— an operation that consumes it — was never built for vehicles. The read is
+still worth having, and the sentence was still wrong.
+
+Owned by P1-17. Not fixed here: adding `versionGuarded: true` changes the
+behaviour of an existing write, which is a different class of change from adding
+a read, and §7 keeps it out of a Frontend branch.
 
 ### The measured extent of `INT-004`, found while building the write forms
 
