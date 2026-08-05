@@ -94,9 +94,58 @@ describe('the idempotency key', () => {
     expect(headers.get('idempotency-key')).toBe('caller-supplied-key');
   });
 
-  it('is NOT attached to PATCH or DELETE, which no operation marks idempotent', async () => {
-    expect((await headersOf('PATCH')).get('idempotency-key')).toBeNull();
-    expect((await headersOf('DELETE')).get('idempotency-key')).toBeNull();
+  /**
+   * This test used to read:
+   *
+   *   it('is NOT attached to PATCH or DELETE, which no operation marks
+   *      idempotent', ...)
+   *
+   * **The premise was false** (`P1-27-INT-003`). The contract marks three PATCH
+   * operations idempotent — `veh.vehicle-update`, `veh.vehicle-status-change`
+   * and `svc.service-update` — plus six PUT. Each answered `400 ERR-INT-002`
+   * before authorization, on every attempt.
+   *
+   * The test passed because it used the path `/api/v1/x`, which is not a
+   * published operation, so it was really asserting the behaviour for an
+   * *unknown* path — and then naming that assertion after a claim about the
+   * whole contract. A green test and a confident sentence, neither of which had
+   * looked at the contract.
+   *
+   * What it asserts now is the fail-safe for an unknown path, which is the thing
+   * `/api/v1/x` actually exercises. The real per-operation behaviour is in
+   * `tests/operation-contract.test.ts`, against the shipped table.
+   */
+  it('sends a key for an UNKNOWN mutation path, whatever the method', async () => {
+    // Not conservatism — asymmetry. A key the operation ignores costs one unread
+    // header; a key it required and did not get is a 400 on every attempt.
+    expect((await headersOf('PATCH')).get('idempotency-key')).toBeTruthy();
+    expect((await headersOf('DELETE')).get('idempotency-key')).toBeTruthy();
+  });
+
+  it('sends no key for a mutation the contract marks non-idempotent', async () => {
+    let seen: Headers | undefined;
+    const client = clientWith(async (_url, init) => {
+      seen = new Headers(init?.headers);
+      return respond(200, {});
+    });
+    // A real published operation — `shared.attachment-link-withdraw` — that is a
+    // mutation and is NOT idempotent. Named from the shipped table rather than
+    // invented, so the test cannot pass by resolving nothing.
+    await client.send('DELETE', '/api/v1/attachments/links/abc');
+    expect(seen?.get('idempotency-key')).toBeNull();
+  });
+
+  it('sends no key on login, which is a POST the contract does not mark idempotent', async () => {
+    // The old POST-only rule attached a key here. It was harmless — the backend
+    // ignores an unread header — but it is worth pinning: the new rule is
+    // narrower than the old one, not merely wider, and this is where that shows.
+    let seen: Headers | undefined;
+    const client = clientWith(async (_url, init) => {
+      seen = new Headers(init?.headers);
+      return respond(200, {});
+    });
+    await client.send('POST', '/api/v1/auth/login', { email: 'a@b.test', password: 'x' });
+    expect(seen?.get('idempotency-key')).toBeNull();
   });
 
   it('is not attached to a read', async () => {

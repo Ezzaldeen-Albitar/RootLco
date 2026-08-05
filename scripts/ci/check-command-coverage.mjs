@@ -88,6 +88,12 @@ export const REGISTER = Object.freeze([
   { name: 'validate:p1-22-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-23-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-24-register', owner: ROOT, tier: 'required', why: 'operation register' },
+  {
+    name: 'validate:idempotent-operations',
+    owner: ROOT,
+    tier: 'required',
+    why: "the Web client's idempotency table is derived from the published contract, not from the HTTP method (P1-27-INT-003) — drift means a mutation the backend refuses before authorization",
+  },
   { name: 'validate:command-coverage', owner: ROOT, tier: 'required', why: 'this gate' },
   {
     name: 'validate:p1-26-frontend',
