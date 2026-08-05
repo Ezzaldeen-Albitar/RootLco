@@ -43,9 +43,10 @@ describe('the navigation model', () => {
 
   it('marks every module whose screens do not exist yet as planned', () => {
     // `available` is a claim that a screen exists. P1-25 built the frame, the
-    // overview and the gallery; P1-26 built authentication and administration.
-    // Everything else is still a route definition for a later phase and must
-    // render as visibly unavailable rather than as a link that 404s.
+    // overview and the gallery; P1-26 built authentication and administration;
+    // P1-27 built CRM customer search. Everything else is still a route
+    // definition for a later phase and must render as visibly unavailable
+    // rather than as a link that 404s.
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
     expect(available.sort()).toEqual([
       'administration',
@@ -54,6 +55,7 @@ describe('the navigation model', () => {
       'administration.permissions',
       'administration.roles',
       'administration.users',
+      'customers',
       'gallery',
       'overview',
       'settings',
@@ -74,7 +76,8 @@ describe('the navigation model', () => {
       'appointments',
       'billing',
       'catalog',
-      'customers',
+      // `customers` left this list in P1-27, when the screen it points at was
+      // built. `vehicles` follows in the same phase.
       'delivery',
       'documents',
       'inventory',

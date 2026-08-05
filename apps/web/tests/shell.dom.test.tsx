@@ -49,12 +49,31 @@ describe('sidebar', () => {
   it('renders a planned module as NOT a link', () => {
     // An operator who clicks a module and lands on a 404 stops trusting the
     // whole navigation.
+    //
+    // The example is `Inventory`, not `Customers`. Customers was planned when
+    // this test was written and became available in P1-27 — so the assertion
+    // started failing against a module that had simply been built. Inventory is
+    // a later phase, which is what makes it a valid stand-in today; whoever
+    // builds it will land here for the same reason and should move the example
+    // on again rather than weaken the claim.
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.queryByRole('link', { name: /Customers/ })).toBeNull();
-    const planned = screen.getByText('Customers', { selector: 'span' });
+    expect(screen.queryByRole('link', { name: /Inventory/ })).toBeNull();
+    const planned = screen.getByText('Inventory', { selector: 'span' });
     expect(planned.closest('[aria-disabled="true"]')).not.toBeNull();
+  });
+
+  it('renders an AVAILABLE module as a real link', () => {
+    // The other half, and the one that would have caught a `status` left at
+    // `planned` after the screen shipped: a built module that still renders as
+    // disabled text is unreachable from the sidebar, and nothing else in this
+    // suite would notice.
+    renderLtr(
+      <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
+    );
+    const customers = screen.getByRole('link', { name: /Customers/ });
+    expect(customers).toHaveAttribute('href', '/en/crm/customers');
   });
 
   it('keeps the accessible name when collapsed', async () => {

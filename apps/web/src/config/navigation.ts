@@ -155,9 +155,16 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'customers',
         labelKey: 'nav.customers',
         icon: 'customers',
-        href: '/customers',
+        // `/crm/customers`, not `/customers`. The route lives under the feature
+        // segment so the customer profile, its components and the duplicate
+        // queue share one parent — and so a future non-CRM "customers" surface
+        // cannot collide with it.
+        href: '/crm/customers',
         permission: 'crm.customer.read',
-        status: 'planned',
+        // Built in P1-27. It was `planned` while the entry pointed at a route
+        // that did not exist; leaving that word on a live screen would tell an
+        // operator the thing in front of them is not real.
+        status: 'available',
         scope: 'company',
       },
       {

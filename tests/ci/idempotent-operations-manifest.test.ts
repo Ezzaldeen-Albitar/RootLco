@@ -18,7 +18,11 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
-import { readContract, render } from '../../scripts/ci/generate-idempotent-operations.mjs';
+import {
+  readContract,
+  render,
+  renderFormatted,
+} from '../../scripts/ci/generate-idempotent-operations.mjs';
 
 const MANIFEST = join(
   REPOSITORY_ROOT,
@@ -74,12 +78,23 @@ describe('the derivation', () => {
 });
 
 describe('the shipped manifest', () => {
-  it('matches the published contract exactly', () => {
-    const expected = render(readContract(readFileSync(CONTRACT, 'utf8')));
+  it('matches the published contract exactly', async () => {
+    const expected = await renderFormatted(readContract(readFileSync(CONTRACT, 'utf8')));
     const actual = readFileSync(MANIFEST, 'utf8').replace(/\r\n/g, '\n');
     // Not a count comparison. A count matches while one operation has been
     // swapped for another, which is precisely the drift worth catching.
     expect(actual).toBe(expected);
+  });
+
+  it('is already Prettier-clean, so formatting it cannot cause drift', async () => {
+    // The generated file lives under `apps/web`, whose `format:check` covers its
+    // own tree. Emitting something Prettier would reformat fails that check —
+    // and formatting it afterwards makes it differ from the generator, which
+    // fails the drift check instead. Running Prettier inside the generator is
+    // what stops the two gates from disagreeing.
+    const operations = readContract(readFileSync(CONTRACT, 'utf8'));
+    expect(await renderFormatted(operations)).toBe(await renderFormatted(operations));
+    expect(await renderFormatted(operations)).not.toBe(render(operations));
   });
 
   it('is what the generator writes, proven by running the real generator', () => {

@@ -37,6 +37,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { format, resolveConfig } from 'prettier';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 
 const CONTRACT = join(REPOSITORY_ROOT, 'docs', 'api', 'openapi.v1.json');
@@ -150,9 +151,24 @@ export function render(operations) {
   return lines.join('\n');
 }
 
+/**
+ * The rendered file, formatted by Prettier with the WEB workspace's own config.
+ *
+ * Not a nicety. `apps/web` runs `format:check` over its own tree, so a generated
+ * file that Prettier would reformat fails the build — and formatting it by hand
+ * afterwards makes it differ from what the generator writes, so the drift gate
+ * then fails instead. Running the formatter here means the two can never
+ * disagree, and it uses `resolveConfig` on the target path so it picks up the
+ * workspace's config rather than the root's (they are separate on purpose).
+ */
+export async function renderFormatted(operations) {
+  const config = (await resolveConfig(TARGET)) ?? {};
+  return format(render(operations), { ...config, parser: 'typescript' });
+}
+
 const documentText = readFileSync(CONTRACT, 'utf8');
 const operations = readContract(documentText);
-const rendered = render(operations);
+const rendered = await renderFormatted(operations);
 const check = process.argv.includes('--check');
 
 const idempotentCount = operations.filter((operation) => operation.idempotent).length;
