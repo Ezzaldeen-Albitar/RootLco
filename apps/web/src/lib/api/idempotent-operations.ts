@@ -27,7 +27,7 @@ export interface PublishedOperation {
   readonly idempotent: boolean;
 }
 
-/** Every operation the contract publishes. 238 of them. */
+/** Every operation the contract publishes. 243 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1102,6 +1102,36 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/template-versions/{versionId}/retirement',
     method: 'POST',
     operationId: 'shared.template-version-retire',
+    idempotent: false,
+  },
+  {
+    template: '/vehicle-catalogue/body-types',
+    method: 'GET',
+    operationId: 'veh.catalogue-body-type-list',
+    idempotent: false,
+  },
+  {
+    template: '/vehicle-catalogue/makes',
+    method: 'GET',
+    operationId: 'veh.catalogue-make-list',
+    idempotent: false,
+  },
+  {
+    template: '/vehicle-catalogue/makes/{makeId}/models',
+    method: 'GET',
+    operationId: 'veh.catalogue-model-list',
+    idempotent: false,
+  },
+  {
+    template: '/vehicle-catalogue/models/{modelId}/trims',
+    method: 'GET',
+    operationId: 'veh.catalogue-trim-list',
+    idempotent: false,
+  },
+  {
+    template: '/vehicle-catalogue/powertrain-types',
+    method: 'GET',
+    operationId: 'veh.catalogue-powertrain-type-list',
     idempotent: false,
   },
   {

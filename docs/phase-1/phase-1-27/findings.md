@@ -36,18 +36,50 @@ restoring `method === 'POST'` fails 16 tests naming each affected operation.
 | `P1-27-INT-005` | No read for either duplicate-candidate queue                  | #194 |
 | `P1-27-INT-006` | A keyset cursor minted from a JS `Date` silently lost rows    | #195 |
 
+## Closed by Backend remediation DURING this phase
+
+Found while establishing ground truth for Waves 7–12, and fixed on a P1-17
+branch rather than inside this Frontend one — §7, and `check-phase-ownership`
+would have failed the merge.
+
+| id              | subject                                                         | PR   |
+| --------------- | --------------------------------------------------------------- | ---- |
+| `P1-27-INT-007` | **Five catalogue relations had no read operation of any kind**  | #197 |
+| `P1-27-INT-008` | **Six of the seven paginated vehicle reads lost rows silently** | #197 |
+
+**`INT-007`.** `veh.makes`, `veh.models`, `veh.trims`, `veh.body_types` and
+`veh.powertrain_types` were readable by nothing — 22 vehicle operations existed
+and not one listed a catalogue. `POST /vehicles` accepts five catalogue uuids, so
+a creation form could not offer a make and a vehicle could only ever be created
+with all five null. Five GETs added; tenant scoping left entirely to RLS, because
+a `tenant_id` predicate in the repository would hide every platform row.
+
+**`INT-008`.** `veh.vehicle-search`, `-history`, `-odometer-history`,
+`-plate-history`, `-ownership-history` and `-relationship-list` all minted their
+cursor from a JS `Date`. These are the reads behind `FE-017`, `FE-021`, `FE-022`,
+`FE-023`, `FE-025` and `FE-029` — so the sixteen "other phases" sites recorded
+below were not all somebody else's problem after all. `veh.vehicle-history` is
+the acute case: attribute-history rows are written by a trigger inside the
+transaction that changed the vehicle, so every row from one update shares
+`occurred_at` to the microsecond and the page walk lost every sibling of the row
+it stopped on, every time.
+
+Vehicle search also now publishes `mergedIntoId`. Search returns merged vehicles
+and gave no way to tell one from a live vehicle, so selecting one made every
+later write answer 409 with nothing on screen explaining why.
+
 ---
 
 ## Open, and NOT this phase's to fix
 
-| id              | owner        | subject                                                                                                                                                 |
-| --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**        |
-| `P1-27-INT-006` | other phases | **16 pre-existing cursor sites** still mint from a JS `Date`, listed with file and line in `findings/p1-27-int-006-cursor-precision.md`                 |
-| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                       |
-| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document |
-| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                     |
-| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                |
+| id              | owner        | subject                                                                                                                                                                 |
+| --------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**                        |
+| `P1-27-INT-006` | other phases | **10 pre-existing cursor sites** still mint from a JS `Date` — was 16; the six in the vehicle module were closed by `P1-27-INT-008` because Waves 7–12 call all of them |
+| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                                       |
+| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document                 |
+| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                                     |
+| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                |
 
 **None of these blocks a P1-27 screen.** `INT-004` affects a generated document,
 not a runtime response. The 16 cursor sites are in operations P1-27 does not
