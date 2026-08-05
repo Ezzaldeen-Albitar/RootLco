@@ -110,9 +110,14 @@ describe('the comment stripper is proven, not assumed', () => {
   it('does not truncate a URL at its own double slash', () => {
     // A naive `//.*$` strip would delete everything after `https:`, hiding any
     // real match on the rest of that line.
-    expect(stripComments("const u = 'https://example.test/merge';")).toContain(
-      'https://example.test/merge'
-    );
+    //
+    // Asserted on the TAIL, not on the whole URL. `includes()` of a full URL is
+    // `js/incomplete-url-substring-sanitization`, which CodeQL raised as HIGH
+    // against the gate's own self-test on PR #198 — correctly, because a
+    // substring check on a URL is a broken host check. The property here never
+    // needed the host: what matters is that the characters after the `//`
+    // survived, which is precisely what a truncation at `https:` destroys.
+    expect(stripComments("const u = 'https://example.test/keep-me';")).toContain('/keep-me');
   });
 
   it('fails the whole gate when the stripper over-matches', () => {

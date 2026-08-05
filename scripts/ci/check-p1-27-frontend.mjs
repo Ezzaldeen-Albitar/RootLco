@@ -125,20 +125,26 @@ export function stripComments(source) {
  * arriving through the one path they cannot see.
  */
 export function selfTest() {
+  // The fourth case proves a `//` preceded by `:` is not treated as a comment
+  // start. It asserts on the TAIL (`/keep-me`) rather than on the whole URL: an
+  // `includes()` of a full URL is `js/incomplete-url-substring-sanitization`,
+  // which CodeQL raised as HIGH against this very function on PR #198. The rule
+  // is right in general — a substring check on a URL is a broken host check —
+  // and the property under test never needed the host anyway. What matters is
+  // that the characters AFTER the `//` survived, which is exactly what the tail
+  // shows and what a truncation at `https:` would destroy.
   const sample = [
     '// customer-merge named in a line comment',
     '/** vehicle-merge named in a docblock */',
     "const path = '/merge';",
-    "const doc = 'https://example.test/merge';",
+    "const doc = 'https://example.test/keep-me';",
   ].join('\n');
   const stripped = stripComments(sample);
   const problems = [];
   if (stripped.includes('customer-merge')) problems.push('line comments survive stripping');
   if (stripped.includes('vehicle-merge')) problems.push('docblocks survive stripping');
   if (!stripped.includes("'/merge'")) problems.push('string literals are destroyed by stripping');
-  if (!stripped.includes('https://example.test/merge')) {
-    problems.push('a URL is truncated at its own //');
-  }
+  if (!stripped.includes('/keep-me')) problems.push('a URL is truncated at its own //');
   return problems;
 }
 

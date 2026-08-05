@@ -73,7 +73,7 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
       '// customer-merge named in a line comment',
       '/** vehicle-merge named in a docblock */',
       "const path = '/merge';",
-      "const doc = 'https://example.test/merge';",
+      "const doc = 'https://example.test/keep-me';",
     ].join('\n');
     const stripped = code(sample);
     // Prose about an absence is gone …
@@ -81,7 +81,11 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     expect(stripped).not.toContain('vehicle-merge');
     // … and the code that would constitute the thing itself is still there.
     expect(stripped).toContain("'/merge'");
-    expect(stripped).toContain('https://example.test/merge');
+    // The TAIL, not the whole URL: `includes()` of a full URL is
+    // `js/incomplete-url-substring-sanitization`, raised as HIGH on PR #198.
+    // What this proves is that the characters after the `//` survived, which is
+    // exactly what a truncation at `https:` would destroy.
+    expect(stripped).toContain('/keep-me');
   });
 
   it('checks a permission by exact membership, never by prefix', () => {
