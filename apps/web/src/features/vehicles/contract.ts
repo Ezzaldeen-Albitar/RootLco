@@ -126,6 +126,25 @@ export const EMPTY_CRITERIA: VehicleSearchCriteria = {
 };
 
 /**
+ * The criteria keys, as a runtime value rather than only as a type.
+ *
+ * TypeScript is erased at runtime, so `Object.entries(criteria)` iterates
+ * whatever the object actually carries — which CodeQL flagged as
+ * `js/remote-property-injection` (high) on PR #198, and it was right to. The
+ * type says five keys; nothing enforced it, and `__proto__` in that loop writes
+ * somewhere nobody intended.
+ *
+ * Iterating this list instead of the object is also **more correct against the
+ * contract**, which is the better reason to do it. The route schema is
+ * `.strict()`: one unrecognised key is a 422 for the *whole* search, not a
+ * dropped filter. Reading from a fixed list means an unexpected key cannot reach
+ * the API at all, rather than reaching it and failing the operator's search.
+ */
+export const CRITERIA_KEYS = Object.freeze(
+  Object.keys(EMPTY_CRITERIA) as readonly (keyof VehicleSearchCriteria)[]
+);
+
+/**
  * Whether the operator has actually asked for anything.
  *
  * An all-empty search would be a full-table scan against an `expensive-read`
@@ -134,7 +153,10 @@ export const EMPTY_CRITERIA: VehicleSearchCriteria = {
  * than a guard two files away.
  */
 export function isEmptyCriteria(criteria: VehicleSearchCriteria): boolean {
-  return Object.values(criteria).every((value) => value.trim().length === 0);
+  // Over `CRITERIA_KEYS`, not `Object.values`. An extra key on the object would
+  // otherwise make an empty search look non-empty and issue the full-table scan
+  // this function exists to refuse.
+  return CRITERIA_KEYS.every((key) => (criteria[key] ?? '').trim().length === 0);
 }
 
 /**
@@ -150,9 +172,14 @@ export function isEmptyCriteria(criteria: VehicleSearchCriteria): boolean {
  * a confidently empty page. Omitting the key is the only correct "no filter".
  */
 export function normalizeCriteria(criteria: VehicleSearchCriteria): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(criteria)) {
-    const trimmed = value.trim();
+  // `Object.create(null)` and a fixed key list. The previous version iterated
+  // `Object.entries(criteria)` and wrote each key into an object literal, which
+  // CodeQL flagged as `js/remote-property-injection` (high) on PR #198 — a key
+  // reaching this loop from anywhere but the five below writes somewhere nobody
+  // intended, and a null-prototype target has nowhere dangerous to write.
+  const out: Record<string, string> = Object.create(null) as Record<string, string>;
+  for (const key of CRITERIA_KEYS) {
+    const trimmed = (criteria[key] ?? '').trim();
     if (trimmed.length > 0) out[key] = trimmed;
   }
   return out;

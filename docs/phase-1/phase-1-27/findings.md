@@ -580,3 +580,51 @@ are reachable **from the sidebar**; typing a VIN issues no request; no merge or
 rescan control exists in the rendered output of either queue; opening either
 queue issues **no non-GET request at all**; no request carries a scope parameter;
 and a VIN typed into search never reaches the address bar.
+
+## Wave 17 — clean room, PR #198, and a high-severity CodeQL alert
+
+### `js/remote-property-injection` — high, and real
+
+CodeQL flagged `normalizeCriteria` in `apps/web/src/features/vehicles/contract.ts`:
+it iterated `Object.entries(criteria)` and wrote each key into an object literal.
+The parameter is typed `VehicleSearchCriteria`, which declares exactly five keys
+— and **TypeScript is erased at runtime**, so the loop iterates whatever the
+object actually carries. A `__proto__` key in that position writes somewhere
+nobody intended.
+
+The fix reads a frozen `CRITERIA_KEYS` list and writes into an
+`Object.create(null)` target. That closes the alert, and the better reason to do
+it is the **contract**: the route schema is `.strict()`, so one unrecognised key
+is a `422` for the _whole_ search rather than a dropped filter. Reading from a
+fixed list means an unexpected key cannot reach the API at all.
+
+**The change immediately caught a real instance of the thing it prevents.** Four
+QA cases failed on the new code because `p1-27-qa.test.ts` passed
+`{ plateNumber: '12-3456' }` — and the criterion is `plate`. Under the old
+implementation that key was forwarded verbatim to a `.strict()` schema, which
+would have answered `422` and failed the operator's entire search. Under the new
+one the criterion is simply absent, the search is correctly refused as empty, and
+the tests said so. A defect that had been sitting in a test written two waves
+earlier, invisible because the old code was happy to forward anything.
+
+### The alert was not visible from the branch ref
+
+`GET /code-scanning/alerts?ref=refs/heads/feature/…` returned **zero** alerts.
+The alert existed only on `refs/pull/198/head`. A CodeQL PR analysis is
+diff-informed and reports against the pull-request ref, so querying the branch —
+the obvious thing to query — reports clean over a high-severity finding. The
+check-run summary said "1 new alert including 1 high severity security
+vulnerability" while the branch query said nothing was wrong.
+
+### The clean room had to be moved, and the first attempt proved nothing
+
+The first clean room was cloned under the session scratchpad. `npm ci`,
+typecheck, lint and both suites all passed there — and `build:web` failed with
+`TurbopackInternalError: path length … exceeds max length of filesystem`. The
+generated chunk name for `CustomerProfileScreen` plus a long scratchpad prefix
+crosses Windows' `MAX_PATH`.
+
+That is an artifact of **where the clean room was put**, not a fact about the
+tree, and reporting it as a build failure would have been as wrong as reporting
+the green tests as a clean-room pass. The clean room was recreated at `C:\cr27`
+so the build is actually measured rather than blocked before it starts.

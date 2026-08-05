@@ -8,6 +8,7 @@ import {
   POWERTRAIN_CATEGORIES,
   VEHICLE_LIFECYCLE_STATUSES,
   WORKSHOP_STATUSES,
+  CRITERIA_KEYS,
   isEmptyCriteria,
   normalizeCriteria,
   normalizeVinForDisplay,
@@ -94,6 +95,41 @@ describe('criteria are sent as the strict schema expects', () => {
     expect(sent).toEqual({ vin: '1HG' });
     expect(Object.keys(sent)).not.toContain('plate');
     expect(Object.values(sent)).not.toContain('');
+  });
+
+  it('sends only the five contract keys, whatever the object actually carries', () => {
+    // TypeScript is erased at runtime. `normalizeCriteria` used to iterate
+    // `Object.entries(criteria)` and write each key into an object literal,
+    // which CodeQL flagged as `js/remote-property-injection` (high) on PR #198.
+    // It reads a fixed list now — which also matters against the `.strict()`
+    // route schema, where ONE unrecognised key is a 422 for the whole search
+    // rather than a dropped filter.
+    const smuggled = {
+      ...EMPTY_CRITERIA,
+      vin: '1HG',
+      // Not in the contract. Reaching the API, it would 422 the operator's
+      // entire search.
+      sort: 'createdAt',
+      tenantId: 'not-yours',
+    } as never;
+    expect(normalizeCriteria(smuggled)).toEqual({ vin: '1HG' });
+  });
+
+  it('writes into a null-prototype object, so a __proto__ key has nowhere to go', () => {
+    const hostile = { ...EMPTY_CRITERIA, vin: 'X', __proto__: { polluted: true } } as never;
+    const sent = normalizeCriteria(hostile);
+    expect(Object.getPrototypeOf(sent)).toBeNull();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('names exactly the five keys the strict schema accepts', () => {
+    expect([...CRITERIA_KEYS].sort()).toEqual([
+      'lifecycleStatus',
+      'plate',
+      'powertrainCategory',
+      'vehicleNumber',
+      'vin',
+    ]);
   });
 
   it('never produces a sort, page or total parameter', () => {

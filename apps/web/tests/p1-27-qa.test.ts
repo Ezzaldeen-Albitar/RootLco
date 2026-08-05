@@ -76,7 +76,13 @@ const LIST_ADAPTERS: readonly { name: string; call: () => Promise<{ status: stri
   },
   {
     name: 'searchVehicles',
-    call: () => vehApi.searchVehicles({ plateNumber: '12-3456' } as never, REQUEST, null),
+    // `plate`, not `plateNumber`. This line said `plateNumber` until
+    // `normalizeCriteria` stopped iterating the object and started reading the
+    // five contract keys — at which point the criterion vanished, the search
+    // was correctly refused as empty, and four cases here failed. The old code
+    // would have forwarded `plateNumber` to a `.strict()` schema, which is a 422
+    // for the whole search.
+    call: () => vehApi.searchVehicles({ plate: '12-3456' } as never, REQUEST, null),
   },
 ];
 
