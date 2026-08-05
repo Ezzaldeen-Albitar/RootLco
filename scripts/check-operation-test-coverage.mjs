@@ -301,6 +301,31 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
   },
+  'veh.catalogue-make-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-007. veh.makes had no read of any kind, so a creation form could not offer a make and a vehicle could only be created with make_id null. Tenant scoping is RLS’s alone (scope = platform OR tenant_id = current) — the repository adds no tenant predicate, because one would hide every platform row from every tenant',
+  },
+  'veh.catalogue-model-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'nested under the make because uq_models_platform_code is unique on (make_id, code), so a model code only means something relative to a make. An unknown or invisible make answers an EMPTY PAGE rather than 404, which is what stops it being an existence oracle for another tenant’s catalogue additions. Sorted by name, and the suite proves it by inserting five models out of alphabetical order at one shared instant',
+  },
+  'veh.catalogue-trim-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'same shape and same reasoning as the model list, one level down',
+  },
+  'veh.catalogue-body-type-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'the flat sibling of the make list; asserted to publish {items, nextCursor, hasMore} and no total',
+  },
+  'veh.catalogue-powertrain-type-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'NOT powertrain_category, which is a five-value enum on the vehicle itself and needs no lookup. powertrain_type_id references a tenant-extensible catalogue relation, and a form offering the enum where the uuid belongs sends a value the FK rejects',
+  },
   'veh.vehicle-duplicate-list': {
     files: ['tests/backend/p1-16-17-duplicate-candidate-reads.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 238,
-    "openapiPaths": 198,
-    "openapiOperations": 238,
+    "operations": 243,
+    "openapiPaths": 203,
+    "openapiOperations": 243,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 153
   },
   "counts": {
-    "Covered": 238
+    "Covered": 243
   },
   "operations": [
     {
@@ -7615,6 +7615,144 @@
       "file": "apps/api/src/app/api/v1/technicians/[technicianProfileId]/queue/route.ts"
     },
     {
+      "id": "veh.catalogue-body-type-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-catalogue/body-types",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-catalogue/body-types",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-catalogue/body-types/route.ts"
+    },
+    {
+      "id": "veh.catalogue-make-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-catalogue/makes",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-catalogue/makes",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-catalogue/makes/route.ts"
+    },
+    {
+      "id": "veh.catalogue-model-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-catalogue/makes/{makeId}/models",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-catalogue/makes/{makeId}/models",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-catalogue/makes/[makeId]/models/route.ts"
+    },
+    {
+      "id": "veh.catalogue-powertrain-type-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-catalogue/powertrain-types",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-catalogue/powertrain-types",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-catalogue/powertrain-types/route.ts"
+    },
+    {
+      "id": "veh.catalogue-trim-list",
+      "domain": "vehicle",
+      "method": "GET",
+      "route": "/api/v1/vehicle-catalogue/models/{modelId}/trims",
+      "permissions": ["veh.vehicle.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/vehicle-catalogue/models/{modelId}/trims",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/vehicle-catalogue/models/[modelId]/trims/route.ts"
+    },
+    {
       "id": "veh.vehicle-authorized-party-add",
       "domain": "vehicle",
       "method": "POST",
@@ -8384,7 +8522,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-17-vehicle-search.test.ts"],
+      "tests": [
+        "tests/backend/p1-17-vehicle-search.test.ts",
+        "tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/route.ts"
     },

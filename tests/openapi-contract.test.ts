@@ -108,6 +108,15 @@ import '@/app/api/v1/customers/[customerId]/history/route';
 import '@/app/api/v1/customers/[customerId]/timeline/route';
 import '@/app/api/v1/customers/[customerId]/vehicles/route';
 // --- Phase 1-17 vehicle backend ------------------------------------------
+// Reference catalogues, added by the P1-17 remediation for `P1-27-INT-007`.
+// These five MUST be listed here: the committed document is generated from
+// whatever this list loaded, so an unimported route is silently absent from the
+// published contract while every gate stays green.
+import '@/app/api/v1/vehicle-catalogue/makes/route';
+import '@/app/api/v1/vehicle-catalogue/makes/[makeId]/models/route';
+import '@/app/api/v1/vehicle-catalogue/models/[modelId]/trims/route';
+import '@/app/api/v1/vehicle-catalogue/body-types/route';
+import '@/app/api/v1/vehicle-catalogue/powertrain-types/route';
 import '@/app/api/v1/vehicles/route';
 import '@/app/api/v1/vehicles/[vehicleId]/route';
 import '@/app/api/v1/vehicles/[vehicleId]/merge/route';

@@ -11,7 +11,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import {
   OWNERSHIP_HISTORY_ORDERING,
   PLATE_HISTORY_ORDERING,
@@ -134,28 +140,36 @@ export class VehicleRegistrationRepository extends Repository {
       valid_from: string;
       valid_to: string | null;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
       `SELECT id, country_code, plate_normalized, valid_from::text AS valid_from,
-              valid_to::text AS valid_to, created_at
+              valid_to::text AS valid_to, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM veh.plate_history
         WHERE tenant_id = $1 AND vehicle_id = $2 ${keyset.predicate}
         ${keyset.order} ${keyset.limitClause}`,
       [context.principal.tenantId, vehicleId, ...keyset.values]
     );
-    return buildPage(
+    return buildPageWithCursors(
       result.rows.map((r) => ({
+        item: {
+          id: r.id,
+          countryCode: r.country_code,
+          plate: r.plate_normalized,
+          validFrom: r.valid_from,
+          validTo: r.valid_to,
+          // `active` means "not yet closed", NOT "in effect today" — a
+          // future-dated plate reports active. The screens say so rather than
+          // relabelling the field.
+          active: r.valid_to === null,
+          createdAt: r.created_at.toISOString(),
+        },
+        sortValue: r.created_at_cursor,
         id: r.id,
-        countryCode: r.country_code,
-        plate: r.plate_normalized,
-        validFrom: r.valid_from,
-        validTo: r.valid_to,
-        active: r.valid_to === null,
-        createdAt: r.created_at.toISOString(),
       })),
       page,
-      PLATE_HISTORY_ORDERING,
-      (hit) => ({ sortValue: hit.createdAt, id: hit.id })
+      PLATE_HISTORY_ORDERING
     );
   }
 
@@ -238,28 +252,33 @@ export class VehicleRegistrationRepository extends Repository {
       valid_from: string;
       valid_to: string | null;
       created_at: Date;
+      created_at_cursor: string;
     }>(
       db,
       `SELECT id, partner_id, ownership_kind, valid_from::text AS valid_from,
-              valid_to::text AS valid_to, created_at
+              valid_to::text AS valid_to, created_at,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
          FROM veh.ownership_history
         WHERE tenant_id = $1 AND vehicle_id = $2 ${keyset.predicate}
         ${keyset.order} ${keyset.limitClause}`,
       [context.principal.tenantId, vehicleId, ...keyset.values]
     );
-    return buildPage(
+    return buildPageWithCursors(
       result.rows.map((r) => ({
+        item: {
+          id: r.id,
+          partnerId: r.partner_id,
+          ownershipKind: r.ownership_kind,
+          validFrom: r.valid_from,
+          validTo: r.valid_to,
+          active: r.valid_to === null,
+          createdAt: r.created_at.toISOString(),
+        },
+        sortValue: r.created_at_cursor,
         id: r.id,
-        partnerId: r.partner_id,
-        ownershipKind: r.ownership_kind,
-        validFrom: r.valid_from,
-        validTo: r.valid_to,
-        active: r.valid_to === null,
-        createdAt: r.created_at.toISOString(),
       })),
       page,
-      OWNERSHIP_HISTORY_ORDERING,
-      (hit) => ({ sortValue: hit.createdAt, id: hit.id })
+      OWNERSHIP_HISTORY_ORDERING
     );
   }
 }
