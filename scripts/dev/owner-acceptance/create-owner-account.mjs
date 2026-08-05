@@ -35,8 +35,11 @@ import { alignLocalJwtSigning, assertHs256 } from './align-local-jwt.mjs';
 import {
   ACCEPTANCE_DB_LOGIN,
   ACCEPTANCE_DB_PASSWORD,
-  ADMIN_PERMISSIONS,
-  CRM_VEHICLE_PERMISSIONS,
+  // `ADMIN_PERMISSIONS` and `CRM_VEHICLE_PERMISSIONS` are NOT imported here.
+  // `OWNER_PERMISSIONS` is their deduplicated union and is the only set this
+  // script grants; importing the two halves as well left them unused, which
+  // ESLint never saw (it does not lint `scripts/`) and CodeQL did — one `note`
+  // finding, over a ceiling that is deliberately zero.
   OWNER_PERMISSIONS,
   GuardFailure,
   IDS,
