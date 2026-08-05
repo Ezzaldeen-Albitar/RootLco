@@ -15,6 +15,7 @@ then every tier run in that copy.
 
 | property                       | value                                      |
 | ------------------------------ | ------------------------------------------- |
+| SHA                            | `e14984e`                                   |
 | Clean-room path                | `C:\cr27`                                   |
 | Tree hash vs the source checkout | **identical**, verified by `rev-parse HEAD^{tree}` |
 | Working tree                   | 0 dirty files                               |
@@ -23,9 +24,14 @@ then every tier run in that copy.
 | `typecheck` (web)              | 0 errors                                    |
 | `lint` (web)                   | 0 errors                                    |
 | `build:web`                    | compiled                                    |
-| Web unit + component suite     | 752 passed, 37 files                        |
+| Web unit + component suite     | 763 passed, 38 files                        |
 | Repository suite               | 1640 passed, 74 files                       |
 | `validate:*` gates             | 40 of 42 pass — the two exceptions are named below |
+
+Re-run at `e14984e`, the head this evidence describes. The web figure rose from
+752/37 at `36fccbc` when the pre-merge adversarial review added
+`server-vocabularies.test.ts`; the numbers above are the ones measured at the
+SHA in the table, not carried forward from an earlier run.
 
 ## The two gates that cannot pass in a clean room, and why
 
