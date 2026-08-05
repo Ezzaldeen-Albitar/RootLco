@@ -4,7 +4,7 @@ import { useActionState, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/primitives/Icon';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import {
   createCompanyAction,
@@ -16,18 +16,6 @@ import {
   MAX_COMPANY_NAME,
   MAX_PERSON_NAME,
 } from '../creation-contract';
-
-/**
- * Translation by a key this file cannot know at compile time.
- *
- * `translate` takes `keyof Messages`, which is right and catches a typo in every
- * literal. A key that arrives from a Server Action's `messageKey`, or from a
- * field-error map, is a `string` — so it is widened here, once, rather than at
- * six call sites. The missing-key CI check is what still covers it.
- */
-function dynamic(messages: Messages, key: string): string {
-  return translate(messages, key as keyof Messages);
-}
 
 /**
  * Create an individual or company customer (`FE-004`, `FE-005`) and show the
@@ -103,7 +91,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
           role="alert"
           className="rounded-md border border-error bg-surface px-3 py-2 text-body text-error"
         >
-          {dynamic(messages, state.messageKey ?? 'form.formError')}
+          {translateDynamic(messages, state.messageKey ?? 'form.formError')}
           {state.correlationId ? (
             <span className="ms-2 text-caption text-text-muted">
               {translate(messages, 'state.correlationId')}{' '}
@@ -187,7 +175,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
           {/* Two options, because creation accepts two. */}
           {CREATABLE_LIFECYCLE_STATUSES.map((value) => (
             <option key={value} value={value}>
-              {translate(messages, `crm.lifecycle.${value}`)}
+              {translateDynamic(messages, `crm.lifecycle.${value}`)}
             </option>
           ))}
         </select>
@@ -336,7 +324,7 @@ function TextField({
   return (
     <div className="flex flex-col gap-1">
       <label className="text-caption font-medium text-text-secondary" htmlFor={id}>
-        {dynamic(messages, labelKey)}
+        {translateDynamic(messages, labelKey)}
         {required ? null : (
           <span className="ms-1 text-text-muted">{translate(messages, 'field.optional')}</span>
         )}
@@ -356,12 +344,12 @@ function TextField({
       />
       {hintKey ? (
         <span id={hintId} className="text-caption text-text-muted">
-          {dynamic(messages, hintKey)}
+          {translateDynamic(messages, hintKey)}
         </span>
       ) : null}
       {error ? (
         <span id={errorId} className="text-caption text-error">
-          {dynamic(messages, error)}
+          {translateDynamic(messages, error)}
         </span>
       ) : null}
     </div>
