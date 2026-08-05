@@ -44,6 +44,66 @@ test.describe('every P1-27 route is reachable and renders', () => {
   }
 });
 
+test.describe('no screen renders a raw message key', () => {
+  for (const locale of LOCALES) {
+    test(`${locale}: nothing that looks like a translation key reaches the page`, async ({
+      page,
+    }) => {
+      // `translate()` is `messages[key] ?? key`, so a value with no label
+      // renders `vehicles.field.color` to the operator and NOTHING fails —
+      // not typecheck, not lint, not a test, not the build.
+      //
+      // Two of these shipped in this phase and were caught only by an
+      // adversarial review of the finished branch: `vehicles.field.*` had zero
+      // entries in either catalogue, and `ADDRESS_TYPES` was invented so two
+      // real values had no label.
+      //
+      // WHAT THIS COVERS, AND WHAT IT DOES NOT.
+      //
+      // A missing label for a LITERAL key is already a build error —
+      // `translate()` takes `keyof Messages`, so renaming one fails typecheck
+      // and the application cannot be built. Verified: that mutation does not
+      // compile.
+      //
+      // The runtime risk is `translateDynamic`, whose key is built from server
+      // data and cannot be typed. This assertion covers exactly that, and it
+      // covers it only for values that render on an EMPTY database — a status
+      // filter renders every one of its options, so it is caught here; a
+      // `vehicles.field.*` label needs a vehicle with attribute history and is
+      // not. `apps/web/tests/server-vocabularies.test.ts` is what covers those,
+      // by comparing the catalogues to the migrations that own the vocabularies.
+      //
+      // Mutation-verified: deleting `vehicles.duplicateStatus.dismissed` and
+      // rebuilding makes this fail with the raw key in the message.
+      const routes = [
+        `/${locale}/crm/customers`,
+        `/${locale}/crm/customers/new/individual`,
+        `/${locale}/crm/customer-duplicates`,
+        `/${locale}/vehicles`,
+        `/${locale}/vehicles/new`,
+        `/${locale}/vehicles/duplicates`,
+      ];
+
+      for (const route of routes) {
+        await page.goto(route);
+        await page.waitForLoadState('networkidle');
+        const text = (await page.locator('body').innerText()) ?? '';
+        // A key is `segment.segment[.segment]` in lower camel with no spaces,
+        // anchored to this product's own namespaces so an ordinary sentence
+        // containing a full stop cannot match.
+        //
+        // The lookbehind excludes an email host: the acceptance account is
+        // `owner.acceptance@crm.local`, whose domain matched the first version
+        // of this pattern and made the guard fail on real content. A guard that
+        // cries wolf gets deleted, so it is narrowed rather than loosened.
+        const keys =
+          text.match(/(?<![@\w.])(?:crm|vehicles|nav|state|form|action)\.[a-zA-Z]+\.?\w*/g) ?? [];
+        expect(keys, `${route} rendered raw message key(s): ${keys.join(', ')}`).toEqual([]);
+      }
+    });
+  }
+});
+
 test.describe('both duplicate queues are reachable from the sidebar', () => {
   test('a signed-in operator can navigate to them without typing a URL', async ({ page }) => {
     // Both screens shipped with routes and no way in. Every test passed, the
