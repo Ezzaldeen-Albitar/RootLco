@@ -122,7 +122,8 @@ Each row is a commit that was green on its own before the next wave started.
 | 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                     | `c8d755d` |
 | 5    | `FE-009`…`FE-014`            | The same six, read surface                       | `ff923f1` |
 | 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | `c390abb` |
-| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | pending   |
+| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | `bf7a011` |
+| 6b   | —                            | P1-17 remediation (PR #197) + reintegration      | `f80a6d2` |
 
 **Frontend progress: 16 / 29. Total: 16 / 42.**
 
@@ -134,12 +135,29 @@ Every CRM task is now delivered except the customer-side half of `FE-025` — th
 `vehicles` profile section, still marked planned because it lists a customer's
 vehicles and there is no vehicle screen to link to before Wave 7.
 
-### Test tiers, re-measured at Wave 6
+### Test tiers, re-measured at Wave 6b
 
 | tier                 | at base     | now         |
 | -------------------- | ----------- | ----------- |
 | Root / CI-contract   | 1608 / 1608 | 1614 / 1614 |
 | Web unit / component | 357 / 357   | 564 / 564   |
+| Backend              | 1818 / 1818 | 1831 / 1831 |
+
+### The Backend surface moved, and this branch is based on the new one
+
+`develop` is now `592a316` — PR #197, a merge commit with two parents. The
+registry is **238 → 243 operations**, 198 → 203 paths, 199 → 204 route files.
+`main` is still `f085d820` and is not promoted by this phase.
+
+`P1-27-INT-007` and `P1-27-INT-008` were found while establishing ground truth
+for Waves 7–12 and fixed on a **P1-17 branch**, not here. Twenty CI checks green,
+merged through protected change control, then merged back into this branch —
+which is exactly the eight-step path §7 lays out, taken for the fifth and sixth
+time in this phase.
+
+**What Wave 7 can now rely on that it could not before:** a make/model/trim
+picker exists at all, and the six vehicle list reads behind `FE-017`, `FE-021`,
+`FE-022`, `FE-023`, `FE-025` and `FE-029` no longer drop rows when paged.
 
 ### What the write surface proved
 
