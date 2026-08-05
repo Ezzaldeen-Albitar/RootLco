@@ -9,7 +9,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { OrderingContract } from '@/server/db/pagination';
 import type { VehicleRelationshipRole } from '../domain/customer-identity';
 
@@ -265,6 +271,7 @@ export class CustomerIdentityRepository extends Repository {
       match_basis: unknown;
       status: string;
       detected_at: Date;
+      detected_at_cursor: string;
       reviewed_by: string | null;
       reviewed_at: Date | null;
     }>(
@@ -278,6 +285,7 @@ export class CustomerIdentityRepository extends Repository {
       `SELECT c.id, c.partner_id_a, a.display_name AS display_name_a,
               c.partner_id_b, b.display_name AS display_name_b,
               c.match_score, c.match_basis, c.status, c.detected_at,
+              ${cursorTimestamp('c.detected_at')} AS detected_at_cursor,
               c.reviewed_by, c.reviewed_at
          FROM crm.duplicate_candidates c
          LEFT JOIN crm.business_partners a
@@ -290,26 +298,31 @@ export class CustomerIdentityRepository extends Repository {
         ${keyset.limitClause}`,
       values
     );
+    // The cursor key is the MICROSECOND rendering, not the published millisecond
+    // one (`P1-27-INT-006`). A duplicate scan stamps its whole batch with one
+    // `transaction_timestamp()`, so a millisecond cursor here does not merely
+    // risk losing the tail of a page — it loses it every time.
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        partnerIdA: row.partner_id_a,
+        displayNameA: row.display_name_a,
+        partnerIdB: row.partner_id_b,
+        displayNameB: row.display_name_b,
+        // `numeric` arrives as a string and stays one. A match score is a decimal
+        // the database froze at detection; parsing it to a float here would let a
+        // rounding artefact change which of two candidates a reviewer sees first.
+        matchScore: row.match_score,
+        matchBasis: row.match_basis,
+        status: row.status,
+        detectedAt: row.detected_at.toISOString(),
+        reviewedBy: row.reviewed_by,
+        reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
+      },
+      sortValue: row.detected_at_cursor,
       id: row.id,
-      partnerIdA: row.partner_id_a,
-      displayNameA: row.display_name_a,
-      partnerIdB: row.partner_id_b,
-      displayNameB: row.display_name_b,
-      // `numeric` arrives as a string and stays one. A match score is a decimal
-      // the database froze at detection; parsing it to a float here would let a
-      // rounding artefact change which of two candidates a reviewer sees first.
-      matchScore: row.match_score,
-      matchBasis: row.match_basis,
-      status: row.status,
-      detectedAt: row.detected_at.toISOString(),
-      reviewedBy: row.reviewed_by,
-      reviewedAt: row.reviewed_at === null ? null : row.reviewed_at.toISOString(),
     }));
-    return buildPage(rows, page, DUPLICATE_CANDIDATE_ORDERING, (row) => ({
-      sortValue: row.detectedAt,
-      id: row.id,
-    }));
+    return buildPageWithCursors(rows, page, DUPLICATE_CANDIDATE_ORDERING);
   }
 
   async findCandidate(db: DbHandle, candidateId: string): Promise<DuplicateCandidateRow | null> {
@@ -442,27 +455,35 @@ export class CustomerIdentityRepository extends Repository {
       event_type: string;
       title: string;
       occurred_at: Date;
+      occurred_at_cursor: string;
       actor_id: string | null;
     }>(
       db,
-      `SELECT id, event_type, title, occurred_at, actor_id
+      `SELECT id, event_type, title, occurred_at,
+              ${cursorTimestamp('occurred_at')} AS occurred_at_cursor,
+              actor_id
          FROM crm.timeline_events
         WHERE tenant_id = $1 AND partner_id = $2 ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
       values
     );
+    // `P1-27-INT-006`. A timeline is written by triggers, so one transaction
+    // routinely emits several events sharing `occurred_at` to the microsecond —
+    // the file's own docblock says so. A millisecond cursor drops whichever of
+    // them fall after a page boundary.
     const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        eventType: row.event_type,
+        title: row.title,
+        occurredAt: row.occurred_at.toISOString(),
+        actorId: row.actor_id,
+      },
+      sortValue: row.occurred_at_cursor,
       id: row.id,
-      eventType: row.event_type,
-      title: row.title,
-      occurredAt: row.occurred_at.toISOString(),
-      actorId: row.actor_id,
     }));
-    return buildPage(rows, page, TIMELINE_ORDERING, (entry) => ({
-      sortValue: entry.occurredAt,
-      id: entry.id,
-    }));
+    return buildPageWithCursors(rows, page, TIMELINE_ORDERING);
   }
 
   /**
