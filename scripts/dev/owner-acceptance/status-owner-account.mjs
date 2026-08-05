@@ -18,7 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import {
-  ADMIN_PERMISSIONS,
+  OWNER_PERMISSIONS,
   GuardFailure,
   IDS,
   NAMES,
@@ -82,8 +82,8 @@ async function main() {
     report('administrator role exists', r.role_a === 1, NAMES.adminRoleName);
     report(
       'role permission count',
-      r.perms === ADMIN_PERMISSIONS.length,
-      `${r.perms} of ${ADMIN_PERMISSIONS.length}`
+      r.perms === OWNER_PERMISSIONS.length,
+      `${r.perms} of ${OWNER_PERMISSIONS.length}`
     );
     report('owner account exists', r.account === 1, email);
     report('owner account active', r.account_status === 'active', String(r.account_status));
@@ -185,7 +185,7 @@ async function main() {
   report('session read', session.ok, `${session.status}`);
 
   const granted = new Set(sessionBody?.permissions ?? []);
-  const missing = ADMIN_PERMISSIONS.filter((code) => !granted.has(code));
+  const missing = OWNER_PERMISSIONS.filter((code) => !granted.has(code));
   report(
     'resolved permissions',
     missing.length === 0,

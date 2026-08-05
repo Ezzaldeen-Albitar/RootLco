@@ -18,6 +18,8 @@
  *   a transport layer does on the caller's behalf.
  */
 
+import { requiresIdempotencyKey } from './operation-contract';
+
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 
 /** RFC 9457 problem details, as the backend publishes them. */
@@ -176,12 +178,11 @@ export class ApiClient {
    *
    * Every operation the backend marks `idempotent: true` **requires** an
    * `Idempotency-Key` header: `route-handler.ts` calls `requireIdempotencyKey`
-   * unconditionally and answers `ERR-INT-002` (400) without one, *before*
-   * permissions are even evaluated. Ten operations in this application's surface
-   * are marked that way. Leaving the header to each call site meant every one of
-   * them failed 100% of the time, and the 400 surfaced as a generic validation
-   * banner naming no field — so the screen looked broken rather than
-   * misconfigured (finding `P1-26-F-015`).
+   * and answers `ERR-INT-002` (400) without one, *before* permissions are even
+   * evaluated. Leaving the header to each call site meant every one of them
+   * failed 100% of the time, and the 400 surfaced as a generic validation banner
+   * naming no field — so the screen looked broken rather than misconfigured
+   * (finding `P1-26-F-015`).
    *
    * A generated key is **semantically correct here**, and only because of the
    * rule directly above it: this client never retries a mutation. One `send` is
@@ -190,9 +191,22 @@ export class ApiClient {
    * retry the backend's idempotency keys exist for — passes its own key, and
    * that explicit key always wins.
    *
-   * The default applies to `POST` only. `PATCH` and `DELETE` are not marked
-   * idempotent anywhere in the published contract, and sending a key they will
-   * never read would be noise.
+   * ## The default is decided by the CONTRACT, not by the method (`P1-27-INT-003`)
+   *
+   * This paragraph used to read: "The default applies to `POST` only. `PATCH` and
+   * `DELETE` are not marked idempotent anywhere in the published contract."
+   *
+   * **That was false**, and it is the kind of false that does real damage,
+   * because a confident sentence is what stops the next reader checking. The
+   * contract marks **120** operations idempotent, of which **nine are not POST**
+   * — six PUT and three PATCH, including `PATCH /vehicles/{vehicleId}`. Every one
+   * of them was refused before authorization, on every attempt.
+   *
+   * The backend's rule was never a method rule; it reads `operation.idempotent`
+   * off the registration. So this client now reads the same fact out of the
+   * published contract via `requiresIdempotencyKey`, and
+   * `validate:idempotent-operations` fails the build if the generated table and
+   * the contract ever disagree.
    */
   async send<T>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -204,8 +218,12 @@ export class ApiClient {
       readonly ifMatch?: string | number;
     } = {}
   ): Promise<ApiResult<T>> {
+    // A caller-supplied key always wins, and is never regenerated: re-presenting
+    // the same key is the deliberate replay the backend's idempotency exists for,
+    // and overwriting it would turn a retry into a second logical attempt.
     const idempotencyKey =
-      options.idempotencyKey ?? (method === 'POST' ? this.#newIdempotencyKey() : undefined);
+      options.idempotencyKey ??
+      (requiresIdempotencyKey(method, path) ? this.#newIdempotencyKey() : undefined);
     return this.#request<T>(method, path, body, options.signal, idempotencyKey, options.ifMatch);
   }
 

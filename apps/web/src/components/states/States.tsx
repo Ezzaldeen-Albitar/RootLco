@@ -192,9 +192,11 @@ export function NotFoundState({ messages }: { readonly messages: Messages }) {
 export function BackendUnavailableState({
   messages,
   action,
+  correlationId,
 }: {
   readonly messages: Messages;
   readonly action?: ReactNode | undefined;
+  readonly correlationId?: string | undefined;
 }) {
   return (
     <StateShell
@@ -204,6 +206,13 @@ export function BackendUnavailableState({
       title={translate(messages, 'state.unavailable.title')}
       description={translate(messages, 'state.unavailable.description')}
       action={action}
+      // `P1-27-DO-002`. This state is the one an operator reports: a 429 or a
+      // transport failure is the failure they will phone about, and without a
+      // reference nothing they say can be tied to the API's structured log. It
+      // was added when `QA-002` routed tables here — the previous code rendered
+      // `ErrorState`, which HAS a reference, so splitting the states out had
+      // silently taken it away on the most-reported path of the two.
+      {...(correlationId ? { correlationId } : {})}
     />
   );
 }

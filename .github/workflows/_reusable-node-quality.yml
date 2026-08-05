@@ -498,6 +498,9 @@ jobs:
           # source, no dangerouslySetInnerHTML. Each of those failures is
           # invisible in review and compiles perfectly.
           npm run validate:web-boundary
+          # No merge caller while P1-OD-017 is open, no duplicate scan from a
+          # review surface, no client-asserted scope, no invented total.
+          npm run validate:p1-27-frontend
 
       - name: Web component tier
         if: inputs.task == 'web-quality'

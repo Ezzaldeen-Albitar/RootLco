@@ -37,14 +37,32 @@ async function lint(code: string) {
   };
 }
 
+/**
+ * 20 s, not the default 5 s.
+ *
+ * The first call into Stylelint in the process pays for loading the entire rule
+ * set — about 5.1 s on a machine that is also running two dev servers and a
+ * browser, which is exactly the machine an Owner-acceptance run uses. At the
+ * default this test failed when nothing was wrong.
+ *
+ * A test whose verdict depends on how busy the host is has stopped being a
+ * check. It gets re-run until it passes, and that habit is what lets a real
+ * failure through.
+ */
+const COLD_START_TIMEOUT_MS = 20_000;
+
 describe('the web Stylelint configuration is valid', () => {
-  it('declares no rule with an invalid option shape', async () => {
-    // The defect that hid the RTL guard. An invalid option is reported
-    // separately from warnings, which is why it never turned the gate red on
-    // its own.
-    const { invalidOptions } = await lint('.a { color: red; }');
-    expect(invalidOptions).toEqual([]);
-  });
+  it(
+    'declares no rule with an invalid option shape',
+    async () => {
+      // The defect that hid the RTL guard. An invalid option is reported
+      // separately from warnings, which is why it never turned the gate red on
+      // its own.
+      const { invalidOptions } = await lint('.a { color: red; }');
+      expect(invalidOptions).toEqual([]);
+    },
+    COLD_START_TIMEOUT_MS
+  );
 
   it('parses the committed configuration as JSON', () => {
     expect(() => JSON.parse(readFileSync(CONFIG, 'utf8'))).not.toThrow();

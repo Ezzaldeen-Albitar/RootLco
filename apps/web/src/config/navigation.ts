@@ -155,9 +155,28 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'customers',
         labelKey: 'nav.customers',
         icon: 'customers',
-        href: '/customers',
+        // `/crm/customers`, not `/customers`. The route lives under the feature
+        // segment so the customer profile, its components and the duplicate
+        // queue share one parent — and so a future non-CRM "customers" surface
+        // cannot collide with it.
+        href: '/crm/customers',
         permission: 'crm.customer.read',
-        status: 'planned',
+        // Built in P1-27. It was `planned` while the entry pointed at a route
+        // that did not exist; leaving that word on a live screen would tell an
+        // operator the thing in front of them is not real.
+        status: 'available',
+        scope: 'company',
+      },
+      {
+        key: 'customer-duplicates',
+        labelKey: 'nav.customerDuplicates',
+        icon: 'customers',
+        href: '/crm/customer-duplicates',
+        // Its OWN permission, not `crm.customer.read`. Reviewing possible
+        // duplicates is a separate capability, and most operators who may read a
+        // customer may not decide whether two records are the same person.
+        permission: 'crm.customer.duplicate.review',
+        status: 'available',
         scope: 'company',
       },
       {
@@ -166,7 +185,18 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         icon: 'vehicles',
         href: '/vehicles',
         permission: 'veh.vehicle.read',
-        status: 'planned',
+        // Built in P1-27. Left as `planned` it would have told an operator that
+        // the screen in front of them is not real.
+        status: 'available',
+        scope: 'company',
+      },
+      {
+        key: 'vehicle-duplicates',
+        labelKey: 'nav.vehicleDuplicates',
+        icon: 'vehicles',
+        href: '/vehicles/duplicates',
+        permission: 'veh.vehicle.duplicate.review',
+        status: 'available',
         scope: 'company',
       },
     ],

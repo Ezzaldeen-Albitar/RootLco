@@ -35,7 +35,12 @@ import { alignLocalJwtSigning, assertHs256 } from './align-local-jwt.mjs';
 import {
   ACCEPTANCE_DB_LOGIN,
   ACCEPTANCE_DB_PASSWORD,
-  ADMIN_PERMISSIONS,
+  // `ADMIN_PERMISSIONS` and `CRM_VEHICLE_PERMISSIONS` are NOT imported here.
+  // `OWNER_PERMISSIONS` is their deduplicated union and is the only set this
+  // script grants; importing the two halves as well left them unused, which
+  // ESLint never saw (it does not lint `scripts/`) and CodeQL did — one `note`
+  // finding, over a ceiling that is deliberately zero.
+  OWNER_PERMISSIONS,
   GuardFailure,
   IDS,
   NAMES,
@@ -429,8 +434,9 @@ async function main() {
       tenantId: IDS.tenantA,
       code: NAMES.adminRoleCode,
       name: NAMES.adminRoleName,
-      description: 'Full approved administration capability for local Owner acceptance.',
-      permissions: ADMIN_PERMISSIONS,
+      description:
+        'Full approved administration, CRM and Vehicle capability for local Owner acceptance.',
+      permissions: OWNER_PERMISSIONS,
     });
     await ensureRole(client, {
       id: IDS.readerRoleA,
@@ -467,7 +473,10 @@ async function main() {
       code: NAMES.adminRoleCode,
       name: NAMES.adminRoleName,
       description: 'Isolation counterpart. No Tenant A principal holds this.',
-      permissions: ADMIN_PERMISSIONS,
+      // Same capability set as Tenant A's role deliberately: the isolation
+      // evidence must show that a Tenant A session is refused Tenant B data
+      // because of the TENANT, not because the role happened to be weaker.
+      permissions: OWNER_PERMISSIONS,
     });
 
     // --- identities ---------------------------------------------------------
@@ -584,10 +593,10 @@ async function main() {
     );
     const c = counts.rows[0];
 
-    if (c.perms_owner !== ADMIN_PERMISSIONS.length) {
+    if (c.perms_owner !== OWNER_PERMISSIONS.length) {
       throw new Error(
         `The administrator role carries ${c.perms_owner} permissions, expected ` +
-          `${ADMIN_PERMISSIONS.length}. The dashboard would render as signed out.`
+          `${OWNER_PERMISSIONS.length}. The dashboard would render as signed out.`
       );
     }
 
@@ -629,7 +638,7 @@ async function main() {
           company: NAMES.companyNameA,
           branch: NAMES.branchNameA,
           role: NAMES.adminRoleName,
-          permissionCount: ADMIN_PERMISSIONS.length,
+          permissionCount: OWNER_PERMISSIONS.length,
           login: { email: NAMES.ownerEmail, password },
           alsoProvisioned: {
             reader: { email: NAMES.readerEmail, password, note: 'read-only, branch-scoped' },
@@ -656,7 +665,7 @@ async function main() {
     log(`  tenants           ${c.tenants}`);
     log(`  Tenant A users    ${c.users_a}`);
     log(`  Tenant A roles    ${c.roles_a}`);
-    log(`  owner permissions ${c.perms_owner} of ${ADMIN_PERMISSIONS.length}`);
+    log(`  owner permissions ${c.perms_owner} of ${OWNER_PERMISSIONS.length}`);
     log(`  company settings  ${c.settings_a}`);
     log(`  Tenant B users    ${c.users_b}`);
     log('');
