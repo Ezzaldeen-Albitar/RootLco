@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -182,6 +182,32 @@ describe('restrictions fail closed', () => {
     expect(section?.textContent ?? '').not.toMatch(/\d/);
   });
 
+  it('does not offer the write form when the read was denied', async () => {
+    listRestrictions.mockResolvedValue(page([], { status: 'denied' }));
+    await open(/Restrictions/);
+    await screen.findByText(en['state.denied.title']);
+    // Every section needs `crm.customer.read` to list and a STRONGER capability
+    // to write, so a caller denied the list certainly cannot write. Rendering
+    // the form would invite an action guaranteed to fail AND disclose the
+    // vocabulary — the options name `no_credit` and `contact_restriction`
+    // whether or not a row was ever returned.
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: en['crm.customers.restrictions.impose'] })
+    ).toBeNull();
+  });
+
+  it('does offer the write form when the read succeeded', async () => {
+    listRestrictions.mockResolvedValue(page([]));
+    await open(/Restrictions/);
+    // The inverse. Without it, a screen that never rendered any form would
+    // satisfy the assertion above.
+    expect(
+      await screen.findByRole('button', { name: en['crm.customers.restrictions.impose'] })
+    ).toBeInTheDocument();
+  });
+
   it('does not render a reason or approval reference on a denial', async () => {
     listRestrictions.mockResolvedValue(
       // A backend that leaked rows alongside a denial must still show nothing.
@@ -320,8 +346,12 @@ describe('consents', () => {
   it('translates the constrained columns', async () => {
     listConsents.mockResolvedValue(page([CONSENT]));
     await open(/Consents/);
-    expect(await screen.findByText(en['crm.consentStatus.withdrawn'])).toBeInTheDocument();
-    expect(screen.getByText(en['crm.consentKind.marketing'])).toBeInTheDocument();
+    // Scoped to the TABLE. The record form legitimately repeats these same
+    // labels in its `<option>` list, so an unscoped query matches twice and
+    // fails for a reason that has nothing to do with the column.
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText(en['crm.consentStatus.withdrawn'])).toBeInTheDocument();
+    expect(within(table).getByText(en['crm.consentKind.marketing'])).toBeInTheDocument();
   });
 });
 

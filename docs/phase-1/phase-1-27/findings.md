@@ -42,7 +42,7 @@ restoring `method === 'POST'` fails 16 tests naming each affected operation.
 
 | id              | owner        | subject                                                                                                                                                 |
 | --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, and never 400 or 404                                                                    |
+| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**        |
 | `P1-27-INT-006` | other phases | **16 pre-existing cursor sites** still mint from a JS `Date`, listed with file and line in `findings/p1-27-int-006-cursor-precision.md`                 |
 | `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                       |
 | `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document |
@@ -53,6 +53,22 @@ restoring `method === 'POST'` fails 16 tests naming each affected operation.
 not a runtime response. The 16 cursor sites are in operations P1-27 does not
 call; if a later wave exercises one, §15 of the execution prompt routes it
 through a separate foundation remediation rather than a fix hidden here.
+
+### The measured extent of `INT-004`, found while building the write forms
+
+`docs/api/openapi.v1.json` describes **238 operations, 152 of them mutations,
+and publishes `requestBody` for zero of them.** Its entire `components.schemas`
+section holds three entries — `ProblemDocument`, `Money`, `PageEnvelope`.
+
+The practical consequence for this phase: **the published document cannot be
+used as the client contract for any write.** Every P1-27 form derives its shape
+from the Zod schema in the owning route module instead, which is what Wave 3's
+creation forms already did. The document remains authoritative for the one thing
+`P1-27-INT-003` needs from it — which operations are `idempotent: true` — and
+that is generated and drift-checked.
+
+This is recorded rather than fixed: the generator is foundation-owned, and §7
+forbids repairing it inside a Frontend branch.
 
 ---
 
@@ -115,3 +131,22 @@ from `en.json`, so a key absent from both locales still fails.
 `crm.consent_history.source` has **no** constraint at all, so it is rendered
 exactly as stored — translating it would print
 `crm.consentSource.in-branch tablet, ref 88213` to an operator.
+
+**A write form rendered on a denied read.** Wiring the six record forms into the
+component sections broke the restrictions fail-closed test immediately: the form
+was rendering underneath the denial notice, naming `no_credit` and
+`contact_restriction` in its options and stating the ten-character minimum. Every
+one of these sections needs `crm.customer.read` to list and a **stronger**
+capability to write, so a caller denied the list certainly cannot write — the
+form both invited an action guaranteed to fail and disclosed exactly the
+vocabulary the denial exists to hide. The form is now gated on a successful read.
+
+**And the first version of that gate was always false.** It read
+`table.status === 'ok'`, which looks like a correct fail-closed guard and is not:
+`TableStatus` has no `'ok'` member, and a loaded, undenied read is `'idle'`. The
+form therefore rendered **nowhere at all**, and the denial test passed for
+entirely the wrong reason. Only the inverse assertion — "does offer the form when
+the read succeeded" — could tell the two apart, and it is the reason that
+assertion was written alongside the negative one. The gate is now
+`table.response`, which is non-null iff the page came back `ok`.
+Mutation-verified: rendering the form unconditionally fails three tests.

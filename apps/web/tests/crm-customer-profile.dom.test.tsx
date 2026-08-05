@@ -22,10 +22,28 @@ import {
 const listContacts = vi.fn();
 const listAddresses = vi.fn();
 
+const emptyPage = async () => ({
+  status: 'ok',
+  rows: [],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'fixed-correlation-id',
+});
+
 vi.mock('@/features/crm/customers/profile-api', () => ({
   listContacts: (...args: unknown[]) => listContacts(...args),
   listAddresses: (...args: unknown[]) => listAddresses(...args),
   readCustomer: vi.fn(),
+  // The other six exist so this file's mock stays a superset of what the screen
+  // imports. A mock that is missing an export does not fail where it is used —
+  // it throws asynchronously inside a different test file's run, which is how
+  // the Wave 5 sections first surfaced here as an unrelated unhandled rejection.
+  listPreferences: emptyPage,
+  listConsents: emptyPage,
+  listNotes: async () => ({ ...(await emptyPage()), includesRestricted: true }),
+  listAlerts: emptyPage,
+  listTags: emptyPage,
+  listRestrictions: emptyPage,
 }));
 
 const { CustomerProfileScreen } =

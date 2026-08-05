@@ -115,21 +115,39 @@ own protected merge — which is exactly what happened four times above.
 
 Each row is a commit that was green on its own before the next wave started.
 
-| wave | tasks                                   | subject                                          | commit    |
-| ---- | --------------------------------------- | ------------------------------------------------ | --------- |
-| 2    | `FE-001`, `FE-002`                      | CRM customer search and results                  | `df6e452` |
-| 3    | `FE-003`, `FE-004`, `FE-005`            | Customer creation, duplicate advisory, lifecycle | `a912681` |
-| 4    | `FE-006`, `FE-007`, `FE-008`            | Profile, contacts, addresses                     | `c8d755d` |
-| 5    | `FE-009`…`FE-014`                       | Preferences, consents, notes, alerts, tags, restrictions | pending   |
+| wave | tasks                        | subject                                          | commit    |
+| ---- | ---------------------------- | ------------------------------------------------ | --------- |
+| 2    | `FE-001`, `FE-002`           | CRM customer search and results                  | `df6e452` |
+| 3    | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle | `a912681` |
+| 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                     | `c8d755d` |
+| 5    | `FE-009`…`FE-014`            | The same six, read surface                       | `ff923f1` |
+| 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | pending   |
 
 **Frontend progress: 14 / 29. Total: 14 / 42.**
 
-### Test tiers, re-measured at Wave 5
+Wave 5 was split because the read surface was coherent and green on its own,
+while the plan binds a **write** operation to each of the same six tasks. Both
+halves are required; `FE-009`…`FE-014` count as delivered only after `5b`.
+
+### Test tiers, re-measured at Wave 5b
 
 | tier                 | at base     | now         |
 | -------------------- | ----------- | ----------- |
 | Root / CI-contract   | 1608 / 1608 | 1614 / 1614 |
-| Web unit / component | 357 / 357   | 508 / 508   |
+| Web unit / component | 357 / 357   | 537 / 537   |
+
+### What the write surface proved
+
+All six writes are registered `idempotent: true`, and **one is a PUT**
+(`crm.preference-set`). Before `P1-27-INT-003` the client derived the
+`Idempotency-Key` from the HTTP method, so that operation would have answered
+`400 ERR-INT-002` before authorization on every attempt while its five POST
+neighbours worked. `tests/crm-governance-writes.test.ts` asserts a key is
+required for all six **and not required for the GETs at the same paths**, so the
+resolver is shown to discriminate rather than to answer yes to everything.
+
+The six need **six different permissions**, not one blanket write capability, and
+those are pinned exactly as the routes register them.
 
 `FAILED_TESTS=0`, `SKIPPED_REQUIRED_TESTS=0`.
 

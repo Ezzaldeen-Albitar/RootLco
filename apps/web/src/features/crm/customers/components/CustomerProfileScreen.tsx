@@ -18,7 +18,35 @@ import {
   listTags,
 } from '../profile-api';
 import {
+  addNoteAction,
+  assignTagAction,
+  imposeRestrictionAction,
+  raiseAlertAction,
+  recordConsentAction,
+  setPreferenceAction,
+} from '../governance-actions';
+import {
+  ALERT_SEVERITIES,
+  ALERT_TYPES,
+  COMMUNICATION_PURPOSES,
+  CONSENT_KINDS,
+  MAX_ALERT_MESSAGE,
+  MAX_APPROVAL_REF,
+  MAX_CONSENT_SOURCE,
+  MAX_NOTE_BODY,
+  MAX_PREFERRED_LOCALE,
+  MAX_REASON,
+  MAX_SEGMENT_CODE,
+  MAX_SEGMENT_NAME,
+  NOTE_CLASSIFICATIONS,
+  NOTE_VISIBILITIES,
+  RECORDABLE_CONSENT_STATUSES,
+  RESTRICTION_TYPES,
+} from '../governance-contract';
+import { RecordForm } from './RecordForm';
+import {
   addressLines,
+  CONTACT_CHANNELS,
   severityRank,
   type Address,
   type Alert,
@@ -429,6 +457,7 @@ function ComponentSection<Row>({
   footnote,
   load,
   columns,
+  form,
 }: {
   readonly id: string;
   readonly locale: Locale;
@@ -438,13 +467,15 @@ function ComponentSection<Row>({
   readonly footnote: React.ReactNode;
   readonly load: (request: TableRequest, cursor: string | null) => Promise<unknown>;
   readonly columns: readonly Column<Row>[];
+  /** The write form, handed a callback that re-reads the list after a success. */
+  readonly form?: (onRecorded: () => void) => React.ReactNode;
 }) {
   const table = useServerTable<Row>(load as Parameters<typeof useServerTable<Row>>[0], {
     initial: INITIAL_REQUEST,
   });
 
   return (
-    <section aria-labelledby={`${id}-heading`} className="flex min-h-0 flex-col">
+    <section aria-labelledby={`${id}-heading`} className="flex min-h-0 flex-col gap-4">
       <h2 id={`${id}-heading`} className="sr-only">
         {translateDynamic(messages, titleKey)}
       </h2>
@@ -460,9 +491,34 @@ function ComponentSection<Row>({
         correlationId={table.correlationId}
         caption={translateDynamic(messages, captionKey)}
       />
-      <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
+      <p className="px-2 text-caption text-text-muted" lang={locale}>
         {footnote}
       </p>
+      {/* The form appears only when the READ succeeded, and that is a security
+          property rather than a tidiness one.
+
+          Every one of these sections needs `crm.customer.read` to list and a
+          STRONGER capability to write. So a caller who was denied the list
+          certainly cannot write, and rendering the form for them would both
+          invite an action guaranteed to fail and disclose the vocabulary the
+          denial exists to hide — a restrictions form names `no_credit` and
+          `contact_restriction` in its options whether or not a row was ever
+          returned. This was caught by the fail-closed test, which started
+          failing the moment the form was wired in.
+
+          The list is RE-READ after a write rather than patched locally: the row
+          the backend stored is the one to show, and a locally appended row would
+          be missing the id, the timestamps and every default the server
+          applied.
+
+          Gated on `response`, not on a status string. `TableStatus` has no
+          `'ok'` member — a loaded, undenied read is `'idle'` — so
+          `status === 'ok'` is ALWAYS FALSE and reads exactly like a working
+          fail-closed guard while rendering the form precisely never. That was
+          the first version of this line, and only the inverse test ("does offer
+          the form when the read succeeded") could tell the difference.
+          `response` is non-null iff the page came back `ok`. */}
+      {table.response ? form?.(table.refresh) : null}
     </section>
   );
 }
@@ -533,6 +589,45 @@ function PreferencesSection({
       footnote={translate(messages, 'crm.customers.preferences.quietHoursReadOnly')}
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.preferences.set"
+          submitKey="crm.customers.preferences.set"
+          onRecorded={onRecorded}
+          action={setPreferenceAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'channel',
+              kind: 'select',
+              labelKey: 'crm.customers.contacts.channel',
+              required: true,
+              options: CONTACT_CHANNELS,
+              optionKeyPrefix: 'crm.channel.',
+            },
+            {
+              name: 'purpose',
+              kind: 'select',
+              labelKey: 'crm.customers.preferences.purpose',
+              required: true,
+              options: COMMUNICATION_PURPOSES,
+              optionKeyPrefix: 'crm.purpose.',
+            },
+            {
+              name: 'preferred',
+              kind: 'checkbox',
+              labelKey: 'crm.customers.preferences.preferred',
+            },
+            {
+              name: 'preferredLocale',
+              kind: 'text',
+              labelKey: 'crm.customers.create.preferredLocale',
+              maxLength: MAX_PREFERRED_LOCALE,
+              hintKey: 'crm.customers.preferences.localeHint',
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -605,6 +700,59 @@ function ConsentsSection({
       footnote={translate(messages, 'crm.customers.consents.appendOnlyNote')}
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.consents.record"
+          submitKey="crm.customers.consents.record"
+          onRecorded={onRecorded}
+          action={recordConsentAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'consentKind',
+              kind: 'select',
+              labelKey: 'crm.customers.consents.kind',
+              required: true,
+              options: CONSENT_KINDS,
+              optionKeyPrefix: 'crm.consentKind.',
+            },
+            {
+              name: 'status',
+              kind: 'select',
+              labelKey: 'crm.customers.column.status',
+              required: true,
+              // TWO options, not the three a consent row can hold. `expired` is
+              // a system transition and is deliberately not offered.
+              options: RECORDABLE_CONSENT_STATUSES,
+              optionKeyPrefix: 'crm.consentStatus.',
+              hintKey: 'crm.customers.consents.statusHint',
+            },
+            {
+              name: 'channel',
+              kind: 'select',
+              labelKey: 'crm.customers.contacts.channel',
+              required: true,
+              options: CONTACT_CHANNELS,
+              optionKeyPrefix: 'crm.channel.',
+            },
+            {
+              name: 'purpose',
+              kind: 'select',
+              labelKey: 'crm.customers.preferences.purpose',
+              required: true,
+              options: COMMUNICATION_PURPOSES,
+              optionKeyPrefix: 'crm.purpose.',
+            },
+            {
+              name: 'source',
+              kind: 'text',
+              labelKey: 'crm.customers.consents.source',
+              maxLength: MAX_CONSENT_SOURCE,
+              hintKey: 'crm.customers.consents.sourceHint',
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -691,6 +839,41 @@ function NotesSection({
       }
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.notes.add"
+          submitKey="crm.customers.notes.add"
+          onRecorded={onRecorded}
+          action={addNoteAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'body',
+              kind: 'textarea',
+              labelKey: 'crm.customers.notes.body',
+              required: true,
+              maxLength: MAX_NOTE_BODY,
+            },
+            {
+              name: 'classification',
+              kind: 'select',
+              labelKey: 'crm.customers.notes.classification',
+              options: NOTE_CLASSIFICATIONS,
+              optionKeyPrefix: 'crm.noteClassification.',
+              // Said before the operator chooses, not after. Picking
+              // `restricted` decides who can ever read this note again.
+              hintKey: 'crm.customers.notes.classificationHint',
+            },
+            {
+              name: 'visibility',
+              kind: 'select',
+              labelKey: 'crm.customers.notes.visibility',
+              options: NOTE_VISIBILITIES,
+              optionKeyPrefix: 'crm.noteVisibility.',
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -779,6 +962,43 @@ function AlertsSection({
       footnote={translate(messages, 'crm.customers.alerts.activeOnlyNote')}
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.alerts.raise"
+          submitKey="crm.customers.alerts.raise"
+          onRecorded={onRecorded}
+          action={raiseAlertAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'alertType',
+              kind: 'select',
+              labelKey: 'crm.customers.alerts.type',
+              required: true,
+              options: ALERT_TYPES,
+              optionKeyPrefix: 'crm.alertType.',
+            },
+            {
+              name: 'severity',
+              kind: 'select',
+              labelKey: 'crm.customers.alerts.severity',
+              required: true,
+              // Offered in RANK order, not the constraint's declaration order
+              // and not alphabetically. The list an operator scans should read
+              // the way the severity actually escalates.
+              options: [...ALERT_SEVERITIES].sort((a, b) => severityRank(a) - severityRank(b)),
+              optionKeyPrefix: 'crm.severity.',
+            },
+            {
+              name: 'message',
+              kind: 'textarea',
+              labelKey: 'crm.customers.alerts.message',
+              required: true,
+              maxLength: MAX_ALERT_MESSAGE,
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -848,6 +1068,31 @@ function TagsSection({
       footnote={translate(messages, 'crm.customers.tags.currentOnlyNote')}
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.tags.assign"
+          submitKey="crm.customers.tags.assign"
+          onRecorded={onRecorded}
+          action={assignTagAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'segmentCode',
+              kind: 'text',
+              labelKey: 'crm.customers.tags.code',
+              required: true,
+              maxLength: MAX_SEGMENT_CODE,
+              hintKey: 'crm.customers.tags.codeHint',
+            },
+            {
+              name: 'name',
+              kind: 'text',
+              labelKey: 'crm.customers.tags.name',
+              maxLength: MAX_SEGMENT_NAME,
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -932,6 +1177,42 @@ function RestrictionsSection({
       footnote={translate(messages, 'crm.customers.restrictions.activeOnlyNote')}
       load={load}
       columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.restrictions.impose"
+          submitKey="crm.customers.restrictions.impose"
+          onRecorded={onRecorded}
+          action={imposeRestrictionAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'restrictionType',
+              kind: 'select',
+              labelKey: 'crm.customers.restrictions.type',
+              required: true,
+              options: RESTRICTION_TYPES,
+              optionKeyPrefix: 'crm.restrictionType.',
+            },
+            {
+              name: 'reason',
+              kind: 'textarea',
+              labelKey: 'crm.customers.restrictions.reason',
+              required: true,
+              maxLength: MAX_REASON,
+              // The ten-character floor is stated up front. Discovering it only
+              // after submitting a two-word reason is a worse experience than
+              // being told, and the floor exists for a real reason.
+              hintKey: 'crm.customers.restrictions.reasonHint',
+            },
+            {
+              name: 'approvalRef',
+              kind: 'text',
+              labelKey: 'crm.customers.restrictions.approvalRef',
+              maxLength: MAX_APPROVAL_REF,
+            },
+          ]}
+        />
+      )}
     />
   );
 }
