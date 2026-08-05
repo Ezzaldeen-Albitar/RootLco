@@ -61,6 +61,25 @@ policy JSON beside it. An investigation that trusted the alerts API would have
 concluded the tree was clean while the gate said otherwise — which is precisely
 the failure mode the baseline's own note describes.
 
+## A red `ci-gate` that means nothing
+
+Pushing a new commit while a run is in flight makes GitHub **cancel** the older
+run. The long jobs — `hosted-clean-room`, `Web quality`, `integration-tests`,
+`Docker build validation` — are the ones still going when that happens, so they
+show `cancelled`, and `ci-gate` then reports `failure` because it cannot see
+green from jobs that never finished.
+
+This happened three times in this phase and each time the honest reading is "that
+SHA was abandoned", not "that SHA is broken". The distinguishing evidence is
+mechanical: a real failure has a `failure` conclusion on a _specific_ job with
+output; a supersession has a cluster of `cancelled` long jobs and a `ci-gate`
+failure with no failing job beneath it.
+
+The only run that matters is the one on the **current branch head**, and it must
+be allowed to finish before the branch is merged. `/commits/{sha}/check-runs` for
+the head SHA is the query; a green run on an earlier SHA proves nothing about
+what merges.
+
 ## Two API facts worth keeping
 
 `/actions/runs` does **not** list every check that reports on a commit. Query
