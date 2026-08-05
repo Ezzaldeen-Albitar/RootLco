@@ -738,3 +738,80 @@ anywhere, no duplicate scan from any queue screen, no upload path, no invented
 total, no client-asserted tenancy, and the vehicle history is an attribute ledger
 rather than a timeline. No Backend logic, migration, business data or secret is
 touched by this branch.
+
+## `P1-27-F-001` — root lint walks `supabase/.temp/`, failing a required aggregate
+
+Found during Owner-acceptance verification of the protected merge, not during
+development, because it only appears once `supabase start` has run.
+
+`supabase start` writes the Edge Runtime's bundled entry point to
+`supabase/.temp/start-secrets/supabase_edge_runtime_RootLco/main/index.ts` — one
+minified line. ESLint does not read `.gitignore`, and the root flat config did
+not name that directory, so `npm run lint` walked it and reported **154 errors**
+at column 30,000 in vendor code. `lint` feeds `verify:repository`, which is a
+**required** aggregate, so the aggregate failed.
+
+**This is `P1-26-F-060` arriving a second time.** That finding was `.local/`
+holding the dedicated Chrome profile, where root lint reported 25,508 problems in
+files nobody here wrote. The comment above the ignore list already described the
+shape precisely — "CI never has the directory, so the failure only ever reaches a
+developer" — and the shape repeated with a different directory.
+
+Both instances share what makes them expensive: **hosted CI never runs the
+command that creates the directory** before linting, so every pull request is
+green while every developer who followed the project's own local setup is red.
+A green pipeline is not evidence about a developer machine.
+
+The whole directory is ignored rather than the one file. Its contents are
+CLI-version-dependent — `pgdelta`, `start-secrets` and `cli-latest` on this
+machine today — so naming a file would fix one machine and break on the next
+Supabase CLI release. `supabase/.branches/**` is added alongside it for the same
+reason, before it becomes the third instance.
+
+`tests/ci/eslint-global-ignores.test.ts` now pins every locally generated
+directory to the list, each labelled with the command that creates it, and
+asserts the opposite failure too: `src/**`, `scripts/**`, `tests/**` and `**/*`
+must never appear, because an ignore list wide enough to be quiet everywhere is
+the other way to make a lint gate meaningless.
+
+**Writing that test reproduced the trap the test exists to catch.** Its first
+draft asserted against the whole config file, so "the config must not name a file
+inside the temp directory" failed on the comment that explains this very fix —
+the comment names `start-secrets`. A text search cannot tell "does this" from
+"explains why it does not do this", which is the third time this phase has hit
+that exact wall. The assertions now read the extracted `globalIgnores([...])`
+array rather than the prose around it.
+
+Mutation-verified: deleting `'supabase/.temp/**'` from the list fails the test.
+The first mutation attempt reported SURVIVED and was wrong — the file uses LF
+line endings and the CRLF pattern never matched, so nothing was mutated. A
+mutation that does not change the file proves only that the file was not changed.
+
+### The regression test tripped a different gate, and the gate was right
+
+`check-test-honesty.mjs` failed the first push of this fix with
+`TH-003: test file declares no test`, on a file that plainly declares eleven.
+
+The cause is the same class the fix is about. That gate strips comments before
+counting tests, with `/\/\*[\s\S]*?\*\//g`. A glob literal such as `'.next/**'`
+contains the two characters that open a block comment, so it opened one that ran
+to the next closing pair further down the file — swallowing every `it()` between
+them. From where the gate stood, the file really did declare no test.
+
+**The gate was not changed.** It guards 293 test files, and a smarter stripper is
+a change with that blast radius which deserves its own verification rather than
+being made in passing inside an unrelated remediation. The test file assembles
+the glob suffix from two constants instead, so the two characters never appear
+adjacent in its source and the runtime value is byte-identical to the config it
+compares against.
+
+This is now the **fourth** time in P1-27 that a text scanner could not tell code
+from prose about code: the security sweeps, the P1-27 frontend gate, the ignore
+test asserting against its own comment, and now a glob literal read as a comment
+opener. Recorded as a limitation of `check-test-honesty.mjs` rather than fixed
+here — the next phase should harden that stripper deliberately, the way
+`check-p1-27-frontend.mjs` did with its `selfTest()`.
+
+Local evidence after the change: test-honesty exit 0 across 293 files,
+`verify:repository` exit 0, the ignore test 11/11, and deleting
+`'supabase/.temp/**'` from the config still fails it.

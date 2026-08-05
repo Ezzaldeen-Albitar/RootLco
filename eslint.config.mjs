@@ -18,6 +18,19 @@ const eslintConfig = defineConfig([
   // scripts and reported 25,508 problems in files no one here wrote. CI never
   // has the directory, so the failure only ever reaches a developer
   // (P1-26-F-060).
+  //
+  // `supabase/.temp/**` is the SAME defect, found again during P1-27 Owner
+  // acceptance (`P1-27-F-001`). `supabase start` — the project's own documented
+  // local setup — writes the Edge Runtime's bundled `main/index.ts` there, a
+  // single minified line. Root ESLint then reported 154 errors at column 30,000
+  // in vendor code, which fails `verify:repository`, a REQUIRED aggregate.
+  // Hosted CI never runs `supabase start` before linting, so once again the
+  // failure only ever reaches a developer — and it reaches every developer who
+  // follows the setup instructions.
+  //
+  // The whole directory is ignored rather than the one file: its contents are
+  // CLI-version-dependent (`pgdelta`, `start-secrets`, `cli-latest` today), so
+  // naming a file would fix this machine and break on the next CLI release.
   globalIgnores([
     '.next/**',
     '.next-dev/**',
@@ -27,6 +40,8 @@ const eslintConfig = defineConfig([
     'coverage/**',
     'next-env.d.ts',
     'apps/**',
+    'supabase/.temp/**',
+    'supabase/.branches/**',
   ]),
 
   {
