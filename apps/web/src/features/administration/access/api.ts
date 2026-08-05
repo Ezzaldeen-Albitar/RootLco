@@ -4,7 +4,7 @@ import { authorizedClient } from '@/lib/api/server-client';
 import type { ApiFailureKind } from '@/lib/api/client';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage, ServerPageStatus } from '../shared/use-server-table';
-import { query, type CursorPage } from '../shared/api';
+import { companyFilterQuery, query, type CursorPage } from '../shared/api';
 import {
   APPROVAL_LIMIT_SERVER_CAP,
   type ApprovalLimitRow,
@@ -152,8 +152,13 @@ export async function listApprovalLimits(
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null, total: null };
 
   const companyId = request.filters.find((filter) => filter.key === 'companyId')?.value;
+  // `companyFilterQuery`, not `query`. Here `companyId` names WHICH company's
+  // limits to list — a resource selector the operator chooses, authorized
+  // server-side like any parameter — not a claim about which company the caller
+  // is in. `query()` refuses the name outright, and doing so broke this screen
+  // the first time it ran against the real application (`P1-27-SEC-001`).
   const result = await client.get<{ items: readonly ApprovalLimitRow[] }>(
-    '/api/v1/iam/approval-limits' + query({ companyId })
+    '/api/v1/iam/approval-limits' + companyFilterQuery({ companyId })
   );
   if (!result.ok) {
     return {

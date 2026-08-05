@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
-import { query } from '@/lib/api/read-operation';
+import { companyFilterQuery, query } from '@/lib/api/read-operation';
 import { FORBIDDEN_URL_KEYS, toSearchParams } from '@/components/data-table/table-state';
 
 /**
@@ -100,6 +100,41 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     for (const { path, source } of PHASE_FILES) {
       expect(source, path).not.toMatch(/['"]?(tenantId|companyId|branchId)['"]?\s*[:,]/);
     }
+  });
+
+  it('permits a company FILTER at exactly one call site, and nowhere else', () => {
+    // The first version of the rule refused `companyId` everywhere and broke a
+    // working P1-26 screen the moment it ran against the real application. Two
+    // different sentences share the word:
+    //
+    //   "I am in company X"                    — never sent; the server knows.
+    //   "show me company X's approval limits"  — a resource selector, sent and
+    //                                            authorized like any parameter.
+    //
+    // `GET /api/v1/iam/approval-limits` is the only operation of the second
+    // shape, and the operator picks the company from a control that exists
+    // because a session may resolve to no single one. Pinning the call sites
+    // here means widening the exception requires changing a test that says why
+    // it is not wider.
+    const callers = [...walk(FEATURES), ...walk(join(process.cwd(), 'src', 'lib'))]
+      .map((path) => ({ path, source: code(readFileSync(path, 'utf8')) }))
+      .filter((f) => /companyFilterQuery\s*\(/.test(f.source))
+      .map((f) => f.path.split(/[\\/]/).slice(-3).join('/'));
+
+    expect(callers.sort()).toEqual([
+      // The one operation with this shape.
+      'administration/access/api.ts',
+      // The definition itself. Not filtered out, so this assertion fails if the
+      // helper moves — the re-export in `administration/shared/api.ts` names it
+      // without calling it and is correctly not matched.
+      'lib/api/read-operation.ts',
+    ]);
+  });
+
+  it('still refuses a tenant or branch even alongside a company filter', () => {
+    expect(() => companyFilterQuery({ tenantId: 't1' })).toThrow(/tenantId/);
+    expect(() => companyFilterQuery({ branchId: 'b1' })).toThrow(/branchId/);
+    expect(companyFilterQuery({ companyId: 'c1' })).toBe('?companyId=c1');
   });
 
   it('throws if a caller ever passes a scope key to the API query builder', () => {

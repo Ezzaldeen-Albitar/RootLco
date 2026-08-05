@@ -11,6 +11,7 @@
  * `@/lib/api/read-operation` directly.
  */
 export {
+  companyFilterQuery,
   query,
   readOperation,
   STATUS_BY_KIND,

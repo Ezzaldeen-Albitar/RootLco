@@ -131,3 +131,40 @@ const SCOPE_KEYS = new Set([
   'company_id',
   'branch_id',
 ]);
+
+/**
+ * A query string for an operation whose `companyId` is a **resource selector**,
+ * not a scope assertion.
+ *
+ * The first version of `query()` refused `companyId` everywhere, and it broke a
+ * working P1-26 screen the moment it ran against the real application:
+ * `GET /api/v1/iam/approval-limits` takes `companyId` as a filter naming *which
+ * company's limits to list*, and the operator picks it from a control that
+ * exists precisely because a session may resolve to no single company. The rule
+ * had conflated two different sentences that share a word:
+ *
+ * - "I am in company X" — a claim about the caller. Never sent; the server knows.
+ * - "show me company X's approval limits" — a claim about the resource. Sent,
+ *   and authorized server-side exactly like any other parameter.
+ *
+ * So the refusal stays the default and the exception is named, narrow and
+ * visible in a diff. `apps/web/tests/p1-27-security.test.ts` pins the call sites
+ * to exactly the one operation that has this shape — widening it means changing
+ * a test that says why it is not wider.
+ */
+export function companyFilterQuery(
+  params: Record<string, string | number | undefined | null>
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== 'companyId' && SCOPE_KEYS.has(key)) {
+      throw new Error(`${key} must not be sent from the client, even alongside a company filter.`);
+    }
+    if (value === undefined || value === null) continue;
+    const text = String(value);
+    if (text.length === 0) continue;
+    search.set(key, text);
+  }
+  const rendered = search.toString();
+  return rendered.length > 0 ? `?${rendered}` : '';
+}

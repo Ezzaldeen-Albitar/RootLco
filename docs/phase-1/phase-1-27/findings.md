@@ -498,3 +498,85 @@ failing on a Frontend branch invites exactly the wrong diagnosis.
 Adding one file to `scripts/ci` made the CI automation record's stated inventory
 wrong, and the test named the exact phrase that had to change. That is `DOC-001`
 working as designed rather than a chore.
+
+## Wave 16 — the adversarial review against the running application
+
+Three defects, and **none of them was visible from inside the repository**. Every
+one needed the real Next.js server, the real API and the real database.
+
+### The Owner could not have tested this phase at all
+
+The Owner-acceptance account carried exactly the **fourteen Administration
+permission codes** from P1-26. Not one CRM or Vehicle code. The Owner would have
+signed in, seen the sidebar, clicked Customers, and been told "you do not have
+permission" — on every screen this phase built.
+
+Nothing was wrong with the screens. The environment could not reach the phase it
+existed to accept, and no test in the repository could have said so, because
+every one of them either mocks the session or asserts the _denial_ path is
+correct — which it was.
+
+The role now carries thirty codes. `crm.customer.merge` and `veh.vehicle.merge`
+are deliberately **withheld**: `P1-OD-017` is open, no screen calls either, and
+granting them would let an acceptance run pass while the affordance that must not
+exist quietly did.
+
+**Writing that list invented a permission.** The first version included
+`veh.vehicle.create`, by symmetry with `crm.customer.create`. It does not exist:
+`POST /vehicles` registers `veh.vehicle.manage`, the same code that gates
+editing. The catalogue check refused the whole bootstrap rather than granting
+thirty of thirty-one — which is exactly what that check is for, and the reason
+the account is provisioned from the catalogue rather than from a list somebody
+believed.
+
+### The `query()` scope refusal broke a working P1-26 screen
+
+`P1-27-SEC-001` made `query()` throw on `tenantId`, `companyId` and `branchId`.
+Against the running application it threw five times, on
+`GET /api/v1/iam/approval-limits` — a P1-26 screen that has worked since that
+phase closed.
+
+The rule had conflated two different sentences that share a word:
+
+- **"I am in company X"** — a claim about the caller. Never sent; the server
+  resolves it from the session.
+- **"show me company X's approval limits"** — a claim about the _resource_. Sent,
+  and authorized server-side exactly like any other parameter.
+
+The operator picks that company from a control that exists _because_ a session
+may resolve to no single one. The refusal was right and its scope was wrong.
+
+`companyFilterQuery` is the named, narrow exception: it permits `companyId` and
+still refuses `tenantId` and `branchId`. `p1-27-security.test.ts` pins the call
+sites to exactly two paths — the one operation with this shape and the definition
+itself — so widening it means changing a test that states why it is not wider.
+
+**The source sweep could not have found this.** `SEC-001` swept
+`features/crm` and `features/vehicles`, proved no scope key appears there, and
+that proof was correct. The conclusion drawn from it — "the client never sends
+scope" — was a generalisation over trees the sweep never opened.
+
+**And 176 authenticated tests passed while the server was throwing.** The failure
+rendered a state the assertions tolerate. It was found by reading the server log
+lines interleaved with a green summary, not by any assertion. A green suite is
+not the same as a quiet one.
+
+### A test whose verdict depended on how busy the machine was
+
+`stylelint-policy.test.ts` failed at 5135 ms against the default 5000 ms timeout.
+The first call into Stylelint pays for loading the whole rule set, and on a host
+running two dev servers and a browser — the host an Owner-acceptance run uses —
+that crosses the line.
+
+It is fixed with an explicit 20 s timeout and a named constant, not by re-running
+until green. A test that fails when nothing is wrong gets re-run as a habit, and
+that habit is what lets a real failure through.
+
+### What the review does prove
+
+`crm-and-vehicles.spec.ts` asserts against the real stack, with nothing mocked:
+every route resolves under a real session in both locales; both duplicate queues
+are reachable **from the sidebar**; typing a VIN issues no request; no merge or
+rescan control exists in the rendered output of either queue; opening either
+queue issues **no non-GET request at all**; no request carries a scope parameter;
+and a VIN typed into search never reaches the address bar.

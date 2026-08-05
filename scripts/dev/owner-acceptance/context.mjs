@@ -128,6 +128,72 @@ export const ADMIN_PERMISSIONS = Object.freeze([
   'org.tax.manage',
 ]);
 
+/**
+ * What the P1-27 CRM and Vehicle screens gate on — `P1-27-FE-001` … `FE-029`.
+ *
+ * Added because the Owner-acceptance account held **only** the fourteen
+ * Administration codes above, so the Owner could sign in, reach the sidebar, and
+ * find that every CRM and Vehicle screen rendered "you do not have permission".
+ * The screens were correct; the account could not exercise one of them. An
+ * acceptance environment that cannot reach the phase under acceptance is not an
+ * acceptance environment.
+ *
+ * Mirrors `apps/web/src/features/crm/permissions.ts`, which was read out of the
+ * route registrations. Every code here is one a P1-27 screen actually checks —
+ * not a convenient superset, because a superset would hide a screen that gates
+ * on the wrong code.
+ */
+export const CRM_VEHICLE_PERMISSIONS = Object.freeze([
+  // CRM: one read code fans out to eight distinct write codes.
+  'crm.customer.read',
+  'crm.customer.create',
+  'crm.customer.profile.write',
+  'crm.customer.consent.write',
+  'crm.customer.note.write',
+  'crm.customer.governance.manage',
+  'crm.customer.restriction.manage',
+  'crm.customer.duplicate.review',
+  'crm.customer.vehicle.manage',
+  // Vehicles: one read code fans out to five.
+  //
+  // There is NO `veh.vehicle.create`. `POST /vehicles` registers
+  // `veh.vehicle.manage` — the same code that gates editing — which is not the
+  // shape CRM uses, where creating and editing are separate codes. The first
+  // version of this list assumed the symmetry and invented the code; the
+  // platform catalogue check refused it, which is exactly what that check is
+  // for.
+  'veh.vehicle.read',
+  'veh.vehicle.manage',
+  'veh.vehicle.status.manage',
+  'veh.vehicle.relationship.manage',
+  'veh.vehicle.odometer.record',
+  'veh.vehicle.duplicate.review',
+  // The document list is gated by a MANAGE capability from a different module —
+  // inverted relative to every other vehicle sub-resource, and the one code an
+  // Administration-shaped permission set would never have suggested.
+  'shared.document.manage',
+]);
+
+/**
+ * `crm.customer.merge` and `veh.vehicle.merge` are DELIBERATELY absent.
+ *
+ * `P1-OD-017` is an open Owner decision and no P1-27 screen calls either
+ * operation. Granting them would let an acceptance run pass while the affordance
+ * that must not exist quietly did.
+ */
+export const WITHHELD_PERMISSIONS = Object.freeze(['crm.customer.merge', 'veh.vehicle.merge']);
+
+/**
+ * Everything the Owner-acceptance administrator role carries.
+ *
+ * Administration (P1-26) plus CRM and Vehicles (P1-27). Deduplicated, because
+ * `iam.user.read` legitimately appears in both readings and a duplicate would
+ * make the role's own count assertion fail for a reason that is not a defect.
+ */
+export const OWNER_PERMISSIONS = Object.freeze([
+  ...new Set([...ADMIN_PERMISSIONS, ...CRM_VEHICLE_PERMISSIONS]),
+]);
+
 /** What a read-only operator holds, for the permission-denied evidence. */
 export const READER_PERMISSIONS = Object.freeze([
   'iam.user.read',
