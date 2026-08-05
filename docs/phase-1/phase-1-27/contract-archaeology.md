@@ -327,6 +327,61 @@ belongs sends a value the FK rejects.
 
 ---
 
+## Vehicle history — ownership, plates, odometer (`FE-021`…`FE-023`)
+
+| operation                        | method | path                               | permission                        |
+| -------------------------------- | ------ | ---------------------------------- | --------------------------------- |
+| `veh.vehicle-ownership-history`  | GET    | `/vehicles/{id}/ownerships`        | `veh.vehicle.read`                |
+| `veh.vehicle-ownership-transfer` | POST   | `/vehicles/{id}/ownerships`        | `veh.vehicle.relationship.manage` |
+| `veh.vehicle-plate-history`      | GET    | `/vehicles/{id}/plates`            | `veh.vehicle.read`                |
+| `veh.vehicle-plate-assign`       | POST   | `/vehicles/{id}/plates`            | `veh.vehicle.manage`              |
+| `veh.vehicle-odometer-history`   | GET    | `/vehicles/{id}/odometer-readings` | `veh.vehicle.read`                |
+| `veh.vehicle-odometer-record`    | POST   | `/vehicles/{id}/odometer-readings` | `veh.vehicle.odometer.record`     |
+
+### `active` does NOT mean "in force today"
+
+It is computed as `valid_to IS NULL`, so a plate or ownership assigned with a
+**future** `valid_from` reports `active: true` before it is in force. A screen
+that rendered that as "current" would be wrong for exactly the interval that
+matters. The screens therefore derive a four-state answer from the dates —
+`in-force`, `scheduled`, `ended`, `unknown` — and never label a row from
+`active` alone.
+
+### `date` is not a timestamp, in either direction
+
+`valid_from` and `valid_to` are PostgreSQL `date`, read `::text`, so they arrive
+as `"2026-08-04"`. `new Date("2026-08-04")` parses as UTC **midnight** and
+renders the previous day west of Greenwich; `.toISOString().slice(0, 10)` shifts
+it the other way east of it. These values are strings from first byte to last
+pixel, and comparison is lexicographic — which for ISO days is exactly
+chronological.
+
+"Today" is built from **local** date parts for the same reason:
+`toISOString().slice(0, 10)` gives the UTC day, which is tomorrow for an operator
+east of Greenwich late in the evening.
+
+### `numeric` is a string, and the comparable column is the NULLABLE one
+
+`veh.odometer_readings.value` and `value_km` are `numeric`, cast `::text` by the
+repository because they need not fit a double. Nothing converts them.
+
+The trap underneath: `value` + `unit` is always present and **incomparable
+across rows** (km and mi in one list), while `value_km` — the comparable form —
+is **nullable**. A screen that ranked or diffed on `value_km` would silently skip
+the rows where it is absent; one that did arithmetic on `value` would compare
+miles to kilometres. So both are shown, neither is computed, and the kilometre
+value is rendered alongside rather than instead.
+
+### These five sub-resource GETs never check that the vehicle exists
+
+An unknown, soft-deleted or cross-tenant id yields an **empty 200 page**, while
+`veh.vehicle-read` on the same id answers 404. The two are inconsistent, so every
+history section renders _beneath_ a vehicle the page has already read — the 404
+is decided once, and an empty section below a vehicle that demonstrably exists
+means what it says.
+
+---
+
 ## Idempotency (`P1-27-INT-003`)
 
 The Backend requires an `Idempotency-Key` on every operation it registers as

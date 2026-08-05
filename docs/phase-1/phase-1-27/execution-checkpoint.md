@@ -125,9 +125,10 @@ Each row is a commit that was green on its own before the next wave started.
 | 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | `bf7a011` |
 | 6b   | —                            | P1-17 remediation (PR #197) + reintegration      | `d00a4b5` |
 | 7    | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads   | `ff9c8d6` |
-| 8    | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                  | pending   |
+| 8    | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                  | `4c16f8b` |
+| 9    | `FE-021`…`FE-023`            | Ownership, plate history, odometer history       | pending   |
 
-**Frontend progress: 20 / 29. Total: 20 / 42.**
+**Frontend progress: 23 / 29. Total: 23 / 42.**
 
 ### Wave 7 decisions worth not re-litigating
 

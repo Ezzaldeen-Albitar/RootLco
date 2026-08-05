@@ -14,6 +14,8 @@ import {
   WORKSHOP_STATUSES,
 } from '../contract';
 import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
+import { localToday } from '../history-contract';
+import { OdometerSection, OwnershipSection, PlateSection } from './VehicleHistorySections';
 import { VinField } from './VinField';
 
 /**
@@ -48,6 +50,22 @@ interface Props {
   readonly canChangeStatus: boolean;
 }
 
+/** Every profile section, including the ones later waves fill in. */
+const SECTIONS = [
+  'overview',
+  'ownership',
+  'plates',
+  'odometer',
+  'ev',
+  'relationships',
+  'documents',
+  'timeline',
+] as const;
+type Section = (typeof SECTIONS)[number];
+
+/** Sections with a screen today. The rest say so rather than being absent. */
+const BUILT: readonly Section[] = ['overview', 'ownership', 'plates', 'odometer'];
+
 export function VehicleProfileScreen({
   locale,
   messages,
@@ -56,10 +74,103 @@ export function VehicleProfileScreen({
   canChangeStatus,
 }: Props) {
   const frozen = isFrozen(vehicle);
+  const [section, setSection] = useState<Section>('overview');
+
+  // Resolved ONCE, from the operator's own clock, and threaded into every
+  // section. Each section computing its own would let a page open before
+  // midnight disagree with itself after it.
+  const [today] = useState(() => localToday(new Date()));
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <ProfileHeader locale={locale} messages={messages} vehicle={vehicle} frozen={frozen} />
+
+      <nav aria-label={translate(messages, 'vehicles.profile.sections')}>
+        <ul className="flex flex-wrap gap-1 border-b border-border">
+          {SECTIONS.map((name) => {
+            const active = name === section;
+            const built = BUILT.includes(name);
+            return (
+              <li key={name}>
+                <button
+                  type="button"
+                  onClick={() => setSection(name)}
+                  aria-current={active ? 'page' : undefined}
+                  className={[
+                    'rounded-t-md px-3 py-2 text-body',
+                    active
+                      ? 'border-b-2 border-brand-primary font-medium text-text-primary'
+                      : 'text-text-secondary',
+                  ].join(' ')}
+                >
+                  {translateDynamic(messages, `vehicles.profile.section.${name}`)}
+                  {built ? null : (
+                    // An unbuilt section that is simply absent leaves an operator
+                    // unable to tell "not built" from "hidden from me".
+                    <span className="ms-1 text-caption text-text-muted">
+                      {translate(messages, 'nav.planned')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {section === 'ownership' ? (
+        <OwnershipSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          today={today}
+        />
+      ) : null}
+      {section === 'plates' ? (
+        <PlateSection locale={locale} messages={messages} vehicleId={vehicle.id} today={today} />
+      ) : null}
+      {section === 'odometer' ? (
+        // No `today`: odometer readings are timestamped observations, not dated
+        // intervals, so there is nothing here to be "in force".
+        <OdometerSection locale={locale} messages={messages} vehicleId={vehicle.id} />
+      ) : null}
+      {!BUILT.includes(section) ? (
+        <p role="status" className="px-2 py-8 text-center text-body text-text-secondary">
+          {translate(messages, 'crm.customers.profile.sectionPending')}
+        </p>
+      ) : null}
+
+      {section !== 'overview' ? null : (
+        <VehicleOverviewSection
+          locale={locale}
+          messages={messages}
+          vehicle={vehicle}
+          frozen={frozen}
+          canEdit={canEdit}
+          canChangeStatus={canChangeStatus}
+        />
+      )}
+    </div>
+  );
+}
+
+function VehicleOverviewSection({
+  locale,
+  messages,
+  vehicle,
+  frozen,
+  canEdit,
+  canChangeStatus,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicle: VehicleDetail;
+  readonly frozen: boolean;
+  readonly canEdit: boolean;
+  readonly canChangeStatus: boolean;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col gap-4">
       <Overview messages={messages} vehicle={vehicle} />
 
       {frozen ? (
