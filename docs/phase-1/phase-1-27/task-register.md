@@ -115,18 +115,33 @@ the module docblocks — each contract file carries the operation table, the
 permission, the constraint it was read out of and the reason for every refusal.
 This register carries the evidence chain.
 
-| tasks             | wave  | SHA                  | operations consumed                                                           | evidence                                                                             |
-| ----------------- | ----- | -------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `FE-001`–`FE-002` | 2     | `f6b5579`            | `crm.customer-search`                                                         | `crm-customer-search.test.ts` (38) · `crm-customer-search.dom.test.tsx` (13)         |
-| `FE-003`–`FE-005` | 3     | `a912681`            | `crm.duplicate-scan`, `crm.individual-create`, `crm.company-create`           | `crm-customer-create.test.ts` · `crm-customer-create.dom.test.tsx`                   |
-| `FE-006`–`FE-008` | 4     | `c8d755d`            | `crm.customer-read`, `crm.contact-*`, `crm.address-*`                         | `crm-customer-profile.test.ts` · `crm-customer-profile.dom.test.tsx`                 |
-| `FE-009`–`FE-014` | 5, 5b | `ff923f1`, `c390abb` | six component list reads + six writes                                         | `crm-profile-api.test.ts` · `crm-governance-writes.test.ts` · `crm-components.dom.*` |
-| `FE-015`–`FE-016` | 6     | `bf7a011`            | `crm.customer-timeline`, `crm.duplicate-list`, `crm.duplicate-review`         | `crm-duplicate-review.test.ts` · `crm-timeline.test.ts`                              |
-| `FE-017`–`FE-018` | 7     | `ff9c8d6`            | `veh.vehicle-search`, `veh.vehicle-create`, five catalogue reads              | `vehicle-search.test.ts` · `vehicle-create.dom.test.tsx`                             |
-| `FE-019`–`FE-020` | 8     | `4c16f8b`            | `veh.vehicle-read`, `veh.vehicle-update`, `veh.vehicle-status-change`         | `vehicle-profile.test.ts` · `vehicle-vin.test.ts`                                    |
-| `FE-021`–`FE-023` | 9     | `1ccbf92`            | ownership, plate and odometer history + their three writes                    | `vehicle-history.test.ts`                                                            |
-| `FE-024`–`FE-025` | 10    | `984af0e`            | `veh.vehicle-ev-profile-*`, `veh.vehicle-relationship-*`, `crm.vehicle-link`  | `vehicle-relations.test.ts`                                                          |
-| `FE-026`–`FE-029` | 11–12 | _this wave_          | `veh.vehicle-document-list`, `veh.vehicle-duplicate-*`, `veh.vehicle-history` | `vehicle-duplicates.test.ts` (20)                                                    |
+| tasks                                                                                                               | wave  | SHA                  | operations consumed                                                           | evidence (file names read from `apps/web/tests`, counts measured)                                                   |
+| ------------------------------------------------------------------------------------------------------------------- | ----- | -------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `FE-001`, `FE-002`                                                                                                  | 2     | `f6b5579`            | `crm.customer-search`                                                         | `crm-customer-search.test.ts` (38) · `crm-customer-search.dom.test.tsx` (13)                                        |
+| `FE-003`, `FE-004`, `FE-005`                                                                                        | 3     | `a912681`            | `crm.duplicate-scan`, `crm.individual-create`, `crm.company-create`           | `crm-customer-create.dom.test.tsx` (19)                                                                             |
+| `FE-006`, `FE-007`, `FE-008`                                                                                        | 4     | `c8d755d`            | `crm.customer-read`, `crm.contact-*`, `crm.address-*`                         | `crm-customer-profile.dom.test.tsx` (21)                                                                            |
+| `FE-009` preferences · `FE-010` consents · `FE-011` notes · `FE-012` alerts · `FE-013` tags · `FE-014` restrictions | 5, 5b | `ff923f1`, `c390abb` | six component list reads + six writes, behind **six different** permissions   | `crm-profile-api.test.ts` (10) · `crm-governance-writes.test.ts` (27) · `crm-customer-components.dom.test.tsx` (23) |
+| `FE-015`, `FE-016`                                                                                                  | 6     | `bf7a011`            | `crm.customer-timeline`, `crm.duplicate-list`, `crm.duplicate-review`         | `crm-duplicate-review.test.ts` (24)                                                                                 |
+| `FE-017`, `FE-018`                                                                                                  | 7     | `ff9c8d6`            | `veh.vehicle-search`, `veh.vehicle-create`, five catalogue reads              | `vehicle-api.test.ts` (23) · `vehicle-contract.test.ts` (22)                                                        |
+| `FE-019`, `FE-020`                                                                                                  | 8     | `4c16f8b`            | `veh.vehicle-read`, `veh.vehicle-update`, `veh.vehicle-status-change`         | `vehicle-profile.test.ts` (24)                                                                                      |
+| `FE-021`, `FE-022`, `FE-023`                                                                                        | 9     | `1ccbf92`            | ownership, plate and odometer history + their three writes                    | `vehicle-history.test.ts` (20)                                                                                      |
+| `FE-024`, `FE-025`                                                                                                  | 10    | `984af0e`            | `veh.vehicle-ev-profile-*`, `veh.vehicle-relationship-*`, `crm.vehicle-link`  | `vehicle-relations.test.ts` (18)                                                                                    |
+| `FE-026`, `FE-027`, `FE-028`, `FE-029`                                                                              | 11–12 | `7ecd97d`            | `veh.vehicle-document-list`, `veh.vehicle-duplicate-*`, `veh.vehicle-history` | `vehicle-duplicates.test.ts` (20)                                                                                   |
+| `SEC-001`…`SEC-004`                                                                                                 | 13    | `c9cb04d`            | the phase's own surface, asserted against the source that shipped             | `p1-27-security.test.ts` (18)                                                                                       |
+| `QA-001`…`QA-005`                                                                                                   | 14    | _this wave_          | every list adapter × every transport failure kind                             | `p1-27-qa.test.ts` (18) · `vehicle-screens.dom.test.tsx` (21)                                                       |
+
+Every task id above is written out individually rather than as a range. A range
+is not searchable: a reader looking for `FE-004` in a register that says
+`FE-003`–`FE-005` finds nothing and concludes the task was never delivered.
+
+**Six of the ten evidence cells in the first version of this table named files
+that do not exist** — `crm-customer-create.test.ts`, `crm-customer-profile.test.ts`,
+`crm-timeline.test.ts`, `vehicle-search.test.ts`, `vehicle-create.dom.test.tsx`
+and `vehicle-vin.test.ts`. They were written from memory of what the waves had
+covered rather than from `apps/web/tests`, and every one of them was plausible.
+A register that cites a file which is not there is worse than one that cites
+nothing, because it looks like evidence. `p1-27-qa.test.ts` now reads the
+directory and fails on any name that is not present.
 
 ### What each wave refused to build, and why
 
@@ -167,6 +182,6 @@ every one of these operations.
 
 ## Remaining
 
-Frontend **29 / 29** · Security **4 / 4** · QA 0 / 5 · DevOps 0 / 2 · Documentation 0 / 2.
+Frontend **29 / 29** · Security **4 / 4** · QA **5 / 5** · DevOps 0 / 2 · Documentation 0 / 2.
 
 `P1-27` closes only on an explicit `OWNER ACCEPTANCE: PASS`.

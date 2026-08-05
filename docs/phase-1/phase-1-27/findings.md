@@ -373,3 +373,66 @@ development or under test — never for an operator.
 reappearing, a duplicate-scan caller reappearing, `console.log` reaching a
 feature module, a route losing its permission gate, `dangerouslySetInnerHTML`
 appearing, and the scope refusal being disabled.
+
+## Wave 14 — QA tasks `QA-001` … `QA-005`
+
+Three real defects, and every one of them was found by writing a test that
+asserted what an operator would see rather than what a function returns.
+
+**Every table told a rate-limited operator that the system had broken.**
+`STATUS_BY_KIND` maps `rate-limited` to `unavailable` and `unauthenticated` to
+`expired` precisely so those two read differently from a fault, and every adapter
+carried the distinction faithfully. `useServerTable` then collapsed it:
+
+```
+: page && page.status !== 'ok' ? 'error' : 'idle'
+```
+
+`TableStatus` was `idle | loading | error | denied`, so `unavailable`, `expired`
+and `not-found` all rendered the generic error card. An operator who merely
+searched faster than thirty times a minute was told something was broken. An
+operator whose session had ended was told the same thing **and handed a Retry
+button that could never work** — re-issuing the same request with the same dead
+session fails identically.
+
+`BackendUnavailableState`, `SessionExpiredState` and `NotFoundState` all already
+existed, fully written and translated, and none of them was reachable from a
+table. The union is widened, the hook passes the status through instead of
+collapsing it, and the expired card deliberately carries **no** action.
+
+This is a shared-foundation file, so the fix reaches every table in the product,
+including P1-26's administration screens. It was found on a vehicle screen only
+because the vehicle screens were the ones being tested for the first time.
+
+**The vehicle domain had no component tests at all.** Every CRM screen had a
+`.dom` suite from Wave 2 onward; the seven vehicle screens built across Waves
+7–12 had contract and adapter coverage only. Those prove what a function returns.
+They cannot prove that a screen issues zero requests before an operator asks,
+that no merge control appears in the rendered output, or that a denial reads as a
+denial rather than as an empty list. `QA-001` is "unit **and component**
+coverage" and the component half was missing on an entire domain.
+`vehicle-screens.dom.test.tsx` is that half, and it is what surfaced the table
+defect above.
+
+**Six of the ten evidence cells in the task register named files that do not
+exist.** `crm-customer-create.test.ts`, `crm-customer-profile.test.ts`,
+`crm-timeline.test.ts`, `vehicle-search.test.ts`, `vehicle-create.dom.test.tsx`
+and `vehicle-vin.test.ts` were all written from memory of what each wave had
+covered rather than from `apps/web/tests`, and every one of them was plausible
+enough to survive a re-read. A register that cites a file which is not there is
+worse than one that cites nothing, because it looks like evidence.
+
+The table is rebuilt from `readdirSync` with measured test counts, and
+`p1-27-qa.test.ts` now reads the directory and fails on any name that is absent.
+The task ids are also written out individually rather than as ranges: a reader
+looking for `FE-004` in a register that says `FE-003`–`FE-005` finds nothing and
+concludes the task was never delivered.
+
+**Nothing was driving every adapter through every failure kind.** There are
+eleven kinds and eighteen list adapters. A mapping correct for `forbidden` and
+wrong for `rate-limited` had nowhere to be caught, because the DOM suites mock
+the adapters wholesale and the unit suites test the contracts. The QA file drives
+all 198 combinations as one loop — a hand-picked sample of three would have been
+a claim about the other eight — and asserts alongside them that each adapter
+actually issues a request, so an adapter returning a hard-coded empty page cannot
+pass the failure loop without ever calling anything.

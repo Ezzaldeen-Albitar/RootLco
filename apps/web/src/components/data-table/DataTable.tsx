@@ -2,10 +2,13 @@
 
 import { useMemo, type ReactNode } from 'react';
 import {
+  BackendUnavailableState,
   EmptyState,
   ErrorState,
   NoResultsState,
+  NotFoundState,
   PermissionDeniedState,
+  SessionExpiredState,
   SkeletonRows,
 } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
@@ -36,7 +39,24 @@ import {
  * caller's, and ultimately the server's. See `table-state.ts`.
  */
 
-export type TableStatus = 'idle' | 'loading' | 'error' | 'denied';
+/**
+ * What the table should render instead of rows.
+ *
+ * `unavailable`, `expired` and `not-found` were added by `P1-27-QA-002`. Before
+ * that this union was `idle | loading | error | denied`, and `useServerTable`
+ * collapsed every non-denied failure into `error` — so an operator who merely
+ * searched faster than 30 times a minute was told the system had broken, and one
+ * whose session had ended was told the same thing and given a Retry button that
+ * could never work.
+ *
+ * The distinction was already computed. `STATUS_BY_KIND` maps `rate-limited` to
+ * `unavailable` and `unauthenticated` to `expired` precisely so those two read
+ * differently, and every adapter carries it faithfully to the hook, which then
+ * threw it away one step before the operator. Every state component this needs
+ * already existed and none of them were reachable from a table.
+ */
+export type TableStatus =
+  'idle' | 'loading' | 'error' | 'denied' | 'unavailable' | 'expired' | 'not-found';
 
 export interface Column<Row> {
   readonly id: string;
@@ -92,20 +112,31 @@ export function DataTable<Row>({
     return <PermissionDeniedState messages={messages} correlationId={correlationId} />;
   }
 
+  const retry = onRetry ? (
+    <button type="button" onClick={onRetry} className={BUTTON_PRIMARY}>
+      {translate(messages, 'state.retry')}
+    </button>
+  ) : undefined;
+
+  if (status === 'unavailable') {
+    // A 429 or a transport hiccup. Retryable, and it says so — "something broke"
+    // sends an operator to support for a wait.
+    return <BackendUnavailableState messages={messages} action={retry} />;
+  }
+
+  if (status === 'expired') {
+    // Deliberately NO retry control. Re-issuing the same request with the same
+    // dead session fails identically; the operator needs to sign in again, and
+    // a button that cannot work is worse than no button.
+    return <SessionExpiredState messages={messages} />;
+  }
+
+  if (status === 'not-found') {
+    return <NotFoundState messages={messages} />;
+  }
+
   if (status === 'error') {
-    return (
-      <ErrorState
-        messages={messages}
-        correlationId={correlationId}
-        action={
-          onRetry ? (
-            <button type="button" onClick={onRetry} className={BUTTON_PRIMARY}>
-              {translate(messages, 'state.retry')}
-            </button>
-          ) : undefined
-        }
-      />
-    );
+    return <ErrorState messages={messages} correlationId={correlationId} action={retry} />;
   }
 
   const rows = response?.rows ?? [];

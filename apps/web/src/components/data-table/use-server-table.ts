@@ -115,13 +115,17 @@ export function useServerTable<Row>(
   const loading = held === null || held.key !== wanted;
   const page = held?.page;
 
+  // `ServerPageStatus` and `TableStatus` now agree on the four failure names, so
+  // the mapping is a pass-through rather than a collapse. Before `P1-27-QA-002`
+  // every non-denied failure became `error`: a rate-limited operator was told
+  // the system had broken, and an expired session was told the same and handed a
+  // Retry button that could not work. The distinction was computed in
+  // `STATUS_BY_KIND` and discarded one step before the operator saw it.
   const status: TableStatus = loading
     ? 'loading'
-    : page?.status === 'denied'
-      ? 'denied'
-      : page && page.status !== 'ok'
-        ? 'error'
-        : 'idle';
+    : page === undefined || page.status === 'ok'
+      ? 'idle'
+      : page.status;
 
   const response = useMemo<TableResponse<Row> | null>(() => {
     if (loading || !page || page.status !== 'ok') return null;
