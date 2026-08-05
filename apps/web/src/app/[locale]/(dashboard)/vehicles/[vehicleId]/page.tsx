@@ -4,6 +4,7 @@ import { NotFoundState, PermissionDeniedState, ErrorState } from '@/components/s
 import { requireSession } from '@/features/authentication/api/session';
 import { VehicleProfileScreen } from '@/features/vehicles/components/VehicleProfileScreen';
 import { readVehicle } from '@/features/vehicles/profile-api';
+import { readEvProfile } from '@/features/vehicles/relations-api';
 import { VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -86,6 +87,11 @@ export default async function VehicleProfilePage({
     );
   }
 
+  // Read on the SERVER. A 404 here means "no EV profile" as often as it means
+  // "no vehicle", and the vehicle's existence has just been established above —
+  // so this is the one place the ambiguity can be resolved honestly.
+  const evProfile = await readEvProfile(vehicleId);
+
   return (
     <>
       <PageBody>
@@ -95,6 +101,11 @@ export default async function VehicleProfilePage({
           vehicle={result.data}
           canEdit={holds(session.permissions, VEHICLE_PERMISSIONS.vehicleManage)}
           canChangeStatus={holds(session.permissions, VEHICLE_PERMISSIONS.statusManage)}
+          canManageRelationships={holds(
+            session.permissions,
+            VEHICLE_PERMISSIONS.relationshipManage
+          )}
+          evProfile={evProfile}
         />
       </PageBody>
     </>

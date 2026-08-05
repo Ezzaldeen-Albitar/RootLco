@@ -115,20 +115,21 @@ own protected merge — which is exactly what happened four times above.
 
 Each row is a commit that was green on its own before the next wave started.
 
-| wave | tasks                        | subject                                          | commit    |
-| ---- | ---------------------------- | ------------------------------------------------ | --------- |
-| 2    | `FE-001`, `FE-002`           | CRM customer search and results                  | `df6e452` |
-| 3    | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle | `a912681` |
-| 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                     | `c8d755d` |
-| 5    | `FE-009`…`FE-014`            | The same six, read surface                       | `ff923f1` |
-| 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | `c390abb` |
-| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | `bf7a011` |
-| 6b   | —                            | P1-17 remediation (PR #197) + reintegration      | `d00a4b5` |
-| 7    | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads   | `ff9c8d6` |
-| 8    | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                  | `4c16f8b` |
-| 9    | `FE-021`…`FE-023`            | Ownership, plate history, odometer history       | pending   |
+| wave | tasks                        | subject                                           | commit    |
+| ---- | ---------------------------- | ------------------------------------------------- | --------- |
+| 2    | `FE-001`, `FE-002`           | CRM customer search and results                   | `df6e452` |
+| 3    | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle  | `a912681` |
+| 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                      | `c8d755d` |
+| 5    | `FE-009`…`FE-014`            | The same six, read surface                        | `ff923f1` |
+| 5b   | `FE-009`…`FE-014`            | The same six, write operations                    | `c390abb` |
+| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge              | `bf7a011` |
+| 6b   | —                            | P1-17 remediation (PR #197) + reintegration       | `d00a4b5` |
+| 7    | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads    | `ff9c8d6` |
+| 8    | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                   | `4c16f8b` |
+| 9    | `FE-021`…`FE-023`            | Ownership, plate history, odometer history        | `1ccbf92` |
+| 10   | `FE-024`, `FE-025`           | EV/hybrid profile; vehicle-customer relationships | pending   |
 
-**Frontend progress: 23 / 29. Total: 23 / 42.**
+**Frontend progress: 25 / 29. Total: 25 / 42.**
 
 ### Wave 7 decisions worth not re-litigating
 

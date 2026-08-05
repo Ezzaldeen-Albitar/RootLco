@@ -15,6 +15,8 @@ import {
 } from '../contract';
 import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
 import { localToday } from '../history-contract';
+import type { EvProfileState } from '../relations-api';
+import { EvProfileSection, RelationshipsSection } from './VehicleRelationsSections';
 import { OdometerSection, OwnershipSection, PlateSection } from './VehicleHistorySections';
 import { VinField } from './VinField';
 
@@ -48,6 +50,10 @@ interface Props {
   readonly vehicle: VehicleDetail;
   readonly canEdit: boolean;
   readonly canChangeStatus: boolean;
+  /** `veh.vehicle.relationship.manage` — a third, separate capability. */
+  readonly canManageRelationships: boolean;
+  /** Read on the server, because a 404 here is an ordinary state, not an error. */
+  readonly evProfile: EvProfileState;
 }
 
 /** Every profile section, including the ones later waves fill in. */
@@ -64,7 +70,14 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number];
 
 /** Sections with a screen today. The rest say so rather than being absent. */
-const BUILT: readonly Section[] = ['overview', 'ownership', 'plates', 'odometer'];
+const BUILT: readonly Section[] = [
+  'overview',
+  'ownership',
+  'plates',
+  'odometer',
+  'ev',
+  'relationships',
+];
 
 export function VehicleProfileScreen({
   locale,
@@ -72,6 +85,8 @@ export function VehicleProfileScreen({
   vehicle,
   canEdit,
   canChangeStatus,
+  canManageRelationships,
+  evProfile,
 }: Props) {
   const frozen = isFrozen(vehicle);
   const [section, setSection] = useState<Section>('overview');
@@ -133,6 +148,24 @@ export function VehicleProfileScreen({
         // No `today`: odometer readings are timestamped observations, not dated
         // intervals, so there is nothing here to be "in force".
         <OdometerSection locale={locale} messages={messages} vehicleId={vehicle.id} />
+      ) : null}
+      {section === 'ev' ? (
+        <EvProfileSection
+          locale={locale}
+          messages={messages}
+          state={evProfile}
+          powertrainCategory={vehicle.powertrainCategory}
+          canEdit={canEdit}
+        />
+      ) : null}
+      {section === 'relationships' ? (
+        <RelationshipsSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          today={today}
+          canManage={canManageRelationships}
+        />
       ) : null}
       {!BUILT.includes(section) ? (
         <p role="status" className="px-2 py-8 text-center text-body text-text-secondary">
