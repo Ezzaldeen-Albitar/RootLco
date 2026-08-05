@@ -172,6 +172,20 @@ describe('vehicle search asks nothing until it is asked', () => {
     expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
   });
 
+  it('shows the correlation reference on the failure an operator reports', async () => {
+    // `P1-27-DO-002`. Splitting `unavailable` out of `error` in `QA-002`
+    // silently dropped this: `ErrorState` carries a reference and the new
+    // `BackendUnavailableState` did not, so the retryable failure — the one
+    // somebody actually phones about — became the one with nothing to quote.
+    const user = userEvent.setup();
+    searchVehicles.mockResolvedValue(
+      page([], { status: 'unavailable', correlationId: 'corr-quotable' })
+    );
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+    expect(await screen.findByText('corr-quotable')).toBeInTheDocument();
+  });
+
   it('offers Retry on a transient failure, because retrying can work', async () => {
     const user = userEvent.setup();
     searchVehicles.mockResolvedValue(page([], { status: 'unavailable' }));

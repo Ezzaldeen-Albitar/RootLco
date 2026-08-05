@@ -436,3 +436,65 @@ all 198 combinations as one loop — a hand-picked sample of three would have be
 a claim about the other eight — and asserts alongside them that each adapter
 actually issues a request, so an adapter returning a hard-coded empty page cannot
 pass the failure loop without ever calling anything.
+
+## Wave 15 — DevOps and Documentation `DO-001`, `DO-002`, `DOC-001`, `DOC-002`
+
+**A gate exists because Wave 6 proved a test is not enough.** The merge form
+shipped past review, typecheck, lint and 669 green tests. Nothing in the pipeline
+objected, because nothing in the pipeline knew `P1-OD-017` was open.
+`check-p1-27-frontend.mjs` encodes the six decisions this phase made — no merge
+caller, no duplicate scan from a review surface, no client-asserted scope, no
+invented total, no upload path, no console output — and a decision encoded in a
+gate has to be argued with in a diff rather than deleted around.
+
+The gate carries the same two anti-vacuity properties as its P1-26 predecessor
+(a rule inspecting zero files fails; comments are stripped so the explanation of
+a rule is not accused of breaking it) plus a third that the earlier one lacks: a
+`selfTest()` that runs on **every invocation** and is folded into the failure
+list. A comment stripper that over-matched would turn all six rules into scans
+over empty strings and report clean — the one failure mode the per-rule
+anti-vacuity checks cannot see, because from their side the files are still
+there.
+
+**The P1-24 operation register silently claimed the new gate test as backend
+evidence.** `scripts/p1-24-operation-register.mjs` credits any test file that
+names an operation id, and the gate test named `crm.customer-merge`,
+`veh.vehicle-merge` and both duplicate-scan operations — as the strings it plants
+to prove the gate rejects them. Regenerating the register added this **Frontend**
+test to the evidence list of four **backend** routes.
+
+A test proving the Web tier never calls an operation is not evidence that the
+route is exercised. The register would have said it was, in a P1-24 document, on
+a P1-27 Frontend branch. The ids are now assembled at runtime from fragments: the
+gate still receives the exact violating string, and it is simply not spelled
+contiguously for a different scanner to misread. `docs/phase-1/phase-1-24/` is
+untouched.
+
+**`P1-27-DO-002` found a regression this phase had just introduced.** Splitting
+`unavailable` out of `error` in `QA-002` routed tables to
+`BackendUnavailableState`, which — unlike `ErrorState` — took no `correlationId`.
+So the _retryable_ failure, the one an operator actually phones about, became the
+only one with no reference to quote. Without it a report is "it broke this
+morning", which cannot be traced to a request. The state now carries the
+reference and a DOM test asserts it is rendered.
+
+This is worth stating plainly: the fix for one honest-reporting defect created
+another, and it survived a full green suite, a build and 49 gates. It was caught
+only because `DO-002` asks a different question — "can support trace this?" —
+than `QA-002` did.
+
+**`validate:command-coverage` refused the new gate before it could be trusted.**
+A command no aggregate runs is a command that has never run. Registering it is
+what makes it reachable from `verify:web` and invoked by hosted CI, and the gate
+would have sat inert otherwise.
+
+**`validate:upgrade-matrix` failed once with `permission denied to terminate
+process` and passed on re-run.** A transient PostgreSQL connection condition
+after several concurrent local runs, not a code defect — this branch has
+`MIGRATION_DIFF=0` and `SUPABASE_DIFF=0`. Recorded because a database gate
+failing on a Frontend branch invites exactly the wrong diagnosis.
+
+**`documented-counts.test.ts` caught the record before a human would have.**
+Adding one file to `scripts/ci` made the CI automation record's stated inventory
+wrong, and the test named the exact phrase that had to change. That is `DOC-001`
+working as designed rather than a chore.

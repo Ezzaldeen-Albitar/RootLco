@@ -120,8 +120,12 @@ export function DataTable<Row>({
 
   if (status === 'unavailable') {
     // A 429 or a transport hiccup. Retryable, and it says so — "something broke"
-    // sends an operator to support for a wait.
-    return <BackendUnavailableState messages={messages} action={retry} />;
+    // sends an operator to support for a wait. The correlation reference goes
+    // with it (`P1-27-DO-002`): this is the failure an operator actually
+    // reports, and it is the only thing that ties their call to the API's log.
+    return (
+      <BackendUnavailableState messages={messages} action={retry} correlationId={correlationId} />
+    );
   }
 
   if (status === 'expired') {
