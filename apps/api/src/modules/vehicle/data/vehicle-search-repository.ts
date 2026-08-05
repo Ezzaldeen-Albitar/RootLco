@@ -17,7 +17,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import {
   VEHICLE_SEARCH_ORDERING,
   type PowertrainCategory,
@@ -38,6 +44,9 @@ interface VehicleRow {
   readonly lifecycle_status: VehicleLifecycleStatus;
   readonly workshop_status: WorkshopStatus;
   readonly created_at: Date;
+  readonly merged_into_id: string | null;
+  /** The same instant at microsecond precision, for the cursor only. */
+  readonly created_at_cursor: string;
 }
 
 function toHit(row: VehicleRow): VehicleSearchHit {
@@ -51,7 +60,14 @@ function toHit(row: VehicleRow): VehicleSearchHit {
     powertrainCategory: row.powertrain_category,
     lifecycleStatus: row.lifecycle_status,
     workshopStatus: row.workshop_status,
+    // Milliseconds, for DISPLAY. Never fed back as a cursor — that is the
+    // defect `P1-27-INT-008` closes.
     createdAt: row.created_at.toISOString(),
+    // Published because search RETURNS merged vehicles (`lifecycle_status`
+    // `'merged'`) and, unlike the detail read, gave a caller no way to know what
+    // a merged row was merged into. Selecting one from a result list made every
+    // subsequent write answer 409 with nothing on screen explaining why.
+    mergedIntoId: row.merged_into_id,
   };
 }
 
@@ -115,18 +131,32 @@ export class VehicleSearchRepository extends Repository {
     );
     values.push(...keyset.values);
 
+    // `created_at_cursor` is the SAME instant as `created_at`, rendered with
+    // microsecond precision by PostgreSQL rather than by a JS `Date`. See
+    // `cursorTimestamp` and `P1-27-INT-008`: the published `createdAt` stays a
+    // millisecond ISO string for display, and the CURSOR is minted from this
+    // column instead. Vehicles created in one transaction share `created_at` to
+    // the microsecond, so paging with a truncated cursor lost rows every time,
+    // not occasionally.
     const sql = `
       SELECT v.id, v.display_number, v.vin_normalized, v.make_id, v.model_id, v.model_year,
-             v.powertrain_category, v.lifecycle_status, v.workshop_status, v.created_at
+             v.powertrain_category, v.lifecycle_status, v.workshop_status, v.created_at,
+             v.merged_into_id,
+             ${cursorTimestamp('v.created_at')} AS created_at_cursor
         FROM veh.vehicles v
        WHERE ${where.join(' AND ')} ${keyset.predicate}
        ${keyset.order}
        ${keyset.limitClause}`;
 
     const result = await this.run<VehicleRow>(db, sql, values);
-    return buildPage(result.rows.map(toHit), page, VEHICLE_SEARCH_ORDERING, (hit) => ({
-      sortValue: hit.createdAt,
-      id: hit.id,
-    }));
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toHit(row),
+        sortValue: row.created_at_cursor,
+        id: row.id,
+      })),
+      page,
+      VEHICLE_SEARCH_ORDERING
+    );
   }
 }

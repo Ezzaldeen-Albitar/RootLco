@@ -32,6 +32,8 @@ import { VehicleHistoryRepository } from './data/vehicle-history-repository';
 import { VehicleHistoryService } from './application/vehicle-history-service';
 import { VehicleReadRepository } from './data/vehicle-read-repository';
 import { VehicleReadService } from './application/vehicle-read-service';
+import { VehicleCatalogueRepository } from './data/vehicle-catalogue-repository';
+import { VehicleCatalogueService } from './application/vehicle-catalogue-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
 export type { VehicleDetailRow } from './application/vehicle-read-service';
@@ -121,5 +123,6 @@ export const vehicleModule = composeModule({
     vehicleLifecycle: new VehicleLifecycleService(new VehicleLifecycleRepository()),
     vehicleHistory: new VehicleHistoryService(new VehicleHistoryRepository()),
     vehicleRead: new VehicleReadService(new VehicleReadRepository()),
+    vehicleCatalogue: new VehicleCatalogueService(new VehicleCatalogueRepository()),
   }),
 });

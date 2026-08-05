@@ -110,6 +110,16 @@ export interface VehicleSearchHit {
   readonly lifecycleStatus: VehicleLifecycleStatus;
   readonly workshopStatus: WorkshopStatus;
   readonly createdAt: string;
+  /**
+   * The surviving vehicle, when this one has been merged away.
+   *
+   * Published because search **returns** merged vehicles — `lifecycle_status`
+   * `'merged'` is not excluded — and every write against one answers 409
+   * `ERR-RES-002`. Without this a result row was indistinguishable from a live
+   * vehicle until the operator tried to edit it. Added by `P1-27-INT-008`; the
+   * detail read has always published it.
+   */
+  readonly mergedIntoId: string | null;
 }
 
 /** Raw (edge-validated) inputs before domain normalisation. */
