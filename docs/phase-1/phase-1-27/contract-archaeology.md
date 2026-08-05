@@ -385,11 +385,18 @@ means what it says.
 ## Idempotency (`P1-27-INT-003`)
 
 The Backend requires an `Idempotency-Key` on every operation it registers as
-idempotent — **120 of 238**, of which **nine are not POST**: six PUT
+idempotent — **120 of 243**, of which **nine are not POST**: six PUT
 (`crm.preference-set`, `crm.customer-status-set`, `dia.diagnostic-item-result`,
 `qms.qc-check-result`, `qms.rework-cost-record`,
 `wo.additional-work-detail-record`) and three PATCH (`veh.vehicle-update`,
 `veh.vehicle-status-change`, `svc.service-update`).
+
+The denominator read **238** until an adversarial review checked it against the
+contract shipping in the same commit. It is 243 — the five vehicle catalogue
+reads added by PR #197 landed in this branch's own history and the sentence was
+not re-derived. Both figures are recomputed here from
+`docs/phase-1/phase-1-24/evidence/operation-register.json`, which is generated
+rather than written: 243 operations, 120 idempotent, nine of those not POST.
 
 The Web client derives that from the published contract, not from the HTTP
 method. `validate:idempotent-operations` fails the build on drift.

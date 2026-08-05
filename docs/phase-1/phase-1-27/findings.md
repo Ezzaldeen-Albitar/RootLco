@@ -628,3 +628,113 @@ That is an artifact of **where the clean room was put**, not a fact about the
 tree, and reporting it as a build failure would have been as wrong as reporting
 the green tests as a clean-room pass. The clean room was recreated at `C:\cr27`
 so the build is actually measured rather than blocked before it starts.
+
+## Wave 17b — the pre-merge adversarial review
+
+Six independent lenses over the finished branch, each finding then put through a
+refutation pass. **25 findings raised, 15 refuted, 10 survived, 5 blocked the
+merge.** The five blockers are fixed below; the five carried items are recorded
+at the end rather than fixed, and say why.
+
+Every blocker is the same shape: something that was **true when written and never
+re-checked**. None was caught by 1640 tests, a clean room, 19 hosted checks or a
+real-browser review, because none of those compares a claim to its authority.
+
+### Two invented server vocabularies rendered raw keys to the operator
+
+`translate()` is `messages[key] ?? key`. A value with no label renders
+`crm.addressType.service` on screen and **nothing fails** — not typecheck, not
+lint, not a test, not the build. It looks like a rendering choice.
+
+**`vehicles.field.*` had zero entries in either catalogue.** `FE-029`'s
+Change-history "Detail" column calls
+`translateDynamic(messages, \`vehicles.field.${row.fieldCode}\`)`, and I never
+added the keys. All eleven codes that
+`veh.emit_vehicle_attribute_history()` writes rendered raw, in both locales. The
+Owner produces those rows by editing a vehicle once — this would have been found
+in the first five minutes of manual acceptance.
+
+**`ADDRESS_TYPES` was invented.** It read `billing / shipping / site / other`.
+`ck_addresses_type` admits `billing / service / registered / other`. So two of
+the four real values had no label, and two labels named values the database
+cannot store — a vocabulary that was wrong in both directions at once.
+
+This is the defect class the phase had already caught six times and recorded as
+closed, with the words "every value read from the migration that owns the
+column". That claim was true of the six and untrue of these two, and nothing
+re-checked it. A sentence in `findings.md` is not a check.
+
+`apps/web/tests/server-vocabularies.test.ts` now reads the CHECK constraint and
+the trigger function **out of the migrations** and compares them to the frontend
+constants and to both catalogues, in both directions: every server value must
+have a non-empty label, and no label may name a value the server cannot produce.
+
+**Writing that test reproduced the bug it was written to catch.** Its first
+draft asserted `vehicles.lifecycleStatus.`, `.workshopStatus.` and
+`.powertrainCategory.` — prefixes I guessed. The real ones are
+`vehicles.lifecycle.`, `.workshop.` and `.powertrain.`, and every label was
+present. So the test now also asserts that each prefix it checks is one a
+component actually builds a key from; a guessed prefix fails loudly instead of
+demanding dead keys until it goes quiet.
+
+Mutation-verified: restoring the invented address list, or deleting one
+`vehicles.field.*` label from either locale, each fails it.
+
+### Two canonical documents stated things that were not true
+
+**The execution checkpoint credited Wave 2 to `df6e452`** — the idempotency fix,
+which touches no CRM file. The delivering commit is `f6b5579`, which is what the
+task register said. Two governing documents disagreed about the phase's first two
+tasks. The same wave log had been frozen at "25 / 29. Total: 25 / 42" since wave
+10, so an Owner reading it front to back was told the phase was two-thirds done
+while the register said 42 / 42. Both are corrected and waves 10–17 are now
+recorded.
+
+**Contract archaeology gave the idempotency denominator as "120 of 238"**, in the
+present tense, in a document that already describes PR #197 — the very PR that
+took the registry to 243. Both figures are now recomputed from the generated
+`operation-register.json`: 243 operations, 120 idempotent, nine not POST.
+
+### Five findings recorded rather than fixed
+
+Each is real and survived refutation. None would make the Owner's manual
+acceptance produce a wrong answer, and each is honestly bounded.
+
+**CRM write forms render on a successful READ rather than on their write
+permission** (`CustomerProfileScreen.tsx`). The six component lists need
+`crm.customer.read`; the six forms drive writes needing five stronger codes, and
+`CRM_PERMISSIONS.profileWrite`/`.consentWrite`/`.noteWrite`/`.governanceManage`/
+`.restrictionManage` are declared and referenced by no component. The vehicle
+profile does this correctly with three distinct codes, so CRM is the outlier.
+A read-only operator sees six controls certain to 403. Not a boundary — the
+server denies every one, `RecordForm` preserves typed input on failure, and the
+acceptance role holds all five codes so the Owner cannot reach it. An affordance
+gap, and the fix belongs with the page that has `session.permissions` in hand.
+
+**The route-gate test proves less than its name says** (`p1-27-security.test.ts`).
+`indexOf('holds(') > -1` runs on **un-stripped** source — the one place in that
+file that does not call `code()` first — so a `holds(` in a docblock satisfies
+it. The ordering half is skipped whenever the route has no
+`await read|list|search[A-Z]`, which is five of the eight routes. All eight are
+correct today; the weakness is future-facing.
+
+**`EvProfile.usableCapacityKwh` is typed `string | null`** and the operation
+returns a JSON number. Cosmetic today (`77.4` rather than `77.40`); the
+type-error half needs a consumer that does not exist.
+
+**The vehicle duplicate queue discards `displayNumberA`/`displayNumberB`**, which
+the operation does publish, in favour of fixed "First record"/"Second record"
+labels — and the file's docblock claims the operation returns only two ids. A
+false code comment and a missed label; both vehicles are still reachable.
+
+**`permissions.ts` cites `apps/web/tests/crm.test.ts`**, which does not exist;
+the assertion lives in `crm-customer-search.test.ts` and is `it.each`-driven.
+A stale filename in a comment.
+
+### What the review confirmed rather than broke
+
+Every deliberate refusal held under adversarial reading: no merge affordance
+anywhere, no duplicate scan from any queue screen, no upload path, no invented
+total, no client-asserted tenancy, and the vehicle history is an attribute ledger
+rather than a timeline. No Backend logic, migration, business data or secret is
+touched by this branch.

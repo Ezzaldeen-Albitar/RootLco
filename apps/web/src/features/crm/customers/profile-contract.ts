@@ -218,7 +218,22 @@ export const CONTACT_CHANNELS = ['phone', 'mobile', 'email', 'other'] as const;
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
 
 /** `crm.addresses.address_type`. */
-export const ADDRESS_TYPES = ['billing', 'shipping', 'site', 'other'] as const;
+/**
+ * `crm.addresses.address_type`, read from `ck_addresses_type`.
+ *
+ * The first version of this line was **invented**: `billing`, `shipping`,
+ * `site`, `other`. The CHECK constraint in
+ * `supabase/migrations/20260719097000_crm_contacts_addresses.sql:134` is
+ * `('billing', 'service', 'registered', 'other')`. So two of the four real
+ * values — `service` and `registered` — had no label and rendered as the raw key
+ * `crm.addressType.service` to the operator, while `shipping` and `site` were
+ * labels for values the database cannot store.
+ *
+ * Nothing failed. `translate()` falls back to the key, so a missing label looks
+ * like a rendering choice rather than an error, and no test compared this list
+ * to the constraint that owns the column.
+ */
+export const ADDRESS_TYPES = ['billing', 'service', 'registered', 'other'] as const;
 export type AddressType = (typeof ADDRESS_TYPES)[number];
 
 export const MAX_CONTACT_VALUE = 320;

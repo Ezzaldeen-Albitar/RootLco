@@ -115,21 +115,36 @@ own protected merge — which is exactly what happened four times above.
 
 Each row is a commit that was green on its own before the next wave started.
 
-| wave | tasks                        | subject                                           | commit    |
-| ---- | ---------------------------- | ------------------------------------------------- | --------- |
-| 2    | `FE-001`, `FE-002`           | CRM customer search and results                   | `df6e452` |
-| 3    | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle  | `a912681` |
-| 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                      | `c8d755d` |
-| 5    | `FE-009`…`FE-014`            | The same six, read surface                        | `ff923f1` |
-| 5b   | `FE-009`…`FE-014`            | The same six, write operations                    | `c390abb` |
-| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge              | `bf7a011` |
-| 6b   | —                            | P1-17 remediation (PR #197) + reintegration       | `d00a4b5` |
-| 7    | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads    | `ff9c8d6` |
-| 8    | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                   | `4c16f8b` |
-| 9    | `FE-021`…`FE-023`            | Ownership, plate history, odometer history        | `1ccbf92` |
-| 10   | `FE-024`, `FE-025`           | EV/hybrid profile; vehicle-customer relationships | pending   |
+| wave  | tasks                        | subject                                           | commit               |
+| ----- | ---------------------------- | ------------------------------------------------- | -------------------- |
+| 1     | —                            | Idempotency from the contract (`P1-27-INT-003`)   | `df6e452`            |
+| 2     | `FE-001`, `FE-002`           | CRM customer search and results                   | `f6b5579`            |
+| 3     | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle  | `a912681`            |
+| 4     | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                      | `c8d755d`            |
+| 5     | `FE-009`…`FE-014`            | The same six, read surface                        | `ff923f1`            |
+| 5b    | `FE-009`…`FE-014`            | The same six, write operations                    | `c390abb`            |
+| 6     | `FE-015`, `FE-016`           | Timeline; duplicate review queue                  | `bf7a011`            |
+| 6b    | —                            | P1-17 remediation (PR #197) + reintegration       | `d00a4b5`            |
+| 7     | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads    | `ff9c8d6`            |
+| 8     | `FE-019`, `FE-020`           | Vehicle profile; VIN validation                   | `4c16f8b`            |
+| 9     | `FE-021`…`FE-023`            | Ownership, plate history, odometer history        | `1ccbf92`            |
+| 10    | `FE-024`, `FE-025`           | EV/hybrid profile; vehicle-customer relationships | `984af0e`            |
+| 11–12 | `FE-026`…`FE-029`            | Documents, media, duplicate review, history       | `7ecd97d`            |
+| 13    | `SEC-001`…`SEC-004`          | Security tasks                                    | `c9cb04d`            |
+| 14    | `QA-001`…`QA-005`            | QA tasks; the table failure-state defect          | `360736f`            |
+| 15    | `DO-001`…`DOC-002`           | CI decision gate; both guides                     | `2688635`, `1719423` |
+| 16    | —                            | Adversarial review against the running stack      | `10c44a4`            |
+| 17    | —                            | Clean room, PR #198, three CodeQL findings        | `9f58eb0`…`80957a5`  |
 
-**Frontend progress: 25 / 29. Total: 25 / 42.**
+**Frontend 29 / 29 · Security 4 / 4 · QA 5 / 5 · DevOps 2 / 2 · Documentation 2 / 2.
+Implementation total 42 / 42 — which is NOT closure. See §9.**
+
+Wave 2 read `df6e452` here until an adversarial review of the finished branch
+checked it: that commit is the idempotency fix and touches no CRM file, while
+`task-register.md` correctly named `f6b5579`. Two governing documents disagreed
+about the phase's first two tasks, and the wave log had also been frozen at
+"25 / 29, 25 / 42" since wave 10 — so an Owner reading this file front to back
+was told the phase was two-thirds done.
 
 ### Wave 7 decisions worth not re-litigating
 
