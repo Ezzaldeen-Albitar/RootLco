@@ -82,13 +82,22 @@ later write answer 409 with nothing on screen explaining why.
 | `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                |
 
 **None of these blocks a P1-27 screen.** `INT-004` affects a generated document,
-not a runtime response. The 16 cursor sites are in operations P1-27 does not
-call; if a later wave exercises one, §15 of the execution prompt routes it
-through a separate foundation remediation rather than a fix hidden here.
+not a runtime response. The **remaining 10** cursor sites are in operations P1-27
+does not call.
+
+**That sentence used to say sixteen, and it was wrong.** The original disposition
+read "the 16 cursor sites are in operations P1-27 does not call", and six of them
+turned out to be `veh.vehicle-search`, `-history`, `-odometer-history`,
+`-plate-history`, `-ownership-history` and `-relationship-list` — the reads behind
+every remaining vehicle wave. The claim was made before the vehicle surface had
+been read, and it survived because nothing re-checked it when the waves that call
+those operations came into view. They were closed by `P1-27-INT-008` on the P1-17
+branch, which is the route §15 prescribes; the ten that remain have been checked
+against the Wave 7–21 operation list rather than assumed.
 
 ### The measured extent of `INT-004`, found while building the write forms
 
-`docs/api/openapi.v1.json` describes **238 operations, 152 of them mutations,
+`docs/api/openapi.v1.json` describes **243 operations, 152 of them mutations,
 and publishes `requestBody` for zero of them.** Its entire `components.schemas`
 section holds three entries — `ProblemDocument`, `Money`, `PageEnvelope`.
 
