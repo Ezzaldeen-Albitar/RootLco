@@ -55,7 +55,6 @@ vi.mock('@/features/crm/customers/identity-api', () => ({
   listHistory: emptyPage,
   listDuplicates: emptyPage,
   reviewDuplicateAction: vi.fn(),
-  mergeCustomerAction: vi.fn(),
 }));
 
 const { CustomerProfileScreen } =

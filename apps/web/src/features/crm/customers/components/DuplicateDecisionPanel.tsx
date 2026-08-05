@@ -5,9 +5,8 @@ import type { ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { mergeCustomerAction, reviewDuplicateAction } from '../identity-api';
+import { reviewDuplicateAction } from '../identity-api';
 import {
-  MAX_APPROVAL_REF,
   MAX_MERGE_REASON,
   MIN_MERGE_REASON,
   formatMatchScore,
@@ -18,23 +17,27 @@ import {
 /**
  * The decision panel for one duplicate candidate (`FE-016`).
  *
- * ## Two decisions, two capabilities, two forms
+ * ## One decision is offered here, and it is dismissal
  *
- * Dismissing is `crm.duplicate-review` / `crm.customer.duplicate.review`.
- * Merging is `crm.customer-merge` / **`crm.customer.merge`**. They are rendered
- * as separate forms with separate submits, because a single control offering
- * both would imply one capability covers them. A reviewer who may clear a false
- * pair a hundred times may not be trusted to combine two real customer records
- * even once.
+ * `crm.duplicate-review` accepts exactly `dismissed`, behind
+ * `crm.customer.duplicate.review`. That is the whole decision surface this
+ * screen has.
  *
- * ## The merge form makes the direction unmissable
+ * ## There is NO merge affordance, and its absence is the design
  *
- * `POST /customers/{customerId}/merge` merges the PATH customer **away** into
- * the body's `survivorId`. Both are uuids, so an inverted request looks
- * perfectly well-formed and destroys the wrong customer. The form therefore does
- * not ask for two ids: it asks which of the two known members SURVIVES, and
- * derives the other side itself. There is no field in which the direction can be
- * transposed.
+ * `crm.customer-merge` exists in the contract and this phase does not call it.
+ * `P1-OD-017` — duplicate and merge rules — is an **open Owner decision**, and
+ * the phase's canonical plan states the requirement precisely: the merge
+ * affordance must be *absent*, "not disabled-with-a-tooltip, and the screen
+ * states that merge rules are pending a decision. A disabled button implies the
+ * capability exists and the user lacks permission, which is a different and
+ * false statement."
+ *
+ * An earlier revision of this file shipped a working merge form with a survivor
+ * selector and an approval-reference field. That was a defect against §13 and
+ * against this phase's own plan, and it is recorded in `findings.md`. What the
+ * plan permits — candidate comparison, `matchBasis` evidence, and dismissal — is
+ * all still here.
  */
 
 const EMPTY: ActionState = { status: 'idle' };
@@ -112,7 +115,24 @@ export function DuplicateDecisionPanel({ locale, messages, candidate, onClose, o
         locale={locale}
       />
 
-      <MergeForm messages={messages} candidate={candidate} onDecided={onDecided} locale={locale} />
+      {/* NO merge affordance. `P1-OD-017` (duplicate and merge rules) is OPEN,
+          and the canonical plan is explicit that the affordance must be
+          ABSENT rather than disabled-with-a-tooltip: a disabled button says
+          "this capability exists and you lack permission", which is a
+          different and false statement.
+
+          An earlier revision of this file shipped a working merge form. That
+          was a defect — recorded in findings.md — and this is what replaces it
+          until the Owner resolves the decision. */}
+      <p
+        className="rounded-md border border-border p-3 text-body text-text-secondary"
+        lang={locale}
+      >
+        {translate(messages, 'crm.duplicates.mergePendingDecision')}
+        <code className="ms-2 font-mono text-caption" dir="ltr">
+          P1-OD-017
+        </code>
+      </p>
     </section>
   );
 }
@@ -217,131 +237,6 @@ function DismissForm({
         {pending
           ? translate(messages, 'form.pending')
           : translate(messages, 'crm.duplicates.dismiss')}
-      </button>
-    </form>
-  );
-}
-
-/**
- * The merge form.
- *
- * The reviewer picks the SURVIVOR from the two known members; the record merged
- * away is whichever they did not pick. That is the whole point of the design —
- * `POST /customers/{customerId}/merge` takes the loser in the path and the
- * survivor in the body, both uuids, so a transposed request is indistinguishable
- * from a correct one and destroys the wrong customer. Here there is no second
- * id to transpose.
- */
-function MergeForm({
-  messages,
-  candidate,
-  onDecided,
-  locale,
-}: {
-  readonly messages: Messages;
-  readonly candidate: DuplicateCandidate;
-  readonly onDecided: () => void;
-  readonly locale: Locale;
-}) {
-  const [a, b] = pairMembers(candidate);
-  const [survivorId, setSurvivorId] = useState<string>('');
-  const [approvalRef, setApprovalRef] = useState('');
-
-  // Derived, never entered. The customer merged away is the other member.
-  const mergedAwayId = survivorId === a.id ? b.id : survivorId === b.id ? a.id : null;
-  const mergedAwayName = survivorId === a.id ? b.name : survivorId === b.id ? a.name : null;
-
-  const [state, submit, pending] = useActionState(async (previous: ActionState, form: FormData) => {
-    if (!mergedAwayId) {
-      return { status: 'invalid' as const, fieldErrors: { survivorId: 'field.required' } };
-    }
-    const result = await mergeCustomerAction(mergedAwayId, previous, form);
-    if (result.status === 'success') {
-      setSurvivorId('');
-      setApprovalRef('');
-      onDecided();
-    }
-    return result;
-  }, EMPTY);
-
-  return (
-    <form action={submit} className="rounded-md border border-status-danger/40 p-3">
-      <h3 className="text-body font-medium text-text-primary">
-        {translate(messages, 'crm.duplicates.mergeHeading')}
-      </h3>
-      <p className="mt-1 text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'crm.duplicates.mergeHint')}
-      </p>
-
-      <fieldset className="mt-3">
-        <legend className="text-caption text-text-secondary">
-          {translate(messages, 'crm.duplicates.survivorLegend')}
-        </legend>
-        {[a, b].map((member) => (
-          <label key={member.id} className="mt-1 flex items-center gap-2 text-body">
-            <input
-              type="radio"
-              name="survivorId"
-              value={member.id}
-              checked={survivorId === member.id}
-              onChange={(event) => setSurvivorId(event.target.value)}
-              className="size-4 accent-brand-primary"
-            />
-            <span>{member.name ?? translate(messages, 'crm.duplicates.nameUnavailable')}</span>
-          </label>
-        ))}
-      </fieldset>
-
-      {/* Said in words, not implied by layout. The destructive half of this
-          operation is the half nobody selected, and it is named explicitly
-          before the reviewer can submit. */}
-      {mergedAwayId ? (
-        <p role="status" className="mt-2 text-caption text-status-danger">
-          {translate(messages, 'crm.duplicates.willBeMerged')}{' '}
-          <strong>{mergedAwayName ?? translate(messages, 'crm.duplicates.nameUnavailable')}</strong>
-        </p>
-      ) : null}
-
-      <label htmlFor="merge-approval-ref" className="mt-3 block text-caption text-text-secondary">
-        {translate(messages, 'crm.customers.restrictions.approvalRef')}
-        {/* REQUIRED here, unlike on a restriction. */}
-        <span aria-hidden="true" className="ms-1 text-status-danger">
-          *
-        </span>
-      </label>
-      <input
-        id="merge-approval-ref"
-        name="approvalRef"
-        type="text"
-        value={approvalRef}
-        onChange={(event) => setApprovalRef(event.target.value)}
-        required
-        maxLength={MAX_APPROVAL_REF}
-        aria-invalid={state.fieldErrors?.approvalRef ? true : undefined}
-        aria-describedby={state.fieldErrors?.approvalRef ? 'merge-approval-error' : undefined}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
-      />
-      {state.fieldErrors?.approvalRef ? (
-        <p id="merge-approval-error" role="alert" className="mt-1 text-caption text-status-danger">
-          {translateDynamic(messages, state.fieldErrors.approvalRef)}
-        </p>
-      ) : null}
-      {state.fieldErrors?.survivorId ? (
-        <p role="alert" className="mt-1 text-caption text-status-danger">
-          {translateDynamic(messages, state.fieldErrors.survivorId)}
-        </p>
-      ) : null}
-
-      <Outcome messages={messages} state={state} />
-
-      <button
-        type="submit"
-        disabled={pending || !mergedAwayId}
-        className="mt-3 rounded-md bg-status-danger px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
-      >
-        {pending
-          ? translate(messages, 'form.pending')
-          : translate(messages, 'crm.duplicates.merge')}
       </button>
     </form>
   );

@@ -3,13 +3,10 @@ import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-co
 import {
   DUPLICATE_DECISIONS,
   DUPLICATE_STATUSES,
-  MAX_APPROVAL_REF,
   MIN_MERGE_REASON,
   TIMELINE_EVENT_TYPES,
   formatMatchScore,
   isActionable,
-  pairMembers,
-  validateMerge,
   validateReviewReason,
   type DuplicateCandidate,
 } from '@/features/crm/customers/identity-contract';
@@ -171,41 +168,27 @@ describe('reviewing and merging are different capabilities', () => {
   });
 });
 
-describe('the merge direction cannot be transposed', () => {
-  it('exposes the pair as an ordered pair with no "duplicate" side', () => {
-    const [a, b] = pairMembers(CANDIDATE);
-    expect(a.id).toBe(CANDIDATE.partnerIdA);
-    expect(b.id).toBe(CANDIDATE.partnerIdB);
-    // A/B is the order the detector recorded and carries no meaning. Neither
-    // member is labelled the original or the copy anywhere in the contract.
-    expect(Object.keys(a)).toEqual(['id', 'name']);
+describe('the merge affordance is absent, not merely unused', () => {
+  it('exports no merge validator from the contract', async () => {
+    // `P1-OD-017` is open and the canonical plan requires the affordance to be
+    // ABSENT. A validator with no call site is one edit away from a form, so
+    // its absence is asserted rather than assumed.
+    const contract = await import('@/features/crm/customers/identity-contract');
+    expect('validateMerge' in contract).toBe(false);
+    expect('MergeInput' in contract).toBe(false);
   });
 
-  it('requires a survivor', () => {
-    expect(validateMerge({ approvalRef: 'AUTH-1' }).survivorId).toBe('field.required');
+  it('exports no merge action from the adapter', async () => {
+    const api = await import('@/features/crm/customers/identity-api');
+    expect('mergeCustomerAction' in api).toBe(false);
   });
 
-  it('requires an approval reference, unlike a restriction', () => {
-    // `crm.customer-merge` types `approvalRef` as `.min(1)` and NOT optional.
-    // A merge redirects one real customer into another; the authorisation for it
-    // is not optional.
-    expect(validateMerge({ survivorId: CANDIDATE.partnerIdA }).approvalRef).toBe('field.required');
-    expect(
-      validateMerge({ survivorId: CANDIDATE.partnerIdA, approvalRef: '   ' }).approvalRef
-    ).toBe('field.required');
-  });
-
-  it('rejects an over-long approval reference', () => {
-    expect(
-      validateMerge({
-        survivorId: CANDIDATE.partnerIdA,
-        approvalRef: 'x'.repeat(MAX_APPROVAL_REF + 1),
-      }).approvalRef
-    ).toBe('field.tooLong');
-  });
-
-  it('accepts a complete merge', () => {
-    expect(validateMerge({ survivorId: CANDIDATE.partnerIdA, approvalRef: 'AUTH-1' })).toEqual({});
+  it('still resolves the merge operation, which exists in the contract', () => {
+    // The operation is real and published. This phase simply does not call it,
+    // and that distinction is worth keeping visible.
+    expect(resolveOperation('POST', '/api/v1/customers/cust-1/merge')?.operationId).toBe(
+      'crm.customer-merge'
+    );
   });
 });
 

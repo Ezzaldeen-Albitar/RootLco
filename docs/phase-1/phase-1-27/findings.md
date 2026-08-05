@@ -246,3 +246,86 @@ the read succeeded" — could tell the two apart, and it is the reason that
 assertion was written alongside the negative one. The gate is now
 `table.response`, which is non-null iff the page came back `ok`.
 Mutation-verified: rendering the form unconditionally fails three tests.
+
+## Wave 11-12 — vehicle documents, duplicates and attribute history
+
+**A working merge form shipped in Wave 6, and it should never have existed.**
+`DuplicateDecisionPanel.tsx` was delivered with a merge form: a survivor
+selector, an approval-reference field, a reason box and a submit button wired to
+`mergeCustomerAction`, which POSTs `crm.customer-merge`. `P1-OD-017` — duplicate
+and merge rules — is an **open Owner decision**, and this phase's own canonical
+plan states the requirement in terms that leave no room: the merge affordance is
+_absent_, "not disabled-with-a-tooltip, and the screen states that merge rules
+are pending a decision. A disabled button implies the capability exists and the
+user lacks permission, which is a different and false statement."
+
+What shipped was worse than the disabled button the plan rejects. It was a
+working control for an irreversible operation whose governing rules do not exist
+yet — permission-gated, but a permission grant is not a decision record.
+
+The form, `mergeCustomerAction`, `MergeInput` and `validateMerge` are all gone.
+What replaces the form is a sentence naming `P1-OD-017`. Two docblocks that had
+described the merge flow as intended behaviour were corrected in the same change;
+they had been written before the plan's paragraph was read, and nothing re-checks
+a claim once it is in a comment. `FE-028` was then built to the corrected rule
+from the start, and both test files assert the **absence** of any export matching
+`/merge/i` — an assertion that fails the moment someone adds one back.
+
+**`veh.vehicle-duplicate-scan` reads like a query and is a privileged audited
+write.** It creates candidate rows, emits an audit record and is throttled at
+30/min. A review queue that "refreshed" by scanning would write audit history
+every time an operator opened it. `FE-028` never calls it, does not offer a
+rescan button, and says so on the screen rather than leaving a reviewer to wonder
+why the list does not update. The test asserts no export matches `/scan/i`.
+
+**`FE-029` is an attribute-change ledger and the tab is no longer called
+"timeline".** `veh.vehicle-history` reads `veh.vehicle_attribute_history` —
+field-level changes to the vehicle master and nothing else. CRM has
+`crm.timeline_events`, populated by triggers across that domain; the vehicle
+schema has **no equivalent table**, which P1-17's own remediation record states
+plainly. The profile's eighth tab was defined as `timeline` and would have
+promised a single event stream the platform does not have, disagreeing with the
+five sibling sections that each read their own operation. It is `history`.
+
+`oldValue` and `newValue` are both nullable, so a single "old → new" template
+renders nonsense for three of the four real cases. `changeShape()` returns `set`,
+`cleared`, `changed` or `empty`, and an empty string is treated as the same
+absence as `null`.
+
+**Two finished screens that no operator could reach.** The CRM duplicate queue
+(`FE-016`, Wave 6) and the vehicle duplicate queue (`FE-028`) both had routes,
+both had screens, and neither was in the sidebar or linked from any list. Nothing
+failed: every test passed, the build compiled, and the pages worked perfectly for
+anyone who typed the URL. Owner acceptance would have found this by failing to
+find the screens.
+
+Both are now sidebar entries, each behind its **own** `*.duplicate.review` code
+rather than the module read code — deciding whether two records are the same
+thing is a separate capability from being allowed to look at one. `vehicles`
+itself was still marked `planned` three waves after its screen was built, which
+told an operator the page in front of them was not real. The navigation test's
+`available` and `planned` lists are exact, so drift in either direction fails.
+
+**A numeric HTML entity read as a hex colour.** `&#8594;` (a right arrow) is a
+`#` followed by four hex digits, and `check-design-tokens.mjs` failed the build
+on it as a raw colour outside the token layer. The literal character is used
+instead. The gate was right to be suspicious and the fix is not to loosen it.
+
+**Vehicle documents are gated by a permission from another module.**
+`veh.vehicle-document-list` needs `shared.document.manage` — a _manage_
+capability from a _different_ module, inverted relative to every other vehicle
+sub-resource, which all read on `veh.vehicle.read`. An operator who can see the
+whole vehicle may be unable to see its documents, and an operator who can see the
+documents may hold no vehicle permission at all. The page checks the code before
+issuing the read, so a denied operator never spends an `expensive-read` slot
+discovering they cannot see it.
+
+The operation publishes a document **reference and nothing else** — no name, no
+type, no date, no size. The section says so instead of rendering four empty
+columns that look like missing data.
+
+**There is no vehicle media operation, so media is recorded as blocked, not as a
+flag.** `P1-OD-025` must decide accepted types, size limits and storage before
+one can exist. `MEDIA_STATUS` is `'blocked-on-p1-od-025'` rather than a boolean:
+a feature flag implies something to switch on, and there is nothing behind this
+one. The test asserts no export matches `/upload|media|attach/i`.

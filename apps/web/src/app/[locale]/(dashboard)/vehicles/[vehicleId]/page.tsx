@@ -5,6 +5,8 @@ import { requireSession } from '@/features/authentication/api/session';
 import { VehicleProfileScreen } from '@/features/vehicles/components/VehicleProfileScreen';
 import { readVehicle } from '@/features/vehicles/profile-api';
 import { readEvProfile } from '@/features/vehicles/relations-api';
+import { listVehicleDocuments, type DocumentsState } from '@/features/vehicles/documents-api';
+import { DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
 import { VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -92,6 +94,15 @@ export default async function VehicleProfilePage({
   // so this is the one place the ambiguity can be resolved honestly.
   const evProfile = await readEvProfile(vehicleId);
 
+  // The documents tab needs `shared.document.manage` — a MANAGE capability from
+  // a different module, inverted relative to every other vehicle sub-resource.
+  // The list is only read when the caller holds it, so a denied operator never
+  // spends an `expensive-read` slot discovering they cannot see it.
+  const canListDocuments = holds(session.permissions, DOCUMENT_LIST_PERMISSION);
+  const documents: DocumentsState = canListDocuments
+    ? await listVehicleDocuments(vehicleId)
+    : { status: 'denied', correlationId: null };
+
   return (
     <>
       <PageBody>
@@ -106,6 +117,8 @@ export default async function VehicleProfilePage({
             VEHICLE_PERMISSIONS.relationshipManage
           )}
           evProfile={evProfile}
+          canListDocuments={canListDocuments}
+          documents={documents}
         />
       </PageBody>
     </>

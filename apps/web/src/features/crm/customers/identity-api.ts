@@ -8,7 +8,6 @@ import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-resul
 import { STATUS_BY_KIND, query, type CursorPage } from '@/lib/api/read-operation';
 import {
   DUPLICATE_DECISIONS,
-  MAX_APPROVAL_REF,
   MAX_MERGE_REASON,
   MIN_MERGE_REASON,
   type DuplicateCandidate,
@@ -161,68 +160,19 @@ export async function reviewDuplicateAction(
   };
 }
 
-const mergeSchema = z
-  .object({
-    survivorId: z.string().uuid('field.required'),
-    // REQUIRED, unlike a restriction's approval reference. A merge redirects one
-    // real customer record into another; the authorisation for it is not
-    // optional.
-    approvalRef: z.string().trim().min(1, 'field.required').max(MAX_APPROVAL_REF),
-  })
-  .strict();
-
 /**
- * `FE-016` — merge a customer into a survivor. **`crm.customer.merge`.**
+ * There is deliberately no `mergeCustomerAction` here.
  *
- * A different permission from the review above, and deliberately so: dismissing
- * a false pair is routine, and combining two real customer records is not.
+ * `crm.customer-merge` exists in the contract and is NOT called by this phase.
+ * `P1-OD-017` — duplicate and merge rules — is an OPEN Owner decision, and the
+ * canonical plan requires the merge affordance to be **absent** rather than
+ * disabled: a disabled control says "this exists and you lack permission",
+ * which is false.
  *
- * The DIRECTION matters and is easy to invert. `customerId` in the path is the
- * record that is merged **away**; `survivorId` in the body is the one that
- * remains. Swapping them destroys the wrong customer, and both are uuids so
- * nothing about the request would look wrong.
+ * An earlier revision of this file exported a working merge action and the
+ * panel shipped a form for it. That was a defect against §13 and against the
+ * phase's own canonical plan; it is recorded in findings.md. The action is
+ * removed rather than flagged, because dead code that can POST a privileged,
+ * irreversible operation is one edit away from being wired up by somebody who
+ * does not know the decision is still open.
  */
-export async function mergeCustomerAction(
-  customerId: string,
-  previous: ActionState,
-  form: FormData
-): Promise<ActionState> {
-  const attempt = (previous.attempt ?? 0) + 1;
-
-  const parsed = mergeSchema.safeParse({
-    survivorId: String(form.get('survivorId') ?? ''),
-    approvalRef: String(form.get('approvalRef') ?? ''),
-  });
-  if (!parsed.success) {
-    const errors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const key = issue.path[0];
-      if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-    }
-    return invalid(errors, attempt);
-  }
-
-  // A customer cannot survive itself. The backend rejects this, but catching it
-  // here costs nothing and the failure mode it prevents — a request that reads
-  // as "merge X into X" — is worth never sending.
-  if (parsed.data.survivorId === customerId) {
-    return invalid({ survivorId: 'crm.duplicates.survivorSameAsMerged' }, attempt);
-  }
-
-  const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
-
-  const result = await client.send(
-    'POST',
-    `/api/v1/customers/${encodeURIComponent(customerId)}/merge`,
-    parsed.data
-  );
-  if (!result.ok) return fromFailure(result, attempt);
-
-  return {
-    status: 'success',
-    messageKey: 'crm.duplicates.merged',
-    correlationId: result.correlationId,
-    attempt,
-  };
-}

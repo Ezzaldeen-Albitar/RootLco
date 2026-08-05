@@ -107,8 +107,66 @@ the 386-test web suite passed unaltered across the move.
 
 ---
 
+## `P1-27-FE-003` … `P1-27-FE-029` — delivered by wave
+
+Every row below is delivered: it has a commit, a test file that names it, and at
+least two mutations that the suite caught. The per-task contract detail lives in
+the module docblocks — each contract file carries the operation table, the
+permission, the constraint it was read out of and the reason for every refusal.
+This register carries the evidence chain.
+
+| tasks             | wave  | SHA                  | operations consumed                                                           | evidence                                                                             |
+| ----------------- | ----- | -------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `FE-001`–`FE-002` | 2     | `f6b5579`            | `crm.customer-search`                                                         | `crm-customer-search.test.ts` (38) · `crm-customer-search.dom.test.tsx` (13)         |
+| `FE-003`–`FE-005` | 3     | `a912681`            | `crm.duplicate-scan`, `crm.individual-create`, `crm.company-create`           | `crm-customer-create.test.ts` · `crm-customer-create.dom.test.tsx`                   |
+| `FE-006`–`FE-008` | 4     | `c8d755d`            | `crm.customer-read`, `crm.contact-*`, `crm.address-*`                         | `crm-customer-profile.test.ts` · `crm-customer-profile.dom.test.tsx`                 |
+| `FE-009`–`FE-014` | 5, 5b | `ff923f1`, `c390abb` | six component list reads + six writes                                         | `crm-profile-api.test.ts` · `crm-governance-writes.test.ts` · `crm-components.dom.*` |
+| `FE-015`–`FE-016` | 6     | `bf7a011`            | `crm.customer-timeline`, `crm.duplicate-list`, `crm.duplicate-review`         | `crm-duplicate-review.test.ts` · `crm-timeline.test.ts`                              |
+| `FE-017`–`FE-018` | 7     | `ff9c8d6`            | `veh.vehicle-search`, `veh.vehicle-create`, five catalogue reads              | `vehicle-search.test.ts` · `vehicle-create.dom.test.tsx`                             |
+| `FE-019`–`FE-020` | 8     | `4c16f8b`            | `veh.vehicle-read`, `veh.vehicle-update`, `veh.vehicle-status-change`         | `vehicle-profile.test.ts` · `vehicle-vin.test.ts`                                    |
+| `FE-021`–`FE-023` | 9     | `1ccbf92`            | ownership, plate and odometer history + their three writes                    | `vehicle-history.test.ts`                                                            |
+| `FE-024`–`FE-025` | 10    | `984af0e`            | `veh.vehicle-ev-profile-*`, `veh.vehicle-relationship-*`, `crm.vehicle-link`  | `vehicle-relations.test.ts`                                                          |
+| `FE-026`–`FE-029` | 11–12 | _this wave_          | `veh.vehicle-document-list`, `veh.vehicle-duplicate-*`, `veh.vehicle-history` | `vehicle-duplicates.test.ts` (20)                                                    |
+
+### What each wave refused to build, and why
+
+A phase that only records what it built hides the decisions that mattered most.
+
+**`FE-003` does not scan on every keystroke.** `crm.duplicate-scan` is a
+privileged audited **write**. The creation form calls it once, on explicit
+intent, and never to decorate a field.
+
+**`FE-016` and `FE-028` have no merge affordance.** `P1-OD-017` is an open Owner
+decision and the plan requires the affordance to be _absent_, not disabled. Wave 6
+shipped a working merge form in breach of this; it was removed and the defect is
+recorded in `findings.md`. Both test files now assert no export matches
+`/merge/i`.
+
+**`FE-028` never calls `veh.vehicle-duplicate-scan`.** Same shape as `FE-003`:
+an operation that reads like a query, creates rows, writes audit history and is
+throttled at 30/min. There is no rescan button and none fires on mount.
+
+**`FE-027` ships no upload path.** There is no vehicle media operation in the
+platform at all. `P1-OD-025` must decide accepted types, size limits and storage
+first. `MEDIA_STATUS` is `'blocked-on-p1-od-025'`, not a feature flag — a flag
+implies something to switch on.
+
+**`FE-029` is not a timeline.** `veh.vehicle-history` is an attribute-change
+ledger over `veh.vehicle_attribute_history`. The vehicle schema has no equivalent
+of `crm.timeline_events`, so the profile tab is `history` and the five component
+histories stay in their own sections rather than being fused into an event stream
+the platform cannot produce.
+
+**No screen invents a total.** Every list is `Page<T>` = `{ items, nextCursor,
+hasMore }`. Previous/Next only, never "page 4 of 37".
+
+**No screen sends a tenant.** Scope is resolved server-side from the session on
+every one of these operations.
+
+---
+
 ## Remaining
 
-Frontend 2 / 29 · Security 0 / 4 · QA 0 / 5 · DevOps 0 / 2 · Documentation 0 / 2.
+Frontend **29 / 29** · Security 0 / 4 · QA 0 / 5 · DevOps 0 / 2 · Documentation 0 / 2.
 
 `P1-27` closes only on an explicit `OWNER ACCEPTANCE: PASS`.

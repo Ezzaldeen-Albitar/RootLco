@@ -17,6 +17,9 @@ import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
 import { localToday } from '../history-contract';
 import type { EvProfileState } from '../relations-api';
 import { EvProfileSection, RelationshipsSection } from './VehicleRelationsSections';
+import { VehicleDocumentsSection } from './VehicleDocumentsSection';
+import { VehicleAttributeHistorySection } from './VehicleAttributeHistorySection';
+import type { DocumentsState } from '../documents-api';
 import { OdometerSection, OwnershipSection, PlateSection } from './VehicleHistorySections';
 import { VinField } from './VinField';
 
@@ -54,9 +57,21 @@ interface Props {
   readonly canManageRelationships: boolean;
   /** Read on the server, because a 404 here is an ordinary state, not an error. */
   readonly evProfile: EvProfileState;
+  /** `shared.document.manage` — a manage capability from a DIFFERENT module. */
+  readonly canListDocuments: boolean;
+  readonly documents: DocumentsState;
 }
 
-/** Every profile section, including the ones later waves fill in. */
+/**
+ * Every profile section.
+ *
+ * The last one is `history`, not `timeline`. `veh.vehicle-history` reads
+ * `veh.vehicle_attribute_history` — field-level changes to the vehicle master —
+ * and the vehicle schema has no equivalent of `crm.timeline_events`. A tab
+ * labelled "timeline" would promise a single event stream that does not exist
+ * and would disagree with the five sections beside it, each of which has its own
+ * operation.
+ */
 const SECTIONS = [
   'overview',
   'ownership',
@@ -65,19 +80,12 @@ const SECTIONS = [
   'ev',
   'relationships',
   'documents',
-  'timeline',
+  'history',
 ] as const;
 type Section = (typeof SECTIONS)[number];
 
 /** Sections with a screen today. The rest say so rather than being absent. */
-const BUILT: readonly Section[] = [
-  'overview',
-  'ownership',
-  'plates',
-  'odometer',
-  'ev',
-  'relationships',
-];
+const BUILT: readonly Section[] = SECTIONS;
 
 export function VehicleProfileScreen({
   locale,
@@ -87,6 +95,8 @@ export function VehicleProfileScreen({
   canChangeStatus,
   canManageRelationships,
   evProfile,
+  canListDocuments,
+  documents,
 }: Props) {
   const frozen = isFrozen(vehicle);
   const [section, setSection] = useState<Section>('overview');
@@ -165,6 +175,21 @@ export function VehicleProfileScreen({
           vehicleId={vehicle.id}
           today={today}
           canManage={canManageRelationships}
+        />
+      ) : null}
+      {section === 'documents' ? (
+        <VehicleDocumentsSection
+          locale={locale}
+          messages={messages}
+          state={documents}
+          canListDocuments={canListDocuments}
+        />
+      ) : null}
+      {section === 'history' ? (
+        <VehicleAttributeHistorySection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
         />
       ) : null}
       {!BUILT.includes(section) ? (

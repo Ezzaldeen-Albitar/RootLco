@@ -168,12 +168,35 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'company',
       },
       {
+        key: 'customer-duplicates',
+        labelKey: 'nav.customerDuplicates',
+        icon: 'customers',
+        href: '/crm/customer-duplicates',
+        // Its OWN permission, not `crm.customer.read`. Reviewing possible
+        // duplicates is a separate capability, and most operators who may read a
+        // customer may not decide whether two records are the same person.
+        permission: 'crm.customer.duplicate.review',
+        status: 'available',
+        scope: 'company',
+      },
+      {
         key: 'vehicles',
         labelKey: 'nav.vehicles',
         icon: 'vehicles',
         href: '/vehicles',
         permission: 'veh.vehicle.read',
-        status: 'planned',
+        // Built in P1-27. Left as `planned` it would have told an operator that
+        // the screen in front of them is not real.
+        status: 'available',
+        scope: 'company',
+      },
+      {
+        key: 'vehicle-duplicates',
+        labelKey: 'nav.vehicleDuplicates',
+        icon: 'vehicles',
+        href: '/vehicles/duplicates',
+        permission: 'veh.vehicle.duplicate.review',
+        status: 'available',
         scope: 'company',
       },
     ],

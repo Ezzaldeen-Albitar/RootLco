@@ -20,16 +20,16 @@ import { DuplicateDecisionPanel } from './DuplicateDecisionPanel';
 /**
  * `FE-016` — the duplicate-candidate review queue.
  *
- * ## Reviewing and merging are two capabilities, not two buttons
+ * ## Only dismissal is offered, because merge is blocked on an open decision
  *
  * `crm.duplicate-review` accepts exactly one decision — `dismissed` — behind
  * `crm.customer.duplicate.review`. Merging is `crm.customer-merge`, a different
- * operation behind **`crm.customer.merge`**. Presenting them as a matched pair
- * of buttons would imply one capability covers both, and it does not: dismissing
- * a false pair is routine, and combining two real customer records is not.
+ * operation behind **`crm.customer.merge`**, and this phase does not call it:
+ * `P1-OD-017` is open, and the canonical plan requires the merge affordance to
+ * be absent rather than disabled.
  *
- * So the queue offers dismissal inline, and the merge is a separate, explicit
- * panel that names which record is destroyed.
+ * So the queue opens a decision panel that compares the pair, shows the match
+ * evidence, offers dismissal, and states that merge rules are pending.
  *
  * ## Neither side of a pair is "the duplicate"
  *

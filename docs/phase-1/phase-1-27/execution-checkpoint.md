@@ -206,3 +206,69 @@ correcting a pushed commit message requires a force push, which the standing
 constraints forbid without exception. Three invisible bytes in one subject line
 is a smaller cost than a rewritten protected history. Every commit message from
 Wave 5 onward is written with a tool that does not add a BOM.
+
+---
+
+## Waves 11–12 — vehicle documents, media, duplicate review and attribute history
+
+`P1-27-FE-026` … `P1-27-FE-029`. **Frontend 29 / 29.** Total 29 / 42.
+
+Four tasks, and three of them are largely a refusal held to precisely.
+
+| task     | what it consumes                                             | what it refuses                                    |
+| -------- | ------------------------------------------------------------ | -------------------------------------------------- |
+| `FE-026` | `veh.vehicle-document-list` behind `shared.document.manage`  | no download — separately audited, not started here |
+| `FE-027` | nothing; there is no vehicle media operation                 | no upload path, no storage, no invented policy     |
+| `FE-028` | `veh.vehicle-duplicate-list`, `veh.vehicle-duplicate-review` | no merge, no scan                                  |
+| `FE-029` | `veh.vehicle-history`                                        | no unified timeline                                |
+
+### The permission on `FE-026` is inverted relative to the whole domain
+
+Every other vehicle sub-resource lists on `veh.vehicle.read`.
+`veh.vehicle-document-list` needs **`shared.document.manage`** — a _manage_
+capability from a _different_ module. An operator who may see the whole vehicle
+may be unable to see its documents, and the reverse. The page checks the code
+**before** issuing the read, so a denied operator never spends an
+`expensive-read` slot to be told no.
+
+The operation publishes a document reference and nothing else — no name, type,
+date or size. The section states that rather than rendering four empty columns
+that read as missing data.
+
+### Two screens that existed and could not be reached
+
+`FE-016` (Wave 6) and `FE-028` both had routes and screens, and neither was in
+the sidebar or linked from any list. Every test passed, the build compiled and
+the pages worked for anyone who typed the URL. Nothing in the pipeline can fail
+on a page nobody navigates to; Owner acceptance would have found it by failing to
+find the screens.
+
+Both are sidebar entries now, each behind its own `*.duplicate.review` code — not
+the module read code, because deciding whether two records are the same thing is
+a separate capability from being allowed to look at one. `vehicles` itself had
+been `planned` for three waves after its screen was built, telling operators the
+page in front of them was not real.
+
+The navigation test's `available` and `planned` lists are exact, so drift either
+way fails. Mutating the `/vehicles/duplicates` href by one character fails the
+new reachability test.
+
+### Mutation verification
+
+| mutation                                                     | result |
+| ------------------------------------------------------------ | ------ |
+| `changeShape` returns `changed` where it should return `set` | caught |
+| `isActionable` becomes `status !== 'merged'` (fails open)    | caught |
+| `formatMatchScore` rounds on `> 5` instead of `>= 5`         | caught |
+| the vehicle-duplicates nav href drifts by one character      | caught |
+
+### Boundary values
+
+```
+APPS_API_EXECUTABLE_DIFF=0   SUPABASE_DIFF=0   MIGRATION_DIFF=0
+UNCLASSIFIED_FILES=0         GENERATED_TRACKED_FILES=0   P1_28_FILES=0
+FAILED_TESTS=0               SKIPPED_REQUIRED_TESTS=0
+```
+
+Web 689 · root 1614 · typecheck 0 · lint 0 · both `format:check` clean · build
+compiled.

@@ -44,7 +44,7 @@ describe('the navigation model', () => {
   it('marks every module whose screens do not exist yet as planned', () => {
     // `available` is a claim that a screen exists. P1-25 built the frame, the
     // overview and the gallery; P1-26 built authentication and administration;
-    // P1-27 built CRM customer search. Everything else is still a route
+    // P1-27 built the CRM and Vehicle screens. Everything else is still a route
     // definition for a later phase and must render as visibly unavailable
     // rather than as a link that 404s.
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
@@ -55,6 +55,10 @@ describe('the navigation model', () => {
       'administration.permissions',
       'administration.roles',
       'administration.users',
+      // Both duplicate queues are in the sidebar, each behind its OWN
+      // `*.duplicate.review` code. They had screens and no route into them —
+      // a page nobody can reach is not delivered.
+      'customer-duplicates',
       'customers',
       'gallery',
       'overview',
@@ -65,6 +69,8 @@ describe('the navigation model', () => {
       'settings.organization',
       'settings.systemSettings',
       'settings.taxes',
+      'vehicle-duplicates',
+      'vehicles',
     ]);
   });
 
@@ -76,15 +82,14 @@ describe('the navigation model', () => {
       'appointments',
       'billing',
       'catalog',
-      // `customers` left this list in P1-27, when the screen it points at was
-      // built. `vehicles` follows in the same phase.
+      // `customers` and `vehicles` both left this list in P1-27, when the
+      // screens they point at were built.
       'delivery',
       'documents',
       'inventory',
       'notifications',
       'reports',
       'technicians',
-      'vehicles',
       'work-orders',
       'work-orders.diagnostics',
       'work-orders.quality',

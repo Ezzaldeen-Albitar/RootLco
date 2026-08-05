@@ -163,26 +163,15 @@ export function pairMembers(
   ];
 }
 
-export interface MergeInput {
-  /** The record that SURVIVES. The path customer is redirected into it. */
-  readonly survivorId: string;
-  /** **Required**, unlike a restriction's, and at least one character. */
-  readonly approvalRef: string;
-}
-
-export function validateMerge(values: Record<string, string>): Readonly<Record<string, string>> {
-  const errors: Record<string, string> = {};
-  const survivor = (values.survivorId ?? '').trim();
-  if (survivor.length === 0) errors.survivorId = 'field.required';
-
-  const ref = (values.approvalRef ?? '').trim();
-  // Required here, optional on a restriction. A merge destroys one of two real
-  // customer records, so the authorisation for it is not optional.
-  if (ref.length === 0) errors.approvalRef = 'field.required';
-  else if (ref.length > MAX_APPROVAL_REF) errors.approvalRef = 'field.tooLong';
-
-  return errors;
-}
+/**
+ * There is deliberately no `MergeInput` and no `validateMerge` here.
+ *
+ * `P1-OD-017` is an open Owner decision and the canonical plan requires the
+ * merge affordance to be **absent**. A validator with no call site is one edit
+ * away from a form, so it is removed rather than left in place — the contract
+ * facts about `crm.customer-merge` stay documented at the top of this file,
+ * which is where a future wave should start when the decision is resolved.
+ */
 
 export function validateReviewReason(reason: string): string | null {
   const trimmed = reason.trim();
