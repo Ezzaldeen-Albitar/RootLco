@@ -199,6 +199,134 @@ happened.
 
 ---
 
+## Vehicle search — `veh.vehicle-search` (`FE-017`)
+
+`GET /api/v1/vehicles` · `veh.vehicle.read` · tenant · `expensive-read` (30/min
+per user) · `auditClass: none`
+
+| aspect     | truth                                                                                                                |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| Request    | `.strict()`: `vin` ≤64, `plate` ≤32, `vehicleNumber` ≤64, `lifecycleStatus`, `powertrainCategory`, `cursor`, `limit` |
+| Response   | `Page<VehicleSearchHit>` — eleven fields, listed below                                                               |
+| Pagination | Cursor, `(created_at DESC, id DESC)`, key `veh.vehicles:created_at_desc`                                             |
+| Sorting    | **None.** No `sort` parameter exists                                                                                 |
+| Total      | **None.** `{ items, nextCursor, hasMore }`                                                                           |
+
+### Every text filter is EXACT — this is the opposite of CRM customer search
+
+`crm.customer-search` matches `name` as a **prefix**. Nothing here is a prefix:
+
+- `vin` compares against the **generated** `vin_normalized` for equality. The
+  client mirrors `veh.normalize_vin` (upper-case, strip non-`[A-Z0-9]`) for
+  display feedback only — `I`, `O` and `Q` are **preserved**, because the
+  platform does not apply the ISO-3779 exclusion.
+- `plate` matches only the **currently active** plate (`valid_to IS NULL`). A
+  vehicle's previous plate finds nothing.
+- `vehicleNumber` is `display_number = $n`.
+
+So a type-ahead returns nothing until the whole value is typed. Combined with
+30 requests per minute, a search-per-keystroke would 429 within seconds and
+still show nothing. The screen says "exact match" beside each field.
+
+### Blank is not the same as absent
+
+`z.string().min(1)` makes `?vin=` a **422 for the whole request**, while
+`?vin=%20` passes validation and then deliberately matches nothing — the backend
+keeps a supplied-but-blank value rather than dropping the filter. Omitting the
+key is the only correct "no filter", and `normalizeCriteria` does exactly that.
+
+### `VehicleSearchHit` — eleven fields, no catalogue NAMES
+
+`id`, `displayNumber`, `vin`, `makeId`, `modelId`, `modelYear`,
+`powertrainCategory`, `lifecycleStatus`, `workshopStatus`, `createdAt`,
+`mergedIntoId`.
+
+**No make or model name.** Only the detail read resolves catalogue labels, so a
+results table that wants "Toyota Camry" must resolve the ids against the
+catalogue reads. The search page therefore loads the make catalogue once, on the
+server, and distinguishes three states that are three different facts: no
+`makeId` at all, a `makeId` that resolves, and a `makeId` that does not — the
+last said plainly rather than rendered as a raw uuid.
+
+`mergedIntoId` was added by `P1-27-INT-008`. Search **returns** merged vehicles
+and every write against one answers 409.
+
+### Why there is no default result list
+
+The prompt permits a bounded default list if the contract supports one. It does
+not: search is `expensive-read`, an unfiltered query is a full scan, and the
+adapter refuses empty criteria. A default list would need a filter nobody chose.
+**Decision: no first page until the operator submits**, made structural by
+mounting the results component only after submission.
+
+---
+
+## Vehicle creation — `veh.vehicle-create` (`FE-018`)
+
+`POST /api/v1/vehicles` · `veh.vehicle.manage` · **`idempotent: true`** ·
+`auditClass: privileged` · `auditAction: veh.vehicle.created` · returns **201**
+(the document says 200 — that is `P1-27-INT-004`)
+
+**Every field is optional**: `vin`, `makeId`, `modelId`, `trimId`, `bodyTypeId`,
+`powertrainTypeId`, `modelYear` (1900–2100), `powertrainCategory`, `color` ≤40,
+`displayNumber` ≤40. A vehicle may be registered as a bare draft.
+
+**`lifecycleStatus` is not settable.** Creation always lands `draft`.
+
+**The response carries no duplicate advisory.** `CreatedVehicle` is
+`{ vehicleId, lifecycleStatus, powertrainCategory, hasVin }`. CRM customer
+creation publishes `possibleDuplicates`; this does not, and
+`veh.vehicle-duplicate-scan` is a separate **privileged audited write** that must
+never be fired to decorate a form. `hasVin` rather than the VIN, because a VIN is
+`internal`-classified and is not echoed back.
+
+### Three server failures a form cannot pre-empt
+
+`mapWriteConflict` maps them, and they are genuinely different:
+
+| SQLSTATE         | answer                                   | meaning                                     |
+| ---------------- | ---------------------------------------- | ------------------------------------------- |
+| unique violation | **409 `ERR-RES-002`**                    | a live vehicle in this tenant has that VIN  |
+| FK violation     | 422 `ERR-VAL-001` `unknown_reference`    | a catalogue id this tenant cannot see       |
+| check violation  | 422 `ERR-VAL-001` `incoherent_reference` | make/model/trim that do not belong together |
+
+**The third is why the catalogue selectors are dependent rather than free.** The
+database enforces coherence, so offering every model regardless of make would
+produce a 422 no operator could diagnose.
+
+---
+
+## Vehicle reference catalogues (`P1-27-INT-007`, PR #197)
+
+Five GETs under `/vehicle-catalogue`, all `veh.vehicle.read`, `auditClass: none`,
+`low-risk-metadata` (600/min per tenant — not `expensive-read`, because filling
+in one vehicle opens three of these pickers).
+
+| operation                            | path                                        |
+| ------------------------------------ | ------------------------------------------- |
+| `veh.catalogue-make-list`            | `/vehicle-catalogue/makes`                  |
+| `veh.catalogue-model-list`           | `/vehicle-catalogue/makes/{makeId}/models`  |
+| `veh.catalogue-trim-list`            | `/vehicle-catalogue/models/{modelId}/trims` |
+| `veh.catalogue-body-type-list`       | `/vehicle-catalogue/body-types`             |
+| `veh.catalogue-powertrain-type-list` | `/vehicle-catalogue/powertrain-types`       |
+
+A tenant sees the **platform catalogue plus its own additions**, enforced once in
+RLS. An unknown or invisible parent answers an **empty page, not a 404**, so the
+nested reads cannot probe another tenant's catalogue.
+
+The adapters walk every page to build an option list, bounded at **20 pages**,
+and report `truncated` when they hit the bound — a partial catalogue presented as
+complete would silently hide the tail of a large tenant's list. Nothing is cached
+across requests: a module-level cache would become a second authority for what a
+tenant's catalogue contains.
+
+**`powertrainCategory` is not `powertrainTypeId`.** The first is a five-value
+enum on the vehicle (`ice`, `ev`, `hybrid`, `phev`, `other`); the second is a
+uuid into a tenant-extensible catalogue. A form offering the enum where the uuid
+belongs sends a value the FK rejects.
+
+---
+
 ## Idempotency (`P1-27-INT-003`)
 
 The Backend requires an `Idempotency-Key` on every operation it registers as

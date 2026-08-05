@@ -117,11 +117,16 @@ forbids repairing it inside a Frontend branch.
 
 These are recorded so nobody mistakes them for open decisions.
 
-| task     | what the contract does not have                                                                                                          |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `FE-001` | **No phone or email search.** `NFR-PRV-001` keeps raw contact values out of the searchable surface entirely.                             |
-| `FE-002` | **No primary contact, alert indicator or last-activity column.** `CustomerSearchHit` publishes six fields and none is any of these.      |
-| `FE-003` | **No pre-submit duplicate check exists.** `crm.duplicate-scan` is a privileged write. The warning is delivered on the creation response. |
+| task     | what the contract does not have                                                                                                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FE-001` | **No phone or email search.** `NFR-PRV-001` keeps raw contact values out of the searchable surface entirely.                                                                                                     |
+| `FE-002` | **No primary contact, alert indicator or last-activity column.** `CustomerSearchHit` publishes six fields and none is any of these.                                                                              |
+| `FE-003` | **No pre-submit duplicate check exists.** `crm.duplicate-scan` is a privileged write. The warning is delivered on the creation response.                                                                         |
+| `FE-017` | **No substring or prefix search.** VIN, plate and vehicle number are all EXACT. Plate matches only the currently active plate.                                                                                   |
+| `FE-017` | **No make or model NAME in the search projection.** `VehicleSearchHit` carries `makeId`/`modelId` and no labels; only the detail read resolves them.                                                             |
+| `FE-017` | **No sort control and no total.** No `sort` parameter exists and the page publishes `hasMore` only.                                                                                                              |
+| `FE-018` | **No duplicate advisory on the creation response.** Unlike CRM, `CreatedVehicle` publishes no candidate list, and `veh.vehicle-duplicate-scan` is a privileged audited write that must not be fired from a form. |
+| `FE-018` | **No VIN decode and no external VIN validation.** Nothing in the platform derives a make, model or year from a VIN.                                                                                              |
 
 ---
 

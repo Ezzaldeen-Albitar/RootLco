@@ -123,9 +123,27 @@ Each row is a commit that was green on its own before the next wave started.
 | 5    | `FE-009`…`FE-014`            | The same six, read surface                       | `ff923f1` |
 | 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | `c390abb` |
 | 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | `bf7a011` |
-| 6b   | —                            | P1-17 remediation (PR #197) + reintegration      | `f80a6d2` |
+| 6b   | —                            | P1-17 remediation (PR #197) + reintegration      | `d00a4b5` |
+| 7    | `FE-017`, `FE-018`           | Vehicle search, creation, five catalogue reads   | pending   |
 
-**Frontend progress: 16 / 29. Total: 16 / 42.**
+**Frontend progress: 18 / 29. Total: 18 / 42.**
+
+### Wave 7 decisions worth not re-litigating
+
+**No default vehicle list.** Search is `expensive-read` (30/min per user), an
+unfiltered query is a full scan, and the adapter refuses empty criteria — so a
+bounded default would need a filter nobody chose. The results component is
+mounted only after submission, which makes "no request before intent" structural
+rather than a guard in another file.
+
+**The catalogue selectors are dependent because the DATABASE requires it**, not
+as a convenience. A check violation on `veh.vehicles` becomes
+`422 incoherent_reference`, so offering every model regardless of make would
+produce an error no operator could diagnose.
+
+**Search results resolve make names from the catalogue read**, because the search
+projection publishes ids and no labels. Three states are distinguished: no make
+recorded, a make that resolves, and a make id this caller cannot see.
 
 Wave 5 was split because the read surface was coherent and green on its own,
 while the plan binds a **write** operation to each of the same six tasks. Both
