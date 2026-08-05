@@ -142,6 +142,63 @@ timestamp.
 
 ---
 
+## Duplicate review and merge — three operations, two capabilities
+
+| operation              | method | path                               | permission                      | idempotent |
+| ---------------------- | ------ | ---------------------------------- | ------------------------------- | ---------- |
+| `crm.duplicate-list`   | GET    | `/customer-duplicates`             | `crm.customer.duplicate.review` | —          |
+| `crm.duplicate-review` | POST   | `/customer-duplicates/{id}/review` | `crm.customer.duplicate.review` | **yes**    |
+| `crm.customer-merge`   | POST   | `/customers/{customerId}/merge`    | **`crm.customer.merge`**        | **yes**    |
+
+**Reviewing and merging are different capabilities.** Dismissing a false pair is
+routine; combining two real customer records is not. The interface must not
+present them as two buttons on one control, and the duplicates page therefore
+gates only on `crm.customer.duplicate.review` — a reviewer who may clear pairs
+but not merge still has work to do here.
+
+### The review endpoint accepts exactly ONE decision
+
+`DUPLICATE_DECISIONS = ['dismissed']`. `merged` is a **status** a candidate
+reaches, not a decision this endpoint takes. A select offering two options would
+send a value the `.strict()` enum rejects, and would imply the reviewer's
+capability covers something it does not.
+
+### The merge direction is invertible and both sides are uuids
+
+`POST /customers/{customerId}/merge` merges the **path** customer away into the
+body's `survivorId`. A transposed request is perfectly well-formed and destroys
+the wrong customer. The form therefore never asks for two ids: the reviewer
+picks which of the two known members **survives**, and the merged-away side is
+derived. There is no field in which the direction can be swapped.
+
+`approvalRef` is **required** here (`.min(1)`), unlike the optional one on a
+restriction.
+
+### `matchScore` is `numeric`, and stays a string
+
+node-postgres decodes `numeric` to a string because it need not fit a double, and
+the repository's docblock says it is "never narrowed to a float". The percentage
+shown on screen is derived from the **characters**, not from arithmetic — see the
+findings entry for the six tests that failed to prove this and the values that
+now do.
+
+`matchBasis` is `jsonb` and safe to display **by schema, not by review**:
+`ck_duplicate_candidates_basis` calls `crm.jsonb_no_raw_value_keys`, which rejects
+a `value`/`raw`/`national_id`/`tax`/`registration`/`date_of_birth` key at any
+depth.
+
+### Timeline (`crm.customer-timeline`)
+
+`event_type` is `text` with a CHECK admitting eight values: `lifecycle_changed`,
+`commercial_changed`, `consent_changed`, `blocked`, `unblocked`, `alert_raised`,
+`merged`, `communication_logged`. `actorId` is nullable and the null means a
+**system-caused** event — "the system expired this consent" is not "somebody
+withdrew it". There is no write anywhere near this list: a control that let an
+operator author a timeline entry would let them write history that never
+happened.
+
+---
+
 ## Idempotency (`P1-27-INT-003`)
 
 The Backend requires an `Idempotency-Key` on every operation it registers as

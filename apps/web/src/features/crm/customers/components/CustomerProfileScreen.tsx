@@ -43,6 +43,8 @@ import {
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
 } from '../governance-contract';
+import { listTimeline } from '../identity-api';
+import type { TimelineEntry } from '../identity-contract';
 import { RecordForm } from './RecordForm';
 import {
   addressLines,
@@ -100,7 +102,13 @@ const SECTIONS = [
 ] as const;
 type Section = (typeof SECTIONS)[number];
 
-/** Sections with a screen today. The rest render an honest "not yet" state. */
+/**
+ * Sections with a screen today. The rest render an honest "not yet" state.
+ *
+ * `vehicles` is the last one outstanding and belongs to `FE-025`, which cannot
+ * be built until the Vehicle waves land — it lists a customer's vehicles, and
+ * there is no vehicle screen to link to yet.
+ */
 const BUILT: readonly Section[] = [
   'overview',
   'contacts',
@@ -111,6 +119,7 @@ const BUILT: readonly Section[] = [
   'alerts',
   'tags',
   'restrictions',
+  'timeline',
 ];
 
 interface Props {
@@ -183,6 +192,9 @@ export function CustomerProfileScreen({ locale, messages, customer }: Props) {
       ) : null}
       {section === 'restrictions' ? (
         <RestrictionsSection locale={locale} messages={messages} customerId={customer.id} />
+      ) : null}
+      {section === 'timeline' ? (
+        <TimelineSection locale={locale} messages={messages} customerId={customer.id} />
       ) : null}
       {!BUILT.includes(section) ? (
         <p role="status" className="px-2 py-8 text-center text-body text-text-secondary">
@@ -1213,6 +1225,79 @@ function RestrictionsSection({
           ]}
         />
       )}
+    />
+  );
+}
+
+/**
+ * `FE-015` — the customer timeline.
+ *
+ * Read-only, and there is no write anywhere near it. `crm.timeline_events` is
+ * written by the operations that cause the events; a control that let an
+ * operator author a timeline entry directly would let them write history that
+ * never happened, which is the one thing a timeline must not permit.
+ */
+function TimelineSection({
+  locale,
+  messages,
+  customerId,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly customerId: string;
+}) {
+  const load = useCallback(
+    (request: TableRequest, cursor: string | null) => listTimeline(customerId, request, cursor),
+    [customerId]
+  );
+
+  const columns = useMemo<readonly Column<TimelineEntry>[]>(
+    () => [
+      {
+        id: 'occurredAt',
+        headerKey: 'crm.customers.timeline.occurredAt',
+        cell: (row) => <FormattedInstant locale={locale} value={row.occurredAt} />,
+      },
+      {
+        id: 'eventType',
+        headerKey: 'crm.customers.timeline.event',
+        cell: (row) => translateDynamic(messages, `crm.timelineEvent.${row.eventType}`),
+      },
+      {
+        id: 'title',
+        headerKey: 'crm.customers.timeline.title',
+        // The backend's own summary line, shown as written. It is capped at 200
+        // characters and is never blank.
+        cell: (row) => <span className="break-words">{row.title}</span>,
+      },
+      {
+        id: 'actorId',
+        headerKey: 'crm.customers.timeline.actor',
+        // A system-caused event has no actor, and that is a real distinction:
+        // "the system expired this consent" is not "somebody withdrew it".
+        cell: (row) =>
+          row.actorId ?? (
+            <span className="text-text-muted">
+              {translate(messages, 'crm.customers.timeline.system')}
+            </span>
+          ),
+      },
+    ],
+    [locale, messages]
+  );
+
+  return (
+    <ComponentSection<TimelineEntry>
+      id="crm-timeline"
+      locale={locale}
+      messages={messages}
+      titleKey="crm.customers.profile.section.timeline"
+      captionKey="crm.customers.timeline.caption"
+      // Newest first, and paged. An operator who sees ten events must not read
+      // that as "ten things have ever happened to this customer".
+      footnote={translate(messages, 'crm.customers.timeline.orderNote')}
+      load={load}
+      columns={columns}
     />
   );
 }

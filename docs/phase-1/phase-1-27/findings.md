@@ -141,6 +141,28 @@ capability to write, so a caller denied the list certainly cannot write — the
 form both invited an action guaranteed to fail and disclosed exactly the
 vocabulary the denial exists to hide. The form is now gated on a successful read.
 
+**Six precision tests that a naive float implementation passed.** Wave 6's
+`formatMatchScore` renders a `numeric` match score without ever parsing it, and
+the first version of its tests asserted `0.875`, `0.5`, `1`, `0.005`, `0.004` and
+a 29-digit value. Replacing the whole function with
+`Math.round(parseFloat(s) * 100)` **passed every one of them.** The tests looked
+like precision tests and were agreement tests — both implementations return the
+same answer for all six inputs, so none of them said anything about why the
+string version exists.
+
+One of those assertions was also simply wrong. It named `0.615` "the classic
+float case"; `0.615 * 100` is `61.50000000000001`, so `Math.round` gives 62 and
+both implementations agree.
+
+The values were then **chosen by running the two implementations against each
+other and keeping only the inputs where they disagree**: `0.145`, `0.285` and
+`0.575` (float rounds each down through `14.499999999999998`), `0.5abc`,
+`0.5; DROP TABLE x` and `0x10` (`parseFloat` reads a confident `50%` out of all
+three), `.5` and `1e-1` (notations `numeric` does not emit), and
+`1.0000000000000000001` (which `parseFloat` rounds to exactly `1`, reporting a
+valid `100%` for a value that is not a 0..1 ratio at all). The same mutation now
+fails four tests.
+
 **And the first version of that gate was always false.** It read
 `table.status === 'ok'`, which looks like a correct fail-closed guard and is not:
 `TableStatus` has no `'ok'` member, and a loaded, undenied read is `'idle'`. The

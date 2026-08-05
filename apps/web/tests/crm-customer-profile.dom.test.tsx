@@ -46,6 +46,18 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
   listRestrictions: emptyPage,
 }));
 
+// Wave 6 moved the timeline into the screen, and its adapter lives in a
+// DIFFERENT module. Without this mock `listTimeline` reaches the real
+// `authorizedClient`, which calls `cookies()` outside a request scope and throws
+// asynchronously into whichever test happened to be running.
+vi.mock('@/features/crm/customers/identity-api', () => ({
+  listTimeline: emptyPage,
+  listHistory: emptyPage,
+  listDuplicates: emptyPage,
+  reviewDuplicateAction: vi.fn(),
+  mergeCustomerAction: vi.fn(),
+}));
+
 const { CustomerProfileScreen } =
   await import('@/features/crm/customers/components/CustomerProfileScreen');
 
@@ -209,10 +221,12 @@ describe('unbuilt sections are visible and honest', () => {
   it('explains rather than showing an empty panel', async () => {
     const user = userEvent.setup();
     renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={INDIVIDUAL} />);
-    // Timeline, not Consents: Wave 5 built Consents and this assertion started
-    // failing, which is the registry behaving correctly. `Timeline` is `FE-015`
-    // and is genuinely still planned.
-    await user.click(screen.getByRole('button', { name: /Timeline/ }));
+    // `Vehicles`, and this is the THIRD section this assertion has pointed at:
+    // Consents (built by Wave 5), then Timeline (built by Wave 6). Each time the
+    // failure was the registry working — a section moved from planned to built
+    // and the test said so. `Vehicles` is `FE-025` and cannot be built until the
+    // Vehicle waves land, since it links to screens that do not exist yet.
+    await user.click(screen.getByRole('button', { name: /Vehicles/ }));
     expect(screen.getByText(en['crm.customers.profile.sectionPending'])).toBeInTheDocument();
   });
 

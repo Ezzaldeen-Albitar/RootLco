@@ -39,6 +39,16 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
   listRestrictions: (...a: unknown[]) => listRestrictions(...a),
 }));
 
+// The timeline adapter lives in its own module. Unmocked it reaches the real
+// `authorizedClient` and calls `cookies()` outside a request scope.
+vi.mock('@/features/crm/customers/identity-api', () => ({
+  listTimeline: async () => page([]),
+  listHistory: async () => page([]),
+  listDuplicates: async () => page([]),
+  reviewDuplicateAction: vi.fn(),
+  mergeCustomerAction: vi.fn(),
+}));
+
 const { CustomerProfileScreen } =
   await import('@/features/crm/customers/components/CustomerProfileScreen');
 
@@ -380,17 +390,24 @@ describe('tags', () => {
 });
 
 describe('every section is reachable and none is marked planned any more', () => {
-  it('leaves only timeline and vehicles planned', async () => {
+  it('leaves only vehicles planned', async () => {
     renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} />);
     const nav = screen.getByRole('navigation', { name: en['crm.customers.profile.sections'] });
-    const planned = nav.querySelectorAll('button');
-    const plannedLabels = Array.from(planned)
+    const plannedLabels = Array.from(nav.querySelectorAll('button'))
       .filter((b) => b.textContent?.includes(en['nav.planned']))
-      .map((b) => b.textContent);
-    // Wave 5 built six of the eight that were planned. Asserting the REMAINDER
-    // rather than a count means this test fails when a later wave forgets to
-    // move a section out of the planned list.
-    expect(plannedLabels).toHaveLength(2);
+      .map((b) => b.textContent ?? '');
+
+    // Asserting WHICH section remains, not how many. A count passes whenever
+    // any one section is planned, so it would not notice a later wave building
+    // Vehicles while accidentally reverting Timeline to planned.
+    expect(plannedLabels).toHaveLength(1);
+    expect(plannedLabels[0]).toContain('Vehicles');
+  });
+
+  it('does not mark timeline planned, now that Wave 6 built it', () => {
+    renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} />);
+    const timeline = screen.getByRole('button', { name: /Timeline/ });
+    expect(timeline.textContent).not.toContain(en['nav.planned']);
   });
 });
 

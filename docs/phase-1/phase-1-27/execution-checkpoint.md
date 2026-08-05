@@ -121,20 +121,25 @@ Each row is a commit that was green on its own before the next wave started.
 | 3    | `FE-003`, `FE-004`, `FE-005` | Customer creation, duplicate advisory, lifecycle | `a912681` |
 | 4    | `FE-006`, `FE-007`, `FE-008` | Profile, contacts, addresses                     | `c8d755d` |
 | 5    | `FE-009`…`FE-014`            | The same six, read surface                       | `ff923f1` |
-| 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | pending   |
+| 5b   | `FE-009`…`FE-014`            | The same six, write operations                   | `c390abb` |
+| 6    | `FE-015`, `FE-016`           | Timeline; duplicate review and merge             | pending   |
 
-**Frontend progress: 14 / 29. Total: 14 / 42.**
+**Frontend progress: 16 / 29. Total: 16 / 42.**
 
 Wave 5 was split because the read surface was coherent and green on its own,
 while the plan binds a **write** operation to each of the same six tasks. Both
 halves are required; `FE-009`…`FE-014` count as delivered only after `5b`.
 
-### Test tiers, re-measured at Wave 5b
+Every CRM task is now delivered except the customer-side half of `FE-025` — the
+`vehicles` profile section, still marked planned because it lists a customer's
+vehicles and there is no vehicle screen to link to before Wave 7.
+
+### Test tiers, re-measured at Wave 6
 
 | tier                 | at base     | now         |
 | -------------------- | ----------- | ----------- |
 | Root / CI-contract   | 1608 / 1608 | 1614 / 1614 |
-| Web unit / component | 357 / 357   | 537 / 537   |
+| Web unit / component | 357 / 357   | 564 / 564   |
 
 ### What the write surface proved
 
