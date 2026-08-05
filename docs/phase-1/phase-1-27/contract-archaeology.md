@@ -110,6 +110,28 @@ so null rows are ordinary. It was typed `string` once — a consumer calling
 (`P1-16-A-01`). The read publishes it anyway: the read reports the column as it
 is rather than hiding a field the schema carries.
 
+### The constrained vocabularies, read from the migrations
+
+Every one of these is `text` with a CHECK, **not** a Postgres enum. They were
+read out of the migration that owns the column; a first draft that guessed got
+four of six wrong.
+
+| column                                       | admitted values                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `crm.communication_preferences.purpose`      | `transactional`, `marketing`, `reminder`                                 |
+| `crm.consent_history.consent_kind`           | `privacy`, `marketing`                                                   |
+| `crm.consent_history.status`                 | `granted`, `withdrawn`, `expired`                                        |
+| `crm.consent_history.source`                 | **no constraint** — open text                                            |
+| `shared.notes.classification`                | `public`, `internal`, `restricted`, `secret`                             |
+| `shared.notes.visibility`                    | `internal`, `customer_visible`                                           |
+| `crm.customer_alerts.alert_type`             | `operational`, `financial`, `safety`, `other`                            |
+| `crm.customer_alerts.severity`               | `info`, `warning`, `critical`                                            |
+| `crm.customer_restrictions.restriction_type` | `no_credit`, `prepay_only`, `no_service`, `contact_restriction`, `other` |
+
+A constrained value gets a translation key; `source` does not, and is rendered
+as stored. The distinction is not cosmetic — a translation key derived from open
+text renders the key itself on screen.
+
 ### Date and time representation
 
 `date` columns (`effective_from`, `effective_to`, `valid_from`, `valid_to`) are

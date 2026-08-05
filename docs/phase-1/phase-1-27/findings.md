@@ -87,3 +87,31 @@ that was not theirs. The fields are controlled.
 templates without `/api/v1` and call sites pass the full path. Table correct,
 resolver correct, agreeing on nothing. Both sides are normalised now, and both
 forms are asserted.
+
+**A whole layer had no test, and 20 green tests said otherwise.** The Wave 5 DOM
+suite mocks `profile-api` wholesale, so it exercises the screens and _cannot_
+exercise the adapters. That was proven rather than assumed: mutating
+`includesRestricted: result.data.includesRestricted === true` to a hard-coded
+`true` left all twenty tests passing. A layer that survives its own mutation is
+a layer nothing is testing, however green the run looks.
+`tests/crm-profile-api.test.ts` now talks to the adapters with only the HTTP
+client mocked; the same mutation fails two of its tests. Writing it immediately
+found a second defect — a failure-kind name used where a view-status name
+belonged, which produced `status: undefined` and would have rendered a blank
+panel instead of a denial.
+
+**Six invented enum vocabularies.** The first draft of the Wave 5 message keys
+contained `crm.purpose.service`, `crm.consentKind.profiling`,
+`crm.alertType.payment` and `crm.restrictionType.credit_hold`. **No CHECK
+constraint admits any of them.** The real vocabularies are
+`transactional|marketing|reminder`, `privacy|marketing`,
+`operational|financial|safety|other` and
+`no_credit|prepay_only|no_service|contact_restriction|other`. A key for a value
+the database cannot hold is dead weight; a key _missing_ for one it can hold
+renders the raw key on screen. Every value is now read from the migration that
+owns the column, and a test enumerates them from the constraints rather than
+from `en.json`, so a key absent from both locales still fails.
+
+`crm.consent_history.source` has **no** constraint at all, so it is rendered
+exactly as stored — translating it would print
+`crm.consentSource.in-branch tablet, ref 88213` to an operator.

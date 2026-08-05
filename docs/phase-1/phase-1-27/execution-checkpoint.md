@@ -108,3 +108,39 @@ NESTED_LOCKFILES=0
 A real Backend defect found during P1-27 does **not** get fixed here. It gets a
 stable `P1-27-INT-###`, an owning phase, its own branch, its own tests, and its
 own protected merge — which is exactly what happened four times above.
+
+---
+
+## 7. Wave log
+
+Each row is a commit that was green on its own before the next wave started.
+
+| wave | tasks                                   | subject                                          | commit    |
+| ---- | --------------------------------------- | ------------------------------------------------ | --------- |
+| 2    | `FE-001`, `FE-002`                      | CRM customer search and results                  | `df6e452` |
+| 3    | `FE-003`, `FE-004`, `FE-005`            | Customer creation, duplicate advisory, lifecycle | `a912681` |
+| 4    | `FE-006`, `FE-007`, `FE-008`            | Profile, contacts, addresses                     | `c8d755d` |
+| 5    | `FE-009`…`FE-014`                       | Preferences, consents, notes, alerts, tags, restrictions | pending   |
+
+**Frontend progress: 14 / 29. Total: 14 / 42.**
+
+### Test tiers, re-measured at Wave 5
+
+| tier                 | at base     | now         |
+| -------------------- | ----------- | ----------- |
+| Root / CI-contract   | 1608 / 1608 | 1614 / 1614 |
+| Web unit / component | 357 / 357   | 508 / 508   |
+
+`FAILED_TESTS=0`, `SKIPPED_REQUIRED_TESTS=0`.
+
+### A defect in the commit history that cannot be repaired
+
+The Wave 4 commit `c8d755d` carries a **UTF-8 BOM** (`ef bb bf`) at the start of
+its subject line, because the message file was written with PowerShell
+`Out-File -Encoding utf8`, which emits a BOM in PowerShell 5.1.
+
+It is recorded rather than fixed. The commit is already on the remote, and
+correcting a pushed commit message requires a force push, which the standing
+constraints forbid without exception. Three invisible bytes in one subject line
+is a smaller cost than a rewritten protected history. Every commit message from
+Wave 5 onward is written with a tool that does not add a BOM.

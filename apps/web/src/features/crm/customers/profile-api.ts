@@ -10,7 +10,17 @@ import {
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
-import type { Address, ContactPoint, CustomerDetail } from './profile-contract';
+import type {
+  Address,
+  Alert,
+  Consent,
+  ContactPoint,
+  CustomerDetail,
+  Note,
+  Preference,
+  Restriction,
+  Tag,
+} from './profile-contract';
 
 /**
  * Reads for the customer profile and its components (`FE-006`…`FE-014`).
@@ -86,4 +96,91 @@ export async function listAddresses(
   cursor: string | null
 ): Promise<ServerPage<Address>> {
   return listComponent<Address>(customerId, 'addresses', request, cursor);
+}
+
+export async function listPreferences(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Preference>> {
+  return listComponent<Preference>(customerId, 'preferences', request, cursor);
+}
+
+export async function listConsents(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Consent>> {
+  return listComponent<Consent>(customerId, 'consents', request, cursor);
+}
+
+/**
+ * Notes, plus whether the caller is seeing all of them.
+ *
+ * `sel_notes_tenant` hides `restricted` and `secret` notes from a caller without
+ * `iam.sensitive.view`, and hides them SILENTLY — the list is simply shorter. So
+ * the operation publishes `includesRestricted` alongside the page, and this is
+ * the one component read that cannot go through `listComponent`: dropping the
+ * flag would leave a screen stating "this customer has three notes" with no way
+ * to know it is wrong.
+ */
+export async function listNotes(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Note> & { readonly includesRestricted: boolean }> {
+  const client = await authorizedClient();
+  if (!client) {
+    return { ...EMPTY, status: 'expired', correlationId: null, includesRestricted: false };
+  }
+
+  const path =
+    `/api/v1/customers/${encodeURIComponent(customerId)}/notes` +
+    query({ cursor, limit: request.pageSize });
+
+  const result = await client.get<CursorPage<Note> & { includesRestricted: boolean }>(path, {
+    retries: 0,
+  });
+  if (!result.ok) {
+    return {
+      ...EMPTY,
+      status: STATUS_BY_KIND[result.kind],
+      correlationId: result.correlationId,
+      // False on a failure, so a screen that could not read never claims the
+      // caller was seeing everything.
+      includesRestricted: false,
+    };
+  }
+  return {
+    status: 'ok',
+    rows: result.data.items,
+    nextCursor: result.data.nextCursor,
+    hasMore: result.data.hasMore,
+    correlationId: result.correlationId,
+    includesRestricted: result.data.includesRestricted === true,
+  };
+}
+
+export async function listAlerts(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Alert>> {
+  return listComponent<Alert>(customerId, 'alerts', request, cursor);
+}
+
+export async function listTags(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Tag>> {
+  return listComponent<Tag>(customerId, 'tags', request, cursor);
+}
+
+export async function listRestrictions(
+  customerId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<Restriction>> {
+  return listComponent<Restriction>(customerId, 'restrictions', request, cursor);
 }

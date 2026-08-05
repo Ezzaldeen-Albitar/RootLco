@@ -191,8 +191,20 @@ describe('unbuilt sections are visible and honest', () => {
   it('explains rather than showing an empty panel', async () => {
     const user = userEvent.setup();
     renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={INDIVIDUAL} />);
-    await user.click(screen.getByRole('button', { name: /Consents/ }));
+    // Timeline, not Consents: Wave 5 built Consents and this assertion started
+    // failing, which is the registry behaving correctly. `Timeline` is `FE-015`
+    // and is genuinely still planned.
+    await user.click(screen.getByRole('button', { name: /Timeline/ }));
     expect(screen.getByText(en['crm.customers.profile.sectionPending'])).toBeInTheDocument();
+  });
+
+  it('does not show the pending notice for a section that IS built', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={INDIVIDUAL} />);
+    await user.click(screen.getByRole('button', { name: /Consents/ }));
+    // The inverse of the assertion above. Without it, a screen that marked
+    // everything planned would satisfy the test this replaced.
+    expect(screen.queryByText(en['crm.customers.profile.sectionPending'])).toBeNull();
   });
 });
 

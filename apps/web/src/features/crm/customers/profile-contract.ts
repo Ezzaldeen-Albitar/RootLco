@@ -104,6 +104,115 @@ export interface Address {
   readonly createdAt: string;
 }
 
+export interface Preference {
+  readonly id: string;
+  readonly channel: string;
+  readonly purpose: string;
+  readonly preferred: boolean;
+  readonly preferredLocale: string | null;
+  /** The column carries it; the PUT cannot set it (`P1-16-A-01`). */
+  readonly quietHoursNote: string | null;
+  /** What a client puts in `If-Match` on the preferences PUT. */
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/**
+ * One consent decision.
+ *
+ * `crm.consent_history` is **append-only**: a withdrawal is a new row, never an
+ * edit. The read returns the whole history rather than a collapsed current
+ * answer, because the sequence of decisions is what makes a consent defensible.
+ *
+ * `seq` is `bigint` and stays a **string**. Two decisions written in one
+ * transaction share `effective_at` to the microsecond, and `seq` is the only
+ * field that says which came second.
+ */
+export interface Consent {
+  readonly id: string;
+  readonly consentKind: string;
+  readonly channel: string | null;
+  readonly purpose: string | null;
+  readonly status: string;
+  readonly source: string | null;
+  readonly effectiveAt: string;
+  readonly contactPointId: string | null;
+  readonly evidenceDocumentId: string | null;
+  readonly recordedBy: string;
+  readonly seq: string;
+}
+
+export interface Note {
+  readonly id: string;
+  readonly body: string;
+  readonly classification: string;
+  readonly visibility: string;
+  readonly authorId: string;
+  readonly editedAt: string | null;
+  readonly createdAt: string;
+}
+
+/**
+ * One alert in force.
+ *
+ * `effectiveFrom` and `effectiveTo` are `date` columns read as `::text` — exact
+ * days, never shifted by a timezone. `severity` is `text` with a CHECK, so it is
+ * ranked by `SEVERITY_RANK` below and never sorted by label.
+ */
+export interface Alert {
+  readonly id: string;
+  readonly alertType: string;
+  readonly severity: string;
+  readonly message: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly acknowledgedBy: string | null;
+  readonly acknowledgedAt: string | null;
+}
+
+export interface Tag {
+  readonly id: string;
+  readonly segmentId: string;
+  readonly segmentCode: string;
+  readonly name: string;
+  readonly validFrom: string;
+  readonly validTo: string | null;
+  readonly assignedAt: string;
+  readonly assignedBy: string;
+}
+
+export interface Restriction {
+  readonly id: string;
+  readonly restrictionType: string;
+  readonly reason: string;
+  readonly approvalRef: string | null;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly imposedBy: string;
+}
+
+/**
+ * Severity, ranked by meaning rather than by spelling.
+ *
+ * `crm.customer_alerts.severity` is `text` with a CHECK — `info`, `warning`,
+ * `critical` — not an enum. Sorted alphabetically that is critical, info,
+ * warning, which ranks **`info` above `warning`**. The Backend already orders by
+ * an explicit rank; this exists so a screen that highlights or groups by
+ * severity uses the same meaning rather than re-deriving one from the label.
+ *
+ * An unknown value sorts last rather than first: a severity this build has not
+ * heard of must not outrank a `critical` it understands.
+ */
+export const SEVERITY_RANK: Readonly<Record<string, number>> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+export function severityRank(severity: string): number {
+  return SEVERITY_RANK[severity] ?? Number.MAX_SAFE_INTEGER;
+}
+
 /** `crm.contact_points.channel` — the CHECK constraint's vocabulary. */
 export const CONTACT_CHANNELS = ['phone', 'mobile', 'email', 'other'] as const;
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
