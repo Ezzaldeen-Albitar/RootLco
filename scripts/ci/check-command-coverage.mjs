@@ -119,6 +119,24 @@ export const REGISTER = Object.freeze([
     // be deleted around a decision, a gate cannot.
     why: 'P1-27 CRM and Vehicle frontend decision rules',
   },
+  {
+    name: 'validate:web-theme',
+    owner: ROOT,
+    tier: 'required',
+    // The workspace delegate for `@rootlco/web`'s `validate:theme`. Registered
+    // here as well as in the web block because BOTH halves of a delegating pair
+    // have to be classified — the root script is what CI actually invokes.
+    why: 'delegates to the web Tailwind theme gate',
+  },
+  {
+    name: 'validate:plain-language',
+    owner: ROOT,
+    tier: 'required',
+    // Owner-acceptance defect 9. The person writing a message is the person for
+    // whom its jargon reads as ordinary English, so review cannot catch this and
+    // a gate can. Twenty-four rules over both message catalogues.
+    why: 'no technical vocabulary in a message a workshop employee reads',
+  },
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },

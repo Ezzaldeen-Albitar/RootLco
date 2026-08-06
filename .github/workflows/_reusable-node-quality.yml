@@ -244,6 +244,10 @@ jobs:
           # OIR-01 is open, so both tiers hold a placeholder. This fails the
           # moment one of them holds a real name and the other does not.
           npm run validate:product-name
+          # The product speaks to receptionists and technicians. No JSON, no
+          # UUIDs, no permission codes, no snake_case identifiers, no raw
+          # translation keys — in either language.
+          npm run validate:plain-language
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
