@@ -121,14 +121,46 @@ It is also the same failure shape this phase has now met three times: a
 (`P1-22`'s delivery eligibility), and ten `idempotent` operations no call site
 could satisfy (`P1-26-F-015`).
 
+### A customer can be linked to a vehicle, and the link cannot be read back
+
+This is the Owner's gaps 3, 4 and 5, and it is not a Frontend omission.
+
+The customer↔vehicle relationship publishes in exactly one direction:
+
+| operation                             | method | path                                                            | direction                       |
+| ------------------------------------- | ------ | --------------------------------------------------------------- | ------------------------------- |
+| `crm.vehicle-link`                    | POST   | `/customers/{customerId}/vehicles`                              | write                           |
+| `veh.vehicle-authorized-party-add`    | POST   | `/vehicles/{vehicleId}/authorized-parties`                      | write                           |
+| `veh.vehicle-authorized-party-retire` | POST   | `/vehicles/{id}/authorized-parties/{relationshipId}/retirement` | write                           |
+| `veh.vehicle-relationship-list`       | GET    | `/vehicles/{vehicleId}/relationships`                           | **read, from the VEHICLE side** |
+
+`/customers/{customerId}/vehicles` publishes **POST only**. Eleven reads exist
+under `/customers/` — addresses, alerts, consents, contacts, history, notes,
+preferences, restrictions, tags, timeline — and **not one of them is vehicles**.
+
+So the platform can record that a customer owns a vehicle and can never answer
+"which vehicles does this customer have?". The only read runs the other way:
+given a vehicle, list its parties.
+
+§4 requires a dedicated Vehicles section on the Customer profile. §5 requires the
+operator to see that customer's vehicles and select one before a repair order is
+opened. Against today's contracts the only way to build either is to enumerate
+every vehicle in the tenant and read each one's relationships — an N+1 sweep over
+a rate-limited surface that cannot be paginated correctly and gets slower as the
+workshop succeeds.
+
+**The P1-27 Frontend could not have built a Customer Vehicles section however
+carefully it was written.** The read does not exist.
+
 ## Integration findings opened by this record
 
 Continuing from `P1-27-INT-009`, the highest previously allocated.
 
-| id              | finding                                                                                                                                                                                                                                                                                                         | owning Backend phase | severity | blocks           |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------- | ---------------- |
-| `P1-27-INT-010` | No reception **detail** read. `rec.reception-approve` and `rec.reception-convert-to-work-order` are both `versionGuarded` with mandatory `If-Match`, and no operation publishes a visit's `recordVersion` except the two writes that also consume it. A reception cannot be resumed, handed over, or recovered. | P1-18                | **High** | Waves C, D, E    |
-| `P1-27-INT-011` | No reception **list** read. An operator cannot see open receptions, and a vehicle or customer cannot show its visits.                                                                                                                                                                                           | P1-18                | **High** | Waves D, E, P, Q |
+| id              | finding                                                                                                                                                                                                                                                                                                                                             | owning Backend phase | severity | blocks           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------- | ---------------- |
+| `P1-27-INT-010` | No reception **detail** read. `rec.reception-approve` and `rec.reception-convert-to-work-order` are both `versionGuarded` with mandatory `If-Match`, and no operation publishes a visit's `recordVersion` except the two writes that also consume it. A reception cannot be resumed, handed over, or recovered.                                     | P1-18                | **High** | Waves C, D, E    |
+| `P1-27-INT-011` | No reception **list** read. An operator cannot see open receptions, and a vehicle or customer cannot show its visits.                                                                                                                                                                                                                               | P1-18                | **High** | Waves D, E, P, Q |
+| `P1-27-INT-012` | **No read lists a customer's vehicles.** `crm.vehicle-link` writes the relationship at `POST /customers/{customerId}/vehicles`; that path publishes no GET, and the only relationship read runs from the vehicle side. The Owner's §4 Vehicles section and §5 vehicle selector cannot be built without an N+1 sweep of every vehicle in the tenant. | P1-16                | **High** | Waves A, D, E    |
 
 Further findings will be added by the archaeology now running across the
 remaining eleven domains. Each will be closed the way §2 requires — its own
