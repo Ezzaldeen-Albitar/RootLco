@@ -19,6 +19,49 @@ fail without it.
 
 ---
 
+## Correction — the P1-24 register was not "crediting false evidence"
+
+The commit message of `9dc096e0` (in PR #200) says that
+`tests/ci/plain-language-gate.test.ts` was "credited as evidence that the CRM
+duplicate-review operation is exercised". **That overstates it, and this phase
+is not entitled to overstate anything.** The correction, measured rather than
+reasoned:
+
+`scripts/p1-24-operation-register.mjs` keeps two things apart, and its own
+docblock says so. **References** are files that MENTION an operation id.
+**Flags** are the reviewable evidence claim, parsed from the
+`COVERAGE-EVIDENCE` block a test declares. Classification comes from flags.
+
+`MAX_PARTIAL` and `MAX_UNCOVERED` are both **0**, and `--check` fails above
+either. So the only classification that passes is `Covered`, and `Covered`
+requires declared flags. **An incidental mention cannot produce a false pass.**
+What it did was add one row to a mentions array, which made the committed
+register stale — and `verify:contracts` failed on exactly that. The gate worked.
+
+### The fix that was nearly made, and why it would have been wrong
+
+The obvious remedy — strip comments before the reference scan, as three other
+call sites in that same file already do — was measured before being written:
+
+|                                               |        |
+| --------------------------------------------- | ------ |
+| operations whose reference list would change  | **76** |
+| operations that would become **unreferenced** | **38** |
+
+`COVERAGE-EVIDENCE` blocks **are comments**. They are the register's designed,
+reviewable declaration format. Stripping comments would have destroyed the
+mechanism the register is built on and turned 38 operations `Uncovered`, failing
+a gate whose ceiling is zero — a change that breaks a gate while looking like it
+hardens one.
+
+**Disposition:** no change to `scripts/p1-24-operation-register.mjs`. The real
+constraint is narrower and is now written down: _do not write a real operation
+id into a test file that does not exercise it, not even in a comment._ The
+wording gate's fixture uses `crm.example-operation`, which matches the rule it
+tests and names nothing real.
+
+---
+
 ## Closed by this phase
 
 | id              | severity | subject                                                                                                                                                               | closed at |

@@ -406,6 +406,51 @@ describe('the sidebar navigation', () => {
     expect(screen.getByRole('link', { name: ar['nav.users'] })).toBeInTheDocument();
   });
 
+  it('works inside the tablet drawer, which is a surface no desktop check can see', async () => {
+    const user = userEvent.setup();
+    /*
+     * The drawer renders its OWN `Sidebar` instance, and it is the one surface
+     * the desktop measurements cannot reach — it does not exist above `lg`.
+     * P1-26 shipped a defect there that every desktop check missed: fifteen
+     * links whose last item's bottom sat 98px below a 700px viewport, so the
+     * last modules were simply unreachable.
+     *
+     * The accordion is new inside that surface. `collapsed={false}` is what the
+     * shell passes there, and it is the reason the disclosure exists at all in
+     * the drawer — the 64px rail has no room for one.
+     *
+     * Measured separately in installed Chrome at 900×700: closed 0px, open
+     * 244px, six child links, focus trapped, Escape restores focus to the
+     * trigger. This case is the fast guard on the same behaviour.
+     */
+    renderLtr(
+      <Sidebar
+        locale="en"
+        messages={en}
+        groups={groups}
+        pathname="/en"
+        collapsed={false}
+        withinDrawer
+        onNavigate={() => {}}
+      />
+    );
+
+    const toggle = screen.getByTestId('nav-disclosure-administration');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: en['nav.users'] })).toBeInTheDocument();
+  });
+
+  it('is what the shell mounts in the drawer, expanded rather than railed', () => {
+    const shell = readFileSync(join(ROOT, 'apps/web/src/components/shell/AppShell.tsx'), 'utf8');
+    // A drawer instance rendered with `collapsed={collapsed}` would inherit the
+    // desktop rail state and show a 64px icon strip inside a 288px panel, with
+    // no disclosure at all.
+    expect(shell).toMatch(/withinDrawer/);
+    expect(shell).toMatch(/collapsed=\{false\}[\s\S]{0,80}withinDrawer/);
+  });
+
   it('gives each duplicate queue a review icon and a readable label', () => {
     renderSidebar();
     // Not truncated, and not the same icon as the search screen beside it.

@@ -31,7 +31,8 @@ Nothing here asserts a class name. A `className` assertion is exactly what let
 
 ## Result
 
-**26 passed · 3 not applicable · 0 failed.**
+**First pass: 26 passed · 3 not applicable · 0 failed.**
+**Second pass (tablet drawer, overscroll, classified console): 18 passed · 0 failed.**
 
 ### The password control
 
@@ -126,6 +127,69 @@ Three defects, all in the first run, all in about twenty minutes.
 All three are fixed in `44e053ad`, and the review was re-run against the merged
 tree to produce the numbers above.
 
+## Second pass — the tablet drawer, overscroll, and a classified console
+
+The first pass left two of the Owner's §28 items unevidenced. This pass covers
+them. **18 passed, 0 failed.**
+
+### The drawer is not at 1024px, and that is worth stating
+
+The probe's first run failed on its own first assertion at 1024×768: the desktop
+sidebar was visible and there was no "Open navigation" button to click. That is
+correct behaviour, not a defect. Tailwind's `lg` breakpoint is **1024px** and the
+sidebar is `lg:flex`, so at exactly 1024 the application is already in its
+desktop layout and the drawer does not exist.
+
+The Owner's instruction lists 1024×768 among the viewports to test. At that size
+the thing under test is the **desktop sidebar**; a "tablet drawer" check there
+would have measured nothing and reported a pass. The drawer's range is strictly
+below 1024, so it is measured at **900×700** — the geometry P1-26 measured its
+own drawer defect at.
+
+| check                               | measurement                                                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| desktop sidebar at 900px            | present in the DOM, width **0** — correctly not shown                                                 |
+| drawer panel                        | top **0**, bottom **700**, viewport **700** — exactly the viewport                                    |
+| every item reachable                | 21 items; last item "Component gallery" bottom **564**, inside the navigation and inside the viewport |
+| accordion closed, inside the drawer | `aria-expanded="false"`, height **0**, `inert` present                                                |
+| accordion open, inside the drawer   | `aria-expanded="true"`, height **244**, 6 child links, all within the navigation                      |
+| focus trap                          | focus on the last control stays inside the panel after Tab                                            |
+| Escape                              | panel gone, focus restored to the "Open navigation" trigger                                           |
+
+The P1-26 drawer defect — fifteen links whose last item's bottom was at 798px
+against a 700px viewport, so the last modules were unreachable — has not
+returned, and the new accordion does not reintroduce it.
+
+### No blank overscroll, at 1024×768
+
+| route                            | document height | viewport | scrolls | horizontal overflow |
+| -------------------------------- | --------------- | -------- | ------- | ------------------- |
+| `/en`                            | 768             | 768      | no      | no                  |
+| `/en/crm/customers`              | 768             | 768      | no      | no                  |
+| `/en/crm/customer-duplicates`    | 768             | 768      | no      | no                  |
+| `/en/vehicles`                   | 768             | 768      | no      | no                  |
+| `/en/vehicles/duplicates`        | 768             | 768      | no      | no                  |
+| `/en/administration/permissions` | 768             | 768      | no      | no                  |
+
+`/administration/permissions` is in the list on purpose: it renders seventeen
+tables and is the screen that produced 6175px of blank overscroll in P1-26.
+
+### The console, classified rather than counted
+
+24 console messages were seen across the whole run. Classified:
+
+| class                              | count |
+| ---------------------------------- | ----- |
+| errors and page errors             | **0** |
+| Content Security Policy violations | **0** |
+| CORS failures                      | **0** |
+| hydration mismatches               | **0** |
+| failed network requests            | **0** |
+
+"No console errors" is a weaker claim than it sounds — a CSP violation, a CORS
+refusal and a hydration mismatch do not all surface as `console.error`. Each is
+matched for by name.
+
 ## Screenshots
 
 `.local/owner-review-shots/` — git-ignored, on the Owner's machine:
@@ -134,7 +198,12 @@ tree to produce the numbers above.
 `03b-sidebar-900px` · `03b-sidebar-768px` · `03b-sidebar-560px` ·
 `03b-sidebar-420px` · `04-sidebar-administration-open` · `05-customer-search` ·
 `06-customer-duplicates` · `07-vehicle-duplicates` · `08-zoom-720x450` ·
-`09-tablet-1024` · `10-customers-ar` · `11-reader-customers`
+`09-tablet-1024` · `10-customers-ar` · `11-reader-customers` ·
+`12-tablet-drawer-accordion`
+
+The probes that produced them are `.local/owner-review-chrome.mjs` and
+`.local/owner-review-tablet-drawer.mjs`, also git-ignored — they read the local
+acceptance credentials, which never enter the repository.
 
 ## What this review is not
 
