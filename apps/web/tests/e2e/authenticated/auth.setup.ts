@@ -58,7 +58,13 @@ setup('sign in and persist the session', async ({ page, context }) => {
   await expect(page.getByLabel('Workspace identifier')).toHaveCount(0);
 
   await page.getByLabel('Email address').fill(email);
-  await page.getByLabel('Password').fill(password);
+  // By ROLE and exact name. `getByLabel` matches an accessible name as a
+  // substring, and the reveal control inside the field is named "Show password"
+  // — which contains "Password", so the loose locator resolves to two elements
+  // and strict mode refuses to guess. Role is what separates a textbox named
+  // "Password" from a button named "Show password", and it is also what a
+  // screen reader announces.
+  await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   // The dashboard is `/en`; the sidebar landmark is what `foundation.spec.ts`

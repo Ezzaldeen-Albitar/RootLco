@@ -311,26 +311,42 @@ function SidebarEntry({
           ].join(' ')}
         >
           {/*
-            `overflow-hidden` is what makes the row height mean anything. The
-            padding is not decoration: the focus ring is drawn 2px outside the
-            element with a 2px offset, so without room inside the clipping box a
-            focused child would have its ring sliced off on the side and bottom.
+            TWO elements, and the split is the whole point.
+
+            The grid item is this bare `overflow-hidden` box. It has no padding,
+            so when the row is `0fr` its min-content height is zero and the group
+            closes to nothing.
+
+            The padding lives on the `<ul>` INSIDE it, where it is clipped along
+            with everything else. It is not decoration: the focus ring is drawn
+            2px outside the element with a 2px offset, so without headroom inside
+            the clipping box a focused child has its ring sliced off.
+
+            One element carrying both was measured at **6px tall while closed**
+            in installed Chrome during the Owner-acceptance review — one sliver
+            per closed group, permanently. `min-height: 0` did not help and could
+            not: a box's own padding is never clipped by its own
+            `overflow: hidden`, so `2px + 4px` survived the collapse. The
+            measurement is what found it; the CSS reasoning alone said it should
+            already have been zero.
           */}
-          <ul className="flex flex-col gap-0.5 overflow-hidden ps-8 pe-1 pt-0.5 pb-1">
-            {item.children?.map((child) => (
-              <SidebarEntry
-                key={child.key}
-                item={child}
-                locale={locale}
-                messages={messages}
-                pathname={pathname}
-                collapsed={false}
-                overrides={overrides}
-                onToggle={onToggle}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </ul>
+          <div className="overflow-hidden">
+            <ul className="flex flex-col gap-0.5 ps-8 pe-1 pt-0.5 pb-1">
+              {item.children?.map((child) => (
+                <SidebarEntry
+                  key={child.key}
+                  item={child}
+                  locale={locale}
+                  messages={messages}
+                  pathname={pathname}
+                  collapsed={false}
+                  overrides={overrides}
+                  onToggle={onToggle}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </ul>
+          </div>
         </div>
       </li>
     );
