@@ -21,11 +21,14 @@ fail without it.
 
 ## Correction — the P1-24 register was not "crediting false evidence"
 
-The commit message of `9dc096e0` (in PR #200) says that
-`tests/ci/plain-language-gate.test.ts` was "credited as evidence that the CRM
-duplicate-review operation is exercised". **That overstates it, and this phase
-is not entitled to overstate anything.** The correction, measured rather than
-reasoned:
+Two places in this phase's own record say something stronger than the truth:
+the Wave 15 section below ("**The P1-24 operation register silently claimed the
+new gate test as backend evidence**"), and the commit message of `9dc096e0` in
+PR #200 ("credited as evidence that the CRM duplicate-review operation is
+exercised").
+
+**Both overstate it, and this phase is not entitled to overstate anything.** The
+correction, measured rather than reasoned:
 
 `scripts/p1-24-operation-register.mjs` keeps two things apart, and its own
 docblock says so. **References** are files that MENTION an operation id.

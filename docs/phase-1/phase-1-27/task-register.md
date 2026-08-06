@@ -127,12 +127,43 @@ This register carries the evidence chain.
 | `FE-021`, `FE-022`, `FE-023`                                                                                        | 9     | `1ccbf92`            | ownership, plate and odometer history + their three writes                    | `vehicle-history.test.ts` (20)                                                                                      |
 | `FE-024`, `FE-025`                                                                                                  | 10    | `984af0e`            | `veh.vehicle-ev-profile-*`, `veh.vehicle-relationship-*`, `crm.vehicle-link`  | `vehicle-relations.test.ts` (18)                                                                                    |
 | `FE-026`, `FE-027`, `FE-028`, `FE-029`                                                                              | 11–12 | `7ecd97d`            | `veh.vehicle-document-list`, `veh.vehicle-duplicate-*`, `veh.vehicle-history` | `vehicle-duplicates.test.ts` (20)                                                                                   |
-| `SEC-001`…`SEC-004`                                                                                                 | 13    | `c9cb04d`            | the phase's own surface, asserted against the source that shipped             | `p1-27-security.test.ts` (18)                                                                                       |
-| `QA-001`…`QA-005`                                                                                                   | 14    | _this wave_          | every list adapter × every transport failure kind                             | `p1-27-qa.test.ts` (18) · `vehicle-screens.dom.test.tsx` (21)                                                       |
+| `SEC-001` permission and resolved-scope enforcement                                                                 | 13    | `c9cb04d`            | the phase's own surface, asserted against the source that shipped             | `p1-27-security.test.ts` (18)                                                                                       |
+| `SEC-002` sensitive-data, export, document, media and file-access controls                                          | 13    | `c9cb04d`            | `FORBIDDEN_URL_KEYS` vs `query()` — two policies, not one list                | `p1-27-security.test.ts` (18)                                                                                       |
+| `SEC-003` abuse-case and privilege-escalation controls                                                              | 13    | `c9cb04d`            | no client-asserted scope on any adapter                                       | `p1-27-security.test.ts` (18)                                                                                       |
+| `SEC-004` security audit-event coverage                                                                             | 13    | `c9cb04d`            | the audited writes the phase calls                                            | `p1-27-security.test.ts` (18)                                                                                       |
+| `QA-001` unit and component coverage                                                                                | 14    | `360736f`            | every screen the phase built                                                  | `p1-27-qa.test.ts` (18) · `vehicle-screens.dom.test.tsx` (21)                                                       |
+| `QA-002` API contract and error-path coverage                                                                       | 14    | `360736f`            | every list adapter × every transport failure kind                             | `p1-27-qa.test.ts` (18)                                                                                             |
+| `QA-003` tenant / company / branch isolation                                                                        | 14    | `360736f`            | the scope the client never asserts                                            | `p1-27-security.test.ts` (18)                                                                                       |
+| `QA-004` concurrency and idempotency                                                                                | 14    | `360736f`            | `operation-contract.ts` and the generated idempotency table                   | `operation-contract.test.ts` (27) · `api-client.test.ts`                                                            |
+| `QA-005` regression and immutable evidence packaging                                                                | 14    | `360736f`            | the evidence file names, read from the directory                              | `p1-27-qa.test.ts` (18)                                                                                             |
+| `DO-001` continuous-integration quality gate                                                                        | 15    | `2688635`            | none — a gate over the phase's own source                                     | `scripts/ci/check-p1-27-frontend.mjs`, six rules with a `selfTest()`                                                |
+| `DO-002` structured logging, monitoring and alert routing                                                           | 15    | `2688635`            | the correlation reference every failure surface carries                       | `observability.test.ts` — **inherited from P1-26 (`3e1f9e3`), not written here**                                    |
+| `DOC-001` contract, catalogue and traceability synchronization                                                      | 17b   | `e14984e`            | the server vocabularies, read from the migrations                             | `server-vocabularies.test.ts`                                                                                       |
+| `DOC-002` operator / developer guidance and change-log update                                                       | 15    | `2688635`            | none — `operator-guide.md`, `developer-guide.md`                              | `p1-27-qa.test.ts` — the guides must name files that exist                                                          |
 
 Every task id above is written out individually rather than as a range. A range
 is not searchable: a reader looking for `FE-004` in a register that says
 `FE-003`–`FE-005` finds nothing and concludes the task was never delivered.
+
+**That sentence was false when it was written, immediately below a table whose
+last two rows read `SEC-001`…`SEC-004` and `QA-001`…`QA-005` — and whose
+`DO-001`, `DO-002`, `DOC-001` and `DOC-002` rows did not exist at all, while the
+totals above tallied DevOps 2/2 and Documentation 2/2.** Nine of the forty-two
+tasks were therefore counted and not named. It was found by a cross-document
+reconciliation during the Owner-acceptance remediation, not by review, and the
+titles above are read from `canonical-plan.md` §"Task list" rather than
+reconstructed. A rule stated one line under its own violation is the most
+comfortable kind of untruth to write.
+
+**The SHAs in the four new rows were wrong on the first attempt, and were
+corrected by `git log --diff-filter=A` rather than by re-reading the table.**
+`DOC-001` and `DOC-002` were both attributed to `1719423` because that commit's
+subject is "record 42/42 implementation"; the guides actually landed in
+`2688635` and `server-vocabularies.test.ts` in `e14984e`, Wave 17b. The same
+query exposed something the table would otherwise have implied: **`DO-002`'s
+evidence, `observability.test.ts`, was written by P1-26 in `3e1f9e3` and is
+inherited, not produced here.** A register that lists an inherited test beside a
+task id reads as though the task wrote it.
 
 **Six of the ten evidence cells in the first version of this table named files
 that do not exist** — `crm-customer-create.test.ts`, `crm-customer-profile.test.ts`,
