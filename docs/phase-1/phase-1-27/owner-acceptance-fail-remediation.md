@@ -133,23 +133,45 @@ merging it into the wording finding would lose the lesson.
   no create operation exists. Recorded as an integration finding rather than
   worked around.
 
+## The installed-browser review found three more
+
+Recorded in full in [`installed-chrome-review.md`](installed-chrome-review.md).
+
+Everything above merged with every automated tier green. Twenty minutes in the
+Owner's own Chrome then found a closed navigation group that was **6px tall
+rather than zero**, a stylesheet documenting a scrollbar rule the browser
+discards, and an **authenticated browser tier that could not sign in at all**.
+
+That is the second time in one week that this phase has learned the same thing,
+and it is worth stating rather than filing: **a green tier is a statement about
+the tier, not about the product.** All three are fixed in `44e053ad`, and the
+review was re-run against the merged tree.
+
 ## Verification
 
-| tier                          | result                                          |
-| ----------------------------- | ----------------------------------------------- |
-| Web unit and component        | 800 passed, 0 failed                            |
-| Root CI tier                  | 638 passed, 0 failed                            |
-| Mutation matrix `--only=M-OA` | **18 / 18 caught**                              |
-| `validate:plain-language`     | 24 rules, 0 findings                            |
-| `validate:web-theme`          | 170 files, 54 colours, 0 unresolvable           |
-| `validate:web-tokens`         | 195 files, 0 raw values                         |
-| `validate:p1-27-frontend`     | 40 files, 0 failures                            |
-| `validate:command-coverage`   | 70 / 70 required commands reachable and invoked |
+| tier                                     | result                                           |
+| ---------------------------------------- | ------------------------------------------------ |
+| Web unit and component                   | **801 passed**, 0 failed                         |
+| Root CI tier                             | 638 passed, 0 failed                             |
+| Database and RLS, on a clean database    | **1636 / 1636**, before fixtures and after reset |
+| Anonymous browser                        | 146 passed, 0 failed, 4 skipped                  |
+| Authenticated browser (en / ar / tablet) | **181 passed**, 0 failed                         |
+| Installed Chrome                         | **26 passed · 3 not applicable · 0 failed**      |
+| Mutation matrix `--only=M-OA`            | **19 / 19 caught**                               |
+| Hosted CI, PR #200 head                  | 20 / 20 acceptable, `ci-gate` green              |
+| Hosted CI, PR #201 head                  | 19 success, 1 skipped, `ci-gate` green           |
+| `validate:plain-language`                | 24 rules, 0 findings                             |
+| `validate:web-theme`                     | 170 files, 54 colours, 0 unresolvable            |
+| `validate:web-tokens`                    | 195 files, 0 raw values                          |
+| `validate:p1-27-frontend`                | 40 files, 0 failures                             |
+| `validate:command-coverage`              | 70 / 70 required commands reachable and invoked  |
 
 ## Governance
 
 - Branch `remediation/p1-27-owner-acceptance-ux`, based on the exact protected
-  `origin/develop` `8b9be4bc92a6349a6cb99d15ee282f5f463c63a5`.
+  `origin/develop` `8b9be4bc92a6349a6cb99d15ee282f5f463c63a5`, merged as PR
+  #200 → `11c07b1d`. Branch `remediation/p1-27-chrome-review-findings` merged as
+  PR #201 → `44e053ad`. Both are two-parent merge commits.
 - No database schema change, no migration change. Migration count remains 119.
 - No Backend business logic in this branch.
 - No direct push to a protected branch, no force push, no squash, no rebase.
