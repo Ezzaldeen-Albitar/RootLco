@@ -573,6 +573,16 @@ const MUTATIONS = Object.freeze([
     cwd: WEB,
   },
   {
+    id: 'M-OA-06c',
+    target: 'apps/web/src/components/shell/AppShell.tsx',
+    claim:
+      'the drawer renders the navigation EXPANDED — inheriting the desktop rail state would put a 64px icon strip inside a 288px panel with no disclosure at all, on the one surface no desktop measurement can see',
+    from: '                collapsed={false}\n                withinDrawer',
+    to: '                collapsed={collapsed}\n                withinDrawer',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
     id: 'M-OA-07',
     target: 'apps/web/src/components/shell/Sidebar.tsx',
     claim:
