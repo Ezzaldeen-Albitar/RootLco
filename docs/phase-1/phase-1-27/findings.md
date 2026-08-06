@@ -6,10 +6,20 @@ Every finding raised or inherited by this phase, with its owner and disposition.
 A finding is closed only when the code that closes it is merged and a test would
 fail without it.
 
-> **P1-27 IS REOPENED.** The Product Owner manually tested the merged
-> application on 2026-08-06 and returned `OWNER ACCEPTANCE: FAIL` with eleven
-> confirmed defects. The result, the disposition of each defect, and the one
-> defect the Owner did not report but this remediation found, are recorded in
+> **P1-27 IS OPEN, AND HAS NOW FAILED OWNER ACCEPTANCE TWICE.**
+>
+> The THIRD review (2026-08-06) returned `OWNER ACCEPTANCE: FAIL` on missing
+> core operational integration: customer, vehicle and work order are
+> disconnected modules and the workshop journey is not one flow. Recorded in
+> [`owner-acceptance-fail-journey.md`](owner-acceptance-fail-journey.md), which
+> also carries the first archaeology finding — **reception publishes eight
+> operations and every one is a POST**, so a `versionGuarded` conversion has no
+> published source for the version it demands, and a reception visit cannot be
+> resumed, handed over or even found.
+>
+> The SECOND review returned `OWNER ACCEPTANCE: FAIL` with eleven confirmed
+> defects. The result, the disposition of each defect, and the one defect the
+> Owner did not report but that remediation found, are recorded in
 > [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md).
 >
 > Read that document first. It contains the single most important fact this
