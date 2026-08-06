@@ -75,15 +75,33 @@ test.describe('authentication', () => {
     // ABSENCE here is what makes this suite fail if it ever returns.
     await expect(page.getByLabel('Workspace identifier')).toHaveCount(0);
     await expect(page.getByLabel('Email address')).toBeVisible();
-    await expect(page.getByLabel('Password')).toBeVisible();
+    /*
+     * By ROLE, not by `getByLabel('Password')`.
+     *
+     * `getByLabel` matches an accessible name as a SUBSTRING, and since the
+     * Owner-acceptance remediation the reveal control lives inside the field
+     * with the accessible name "Show password" — which contains "Password". The
+     * loose locator resolved to two elements and Playwright's strict mode
+     * correctly refused to guess.
+     *
+     * The two names are not ambiguous to anyone actually using them: a screen
+     * reader announces "Password, edit text" and "Show password, button", and
+     * role is what separates them. This asserts the same thing the user hears.
+     */
+    await expect(page.getByRole('textbox', { name: 'Password', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
     await expect(page.getByRole('link', { name: 'Forgotten your password?' })).toBeVisible();
   });
 
   test('the password can be revealed and is hidden until it is', async ({ page }) => {
     await page.goto('/en/login');
-    const password = page.getByLabel('Password');
+    const password = page.getByRole('textbox', { name: 'Password', exact: true });
     await expect(password).toHaveAttribute('type', 'password');
+
+    // The control is INSIDE the field, at the inline end. It used to be a text
+    // button underneath, which the Product Owner rejected at acceptance.
+    const field = page.getByTestId('password-reveal-toggle');
+    await expect(field).toHaveAttribute('aria-controls', (await password.getAttribute('id')) ?? '');
 
     const toggle = page.getByRole('button', { name: 'Show password' });
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
