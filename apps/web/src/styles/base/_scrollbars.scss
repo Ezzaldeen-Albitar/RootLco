@@ -48,11 +48,26 @@
 // single neutral thumb would be invisible on one of them.
 
 /// The shared geometry. Applied by both variants.
+///
+/// ## Which of these two blocks actually runs, measured
+///
+/// Both are declared, and in the Owner's browser only the FIRST one applies.
+/// Chrome from 121 onward implements the standard `scrollbar-width` and
+/// `scrollbar-color`, and when either is set on an element it IGNORES that
+/// element's `::-webkit-scrollbar-*` rules entirely. So the 6px below is dead
+/// code in current Chrome; what it actually paints is `thin`.
+///
+/// Measured in installed Chrome on Windows 11, same page, same moment:
+///
+///   an unstyled scroll container   15px gutter
+///   this navigation                10px gutter, thumb `rgba(0,0,0,0)` at rest
+///   the same on hover              thumb `rgb(137,166,200)`
+///
+/// That is the Owner's defect gone — the bar is a third narrower and paints
+/// nothing until the region is used — but it is NOT 6px, and saying 6px would
+/// be quoting a rule the browser discarded. The `::-webkit-` block stays for
+/// Safari and for Chromium before 121, where it is the only form understood.
 @mixin subtle-scrollbar-geometry {
-  // Firefox and Chromium ≥121 read the standard properties; the `::-webkit-`
-  // block below is what older Chromium and Safari read. Both are declared
-  // because the Owner's browser is Chrome and the CI browser is Chromium, and
-  // "it works on mine" is not a claim this file gets to make.
   scrollbar-width: thin;
 
   &::-webkit-scrollbar {

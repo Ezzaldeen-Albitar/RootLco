@@ -300,6 +300,34 @@ describe('the sidebar navigation', () => {
     expect(panel?.className).toContain('grid-rows-[0fr]');
   });
 
+  it('closes to nothing, because the clipped box carries no padding of its own', () => {
+    renderSidebar();
+    const panel = document.getElementById(
+      screen.getByTestId('nav-disclosure-administration').getAttribute('aria-controls') ?? ''
+    );
+    const clipped = panel?.firstElementChild;
+    const list = clipped?.firstElementChild;
+
+    /*
+     * Measured in installed Chrome, not reasoned about: a single element
+     * carrying both `overflow-hidden` and the focus-ring padding was **6px tall
+     * while closed** — one permanent sliver per closed group.
+     *
+     * A box's own padding is never clipped by its own `overflow: hidden`, and
+     * `min-height: 0` does not help, so `pt-0.5 pb-1` survived the collapse to
+     * `0fr`. The clipping box and the padded box have to be different elements.
+     *
+     * jsdom has no layout, so this asserts the STRUCTURE that produces the
+     * geometry rather than the geometry itself. The 0px is in the Chrome review.
+     */
+    expect(clipped?.tagName).toBe('DIV');
+    expect(clipped?.className).toBe('overflow-hidden');
+    expect(list?.tagName).toBe('UL');
+    expect(list?.className).toContain('pt-0.5');
+    expect(list?.className).toContain('pb-1');
+    expect(list?.className).not.toContain('overflow-hidden');
+  });
+
   it('takes a closed group out of the tab order instead of hiding it at zero height', () => {
     renderSidebar();
     const panel = document.getElementById(

@@ -563,6 +563,16 @@ const MUTATIONS = Object.freeze([
     cwd: WEB,
   },
   {
+    id: 'M-OA-06b',
+    target: 'apps/web/src/components/shell/Sidebar.tsx',
+    claim:
+      'the clipping box carries no padding of its own — a box’s padding is never clipped by its own overflow, so one element doing both left every closed group 6px tall in installed Chrome',
+    from: '          <div className="overflow-hidden">',
+    to: '          <div className="overflow-hidden pt-0.5 pb-1">',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
     id: 'M-OA-07',
     target: 'apps/web/src/components/shell/Sidebar.tsx',
     claim:
