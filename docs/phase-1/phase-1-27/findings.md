@@ -6,6 +6,17 @@ Every finding raised or inherited by this phase, with its owner and disposition.
 A finding is closed only when the code that closes it is merged and a test would
 fail without it.
 
+> **P1-27 IS REOPENED.** The Product Owner manually tested the merged
+> application on 2026-08-06 and returned `OWNER ACCEPTANCE: FAIL` with eleven
+> confirmed defects. The result, the disposition of each defect, and the one
+> defect the Owner did not report but this remediation found, are recorded in
+> [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md).
+>
+> Read that document first. It contains the single most important fact this
+> phase produced: at the moment the Owner found eleven defects, 767 unit tests,
+> 146 anonymous browser tests, 180 authenticated browser tests, 1636 database
+> and RLS tests, hosted CI and CodeQL were **all green**.
+
 ---
 
 ## Closed by this phase
