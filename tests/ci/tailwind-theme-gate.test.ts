@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain ESM JavaScript, like every other gate in this repo.
+// Plain ESM JavaScript, like every other gate in this repository.
 import { inspect, selfTest, themeColours } from '../../apps/web/scripts/check-tailwind-theme.mjs';
 
 /**

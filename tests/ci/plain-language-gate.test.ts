@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- the gate is plain ESM JavaScript, deliberately: it runs
-// from a hosted runner with no build step, exactly as every other gate does.
+// Plain ESM JavaScript, deliberately: every gate in this repository runs from a
+// hosted runner with no build step. `allowJs` resolves it, so no suppression is
+// needed — and an unnecessary `@ts-expect-error` is itself a type error here.
 import { RULES, inspect, selfTest } from '../../scripts/ci/check-plain-language.mjs';
 
 /**
@@ -58,7 +59,26 @@ describe('the gate can still fail', () => {
     ['internal-identifier', 'The match_basis could not be read.'],
     ['camel-identifier', 'This record has a stale recordVersion.'],
     ['permission-code', 'You need crm.customer.duplicate.review for this.'],
-    ['operation-id', 'The crm.duplicate-review call did not complete.'],
+    /*
+     * `crm.example-operation`, deliberately NOT a real operation id.
+     *
+     * The first draft named the real CRM duplicate-review operation, and
+     * `scripts/p1-24-operation-register.mjs` — which scans test files for
+     * operation ids — duly credited this wording gate as backend evidence that
+     * the operation is exercised. It is not; this file never calls it. That is
+     * the same defect the phase already recorded once.
+     *
+     * Then the SECOND draft failed the same way: the comment explaining the fix
+     * still contained the literal id, and the register reads raw file text. It
+     * does not strip comments, so a sentence about an operation counts as a test
+     * of it. Sixth time this phase that a scanner has read prose about code as
+     * code, and the first time it happened inside a comment written to explain
+     * the previous five.
+     *
+     * A fixture that matches the RULE without naming anything real tests the
+     * rule and claims nothing.
+     */
+    ['operation-id', 'The crm.example-operation call did not complete.'],
     ['null', 'The value is null.'],
     ['json', 'The JSON could not be parsed.'],
     ['uuid', 'Copy the UUID from the address bar.'],
