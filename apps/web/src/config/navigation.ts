@@ -50,6 +50,15 @@ export interface NavigationItem {
   readonly scope: NavigationScope;
   /** Optional numeric badge, e.g. unread notifications. */
   readonly badgeKey?: string;
+  /**
+   * Match this item's route EXACTLY rather than by longest prefix.
+   *
+   * Needed by a child that points at its own parent's route: `/administration`
+   * is a prefix of `/administration/users`, so under the default rule the
+   * Administration overview entry would be highlighted on every administration
+   * screen and the operator would see two current pages at once.
+   */
+  readonly exact?: boolean;
   readonly children?: readonly NavigationItem[];
 }
 
@@ -63,6 +72,15 @@ export type IconName =
   | 'overview'
   | 'customers'
   | 'vehicles'
+  /**
+   * A review queue, not a list.
+   *
+   * The two duplicate queues used the same icon as the search screens they sit
+   * beside, so nothing but the (truncated) label distinguished "all customers"
+   * from "customer records that may be the same person and need a decision".
+   * A queue that needs human attention gets an attention glyph.
+   */
+  | 'duplicate-review'
   | 'appointments'
   | 'work-orders'
   | 'technicians'
@@ -170,7 +188,7 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
       {
         key: 'customer-duplicates',
         labelKey: 'nav.customerDuplicates',
-        icon: 'customers',
+        icon: 'duplicate-review',
         href: '/crm/customer-duplicates',
         // Its OWN permission, not `crm.customer.read`. Reviewing possible
         // duplicates is a separate capability, and most operators who may read a
@@ -193,7 +211,7 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
       {
         key: 'vehicle-duplicates',
         labelKey: 'nav.vehicleDuplicates',
-        icon: 'vehicles',
+        icon: 'duplicate-review',
         href: '/vehicles/duplicates',
         permission: 'veh.vehicle.duplicate.review',
         status: 'available',
@@ -298,6 +316,31 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         scope: 'tenant',
         children: [
+          /*
+           * `/administration` is a real page, and since the Owner-acceptance
+           * remediation a parent row is a DISCLOSURE CONTROL rather than a link
+           * — it opens and closes its children instead of navigating.
+           *
+           * Without this entry that page would have become unreachable from the
+           * navigation: the only thing that pointed at it was the parent, and
+           * the parent stopped pointing anywhere. A route that exists and cannot
+           * be reached is worse than one that was never built, because nothing
+           * in the interface admits it is there.
+           *
+           * `settings` needs no equivalent entry: its own href is already
+           * `/administration/organization`, which its first child names.
+           */
+          {
+            key: 'administration.overview',
+            labelKey: 'nav.administrationOverview',
+            icon: 'administration',
+            href: '/administration',
+            permission: 'iam.user.read',
+            status: 'available',
+            scope: 'tenant',
+            // `/administration` is a prefix of every screen below it.
+            exact: true,
+          },
           {
             key: 'administration.users',
             labelKey: 'nav.users',
@@ -456,6 +499,18 @@ export function hrefFor(locale: Locale, item: Pick<NavigationItem, 'href'>): str
  */
 export function isActive(pathname: string, locale: Locale, item: NavigationItem): boolean {
   const target = hrefFor(locale, item);
-  if (item.href === '/') return pathname === target || pathname === `${target}/`;
+  if (item.href === '/' || item.exact) return pathname === target || pathname === `${target}/`;
   return pathname === target || pathname.startsWith(`${target}/`);
+}
+
+/**
+ * Whether this item, or anything beneath it, is the page the operator is on.
+ *
+ * This is what keeps a collapsed group honest: a parent whose child is the
+ * current page must still show as current, and must open itself, or collapsing
+ * the group makes the current page impossible to find.
+ */
+export function containsActive(pathname: string, locale: Locale, item: NavigationItem): boolean {
+  if (isActive(pathname, locale, item)) return true;
+  return (item.children ?? []).some((child) => containsActive(pathname, locale, child));
 }

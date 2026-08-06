@@ -88,7 +88,7 @@ export function RecordForm({ messages, fields, action, submitKey, titleKey, onRe
               <label htmlFor={id} className="block text-caption text-text-secondary">
                 {translateDynamic(messages, field.labelKey)}
                 {field.required ? (
-                  <span aria-hidden="true" className="ms-1 text-status-danger">
+                  <span aria-hidden="true" className="ms-1 text-error">
                     *
                   </span>
                 ) : null}
@@ -123,7 +123,7 @@ export function RecordForm({ messages, fields, action, submitKey, titleKey, onRe
                   checked={values[field.name] === 'on'}
                   onChange={(event) => set(field.name, event.target.checked ? 'on' : '')}
                   aria-describedby={describedBy}
-                  className="mt-2 size-4 accent-brand-primary"
+                  className="mt-2 size-4 accent-primary"
                 />
               ) : field.kind === 'textarea' ? (
                 <textarea
@@ -159,7 +159,7 @@ export function RecordForm({ messages, fields, action, submitKey, titleKey, onRe
                 </p>
               ) : null}
               {errorKey ? (
-                <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-status-danger">
+                <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-error">
                   {translateDynamic(messages, errorKey)}
                 </p>
               ) : null}
@@ -172,19 +172,19 @@ export function RecordForm({ messages, fields, action, submitKey, titleKey, onRe
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
         >
           {pending ? translate(messages, 'form.pending') : translateDynamic(messages, submitKey)}
         </button>
 
         {state.status === 'success' ? (
-          <p role="status" className="text-body text-status-success">
+          <p role="status" className="text-body text-success">
             {translateDynamic(messages, state.messageKey ?? '')}
           </p>
         ) : null}
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
-          <p role="alert" className="text-body text-status-danger">
+          <p role="alert" className="text-body text-error">
             {translateDynamic(messages, state.messageKey)}
             {state.correlationId ? (
               // The reference an operator can quote. Without it a support call

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
+import { CustomerCreateActions } from '@/features/crm/customers/components/CustomerCreateActions';
 import { CustomerSearchScreen } from '@/features/crm/customers/components/CustomerSearchScreen';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
@@ -48,6 +49,8 @@ export default async function CustomerSearchPage({
     );
   }
 
+  const canCreate = holds(session.permissions, CRM_PERMISSIONS.customerCreate);
+
   return (
     <>
       <PageHeader
@@ -56,13 +59,27 @@ export default async function CustomerSearchPage({
         titleKey="crm.customers.title"
         descriptionKey="crm.customers.description"
         crumbs={[{ labelKey: 'nav.customers' }]}
+        /*
+         * The Owner-acceptance defect this closes: "Customer Search has no clear
+         * Add Customer action." Both creation routes existed and neither was
+         * reachable from the screen an operator starts on — you had to run a
+         * search that found nothing, or type the URL.
+         *
+         * Rendered here, in the page header, where a primary action belongs, and
+         * again beneath an empty result inside the screen. Same component, so
+         * the two cannot say different things.
+         */
+        actions={
+          <CustomerCreateActions
+            locale={locale}
+            messages={messages}
+            canCreate={canCreate}
+            variant="primary"
+          />
+        }
       />
       <PageBody fill>
-        <CustomerSearchScreen
-          locale={locale}
-          messages={messages}
-          canCreate={holds(session.permissions, CRM_PERMISSIONS.customerCreate)}
-        />
+        <CustomerSearchScreen locale={locale} messages={messages} canCreate={canCreate} />
       </PageBody>
     </>
   );

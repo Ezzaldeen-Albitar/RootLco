@@ -149,7 +149,7 @@ export function CustomerProfileScreen({ locale, messages, customer }: Props) {
                   className={[
                     'rounded-t-md px-3 py-2 text-body',
                     active
-                      ? 'border-b-2 border-brand-primary font-medium text-text-primary'
+                      ? 'border-b-2 border-primary font-medium text-text-primary'
                       : 'text-text-secondary',
                   ].join(' ')}
                 >
@@ -918,9 +918,9 @@ function AlertsSection({
           <span
             className={
               severityRank(row.severity) === 0
-                ? 'font-semibold text-status-danger'
+                ? 'font-semibold text-error'
                 : severityRank(row.severity) === 1
-                  ? 'font-medium text-status-warning'
+                  ? 'font-medium text-warning'
                   : 'text-text-secondary'
             }
           >

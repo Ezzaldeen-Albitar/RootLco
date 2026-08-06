@@ -19,6 +19,8 @@
  * records.
  */
 
+import { formatPercent, type ConfidenceBands } from '@/lib/duplicates/score';
+
 /** `crm.duplicate_candidates.status`. */
 export const DUPLICATE_STATUSES = ['open', 'dismissed', 'merged'] as const;
 export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
@@ -115,25 +117,31 @@ export interface DuplicateCandidate {
  * representation is shown raw rather than rendered as a confident wrong number.
  */
 export function formatMatchScore(score: string): string | null {
-  const match = /^(\d+)(?:\.(\d*))?$/.exec(score.trim());
-  if (!match) return null;
-
-  const whole = match[1] ?? '0';
-  const fraction = match[2] ?? '';
-
-  // A score is a 0..1 ratio. Anything else is not a shape this understands.
-  if (whole !== '0' && whole !== '1') return null;
-  if (whole === '1' && /[1-9]/.test(fraction)) return null;
-  if (whole === '1') return '100%';
-
-  // Percent = the first two fractional digits, with the third rounded in by
-  // string comparison rather than by float arithmetic.
-  const digits = (fraction + '000').slice(0, 3);
-  const tens = Number(digits.slice(0, 2));
-  const roundUp = Number(digits[2]) >= 5;
-  const percent = Math.min(100, tens + (roundUp ? 1 : 0));
-  return `${percent}%`;
+  return formatPercent(score);
 }
+
+/**
+ * Where "strong", "possible" and "needs review" fall for a CUSTOMER pair.
+ *
+ * Read off the scorer in `apps/api/src/modules/crm/domain/customer-identity.ts`,
+ * not chosen for roundness:
+ *
+ *   - name 0.50 · contact 0.35 · address 0.15, summing to 1.00
+ *   - `CANDIDATE_THRESHOLD` is 0.50, so nothing below 50% is ever recorded
+ *
+ * **85%** is the lowest score that requires the name comparison plus one other
+ * — 0.50 + 0.35 = 0.85. A pair that agrees on the normalised name AND shares a
+ * telephone number or email address is as strong as this detector gets without
+ * agreeing on everything, so that is where "strong match" starts.
+ *
+ * **65%** is 0.50 + 0.15: the name plus an address. Below that, a candidate
+ * exists on the name alone (0.50) or on contact plus address (0.50) — worth a
+ * look, not worth confidence. Hence "needs review" rather than "possible".
+ */
+export const CUSTOMER_CONFIDENCE_BANDS: ConfidenceBands = Object.freeze({
+  strong: 85,
+  possible: 65,
+});
 
 /**
  * Whether a candidate can still be acted on.

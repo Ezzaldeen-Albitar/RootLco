@@ -1,0 +1,35 @@
+// =============================================================================
+// Navigation disclosure
+// =============================================================================
+//
+// The chevron on a collapsible sidebar group.
+//
+// ## Why this is CSS and not a second SVG
+//
+// One glyph, rotated, so the open and closed states are visibly the SAME arrow
+// moving rather than two shapes swapping. A swap reads as a different control;
+// a rotation reads as the control changing state, which is what it is.
+//
+// ## Why there is a `[dir='rtl']` branch here, when almost nothing else has one
+//
+// `transform` has no logical form. Padding, borders and insets all do — which is
+// why the rest of this application has no direction branches at all — but a
+// rotation is geometry, and "points towards the content that will open" is a
+// physical direction that genuinely mirrors. Writing it once, here, is better
+// than a component that guesses.
+//
+// Expanded: the arrow points down, at the list it has opened.
+// Collapsed: it points along the reading direction — inline-end in English, and
+// inline-end in Arabic too, which is the opposite physical side.
+
+.nav-chevron {
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.nav-chevron[data-expanded='false'] {
+  transform: rotate(-90deg);
+}
+
+[dir='rtl'] .nav-chevron[data-expanded='false'] {
+  transform: rotate(90deg);
+}

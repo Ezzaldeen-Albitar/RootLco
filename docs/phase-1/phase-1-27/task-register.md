@@ -193,3 +193,47 @@ documentation-only `P1-G27` gate record get written.
 
 Silence is not Pass. P1-26 was closed once on unproven claims and had to be
 reopened; that is why this sentence is here.
+
+---
+
+## Owner-acceptance remediation — `OA-01` … `OA-09`
+
+The Owner tested the merged application on 2026-08-06 and returned
+`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects. **P1-27 is reopened.**
+The result and the disposition of every defect are in
+[`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md).
+
+The implementation total above is unchanged and is now beside the point: 42 / 42
+tasks were complete, every automated tier was green, and the product was still
+rejected. The tasks below are what that rejection actually cost.
+
+| id      | task                                                                   | defect                    | evidence                                                 |
+| ------- | ---------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------- |
+| `OA-01` | Password reveal control inside the field, product-wide                 | 1                         | `PasswordField`; `M-OA-01` … `M-OA-03`                   |
+| `OA-02` | Subtle overlay scrollbar on the sidebar navigation                     | 2                         | `_scrollbars.scss`; `M-OA-07` … `M-OA-09`                |
+| `OA-03` | Every sidebar parent a controlled disclosure, with animation           | 3, 4                      | `Sidebar.tsx`; `M-OA-04` … `M-OA-06`                     |
+| `OA-04` | Add Individual / Add Company from the page header and the empty result | 5                         | `CustomerCreateActions`; `M-OA-10`, `M-OA-11`, `M-OA-15` |
+| `OA-05` | Duplicate queues named, iconed and introduced in business language     | 7                         | navigation, catalogues                                   |
+| `OA-06` | Match evidence rendered as sentences with a confidence band            | 8                         | `MatchExplanation`; `M-OA-12` … `M-OA-14`                |
+| `OA-07` | Wording audit across both catalogues, plus `validate:plain-language`   | 9                         | 24 rules; `M-OA-16`, `M-OA-17`                           |
+| `OA-08` | `validate:web-theme` — 51 colour utilities that emitted no CSS         | not reported by the Owner | `M-OA-18`                                                |
+| `OA-09` | Workshop workflow and vehicle-catalogue documentation                  | 10, 11                    | `docs/product/` — **planning only, nothing implemented** |
+
+### What `OA-09` is not
+
+It is ten documents and an integration-findings register. It is not an
+implementation of the workshop journey, and it does not authorise one. Every
+document says so in its own header, and `docs/product/README.md` §5 states the
+controlled sequence by which each finding becomes real work in a later phase.
+
+### What is still not done, and is not claimed
+
+- **Defect 6, in full.** Both customer creation paths are now reachable and
+  clearly labelled. The fourteen progressive sections the Owner listed are not
+  built: most name fields whose backend contract this phase has not audited, and
+  this phase's own record contains four separate failures caused by guessing a
+  contract. That work belongs in a Frontend wave with contract archaeology in
+  front of it.
+- **A candidate count on either duplicate queue.** The read publishes no total,
+  so any count would be fabricated.
+- **Vehicle document creation.** No create operation exists.

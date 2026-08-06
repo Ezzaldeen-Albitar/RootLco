@@ -82,7 +82,7 @@ export function VehicleDocumentsSection({
             {translate(messages, 'vehicles.documents.vehicleNotFound')}
           </p>
         ) : (
-          <p role="alert" className="mt-2 text-body text-status-danger">
+          <p role="alert" className="mt-2 text-body text-error">
             {translate(messages, 'vehicles.documents.readFailed')}
             {state.correlationId ? (
               <code className="ms-2 font-mono text-caption">{state.correlationId}</code>

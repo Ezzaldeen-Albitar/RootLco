@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useState } from 'react';
-import { TextField } from '@/components/forms/Field';
+import { useActionState } from 'react';
+import { PasswordField, TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -37,7 +37,6 @@ export function LoginForm({
   readonly messages: Messages;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(loginAction, IDLE);
-  const [revealed, setRevealed] = useState(false);
   const fieldError = (name: string) => {
     const key = state.fieldErrors?.[name];
     return key ? translate(messages, key as keyof Messages) : undefined;
@@ -59,35 +58,29 @@ export function LoginForm({
         error={fieldError('email')}
       />
 
-      <div className="flex flex-col gap-1.5">
-        <TextField
-          name="password"
-          type={revealed ? 'text' : 'password'}
-          label={translate(messages, 'auth.login.password')}
-          required
-          autoComplete="current-password"
-          error={fieldError('password')}
-        />
-        {/*
-          A toggle, not a permanent reveal, and it defaults to hidden. It exists
-          because the alternative to seeing what you typed is retyping a long
-          password until it works — which is the behaviour that produces short,
-          memorable ones.
+      {/*
+        The reveal control lives INSIDE the field, in `PasswordField`. It used to
+        be a text button underneath, which the Product Owner rejected at Owner
+        acceptance: a control below the input reads as an action on the form
+        rather than as part of the field, and on a narrow viewport the error
+        message pushes it away from the input it belongs to.
 
-          `aria-pressed` carries the state, so the control announces whether the
-          password is currently visible rather than only naming the action. The
-          field keeps `autoComplete="current-password"` in both modes: changing
-          it on reveal is what stops a password manager filling the form.
-        */}
-        <button
-          type="button"
-          onClick={() => setRevealed(!revealed)}
-          aria-pressed={revealed}
-          className="self-start text-caption text-text-secondary underline-offset-2 hover:text-primary hover:underline"
-        >
-          {translate(messages, revealed ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-        </button>
-      </div>
+        A toggle, not a permanent reveal, and it defaults to hidden. It exists
+        because the alternative to seeing what you typed is retyping a long
+        password until it works — which is the behaviour that produces short,
+        memorable ones. The field keeps `autoComplete="current-password"` in both
+        modes: changing it on reveal is what stops a password manager filling the
+        form.
+      */}
+      <PasswordField
+        name="password"
+        label={translate(messages, 'auth.login.password')}
+        required
+        autoComplete="current-password"
+        error={fieldError('password')}
+        showLabel={translate(messages, 'field.password.show')}
+        hideLabel={translate(messages, 'field.password.hide')}
+      />
 
       <SubmitButton
         label={translate(messages, 'auth.login.submit')}

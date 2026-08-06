@@ -52,6 +52,10 @@ describe('the navigation model', () => {
       'administration',
       'administration.approvalLimits',
       'administration.auditLog',
+      // The parent row became a DISCLOSURE at Owner acceptance — it opens and
+      // closes its children instead of navigating — so `/administration` needs
+      // a child of its own or the page it serves becomes unreachable.
+      'administration.overview',
       'administration.permissions',
       'administration.roles',
       'administration.users',

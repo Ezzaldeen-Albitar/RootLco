@@ -26,6 +26,7 @@
     "typecheck": "tsc --noEmit",
     "validate:boundary": "node scripts/check-api-boundary.mjs",
     "validate:brand": "node scripts/check-brand-isolation.mjs",
+    "validate:theme": "node scripts/check-tailwind-theme.mjs",
     "validate:tokens": "node scripts/check-design-tokens.mjs"
   },
   "dependencies": {

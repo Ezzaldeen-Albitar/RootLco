@@ -163,11 +163,7 @@ function Note({
     | 'vehicles.vin.checkUnavailable';
 }) {
   const className =
-    tone === 'danger'
-      ? 'text-status-danger'
-      : tone === 'success'
-        ? 'text-status-success'
-        : 'text-text-muted';
+    tone === 'danger' ? 'text-error' : tone === 'success' ? 'text-success' : 'text-text-muted';
   return (
     <p role={tone === 'danger' ? 'alert' : 'status'} className={`mt-1 text-caption ${className}`}>
       {translate(messages, messageKey)}

@@ -244,6 +244,10 @@ jobs:
           # OIR-01 is open, so both tiers hold a placeholder. This fails the
           # moment one of them holds a real name and the other does not.
           npm run validate:product-name
+          # The product speaks to receptionists and technicians. No JSON, no
+          # UUIDs, no permission codes, no snake_case identifiers, no raw
+          # translation keys — in either language.
+          npm run validate:plain-language
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -492,6 +496,11 @@ jobs:
         run: |
           set -euo pipefail
           npm run validate:web-tokens
+          # Every colour utility the source uses must resolve to a theme entry.
+          # Tailwind emits nothing for a name it does not know and says nothing
+          # about it, so `bg-brand-primary` sat in fourteen components with no
+          # rule behind it until Owner acceptance.
+          npm run validate:web-theme
           npm run validate:web-brand
           npm run validate:notification-authority
           # No fetch outside the API layer, no import of API server or Supabase

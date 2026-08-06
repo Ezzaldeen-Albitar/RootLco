@@ -27,6 +27,13 @@ const config: Config = {
         surface: 'var(--color-surface)',
         'surface-subtle': 'var(--color-surface-subtle)',
         'surface-raised': 'var(--color-surface-raised)',
+        // The printed sheet. `--color-paper` has existed since P1-25 and the
+        // print stylesheet remaps three surfaces onto it, but the utility was
+        // never registered here — so `bg-paper` in `PrintDocument` resolved to
+        // nothing and the document had no background of its own. Same class of
+        // silent failure as the invented `brand-*`/`status-*` names this
+        // remediation removed; see `tests/tailwind-theme.test.ts`.
+        paper: 'var(--color-paper)',
         overlay: 'var(--color-overlay)',
         skeleton: 'var(--color-skeleton)',
         'text-primary': 'var(--color-text-primary)',

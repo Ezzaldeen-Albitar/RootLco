@@ -46,6 +46,21 @@ const CURRENCY =
   'npx vitest run --config vitest.config.backend.ts tests/backend/p1-22-currency-coherence.test.ts';
 
 /**
+ * P1-27 Owner-acceptance verifiers.
+ *
+ * These run inside `apps/web`, which is its own workspace with its own Vitest
+ * configuration — hence the `cwd` field below. A mutation "caught" by a suite
+ * that never loaded its config would be caught by the config failing, which
+ * proves nothing about the guarantee.
+ */
+const WEB_ACCEPTANCE = 'npx vitest run tests/p1-27-owner-acceptance.dom.test.tsx';
+const WEB_VEHICLES = 'npx vitest run tests/vehicle-screens.dom.test.tsx';
+const WEB_SEARCH = 'npx vitest run tests/crm-customer-search.test.ts';
+const WEB = 'apps/web';
+const PLAIN_LANGUAGE = 'npx vitest run tests/ci/plain-language-gate.test.ts';
+const THEME = 'npx vitest run tests/ci/tailwind-theme-gate.test.ts';
+
+/**
  * Every `verify` command is a literal from this frozen table. Nothing here is
  * built from an argument, an environment variable or a file — the only inputs
  * this script has are the ones written below.
@@ -474,11 +489,218 @@ const MUTATIONS = Object.freeze([
     to: '      return { body: eligibility };',
     verify: DELIVERY,
   },
+
+  /**
+   * ---- P1-27 Owner-acceptance remediation ---------------------------------
+   *
+   * The Product Owner returned FAIL against a build that had 767 green unit
+   * tests, a green anonymous browser tier and a green authenticated browser
+   * tier. Every defect they found was invisible to all three.
+   *
+   * So for this remediation, "the tests pass" is not the claim. The claim is
+   * that undoing each fix turns a specific test red, and each entry below is
+   * that claim executed: it restores the exact defect the Owner reported and
+   * asserts the suite notices.
+   */
+  {
+    id: 'M-OA-01',
+    target: 'apps/web/src/components/forms/Field.tsx',
+    claim:
+      'the password reveal control is positioned INSIDE the field — the Owner rejected a control rendered below the input, where an error message separates it from the field it belongs to',
+    from: '            className="absolute end-1 flex h-8 w-8 items-center justify-center rounded-md',
+    to: '            className="mt-2 flex h-8 w-8 items-center justify-center rounded-md',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-02',
+    target: 'apps/web/src/components/forms/Field.tsx',
+    claim:
+      'the reveal control cannot submit the form — a bare button inside a form defaults to submit, so revealing a password would attempt a sign-in',
+    from: '            // Not `submit`. A bare button inside a form submits it, and the\n            // whole point of this control is that it does not.\n            type="button"',
+    to: '            type="submit"',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-03',
+    target: 'apps/web/src/components/forms/Field.tsx',
+    claim:
+      'the input element is patched rather than replaced, so the typed password survives the toggle',
+    from: "            type={revealed ? 'text' : 'password'}",
+    to: "            type={'password'}",
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-04',
+    target: 'apps/web/src/components/shell/Sidebar.tsx',
+    claim:
+      'a sidebar parent is a disclosure — the Owner reported Administration as "always expanded, with no clear expand/collapse arrow"',
+    from: '  const isDisclosure = hasChildren && !collapsed;',
+    to: '  const isDisclosure = false;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-05',
+    target: 'apps/web/src/components/shell/Sidebar.tsx',
+    claim:
+      'a group containing the current page opens itself — otherwise a collapsed sidebar makes the page the operator is on impossible to locate',
+    from: '  const expanded = overrides[item.key] ?? withinGroup;',
+    to: '  const expanded = overrides[item.key] ?? false;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-06',
+    target: 'apps/web/src/components/shell/Sidebar.tsx',
+    claim:
+      'a closed group is inert — zero height is not zero focusability, and without it six invisible links stay in the tab order',
+    from: '          inert={!expanded}',
+    to: '          inert={false}',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-07',
+    target: 'apps/web/src/components/shell/Sidebar.tsx',
+    claim:
+      'the navigation carries the subtle-scrollbar treatment — without it Windows draws its ~15px classic channel down the shell’s most prominent surface',
+    from: '        className="subtle-scrollbar-on-dark relative min-h-0 flex-1 overflow-y-auto',
+    to: '        className="relative min-h-0 flex-1 overflow-y-auto',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-08',
+    target: 'apps/web/src/styles/base/_scrollbars.scss',
+    claim: 'the scrollbar is narrow rather than the operating system default width',
+    from: '  scrollbar-width: thin;',
+    to: '  scrollbar-width: auto;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-09',
+    target: 'apps/web/src/styles/base/_scrollbars.scss',
+    claim:
+      'the thumb is transparent at rest and appears on interaction — a permanently painted thumb is the defect, only thinner',
+    from: '  scrollbar-color: transparent transparent;\n  transition: scrollbar-color var(--duration-base) var(--ease-standard);\n\n  &::-webkit-scrollbar-thumb {\n    background-color: transparent;\n  }\n\n  &:hover,\n  &:focus-within {',
+    to: '  scrollbar-color: var(--color-sidebar-text-muted) transparent;\n\n  &:hover,\n  &:focus-within {',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-10',
+    target: 'apps/web/src/features/crm/customers/components/CustomerCreateActions.tsx',
+    claim:
+      'the Add Customer actions render — the Owner reported "Customer Search has no clear Add Customer action"',
+    from: '  if (!canCreate) return null;',
+    to: '  return null;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-11',
+    target: 'apps/web/src/features/crm/customers/components/CustomerCreateActions.tsx',
+    claim:
+      'the actions are ABSENT without the permission, not merely quiet — a disabled control asserts the capability exists and this operator lacks it',
+    from: '  if (!canCreate) return null;',
+    to: '  if (false) return null;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-12',
+    target: 'apps/web/src/lib/duplicates/explanations.ts',
+    claim:
+      'an unrecognised comparison never reaches the operator by its internal name — a fallback that echoes the signal reintroduces the defect the first time the backend adds one',
+    from: '  return unrecognised ? [...known, UNKNOWN_REASON] : known;',
+    to: '  return unrecognised ? [...known, ...signals] : known;',
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-13',
+    target: 'apps/web/src/features/vehicles/components/VehicleDuplicateReviewScreen.tsx',
+    claim:
+      'the vehicle review panel explains the match in sentences rather than printing the stored evidence',
+    from: '      <MatchExplanation\n        locale={locale}\n        messages={messages}\n        score={candidate.matchScore}\n        bands={VEHICLE_CONFIDENCE_BANDS}\n        reasonKeys={vehicleMatchReasons(candidate.matchBasis)}\n      />',
+    to: '      <pre>{JSON.stringify(candidate.matchBasis, null, 2)}</pre>',
+    verify: WEB_VEHICLES,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-14',
+    target: 'apps/web/src/lib/duplicates/score.ts',
+    claim:
+      'the confidence band is derived from the score — without it every pair reads the same and the band stops being information',
+    from: "  if (percent >= bands.strong) return 'strong';",
+    to: "  if (false) return 'strong';",
+    verify: WEB_ACCEPTANCE,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-15',
+    target: 'apps/web/src/app/[locale]/(dashboard)/crm/customers/page.tsx',
+    claim:
+      'the customer search page mounts the creation actions in its header, not only under an empty result',
+    from: '        actions={\n          <CustomerCreateActions',
+    to: '        actionsRemovedByMutation={\n          <CustomerCreateActions',
+    verify: WEB_SEARCH,
+    cwd: WEB,
+  },
+  {
+    id: 'M-OA-16',
+    target: 'apps/web/src/i18n/messages/en.json',
+    claim:
+      'no shipped message is a raw translation key — `translate` returns the key when a message is missing, and a key pasted in as its own value makes that failure permanent and invisible',
+    from: '  "duplicates.reasonsHeading": "Why these records were matched",',
+    to: '  "duplicates.reasonsHeading": "duplicates.reasonsHeading",',
+    verify: PLAIN_LANGUAGE,
+  },
+  {
+    id: 'M-OA-17',
+    target: 'apps/web/src/i18n/messages/en.json',
+    claim: 'no shipped message names an internal identifier at a workshop employee',
+    from: '  "crm.duplicates.reason.name": "Both records use the same name, once spacing and capital letters are ignored.",',
+    to: '  "crm.duplicates.reason.name": "The normalized_name signal fired on match_basis.",',
+    verify: PLAIN_LANGUAGE,
+  },
+  {
+    id: 'M-OA-18',
+    target: 'apps/web/tailwind.config.ts',
+    claim:
+      'every colour utility resolves — Tailwind emits nothing for a name it does not know and says nothing about it, which is how 51 utilities across 14 components shipped with no CSS behind them',
+    from: "        primary: 'var(--color-primary)',",
+    to: "        primaryRenamedByMutation: 'var(--color-primary)',",
+    verify: THEME,
+  },
 ]);
+
+/**
+ * `--only=<prefix>` runs one family.
+ *
+ * The backend families need a live PostgreSQL; the P1-27 families do not. Being
+ * able to run `--only=M-27` is what makes the frontend matrix usable during a
+ * remediation instead of something that is only ever run once at the end.
+ *
+ * The prefix filters ids, which are literals in the frozen table above — no
+ * argument reaches a command.
+ */
+const onlyArgument = process.argv.find((argument) => argument.startsWith('--only='));
+const only = onlyArgument ? onlyArgument.slice('--only='.length) : null;
+const selected = only ? MUTATIONS.filter((mutation) => mutation.id.startsWith(only)) : MUTATIONS;
+
+if (only && selected.length === 0) {
+  console.error(`--only=${only} matched no mutation. Nothing was run.`);
+  process.exit(2);
+}
 
 const results = [];
 
-for (const mutation of MUTATIONS) {
+for (const mutation of selected) {
   const targetPath = fromRoot(mutation.target);
   const original = readFileSync(targetPath, 'utf8');
 
@@ -500,12 +722,30 @@ for (const mutation of MUTATIONS) {
   try {
     writeFileSync(targetPath, mutated);
     try {
-      execSync(mutation.verify, { stdio: 'pipe', encoding: 'utf8' });
+      // `cwd` because the web workspace holds its own Vitest configuration. A
+      // mutation "caught" by a run that never loaded its config would be caught
+      // by the config failing, which proves nothing about the guarantee.
+      execSync(mutation.verify, {
+        stdio: 'pipe',
+        encoding: 'utf8',
+        ...(mutation.cwd ? { cwd: fromRoot(mutation.cwd) } : {}),
+      });
       outcome = 'the suite PASSED against mutated source';
     } catch (error) {
       caught = true;
       const text = `${error.stdout ?? ''}${error.stderr ?? ''}`;
-      const failed = text.match(/Tests\s+\S*\s*(\d+) failed/);
+      /*
+       * `\s+(\d+)\s+failed`, not `\s+\S*\s*(\d+) failed`.
+       *
+       * The old pattern reported "0 test(s) failed" for a run in which ten
+       * tests failed: `\S*` swallowed "1" out of "10", backtracking left `(\d+)`
+       * matching the "0", and the harness printed a count that was the last
+       * DIGIT rather than the number. Found while investigating a `CAUGHT — 0
+       * test(s) failed` line on the P1-27 matrix, which is exactly the shape of
+       * a mutation caught by something other than the guarantee it targets —
+       * and which therefore has to be explained rather than accepted.
+       */
+      const failed = text.match(/Tests\s+(\d+)\s+failed/);
       outcome = failed
         ? `${failed[1]} test(s) failed`
         : /error TS\d+|Transform failed|SyntaxError/.test(text)

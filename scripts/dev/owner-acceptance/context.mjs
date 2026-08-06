@@ -194,13 +194,46 @@ export const OWNER_PERMISSIONS = Object.freeze([
   ...new Set([...ADMIN_PERMISSIONS, ...CRM_VEHICLE_PERMISSIONS]),
 ]);
 
-/** What a read-only operator holds, for the permission-denied evidence. */
+/**
+ * What a read-only, branch-scoped operator holds.
+ *
+ * ## Why the CRM and Vehicle read codes were added
+ *
+ * This set used to be five Administration read codes and nothing else. That
+ * made the reader account useless for the review the Product Owner asked for
+ * after `OWNER ACCEPTANCE: FAIL`: §29 lists customer search, customer profile,
+ * vehicle search and both duplicate queues among the surfaces to check as a
+ * read-only user, and with no CRM or Vehicle code every one of them was a
+ * permission denial. "Everything is denied" evidences the denial state; it
+ * evidences nothing about whether a read-only operator can USE the product.
+ *
+ * With `crm.customer.read` and `veh.vehicle.read` the account browses customers
+ * and vehicles and the write affordances are absent — which is the distinction
+ * worth looking at, and the one an operator would actually notice.
+ *
+ * ## What is still deliberately withheld, and what each absence proves
+ *
+ *   - `crm.customer.create` — the Add Customer actions must NOT render. That is
+ *     the permission rule of the control this remediation added, checked in a
+ *     real browser rather than only in a unit test.
+ *   - every `*.write`, `*.manage` and `*.record` code — no mutation surface.
+ *   - `crm.customer.duplicate.review` and `veh.vehicle.duplicate.review` — both
+ *     queues must be absent from the sidebar entirely. Each queue is gated on
+ *     its OWN code precisely because reviewing whether two records are the same
+ *     person is a different capability from reading a customer.
+ *
+ * The account is also branch-scoped (Company A, Branch A), so it carries both
+ * properties §29 names. They are not separable on this one account, and that is
+ * stated rather than presented as two independent checks.
+ */
 export const READER_PERMISSIONS = Object.freeze([
   'iam.user.read',
   'iam.role.read',
   'org.tenant.read',
   'org.company.read',
   'org.branch.read',
+  'crm.customer.read',
+  'veh.vehicle.read',
 ]);
 
 /**

@@ -185,7 +185,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-on-brand disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
         >
           {translate(messages, pending ? 'form.saving' : 'form.submit')}
         </button>
@@ -262,7 +262,7 @@ function CreationOutcome({
               <li key={match.id}>
                 <Link
                   href={`/${locale}/crm/customers/${match.id}`}
-                  className="text-link underline-offset-2 hover:underline"
+                  className="text-primary underline-offset-2 hover:underline"
                 >
                   {match.displayName}
                 </Link>
@@ -280,7 +280,7 @@ function CreationOutcome({
       <div className="flex flex-wrap gap-2">
         <Link
           href={`/${locale}/crm/customers/${created.customerId}`}
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-on-brand"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
         >
           {translate(messages, 'crm.customers.create.openCreated')}
         </Link>

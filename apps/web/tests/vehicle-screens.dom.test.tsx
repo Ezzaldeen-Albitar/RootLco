@@ -67,7 +67,22 @@ const CANDIDATE = {
   vehicleIdA: 'a1b2c3d4-0000-4000-8000-000000000001',
   vehicleIdB: 'a1b2c3d4-0000-4000-8000-000000000002',
   matchScore: '0.930',
-  matchBasis: { signals: [{ signal: 'vin_collision', weight: 1 }] },
+  /*
+   * The REAL shape, from `scoreComparison` in
+   * `apps/api/src/modules/vehicle/domain/vehicle-identity.ts`: a flat array of
+   * `{ basis, classification, weight }`.
+   *
+   * This fixture used to be `{ signals: [{ signal: 'vin_collision', weight: 1 }] }`
+   * — an object rather than an array, and carrying the CRM detector's `signal`
+   * key rather than the vehicle detector's `basis` key. Neither shape the
+   * backend produces. It went unnoticed because the assertion it fed only ran
+   * `JSON.stringify` over it and looked for a substring, which any shape
+   * containing that word would satisfy.
+   */
+  matchBasis: [
+    { basis: 'vin_collision', classification: 'restricted', weight: 0.7 },
+    { basis: 'make_model_year_similarity', classification: 'internal', weight: 0.2 },
+  ],
   status: 'open',
   detectedAt: '2026-08-04T10:00:00.000Z',
   reviewedBy: null,
@@ -269,12 +284,57 @@ describe('the vehicle duplicate queue', () => {
     );
   });
 
-  it('shows the match basis as data rather than as a sentence about it', async () => {
+  /**
+   * Owner acceptance reversed this test's premise.
+   *
+   * It used to assert that the panel printed `vin_collision` — the stored
+   * evidence, rendered as JSON. The Product Owner's finding: "Duplicate-review
+   * screens do not explain, in normal business language, why records may be
+   * duplicates." So the requirement is now the opposite, and it is asserted in
+   * both directions: the sentence must be there AND the signal name must not.
+   */
+  it('explains the match in business language', async () => {
     const user = userEvent.setup();
     render();
     await screen.findByText('93%');
     await user.click(screen.getByRole('button', { name: en['crm.duplicates.review'] }));
-    expect(screen.getByText(/vin_collision/)).toBeInTheDocument();
+
+    expect(screen.getByText(en['vehicles.duplicates.reason.vin'])).toBeInTheDocument();
+    expect(screen.getByText(en['vehicles.duplicates.reason.makeModelYear'])).toBeInTheDocument();
+    // The system warns; a person decides. The most important sentence here.
+    expect(screen.getByText(en['duplicates.warningNotDecision'])).toBeInTheDocument();
+  });
+
+  it('renders no internal signal name and no evidence JSON', async () => {
+    const user = userEvent.setup();
+    const { container } = render();
+    await screen.findByText('93%');
+    await user.click(screen.getByRole('button', { name: en['crm.duplicates.review'] }));
+
+    const text = container.textContent ?? '';
+    for (const signal of [
+      'vin_collision',
+      'plate_collision',
+      'make_model_year_similarity',
+      'classification',
+      'restricted',
+      'weight',
+    ]) {
+      expect(text, `${signal} reached the screen`).not.toContain(signal);
+    }
+    // A `<pre>` is how the evidence used to arrive. Nothing renders one now.
+    expect(container.querySelector('pre')).toBeNull();
+  });
+
+  it('names a confidence band a workshop employee can act on', async () => {
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('93%');
+    await user.click(screen.getByRole('button', { name: en['crm.duplicates.review'] }));
+    // 0.93 is at or above the vehicle strong band (90).
+    expect(screen.getByTestId('match-confidence')).toHaveTextContent(
+      en['duplicates.confidence.strong']
+    );
   });
 });
 
