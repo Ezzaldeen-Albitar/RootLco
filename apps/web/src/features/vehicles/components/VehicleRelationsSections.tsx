@@ -65,7 +65,7 @@ export function EvProfileSection({
   if (state.status !== 'ok') {
     return (
       <section className="rounded-lg border border-border bg-surface p-4" role="alert">
-        <p className="text-body text-status-danger">
+        <p className="text-body text-error">
           {/* A failed read is NOT "no profile". Collapsing them would tell an
               operator a battery-electric vehicle has no battery recorded. */}
           {translate(messages, 'vehicles.ev.readFailed')}
@@ -133,10 +133,7 @@ export function EvProfileSection({
         // A safety flag the workshop set on this vehicle. It is reported exactly
         // as recorded — nothing here infers it from the battery size or the
         // powertrain, because a safety claim nobody made is worse than none.
-        <p
-          role="status"
-          className="mt-3 rounded-md bg-status-warning/15 p-2 text-body text-status-warning"
-        >
+        <p role="status" className="mt-3 rounded-md bg-warning/15 p-2 text-body text-warning">
           {translate(messages, 'vehicles.ev.highVoltage')}
         </p>
       ) : null}

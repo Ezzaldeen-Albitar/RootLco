@@ -147,7 +147,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
           <button
             type="submit"
             disabled={blocked}
-            className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
           >
             {translate(messages, 'vehicles.search.submit')}
           </button>

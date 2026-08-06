@@ -124,7 +124,7 @@ export function VehicleProfileScreen({
                   className={[
                     'rounded-t-md px-3 py-2 text-body',
                     active
-                      ? 'border-b-2 border-brand-primary font-medium text-text-primary'
+                      ? 'border-b-2 border-primary font-medium text-text-primary'
                       : 'text-text-secondary',
                   ].join(' ')}
                 >
@@ -288,7 +288,7 @@ function ProfileHeader({
           </code>
         ) : null}
         {frozen ? (
-          <span className="rounded-md bg-status-warning/15 px-2 py-0.5 text-caption text-status-warning">
+          <span className="rounded-md bg-warning/15 px-2 py-0.5 text-caption text-warning">
             {translate(messages, 'vehicles.profile.frozenBadge')}
           </span>
         ) : null}
@@ -507,7 +507,7 @@ function EditPanel({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
         >
           {pending ? translate(messages, 'form.pending') : translate(messages, 'form.submit')}
         </button>
@@ -610,7 +610,7 @@ function Outcome({
   return (
     <p
       role={failed ? 'alert' : 'status'}
-      className={`text-body ${failed ? 'text-status-danger' : 'text-status-success'}`}
+      className={`text-body ${failed ? 'text-error' : 'text-success'}`}
     >
       {translateDynamic(messages, state.messageKey)}
       {state.correlationId ? (

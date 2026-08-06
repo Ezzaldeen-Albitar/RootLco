@@ -203,9 +203,51 @@ describe('the screen searches on intent, not on a keystroke', () => {
     expect(screen.toLowerCase()).not.toContain('email');
   });
 
-  it('shows a create action only after an empty result, and only with permission', () => {
-    expect(screen).toContain('canCreate &&');
-    expect(screen).toContain('rows.length === 0');
+  /**
+   * Owner acceptance widened this.
+   *
+   * "Customer Search has no clear Add Customer action." The contextual offer
+   * under an empty result was the ONLY way into customer creation, which meant
+   * an operator had to run a search that failed before the product would admit
+   * that creating a customer was possible.
+   *
+   * The actions now live in the page header as well, and `CustomerCreateActions`
+   * owns the permission rule for both call sites. The empty-result offer stays —
+   * it is where "this customer is new" is actually thought — and it now carries
+   * the sentence that says what happened to the search.
+   */
+  it('offers customer creation from the page header, not only from an empty result', () => {
+    const page = readFileSync(
+      join(ROOT, 'apps/web/src/app/[locale]/(dashboard)/crm/customers/page.tsx'),
+      'utf8'
+    );
+    expect(page).toContain('CustomerCreateActions');
+    expect(page).toMatch(/actions=\{/);
+  });
+
+  it('repeats the offer under an empty result, with a sentence about the search', () => {
+    expect(screen).toContain('noResults');
+    expect(screen).toContain('crm.customers.search.noMatch');
+    expect(screen).toContain('CustomerCreateActions');
+  });
+
+  it('keeps the permission rule in one place, so the two call sites cannot disagree', () => {
+    const actions = readFileSync(
+      join(ROOT, 'apps/web/src/features/crm/customers/components/CustomerCreateActions.tsx'),
+      'utf8'
+    );
+    // Absent, not disabled: a disabled control asserts the capability exists and
+    // this operator lacks it, which invites a request for a permission they may
+    // have no business holding.
+    expect(actions).toContain('if (!canCreate) return null;');
+    // `disabled=` and `aria-disabled`, not the word "disabled": this file's own
+    // docblock explains why the control is absent rather than disabled, and a
+    // bare substring sweep matches its own prose. That mistake has now been made
+    // four times in this phase.
+    expect(actions).not.toMatch(/disabled=/);
+    expect(actions).not.toContain('aria-disabled');
+    // The screen must not re-derive it.
+    expect(screen).not.toMatch(/canCreate\s*&&\s*noResults/);
   });
 });
 

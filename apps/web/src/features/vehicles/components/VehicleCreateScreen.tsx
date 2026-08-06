@@ -324,7 +324,7 @@ export function VehicleCreateScreen({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse disabled:opacity-60"
         >
           {pending
             ? translate(messages, 'form.pending')
@@ -332,7 +332,7 @@ export function VehicleCreateScreen({
         </button>
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
-          <p role="alert" className="text-body text-status-danger">
+          <p role="alert" className="text-body text-error">
             {translateDynamic(messages, state.messageKey)}
             {state.correlationId ? (
               <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
@@ -431,7 +431,7 @@ function CatalogueSelect({
       </p>
 
       {error ? (
-        <p role="alert" className="mt-1 text-caption text-status-danger">
+        <p role="alert" className="mt-1 text-caption text-error">
           {translateDynamic(messages, error)}
         </p>
       ) : null}
@@ -465,10 +465,7 @@ function CreationOutcome({
       aria-labelledby="vehicle-created-heading"
       className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
     >
-      <h2
-        id="vehicle-created-heading"
-        className="text-section-title font-medium text-status-success"
-      >
+      <h2 id="vehicle-created-heading" className="text-section-title font-medium text-success">
         {translate(messages, 'vehicles.create.created')}
       </h2>
 
@@ -568,7 +565,7 @@ function TextField({
         {translateDynamic(messages, hintKey)}
       </p>
       {error ? (
-        <p role="alert" className="mt-1 text-caption text-status-danger">
+        <p role="alert" className="mt-1 text-caption text-error">
           {translateDynamic(messages, error)}
         </p>
       ) : null}

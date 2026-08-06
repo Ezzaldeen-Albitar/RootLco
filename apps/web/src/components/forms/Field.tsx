@@ -2,6 +2,7 @@
 
 import {
   useId,
+  useState,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
@@ -165,6 +166,136 @@ export function TextField({
         </div>
       )}
     </FieldFrame>
+  );
+}
+
+/**
+ * A password field whose reveal control lives INSIDE the field.
+ *
+ * ## Why this is a component and not a prop on `TextField`
+ *
+ * `TextField`'s `trailingIcon` is `pointer-events-none` — deliberately, because
+ * every other trailing glyph is decoration and must not eat a click aimed at the
+ * input. A reveal toggle is the opposite: it is a real, focusable, clickable
+ * control that owns the end of the field. Making `trailingIcon` interactive to
+ * accommodate it would make every decorative icon in the product a click target.
+ *
+ * ## Why the control is inside the field rather than beneath it
+ *
+ * The Product Owner rejected the previous arrangement — a text button under the
+ * input — at Owner acceptance. A control that sits below the field reads as a
+ * separate action on the form rather than as an attribute of the field it
+ * belongs to, and on a narrow viewport it is separated from its input by the
+ * error message. Inside the field it is where every operator has been taught to
+ * look for it.
+ *
+ * ## The details that are easy to get wrong
+ *
+ *   - **`type="button"`.** A bare `<button>` inside a form defaults to `submit`.
+ *     Revealing a password would submit the sign-in form.
+ *   - **The padding does not change.** `pe-11` is applied in BOTH states, so
+ *     toggling never reflows the input and the caret does not jump.
+ *   - **`end-1`, not `right-1`.** Logical inset, so Arabic RTL puts the control
+ *     at the visual left with no `[dir='rtl']` override.
+ *   - **The input element is not replaced.** Only its `type` attribute changes,
+ *     so React patches the attribute in place and the value survives — a
+ *     conditional that rendered two different inputs would clear it.
+ *   - **`autoComplete` is unchanged by the toggle.** Rewriting it on reveal is
+ *     what stops a password manager filling the form.
+ *   - **The accessible name changes with the state**, and `aria-pressed` carries
+ *     the state, so a screen reader announces whether the password is currently
+ *     visible instead of only naming the action.
+ */
+export function PasswordField({
+  label,
+  description,
+  error,
+  required,
+  optionalHint,
+  showLabel,
+  hideLabel,
+  ...input
+}: BaseFieldProps &
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'id' | 'required' | 'type'> & {
+    /** Accessible name while the password is hidden, e.g. "Show password". */
+    readonly showLabel: string;
+    /** Accessible name while the password is visible, e.g. "Hide password". */
+    readonly hideLabel: string;
+  }) {
+  const [revealed, setRevealed] = useState(false);
+
+  return (
+    <FieldFrame
+      label={label}
+      description={description}
+      error={error}
+      required={required}
+      optionalHint={optionalHint}
+    >
+      {({ controlId, describedBy, invalid, errorId }) => (
+        <div className="relative flex items-center">
+          <input
+            id={controlId}
+            type={revealed ? 'text' : 'password'}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            aria-errormessage={errorId}
+            aria-required={required || undefined}
+            // Reserved in both states, so the toggle never moves the text.
+            className={controlClass(invalid, 'pe-11')}
+            {...input}
+          />
+          <button
+            // Not `submit`. A bare button inside a form submits it, and the
+            // whole point of this control is that it does not.
+            type="button"
+            onClick={() => setRevealed((current) => !current)}
+            aria-pressed={revealed}
+            aria-controls={controlId}
+            aria-label={revealed ? hideLabel : showLabel}
+            title={revealed ? hideLabel : showLabel}
+            data-testid="password-reveal-toggle"
+            // `absolute end-1`: logical, so RTL needs no override. `tabIndex` is
+            // left alone — a button is focusable, and removing it from the tab
+            // order would make the control mouse-only.
+            className="absolute end-1 flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <PasswordRevealIcon revealed={revealed} />
+          </button>
+        </div>
+      )}
+    </FieldFrame>
+  );
+}
+
+/**
+ * The eye glyph.
+ *
+ * `aria-hidden`, because the accessible name lives on the button. A `<title>`
+ * here would be announced a second time and would produce a tooltip the keyboard
+ * cannot reach.
+ */
+function PasswordRevealIcon({ revealed }: { readonly revealed: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
+      <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" />
+      {/* The struck-through eye means "hidden", which is the state the control
+          moves TO. Drawn rather than swapped for a second glyph so the two
+          states share one shape and the change reads as one thing toggling. */}
+      {revealed ? null : <path d="M4.2 4.2 19.8 19.8" />}
+    </svg>
   );
 }
 

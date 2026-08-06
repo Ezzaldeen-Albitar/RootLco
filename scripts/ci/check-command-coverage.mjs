@@ -443,6 +443,12 @@ export const REGISTER = Object.freeze([
     why: 'reached through validate:web-brand',
   },
   {
+    name: 'validate:theme',
+    owner: WEB,
+    tier: 'required',
+    why: 'reached through validate:web-theme',
+  },
+  {
     name: 'validate:boundary',
     owner: WEB,
     tier: 'required',

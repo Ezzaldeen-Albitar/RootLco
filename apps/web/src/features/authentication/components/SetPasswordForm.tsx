@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useActionState } from 'react';
-import { TextField } from '@/components/forms/Field';
+import { PasswordField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -92,24 +92,33 @@ export function SetPasswordForm({
 
       <FormFeedback state={state} messages={messages} />
 
-      <TextField
+      {/*
+        Both fields carry their own reveal control, inside the field. Choosing a
+        password you cannot see and then confirming a password you cannot see is
+        how a typo becomes an account you are locked out of — and this form is
+        reached from an invitation or a reset link, where the operator has no
+        working password to fall back on.
+      */}
+      <PasswordField
         name="password"
-        type="password"
         label={translate(messages, 'auth.reset.password')}
         description={translate(messages, 'auth.reset.passwordHint')}
         required
         autoComplete="new-password"
         minLength={8}
         error={fieldError('password')}
+        showLabel={translate(messages, 'field.password.show')}
+        hideLabel={translate(messages, 'field.password.hide')}
       />
 
-      <TextField
+      <PasswordField
         name="confirmPassword"
-        type="password"
         label={translate(messages, 'auth.reset.confirmPassword')}
         required
         autoComplete="new-password"
         error={fieldError('confirmPassword')}
+        showLabel={translate(messages, 'field.password.show')}
+        hideLabel={translate(messages, 'field.password.hide')}
       />
 
       <SubmitButton

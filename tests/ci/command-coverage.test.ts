@@ -158,6 +158,10 @@ describe('the live repository', () => {
       'typecheck',
       'validate:boundary',
       'validate:brand',
+      // Added by the P1-27 Owner-acceptance remediation. `bg-brand-primary` and
+      // six other invented colour names resolved to no CSS at all across
+      // fourteen components, and every automated tier stayed green.
+      'validate:theme',
       'validate:tokens',
     ]);
   });

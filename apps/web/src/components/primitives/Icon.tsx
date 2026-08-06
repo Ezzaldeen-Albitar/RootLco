@@ -33,6 +33,9 @@ const PATHS: Record<IconName, readonly string[]> = {
     'M6.6 16.1h.01',
     'M17.4 16.1h.01',
   ],
+  // A triangle with an exclamation: "look at this and decide". Deliberately not
+  // an error glyph — the detector is warning, never deciding.
+  'duplicate-review': ['M12 4.4 21 19.6H3L12 4.4Z', 'M12 10.2v4', 'M12 16.7h.01'],
   appointments: [
     'M4 6.8A1.8 1.8 0 0 1 5.8 5h12.4A1.8 1.8 0 0 1 20 6.8v11.4A1.8 1.8 0 0 1 18.2 20H5.8A1.8 1.8 0 0 1 4 18.2V6.8Z',
     'M4 10h16',

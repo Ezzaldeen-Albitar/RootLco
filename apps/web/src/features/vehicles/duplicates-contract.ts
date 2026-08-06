@@ -41,6 +41,8 @@
  * assumed either would render "null → X" or throw.
  */
 
+import { formatPercent, type ConfidenceBands } from '@/lib/duplicates/score';
+
 /** `veh.duplicate_candidates.status`. */
 export const VEHICLE_DUPLICATE_STATUSES = ['open', 'dismissed', 'merged'] as const;
 export type VehicleDuplicateStatus = (typeof VEHICLE_DUPLICATE_STATUSES)[number];
@@ -125,17 +127,28 @@ export function validateReviewReason(reason: string): string | null {
  * as a confident wrong number.
  */
 export function formatMatchScore(score: string): string | null {
-  const match = /^(\d+)(?:\.(\d*))?$/.exec(score.trim());
-  if (!match) return null;
-
-  const whole = match[1] ?? '0';
-  const fraction = match[2] ?? '';
-  if (whole !== '0' && whole !== '1') return null;
-  if (whole === '1' && /[1-9]/.test(fraction)) return null;
-  if (whole === '1') return '100%';
-
-  const digits = (fraction + '000').slice(0, 3);
-  const tens = Number(digits.slice(0, 2));
-  const roundUp = Number(digits[2]) >= 5;
-  return `${Math.min(100, tens + (roundUp ? 1 : 0))}%`;
+  return formatPercent(score);
 }
+
+/**
+ * Where "strong", "possible" and "needs review" fall for a VEHICLE pair.
+ *
+ * Higher than the customer bands, because this detector is deliberately harder
+ * to satisfy. From `apps/api/src/modules/vehicle/domain/vehicle-identity.ts`:
+ *
+ *   - near-VIN 70 · plate movement 60 · make/model/year 20, on a 0–100 scale
+ *   - the threshold is 80 AND at least one strong signal must have fired, so a
+ *     lone near-VIN (70) is not enough and make/model/year alone (20) can never
+ *     record anything
+ *
+ * So the lowest score that can exist here is 80 — plate movement plus
+ * make/model/year — and every recorded candidate already carries strong
+ * evidence. **90%** is near-VIN plus make/model/year, or both strong signals
+ * together; that is the band worth calling strong. Nothing can land below 80, so
+ * "needs review" is unreachable in practice and is kept only so an unexpected
+ * stored value is not silently promoted to "possible".
+ */
+export const VEHICLE_CONFIDENCE_BANDS: ConfidenceBands = Object.freeze({
+  strong: 90,
+  possible: 80,
+});

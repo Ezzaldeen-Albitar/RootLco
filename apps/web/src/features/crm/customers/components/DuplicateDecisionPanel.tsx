@@ -1,12 +1,15 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { MatchExplanation } from '@/components/duplicates/MatchExplanation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { customerMatchReasons } from '@/lib/duplicates/explanations';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { reviewDuplicateAction } from '../identity-api';
 import {
+  CUSTOMER_CONFIDENCE_BANDS,
   MAX_MERGE_REASON,
   MIN_MERGE_REASON,
   formatMatchScore,
@@ -106,7 +109,13 @@ export function DuplicateDecisionPanel({ locale, messages, candidate, onClose, o
         ))}
       </dl>
 
-      <MatchBasis messages={messages} basis={candidate.matchBasis} />
+      <MatchExplanation
+        locale={locale}
+        messages={messages}
+        score={candidate.matchScore}
+        bands={CUSTOMER_CONFIDENCE_BANDS}
+        reasonKeys={customerMatchReasons(candidate.matchBasis)}
+      />
 
       <DismissForm
         messages={messages}
@@ -134,30 +143,6 @@ export function DuplicateDecisionPanel({ locale, messages, candidate, onClose, o
         </code>
       </p>
     </section>
-  );
-}
-
-/**
- * The evidence, rendered as data rather than prose.
- *
- * Safe to show **by schema, not by review**: `ck_duplicate_candidates_basis`
- * calls `crm.jsonb_no_raw_value_keys`, which rejects a
- * `value`/`raw`/`national_id`/`tax`/`registration`/`date_of_birth` key at any
- * depth. So the basis can only ever say which signals fired and how heavily. It
- * is still printed as JSON rather than interpreted, because inventing a sentence
- * from it would be this screen claiming to know what the detector meant.
- */
-function MatchBasis({ messages, basis }: { readonly messages: Messages; readonly basis: unknown }) {
-  if (basis === null || basis === undefined) return null;
-  return (
-    <div>
-      <h3 className="text-caption text-text-secondary">
-        {translate(messages, 'crm.duplicates.basis')}
-      </h3>
-      <pre className="mt-1 max-h-40 overflow-auto rounded-md bg-surface-subtle p-2 text-caption text-text-primary">
-        <code dir="ltr">{JSON.stringify(basis, null, 2)}</code>
-      </pre>
-    </div>
   );
 }
 
@@ -198,7 +183,7 @@ function DismissForm({
 
       <label htmlFor="duplicate-reason" className="mt-3 block text-caption text-text-secondary">
         {translate(messages, 'crm.customers.restrictions.reason')}
-        <span aria-hidden="true" className="ms-1 text-status-danger">
+        <span aria-hidden="true" className="ms-1 text-error">
           *
         </span>
       </label>
@@ -218,11 +203,7 @@ function DismissForm({
         className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
       />
       {state.fieldErrors?.reason ? (
-        <p
-          id="duplicate-reason-error"
-          role="alert"
-          className="mt-1 text-caption text-status-danger"
-        >
+        <p id="duplicate-reason-error" role="alert" className="mt-1 text-caption text-error">
           {translateDynamic(messages, state.fieldErrors.reason)}
         </p>
       ) : null}
@@ -254,7 +235,7 @@ function Outcome({
   return (
     <p
       role={failed ? 'alert' : 'status'}
-      className={`mt-2 text-body ${failed ? 'text-status-danger' : 'text-status-success'}`}
+      className={`mt-2 text-body ${failed ? 'text-error' : 'text-success'}`}
     >
       {translateDynamic(messages, state.messageKey)}
       {state.correlationId ? (

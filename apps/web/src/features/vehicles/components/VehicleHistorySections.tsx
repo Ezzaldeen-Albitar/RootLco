@@ -48,9 +48,9 @@ function StateBadge({
 }) {
   const tone =
     state === 'in-force'
-      ? 'text-status-success'
+      ? 'text-success'
       : state === 'scheduled'
-        ? 'text-status-warning'
+        ? 'text-warning'
         : 'text-text-muted';
   return (
     <span className={`text-caption ${tone}`}>
@@ -255,7 +255,7 @@ export function OdometerSection({ locale, messages, vehicleId }: OdometerProps) 
         cell: (row) => (
           <span className="flex flex-col gap-0.5">
             {row.anomalyFlag ? (
-              <span className="text-caption text-status-warning">
+              <span className="text-caption text-warning">
                 {translate(messages, 'vehicles.odometer.anomaly')}
               </span>
             ) : null}

@@ -5,7 +5,9 @@ import { useActionState, useCallback, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
+import { MatchExplanation } from '@/components/duplicates/MatchExplanation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { vehicleMatchReasons } from '@/lib/duplicates/explanations';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -13,6 +15,7 @@ import { listVehicleDuplicates, reviewVehicleDuplicateAction } from '../duplicat
 import {
   MAX_REVIEW_REASON,
   MIN_REVIEW_REASON,
+  VEHICLE_CONFIDENCE_BANDS,
   VEHICLE_DUPLICATE_STATUSES,
   formatMatchScore,
   isActionable,
@@ -73,7 +76,7 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
               <Link
                 key={id}
                 href={`/${locale}/vehicles/${id}`}
-                className="text-caption text-brand-primary underline"
+                className="text-caption text-primary underline"
                 dir="ltr"
               >
                 {translate(
@@ -285,11 +288,7 @@ function VehicleDuplicateDecisionPanel({
               )}
             </dt>
             <dd className="text-body">
-              <Link
-                href={`/${locale}/vehicles/${id}`}
-                className="text-brand-primary underline"
-                dir="ltr"
-              >
+              <Link href={`/${locale}/vehicles/${id}`} className="text-primary underline" dir="ltr">
                 {translate(messages, 'vehicles.duplicates.openProfile')}
               </Link>
             </dd>
@@ -297,21 +296,23 @@ function VehicleDuplicateDecisionPanel({
         ))}
       </dl>
 
-      {/* Safe to print BY SCHEMA: `veh.valid_match_basis` rejects raw identifier
-          keys at any depth, so the basis can only say which signals fired and
-          how heavily. Printed as data rather than interpreted — writing a
-          sentence from it would be this screen claiming to know what the
-          detector meant. */}
-      {candidate.matchBasis === null || candidate.matchBasis === undefined ? null : (
-        <div>
-          <h3 className="text-caption text-text-secondary">
-            {translate(messages, 'crm.duplicates.basis')}
-          </h3>
-          <pre className="mt-1 max-h-40 overflow-auto rounded-md bg-surface-subtle p-2 text-caption text-text-primary">
-            <code dir="ltr">{JSON.stringify(candidate.matchBasis, null, 2)}</code>
-          </pre>
-        </div>
-      )}
+      {/*
+        The evidence, as sentences. It used to be `JSON.stringify(matchBasis)` in
+        a `<pre>` — which is what the Product Owner was looking at when they
+        wrote "Duplicate-review screens do not explain, in normal business
+        language, why records may be duplicates".
+
+        The chassis numbers themselves never appear here. `veh.valid_match_basis`
+        already forbids raw identifier values from being stored in the evidence,
+        and this screen additionally never echoes any part of the stored object.
+      */}
+      <MatchExplanation
+        locale={locale}
+        messages={messages}
+        score={candidate.matchScore}
+        bands={VEHICLE_CONFIDENCE_BANDS}
+        reasonKeys={vehicleMatchReasons(candidate.matchBasis)}
+      />
 
       <form action={submit} className="rounded-md border border-border p-3">
         <h3 className="text-body font-medium text-text-primary">
@@ -330,7 +331,7 @@ function VehicleDuplicateDecisionPanel({
           className="mt-3 block text-caption text-text-secondary"
         >
           {translate(messages, 'crm.customers.restrictions.reason')}
-          <span aria-hidden="true" className="ms-1 text-status-danger">
+          <span aria-hidden="true" className="ms-1 text-error">
             *
           </span>
         </label>
@@ -353,7 +354,7 @@ function VehicleDuplicateDecisionPanel({
           <p
             id="vehicle-duplicate-reason-error"
             role="alert"
-            className="mt-1 text-caption text-status-danger"
+            className="mt-1 text-caption text-error"
           >
             {translateDynamic(messages, state.fieldErrors.reason)}
           </p>
@@ -363,7 +364,7 @@ function VehicleDuplicateDecisionPanel({
           <p
             role={state.status === 'success' ? 'status' : 'alert'}
             className={`mt-2 text-body ${
-              state.status === 'success' ? 'text-status-success' : 'text-status-danger'
+              state.status === 'success' ? 'text-success' : 'text-error'
             }`}
           >
             {translateDynamic(messages, state.messageKey)}

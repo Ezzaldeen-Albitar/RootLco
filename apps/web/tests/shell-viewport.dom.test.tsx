@@ -118,7 +118,9 @@ describe('the shell is exactly the viewport, and its regions scroll', () => {
   });
 
   it('scrolls the navigation region internally, below a fixed brand block', () => {
-    expect(sidebar).toMatch(/<nav[\s\S]{0,400}?className="relative min-h-0 flex-1 overflow-y-auto/);
+    expect(sidebar).toMatch(
+      /<nav[\s\S]{0,600}?className="subtle-scrollbar-on-dark relative min-h-0 flex-1 overflow-y-auto/
+    );
     // The brand block must NOT scroll with it.
     expect(sidebar).toMatch(/flex h-16 shrink-0 items-center/);
   });

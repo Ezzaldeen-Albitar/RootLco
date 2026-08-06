@@ -10,6 +10,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { searchCustomers } from '../api';
+import { CustomerCreateActions } from './CustomerCreateActions';
 import {
   LIFECYCLE_STATUSES,
   MAX_CUSTOMER_NUMBER_LENGTH,
@@ -195,33 +196,37 @@ function CustomerSearchResults({
           <button
             type="button"
             onClick={() => router.push(`/${locale}/crm/customers/${row.id}`)}
-            className="text-link underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
           >
             {translate(messages, 'crm.customers.search.open')}
           </button>
         )}
       />
       {/*
-        Offered only after a search that found nothing, and only to someone who
-        could actually create. Showing it to an operator without
-        `crm.customer.create` would put a button in front of them whose only
-        possible outcome is a 403 — and offering it before a search would invite
-        creating a duplicate of a customer they have not looked for yet.
+        Repeated here, under a search that found nothing, because that is where
+        the thought "this customer is new" actually happens. The page header
+        carries the same two actions for the operator who already knows.
+
+        Only to someone who could actually create: showing it to an operator
+        without `crm.customer.create` would put a control in front of them whose
+        only possible outcome is a 403.
+
+        The sentence above them matters as much as the buttons. "No matching
+        customer was found" is a statement about the search; without it, two
+        buttons under an empty table read as an instruction to create rather than
+        as an answer to what was asked.
       */}
-      {canCreate && noResults ? (
-        <div className="flex flex-wrap justify-center gap-2 pb-4">
-          <a
-            href={`/${locale}/crm/customers/new/individual`}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-          >
-            {translate(messages, 'crm.customers.search.createIndividual')}
-          </a>
-          <a
-            href={`/${locale}/crm/customers/new/company`}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
-          >
-            {translate(messages, 'crm.customers.search.createCompany')}
-          </a>
+      {noResults ? (
+        <div className="flex flex-col items-center gap-3 pb-4 text-center">
+          <p className="text-body text-text-secondary">
+            {translate(messages, 'crm.customers.search.noMatch')}
+          </p>
+          <CustomerCreateActions
+            locale={locale}
+            messages={messages}
+            canCreate={canCreate}
+            variant="contextual"
+          />
         </div>
       ) : null}
     </>
@@ -362,7 +367,7 @@ function SearchForm({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="submit"
-          className="rounded-md bg-brand-primary px-4 py-2 text-body font-medium text-on-brand"
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
         >
           {translate(messages, 'crm.customers.search.submit')}
         </button>
