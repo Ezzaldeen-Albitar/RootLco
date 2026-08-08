@@ -27,6 +27,7 @@ import {
   toAuthorizedPartyPlan,
   type AuthorizedPartyInput,
 } from '../domain/vehicle-relations';
+import { namePartners, type Named } from './partner-identity';
 
 export interface AuthorizedPartyResult {
   readonly vehicleId: string;
@@ -151,15 +152,27 @@ export class VehicleRelationsService extends ApplicationService {
     return { vehicleId, relationshipId };
   }
 
-  listRelationships(
+  /**
+   * A vehicle's parties, each **named** (`P1-27-INT-025`).
+   *
+   * The repository read publishes `partner_id` and nothing else, so the
+   * relationships screen rendered a uuid under a column headed with a person's
+   * name. `namePartners` resolves the whole page through the CRM module's public
+   * surface in one statement; see that module for why the join is not written
+   * here and why an unresolvable party is a sentence rather than a failure.
+   */
+  async listRelationships(
     db: DbHandle,
     vehicleId: string,
     page: PageInput
-  ): Promise<Page<RelationshipHit>> {
-    return this.relations.listRelationships(
+  ): Promise<Page<Named<RelationshipHit>>> {
+    return namePartners(
       db,
-      vehicleId,
-      pageRequest(RELATIONSHIP_ORDERING, page)
+      await this.relations.listRelationships(
+        db,
+        vehicleId,
+        pageRequest(RELATIONSHIP_ORDERING, page)
+      )
     );
   }
 
