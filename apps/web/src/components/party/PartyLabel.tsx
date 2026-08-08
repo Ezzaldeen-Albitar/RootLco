@@ -58,16 +58,22 @@ export function PartyLabel({
   // the named branch and render an EMPTY cell. An empty cell says nothing at
   // all, which is worse than the sentence and worse than the identifier.
   //
-  // This is not hypothetical. The Backend half of `P1-27-INT-025` is a separate
-  // pull request, and if the FRONTEND merges first this component renders
-  // against an operation that publishes no partner fields at all — which is
-  // exactly the shape above.
+  // This is not hypothetical. The Backend half of `P1-27-INT-025` ships as a
+  // SEPARATE pull request, so between the two merges one side is always ahead:
   //
-  // (An earlier version of this note had the order backwards. On `develop`
-  // today the relationships cell renders `row.partnerId` directly, so it is
-  // Backend-first that leaves the uuid on screen for one merge window and
-  // Frontend-first that produces the absent-field window this guard covers.
-  // Either order is safe now, which is the point of the guard.)
+  //   Frontend first — the operation publishes no partner fields yet, this
+  //     component receives `undefined`, and the guard is what makes it say the
+  //     sentence instead of rendering an empty cell.
+  //   Backend first — the field is published but the screen consuming it has
+  //     not landed, so a uuid stays on screen for that window.
+  //
+  // Either order is survivable, which is the point of the guard. Whichever
+  // lands second closes the window; neither leaves a blank.
+  //
+  // Deliberately written about the WINDOW rather than about what `develop`
+  // renders today, because "today" stops being true the moment either half
+  // merges — a comment pinned to a transient state is the defect class this
+  // phase keeps finding in its own work.
   //
   // The vehicle attribute-ledger actor cell already uses `== null` for the same
   // reason.
