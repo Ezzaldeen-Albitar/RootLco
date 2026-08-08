@@ -86,8 +86,80 @@ export const USER_ORDERING: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * The minimum a ledger needs to name the person who did something
+ * (`P1-27-INT-026`, `VHM-13`).
+ *
+ * `display_name` and nothing else. Deliberately NOT `AccountRow`: that carries
+ * `email`, `provider_subject`, `status` and `mfa_required`, and a history screen
+ * that wanted a name would have been handed a tenant-wide address book.
+ */
+export interface UserDisplayIdentity {
+  readonly id: string;
+  readonly displayName: string;
+}
+
 export class IdentityRepository extends Repository {
   protected readonly module = 'iam';
+
+  /**
+   * Display names for a set of user ids.
+   *
+   * ## Two columns, one statement, one tenant
+   *
+   * The projection is `id, display_name`. `iam.user_accounts.display_name` is
+   * NOT NULL with a not-blank CHECK, so a resolved id always yields a usable
+   * name. No password material, no provider subject, no session data, no email:
+   * none is selected, and the database refuses the rest independently at the
+   * privilege layer.
+   *
+   * `iam.user_employee_links` is a SEPARATE, temporally-valid table. A user id
+   * is not an employee id, and resolving through the link would answer "which
+   * employee record is current" rather than "who did this" — going wrong for
+   * exactly the historical rows a ledger exists to preserve.
+   *
+   * A soft-deleted account still resolves. The alternative is that every record
+   * written by somebody who has since left becomes anonymous, which is the
+   * opposite of what an audit trail is for.
+   */
+  async findDisplayIdentities(
+    db: DbHandle,
+    userIds: readonly string[]
+  ): Promise<ReadonlyMap<string, UserDisplayIdentity>> {
+    const unique = [...new Set(userIds)];
+    // No ids means no statement. Sending an empty array would be a round trip
+    // that can only return nothing.
+    if (unique.length === 0) return new Map();
+
+    const result = await this.run<{ id: string; display_name: string }>(
+      db,
+      `SELECT id, display_name
+         FROM iam.user_accounts
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+      [db.context.principal.tenantId, unique]
+    );
+
+    return new Map(
+      result.rows.map((row) => [row.id, { id: row.id, displayName: row.display_name }])
+    );
+  }
+
+  /**
+   * Whether this caller may be told a user's name at all.
+   *
+   * `iam.user-detail` is guarded by `iam.user.read`. The reads that hold actor
+   * ids are guarded by their own domain permission, so resolving for everybody
+   * would publish a tenant-wide staff directory to anyone who can open a
+   * vehicle. Checking the capability means this surface can only ever tell a
+   * caller something they were already entitled to ask for one id at a time.
+   */
+  async mayReadUsers(db: DbHandle): Promise<boolean> {
+    const result = await this.run<{ allowed: boolean }>(
+      db,
+      `SELECT iam.has_permission('iam.user.read') AS allowed`
+    );
+    return result.rows[0]?.allowed === true;
+  }
 
   /** Reads an account by its provider identity within the context tenant. */
   async findByProviderSubject(
