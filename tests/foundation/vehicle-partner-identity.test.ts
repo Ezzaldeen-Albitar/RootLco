@@ -45,6 +45,9 @@ vi.mock('@/modules/crm', () => ({
 }));
 
 const { namePartners } = await import('@api/modules/vehicle/application/partner-identity');
+// NOT mocked — the block at the foot of this file drives the real service with a
+// fake repository, which is the only way to execute the entitlement check.
+const { CustomerReadService } = await import('@api/modules/crm/application/customer-read-service');
 
 const DB = {} as never;
 
@@ -169,5 +172,77 @@ describe('this file is not vacuous', () => {
     resolveDisplayIdentities.mockResolvedValue(new Map());
     await namePartners(DB, page([{ partnerId: ALPHA }]));
     expect(resolveDisplayIdentities).toHaveBeenCalled();
+  });
+});
+
+describe('the resolver itself — the entitlement check the fold cannot reach', () => {
+  /*
+   * The block above mocks `@/modules/crm` at the module boundary, so it proves
+   * the FOLD and never executes `resolveDisplayIdentities`. That matters more
+   * than it sounds: the security argument this whole change rests on lives
+   * inside that method, in one line.
+   *
+   * `veh-ownership-visibility-matrix.md:49` grants a caller holding
+   * `veh.vehicle.read` the ownership partner UUID and DENIES them the CRM
+   * columns beside it, and `:36-37` reserves widening to the Owner. Both calling
+   * operations are guarded by `veh.vehicle.read`, not `crm.customer.read`. So
+   * resolving unconditionally would hand a name to a caller the matrix gives an
+   * opaque identifier — a widening, dressed as a bug fix.
+   *
+   * ~20 lines of docblock argue that. Until this block, ZERO tests executed the
+   * line that implements it: the guard could have been deleted and the whole
+   * root tier stayed green. The service takes its repository by constructor, so
+   * reaching it needs no database.
+   */
+  const NAMED = {
+    displayName: 'Layla Haddad',
+    displayNumber: 'C-000482',
+    partyType: 'individual',
+  };
+
+  function serviceWith(mayRead: boolean) {
+    const findDisplayIdentities = vi.fn(async () => new Map([[ALPHA, NAMED]]));
+    const mayReadCustomers = vi.fn(async () => mayRead);
+    const service = new CustomerReadService({
+      mayReadCustomers,
+      findDisplayIdentities,
+    } as never);
+    return { service, findDisplayIdentities, mayReadCustomers };
+  }
+
+  it('resolves names for a caller who holds the CRM read', async () => {
+    const { service, findDisplayIdentities } = serviceWith(true);
+    const map = await service.resolveDisplayIdentities(DB, [ALPHA]);
+    expect(findDisplayIdentities).toHaveBeenCalledTimes(1);
+    expect(map.get(ALPHA)).toEqual(NAMED);
+  });
+
+  it('returns an EMPTY map to a caller who does not, and never queries', async () => {
+    // The narrowing. An unentitled caller now sees "Customer unavailable" where
+    // they used to see a uuid — strictly less information, and the matrix is
+    // untouched. `findDisplayIdentities` must not run at all: issuing the query
+    // and discarding the rows would be the same widening with extra steps.
+    const { service, findDisplayIdentities, mayReadCustomers } = serviceWith(false);
+    const map = await service.resolveDisplayIdentities(DB, [ALPHA]);
+    expect(mayReadCustomers).toHaveBeenCalledTimes(1);
+    expect(findDisplayIdentities).not.toHaveBeenCalled();
+    expect(map.size).toBe(0);
+  });
+
+  it('asks nothing at all for an empty id list', async () => {
+    // One extra statement per page, and only when there is something to resolve.
+    const { service, findDisplayIdentities, mayReadCustomers } = serviceWith(true);
+    const map = await service.resolveDisplayIdentities(DB, []);
+    expect(map.size).toBe(0);
+    expect(mayReadCustomers).not.toHaveBeenCalled();
+    expect(findDisplayIdentities).not.toHaveBeenCalled();
+  });
+
+  it('does not throw for an id it cannot resolve', async () => {
+    // Unlike `readCustomer`, which 404s. A relationship may reference a partner
+    // the caller cannot see, and that is a sentence for the screen to say — not
+    // a request to fail, which would hide six good rows because of one.
+    const { service } = serviceWith(true);
+    await expect(service.resolveDisplayIdentities(DB, [BETA])).resolves.toBeInstanceOf(Map);
   });
 });

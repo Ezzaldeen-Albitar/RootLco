@@ -225,12 +225,22 @@ export const REGISTER = Object.freeze([
     name: 'validate:phase-ownership',
     owner: ROOT,
     tier: 'informational',
-    // Takes a profile and a base ref, so it is invoked per phase branch rather
-    // than from the repository-wide aggregate. P1-26's CI job runs it with the
-    // p1-26-frontend profile; the pre-P1-26 remediation runs it with
-    // api-boundary. Its rule table is proven by tests/ci/phase-ownership.test.ts,
-    // which runs in the required unit tier.
-    why: 'per-phase changed-file ownership; parameterised, so invoked by the phase job not the aggregate',
+    // Takes a profile and a base ref, so it cannot run from the repository-wide
+    // aggregate: the profile is a property of the BRANCH, not of the repository.
+    //
+    // This note used to say "P1-26's CI job runs it with the p1-26-frontend
+    // profile". **No CI job runs it with any profile.** A grep of `.github/`
+    // for `phase-ownership` returns nothing, and it has never returned anything.
+    // It found seven API source files riding inside the P1-27 Frontend branch
+    // because somebody ran it by hand.
+    //
+    // The selection mechanism now exists — `PHASE_OWNERSHIP_PROFILE`, so one job
+    // can pick the profile per branch. The JOB does not, and adding a
+    // repository-wide one at the end of a Frontend remediation would gate every
+    // other phase's pull requests on a rule nobody has agreed to. Recorded as
+    // `P1-27-DO-003`. Its rule table IS proven, by tests/ci/phase-ownership.test.ts
+    // in the required unit tier — the rules are tested; the invocation is not.
+    why: 'per-phase changed-file ownership; parameterised, so it is invoked per branch — and today by a human, not by CI (P1-27-DO-003)',
   },
   {
     name: 'validate:web-topology',

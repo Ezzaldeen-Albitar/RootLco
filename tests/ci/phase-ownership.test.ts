@@ -5,6 +5,8 @@
  * Database change riding inside a Frontend phase: reviewed as Frontend, gated
  * by no Backend job, and invisible until it breaks something in production.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classify, evaluate, PROFILES } from '../../scripts/ci/check-phase-ownership.mjs';
 
@@ -211,6 +213,37 @@ describe('p1-27-frontend profile', () => {
     expect(Object.keys(PROFILES['p1-27-frontend'].forbidden).sort()).toEqual(
       Object.keys(PROFILES['p1-26-frontend'].forbidden).sort()
     );
+  });
+});
+
+describe('every profile is SELECTABLE, not merely declared', () => {
+  it('is reachable by name from the command line or the environment', () => {
+    /*
+     * The gate's npm script passes no argument, so every invocation used the
+     * `p1-26-frontend` default — which forbids `apiSource` and therefore cannot
+     * pass on a Backend branch at all. The two P1-27 profiles were reachable
+     * from no script and no workflow: a profile nothing can select is a
+     * declaration, not a gate, and that is this phase's own recurring defect
+     * appearing in its own tooling.
+     *
+     * Asserted by reading the script, because the selection happens in `main()`
+     * which this file does not call.
+     */
+    const source = readFileSync(
+      join(process.cwd(), 'scripts', 'ci', 'check-phase-ownership.mjs'),
+      'utf8'
+    );
+    expect(source).toContain('process.env.PHASE_OWNERSHIP_PROFILE');
+    expect(source).toContain('process.env.PHASE_OWNERSHIP_BASE');
+    // And every declared profile must be a name `evaluate` accepts, or the
+    // selection mechanism points at nothing.
+    for (const name of Object.keys(PROFILES)) {
+      const { failures } = evaluate(['apps/web/src/x.ts'], name);
+      expect(
+        failures.some((f) => f.includes('unknown ownership profile')),
+        name
+      ).toBe(false);
+    }
   });
 });
 

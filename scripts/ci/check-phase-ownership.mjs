@@ -175,8 +175,26 @@ export function evaluate(changed, profileName) {
 }
 
 function main() {
-  const profileName = process.argv[2] ?? 'p1-26-frontend';
-  const base = process.argv[3] ?? 'origin/develop';
+  /*
+   * Profile selection: argument, then environment, then the default.
+   *
+   * `PHASE_OWNERSHIP_PROFILE` exists because the npm script that invokes this
+   * gate — `validate:phase-ownership` — passes no argument, so every caller got
+   * `p1-26-frontend` whatever branch they were on. That is not a nuisance: on a
+   * BACKEND branch the default forbids `apiSource`, so the gate cannot pass at
+   * all, and the two P1-27 profiles below were reachable from no script and no
+   * workflow. A profile nothing can select is a declaration, not a gate — which
+   * is this phase's own recurring defect, in its own tooling.
+   *
+   * The env var lets one CI job select the profile per branch without a script
+   * per profile. What is still MISSING is that job: grep of `.github/` for
+   * `phase-ownership` returns nothing, so this gate runs only when a human runs
+   * it. Recorded as `P1-27-DO-003` rather than fixed here, because adding a
+   * repository-wide CI job at the end of a Frontend remediation would gate every
+   * other phase's pull requests on a rule nobody has agreed to yet.
+   */
+  const profileName = process.argv[2] ?? process.env.PHASE_OWNERSHIP_PROFILE ?? 'p1-26-frontend';
+  const base = process.argv[3] ?? process.env.PHASE_OWNERSHIP_BASE ?? 'origin/develop';
 
   let changed = [];
   try {
