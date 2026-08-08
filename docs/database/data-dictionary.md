@@ -2748,6 +2748,7 @@ Reception visit master / custody boundary (P1-08-DB-005). Exactly one origin (ap
 | `updated_by`            | uuid                     | YES  | —                   | internal |
 | `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
 | `deleted_by`            | uuid                     | YES  | —                   | internal |
+| `custody_released_at`   | timestamp with time zone | YES  | —                   | internal |
 
 ### `rec.reception_party_roles`
 
