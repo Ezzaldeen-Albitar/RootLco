@@ -54,6 +54,14 @@ const SUBJ_A = 'fx_p1_17_veh_reg_a';
 const ROLE_B = 'c1740000-0000-4000-8000-0000000000b1';
 const USER_RB = 'c1740000-0000-4000-8000-0000000000b2';
 const SUBJ_B = 'fx_p1_17_veh_reg_b';
+/*
+ * A third principal holding `veh.vehicle.read` AND `crm.customer.read`
+ * (`P1-27-INT-025`). The two above hold no CRM permission, which is what makes
+ * the withholding case real.
+ */
+const ROLE_C = 'c1740000-0000-4000-8000-0000000000c1';
+const USER_RC = 'c1740000-0000-4000-8000-0000000000c2';
+const SUBJ_C = 'fx_p1_17_veh_reg_c';
 const PARTNER_A1 = 'c1740000-0000-4000-8000-0000000000d1';
 const PARTNER_A2 = 'c1740000-0000-4000-8000-0000000000d2';
 const PARTNER_B1 = 'c1740000-0000-4000-8000-0000000000d3';
@@ -67,7 +75,15 @@ interface Body {
   readonly plateId?: string;
   readonly ownershipId?: string;
   readonly ownershipKind?: string;
-  readonly items?: readonly { readonly id: string; readonly active?: boolean }[];
+  readonly items?: readonly {
+    readonly id: string;
+    readonly active?: boolean;
+    // `P1-27-INT-025` — required-and-nullable on the wire.
+    readonly partnerId?: string;
+    readonly partnerName?: string | null;
+    readonly partnerNumber?: string | null;
+    readonly partnerType?: string | null;
+  }[];
   readonly code?: string;
 }
 
@@ -162,6 +178,32 @@ async function seedWriter(
   );
 }
 
+/** A reader entitled to BOTH the vehicle read and the CRM customer read. */
+async function seedNamingReader(): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1,$2,$3,$4,$4||'@example.test','Naming Reader','active',$5) ON CONFLICT (id) DO NOTHING`,
+    [USER_RC, TENANT_A, IDENTITY_PROVIDER, SUBJ_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'P1-17 naming reader',$4) ON CONFLICT (id) DO NOTHING`,
+    [ROLE_C, TENANT_A, SUBJ_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code IN ('veh.vehicle.read','crm.customer.read')
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, ROLE_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
+    [TENANT_A, USER_RC, ROLE_C, USER_A]
+  );
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -171,12 +213,14 @@ beforeAll(async () => {
     `INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
      VALUES ('veh.vehicle.manage','veh','Create and edit vehicles','medium',$1),
             ('veh.vehicle.read','veh','Read vehicles','low',$1),
-            ('veh.vehicle.relationship.manage','veh','Transfer ownership and manage authorized parties','medium',$1)
+            ('veh.vehicle.relationship.manage','veh','Transfer ownership and manage authorized parties','medium',$1),
+            ('crm.customer.read','crm','Read customers','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
   await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A);
   await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B);
+  await seedNamingReader();
 
   // Customers to transfer ownership to, and a merged vehicle. All the veh/crm
   // triggers stamp their actor from `app.user_id`, so the fixture runs in one
@@ -427,6 +471,53 @@ describe('plate assignment and history', () => {
 });
 
 describe('ownership transfer and history', () => {
+  /*
+   * `P1-27-INT-025` — the second of `namePartners`' two call sites, and the one
+   * where the omission read worst: a column headed "owner" containing a uuid.
+   *
+   * Before these two cases nothing in `tests/backend` or `tests/db` mentioned
+   * `partnerName`; the only coverage was a foundation test that mocks
+   * `@/modules/crm` at the module boundary and so proves the fold rather than
+   * the resolution. Deleting the wrapper at
+   * `vehicle-registration-service.ts:178` left every tier green.
+   */
+  it('names the owner for a caller entitled to read customers', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    await transfer(vehicle, { partnerId: PARTNER_A2, transferReason: 'sale' });
+
+    authAs(SUBJ_C);
+    const response = await listOwn(vehicle);
+    expect(response.status).toBe(200);
+    // `Owner Two`, distinct from `Owner One`, so the assertion identifies the
+    // partner on the row rather than proving some name came back.
+    const row = (((await response.json()) as Body).items ?? [])[0];
+    expect(row?.partnerId).toBe(PARTNER_A2);
+    expect(row?.partnerName).toBe('Owner Two');
+    expect(row?.partnerType).toBe('organization');
+  });
+
+  it('withholds the owner name from a caller who may read vehicles but not customers', async () => {
+    /*
+     * `veh-ownership-visibility-matrix.md:49` grants a `veh.vehicle.read` caller
+     * the ownership partner uuid and denies the CRM columns beside it; `:36-37`
+     * reserves widening to the Owner. `SUBJ_A` holds three `veh` permissions and
+     * no CRM permission, so it must get the ROW and not the name.
+     */
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    await transfer(vehicle, { partnerId: PARTNER_A2, transferReason: 'sale' });
+
+    const response = await listOwn(vehicle);
+    expect(response.status).toBe(200);
+    const row = (((await response.json()) as Body).items ?? [])[0];
+    // Withholding a name must never hide an ownership record.
+    expect(row?.partnerId).toBe(PARTNER_A2);
+    expect(row?.partnerName).toBeNull();
+    expect(row?.partnerNumber).toBeNull();
+    expect(row?.partnerType).toBeNull();
+  });
+
   it('transfers ownership atomically with an audit and one event, and replays idempotently', async () => {
     authAs(SUBJ_A);
     const vehicle = await newVehicle();
