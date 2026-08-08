@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { STATUS_BY_KIND } from '@/lib/api/read-operation';
@@ -93,11 +93,114 @@ beforeEach(() => {
   authorizedClient.mockResolvedValue(client as unknown);
 });
 
+/**
+ * Every component this phase's two feature trees export.
+ *
+ * Walked rather than listed, because a list is exactly what let six components
+ * ship untested while this task reported green.
+ */
+function componentNames(): readonly string[] {
+  const roots = [
+    join(process.cwd(), 'src', 'features', 'crm'),
+    join(process.cwd(), 'src', 'features', 'vehicles'),
+  ];
+  const names = new Set<string>();
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith('.tsx')) continue;
+      for (const m of readFileSync(full, 'utf8').matchAll(/^export function ([A-Z]\w+)/gm)) {
+        if (m[1]) names.add(m[1]);
+      }
+    }
+  };
+  for (const root of roots) walk(root);
+  return [...names].sort();
+}
+
+/** Every test source in this workspace, concatenated once. */
+function testSources(): string {
+  const dir = join(process.cwd(), 'tests');
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) out.push(readFileSync(full, 'utf8'));
+    }
+  };
+  walk(dir);
+  return out.join('\n');
+}
+
 describe('P1-27-QA-001 — every adapter is reached, and this file proves it', () => {
   it('drives eighteen list adapters, not a sample of them', () => {
     // A count assertion, so deleting a case from the table fails rather than
     // quietly narrowing what the loops below cover.
     expect(LIST_ADAPTERS).toHaveLength(18);
+  });
+
+  it('drives every paginated list adapter the feature trees export', () => {
+    /*
+     * The count above pins the table against deletion; this pins it against
+     * OMISSION, which is the failure that actually happened. `LIST_ADAPTERS` is
+     * hand-written, so an adapter that was never added is invisible to it —
+     * exactly how `listVehicleDocuments` stayed untested while the case above
+     * asserted "not a sample of them".
+     *
+     * Derived from the adapter modules. `listVehicleDocuments` is excluded BY
+     * NAME with a reason: it takes no `TableRequest` and returns
+     * `DocumentsState`, so it cannot be driven by these loops — it has its own
+     * suite in `vehicle-documents.test.ts`, and that exclusion is stated here so
+     * it is a decision rather than an oversight.
+     */
+    const EXCLUDED = new Map([
+      ['listVehicleDocuments', 'no TableRequest; covered by vehicle-documents.test.ts'],
+      ['listMakes', 'catalogue read; covered by vehicle-api.test.ts'],
+      ['listModels', 'catalogue read; covered by vehicle-api.test.ts'],
+      ['listTrims', 'catalogue read; covered by vehicle-api.test.ts'],
+      ['listBodyTypes', 'catalogue read; covered by vehicle-api.test.ts'],
+      ['listPowertrainTypes', 'catalogue read; covered by vehicle-api.test.ts'],
+    ]);
+
+    const exported = new Set<string>();
+    const roots = [
+      join(process.cwd(), 'src', 'features', 'crm'),
+      join(process.cwd(), 'src', 'features', 'vehicles'),
+    ];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/-api\.ts$|\/api\.ts$|^api\.ts$/.test(entry.name)) continue;
+        for (const m of readFileSync(full, 'utf8').matchAll(/^export async function (list\w+)/gm)) {
+          if (m[1]) exported.add(m[1]);
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+
+    expect(exported.size, 'no list adapters were discovered').toBeGreaterThan(10);
+
+    const driven = new Set(LIST_ADAPTERS.map((a) => a.name));
+    const missing = [...exported].filter((n) => !driven.has(n) && !EXCLUDED.has(n));
+    expect(
+      missing,
+      `these list adapters are driven by nothing:\n  ${missing.join('\n  ')}`
+    ).toEqual([]);
+
+    // And no exclusion may name an adapter that no longer exists, or the list
+    // becomes a place to hide things.
+    for (const name of EXCLUDED.keys()) {
+      expect(exported.has(name), `${name} is excluded but no longer exported`).toBe(true);
+    }
   });
 
   it('actually issues a request for each one', async () => {
@@ -115,32 +218,32 @@ describe('P1-27-QA-001 — every adapter is reached, and this file proves it', (
     }
   });
 
-  it('has a test file for every feature module that ships behaviour', () => {
-    // Named from `readdirSync`, not from memory. The first draft of this list
-    // asserted `vehicle-search.test.ts` and `vehicle-create.dom.test.tsx`, and
-    // neither exists — the same two names had already been written into the
-    // task register as evidence for Wave 7. A register that cites a file that is
-    // not there is worse than one that cites nothing.
-    const tests = readdirSync(join(process.cwd(), 'tests')).join('\n');
-    for (const name of [
-      'crm-customer-search.test.ts',
-      'crm-customer-search.dom.test.tsx',
-      'crm-customer-create.dom.test.tsx',
-      'crm-customer-profile.dom.test.tsx',
-      'crm-customer-components.dom.test.tsx',
-      'crm-profile-api.test.ts',
-      'crm-governance-writes.test.ts',
-      'crm-duplicate-review.test.ts',
-      'vehicle-api.test.ts',
-      'vehicle-contract.test.ts',
-      'vehicle-profile.test.ts',
-      'vehicle-history.test.ts',
-      'vehicle-relations.test.ts',
-      'vehicle-duplicates.test.ts',
-      'vehicle-screens.dom.test.tsx',
-    ]) {
-      expect(tests, name).toContain(name);
-    }
+  it('renders every component this phase ships', () => {
+    /*
+     * DERIVED from the filesystem, not listed here.
+     *
+     * This case used to assert that fifteen NAMED test files exist. A filename
+     * assertion can only fail if a file is renamed — never if a component is
+     * untested — so six components delivered under six canonical FE tasks shipped
+     * with zero component coverage while `QA-001` reported green:
+     * `VehicleCreateScreen`, `VehicleProfileScreen`, `VinField`,
+     * `VehicleDocumentsSection`, `DuplicateDecisionPanel` and `EvProfileSection`.
+     *
+     * The inventory is now the components themselves, so a new one is covered by
+     * this rule the moment it is written rather than the moment somebody
+     * remembers to add its filename.
+     */
+    const components = componentNames();
+    expect(components.length, 'no components were discovered — the walk is broken').toBeGreaterThan(
+      15
+    );
+
+    const suite = testSources();
+    const unreferenced = components.filter((name) => !suite.includes(name));
+    expect(
+      unreferenced,
+      `these components are rendered by no test:\n  ${unreferenced.join('\n  ')}`
+    ).toEqual([]);
   });
 
   it('covers BOTH domains at the component level, not just CRM', () => {

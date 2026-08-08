@@ -51,7 +51,6 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/features/crm/customers/identity-api', () => ({
   listTimeline: (...a: unknown[]) => listTimeline(...a),
-  listHistory: async () => okPage,
   listDuplicates: async () => okPage,
   reviewDuplicateAction: vi.fn(),
 }));

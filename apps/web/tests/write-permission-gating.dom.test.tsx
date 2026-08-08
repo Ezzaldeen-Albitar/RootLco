@@ -86,7 +86,6 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
 // screen and would look exactly like a working gate.
 vi.mock('@/features/crm/customers/identity-api', () => ({
   listTimeline: (...a: unknown[]) => listTimeline(...a),
-  listHistory: async () => okPage,
   listDuplicates: async () => okPage,
   reviewDuplicateAction: vi.fn(),
 }));

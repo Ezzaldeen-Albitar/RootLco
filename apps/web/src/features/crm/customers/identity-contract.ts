@@ -81,6 +81,12 @@ export interface TimelineEntry {
   readonly actorName?: string | null;
 }
 
+/**
+ * One entry from the customer HISTORY read.
+ *
+ * Retained although the adapter is gone: the operation still exists and this is
+ * the shape it publishes. A future task that wires the read starts from here.
+ */
 export interface HistoryEntry {
   readonly kind: HistoryKind;
   readonly id: string;

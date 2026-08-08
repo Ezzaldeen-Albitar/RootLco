@@ -48,7 +48,6 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
 // `authorizedClient` and calls `cookies()` outside a request scope.
 vi.mock('@/features/crm/customers/identity-api', () => ({
   listTimeline: async () => page([]),
-  listHistory: async () => page([]),
   listDuplicates: async () => page([]),
   reviewDuplicateAction: vi.fn(),
 }));

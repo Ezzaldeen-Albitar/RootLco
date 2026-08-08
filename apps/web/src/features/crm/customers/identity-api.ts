@@ -11,7 +11,6 @@ import {
   MAX_MERGE_REASON,
   MIN_MERGE_REASON,
   type DuplicateCandidate,
-  type HistoryEntry,
   type TimelineEntry,
 } from './identity-contract';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
@@ -51,30 +50,19 @@ export async function listTimeline(
   };
 }
 
-export async function listHistory(
-  customerId: string,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<HistoryEntry>> {
-  const client = await authorizedClient();
-  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-
-  const path =
-    `/api/v1/customers/${encodeURIComponent(customerId)}/history` +
-    query({ cursor, limit: request.pageSize });
-
-  const result = await client.get<CursorPage<HistoryEntry>>(path, { retries: 0 });
-  if (!result.ok) {
-    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
-  }
-  return {
-    status: 'ok',
-    rows: result.data.items,
-    nextCursor: result.data.nextCursor,
-    hasMore: result.data.hasMore,
-    correlationId: result.correlationId,
-  };
-}
+/*
+ * `listHistory` is gone (`P1-27-QA-002`).
+ *
+ * It called `GET /customers/{id}/history` and had ZERO production consumers —
+ * only its own definition, plus the key that five test files supply so a
+ * wholesale module mock does not throw. No canonical P1-27 task names a customer
+ * history read: `FE-015` is the TIMELINE, which is `crm.customer-timeline`
+ * and is wired.
+ *
+ * The audit reported it as an adapter with no failure-path coverage. Adding
+ * coverage would have tested an unreachable read; the same standard applied to
+ * the governance validators and the review-reason mirrors applies here.
+ */
 
 /**
  * The duplicate-candidate queue.

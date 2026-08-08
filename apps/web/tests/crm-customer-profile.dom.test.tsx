@@ -52,7 +52,6 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
 // asynchronously into whichever test happened to be running.
 vi.mock('@/features/crm/customers/identity-api', () => ({
   listTimeline: emptyPage,
-  listHistory: emptyPage,
   listDuplicates: emptyPage,
   reviewDuplicateAction: vi.fn(),
 }));
