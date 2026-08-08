@@ -38,6 +38,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * else already installed.
  */
 
+/*
+ * Thirty seconds, matching `canonical-documents.test.ts:33` and
+ * `module-boundaries.test.ts:40`, which raise it for the same reason.
+ *
+ * Every case here calls `vi.resetModules()` and then `await import('@/modules/iam')`,
+ * so each pays for a COLD transform and import of the whole IAM module graph.
+ *
+ * Stated honestly, because the first attempt at this comment got the mechanism
+ * wrong: on an idle machine the file passes comfortably — measured at 1.4 s for
+ * the slowest case, and the full 79-file tier green at 1692/1692. The failures
+ * that prompted this appeared only while six concurrent review agents were
+ * saturating the CPU, and under that load four OTHER files in this tier
+ * (`operation-coverage-gate`, `dependency-path-proof`, `route-templates`,
+ * `repository-paths`) time out too, on unmutated trees.
+ *
+ * So this is insurance against a loaded CI runner, not a fix for a reproduced
+ * defect, and it is the cheapest member of a family this repository has already
+ * been bitten by. It weakens no assertion: the bound has nothing to do with the
+ * property under test, and `vi.resetModules()` stays, because without it
+ * `composeModule`'s per-closure memoisation would hand this file a registry
+ * somebody else had already booted a provider into.
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 const PROVIDER_ENV = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',

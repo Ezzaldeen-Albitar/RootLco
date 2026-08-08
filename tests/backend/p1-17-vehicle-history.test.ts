@@ -111,12 +111,22 @@ async function seedWriter(
   tenantId: string,
   roleId: string,
   userId: string,
-  subject: string
+  subject: string,
+  /*
+   * DISTINCT per principal, and that is the point.
+   *
+   * Every seeded user used to be inserted as 'History Reader', so the positive
+   * assertion below proved a name came back and NOT that the right one did:
+   * resolving the viewer's own id instead of the actor's would have passed it
+   * just as well. The writer and the reader now carry different names, so the
+   * assertion attributes.
+   */
+  displayName: string
 ): Promise<void> {
   await admin.query(
     `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
-     VALUES ($1,$2,$3,$4,$4||'@example.test','History Reader','active',$5) ON CONFLICT (id) DO NOTHING`,
-    [userId, tenantId, IDENTITY_PROVIDER, subject, USER_A]
+     VALUES ($1,$2,$3,$4,$4||'@example.test',$6,'active',$5) ON CONFLICT (id) DO NOTHING`,
+    [userId, tenantId, IDENTITY_PROVIDER, subject, USER_A, displayName]
   );
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
@@ -186,12 +196,15 @@ beforeAll(async () => {
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
-  await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A);
-  await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B);
+  // `History Writer` is the principal that CHANGES the vehicle, so it is the
+  // name the attribute ledger must report.
+  await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A, 'History Writer');
+  await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B, 'Tenant B Writer');
   // A third caller, identical except that they also hold `iam.user.read`. The
   // pair is what makes the actor-naming assertions mean something: the same
   // history row, read twice, names a person for one of them and not the other.
-  await seedWriter(TENANT_A, ROLE_N, USER_RN, SUBJ_N);
+  // Named differently again, so reading the VIEWER's name would be visible.
+  await seedWriter(TENANT_A, ROLE_N, USER_RN, SUBJ_N, 'History Reader');
   await admin.query(
     `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
      SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
@@ -266,7 +279,12 @@ describe('attribute-change history', () => {
     authAs(SUBJ_N);
     const body = (await (await history(vehicle)).json()) as Body;
     const row = (body.items ?? []).find((i) => i.fieldCode === 'color');
-    expect(row?.actorName).toBe('History Reader');
+    // The WRITER's name, not the reader's. `SUBJ_A` made the change and
+    // `SUBJ_N` is reading it, and the two carry different display names — so a
+    // read that resolved the viewer's own id instead of the row's actor would
+    // return 'History Reader' here and fail.
+    expect(row?.actorName).toBe('History Writer');
+    expect(row?.actorName).not.toBe('History Reader');
   });
 
   it('withholds the name from a caller who may not, without failing the read', async () => {

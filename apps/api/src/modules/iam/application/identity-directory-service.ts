@@ -48,8 +48,12 @@ export class IdentityDirectoryService extends ApplicationService {
    * ids are guarded by their own domain permission. Resolving for every caller
    * would hand a tenant-wide staff directory to anyone who can open a vehicle,
    * so the capability is checked first and an unentitled caller gets an EMPTY
-   * map. Their screen then says "User unavailable" — strictly less information
-   * than the uuid it used to print.
+   * map — no name, and nothing they did not already have.
+   *
+   * NOT "strictly less information than the uuid it used to print", which is
+   * what this said before and is false: the actor id is still published
+   * alongside the name, so the change is additive. What the caller's SCREEN
+   * shows is the frontend's decision; this service publishes an absence.
    *
    * ## It does not throw
    *

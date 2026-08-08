@@ -163,10 +163,22 @@ export function installIamRuntime(): IdentityProvider {
  * unchanged: every existing consumer, and the authenticator installation that
  * depends on it, behaves exactly as before.
  *
- * Nothing that needs an `IdentityProvider` may be added here. The check is not a
- * convention — `IdentityDirectoryService`'s constructor takes the repository and
- * nothing else, so a service that needed a provider could not be constructed in
- * this factory without the type system objecting.
+ * Nothing that needs an `IdentityProvider` may be added here, and that rule is
+ * held by a TEST, not by the compiler.
+ *
+ * An earlier version of this paragraph claimed otherwise — "a service that
+ * needed a provider could not be constructed in this factory without the type
+ * system objecting". It can. `IdentityDirectoryService`'s constructor takes only
+ * the repository, but nothing stops a SECOND, provider-taking service being
+ * added to the object below; a reviewer compiled exactly that mutation. What
+ * catches it is `tests/foundation/iam-directory-composition.test.ts`, which
+ * composes this root with every provider variable unset and asserts it does not
+ * throw — and asserts, in the same file, that `iamModule()` under the identical
+ * environment still does. Adding `installIamRuntime()` here fails four of its
+ * five cases.
+ *
+ * Recording that distinction matters: a comment claiming a compiler guarantee
+ * that does not exist is how this phase's defects have repeatedly survived.
  */
 export const iamDirectory = composeModule({
   module: 'iam',
