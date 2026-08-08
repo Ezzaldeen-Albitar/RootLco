@@ -157,6 +157,10 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
+          // `frozen` as well as the capability: `requireWritableVehicle` refuses
+          // a merged or scrapped vehicle with a 409, so offering the transfer
+          // form on one is offering an action that can only fail.
+          canManageRelationships={canManageRelationships && !frozen}
         />
       ) : null}
       {section === 'plates' ? (
@@ -187,7 +191,7 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          canManage={canManageRelationships}
+          canManage={canManageRelationships && !frozen}
         />
       ) : null}
       {section === 'documents' ? (

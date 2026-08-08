@@ -31,13 +31,28 @@
  * Owner acceptance in the first place. With `Named<T>` the resolution is the
  * only way to produce the return type.
  *
+ * ## It narrows, and never widens
+ *
+ * Both calling operations are guarded by `veh.vehicle.read`. A caller holding
+ * only that is granted the "Ownership partner UUID (opaque UUID)" by
+ * `docs/database/veh-ownership-visibility-matrix.md:49`, and denied the CRM
+ * columns beside it for the reason "CRM RLS + CRM permission model". Handing
+ * them a name would be a widening the matrix reserves to the Owner (`:36-37`:
+ * the API layer "narrows further but can never widen what RLS denies").
+ *
+ * So `resolveDisplayIdentities` checks `crm.customer.read` first and returns an
+ * empty map to a caller who lacks it. Such a caller now sees "Customer
+ * unavailable" where they used to see a uuid — strictly less information, and
+ * the no-uuid-as-a-label rule satisfied without touching the matrix.
+ *
  * ## An unresolved partner is a sentence, not a failure
  *
  * A row may reference a partner this caller cannot see — soft-deleted, merged
- * away, or outside their scope. That id is simply absent from the map and the
- * three fields come back `null`, which the screen renders as words. The
- * alternatives — failing the whole list, or falling back to the uuid — either
- * hide six good rows because of one, or reintroduce the defect.
+ * away, outside their scope, or beyond their CRM entitlement. That id is simply
+ * absent from the map and the three fields come back `null`, which the screen
+ * renders as words. The alternatives — failing the whole list, or falling back
+ * to the uuid — either hide six good rows because of one, or reintroduce the
+ * defect.
  */
 import { crmModule } from '@/modules/crm';
 import type { DbHandle } from '@/server/db/transaction';

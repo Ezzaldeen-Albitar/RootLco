@@ -10,8 +10,10 @@ import { fieldErrorsOf, optionalField, vehicleBase, writeVehicle } from './write
 import {
   MAX_ODOMETER_VALUE,
   MAX_PLATE_RAW,
+  MAX_TRANSFER_REASON,
   ODOMETER_CAPTURE_METHODS,
   ODOMETER_UNITS,
+  OWNERSHIP_KINDS,
   type OdometerReadingEntry,
   type OwnershipHistoryEntry,
   type PlateHistoryEntry,
@@ -152,6 +154,63 @@ export async function assignPlateAction(
     },
     `${vehicleBase(vehicleId)}/plates`,
     'vehicles.plate.assigned'
+  );
+}
+
+const transferSchema = z
+  .object({
+    // The uuid the SELECTOR produced, never typed by anyone. A text box here
+    // would be a control no workshop employee could use.
+    partnerId: z.string().uuid('vehicles.ownership.error.customer'),
+    ownershipKind: z.enum(OWNERSHIP_KINDS).optional(),
+    // Exactly ten characters, `YYYY-MM-DD`, straight from a `date` input. Never
+    // derived from a `Date`: `toISOString().slice(0,10)` gives the UTC day,
+    // which is the wrong calendar day for most of the world.
+    effectiveDate: z.string().trim().length(10, 'vehicles.plate.error.date').optional(),
+    transferReason: z.string().trim().min(1).max(MAX_TRANSFER_REASON).optional(),
+  })
+  .strict();
+
+/**
+ * `FE-021` — transfer ownership. **`veh.vehicle.relationship.manage`**, not
+ * `veh.vehicle.manage`: the permission that governs who a vehicle belongs to is
+ * deliberately not the one that governs editing its colour.
+ *
+ * The operation closes the current ownership of the same kind and opens the new
+ * one in one transaction; the frozen EXCLUDE constraint keeps exactly one
+ * registered owner at a time, and a concurrent transfer that already closed the
+ * interval arrives here as a conflict rather than a silent double-close.
+ *
+ * `ownershipKind` is optional in the contract and the server defaults it. It is
+ * offered anyway, because "registered owner" and "fleet operator" are different
+ * facts and a form that silently chose one would be deciding for the operator.
+ */
+export async function transferOwnershipAction(
+  vehicleId: string,
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  return writeVehicle(
+    previous,
+    () => {
+      const parsed = transferSchema.safeParse({
+        partnerId: String(form.get('partnerId') ?? '').trim(),
+        ...(optionalField(form, 'ownershipKind')
+          ? { ownershipKind: optionalField(form, 'ownershipKind') }
+          : {}),
+        ...(optionalField(form, 'effectiveDate')
+          ? { effectiveDate: optionalField(form, 'effectiveDate') }
+          : {}),
+        ...(optionalField(form, 'transferReason')
+          ? { transferReason: optionalField(form, 'transferReason') }
+          : {}),
+      });
+      return parsed.success
+        ? { ok: true as const, body: parsed.data }
+        : { ok: false as const, errors: fieldErrorsOf(parsed.error) };
+    },
+    `${vehicleBase(vehicleId)}/ownerships`,
+    'vehicles.ownership.transferred'
   );
 }
 

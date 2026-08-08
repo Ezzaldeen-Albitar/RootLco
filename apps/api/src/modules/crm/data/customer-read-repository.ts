@@ -737,6 +737,34 @@ export class CustomerReadRepository extends Repository {
    * `iam.has_permission('iam.sensitive.view')`, and any second implementation of
    * "does this caller hold it" could disagree with the policy that matters.
    */
+  /**
+   * Whether this caller may be told a customer's name at all (`P1-27-INT-025`).
+   *
+   * `docs/database/veh-ownership-visibility-matrix.md:49` grants a tenant
+   * employee holding only Vehicle read the "Ownership partner UUID (opaque
+   * UUID)" and denies the CRM columns beside it, giving the reason "CRM RLS +
+   * CRM permission model". RLS alone does not implement that: `crm.customer.read`
+   * is enforced at the operation boundary, and the vehicle relationship and
+   * ownership reads are guarded by `veh.vehicle.read`. So resolving a name for
+   * every caller of those reads would hand a CRM name to somebody the matrix
+   * says may not have one — a widening, and one the matrix reserves to the Owner
+   * (`:36-37`: the API layer "narrows further but can never widen what RLS
+   * denies").
+   *
+   * Checking the capability here narrows instead. A caller who holds
+   * `crm.customer.read` could open the customer and read the same name, so they
+   * gain nothing they did not have; a caller who does not gets no name — and the
+   * screen says "Customer unavailable" rather than falling back to the uuid,
+   * which satisfies the no-uuid-as-a-label rule without touching the matrix.
+   */
+  async mayReadCustomers(db: DbHandle): Promise<boolean> {
+    const result = await this.run<{ allowed: boolean }>(
+      db,
+      `SELECT iam.has_permission('crm.customer.read') AS allowed`
+    );
+    return result.rows[0]?.allowed === true;
+  }
+
   async mayViewSensitiveNotes(db: DbHandle): Promise<boolean> {
     const result = await this.run<{ allowed: boolean }>(
       db,

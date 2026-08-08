@@ -1,7 +1,7 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
-import type { ActionState } from '@/lib/forms/action-result';
+import { useActionState, useId, useState, type ReactNode } from 'react';
+import { invalid, type ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 
@@ -88,6 +88,32 @@ interface Props {
    * operator an empty form for a profile that exists.
    */
   readonly clearOnSuccess?: boolean;
+  /**
+   * A control the `FieldSpec` list cannot express, rendered inside the form and
+   * above the fields.
+   *
+   * The customer selector is the case this exists for: choosing a customer is a
+   * search, a result list and a chosen-state, and it submits its value through a
+   * hidden input the surrounding `<form>` picks up like any other field. Adding
+   * a `'party'` field kind instead would make this generic form import a domain
+   * component, and the next such control would add a second kind.
+   *
+   * Whatever it renders must not be a `<form>` — nesting one is invalid HTML and
+   * the browser drops the inner element, taking its submit handler with it.
+   *
+   * Receives the current `ActionState` so the caller can render its own control's
+   * error beside it. `RecordForm` cannot place that error itself: the control is
+   * not in `fields`, so there is no label to put it under.
+   */
+  readonly prelude?: (state: ActionState) => ReactNode;
+  /**
+   * Blocks submission with a field error instead of sending. For a control in
+   * `prelude`, whose value `required` on an input cannot police.
+   *
+   * Returns field errors, or `null` to proceed. Runs BEFORE the action, so an
+   * incomplete form costs no rate-limit slot and the operator is told instantly.
+   */
+  readonly guard?: () => Record<string, string> | null;
 }
 
 const EMPTY: ActionState = { status: 'idle' };
@@ -101,6 +127,8 @@ export function RecordForm({
   onRecorded,
   initialValues,
   clearOnSuccess = true,
+  prelude,
+  guard,
 }: Props) {
   const [values, setValues] = useState<Record<string, string>>(initialValues ?? {});
   // Per-instance, because the vehicle profile renders more than one of these on
@@ -110,6 +138,10 @@ export function RecordForm({
   // browser happened to match first.
   const instance = useId();
   const [state, submit, pending] = useActionState(async (previous: ActionState, form: FormData) => {
+    // Before the action, so a form missing its `prelude` control never spends a
+    // rate-limit slot on a request the server would answer 422.
+    const blocked = guard?.();
+    if (blocked) return invalid(blocked, (previous.attempt ?? 0) + 1);
     const result = await action(previous, form);
     if (result.status === 'success') {
       // Cleared only here, and only for an append. On any failure the
@@ -128,6 +160,8 @@ export function RecordForm({
       <h3 className="mb-3 text-section-title font-medium text-text-primary">
         {translateDynamic(messages, titleKey)}
       </h3>
+
+      {prelude ? <div className="mb-3">{prelude(state)}</div> : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {fields.map((field) => {

@@ -109,11 +109,25 @@ export class CustomerReadService extends ApplicationService {
    * relationship may reference a partner the caller cannot see, and that is a
    * sentence for the screen to say, not a request to fail. Unresolved ids are
    * absent from the map.
+   *
+   * ## It narrows, and never widens
+   *
+   * The calling operations are guarded by `veh.vehicle.read`, not by
+   * `crm.customer.read`. Resolving unconditionally would therefore hand a CRM
+   * name to a caller `veh-ownership-visibility-matrix.md:49` grants only an
+   * opaque uuid — a widening, and the matrix reserves widening to the Owner
+   * (`:36-37`). So the CRM capability is checked first and an unentitled caller
+   * gets an EMPTY map: exactly the information they have today, rendered as a
+   * sentence instead of an identifier.
+   *
+   * One extra statement per page, and only when there is something to resolve.
    */
   async resolveDisplayIdentities(
     db: DbHandle,
     partnerIds: readonly string[]
   ): Promise<ReadonlyMap<string, CustomerDisplayIdentity>> {
+    if (partnerIds.length === 0) return new Map();
+    if (!(await this.reads.mayReadCustomers(db))) return new Map();
     return this.reads.findDisplayIdentities(db, partnerIds);
   }
 

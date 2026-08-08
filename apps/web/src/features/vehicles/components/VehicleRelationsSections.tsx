@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -9,14 +9,23 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import { listRelationships, setEvProfileAction, type EvProfileState } from '../relations-api';
+import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import {
+  authorizePartyAction,
+  listRelationships,
+  retirePartyAction,
+  setEvProfileAction,
+  type EvProfileState,
+} from '../relations-api';
 import { intervalState } from '../history-contract';
 import {
+  AUTHORIZED_ACTIONS,
   EV_KINDS,
   MAX_CHARGE_PORT,
   SCOPED_ROLE,
   canHaveEvProfile,
   scopeState,
+  validateScope,
   type EvProfile,
   type VehicleRelationship,
 } from '../relations-contract';
@@ -252,6 +261,196 @@ export function EvProfileSection({
   );
 }
 
+/**
+ * `FE-025` — authorize a customer as a scoped party.
+ *
+ * `veh.vehicle-authorized-party-add` shipped registered, permission-covered and
+ * called from nowhere, for the same reason ownership transfer did: the body
+ * wants a `partnerId` and there was no way to choose a customer.
+ *
+ * The scope is a set of checkboxes over the six actions
+ * `veh.valid_authorization_scope` admits, and no seventh is offered — the
+ * constraint would reject it, and the operator could not act on the rejection.
+ * Nothing here grants ownership: an authorized party is never the legal owner,
+ * and the vocabulary contains no action that says otherwise.
+ */
+function AuthorizePartyForm({
+  locale,
+  messages,
+  vehicleId,
+  onRecorded,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicleId: string;
+  readonly onRecorded: () => void;
+}) {
+  const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
+  const [actions, setActions] = useState<readonly string[]>([]);
+
+  const toggle = (action: string) =>
+    setActions((current) =>
+      current.includes(action) ? current.filter((a) => a !== action) : [...current, action]
+    );
+
+  return (
+    <RecordForm
+      messages={messages}
+      titleKey="vehicles.relationships.authorize"
+      submitKey="vehicles.relationships.authorize"
+      onRecorded={() => {
+        setCustomer(null);
+        setActions([]);
+        onRecorded();
+      }}
+      action={authorizePartyAction.bind(null, vehicleId)}
+      guard={() => {
+        // Both checked here rather than only server-side, because both produce a
+        // 422 the operator cannot see the cause of — and because `validateScope`
+        // is the same rule the database constraint enforces.
+        if (customer === null) return { partnerId: 'vehicles.ownership.error.customer' };
+        if (validateScope(actions) !== 'ok') {
+          return { allowedActions: 'vehicles.relationships.scopeEmpty' };
+        }
+        return null;
+      }}
+      prelude={(state) => (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <CustomerSelector
+              locale={locale}
+              messages={messages}
+              name="partnerId"
+              labelKey="vehicles.relationships.person"
+              value={customer}
+              onChange={setCustomer}
+              required
+            />
+            {state.fieldErrors?.partnerId ? (
+              <p role="alert" className="text-caption text-error">
+                {translateDynamic(messages, state.fieldErrors.partnerId)}
+              </p>
+            ) : null}
+          </div>
+
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-label font-medium text-text-primary">
+              {translate(messages, 'vehicles.relationships.scope')}
+              <span aria-hidden="true" className="ms-1 text-error">
+                *
+              </span>
+            </legend>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {AUTHORIZED_ACTIONS.map((action) => (
+                <label key={action} className="flex items-start gap-2 text-body text-text-primary">
+                  <input
+                    type="checkbox"
+                    // Repeated `name`, read with `getAll` — the shape the action
+                    // expects, and the shape an array field must take in a form.
+                    name="allowedActions"
+                    value={action}
+                    checked={actions.includes(action)}
+                    onChange={() => toggle(action)}
+                    className="mt-1 size-4 accent-primary"
+                  />
+                  <span>{translateDynamic(messages, `vehicles.action.${action}`)}</span>
+                </label>
+              ))}
+            </div>
+            {state.fieldErrors?.allowedActions ? (
+              <p role="alert" className="text-caption text-error">
+                {translateDynamic(messages, state.fieldErrors.allowedActions)}
+              </p>
+            ) : null}
+          </fieldset>
+        </div>
+      )}
+      fields={[
+        {
+          name: 'effectiveDate',
+          kind: 'date',
+          labelKey: 'vehicles.interval.from',
+          hintKey: 'vehicles.relationships.effectiveHint',
+        },
+      ]}
+    />
+  );
+}
+
+/**
+ * `FE-025` — retire an authorized party.
+ *
+ * A retirement, not a deletion: the relationship stays in the history with an
+ * end date, which is what makes "who was authorized last March" answerable. The
+ * confirmation exists because the control sits in a row of a table and a
+ * mis-click would end somebody's authority to collect a vehicle.
+ *
+ * Offered ONLY on an open `authorized_person` row. The operation closes an open
+ * interval, so on any other row it would be a control that can only fail — and
+ * on an owner row it would suggest ownership can be ended from here, which it
+ * cannot.
+ */
+function RetirePartyButton({
+  messages,
+  vehicleId,
+  relationship,
+  onRetired,
+}: {
+  readonly messages: Messages;
+  readonly vehicleId: string;
+  readonly relationship: VehicleRelationship;
+  readonly onRetired: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="rounded-md border border-border px-2 py-1 text-caption text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {translate(messages, 'vehicles.relationships.retire')}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p role="alert" className="text-caption text-text-secondary">
+        {translate(messages, 'vehicles.relationships.retireConfirm')}
+      </p>
+      <div className="flex gap-2">
+        <RecordForm
+          messages={messages}
+          titleKey="vehicles.relationships.retire"
+          submitKey="vehicles.relationships.retire"
+          action={retirePartyAction.bind(null, vehicleId, relationship.id)}
+          onRecorded={() => {
+            setConfirming(false);
+            onRetired();
+          }}
+          fields={[
+            {
+              name: 'effectiveDate',
+              kind: 'date',
+              labelKey: 'vehicles.interval.to',
+              hintKey: 'vehicles.relationships.retireHint',
+            },
+          ]}
+        />
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="self-start rounded-md border border-border px-2 py-1 text-caption text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          {translate(messages, 'admin.cancel')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** `FE-025`. */
 export function RelationshipsSection({
   locale,
@@ -337,8 +536,28 @@ export function RelationshipsSection({
           </span>
         ),
       },
+      ...(canManage
+        ? [
+            {
+              id: 'actions',
+              headerKey: 'admin.actions',
+              // ONLY on an open authorized party. The operation closes an open
+              // interval, so anywhere else this control could only fail — and on
+              // an owner row it would imply ownership can be ended from here.
+              cell: (row: VehicleRelationship) =>
+                row.relationshipRole === SCOPED_ROLE && row.validTo === null ? (
+                  <RetirePartyButton
+                    messages={messages}
+                    vehicleId={vehicleId}
+                    relationship={row}
+                    onRetired={table.refresh}
+                  />
+                ) : null,
+            },
+          ]
+        : []),
     ],
-    [messages, today]
+    [messages, today, canManage, vehicleId, table.refresh]
   );
 
   return (
@@ -368,12 +587,25 @@ export function RelationshipsSection({
       </p>
 
       {canManage ? (
-        <p className="px-2 text-caption text-text-muted" lang={locale}>
-          {/* There is no GET for authorized parties. They are visible only
-              through this list, which needs a DIFFERENT permission — so a
-              caller may be able to add one without being able to see it. */}
-          {translate(messages, 'vehicles.relationships.manageNote')}
-        </p>
+        <>
+          <p className="px-2 text-caption text-text-muted" lang={locale}>
+            {/* There is no GET for authorized parties. They are visible only
+                through this list, which needs a DIFFERENT permission — so a
+                caller may be able to add one without being able to see it. */}
+            {translate(messages, 'vehicles.relationships.manageNote')}
+          </p>
+          {/* Gated on `response`, not on a status string: `TableStatus` has no
+              `'ok'` member, so `status === 'ok'` is always false and would read
+              exactly like a working guard while rendering the form never. */}
+          {table.response ? (
+            <AuthorizePartyForm
+              locale={locale}
+              messages={messages}
+              vehicleId={vehicleId}
+              onRecorded={table.refresh}
+            />
+          ) : null}
+        </>
       ) : null}
     </section>
   );

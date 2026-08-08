@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -9,20 +9,24 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { PartyLabel } from '@/components/party/PartyLabel';
+import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import {
   assignPlateAction,
   listOdometerReadings,
   listOwnerships,
   listPlates,
   recordOdometerAction,
+  transferOwnershipAction,
 } from '../history-api';
 import {
   intervalState,
   isCorrection,
   localToday,
   MAX_PLATE_RAW,
+  MAX_TRANSFER_REASON,
   ODOMETER_CAPTURE_METHODS,
   ODOMETER_UNITS,
+  OWNERSHIP_KINDS,
   odometerDisplay,
   type IntervalState,
   type OdometerReadingEntry,
@@ -81,7 +85,100 @@ function Day({ value }: { readonly value: string | null }) {
   );
 }
 
-export function OwnershipSection({ locale, messages, vehicleId, today }: SectionProps) {
+/**
+ * `FE-021` — transfer ownership to a customer chosen BY NAME.
+ *
+ * `veh.vehicle-ownership-transfer` was registered, permission-covered and
+ * reachable from no screen for the whole of P1-27: a vehicle could not be sold.
+ * The reason it stayed unwired is visible in the contract — the body wants a
+ * `partnerId`, and the only honest control for that is a customer chooser, which
+ * did not exist. A uuid text box would have been a control no workshop employee
+ * could use.
+ *
+ * The selector submits the id through a hidden input; the operator never sees
+ * one. `guard` blocks submission before the action runs, so an unchosen customer
+ * costs no rate-limit slot.
+ */
+function TransferOwnershipForm({
+  locale,
+  messages,
+  vehicleId,
+  onRecorded,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicleId: string;
+  readonly onRecorded: () => void;
+}) {
+  const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
+
+  return (
+    <RecordForm
+      messages={messages}
+      titleKey="vehicles.ownership.transfer"
+      submitKey="vehicles.ownership.transfer"
+      onRecorded={() => {
+        // The new owner is now the current one, so the chooser goes back to
+        // empty. Leaving the previous target selected invites a second transfer
+        // to the same customer on the next click.
+        setCustomer(null);
+        onRecorded();
+      }}
+      action={transferOwnershipAction.bind(null, vehicleId)}
+      guard={() => (customer === null ? { partnerId: 'vehicles.ownership.error.customer' } : null)}
+      prelude={(state) => (
+        <div className="flex flex-col gap-1.5">
+          <CustomerSelector
+            locale={locale}
+            messages={messages}
+            name="partnerId"
+            labelKey="vehicles.ownership.newOwner"
+            value={customer}
+            onChange={setCustomer}
+            required
+          />
+          {state.fieldErrors?.partnerId ? (
+            <p role="alert" className="text-caption text-error">
+              {translateDynamic(messages, state.fieldErrors.partnerId)}
+            </p>
+          ) : null}
+        </div>
+      )}
+      fields={[
+        {
+          name: 'ownershipKind',
+          kind: 'select',
+          labelKey: 'vehicles.ownership.kind',
+          options: OWNERSHIP_KINDS,
+          optionKeyPrefix: 'vehicles.ownershipKind.',
+          hintKey: 'vehicles.ownership.kindHint',
+        },
+        {
+          // A `date` control: `YYYY-MM-DD`, no time, no zone. The day the
+          // operator picked is the day the server stores.
+          name: 'effectiveDate',
+          kind: 'date',
+          labelKey: 'vehicles.interval.from',
+          hintKey: 'vehicles.plate.effectiveFromHint',
+        },
+        {
+          name: 'transferReason',
+          kind: 'textarea',
+          labelKey: 'vehicles.ownership.reason',
+          maxLength: MAX_TRANSFER_REASON,
+        },
+      ]}
+    />
+  );
+}
+
+export function OwnershipSection({
+  locale,
+  messages,
+  vehicleId,
+  today,
+  canManageRelationships = false,
+}: SectionProps & { readonly canManageRelationships?: boolean }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listOwnerships(vehicleId, request, cursor),
     [vehicleId]
@@ -135,6 +232,18 @@ export function OwnershipSection({ locale, messages, vehicleId, today }: Section
       table={table}
       columns={columns}
       rowId={(row) => row.id}
+      {...(canManageRelationships
+        ? {
+            form: (onRecorded: () => void) => (
+              <TransferOwnershipForm
+                locale={locale}
+                messages={messages}
+                vehicleId={vehicleId}
+                onRecorded={onRecorded}
+              />
+            ),
+          }
+        : {})}
     />
   );
 }

@@ -69,6 +69,8 @@ export const COUNTRY_CODE_PATTERN = /^[A-Z]{2,3}$/;
  */
 export const MAX_PLATE_RAW = 32;
 export const MAX_ODOMETER_VALUE = 9_999_999_999;
+/** `MAX_TRANSFER_REASON` in `veh/domain/vehicle-registration.ts`. */
+export const MAX_TRANSFER_REASON = 500;
 
 export interface PlateHistoryEntry {
   readonly id: string;
