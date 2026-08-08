@@ -244,6 +244,46 @@ title  : fix(p1-27): close final canonical CRM and vehicle blockers
 
 ---
 
+## 7A. The 42-task audit does NOT support 42/42
+
+Derived independently from implementation truth by 30 agents reading the real
+tree, every PASS then put through an adversarial recheck instructed to refute it.
+Full detail in `independent-task-audit.md`.
+
+```
+TASKS_AUDITED = 42
+PASS          = 20
+FAIL          = 22
+PASS_REFUTED  = 11
+```
+
+**P1-27 is not at 42/42 and must not be reported as such.** The most severe
+finding, `FE-019`, is fixed at `8daf8e9`: the vehicle search listed vehicles and
+offered no way to open one, so the entire vehicle profile — and every write this
+remediation wired onto it — was reachable only from the duplicate-review queue.
+That is the same defect shape as the unreachable writes, one level up.
+
+The remaining findings include, verified by hand where quoted:
+
+- `SEC-001` — `WRITE_PERMISSIONS` (`governance-contract.ts:142`) has **zero
+  consumers**; ten write surfaces carry no client-side permission gate.
+- `SEC-004` — a security test compares a path case-sensitively and fails on any
+  POSIX runner; hosted CI is `ubuntu-latest`.
+- `FE-002` — a search that matches nothing renders "Nothing here yet", because
+  `isNarrowed()` cannot see criteria held outside `TableRequest`.
+- `FE-029` — `actorName` is not published by the API on this branch, because the
+  Backend half is on an unmerged branch. Expected, and it resolves on merge.
+- `FE-022`, `FE-023`, `FE-024` — missing permission gating and, for the
+  electric-drive write, no test of any kind.
+- `DOC-001`, `DOC-002`, `QA-005` — documents that name their own proof are stale
+  or point at a gate that is currently red.
+
+These are recorded rather than fixed. Fixing twenty-one findings inside this
+remediation would repeat the mistake that produced them: a large change reported
+green because the checks that would contradict it were not the ones run.
+
+---
+
 ## 8. What remains before the Owner can accept
 
 1. Both pull requests opened, exact-head CI green, merged with true merge commits.
