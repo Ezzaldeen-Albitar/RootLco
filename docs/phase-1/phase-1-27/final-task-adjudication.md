@@ -69,19 +69,19 @@ All 33 are adjudicated below.
 | `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself           |
 | `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`   | itself           |
 | `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`   | itself           |
-| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `8daf8e9`   | `FE-019`         |
-| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`         |
+| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`         |
 | `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `ef4b3a9`   | itself           |
+| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
 | `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself           |
-| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `52a230a`   | itself           |
+| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
 | `FE-029`  | `REAL_P1_27_DEFECT`    | BLOCKED           | P1-14 backend PR |
 | `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`   | itself           |
 | `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`  | itself           |
 | `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
 | `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`   | itself           |
-| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `02b707f`   | itself           |
-| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `02b707f`   | itself           |
+| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
+| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
 | `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`   | itself           |
 | `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head) | itself           |
 | `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed  | itself           |
@@ -113,6 +113,38 @@ the defect `QA-005` reports in the first place.
 The durable half of `QA-005` is done: `apps/web/tests/p1-27-doc-reconciliation.test.ts`
 reconciles the records against the repository, so the next drift is a build
 failure rather than a silent lie. What remains is the measurement itself.
+
+---
+
+## The adversarial recheck of this document's own verdicts
+
+Every `FIXED` above was re-attacked by seven independent agents instructed to
+REFUTE rather than confirm, one group of tasks each, against live repository
+truth. **`PASS_REFUTED = 4`**, and all four are now fixed in `0272e1d`. The two
+`SOUND` verdicts that ran wider than their evidence supported (`FE-020`'s
+justification comment, `FE-015`'s dead-field disclosure) are recorded below as
+residual corrections rather than as failed tasks, because in both cases the
+task's deliverable holds and what is wrong is a sentence.
+
+| task                         | what survived the recheck                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FE-024`, `FE-021`, `FE-022` | One predicate, three shipped write surfaces. `isFrozen` covered `merged` while `vehicle-registration-service.ts:194`, `vehicle-relations-service.ts:184` and `vehicle-lifecycle-service.ts:68` all refuse `merged` OR `scrapped`. Every docblock beside those gates said "a merged or scrapped vehicle"; one added "Verified against the server". Fixed with a second predicate, `isTerminal`, mirroring the API's own `TERMINAL_LIFECYCLE` — NOT by widening `isFrozen`, because `veh.vehicle-update` and the odometer writer accept a scrapped vehicle and blocking them would have been the same defect pointing the other way. |
+| `FE-028`                     | The ordinal moved from the visible label to an `aria-label`, which wins the accessible-name computation outright: the announced name stayed "First record" while the screen showed `V-0001`. WCAG 2.5.3 Label in Name, Level A. The new test ASSERTED that as the design, and its sibling — which was supposed to catch it — inspected `container.textContent`, which structurally cannot see an `aria-label`.                                                                                                                                                                                                                     |
+| `QA-001`                     | `suite.includes(name)` over RAW test text, including this repository's own docblocks. The six components the fix's commit message names as previously untested appear in `p1-27-qa.test.ts`'s own prose, and those words satisfied the sweep. Three components — `VehicleProfileScreen`, `VinField`, `DuplicateDecisionPanel` — appeared in the entire corpus only inside `*` comment lines. Each has a direct suite now, including the first test anywhere that renders `VehicleProfileScreen`.                                                                                                                                   |
+| `QA-002`                     | Three exclusions cited `vehicle-api.test.ts` for `listTrims`, `listBodyTypes` and `listPowertrainTypes`; it imported none of them. The only guard was "still exported". The citation is now checked against the cited file's own imports — and that check found a fourth stale citation on its first run.                                                                                                                                                                                                                                                                                                                          |
+
+### Residual corrections, not reopened tasks
+
+- **`FE-020`.** The deliverable holds and was mutation-proved: `VinField` on the
+  create path with `excludeVehicleId={null}`, the error prop, `name="vin"`
+  preserved, both outcome links, locale parity. What is wrong is one bullet of a
+  justification comment and one test label, which claim a duplicate-VIN `409` now
+  renders as a VIN conflict. See the residual below.
+- **`FE-015` / `FE-029`.** The uuid is genuinely gone from both surfaces and the
+  three honest states are symmetric across `en`/`ar`. What is undisclosed is that
+  the CRM half's `actorName` branch has no producer on ANY branch — `actorName`
+  occurs nowhere in `apps/api`, and the pending P1-14 branch touches `iam/` and
+  `vehicle/` only. `FE-029` is disclosed as blocked; the CRM half was not.
 
 ---
 
@@ -367,9 +399,15 @@ credentials). `FE-029` cannot pass until that merges.
 
 ---
 
-## Open — reproduced against the repository
+## Reproduced against the repository at head `915b861` — SUPERSEDED
 
-Each of the following was re-checked against head `915b861` by direct inspection.
+**This section is a snapshot, not a status.** Every entry below was reproduced by
+direct inspection at head `915b861` and each has since been fixed; the Summary
+table above is the live status and the commits are named there. The section is
+kept because a record that shows only the final state cannot be checked — the
+reproduction is the evidence that the fix was a fix and not a re-description.
+
+`FE-003` in particular reads here as open and is `FIXED 52a230a` above.
 
 ### `FE-003` — `REAL_P1_27_DEFECT`
 

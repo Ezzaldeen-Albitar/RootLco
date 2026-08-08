@@ -234,8 +234,10 @@ describe('a verdict never outlives the value it was about', () => {
 });
 
 describe('the server keeps the last word', () => {
-  it('renders the write rejection against the VIN field itself', async () => {
-    // The 409 the create used to render as "Someone else changed this".
+  it('renders a local validation rejection against the VIN field itself', async () => {
+    // `status: 'invalid'` with `fieldErrors.vin` is what a LOCAL Zod failure
+    // produces. The 409 case is the one below, and this label used to claim to
+    // be it while mocking a state a 409 never reaches.
     createVehicleAction.mockResolvedValue({
       status: 'invalid',
       attempt: 1,

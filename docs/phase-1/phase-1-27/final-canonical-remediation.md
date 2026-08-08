@@ -273,6 +273,15 @@ The remaining findings include, verified by hand where quoted:
   `isNarrowed()` cannot see criteria held outside `TableRequest`.
 - `FE-029` — `actorName` is not published by the API on this branch, because the
   Backend half is on an unmerged branch. Expected, and it resolves on merge.
+- **The CRM half of the same field has no producer on ANY branch**, and this was
+  not disclosed until an adversarial recheck found it. `actorName` occurs nowhere
+  in `apps/api` (verified repository-wide), and
+  `remediation/p1-14-actor-display-identity` (`210aac2`) touches five files, all
+  under `iam/` and `vehicle/` — none under `crm/`. So the customer timeline's
+  "Recorded by" column reads the safe sentence for **every human row**, now and
+  after that pull request merges. No uuid is shown, which is the requirement, and
+  the field is retained rather than deleted so that wiring it is a Backend change
+  alone. Owned by P1-16 Backend, not by this phase.
 - `FE-022`, `FE-023`, `FE-024` — missing permission gating and, for the
   electric-drive write, no test of any kind.
 - `DOC-001`, `DOC-002`, `QA-005` — documents that name their own proof are stale

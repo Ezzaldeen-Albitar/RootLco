@@ -491,8 +491,18 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
      * body is exactly as wrong as one in a query string. `send` was already
      * mocked in this file and never asserted on.
      *
-     * Driven through the real write adapters, so a body assembled by a future
-     * edit is covered without anyone remembering to add it here.
+     * Three adapters are DRIVEN here, out of the ~23 the two trees export. That
+     * is a sample, and this comment used to claim it was not — "driven through
+     * the real write adapters, so a body assembled by a future edit is covered".
+     * The case below (`the write sweep is a stated sample, not a claim of
+     * completeness`) makes the sample explicit and fails if the set grows
+     * without somebody deciding what to do about it.
+     *
+     * The completeness guarantee that IS real is static: `check-p1-27-frontend.mjs`
+     * scans both trees for `tenantId` / `companyId` / `branchId` with `allow: []`,
+     * so a scope smuggled into any future write body fails CI whether or not it
+     * is driven here. This runtime sweep proves the three bodies that are hardest
+     * to reason about statically — the ones assembled from a `FormData`.
      */
     const WRITES: readonly { name: string; call: () => Promise<unknown> }[] = [
       {
@@ -532,6 +542,53 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
       const call = JSON.stringify(send.mock.calls[0]);
       expect(call, write.name).not.toMatch(/tenant|company|branch/i);
     }
+  });
+
+  it('the write sweep is a stated sample, and the static gate covers the rest', () => {
+    /*
+     * The number of write adapters the sweep above DRIVES, against the number
+     * the two trees export. A sample is a legitimate choice; a sample described
+     * as exhaustive is not, and that is what the docblock above used to do.
+     *
+     * Pinning both numbers means the ratio cannot quietly worsen: adding a
+     * fourteenth write adapter without touching this file fails here, and
+     * whoever adds it decides whether to drive it or to rely on the static rule.
+     */
+    const DRIVEN = 3;
+    const exported = new Set<string>();
+    const roots = [
+      join(process.cwd(), 'src', 'features', 'crm'),
+      join(process.cwd(), 'src', 'features', 'vehicles'),
+    ];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!entry.name.endsWith('.ts')) continue;
+        for (const m of stripComments(readFileSync(full, 'utf8')).matchAll(
+          /^export async function (\w+Action)/gm
+        )) {
+          if (m[1]) exported.add(m[1]);
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+
+    expect(exported.size, 'no write adapters were discovered — the walk is broken').toBe(23);
+
+    // And the static rule that DOES cover all of them, read from the gate rather
+    // than asserted: `no-client-asserted-scope` must scan both trees with no
+    // allowance, or the sentence above about CI is false.
+    const gate = readFileSync(
+      join(process.cwd(), '..', '..', 'scripts', 'ci', 'check-p1-27-frontend.mjs'),
+      'utf8'
+    );
+    const rule = /id:\s*'no-client-asserted-scope'[\s\S]*?allow:\s*(\[[^\]]*\])/.exec(gate);
+    expect(rule?.[1], 'the scope rule carries an allowance').toBe('[]');
+    expect(DRIVEN).toBeLessThan(exported.size);
   });
 
   it('encodes every path parameter, so an id cannot escape its segment', async () => {

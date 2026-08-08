@@ -141,17 +141,19 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
     expect(failures.some((f) => f.includes('no files were inspected'))).toBe(true);
   });
 
-  it('fails a rule whose allow-list has swallowed every file', () => {
+  it('carries no rule whose allow-list could swallow every file', () => {
     /*
      * This case used to drive `no-duplicate-scan-on-a-queue`, whose allowance is
      * now empty because it exempted a file that never matched the rule
      * (`P1-27-FE-003`, and see the invariant below).
      *
      * NO rule carries an allowance today, so the swallow scenario cannot be
-     * constructed from the real rule set — and that is stated here rather than
-     * hidden behind a `find` that silently returns nothing. The loop is
-     * deliberately empty NOW and becomes live the moment any allowance is added,
-     * which is exactly when this guard starts mattering again.
+     * constructed from the real rule set — which the loop below states rather
+     * than hiding behind a `find` that silently returns nothing. It is
+     * deliberately empty NOW and becomes live the moment any allowance is added.
+     *
+     * The title used to say "fails a rule whose allow-list has swallowed every
+     * file", which is what the NEXT case does. This one asserts an invariant.
      */
     const withAllowances = RULES.filter((r) => r.allow.length > 0);
     for (const rule of withAllowances) {
@@ -169,6 +171,46 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
     // accident. Without it, a future allowance could reintroduce the hole and
     // this case would keep passing by iterating over nothing.
     expect(withAllowances.map((r) => r.id)).toEqual([]);
+  });
+
+  it('fails a rule that inspected zero files, proved on a synthetic rule', () => {
+    /*
+     * The per-rule anti-vacuity branch — `check-p1-27-frontend.mjs`'s
+     * "inspected 0 files — this rule is measuring nothing" — has had ZERO
+     * coverage since every allowance was emptied: the loop above iterates over
+     * nothing, and `evaluate([])` returns at the earlier whole-run guard before
+     * any rule is reached.
+     *
+     * A branch that exists to catch a gate measuring nothing must not itself be
+     * deletable green. RULES is mutated for the length of this case only and
+     * restored in `finally`, so the real rule set is unchanged either way.
+     */
+    // `RULES` is inferred `allow: never[]` because every real rule's allowance
+    // is `[]` — which is the fact the case above pins. The cast is what lets a
+    // synthetic rule carry one; it widens the local view, not the export.
+    const rules = RULES as unknown as {
+      id: string;
+      pattern: RegExp;
+      what: string;
+      allow: string[];
+    }[];
+    rules.push({
+      id: 'synthetic-allow-everything',
+      pattern: /never-matches-anything/,
+      what: 'exists only to reach the per-rule anti-vacuity branch',
+      allow: ['synthetic/'],
+    });
+    try {
+      const { failures } = evaluate([{ path: 'synthetic/a.ts', source: 'export const a = 1;' }]);
+      expect(
+        failures.some((f) => f.includes('synthetic-allow-everything: inspected 0 files')),
+        'the per-rule anti-vacuity branch did not fire'
+      ).toBe(true);
+    } finally {
+      rules.pop();
+    }
+    // And the rule set is back exactly as it was.
+    expect(RULES.some((r) => r.id === 'synthetic-allow-everything')).toBe(false);
   });
 });
 

@@ -29,7 +29,8 @@ the next phase will read.
 `npm run validate:p1-27-frontend` fails the build on:
 
 - a merge caller of any shape while `P1-OD-017` is open,
-- a duplicate-scan call from anywhere but the one allowed creation form,
+- a duplicate-scan call from anywhere in either feature tree — there is no
+  exemption; the creation-time warning arrives on the create RESPONSE,
 - a client-asserted `tenantId` / `companyId` / `branchId`,
 - a total computed from `rows.length`,
 - any upload path while `P1-OD-025` is open,

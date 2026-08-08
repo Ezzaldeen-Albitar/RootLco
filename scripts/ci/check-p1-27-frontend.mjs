@@ -12,12 +12,16 @@
  *      affordance to be *absent*, not disabled: a disabled button asserts the
  *      capability exists and this operator lacks permission, which is a
  *      different and false statement.
- *   2. **No duplicate-scan caller on a review screen.** `crm.duplicate-scan` and
- *      `veh.vehicle-duplicate-scan` read like queries and are privileged audited
- *      **writes** — they create candidate rows, emit audit records and are
- *      throttled at 30/min. The creation form calls the CRM one once, on
- *      explicit intent. A queue that "refreshed" by scanning would write audit
- *      history every time somebody looked at it.
+ *   2. **No duplicate-scan caller anywhere in these trees.** `crm.duplicate-scan`
+ *      and `veh.vehicle-duplicate-scan` read like queries and are privileged
+ *      audited **writes** — they create candidate rows, emit audit records and
+ *      are throttled at 30/min. Neither has a call site in this phase: the
+ *      creation-time duplicate warning arrives on the create RESPONSE as
+ *      `possibleDuplicates`, and no scan is involved. A queue that "refreshed"
+ *      by scanning would write audit history every time somebody looked at it.
+ *      This header used to say the creation form calls the CRM one once, which
+ *      was the justification for an allow-list entry the rule below records as
+ *      never having been true.
  *   3. **No client-asserted scope.** Tenant, company and branch are resolved
  *      server-side from the session on every operation this platform publishes.
  *   4. **No invented total.** Every list operation returns

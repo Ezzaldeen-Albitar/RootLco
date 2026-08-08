@@ -77,6 +77,16 @@ export interface TimelineEntry {
    * (`vehicles.history.actorUnavailable`). This field exists so the customer
    * timeline reads a name the moment one is published, without a second change
    * here.
+   *
+   * **Nothing publishes it today, and no branch does.** `actorName` occurs
+   * nowhere in `apps/api`; `crm.customer-timeline` returns `actor_id` alone.
+   * The pending `remediation/p1-14-actor-display-identity` closes the VEHICLE
+   * half only — its five files are under `iam/` and `vehicle/`, none under
+   * `crm/` — so this branch of the timeline cell is unreachable now AND after
+   * that merge, and "Recorded by" reads the safe sentence for every human row.
+   * That is the honest outcome and it is recorded beside `FE-029` in
+   * `final-canonical-remediation.md`; a uuid was never an option, and the field
+   * is kept rather than deleted so the wiring is a Backend change alone.
    */
   readonly actorName?: string | null;
 }

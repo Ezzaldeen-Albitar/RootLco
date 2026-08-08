@@ -44,6 +44,21 @@ if (!AXE) {
 /** WCAG 2.1 A and AA — the level the accessibility evidence claims. */
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+/*
+ * Every authenticated route this phase can reach without first creating data.
+ *
+ * The five CRM and vehicle routes below were MISSING, and that omission is why a
+ * WCAG 2.5.3 Label in Name failure on the vehicle duplicate queue survived every
+ * tier and was found only by an adversarial recheck. The list declared "WCAG 2.1
+ * A and AA — the level the accessibility evidence claims" while containing no
+ * P1-27 route at all, so the phase under acceptance was the one part of the
+ * product no automated scan had ever visited.
+ *
+ * The profile and detail routes are deliberately absent: each needs a real
+ * customer or vehicle id, and a scan pointed at a 404 reports zero violations.
+ * They are covered by component-level scans instead, which is a statement about
+ * what this file does rather than a gap it hides.
+ */
 const ROUTES = [
   '/administration',
   '/administration/organization',
@@ -57,6 +72,11 @@ const ROUTES = [
   '/administration/languages',
   '/administration/audit-log',
   '/administration/system-settings',
+  '/crm/customers',
+  '/crm/customer-duplicates',
+  '/vehicles',
+  '/vehicles/new',
+  '/vehicles/duplicates',
   '/profile',
   '', // the dashboard
 ];

@@ -417,8 +417,14 @@ describe('the attribute-change ledger', () => {
 
   /*
    * `P1-27-INT-026` (D3). The ledger stores an `actor_id` and the column headed
-   * "Changed by" printed that uuid. The read now resolves it through the IAM
-   * module's provider-free directory and publishes `actorName`.
+   * "Changed by" printed that uuid.
+   *
+   * The producer is written and pushed on
+   * `remediation/p1-14-actor-display-identity` and NOT merged, so on
+   * `origin/develop` today the operation still publishes an id and no name.
+   * These cases drive the CONSUMER through both worlds directly, which is why
+   * they can pass while `FE-029` is blocked: the point is that no merge order
+   * can put a uuid back on screen.
    *
    * The three cases below are the whole contract: a name is shown when there is
    * one, and the SAME safe sentence when there is not — whether that is because

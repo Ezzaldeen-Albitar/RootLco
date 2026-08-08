@@ -181,6 +181,14 @@ export function VehicleCreateScreen({
               the generic "Someone else changed this", which is not what
               happened and not something they could act on.
 
+              That third leg was NOT fixed by mounting this control, and the
+              first version of this comment claimed it was. `fieldErrorsOf`
+              returns `{}` unless the failure is a validation failure, so a 409
+              had nowhere to land beside the field. `createVehicleAction` now
+              names it — a 409 from `POST /vehicles` is the active-VIN collision
+              and nothing else — and it arrives here through `errorFor('vin')`
+              like any other field error.
+
               `excludeVehicleId` is null because there is no vehicle yet: every
               existing match is a real conflict, and there is no own-VIN to
               exclude. */}

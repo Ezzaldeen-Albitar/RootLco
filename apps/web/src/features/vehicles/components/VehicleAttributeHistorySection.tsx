@@ -120,10 +120,18 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
       {
         id: 'actor',
         headerKey: 'vehicles.history.actor',
-        // The operation resolves the actor through the IAM module's
-        // provider-free directory and publishes a name (`P1-27-INT-026`). It
-        // used to publish only an id, and this column printed that uuid under a
-        // heading that said "who".
+        // This column printed a raw actor uuid under a heading that says "who".
+        // It does not any more — but note the tense: on `origin/develop` TODAY
+        // the operation publishes an `actor_id` and NO name, so this cell reads
+        // "User unavailable" for every row.
+        //
+        // The producer is written and pushed on
+        // `remediation/p1-14-actor-display-identity` (`210aac2`), which resolves
+        // the actor through the IAM module's provider-free directory
+        // (`P1-27-INT-026`). `P1-27-FE-029` is BLOCKED on that pull request and
+        // is disclosed as blocked in `final-canonical-remediation.md`. This
+        // consumer is deliberately written for both worlds so the merge order
+        // cannot put a uuid back on screen.
         //
         // `undefined` and `null` render identically and deliberately: absent
         // means the API predates the identity surface, null means this caller

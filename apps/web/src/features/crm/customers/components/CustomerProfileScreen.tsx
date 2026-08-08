@@ -116,9 +116,17 @@ type Section = (typeof SECTIONS)[number];
 /**
  * Sections with a screen today. The rest render an honest "not yet" state.
  *
- * `vehicles` is the last one outstanding and belongs to `FE-025`, which cannot
- * be built until the Vehicle waves land — it lists a customer's vehicles, and
- * there is no vehicle screen to link to yet.
+ * `vehicles` is the last one outstanding, and the reason is a MISSING READ, not
+ * a missing screen. `POST /customers/{id}/vehicles` publishes no `GET`: there is
+ * no "this customer's vehicles" operation anywhere in the platform
+ * (`P1-27-INT-012`, owned by P1-16 Backend and deferred to P1-28), so this tab
+ * has nothing to list. The link itself is offered from the VEHICLE side, where
+ * the result is visible in the table directly above the form.
+ *
+ * This block previously said the blocker was that "there is no vehicle screen to
+ * link to yet". That stopped being true at `FE-019`, which built the vehicle
+ * profile route; the sentence outlived its fact while the correct reason was
+ * already recorded in `relations-api.ts` and in `findings.md`.
  */
 const BUILT: readonly Section[] = [
   'overview',

@@ -9,9 +9,18 @@ and no document recorded a decision to drop it — half a named canonical
 deliverable, covered by a `task-register.md` cell citing an automated proof that
 did not exist.
 
-`apps/web/tests/p1-27-doc-reconciliation.test.ts` now fails if this file is
-missing, if the sibling convention disappears, or if this file stops naming the
-waves below.
+`apps/web/tests/p1-27-doc-reconciliation.test.ts` fails if this file is missing,
+if the sibling convention disappears, or if **any task the adjudication records
+as `FIXED` on this branch is absent from the table below** — the row set is
+derived from `final-task-adjudication.md`, not maintained by hand.
+
+That derivation replaced a durability claim that was not true. This file
+originally said the test fails "if this file stops naming the waves below", and
+the test asserted four hard-coded strings, none of which was a wave heading:
+every wave section could have been deleted and it would have stayed green. It
+was also missing `FE-003` entirely — a live gate hole the adjudication records
+as fixed on this branch — which is exactly what a derived row set catches and a
+hand-written one does not.
 
 **Status: `OWNER ACCEPTANCE: FAIL`.** The phase is not closed, `P1-G27` is not
 written, `main` is untouched, and P1-28 has not begun.
@@ -74,26 +83,62 @@ authenticated browser and 1636 database tests, hosted CI and CodeQL were all
 green. What followed is recorded in `final-task-adjudication.md`; the code
 changes are:
 
-| task                | what was wrong                                                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `SEC-001`           | Ten write forms rendered for anyone holding `crm.customer.read`. `WRITE_PERMISSIONS` had zero consumers.                          |
-| `SEC-004`           | The security sweep matched no file on Windows, so it passed locally and failed on `ubuntu-latest`.                                |
-| `FE-002`            | A search matching nothing announced "Nothing here yet" — a claim about the whole tenant.                                          |
-| `FE-004`            | An unkeyed Zod bound rendered English library prose under an Arabic label. Seven adapters carried the same.                       |
-| `FE-013`            | Ten client-side validators with one reference each: their own definition. Their tests were their consumers.                       |
-| `FE-015`            | The customer timeline printed a raw actor uuid under "Recorded by".                                                               |
-| `FE-016`            | The CRM duplicate queue was rendered by no test; its dismissal was proved by a mirror nothing called.                             |
-| `FE-017`            | Two comments justified an absent link by a route that had existed since `FE-019`.                                                 |
-| `FE-018`            | The create screen discarded the id of the vehicle it had just created. The journey ended in a dead end.                           |
-| `FE-019`            | Vehicle search offered no way to open a result. Route existence is not navigability.                                              |
-| `FE-020`            | `VinField` implemented the canonical four verdicts and was mounted only on the update panel.                                      |
-| `FE-024`            | The client demanded a positive capacity where the route accepts zero, refusing a value the platform stores.                       |
-| `FE-026`            | The documents adapter and section were in no test at all.                                                                         |
-| `FE-028`            | The duplicate queue labelled each vehicle "First record" / "Second record" while the operation published both references.         |
-| `QA-001` / `QA-002` | Two inventories that could only fail if a file was renamed, never if a component or adapter was untested.                         |
-| `QA-003`            | Three browser observers filtered on a URL the browser never requests, asserting an emptiness they could not have found otherwise. |
-| `DOC-001`           | §9 asserted eleven unreachable operations while the gate beside it proved four.                                                   |
-| `DOC-002`           | This file.                                                                                                                        |
+| task                | what was wrong                                                                                                                                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SEC-001`           | Ten write forms rendered for anyone holding `crm.customer.read`. `WRITE_PERMISSIONS` had zero consumers.                                                                                                                         |
+| `SEC-002`           | Reproduced against the repository and refuted; the record was corrected rather than the code.                                                                                                                                    |
+| `SEC-004`           | The security sweep matched no file on Windows, so it passed locally and failed on `ubuntu-latest`.                                                                                                                               |
+| `FE-002`            | A search matching nothing announced "Nothing here yet" — a claim about the whole tenant.                                                                                                                                         |
+| `FE-003`            | The frontend gate exempted a file from the duplicate-scan rule for a call that does not exist. An allow-listed file is skipped entirely, so a privileged audited write added there would have passed. Every `allow` is now `[]`. |
+| `FE-004`            | An unkeyed Zod bound rendered English library prose under an Arabic label. Seven adapters carried the same.                                                                                                                      |
+| `FE-013`            | Ten client-side validators with one reference each: their own definition. Their tests were their consumers.                                                                                                                      |
+| `FE-015`            | The customer timeline printed a raw actor uuid under "Recorded by".                                                                                                                                                              |
+| `FE-016`            | The CRM duplicate queue was rendered by no test; its dismissal was proved by a mirror nothing called.                                                                                                                            |
+| `FE-017`            | Two comments justified an absent link by a route that had existed since `FE-019`.                                                                                                                                                |
+| `FE-018`            | The create screen discarded the id of the vehicle it had just created. The journey ended in a dead end.                                                                                                                          |
+| `FE-019`            | Vehicle search offered no way to open a result. Route existence is not navigability.                                                                                                                                             |
+| `FE-020`            | `VinField` implemented the canonical four verdicts and was mounted only on the update panel.                                                                                                                                     |
+| `FE-021` / `FE-022` | On a SCRAPPED vehicle the ownership transfer and the plate form rendered a live Save whose only possible answer was 409. See the recheck section below.                                                                          |
+| `FE-024`            | The client demanded a positive capacity where the route accepts zero, refusing a value the platform stores. Its lifecycle gate was then one status short — see the recheck section below.                                        |
+| `FE-026`            | The documents adapter and section were in no test at all.                                                                                                                                                                        |
+| `FE-028`            | The duplicate queue labelled each vehicle "First record" / "Second record" while the operation published both references.                                                                                                        |
+| `QA-001` / `QA-002` | Two inventories that could only fail if a file was renamed, never if a component or adapter was untested.                                                                                                                        |
+| `QA-003`            | Three browser observers filtered on a URL the browser never requests, asserting an emptiness they could not have found otherwise.                                                                                                |
+| `DOC-001`           | §9 asserted eleven unreachable operations while the gate beside it proved four.                                                                                                                                                  |
+| `DOC-002`           | This file.                                                                                                                                                                                                                       |
+
+Eight further tasks were adjudicated `DUPLICATE_FINDING` and closed by fixing the
+root rather than the symptom. They are named here because a task closed without a
+row of its own reads as a task nobody looked at:
+
+| task                                              | closed by |
+| ------------------------------------------------- | --------- |
+| `FE-001`                                          | `FE-002`  |
+| `FE-007`, `FE-008`, `FE-009`, `FE-010`, `SEC-003` | `SEC-001` |
+| `FE-023`                                          | `SEC-001` |
+
+---
+
+## The adversarial recheck of this branch's own fixes
+
+Every task above had been recorded as fixed when seven attack agents were set on
+the branch with instructions to refute rather than confirm. Four verdicts did not
+survive, and the shape they share is worth stating: **in three of the four the
+docblock beside the fix stated the correct rule while the code implemented a
+narrower one, and the test asserted the code.**
+
+| task                         | what the recheck found                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FE-021`, `FE-022`, `FE-024` | `isFrozen` covered `merged` only while three server writers refuse `merged` OR `scrapped`. On a scrapped vehicle the plate form, the ownership transfer, the authorised-party form and the electric-drive save all offered an action that could only fail. Each gate's own docblock said "a merged or scrapped vehicle"; one added "Verified against the server". |
+| `FE-028`                     | The ordinal moved from the visible label to an `aria-label`, which wins the accessible-name computation outright — so the announced name stayed "First record" while the screen showed `V-0001`. WCAG 2.5.3 Label in Name, Level A. The test that should have caught it inspected `textContent`, which cannot see an `aria-label`.                                |
+| `QA-001`                     | The component sweep matched a substring over RAW test text, including its own docblock listing the six components that shipped untested. Three components appeared in the whole corpus only inside comments.                                                                                                                                                      |
+| `QA-002`                     | Three exclusions cited `vehicle-api.test.ts` for adapters it did not import. The only guard was "still exported".                                                                                                                                                                                                                                                 |
+
+The fixes are in `0272e1d`, each mutation-proved. The two predicates the vehicle
+profile now carries — `isFrozen` (merged) and `isTerminal` (merged or scrapped) —
+exist because the server has two rules, not one: a scrapped vehicle's DETAILS can
+still be corrected and its final odometer reading can still be recorded, so
+widening the freeze would have removed two working controls.
 
 ---
 

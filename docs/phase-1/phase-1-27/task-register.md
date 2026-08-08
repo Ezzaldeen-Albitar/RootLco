@@ -178,9 +178,20 @@ directory and fails on any name that is not present.
 
 A phase that only records what it built hides the decisions that mattered most.
 
-**`FE-003` does not scan on every keystroke.** `crm.duplicate-scan` is a
-privileged audited **write**. The creation form calls it once, on explicit
-intent, and never to decorate a field.
+**`FE-003` does not scan at all.** `crm.duplicate-scan` is a privileged audited
+**write**, and no P1-27 surface calls it. The creation-time duplicate warning
+arrives on the create RESPONSE as `possibleDuplicates`
+(`creation-contract.ts`), which is why `crm-customer-create.dom.test.tsx`
+asserts the absence deliberately.
+
+This paragraph used to say "the creation form calls it once, on explicit
+intent". That was never true, and it was the stated justification for an
+allow-list entry in `check-p1-27-frontend.mjs` exempting `creation-actions.ts`
+from the `no-duplicate-scan-on-a-queue` rule. `evaluate()` skips an allow-listed
+file entirely, so the exemption was a live hole rather than merely a stale
+sentence: a privileged audited write added to that one file would have passed
+the gate that exists to stop it. `FE-003` (`52a230a`) deleted it, and every
+`allow` in that gate is now `[]`.
 
 **`FE-016` and `FE-028` have no merge affordance.** `P1-OD-017` is an open Owner
 decision and the plan requires the affordance to be _absent_, not disabled. Wave 6

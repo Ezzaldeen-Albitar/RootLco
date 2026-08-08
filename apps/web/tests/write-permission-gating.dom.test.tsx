@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -298,16 +300,56 @@ describe('the two ungated vehicle writes', () => {
 });
 
 describe('the gate is visibility, and the code says so', () => {
-  it('is not the enforcement, and nothing here pretends it is', () => {
-    // The Server Actions carry no permission check of their own and must not
-    // grow one: the Backend authorizes every call, and a second opinion computed
-    // in the browser process would be a second answer that can disagree.
-    //
-    // This assertion exists so that a future change adding a client-side
-    // `if (!canWrite) return` to an action — which would look like defence in
-    // depth and would in fact be a new source of truth — is a deliberate act
-    // rather than a quiet one.
+  it('covers every write surface and defaults every one of them closed', () => {
+    // The two properties these assertions actually establish, said accurately.
+    // The comment they replace claimed they stop a future client-side
+    // `if (!canWrite) return` being added to a Server Action — a real rule, but
+    // one neither line tests. It is enforced below, by reading the modules.
     expect(Object.keys(WRITE_PERMISSIONS)).toHaveLength(9);
     expect(Object.values(NO_WRITES).some(Boolean)).toBe(false);
+  });
+
+  it('finds no permission check inside any P1-27 Server Action module', () => {
+    /*
+     * The Backend authorizes every call. A second opinion computed in the
+     * browser process would be a second answer that can disagree — and it would
+     * look like defence in depth while being a new source of truth.
+     *
+     * Read from the modules rather than asserted in prose: every `'use server'`
+     * file in the two feature trees is opened, comments stripped, and checked
+     * for the client-side predicate. A future `if (!canWrite) return` in an
+     * action is then a failing test rather than a quiet one.
+     */
+    const roots = [
+      join(process.cwd(), 'src', 'features', 'crm'),
+      join(process.cwd(), 'src', 'features', 'vehicles'),
+    ];
+    const offenders: string[] = [];
+    let serverModules = 0;
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!entry.name.endsWith('.ts')) continue;
+        const source = readFileSync(full, 'utf8');
+        if (!/^['"]use server['"]/m.test(source)) continue;
+        serverModules += 1;
+        const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/gm, '$1');
+        if (/\bholds\s*\(|\bpermittedWrites\s*\(|\bWRITE_PERMISSIONS\b/.test(code)) {
+          offenders.push(entry.name);
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+
+    // Anti-vacuity: a walk that found no server modules would pass silently.
+    expect(serverModules, 'no "use server" modules were inspected').toBeGreaterThan(5);
+    expect(
+      offenders,
+      `these Server Action modules compute a permission themselves:\n  ${offenders.join('\n  ')}`
+    ).toEqual([]);
   });
 });

@@ -75,6 +75,68 @@ describe('DOC-001 — §9 agrees with the gate that owns the question', () => {
     expect(traceability).not.toContain('are simply not built');
   });
 
+  it('resolves every call site the closed-by-D1 sub-table cites', () => {
+    /*
+     * The sub-table names, for each operation that had no call site at the audit,
+     * the `file:line` that has one now. Nothing checked those cells, and three of
+     * seven were wrong: the ownership and plate rows were TRANSPOSED (`:155` is
+     * the `/plates` line inside `assignPlateAction`, `:212` is the `/ownerships`
+     * line inside `transferOwnershipAction`) and `crm.vehicle-link` pointed at a
+     * sentence inside a docblock rather than at the `client.send`.
+     *
+     * A false citation in an evidence table is worse than none: it looks like
+     * proof. Each cell is resolved here — the file must exist, the line must
+     * exist, and the line must carry the operation's own path segment.
+     */
+    const traceability = read('evidence', 'task-traceability.md');
+    const SRC = join(REPO, 'apps', 'web', 'src', 'features');
+
+    const CITED: readonly { op: string; file: string; needle: string }[] = [
+      { op: 'crm.contact-add', file: 'crm/customers/profile-actions.ts', needle: '/contacts' },
+      { op: 'crm.address-add', file: 'crm/customers/profile-actions.ts', needle: '/addresses' },
+      {
+        op: 'crm.customer-status-set',
+        file: 'crm/customers/governance-actions.ts',
+        needle: '/status',
+      },
+      { op: 'crm.vehicle-link', file: 'vehicles/relations-api.ts', needle: '/vehicles' },
+      {
+        op: 'veh.vehicle-ownership-transfer',
+        file: 'vehicles/history-api.ts',
+        needle: '/ownerships',
+      },
+      { op: 'veh.vehicle-plate-assign', file: 'vehicles/history-api.ts', needle: '/plates' },
+      {
+        op: 'veh.vehicle-odometer-record',
+        file: 'vehicles/history-api.ts',
+        needle: '/odometer-readings',
+      },
+    ];
+
+    for (const { op, file, needle } of CITED) {
+      const row = traceability
+        .split('\n')
+        .find((line) => line.includes(`\`${op}\``) && line.includes('.ts:'));
+      expect(row, `§9 has no call-site row for ${op}`).toBeTruthy();
+
+      const cite = /`([\w./-]+\.ts):(\d+)`/.exec(row ?? '');
+      expect(cite, `${op}'s row carries no file:line citation`).toBeTruthy();
+
+      const basename = cite?.[1] ?? '';
+      const lineNo = Number(cite?.[2] ?? 0);
+      expect(file.endsWith(basename), `${op} cites ${basename}, expected ${file}`).toBe(true);
+
+      const lines = readFileSync(join(SRC, file), 'utf8').split('\n');
+      expect(lineNo, `${op} cites line ${lineNo}, past the end of ${basename}`).toBeLessThanOrEqual(
+        lines.length
+      );
+      expect(
+        lines[lineNo - 1],
+        `${basename}:${lineNo} does not carry ${needle} — the citation for ${op} is wrong`
+      ).toContain(needle);
+    }
+  });
+
   it('gives every absent operation a decision reference', () => {
     // The gate refuses a blank one; this refuses a missing one in the record.
     for (const id of deliberatelyAbsent) {
@@ -107,11 +169,38 @@ describe('DOC-002 — the change log the task names actually exists', () => {
     expect(siblings.length, 'no sibling phase ships a change log any more').toBeGreaterThan(0);
   });
 
-  it('records the remediation waves rather than restating the plan', () => {
+  it('names every task the adjudication records as FIXED on this branch', () => {
+    /*
+     * DERIVED from `final-task-adjudication.md`, not from a hand-written list.
+     *
+     * This case used to assert four hard-coded strings — `SEC-001`, `FE-019`,
+     * `FE-020` and `OWNER ACCEPTANCE: FAIL` — none of which is a wave heading,
+     * while the change log claimed the test "fails if this file stops naming the
+     * waves below". Every wave section could have been deleted and it would have
+     * stayed green, and `FE-003` — a live gate hole, adjudicated FIXED on this
+     * branch — was missing from the log entirely.
+     *
+     * A change log is the phase's answer to "what did you change". Deriving the
+     * row set from the adjudication makes an omission a build failure, which is
+     * the only thing that would have caught the one that happened.
+     */
+    const adjudication = read('final-task-adjudication.md');
+    const fixed = [...adjudication.matchAll(/\|\s*`([A-Z]+-\d+)`\s*\|[^|]*\|\s*FIXED\b/g)].map(
+      (m) => m[1] as string
+    );
+
+    expect(fixed.length, 'no FIXED rows were read from the adjudication').toBeGreaterThan(20);
+
     const log = read('evidence', 'change-log.md');
-    for (const marker of ['SEC-001', 'FE-019', 'FE-020', 'OWNER ACCEPTANCE: FAIL']) {
-      expect(log, `the change log does not mention ${marker}`).toContain(marker);
-    }
+    const missing = [...new Set(fixed)].filter((task) => !log.includes(task));
+    expect(
+      missing,
+      `the change log does not name these FIXED tasks:\n  ${missing.join('\n  ')}`
+    ).toEqual([]);
+  });
+
+  it('states the phase status in the log itself', () => {
+    expect(read('evidence', 'change-log.md')).toContain('OWNER ACCEPTANCE: FAIL');
   });
 });
 

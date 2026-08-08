@@ -298,6 +298,38 @@ describe('creation sends the schema shape', () => {
     expect(result.created).toBeUndefined();
   });
 
+  it('names the 409 as a duplicate VIN, against the VIN field', async () => {
+    /*
+     * `P1-27-FE-020`'s third leg, and the one the first fix did not close.
+     *
+     * `fieldErrorsOf` returns `{}` unless `failure.kind === 'validation'`, so a
+     * 409 had nowhere to land and arrived as the generic conflict copy —
+     * "Someone else changed this" — which is not what happened, does not mention
+     * the VIN and is not something an operator can act on. The manual VIN check
+     * is opt-in, so this IS the default path for a duplicate.
+     *
+     * Safe to name because `create()` reaches `mapWriteConflict` only from the
+     * insert and the single conflict it maps there is the active-VIN collision;
+     * the catalogue refusals are 422s and the merge freeze belongs to `update`.
+     */
+    send.mockResolvedValue(failure('conflict'));
+    const result = await createVehicleAction({ status: 'idle' }, form({ vin: 'DUP' }));
+    expect(result.status).toBe('conflict');
+    expect(result.fieldErrors?.vin).toBe('vehicles.vin.duplicate');
+    expect(result.messageKey).toBe('vehicles.vin.duplicate');
+  });
+
+  it('leaves every other failure kind alone', async () => {
+    // Only the 409 has one unambiguous meaning on this path. A 422 can be any
+    // of five catalogue refusals and must keep its own copy.
+    for (const kind of ['validation', 'forbidden', 'rate-limited', 'server'] as const) {
+      send.mockResolvedValue(failure(kind));
+      const result = await createVehicleAction({ status: 'idle' }, form({ vin: 'ABC' }));
+      expect(result.fieldErrors?.vin, kind).not.toBe('vehicles.vin.duplicate');
+      expect(result.messageKey, kind).not.toBe('vehicles.vin.duplicate');
+    }
+  });
+
   it('does not call the API when the session has expired', async () => {
     authorizedClient.mockResolvedValue(null);
     const result = await createVehicleAction({ status: 'idle' }, form({ vin: 'ABC' }));

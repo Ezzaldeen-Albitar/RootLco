@@ -150,7 +150,32 @@ export async function createVehicleAction(
   if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
 
   const result = await client.send<CreatedVehicle>('POST', '/api/v1/vehicles', parsed.data);
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    /*
+     * A 409 from `POST /vehicles` is the ACTIVE-VIN COLLISION and nothing else.
+     *
+     * `vehicle-write-service.ts` `create()` reaches `mapWriteConflict` only from
+     * the insert, and the single conflict it maps there is `23505` — "A live
+     * vehicle with this VIN already exists in the tenant". The catalogue
+     * refusals are 422s and the merge freeze belongs to `update`, not `create`.
+     *
+     * Without this, that 409 arrived as the generic conflict copy — "Someone
+     * else changed this" — which is not what happened, does not mention the VIN
+     * and is not something an operator can act on. `fieldErrorsOf` cannot help:
+     * it returns `{}` unless `failure.kind === 'validation'`, so the error had
+     * nowhere to land beside the field it is about. Named here, at the one call
+     * site that knows what a 409 means on this path.
+     */
+    if (result.kind === 'conflict') {
+      return {
+        ...state,
+        messageKey: 'vehicles.vin.duplicate',
+        fieldErrors: { ...(state.fieldErrors ?? {}), vin: 'vehicles.vin.duplicate' },
+      };
+    }
+    return state;
+  }
 
   return {
     status: 'success',
