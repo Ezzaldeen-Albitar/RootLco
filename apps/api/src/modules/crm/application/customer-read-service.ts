@@ -48,6 +48,7 @@ import {
   type ConsentEntry,
   type ContactPointEntry,
   type CustomerDetailRow,
+  type CustomerDisplayIdentity,
   type CustomerReadRepository,
   type NoteEntry,
   type PreferenceEntry,
@@ -92,6 +93,28 @@ export class CustomerReadService extends ApplicationService {
       throw new AppFailure('ERR-RES-001', { message: 'Customer was not found' });
     }
     return customer;
+  }
+
+  /**
+   * Display identity for a set of partner ids — the CRM module's answer to
+   * "who is this?" for a module that legitimately holds partner ids and must not
+   * show them (`P1-27-INT-025`).
+   *
+   * Exposed on the module's PUBLIC surface so the vehicle module can compose it
+   * rather than reaching into `crm.business_partners` with its own SQL. No `veh`
+   * repository touches a CRM table today, and adding the first cross-schema join
+   * inside a bug fix would set a precedent that outlives the fix.
+   *
+   * Unlike `readCustomer` this does NOT throw for an id it cannot resolve. A
+   * relationship may reference a partner the caller cannot see, and that is a
+   * sentence for the screen to say, not a request to fail. Unresolved ids are
+   * absent from the map.
+   */
+  async resolveDisplayIdentities(
+    db: DbHandle,
+    partnerIds: readonly string[]
+  ): Promise<ReadonlyMap<string, CustomerDisplayIdentity>> {
+    return this.reads.findDisplayIdentities(db, partnerIds);
   }
 
   async listContacts(

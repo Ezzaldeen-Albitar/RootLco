@@ -10,6 +10,10 @@
  * never treated as the legal owner.
  */
 import { ApplicationService } from '@/server/layering';
+// Cross-module composition through the PUBLIC surface, not a cross-schema join.
+// `crm` imports nothing from `vehicle`, so there is no cycle; the reception
+// module composes shared-services the same way.
+import { crmModule } from '@/modules/crm';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
@@ -151,16 +155,63 @@ export class VehicleRelationsService extends ApplicationService {
     return { vehicleId, relationshipId };
   }
 
-  listRelationships(
+  /**
+   * A vehicle's parties, each named (`P1-27-INT-025`).
+   *
+   * ## Why the name is resolved here and not in the repository
+   *
+   * The read publishes `partner_id` and nothing else, so the relationships screen
+   * rendered a uuid under a column headed with a person's name — against the
+   * standing rule that no uuid is a normal label.
+   *
+   * The name lives in `crm.business_partners`. **No `veh` repository touches a
+   * CRM table**, and adding the first cross-schema join inside a bug fix would
+   * set a precedent that outlives the fix. So the vehicle module composes the CRM
+   * module's PUBLIC surface instead — the same shape as the reception module
+   * composing shared-services for its numbering. Modules talk through their
+   * published services; schemas stay owned.
+   *
+   * ## One extra statement, not one per row
+   *
+   * `resolveDisplayIdentities` takes the whole page's ids at once. Resolving them
+   * singly would be an N+1 against a bucket sized for one read per page.
+   *
+   * ## An unresolved partner is a sentence, not a failure
+   *
+   * A relationship may reference a partner this caller cannot see — soft-deleted,
+   * merged away, or outside their scope. That id is simply absent from the map
+   * and `partnerName` comes back `null`, which the screen renders as words. The
+   * alternative — failing the whole list, or falling back to the uuid — either
+   * hides six good rows because of one, or reintroduces the defect.
+   */
+  async listRelationships(
     db: DbHandle,
     vehicleId: string,
     page: PageInput
   ): Promise<Page<RelationshipHit>> {
-    return this.relations.listRelationships(
+    const result = await this.relations.listRelationships(
       db,
       vehicleId,
       pageRequest(RELATIONSHIP_ORDERING, page)
     );
+
+    const identities = await crmModule().customerRead.resolveDisplayIdentities(
+      db,
+      result.items.map((item) => item.partnerId)
+    );
+
+    return {
+      ...result,
+      items: result.items.map((item) => {
+        const identity = identities.get(item.partnerId);
+        return {
+          ...item,
+          partnerName: identity?.displayName ?? null,
+          partnerNumber: identity?.displayNumber ?? null,
+          partnerType: identity?.partyType ?? null,
+        };
+      }),
+    };
   }
 
   private async requireWritableVehicle(db: DbHandle, vehicleId: string): Promise<void> {

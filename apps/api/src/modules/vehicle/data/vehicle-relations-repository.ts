@@ -27,6 +27,17 @@ export interface RelationsVehicleState {
 export interface RelationshipHit {
   readonly id: string;
   readonly partnerId: string;
+  /**
+   * The party's display name, or `null` when this caller cannot see them.
+   *
+   * Not selected by this repository — `veh` owns no CRM table. The service
+   * resolves it through the CRM module's public surface and fills it in
+   * (`P1-27-INT-025`). `null` means "not visible to you", which the screen says
+   * in words; it never falls back to the id.
+   */
+  readonly partnerName?: string | null;
+  readonly partnerNumber?: string | null;
+  readonly partnerType?: string | null;
   readonly relationshipRole: string;
   readonly validFrom: string;
   readonly validTo: string | null;

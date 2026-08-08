@@ -116,6 +116,21 @@ export const RESTRICTION_ORDERING: OrderingContract = {
 };
 
 /** A customer, as much of one as a profile screen needs. */
+/**
+ * The least a screen needs to name a customer instead of showing a uuid.
+ *
+ * Deliberately three fields. A relationship row needs to say WHO, not to carry a
+ * second copy of the customer profile — and every field published somewhere it is
+ * not needed is a field that has to be justified against the tenant's privacy
+ * classification wherever it lands.
+ */
+export interface CustomerDisplayIdentity {
+  readonly id: string;
+  readonly displayName: string;
+  readonly displayNumber: string | null;
+  readonly partyType: string;
+}
+
 export interface CustomerDetailRow {
   readonly id: string;
   readonly displayNumber: string | null;
@@ -290,6 +305,67 @@ export class CustomerReadRepository extends Repository {
    * query: a customer and its profile are written in one transaction and a screen
    * that read them separately could observe one without the other.
    */
+  /**
+   * Display identity for a SET of partner ids, for callers that hold ids and
+   * must show people rather than uuids (`P1-27-INT-025`).
+   *
+   * ## Why a batch, and why here
+   *
+   * The vehicle relationship and ownership reads publish `partner_id` and no
+   * name, so their screens rendered a uuid under a column headed with a person's
+   * name. Resolving that one id at a time would be an N+1 — and against the
+   * `expensive-read` bucket, a single page of relationships could exhaust an
+   * operator's minute. One statement, one round trip, however many rows.
+   *
+   * ## Absence is a normal answer, not an error
+   *
+   * `findCustomerDetail` throws `ERR-RES-001` through its service, which is right
+   * for "open this customer" and wrong here: a relationship row can legitimately
+   * reference a partner this caller cannot see, and the screen's job is then to
+   * say so in words rather than to fail. So ids that resolve to nothing are
+   * simply ABSENT from the returned map, and the caller decides what to say.
+   *
+   * Soft-deleted and merged partners are excluded on the same predicate
+   * `findCustomerDetail` uses, so the two reads cannot disagree about who exists.
+   * RLS still applies underneath the explicit tenant predicate.
+   */
+  async findDisplayIdentities(
+    db: DbHandle,
+    partnerIds: readonly string[]
+  ): Promise<ReadonlyMap<string, CustomerDisplayIdentity>> {
+    const unique = [...new Set(partnerIds)];
+    // No ids means no statement. Sending an empty array would be a round trip
+    // that can only return nothing.
+    if (unique.length === 0) return new Map();
+
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      display_number: string | null;
+      display_name: string;
+      party_type: string;
+    }>(
+      db,
+      `SELECT id, display_number, display_name, party_type
+         FROM crm.business_partners
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+          AND deleted_at IS NULL AND merged_into_id IS NULL`,
+      [context.principal.tenantId, unique]
+    );
+
+    return new Map(
+      result.rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          displayName: row.display_name,
+          displayNumber: row.display_number,
+          partyType: row.party_type,
+        },
+      ])
+    );
+  }
+
   async findCustomerDetail(db: DbHandle, customerId: string): Promise<CustomerDetailRow | null> {
     const context = this.assertContext(db);
     const result = await this.run<{
