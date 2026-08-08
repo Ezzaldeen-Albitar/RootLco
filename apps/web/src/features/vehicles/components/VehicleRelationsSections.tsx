@@ -538,14 +538,32 @@ export function RelationshipsSection({
   vehicleId,
   today,
   canManage,
+  canRetire = canManage,
   canLinkCustomer = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly vehicleId: string;
   readonly today: string;
-  /** `veh.vehicle.relationship.manage` — authorise and retire. */
+  /** `veh.vehicle.relationship.manage` — ADD an authorised party. */
   readonly canManage: boolean;
+  /**
+   * `veh.vehicle.relationship.manage` — RETIRE one. The same permission, and a
+   * separate prop, because the two writes have different LIFECYCLE rules.
+   *
+   * `addAuthorizedParty` calls `requireWritableVehicle` and so refuses a merged
+   * or scrapped vehicle. `retireAuthorizedParty` calls it nowhere
+   * (`vehicle-relations-service.ts:104-152`), the repository touches only
+   * `veh.vehicle_relationships`, and that table carries no lifecycle-aware
+   * trigger — so retiring on a scrapped vehicle returns 200.
+   *
+   * That is the legitimate case: taking an authorised driver off a written-off
+   * car is exactly the cleanup somebody needs to do. Gating retire on the same
+   * `!terminal` conjunct as the add form removed a working control, which is
+   * the same defect the two-predicate design was built to avoid — one method
+   * over. Defaults to `canManage` so no existing caller changes behaviour.
+   */
+  readonly canRetire?: boolean;
   /** `crm.customer.vehicle.manage` — a DIFFERENT module's capability. */
   readonly canLinkCustomer?: boolean;
 }) {
@@ -620,7 +638,9 @@ export function RelationshipsSection({
           </span>
         ),
       },
-      ...(canManage
+      // `canRetire`, NOT `canManage`: the retire writer has no lifecycle guard,
+      // so a scrapped vehicle's authorised parties can still be taken off.
+      ...(canRetire
         ? [
             {
               id: 'actions',
@@ -641,7 +661,7 @@ export function RelationshipsSection({
           ]
         : []),
     ],
-    [messages, today, canManage, vehicleId, table.refresh]
+    [messages, today, canRetire, vehicleId, table.refresh]
   );
 
   return (

@@ -992,6 +992,7 @@
   "vehicles.profile.section.plates": "Plates",
   "vehicles.profile.section.relationships": "People",
   "vehicles.profile.sections": "Vehicle sections",
+  "vehicles.create.conflict": "One of the values you entered is already used by another vehicle. Check the VIN and the reference number.",
   "vehicles.profile.statusChanged": "Status changed.",
   "vehicles.profile.statusHeading": "Change status",
   "vehicles.profile.terminalNote": "This vehicle is scrapped. You can still correct its details, but its status, plates, owners, authorised people and battery details can no longer change.",

@@ -58,10 +58,19 @@ export function PartyLabel({
   // the named branch and render an EMPTY cell. An empty cell says nothing at
   // all, which is worse than the sentence and worse than the identifier.
   //
-  // This is not hypothetical: the Backend half of `P1-27-INT-025` is a separate
-  // pull request, so between its merge and the Frontend's there is a window in
-  // which exactly that happens. The vehicle attribute-ledger actor cell already
-  // uses `== null` for the same reason.
+  // This is not hypothetical. The Backend half of `P1-27-INT-025` is a separate
+  // pull request, and if the FRONTEND merges first this component renders
+  // against an operation that publishes no partner fields at all — which is
+  // exactly the shape above.
+  //
+  // (An earlier version of this note had the order backwards. On `develop`
+  // today the relationships cell renders `row.partnerId` directly, so it is
+  // Backend-first that leaves the uuid on screen for one merge window and
+  // Frontend-first that produces the absent-field window this guard covers.
+  // Either order is safe now, which is the point of the guard.)
+  //
+  // The vehicle attribute-ledger actor cell already uses `== null` for the same
+  // reason.
   if (party.partnerName == null) {
     return (
       <span

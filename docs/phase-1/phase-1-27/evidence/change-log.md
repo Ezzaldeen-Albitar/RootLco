@@ -70,11 +70,18 @@ test they shipped without: every web test mocks the adapter, so the whole
 resolution path could have returned an empty map and the Frontend suite would
 have stayed green.
 
-**That branch merges FIRST.** Between the two merges the operation publishes no
-name and `PartyLabel` says "Customer unavailable" — the honest state, and the
-component was hardened to treat an ABSENT field the same as a null one, because
-the row arrives as a typed cast rather than a parse and `=== null` would have
-rendered an empty cell instead.
+**Either merge order is now safe, and neither is free.** On `develop` today the
+relationships cell renders `row.partnerId` — the uuid. So Backend-first leaves
+that uuid on screen until the Frontend merges, and Frontend-first renders
+"Customer unavailable" until the Backend merges. The handoff prescribes
+Backend-first for review reasons and says so.
+
+`PartyLabel` was hardened for the second window: it tests `== null` rather than
+`=== null`, because the row arrives as a typed CAST rather than a parse, so a
+backend that does not publish the fields sends `undefined` and the strict check
+would have rendered an EMPTY cell — which says nothing at all, and is worse than
+either the sentence or the identifier. An earlier version of this paragraph
+attributed the window to the wrong merge order.
 
 ### D3 — actor identity (Backend, NOT MERGED)
 

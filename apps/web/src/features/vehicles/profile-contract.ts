@@ -84,12 +84,27 @@ export interface VehicleDetail {
 }
 
 /**
- * A frozen vehicle refuses EVERY write with `409 ERR-RES-002`.
+ * A merged vehicle is a duplicate folded into a survivor. **Every write control
+ * is withdrawn**, and that is partly a server rule and partly a decision.
  *
- * `merged` only, and that is not an oversight — see `isTerminal` below. The two
- * predicates exist because the server does not have one rule, it has two, and a
- * screen that collapses them either offers an action that can only fail or hides
- * one that would have worked.
+ * The honest split, because an earlier version of this docblock said "refuses
+ * EVERY write with `409 ERR-RES-002`" and its own table thirty lines below said
+ * otherwise:
+ *
+ *   - `veh.vehicle-update`, `-status-change`, `-plate-assign`,
+ *     `-ownership-transfer`, `-authorized-party-add` and `-ev-profile-set` all
+ *     refuse `merged` at the server. That half is a mirror.
+ *   - The odometer write, the CRM customer link and the authorised-party RETIRE
+ *     have **no lifecycle guard at all**, and there is no database backstop
+ *     either: `tg_vehicles_merge_guard` is `BEFORE UPDATE ON veh.vehicles`, so
+ *     it cannot fire for an INSERT into `veh.odometer_readings` or
+ *     `veh.vehicle_relationships`. The server would accept those three.
+ *
+ * They are withheld on a merged vehicle anyway, because a record written against
+ * a tombstone is a record nobody will find. That is Owner policy and is stated
+ * as policy rather than dressed as a server mirror.
+ *
+ * `merged` only. Scrapped is a different question — see `isTerminal` below.
  */
 export function isFrozen(vehicle: VehicleDetail): boolean {
   return vehicle.mergedIntoId !== null || vehicle.lifecycleStatus === 'merged';
@@ -109,13 +124,19 @@ export function isFrozen(vehicle: VehicleDetail): boolean {
  *
  * | write                                | refuses `merged` | refuses `scrapped` |
  * | ------------------------------------ | ---------------- | ------------------ |
- * | plate assign / ownership transfer     | yes              | **yes** — `vehicle-registration-service.ts:194` |
- * | authorized party add / retire         | yes              | **yes** — `vehicle-relations-service.ts:184`    |
+ * | plate assign / ownership transfer     | yes              | **yes** — `requireWritableVehicle`, `vehicle-registration-service.ts:182` |
+ * | authorized party **add**              | yes              | **yes** — `requireWritableVehicle`, `vehicle-relations-service.ts:171` |
+ * | authorized party **retire**           | no guard         | no guard — `retireAuthorizedParty` (`vehicle-relations-service.ts:104-152`) calls `requireWritableVehicle` NOWHERE, and `veh.vehicle_relationships` has no lifecycle trigger |
  * | EV profile set                        | yes              | **yes** — `vehicle-lifecycle-service.ts:68`     |
  * | vehicle update (details)              | yes              | no  — `vehicle-write-service.ts:119` guards `merged` only |
  * | status change                         | yes              | no guard, but `LIFECYCLE_TRANSITIONS.scrapped` is `[]`, so every target is refused |
  * | odometer record                       | no lifecycle guard at all — `vehicle-odometer-service.ts` |
  * | customer→vehicle link (CRM)           | no lifecycle guard at all — `customer-identity-service.ts:302` |
+ *
+ * The add/retire row was ONE row saying "yes / yes" for both, and the gate built
+ * from it dropped the retire control on a scrapped vehicle — removing a write
+ * the server accepts, which is the same defect this predicate exists to avoid,
+ * one method over. Two rows now, and two props at the call site.
  *
  * So a scrapped vehicle's DETAILS can still be corrected — a plate typo on a
  * written-off car is exactly the sort of correction that stays legitimate — while

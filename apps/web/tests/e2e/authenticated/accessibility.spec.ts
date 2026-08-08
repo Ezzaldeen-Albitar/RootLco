@@ -44,20 +44,53 @@ if (!AXE) {
 /** WCAG 2.1 A and AA — the level the accessibility evidence claims. */
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+/**
+ * Rules a TAG-SCOPED run silently drops, re-enabled by name.
+ *
+ * axe sets `tagExclude = ['experimental', 'deprecated']` by default, and a rule
+ * carrying an excluded tag is removed from a `runOnly` tag run even when one of
+ * its own tags was requested. `label-content-name-mismatch` is tagged
+ * `['cat.semantics', 'wcag21a', 'wcag253', …, 'experimental']` — measured
+ * against this repository's own axe-core, not assumed — so asking for `wcag21a`
+ * does NOT ask for it, and it appears in neither violations nor passes nor
+ * incomplete nor inapplicable.
+ *
+ * It is the ONLY rule axe ships for SC 2.5.3 Label in Name. Without this block
+ * no route in `ROUTES` could ever produce a 2.5.3 finding, which is why the
+ * vehicle duplicate queue's Label in Name failure survived every tier — not,
+ * as an earlier version of this file claimed, because the route was unlisted.
+ * Listing the route was necessary and was not sufficient.
+ */
+const ALSO = { 'label-content-name-mismatch': { enabled: true } };
+
 /*
  * Every authenticated route this phase can reach without first creating data.
  *
- * The five CRM and vehicle routes below were MISSING, and that omission is why a
- * WCAG 2.5.3 Label in Name failure on the vehicle duplicate queue survived every
- * tier and was found only by an adversarial recheck. The list declared "WCAG 2.1
- * A and AA — the level the accessibility evidence claims" while containing no
- * P1-27 route at all, so the phase under acceptance was the one part of the
- * product no automated scan had ever visited.
+ * The five CRM and vehicle routes below were MISSING: this list declared "WCAG
+ * 2.1 A and AA — the level the accessibility evidence claims" while containing
+ * no P1-27 route at all, so the phase under acceptance was the one part of the
+ * product no automated scan had ever visited. They are here now, and the other
+ * sixty-eight tag-scoped rules run against three previously unscanned screens.
  *
- * The profile and detail routes are deliberately absent: each needs a real
- * customer or vehicle id, and a scan pointed at a 404 reports zero violations.
- * They are covered by component-level scans instead, which is a statement about
- * what this file does rather than a gap it hides.
+ * ## What listing them did NOT fix, and an earlier version of this comment said it did
+ *
+ * It did not explain how the duplicate queue's Label in Name failure survived.
+ * That rule is excluded from every tag-scoped run by axe's `experimental` tag —
+ * see `ALSO` above — so the gate would have stayed green with the defect live
+ * even if this route had been listed from the first day. The route list and the
+ * rule are two separate necessary conditions and only one of them was missing
+ * from the diagnosis.
+ *
+ * ## The profile and detail screens are scanned by NOTHING
+ *
+ * They need a real customer or vehicle id, and a scan pointed at a 404 reports
+ * zero violations — which is why they are not listed here. They are also not
+ * covered elsewhere: exactly three files in `apps/web` import `vitest-axe`
+ * (`gallery-and-print`, `overlays`, `shell`) and none of them renders
+ * `VehicleProfileScreen`, `CustomerProfileScreen`, `VehicleDuplicateReviewScreen`
+ * or `DuplicateReviewScreen`. A previous version of this note claimed they were
+ * "covered by component-level scans instead". They are not. It is an open gap,
+ * recorded as one rather than papered over.
  */
 const ROUTES = [
   '/administration',
@@ -102,20 +135,51 @@ async function scan(page: import('@playwright/test').Page) {
       'either way a scan now would report zero violations over nothing.'
   ).toBe(true);
 
-  return page.evaluate(async (tags) => {
-    const axe = (
-      window as unknown as { axe: { run: (c: unknown, o: unknown) => Promise<unknown> } }
-    ).axe;
-    const result = (await axe.run(document, { runOnly: tags })) as {
-      violations: AxeViolation[];
-    };
-    return result.violations.map((v) => ({
-      id: v.id,
-      impact: v.impact,
-      help: v.help,
-      nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
-    }));
-  }, TAGS);
+  return page.evaluate(
+    async ({ tags, rules }) => {
+      const axe = (
+        window as unknown as { axe: { run: (c: unknown, o: unknown) => Promise<unknown> } }
+      ).axe;
+      const result = (await axe.run(document, { runOnly: tags, rules })) as {
+        violations: AxeViolation[];
+      };
+      return result.violations.map((v) => ({
+        id: v.id,
+        impact: v.impact,
+        help: v.help,
+        nodes: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
+      }));
+    },
+    { tags: TAGS, rules: ALSO }
+  );
+}
+
+/**
+ * Proves the re-enabled rule is actually RUNNING, on a fixture that breaks it.
+ *
+ * Without this the `ALSO` block is a declaration: a typo in the rule id, or an
+ * axe upgrade that renames it, would leave every route scan green and silent —
+ * which is exactly the state this file was in before, and exactly how the
+ * duplicate queue's failure survived.
+ */
+async function proveLabelInNameRuns(page: import('@playwright/test').Page): Promise<string[]> {
+  return page.evaluate(
+    async ({ tags, rules }) => {
+      const doc = document.createElement('div');
+      // Visible text "V-0001", announced name "First record" — the defect.
+      doc.innerHTML = '<a href="#x" aria-label="First record">V-0001</a>';
+      document.body.appendChild(doc);
+      const axe = (
+        window as unknown as { axe: { run: (c: unknown, o: unknown) => Promise<unknown> } }
+      ).axe;
+      const result = (await axe.run(doc, { runOnly: tags, rules })) as {
+        violations: { id: string }[];
+      };
+      doc.remove();
+      return result.violations.map((v) => v.id);
+    },
+    { tags: TAGS, rules: ALSO }
+  );
 }
 
 const localeOf = (project: string) => (project.endsWith('-ar') ? 'ar' : 'en');
@@ -153,6 +217,17 @@ test.describe('authenticated accessibility', () => {
       ).toEqual([]);
     });
   }
+
+  test('the Label in Name rule is enabled, proved on a planted violation', async ({ page }) => {
+    await page.addInitScript({ path: AXE });
+    await page.goto('/en/administration/users');
+    const ids = await proveLabelInNameRuns(page);
+    expect(
+      ids,
+      'label-content-name-mismatch did not fire on an element that plainly breaks it — ' +
+        'the rule is excluded from this run, so no route scan above can ever report SC 2.5.3'
+    ).toContain('label-content-name-mismatch');
+  });
 
   test('a dialog traps focus and returns it, signed in', async ({ page }) => {
     await page.addInitScript({ path: AXE });

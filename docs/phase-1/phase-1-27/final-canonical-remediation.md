@@ -308,10 +308,13 @@ branch can gate itself, and `p1-27-frontend` because the gate DEFAULTS to
 `p1-26-frontend`, so P1-27 was measured against another phase's declaration for
 its entire life.
 
-**Merge order is Backend first.** Between the two merges the two vehicle lists
-publish no partner name and read "Customer unavailable" — the honest state, and
-`PartyLabel` was hardened to treat an absent field the same as a null one so the
-window shows a sentence rather than an empty cell.
+**Merge order is Backend first, and it is not the cost-free option.** On
+`develop` today the relationships cell renders `row.partnerId`, so Backend-first
+leaves that uuid on screen until the Frontend merges; Frontend-first would remove
+it immediately and show "Customer unavailable" until the Backend merges.
+Backend-first is chosen so the API change is reviewed as API before anything
+depends on it. `PartyLabel` was hardened to treat an absent field the same as a
+null one, so the Frontend-first window would also be safe.
 
 The finding worth keeping is not the split. It is that a Backend change reached
 three merges to `develop` with **no Backend test of any kind**, and nothing

@@ -94,6 +94,7 @@ const TRANSFER_FORM = en['vehicles.ownership.transfer'];
 const ODOMETER_FORM = en['vehicles.odometer.record'];
 const AUTHORIZE_FORM = en['vehicles.relationships.authorize'];
 const EV_SAVE = en['vehicles.ev.record'];
+const RETIRE_CONTROL = en['vehicles.relationships.retire'];
 const EDIT_HEADING = en['vehicles.profile.editHeading'];
 const STATUS_HEADING = en['vehicles.profile.statusHeading'];
 const TERMINAL_NOTE = en['vehicles.profile.terminalNote'];
@@ -136,6 +137,21 @@ function page() {
     correlationId: 'fixed-correlation-id',
   };
 }
+
+/** An OPEN authorised party — the only row shape that offers the retire control. */
+const AUTHORIZED_PARTY = {
+  id: 'rel-1',
+  partnerId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  partnerName: 'Layla Haddad',
+  partnerNumber: 'C-000482',
+  partnerType: 'individual',
+  relationshipRole: 'authorized_person',
+  validFrom: '2026-01-01',
+  validTo: null,
+  active: true,
+  allowedActions: ['approve_quotation'],
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
 
 beforeEach(() => {
   for (const fn of [
@@ -252,12 +268,63 @@ describe('a scrapped vehicle withdraws exactly the writes the server refuses', (
     expect(screen.getByRole('heading', { name: STATUS_HEADING })).toBeTruthy();
     expect(screen.queryByText(TERMINAL_NOTE)).toBeNull();
   });
+
+  it('says why to an operator who never had the status permission', () => {
+    /*
+     * The note carried a `canChangeStatus &&` conjunct — a permission governing
+     * NONE of the four surfaces it explains. An operator holding
+     * `veh.vehicle.manage` and `veh.vehicle.relationship.manage` but not
+     * status-manage lost the plate form, the transfer, the authorise form and
+     * the electric-drive save with no explanation anywhere: exactly the silence
+     * the note exists to prevent, and unreachable by every other case in this
+     * file because they all render with all six capabilities set.
+     */
+    renderLtr(
+      <VehicleProfileScreen
+        locale="en"
+        messages={en}
+        vehicle={{ ...VEHICLE, lifecycleStatus: 'scrapped' }}
+        canEdit
+        canChangeStatus={false}
+        canManageRelationships
+        canLinkCustomer
+        canRecordOdometer
+        evProfile={{ status: 'none' }}
+        canListDocuments
+        documents={{ status: 'ok', documentIds: [] }}
+      />
+    );
+    expect(screen.getByText(TERMINAL_NOTE)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: STATUS_HEADING })).toBeNull();
+  });
 });
 
 describe('a scrapped vehicle keeps the writes the server still accepts', () => {
   it('keeps the edit panel, because vehicle-update guards merged alone', () => {
     render({ lifecycleStatus: 'scrapped' });
     expect(screen.getByRole('heading', { name: EDIT_HEADING })).toBeTruthy();
+  });
+
+  it('keeps the RETIRE control, because the retire writer has no lifecycle guard', async () => {
+    /*
+     * The first version of this fix gated authorise and retire on ONE prop, on
+     * a table row that said both refuse merged and scrapped. Only `add` does:
+     * `addAuthorizedParty` calls `requireWritableVehicle`,
+     * `retireAuthorizedParty` (`vehicle-relations-service.ts:104-152`) calls it
+     * nowhere, `veh.vehicle_relationships` carries no lifecycle trigger, and the
+     * route calls straight through — retiring on a scrapped vehicle returns 200.
+     *
+     * So the fix REMOVED a working control: taking an authorised driver off a
+     * written-off car is exactly the cleanup somebody needs to do. That is the
+     * defect the two-predicate design exists to avoid, one method over, and it
+     * was invisible because nothing rendered this column through the screen.
+     */
+    listRelationships.mockResolvedValue({ ...page(), rows: [AUTHORIZED_PARTY] });
+    render({ lifecycleStatus: 'scrapped' });
+    await openSection(en['vehicles.profile.section.relationships']);
+    await waitFor(() => expect(screen.getByRole('button', { name: RETIRE_CONTROL })).toBeTruthy());
+    // …while the ADD form, which the server does refuse, stays withdrawn.
+    expect(screen.queryByRole('button', { name: AUTHORIZE_FORM })).toBeNull();
   });
 
   it('keeps the odometer form, because the odometer writer has no lifecycle guard', async () => {
@@ -278,7 +345,19 @@ describe('a merged vehicle withdraws everything', () => {
     expect(screen.queryByText(TERMINAL_NOTE)).toBeNull();
   });
 
-  it('withdraws the odometer form as well', async () => {
+  it('withdraws the odometer form as well — a POLICY, not a server mirror', async () => {
+    /*
+     * Stated accurately, because the comment this pins used to claim the server
+     * refused it. It does not: `vehicle-odometer-service.ts` has no lifecycle
+     * guard, and `tg_vehicles_merge_guard` is `BEFORE UPDATE ON veh.vehicles`,
+     * so it cannot fire for an INSERT into `veh.odometer_readings`. The server
+     * would accept a reading against a merged vehicle.
+     *
+     * It is withheld because a merged vehicle is a duplicate folded into a
+     * survivor, and a reading recorded against the tombstone is one nobody will
+     * find. If the Owner decides otherwise this case is what changes — which is
+     * the point of writing the reason down rather than a false server citation.
+     */
     const view = render({ lifecycleStatus: 'merged' });
     await openSection(en['vehicles.profile.section.odometer']);
     await waitFor(() => expect(listOdometerReadings).toHaveBeenCalled());

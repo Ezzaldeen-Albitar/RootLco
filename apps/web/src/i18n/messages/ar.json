@@ -992,6 +992,7 @@
   "vehicles.profile.section.plates": "اللوحات",
   "vehicles.profile.section.relationships": "الأشخاص",
   "vehicles.profile.sections": "أقسام المركبة",
+  "vehicles.create.conflict": "إحدى القيم التي أدخلتها مستخدمة بالفعل لمركبة أخرى. تحقّق من رقم الهيكل ومن الرقم المرجعي.",
   "vehicles.profile.statusChanged": "تم تغيير الحالة.",
   "vehicles.profile.statusHeading": "تغيير الحالة",
   "vehicles.profile.terminalNote": "هذه المركبة مشطوبة. لا يزال بإمكانك تصحيح تفاصيلها، لكن لم يعد بالإمكان تغيير حالتها أو لوحاتها أو مالكيها أو الأشخاص المخوّلين أو بيانات البطارية.",

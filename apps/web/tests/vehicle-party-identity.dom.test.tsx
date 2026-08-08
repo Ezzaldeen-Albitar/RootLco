@@ -171,8 +171,10 @@ describe('PartyLabel on its own, because the rule lives in one component', () =>
      * named branch and render an EMPTY cell, which says nothing at all.
      *
      * This is a real window, not a hypothetical: the Backend half of
-     * `P1-27-INT-025` is a separate pull request that merges FIRST, and between
-     * the two merges this is exactly the shape that arrives.
+     * `P1-27-INT-025` is a separate pull request, so if the FRONTEND merges
+     * first this is exactly the shape that arrives. (Backend-first has its own
+     * window — `develop` renders the raw uuid until the Frontend lands — which
+     * is why the guard matters whichever order is chosen.)
      */
     const absent = {} as unknown as Parameters<typeof PartyLabel>[0]['party'];
     renderLtr(<PartyLabel messages={en} party={absent} />);

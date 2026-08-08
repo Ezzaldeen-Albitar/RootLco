@@ -197,9 +197,18 @@ export function VehicleProfileScreen({
       {section === 'odometer' ? (
         // No `today`: odometer readings are timestamped observations, not dated
         // intervals, so there is nothing here to be "in force".
-        // `frozen`, NOT `terminal`. `vehicle-odometer-service.ts` has no lifecycle
-        // guard of its own, so the only refusal is the merge freeze at the
-        // database. A scrapped vehicle's final reading is a legitimate record.
+        // `frozen`, NOT `terminal` — and this one is a PRODUCT DECISION, not a
+        // server mirror. An earlier comment here said the refusal was "the merge
+        // freeze at the database"; there is no such refusal.
+        // `vehicle-odometer-service.ts` has no lifecycle guard, and
+        // `tg_vehicles_merge_guard` is `BEFORE UPDATE ON veh.vehicles`, so it
+        // cannot fire for an INSERT into `veh.odometer_readings` — the server
+        // accepts a reading against a merged vehicle.
+        //
+        // It is withheld anyway: a merged vehicle is a duplicate folded into a
+        // survivor, and a reading recorded against the tombstone is a reading
+        // nobody will find. A scrapped vehicle's FINAL reading is different, and
+        // stays available. Owner policy, stated as policy.
         <OdometerSection
           locale={locale}
           messages={messages}
@@ -233,11 +242,20 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          // Authorize / retire is `terminal`: `vehicle-relations-service.ts:184`
-          // refuses merged and scrapped alike. The CRM link is `frozen` only —
-          // `customer-identity-service.ts:302` has no lifecycle guard, so the
-          // sole refusal there is the merge freeze.
+          // THREE different answers, because the three writers behind this one
+          // section have three different lifecycle rules:
+          //
+          //   ADD an authorised party — `vehicle-relations-service.ts:171` calls
+          //     `requireWritableVehicle`, so merged and scrapped both 409.
+          //   RETIRE one — `retireAuthorizedParty` (:104-152) calls it NOWHERE,
+          //     and `veh.vehicle_relationships` carries no lifecycle trigger, so
+          //     the server accepts it on a scrapped vehicle. Taking a driver off
+          //     a written-off car is legitimate cleanup and stays available.
+          //   LINK a customer — `customer-identity-service.ts:302` has no
+          //     lifecycle guard either. `!frozen` here is a PRODUCT decision
+          //     about a merged duplicate, not a server mirror; see below.
           canManage={canManageRelationships && !terminal}
+          canRetire={canManageRelationships}
           canLinkCustomer={canLinkCustomer && !frozen}
         />
       ) : null}
@@ -321,7 +339,16 @@ function VehicleOverviewSection({
           {canChangeStatus && !terminal ? (
             <StatusPanel messages={messages} vehicle={vehicle} />
           ) : null}
-          {canChangeStatus && terminal ? (
+          {/*
+            UNGATED, like the frozen note above it. This carried a
+            `canChangeStatus &&` conjunct, which is a permission governing NONE
+            of the four surfaces it explains — so an operator holding
+            `veh.vehicle.manage` and `veh.vehicle.relationship.manage` but not
+            status-manage lost the plate form, the transfer, the authorise form
+            and the electric-drive save with no explanation anywhere. That is
+            the silence the note exists to prevent.
+          */}
+          {terminal ? (
             <p
               role="status"
               className="rounded-lg border border-border bg-surface p-4 text-body text-text-secondary"

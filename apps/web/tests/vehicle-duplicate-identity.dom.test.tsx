@@ -140,6 +140,12 @@ describe('each side of the pair is named by its own reference', () => {
       'href',
       `/en/vehicles/${ID_B}`
     );
+    // ANCHORED, because containment alone survives swapping the two nodes. SC
+    // 2.5.3 requires containment and speech-input software matches best from the
+    // start of the name, which is why the reference is rendered first. Without
+    // `^` the ordering is asserted by nothing and a reorder passes silently.
+    expect(screen.getByRole('link', { name: /^V-0001/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^V-0002/ })).toBeInTheDocument();
   });
 
   it('refuses to let the ordinal become the whole accessible name again', async () => {

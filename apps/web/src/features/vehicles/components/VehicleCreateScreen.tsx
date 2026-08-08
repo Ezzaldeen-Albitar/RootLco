@@ -181,13 +181,15 @@ export function VehicleCreateScreen({
               the generic "Someone else changed this", which is not what
               happened and not something they could act on.
 
-              That third leg was NOT fixed by mounting this control, and the
-              first version of this comment claimed it was. `fieldErrorsOf`
-              returns `{}` unless the failure is a validation failure, so a 409
-              had nowhere to land beside the field. `createVehicleAction` now
-              names it — a 409 from `POST /vehicles` is the active-VIN collision
-              and nothing else — and it arrives here through `errorFor('vin')`
-              like any other field error.
+              That third leg is only PARTLY closed, and two earlier versions of
+              this comment overclaimed it. `createVehicleAction` now replaces the
+              generic conflict copy with a sentence about this create — but it
+              does NOT say which value collided, and must not: `veh.vehicles`
+              has two tenant-scoped unique indexes (VIN and reference number)
+              and the server maps both to one `ERR-RES-002` without reading the
+              constraint name. Naming the VIN would accuse the wrong field
+              whenever the reference number is the duplicate. Distinguishing
+              them is a Backend change (`P1-27-INT-027`, owned by P1-17).
 
               `excludeVehicleId` is null because there is no vehicle yet: every
               existing match is a real conflict, and there is no own-VIN to

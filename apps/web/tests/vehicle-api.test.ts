@@ -298,35 +298,36 @@ describe('creation sends the schema shape', () => {
     expect(result.created).toBeUndefined();
   });
 
-  it('names the 409 as a duplicate VIN, against the VIN field', async () => {
+  it('says a value is already used, and does NOT say which', async () => {
     /*
-     * `P1-27-FE-020`'s third leg, and the one the first fix did not close.
+     * `P1-27-FE-020`'s third leg. The generic conflict copy — "Someone else
+     * changed this" — is not what happened on a create and is not something an
+     * operator can act on, so the message is replaced. What is NOT done is
+     * naming the field.
      *
-     * `fieldErrorsOf` returns `{}` unless `failure.kind === 'validation'`, so a
-     * 409 had nowhere to land and arrived as the generic conflict copy —
-     * "Someone else changed this" — which is not what happened, does not mention
-     * the VIN and is not something an operator can act on. The manual VIN check
-     * is opt-in, so this IS the default path for a duplicate.
-     *
-     * Safe to name because `create()` reaches `mapWriteConflict` only from the
-     * insert and the single conflict it maps there is the active-VIN collision;
-     * the catalogue refusals are 422s and the merge freeze belongs to `update`.
+     * An earlier version of this case asserted `fieldErrors.vin` on the premise
+     * that the active-VIN collision is the only 409 `POST /vehicles` raises.
+     * `veh.vehicles` carries TWO tenant-scoped unique indexes —
+     * `uq_vehicles_active_vin` and `uq_vehicles_active_display_number` — and
+     * `mapWriteConflict` branches on SQLSTATE alone without reading the
+     * constraint name, so a duplicate REFERENCE NUMBER produces the identical
+     * 409 and would have been rendered as "This VIN is already used", beside
+     * the VIN field, about a value the operator did not duplicate.
      */
     send.mockResolvedValue(failure('conflict'));
     const result = await createVehicleAction({ status: 'idle' }, form({ vin: 'DUP' }));
     expect(result.status).toBe('conflict');
-    expect(result.fieldErrors?.vin).toBe('vehicles.vin.duplicate');
-    expect(result.messageKey).toBe('vehicles.vin.duplicate');
+    expect(result.messageKey).toBe('vehicles.create.conflict');
+    // The assertion that keeps it honest: no field is accused.
+    expect(result.fieldErrors?.vin).toBeUndefined();
+    expect(result.fieldErrors?.displayNumber).toBeUndefined();
   });
 
   it('leaves every other failure kind alone', async () => {
-    // Only the 409 has one unambiguous meaning on this path. A 422 can be any
-    // of five catalogue refusals and must keep its own copy.
     for (const kind of ['validation', 'forbidden', 'rate-limited', 'server'] as const) {
       send.mockResolvedValue(failure(kind));
       const result = await createVehicleAction({ status: 'idle' }, form({ vin: 'ABC' }));
-      expect(result.fieldErrors?.vin, kind).not.toBe('vehicles.vin.duplicate');
-      expect(result.messageKey, kind).not.toBe('vehicles.vin.duplicate');
+      expect(result.messageKey, kind).not.toBe('vehicles.create.conflict');
     }
   });
 
