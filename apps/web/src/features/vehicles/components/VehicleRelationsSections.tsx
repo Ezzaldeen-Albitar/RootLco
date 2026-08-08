@@ -8,6 +8,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { RecordForm } from '@/components/forms/RecordForm';
+import { PartyLabel } from '@/components/party/PartyLabel';
 import { listRelationships, setEvProfileAction, type EvProfileState } from '../relations-api';
 import { intervalState } from '../history-contract';
 import {
@@ -279,16 +280,14 @@ export function RelationshipsSection({
         cell: (row) => translateDynamic(messages, `vehicles.role.${row.relationshipRole}`),
       },
       {
-        id: 'partnerId',
+        id: 'partner',
         headerKey: 'vehicles.relationships.person',
-        // The operation publishes `partner_id` and no name. Shown as a reference
-        // and labelled as one rather than resolved by a CRM read this operation
-        // does not imply.
-        cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.partnerId}
-          </code>
-        ),
+        // The operation now resolves the party through the CRM module and
+        // publishes a name, a reference and a type. It used to publish only
+        // `partner_id`, and this column printed that uuid under a heading that
+        // said "customer" (`P1-27-INT-025`). An unresolvable party renders as a
+        // sentence — never as the id.
+        cell: (row) => <PartyLabel messages={messages} party={row} />,
       },
       {
         id: 'scope',

@@ -33,6 +33,8 @@
  * says so rather than showing an empty list that looks like "there are none".
  */
 
+import type { PartyIdentity } from '@/components/party/PartyLabel';
+
 /** `veh.vehicle_ev_profiles.ev_kind`. Note: no `ice`. */
 export const EV_KINDS = ['bev', 'hybrid', 'phev'] as const;
 export type EvKind = (typeof EV_KINDS)[number];
@@ -86,7 +88,16 @@ export type AuthorizedAction = (typeof AUTHORIZED_ACTIONS)[number];
  */
 export const SCOPED_ROLE: VehicleRelationshipRole = 'authorized_person';
 
-export interface VehicleRelationship {
+/**
+ * One relationship row.
+ *
+ * `partnerId` is carried because a retirement needs it; it is **never
+ * rendered**. The operation resolves the party through the CRM module and
+ * publishes the three `partner*` display fields alongside it (`P1-27-INT-025`),
+ * all of them required and nullable — `null` meaning "this caller cannot see
+ * that party", which `PartyLabel` states in words.
+ */
+export interface VehicleRelationship extends PartyIdentity {
   readonly id: string;
   readonly partnerId: string;
   readonly relationshipRole: string;

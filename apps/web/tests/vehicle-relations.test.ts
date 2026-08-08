@@ -32,6 +32,9 @@ const { readEvProfile } = await import('@/features/vehicles/relations-api');
 const RELATIONSHIP: VehicleRelationship = {
   id: 'r1',
   partnerId: 'p1',
+  partnerName: 'Layla Haddad',
+  partnerNumber: 'C-000482',
+  partnerType: 'individual',
   relationshipRole: 'owner',
   validFrom: '2026-01-01',
   validTo: null,

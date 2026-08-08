@@ -8,6 +8,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { RecordForm } from '@/components/forms/RecordForm';
+import { PartyLabel } from '@/components/party/PartyLabel';
 import {
   assignPlateAction,
   listOdometerReadings,
@@ -95,17 +96,12 @@ export function OwnershipSection({ locale, messages, vehicleId, today }: Section
         cell: (row) => translateDynamic(messages, `vehicles.ownershipKind.${row.ownershipKind}`),
       },
       {
-        id: 'partnerId',
+        id: 'partner',
         headerKey: 'vehicles.ownership.owner',
-        // The operation publishes `partner_id` and no customer NAME. A uuid is
-        // not a name, so the reference is shown as a reference and labelled as
-        // one — resolving it would need a CRM read this operation does not
-        // imply and this screen does not make.
-        cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.partnerId}
-          </code>
-        ),
+        // The operation now resolves the owner through the CRM module. This
+        // column printed a uuid under the heading "owner" for the whole of
+        // P1-27 (`P1-27-INT-025`); an owner nobody can name is stated in words.
+        cell: (row) => <PartyLabel messages={messages} party={row} />,
       },
       {
         id: 'validFrom',

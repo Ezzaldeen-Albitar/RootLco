@@ -35,6 +35,8 @@
  * would be wrong for exactly the interval that matters.
  */
 
+import type { PartyIdentity } from '@/components/party/PartyLabel';
+
 /** `veh.ownership_history.ownership_kind`. */
 export const OWNERSHIP_KINDS = ['registered_owner', 'beneficial', 'fleet'] as const;
 export type OwnershipKind = (typeof OWNERSHIP_KINDS)[number];
@@ -81,7 +83,16 @@ export interface PlateHistoryEntry {
   readonly createdAt: string;
 }
 
-export interface OwnershipHistoryEntry {
+/**
+ * One ownership interval.
+ *
+ * `partnerId` is carried because a write needs it; it is **never rendered**. The
+ * operation resolves the party through the CRM module and publishes the three
+ * `partner*` display fields alongside it (`P1-27-INT-025`), all of them required
+ * and nullable — `null` meaning "this caller cannot see that party", which
+ * `PartyLabel` states in words.
+ */
+export interface OwnershipHistoryEntry extends PartyIdentity {
   readonly id: string;
   readonly partnerId: string;
   readonly ownershipKind: string;

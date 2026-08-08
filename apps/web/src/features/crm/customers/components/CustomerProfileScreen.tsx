@@ -498,7 +498,12 @@ function AddressesSection({
               labelKey: 'crm.customers.addresses.line2',
               maxLength: MAX_ADDRESS_LINE,
             },
-            { name: 'city', kind: 'text', labelKey: 'crm.customers.addresses.city', maxLength: MAX_ADDRESS_LINE },
+            {
+              name: 'city',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.city',
+              maxLength: MAX_ADDRESS_LINE,
+            },
             {
               name: 'region',
               kind: 'text',

@@ -204,7 +204,9 @@ export function RecordForm({
                   // text. A `date` input yields `YYYY-MM-DD`, which is what the
                   // `date`-typed request fields expect — and it never carries a
                   // time or a zone, so a calendar day cannot shift.
-                  type={field.kind === 'number' ? 'number' : field.kind === 'date' ? 'date' : 'text'}
+                  type={
+                    field.kind === 'number' ? 'number' : field.kind === 'date' ? 'date' : 'text'
+                  }
                   value={values[field.name] ?? ''}
                   onChange={(event) => set(field.name, event.target.value)}
                   required={field.required}
