@@ -7,7 +7,7 @@ import { readVehicle } from '@/features/vehicles/profile-api';
 import { readEvProfile } from '@/features/vehicles/relations-api';
 import { listVehicleDocuments, type DocumentsState } from '@/features/vehicles/documents-api';
 import { DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
-import { VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -116,6 +116,10 @@ export default async function VehicleProfilePage({
             session.permissions,
             VEHICLE_PERMISSIONS.relationshipManage
           )}
+          // `crm.vehicle-link` is a CRM operation with a CRM permission. An
+          // operator may hold one of these two and not the other, so the
+          // relationships panel takes both rather than conflating them.
+          canLinkCustomer={holds(session.permissions, CRM_PERMISSIONS.vehicleManage)}
           evProfile={evProfile}
           canListDocuments={canListDocuments}
           documents={documents}

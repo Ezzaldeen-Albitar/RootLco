@@ -56,6 +56,8 @@ interface Props {
   readonly canChangeStatus: boolean;
   /** `veh.vehicle.relationship.manage` — a third, separate capability. */
   readonly canManageRelationships: boolean;
+  /** `crm.customer.vehicle.manage` — a CRM capability, held independently. */
+  readonly canLinkCustomer: boolean;
   /** Read on the server, because a 404 here is an ordinary state, not an error. */
   readonly evProfile: EvProfileState;
   /** `shared.document.manage` — a manage capability from a DIFFERENT module. */
@@ -95,6 +97,7 @@ export function VehicleProfileScreen({
   canEdit,
   canChangeStatus,
   canManageRelationships,
+  canLinkCustomer,
   evProfile,
   canListDocuments,
   documents,
@@ -192,6 +195,7 @@ export function VehicleProfileScreen({
           vehicleId={vehicle.id}
           today={today}
           canManage={canManageRelationships && !frozen}
+          canLinkCustomer={canLinkCustomer && !frozen}
         />
       ) : null}
       {section === 'documents' ? (

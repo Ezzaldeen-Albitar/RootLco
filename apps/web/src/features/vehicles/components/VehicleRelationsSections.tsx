@@ -12,6 +12,7 @@ import { PartyLabel } from '@/components/party/PartyLabel';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import {
   authorizePartyAction,
+  linkCustomerAction,
   listRelationships,
   retirePartyAction,
   setEvProfileAction,
@@ -21,6 +22,7 @@ import { intervalState } from '../history-contract';
 import {
   AUTHORIZED_ACTIONS,
   EV_KINDS,
+  LINKABLE_ROLES,
   MAX_CHARGE_PORT,
   SCOPED_ROLE,
   canHaveEvProfile,
@@ -378,6 +380,80 @@ function AuthorizePartyForm({
 }
 
 /**
+ * `FE-025` — link a customer to this vehicle in a role.
+ *
+ * `crm.vehicle-link`, permission `crm.customer.vehicle.manage` — a DIFFERENT
+ * module and a different capability from the two `veh` writes beside it, so it
+ * carries its own gate.
+ *
+ * Offered from the vehicle screen rather than the customer profile because
+ * `POST /customers/{id}/vehicles` publishes no `GET`: there is no "this
+ * customer's vehicles" read anywhere (`P1-27-INT-012`, owned by P1-16 and
+ * deferred to P1-28), so a link made there would be invisible the moment it was
+ * made. The CRM writer inserts into `veh.vehicle_relationships`, which is the
+ * table the list above this form reads — so here, the result appears directly
+ * above the control that created it.
+ */
+function LinkCustomerForm({
+  locale,
+  messages,
+  vehicleId,
+  onRecorded,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly vehicleId: string;
+  readonly onRecorded: () => void;
+}) {
+  const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
+
+  return (
+    <RecordForm
+      messages={messages}
+      titleKey="vehicles.relationships.link"
+      submitKey="vehicles.relationships.link"
+      onRecorded={() => {
+        setCustomer(null);
+        onRecorded();
+      }}
+      action={linkCustomerAction.bind(null, vehicleId)}
+      guard={() => (customer === null ? { partnerId: 'vehicles.ownership.error.customer' } : null)}
+      prelude={(state) => (
+        <div className="flex flex-col gap-1.5">
+          <CustomerSelector
+            locale={locale}
+            messages={messages}
+            name="partnerId"
+            labelKey="vehicles.relationships.person"
+            value={customer}
+            onChange={setCustomer}
+            required
+          />
+          {state.fieldErrors?.partnerId ? (
+            <p role="alert" className="text-caption text-error">
+              {translateDynamic(messages, state.fieldErrors.partnerId)}
+            </p>
+          ) : null}
+        </div>
+      )}
+      fields={[
+        {
+          name: 'relationshipRole',
+          kind: 'select',
+          labelKey: 'vehicles.relationships.role',
+          required: true,
+          // Six roles, not seven. An authorised person is created by the control
+          // below, which sets the scope this operation cannot.
+          options: LINKABLE_ROLES,
+          optionKeyPrefix: 'vehicles.role.',
+          hintKey: 'vehicles.relationships.linkRoleHint',
+        },
+      ]}
+    />
+  );
+}
+
+/**
  * `FE-025` — retire an authorized party.
  *
  * A retirement, not a deletion: the relationship stays in the history with an
@@ -458,12 +534,16 @@ export function RelationshipsSection({
   vehicleId,
   today,
   canManage,
+  canLinkCustomer = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly vehicleId: string;
   readonly today: string;
+  /** `veh.vehicle.relationship.manage` — authorise and retire. */
   readonly canManage: boolean;
+  /** `crm.customer.vehicle.manage` — a DIFFERENT module's capability. */
+  readonly canLinkCustomer?: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listRelationships(vehicleId, request, cursor),
@@ -585,6 +665,19 @@ export function RelationshipsSection({
       <p className="px-2 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.relationships.scopeExplainer')}
       </p>
+
+      {/* A DIFFERENT capability from `canManage`, so its own gate: an operator
+          may link a customer without being able to authorise one, and the
+          reverse. The list above shows the result either way — both writers
+          insert into `veh.vehicle_relationships`. */}
+      {canLinkCustomer && table.response ? (
+        <LinkCustomerForm
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicleId}
+          onRecorded={table.refresh}
+        />
+      ) : null}
 
       {canManage ? (
         <>
