@@ -291,13 +291,32 @@ describe('P1-27-SEC-003 — abuse cases and privilege escalation', () => {
 
 describe('P1-27-SEC-004 — audit-event coverage', () => {
   it('surfaces a correlation reference on every failure path', () => {
-    // An operator who cannot quote a correlation ID cannot have an incident
-    // traced. Every adapter carries one out of the failure, including the ones
-    // that return an empty page.
-    const adapters = PHASE_FILES.filter((f) => /-api\.ts$|\/api\.ts$|-actions\.ts$/.test(f.path));
+    // An operator who cannot quote a correlation reference cannot have an
+    // incident traced. Every adapter carries one out of the failure, including
+    // the ones that return an empty page.
+    //
+    // An adapter satisfies this in one of two ways: it maps the failure itself,
+    // or it DELEGATES that mapping to `action-support.ts`, which exists because
+    // the customer write actions had one copy of the mapping between them and a
+    // second copy would drift. Delegation is not a loophole — the delegate is
+    // asserted to carry the reference below, so a file that delegated to
+    // something which did not would still fail.
+    const SUPPORT = 'action-support.ts';
+    const adapters = PHASE_FILES.filter((f) =>
+      /-api\.ts$|\/api\.ts$|-actions\.ts$|action-support\.ts$/.test(f.path)
+    );
     expect(adapters.length).toBeGreaterThan(8);
+
+    const support = adapters.find((f) => f.path.endsWith(SUPPORT));
+    expect(support, 'the shared failure mapping must exist to be delegated to').toBeDefined();
+    expect(support?.source, SUPPORT).toContain('correlationId');
+
     for (const { path, source } of adapters) {
-      expect(source, path).toContain('correlationId');
+      if (source.includes('correlationId')) continue;
+      expect(
+        source.includes(`./${SUPPORT.replace('.ts', '')}`),
+        `${path} neither carries a correlation reference nor delegates to ${SUPPORT}`
+      ).toBe(true);
     }
   });
 

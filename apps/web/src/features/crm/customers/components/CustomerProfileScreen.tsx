@@ -43,12 +43,17 @@ import {
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
 } from '../governance-contract';
+import { addAddressAction, addContactAction } from '../profile-actions';
 import { listTimeline } from '../identity-api';
 import type { TimelineEntry } from '../identity-contract';
 import { RecordForm } from './RecordForm';
 import {
   addressLines,
+  ADDRESS_TYPES,
   CONTACT_CHANNELS,
+  MAX_ADDRESS_LINE,
+  MAX_CONTACT_VALUE,
+  MAX_LABEL,
   severityRank,
   type Address,
   type Alert,
@@ -320,8 +325,6 @@ function ContactsSection({
     (request: TableRequest, cursor: string | null) => listContacts(customerId, request, cursor),
     [customerId]
   );
-  const table = useServerTable<ContactPoint>(load, { initial: INITIAL_REQUEST });
-
   const columns = useMemo<readonly Column<ContactPoint>[]>(
     () => [
       {
@@ -357,27 +360,57 @@ function ContactsSection({
     [messages]
   );
 
+  // Uses `ComponentSection` for the same reason the six governance sections do:
+  // it owns the one correct form gate. Before `FE-007`'s write was wired this
+  // section had its own `<section>` + `DataTable`, because it had no form to gate.
   return (
-    <section aria-labelledby="crm-contacts-heading" className="flex min-h-0 flex-col">
-      <h2 id="crm-contacts-heading" className="sr-only">
-        {translate(messages, 'crm.customers.profile.section.contacts')}
-      </h2>
-      <DataTable<ContactPoint>
-        messages={messages}
-        columns={columns}
-        rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.customers.contacts.caption')}
-      />
-      <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'crm.customers.contacts.softDeleteNote')}
-      </p>
-    </section>
+    <ComponentSection<ContactPoint>
+      id="crm-contacts"
+      locale={locale}
+      messages={messages}
+      titleKey="crm.customers.profile.section.contacts"
+      captionKey="crm.customers.contacts.caption"
+      footnote={translate(messages, 'crm.customers.contacts.softDeleteNote')}
+      load={load}
+      columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.contacts.add"
+          submitKey="crm.customers.contacts.add"
+          onRecorded={onRecorded}
+          action={addContactAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'channel',
+              kind: 'select',
+              labelKey: 'crm.customers.contacts.channel',
+              required: true,
+              options: CONTACT_CHANNELS,
+              optionKeyPrefix: 'crm.channel.',
+            },
+            {
+              name: 'value',
+              kind: 'text',
+              labelKey: 'crm.customers.contacts.value',
+              required: true,
+              maxLength: MAX_CONTACT_VALUE,
+            },
+            {
+              name: 'label',
+              kind: 'text',
+              labelKey: 'crm.customers.contacts.label',
+              maxLength: MAX_LABEL,
+            },
+            {
+              name: 'isPrimary',
+              kind: 'checkbox',
+              labelKey: 'crm.customers.contacts.primary',
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 
@@ -394,8 +427,6 @@ function AddressesSection({
     (request: TableRequest, cursor: string | null) => listAddresses(customerId, request, cursor),
     [customerId]
   );
-  const table = useServerTable<Address>(load, { initial: INITIAL_REQUEST });
-
   const columns = useMemo<readonly Column<Address>[]>(
     () => [
       {
@@ -429,26 +460,77 @@ function AddressesSection({
   );
 
   return (
-    <section aria-labelledby="crm-addresses-heading" className="flex min-h-0 flex-col">
-      <h2 id="crm-addresses-heading" className="sr-only">
-        {translate(messages, 'crm.customers.profile.section.addresses')}
-      </h2>
-      <DataTable<Address>
-        messages={messages}
-        columns={columns}
-        rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.customers.addresses.caption')}
-      />
-      <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'crm.customers.addresses.softDeleteNote')}
-      </p>
-    </section>
+    <ComponentSection<Address>
+      id="crm-addresses"
+      locale={locale}
+      messages={messages}
+      titleKey="crm.customers.profile.section.addresses"
+      captionKey="crm.customers.addresses.caption"
+      footnote={translate(messages, 'crm.customers.addresses.softDeleteNote')}
+      load={load}
+      columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.addresses.add"
+          submitKey="crm.customers.addresses.add"
+          onRecorded={onRecorded}
+          action={addAddressAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'addressType',
+              kind: 'select',
+              labelKey: 'crm.customers.addresses.type',
+              required: true,
+              options: ADDRESS_TYPES,
+              optionKeyPrefix: 'crm.addressType.',
+            },
+            {
+              name: 'line1',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.line1',
+              required: true,
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'line2',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.line2',
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            { name: 'city', kind: 'text', labelKey: 'crm.customers.addresses.city', maxLength: MAX_ADDRESS_LINE },
+            {
+              name: 'region',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.region',
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'postalCode',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.postalCode',
+              maxLength: 20,
+            },
+            {
+              // Two letters, and no country is defaulted. An address with no
+              // country recorded is a state the contract permits, and guessing
+              // one from the tenant would silently attribute a foreign address
+              // to it.
+              name: 'countryCode',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.country',
+              maxLength: 2,
+              hintKey: 'crm.customers.addresses.countryHint',
+            },
+            {
+              name: 'isPrimary',
+              kind: 'checkbox',
+              labelKey: 'crm.customers.contacts.primary',
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 

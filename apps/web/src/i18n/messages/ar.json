@@ -1021,5 +1021,17 @@
   "vehicles.workshop.awaiting_parts": "بانتظار قطع",
   "vehicles.workshop.in_workshop": "في الورشة",
   "vehicles.workshop.none": "ليست في الورشة",
-  "vehicles.workshop.ready_for_delivery": "جاهزة للتسليم"
+  "vehicles.workshop.ready_for_delivery": "جاهزة للتسليم",
+  "crm.customers.contacts.add": "إضافة وسيلة تواصل",
+  "crm.customers.contacts.added": "تمت إضافة وسيلة التواصل.",
+  "crm.customers.addresses.add": "إضافة عنوان",
+  "crm.customers.addresses.added": "تمت إضافة العنوان.",
+  "crm.customers.addresses.line1": "العنوان — السطر الأول",
+  "crm.customers.addresses.line2": "العنوان — السطر الثاني",
+  "crm.customers.addresses.city": "المدينة",
+  "crm.customers.addresses.region": "المنطقة",
+  "crm.customers.addresses.postalCode": "الرمز البريدي",
+  "crm.customers.addresses.country": "الدولة",
+  "crm.customers.addresses.countryHint": "رمز الدولة من حرفين، مثل JO أو AE. اتركه فارغًا إذا لم تكن تعرفه.",
+  "crm.customers.addresses.error.country": "استخدم رمز الدولة المكوّن من حرفين."
 }

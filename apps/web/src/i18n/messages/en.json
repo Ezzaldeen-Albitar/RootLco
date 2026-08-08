@@ -1021,5 +1021,17 @@
   "vehicles.workshop.awaiting_parts": "Awaiting parts",
   "vehicles.workshop.in_workshop": "In workshop",
   "vehicles.workshop.none": "Not in workshop",
-  "vehicles.workshop.ready_for_delivery": "Ready for delivery"
+  "vehicles.workshop.ready_for_delivery": "Ready for delivery",
+  "crm.customers.contacts.add": "Add contact",
+  "crm.customers.contacts.added": "Contact added.",
+  "crm.customers.addresses.add": "Add address",
+  "crm.customers.addresses.added": "Address added.",
+  "crm.customers.addresses.line1": "Address line 1",
+  "crm.customers.addresses.line2": "Address line 2",
+  "crm.customers.addresses.city": "City",
+  "crm.customers.addresses.region": "Region",
+  "crm.customers.addresses.postalCode": "Postal code",
+  "crm.customers.addresses.country": "Country",
+  "crm.customers.addresses.countryHint": "Two-letter country code, for example JO or AE. Leave it empty if you do not know it.",
+  "crm.customers.addresses.error.country": "Use the two-letter country code."
 }
