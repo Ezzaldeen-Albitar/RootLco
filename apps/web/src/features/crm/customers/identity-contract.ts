@@ -195,10 +195,15 @@ export function pairMembers(
  * which is where a future wave should start when the decision is resolved.
  */
 
-export function validateReviewReason(reason: string): string | null {
-  const trimmed = reason.trim();
-  if (trimmed.length === 0) return 'field.required';
-  if (trimmed.length < MIN_MERGE_REASON) return 'field.tooShort';
-  if (trimmed.length > MAX_MERGE_REASON) return 'field.tooLong';
-  return null;
-}
+/*
+ * `validateReviewReason` is gone from this file (`P1-27-FE-016` / `FE-028`).
+ *
+ * It mirrored the zod `.min(..., 'field.tooShort')` in this domain's own review
+ * adapter and had no production caller — the same defect `P1-27-FE-013` removed
+ * from the governance contracts, in the two files that sweep did not reach. Its
+ * only consumers were tests, so the coverage credited to the one decision these
+ * tasks may ship while `P1-OD-017` is open was proving an unreachable copy.
+ *
+ * The real validation runs in the adapter's schema and is driven end to end by
+ * `apps/web/tests/duplicate-review-writes.test.ts`.
+ */

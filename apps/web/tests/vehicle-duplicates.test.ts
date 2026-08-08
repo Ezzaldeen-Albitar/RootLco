@@ -6,7 +6,6 @@ import {
   changeShape,
   formatMatchScore,
   isActionable,
-  validateReviewReason,
   type VehicleDuplicateCandidate,
   type VehicleHistoryEntry,
 } from '@/features/vehicles/duplicates-contract';
@@ -98,10 +97,16 @@ describe('review accepts exactly one decision', () => {
     expect(isActionable({ ...CANDIDATE, status: 'under_appeal' })).toBe(false);
   });
 
-  it('requires a substantive reason', () => {
-    expect(validateReviewReason('no')).toBe('field.tooShort');
-    expect(validateReviewReason(' '.repeat(20))).toBe('field.required');
-    expect(validateReviewReason('x'.repeat(MIN_REVIEW_REASON))).toBeNull();
+  it('states the same reason floor the write enforces', () => {
+    // "requires a substantive reason" moved to `duplicate-review-writes.test.ts`,
+    // where it drives `reviewVehicleDuplicateAction`'s own schema. It used to
+    // call `validateReviewReason`, a mirror with no production caller — the twin
+    // of the CRM one, and the same defect as `P1-27-FE-013`.
+    //
+    // The BOUND stays here: the screen reads it for the field's `minLength`, and
+    // a floor that drifted from the schema's would let an operator type a reason
+    // the form accepts and the write rejects.
+    expect(MIN_REVIEW_REASON).toBe(10);
   });
 });
 
