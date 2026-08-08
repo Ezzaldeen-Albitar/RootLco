@@ -1608,16 +1608,43 @@ function TimelineSection({
         cell: (row) => <span className="break-words">{row.title}</span>,
       },
       {
-        id: 'actorId',
+        id: 'actor',
         headerKey: 'crm.customers.timeline.actor',
-        // A system-caused event has no actor, and that is a real distinction:
-        // "the system expired this consent" is not "somebody withdrew it".
-        cell: (row) =>
-          row.actorId ?? (
+        /*
+         * Three states, and the middle one used to be a uuid.
+         *
+         * This cell rendered `row.actorId` directly — a raw identifier under a
+         * column headed "Recorded by", which names nobody and is exactly the
+         * defect `P1-27-INT-026` fixed on the vehicle attribute ledger. That
+         * remediation was scoped to the finding that raised it rather than to
+         * the property it established, so the customer timeline — same shape,
+         * same header, same backend publishing an id and no name — was never
+         * swept.
+         *
+         *   actorId == null   a SYSTEM event. A real distinction worth keeping:
+         *                     "the system expired this consent" is not
+         *                     "somebody withdrew it".
+         *   actorName present the person, named.
+         *   otherwise         a phrase. `undefined` means the API predates the
+         *                     identity surface and `null` means this caller may
+         *                     not be told; neither is a licence to print the id.
+         */
+        cell: (row) => {
+          if (row.actorId == null) {
+            return (
+              <span className="text-text-muted">
+                {translate(messages, 'crm.customers.timeline.system')}
+              </span>
+            );
+          }
+          return typeof row.actorName === 'string' && row.actorName.trim().length > 0 ? (
+            row.actorName
+          ) : (
             <span className="text-text-muted">
-              {translate(messages, 'crm.customers.timeline.system')}
+              {translate(messages, 'crm.customers.timeline.actorUnavailable')}
             </span>
-          ),
+          );
+        },
       },
     ],
     [locale, messages]

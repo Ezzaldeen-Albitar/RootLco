@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useId, useState, useTransition } from 'react';
+import Link from 'next/link';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -516,7 +517,31 @@ function CreationOutcome({
         {translate(messages, 'vehicles.create.draftFollowUp')}
       </p>
 
-      <div>
+      {/* The vehicle that was just created is where the operator wants to go,
+          and until now this screen threw its id away (`P1-27-FE-018`).
+
+          `created.vehicleId` was already in hand — the action returns it and
+          this component receives it — and the only exit offered was "Add
+          another vehicle", which reloads the page. So the create journey ended
+          in a dead end: to reach the record you had just made you had to leave,
+          open Vehicles, and search for it.
+
+          The same class of defect as `FE-019` on the search leg, on the other
+          leg of the same journey, and the sibling customer screen has offered
+          both of these links since it shipped. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href={`/${locale}/vehicles/${created.vehicleId}`}
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse"
+        >
+          {translate(messages, 'vehicles.create.openCreated')}
+        </Link>
+        <Link
+          href={`/${locale}/vehicles`}
+          className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
+        >
+          {translate(messages, 'vehicles.create.backToSearch')}
+        </Link>
         <button
           type="button"
           onClick={onAnother}

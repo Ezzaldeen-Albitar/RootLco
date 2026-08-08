@@ -65,6 +65,20 @@ export interface TimelineEntry {
   readonly title: string;
   readonly occurredAt: string;
   readonly actorId: string | null;
+  /**
+   * The actor's display name, when an identity surface publishes one.
+   *
+   * OPTIONAL on the wire, and that is the difference that matters: `undefined`
+   * means the API predates the identity surface, `null` means this caller may
+   * not be told who it was. Neither is a licence to print `actorId`, which is a
+   * uuid and is never shown (`P1-27-INT-026`).
+   *
+   * The vehicle attribute ledger has the same shape and the same rule
+   * (`vehicles.history.actorUnavailable`). This field exists so the customer
+   * timeline reads a name the moment one is published, without a second change
+   * here.
+   */
+  readonly actorName?: string | null;
 }
 
 export interface HistoryEntry {
