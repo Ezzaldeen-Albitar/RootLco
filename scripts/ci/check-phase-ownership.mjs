@@ -65,6 +65,34 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-27-frontend': {
+    why: 'P1-27 is a Frontend phase',
+    // Identical rules to `p1-26-frontend`, declared under its own name because a
+    // phase that borrows another phase's profile is not declaring anything. The
+    // gate defaults to `p1-26-frontend` when no profile is given, which is how
+    // P1-27 came to be measured against P1-26's declaration for its whole life.
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through a Backend remediation',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      migrations: 'a Frontend phase must not change a migration',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-27-backend-partner-identity': {
+    why: 'the P1-27-INT-025 partner-identity Backend remediation, split out of the Frontend branch',
+    allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      // `web` forbidden on purpose, for the same reason `backend-login-contract`
+      // forbids it: this change exists BECAUSE seven API source files were
+      // riding inside a Frontend branch where no Backend gate saw them. A
+      // profile that permitted both halves would reopen the hole it closes.
+      web: 'the partner-identity remediation is Backend-only — the Frontend half is a separate change',
+      migrations: 'the partner-identity remediation must not change a migration',
+      supabase: 'the partner-identity remediation must not change the database',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig', 'web'],
