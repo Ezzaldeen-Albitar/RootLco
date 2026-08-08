@@ -269,7 +269,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 119 migrations, with 118 and 119 last', () => {
+  it('the repository declares exactly 120 migrations, with 119 and 120 last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -282,13 +282,18 @@ describe('P1-15 / global security posture', () => {
     // point of asserting the count here rather than trusting the file list.
     // 119 is DBCR-P1-16-001, which grants app_runtime a CRM-customer-scoped write
     // surface on shared.notes; its two added policies are asserted below.
+    // 120 is DBCR-P1-18-001 (P1-27-INT-013), which adds
+    // rec.reception_visits.custody_released_at plus its guard and maintainer and
+    // restates uq_reception_visits_open_vehicle. It adds no grant, role, policy
+    // or permission code, so every inventory assertion in this file is unchanged
+    // by it — which is exactly why the count is asserted here.
     const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(119);
-    expect(files.at(-2)).toBe('20260729090000_shared_number_sequence_period_hardening.sql');
-    expect(files.at(-1)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
+    expect(files).toHaveLength(120);
+    expect(files.at(-2)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
+    expect(files.at(-1)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {

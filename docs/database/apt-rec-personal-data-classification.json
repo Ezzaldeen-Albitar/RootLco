@@ -1369,6 +1369,11 @@
       "searchable": false,
       "dataType": "timestamp with time zone"
     },
+    "rec.reception_visits.custody_released_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
     "rec.reception_visits.deleted_at": {
       "classification": "internal",
       "searchable": false,
