@@ -749,7 +749,7 @@
         "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },
@@ -7603,7 +7603,7 @@
         "x-required-permissions": ["shared.notification.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },
@@ -7657,7 +7657,7 @@
         "x-required-permissions": ["shared.notification.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },
@@ -7711,7 +7711,7 @@
         "x-required-permissions": ["shared.notification.delivery.read"],
         "x-scope": "tenant",
         "x-audit-class": "security",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },
@@ -10017,7 +10017,7 @@
         "x-required-permissions": ["rpt.report.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },
@@ -10071,7 +10071,7 @@
         "x-required-permissions": ["rpt.report.read"],
         "x-scope": "tenant",
         "x-audit-class": "none",
-        "x-rate-limit-policy": "standard-read",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },

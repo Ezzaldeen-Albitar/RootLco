@@ -38,7 +38,10 @@ export const REPORT_READ_OPERATION = defineOperation({
   permissions: ['rpt.report.read'],
   scope: 'tenant',
   auditClass: 'none',
-  rateLimitPolicy: 'standard-read',
+  // Was the unregistered `'standard-read'`, which made every request to this
+  // operation an unhandled 500 (`P1-27-INT-113`). `expensive-read` is the policy
+  // whose own rationale names reports, and it keys on operation+tenant+user.
+  rateLimitPolicy: 'expensive-read',
   cacheCategory: 'never',
 });
 

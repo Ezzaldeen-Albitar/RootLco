@@ -22,7 +22,11 @@ export const DOCUMENT_READ_OPERATION = defineOperation({
   permissions: ['shared.document.manage'],
   scope: 'tenant',
   auditClass: 'none',
-  rateLimitPolicy: 'standard-read',
+  // Was the unregistered `'standard-read'`, which made every request to this
+  // operation an unhandled 500 (`P1-27-INT-113`). `expensive-read` keys on
+  // operation+tenant+user, so one operator cannot monopolise document metadata
+  // reads for a tenant.
+  rateLimitPolicy: 'expensive-read',
   cacheCategory: 'never',
 });
 

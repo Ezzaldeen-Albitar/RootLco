@@ -39,7 +39,10 @@ export const NOTIFICATION_DELIVERY_LIST_OPERATION = defineOperation({
   scope: 'tenant',
   auditClass: 'security',
   auditAction: 'shared.notification.delivery_inspected',
-  rateLimitPolicy: 'standard-read',
+  // Was the unregistered `'standard-read'`, which made every request to this
+  // operation an unhandled 500 (`P1-27-INT-113`). Keyed per user within a tenant,
+  // because an inbox is per-recipient — see the list route for the full reasoning.
+  rateLimitPolicy: 'expensive-read',
   cacheCategory: 'never',
 });
 
