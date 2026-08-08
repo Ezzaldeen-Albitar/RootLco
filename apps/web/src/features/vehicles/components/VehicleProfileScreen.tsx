@@ -14,7 +14,7 @@ import {
   VEHICLE_LIFECYCLE_STATUSES,
   WORKSHOP_STATUSES,
 } from '../contract';
-import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
+import { isFrozen, isTerminal, labelFor, type VehicleDetail } from '../profile-contract';
 import { localToday } from '../history-contract';
 import type { EvProfileState } from '../relations-api';
 import { EvProfileSection, RelationshipsSection } from './VehicleRelationsSections';
@@ -112,7 +112,12 @@ export function VehicleProfileScreen({
   canListDocuments,
   documents,
 }: Props) {
+  // TWO predicates, because the server has two rules. `frozen` (merged) refuses
+  // every write; `terminal` (merged or scrapped) refuses the four that ADD to a
+  // vehicle's registration or equipment. See `profile-contract.ts` for the
+  // writer-by-writer table this was read from.
   const frozen = isFrozen(vehicle);
+  const terminal = isTerminal(vehicle);
   const [section, setSection] = useState<Section>('overview');
 
   // The EV profile and the documents list are read on the SERVER and handed to
@@ -170,10 +175,11 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          // `frozen` as well as the capability: `requireWritableVehicle` refuses
-          // a merged or scrapped vehicle with a 409, so offering the transfer
-          // form on one is offering an action that can only fail.
-          canManageRelationships={canManageRelationships && !frozen}
+          // `terminal` as well as the capability: `requireWritableVehicle`
+          // (`vehicle-registration-service.ts:194`) refuses a merged OR SCRAPPED
+          // vehicle with a 409, so offering the transfer form on one is offering
+          // an action that can only fail.
+          canManageRelationships={canManageRelationships && !terminal}
         />
       ) : null}
       {section === 'plates' ? (
@@ -182,14 +188,18 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          // `veh.vehicle.manage`, and `frozen` for the same reason ownership
-          // carries it: a merged or scrapped vehicle answers 409.
-          canEdit={canEdit && !frozen}
+          // `veh.vehicle.manage`, and `terminal` for the same reason ownership
+          // carries it — the same `requireWritableVehicle` call: a merged or
+          // scrapped vehicle answers 409.
+          canEdit={canEdit && !terminal}
         />
       ) : null}
       {section === 'odometer' ? (
         // No `today`: odometer readings are timestamped observations, not dated
         // intervals, so there is nothing here to be "in force".
+        // `frozen`, NOT `terminal`. `vehicle-odometer-service.ts` has no lifecycle
+        // guard of its own, so the only refusal is the merge freeze at the
+        // database. A scrapped vehicle's final reading is a legitimate record.
         <OdometerSection
           locale={locale}
           messages={messages}
@@ -203,11 +213,13 @@ export function VehicleProfileScreen({
           messages={messages}
           state={evProfile}
           powertrainCategory={vehicle.powertrainCategory}
-          // `frozen` as well as the capability, like plates and ownership beside
-          // it. Verified against the server rather than assumed by analogy:
-          // `vehicle-lifecycle-service.ts:68-74` throws `ERR-RES-002` for a
-          // merged or scrapped vehicle, so the form could only ever fail there.
-          canEdit={canEdit && !frozen}
+          // `terminal` as well as the capability, like plates and ownership
+          // beside it. Verified against the server rather than assumed by
+          // analogy: `vehicle-lifecycle-service.ts:68-74` throws `ERR-RES-002`
+          // for a merged OR SCRAPPED vehicle, so the form could only ever fail
+          // there. This docblock said exactly that while the gate it described
+          // tested `merged` alone — the fix is the gate, not the sentence.
+          canEdit={canEdit && !terminal}
           vehicleId={vehicle.id}
           // The profile is read on the SERVER, so a save cannot be reflected by
           // re-running a client fetch. A router refresh re-runs the page's own
@@ -221,7 +233,11 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          canManage={canManageRelationships && !frozen}
+          // Authorize / retire is `terminal`: `vehicle-relations-service.ts:184`
+          // refuses merged and scrapped alike. The CRM link is `frozen` only —
+          // `customer-identity-service.ts:302` has no lifecycle guard, so the
+          // sole refusal there is the merge freeze.
+          canManage={canManageRelationships && !terminal}
           canLinkCustomer={canLinkCustomer && !frozen}
         />
       ) : null}
@@ -252,6 +268,7 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicle={vehicle}
           frozen={frozen}
+          terminal={terminal}
           canEdit={canEdit}
           canChangeStatus={canChangeStatus}
         />
@@ -265,6 +282,7 @@ function VehicleOverviewSection({
   messages,
   vehicle,
   frozen,
+  terminal,
   canEdit,
   canChangeStatus,
 }: {
@@ -272,6 +290,7 @@ function VehicleOverviewSection({
   readonly messages: Messages;
   readonly vehicle: VehicleDetail;
   readonly frozen: boolean;
+  readonly terminal: boolean;
   readonly canEdit: boolean;
   readonly canChangeStatus: boolean;
 }) {
@@ -290,8 +309,26 @@ function VehicleOverviewSection({
         </p>
       ) : (
         <>
+          {/*
+            A SCRAPPED vehicle is not frozen. Its details can still be corrected
+            — `vehicle-write-service.ts:119` guards `merged` alone — so the edit
+            panel stays. Its STATUS cannot move: `LIFECYCLE_TRANSITIONS.scrapped`
+            is `[]`, and a terminal vehicle's workshop axis is pinned to `none`
+            by `ck_vehicles_terminal_workshop`, so every control on the status
+            panel would answer 409. It is withdrawn, with the reason said once.
+          */}
           {canEdit ? <EditPanel locale={locale} messages={messages} vehicle={vehicle} /> : null}
-          {canChangeStatus ? <StatusPanel messages={messages} vehicle={vehicle} /> : null}
+          {canChangeStatus && !terminal ? (
+            <StatusPanel messages={messages} vehicle={vehicle} />
+          ) : null}
+          {canChangeStatus && terminal ? (
+            <p
+              role="status"
+              className="rounded-lg border border-border bg-surface p-4 text-body text-text-secondary"
+            >
+              {translate(messages, 'vehicles.profile.terminalNote')}
+            </p>
+          ) : null}
         </>
       )}
     </div>

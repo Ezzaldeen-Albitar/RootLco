@@ -83,9 +83,48 @@ export interface VehicleDetail {
   readonly updatedAt: string | null;
 }
 
-/** A frozen vehicle refuses every write with `409 ERR-RES-002`. */
+/**
+ * A frozen vehicle refuses EVERY write with `409 ERR-RES-002`.
+ *
+ * `merged` only, and that is not an oversight — see `isTerminal` below. The two
+ * predicates exist because the server does not have one rule, it has two, and a
+ * screen that collapses them either offers an action that can only fail or hides
+ * one that would have worked.
+ */
 export function isFrozen(vehicle: VehicleDetail): boolean {
   return vehicle.mergedIntoId !== null || vehicle.lifecycleStatus === 'merged';
+}
+
+/**
+ * A terminal vehicle refuses every write that ADDS something to its registration
+ * or its equipment: plates, owners, authorized people, EV profile.
+ *
+ * Mirrors `TERMINAL_LIFECYCLE` in `apps/api/src/modules/vehicle/domain/vehicle-lifecycle.ts:78`
+ * — `{merged, scrapped}` — which is the set the DB check constraint
+ * `veh.vehicles.ck_vehicles_terminal_workshop` uses too.
+ *
+ * ## Why this is not simply folded into `isFrozen`
+ *
+ * The server's refusals were read one writer at a time rather than assumed:
+ *
+ * | write                                | refuses `merged` | refuses `scrapped` |
+ * | ------------------------------------ | ---------------- | ------------------ |
+ * | plate assign / ownership transfer     | yes              | **yes** — `vehicle-registration-service.ts:194` |
+ * | authorized party add / retire         | yes              | **yes** — `vehicle-relations-service.ts:184`    |
+ * | EV profile set                        | yes              | **yes** — `vehicle-lifecycle-service.ts:68`     |
+ * | vehicle update (details)              | yes              | no  — `vehicle-write-service.ts:119` guards `merged` only |
+ * | status change                         | yes              | no guard, but `LIFECYCLE_TRANSITIONS.scrapped` is `[]`, so every target is refused |
+ * | odometer record                       | no lifecycle guard at all — `vehicle-odometer-service.ts` |
+ * | customer→vehicle link (CRM)           | no lifecycle guard at all — `customer-identity-service.ts:302` |
+ *
+ * So a scrapped vehicle's DETAILS can still be corrected — a plate typo on a
+ * written-off car is exactly the sort of correction that stays legitimate — while
+ * its registration and equipment cannot change. Widening `isFrozen` would have
+ * removed a working control; leaving it as it was left four Save buttons whose
+ * only possible answer was 409.
+ */
+export function isTerminal(vehicle: VehicleDetail): boolean {
+  return isFrozen(vehicle) || vehicle.lifecycleStatus === 'scrapped';
 }
 
 /**

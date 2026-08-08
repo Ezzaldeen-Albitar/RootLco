@@ -994,6 +994,7 @@
   "vehicles.profile.sections": "أقسام المركبة",
   "vehicles.profile.statusChanged": "تم تغيير الحالة.",
   "vehicles.profile.statusHeading": "تغيير الحالة",
+  "vehicles.profile.terminalNote": "هذه المركبة مشطوبة. لا يزال بإمكانك تصحيح تفاصيلها، لكن لم يعد بالإمكان تغيير حالتها أو لوحاتها أو مالكيها أو الأشخاص المخوّلين أو بيانات البطارية.",
   "vehicles.profile.title": "المركبة",
   "vehicles.profile.untitled": "مركبة",
   "vehicles.relationships.authorize": "تخويل عميل",

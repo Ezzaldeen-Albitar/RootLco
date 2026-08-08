@@ -19,7 +19,8 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const { searchVehicles, createVehicleAction } = await import('@/features/vehicles/api');
-const { listMakes, listModels } = await import('@/features/vehicles/catalogue-api');
+const { listMakes, listModels, listTrims, listBodyTypes, listPowertrainTypes } =
+  await import('@/features/vehicles/catalogue-api');
 const { EMPTY_CRITERIA } = await import('@/features/vehicles/contract');
 
 const REQUEST = { pageSize: 25 } as never;
@@ -192,6 +193,60 @@ describe('the catalogue adapter walks pages and reports its own bound', () => {
     expect(result.status).toBe('denied');
     expect(result.options).toEqual([]);
     expect(result.truncated).toBe(false);
+  });
+});
+
+describe('all FIVE catalogue adapters, not the two that happened to be imported', () => {
+  /*
+   * `QA-002`'s exclusion map cited this file as the coverage for `listTrims`,
+   * `listBodyTypes` and `listPowertrainTypes`. It imported none of them: their
+   * only other appearances anywhere in the suite were as `vi.fn()` stubs that
+   * mock the real adapter away. Three adapters `VehicleCreateScreen` actually
+   * calls had no path, failure-mapping or bound coverage at all, hidden behind a
+   * citation that named a file rather than a behaviour.
+   *
+   * The citation is now true. Each adapter is driven here on its own.
+   */
+  const CASES = [
+    { name: 'listTrims', call: () => listTrims('m1'), path: '/vehicle-catalogue/models/' },
+    { name: 'listBodyTypes', call: () => listBodyTypes(), path: '/vehicle-catalogue/body-types' },
+    {
+      name: 'listPowertrainTypes',
+      call: () => listPowertrainTypes(),
+      path: '/vehicle-catalogue/powertrain-types',
+    },
+  ] as const;
+
+  it.each(CASES)('$name reads its own operation path', async ({ call, path }) => {
+    get.mockResolvedValue(page([{ id: 'a', name: 'Alpha' }]));
+    const result = await call();
+    expect(result.status).toBe('ok');
+    expect(result.options.map((o) => o.name)).toEqual(['Alpha']);
+    const [requested] = get.mock.calls[0] as [string];
+    expect(requested).toContain(path);
+  });
+
+  it.each(CASES)('$name reports a denial rather than an empty catalogue', async ({ call }) => {
+    get.mockResolvedValue(failure('forbidden'));
+    const result = await call();
+    expect(result.status).toBe('denied');
+    expect(result.options).toEqual([]);
+  });
+
+  it.each(CASES)('$name stops at the page bound and says so', async ({ call }) => {
+    get.mockResolvedValue(page([{ id: 'x', name: 'X' }], 'c', true));
+    const result = await call();
+    expect(result.truncated).toBe(true);
+    expect(get).toHaveBeenCalledTimes(20);
+  });
+
+  it('encodes the model id into the trims path rather than concatenating it', async () => {
+    get.mockResolvedValue(page([]));
+    await listTrims('../../admin');
+    const [path] = get.mock.calls[0] as [string];
+    expect(path).not.toContain('../');
+    expect(path).toContain('%2F');
+    expect(path).toContain('/trims');
   });
 });
 

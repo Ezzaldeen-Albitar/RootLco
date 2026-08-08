@@ -42,6 +42,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 
 const { DuplicateReviewScreen } =
   await import('@/features/crm/customers/components/DuplicateReviewScreen');
+const { DuplicateDecisionPanel } =
+  await import('@/features/crm/customers/components/DuplicateDecisionPanel');
 
 const ID_A = '11111111-1111-4111-8111-111111111111';
 const ID_B = '22222222-2222-4222-8222-222222222222';
@@ -164,6 +166,83 @@ describe('the decision panel', () => {
     // Re-deciding something already settled is refused by the backend; the
     // control should never have been offered.
     expect(screen.queryByRole('button', { name: en['crm.duplicates.review'] })).toBeNull();
+  });
+});
+
+describe('DuplicateDecisionPanel mounted directly', () => {
+  /*
+   * The panel is reached above by clicking Review, which exercises it but leaves
+   * it INVISIBLE to the QA-001 inventory: no test imported it, so its name
+   * appeared in the corpus only inside comments and a substring sweep counted
+   * the prose as coverage.
+   *
+   * Mounting it directly also reaches two states the queue cannot produce on
+   * demand: a score whose shape the formatter rejects, and a candidate whose
+   * `matchBasis` is missing entirely.
+   */
+  const noop = () => {};
+
+  it('names both sides and offers dismissal, with no merge control', () => {
+    renderLtr(
+      <DuplicateDecisionPanel
+        locale="en"
+        messages={en}
+        candidate={candidate()}
+        onClose={noop}
+        onDecided={noop}
+      />
+    );
+    expect(screen.getByText('Nadia Khoury')).toBeInTheDocument();
+    expect(screen.getByText('Nadia Khouri')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /merge/i })).toBeNull();
+  });
+
+  it('shows the raw score rather than guessing when the shape is unexpected', () => {
+    const { container } = renderLtr(
+      <DuplicateDecisionPanel
+        locale="en"
+        messages={en}
+        candidate={candidate({ matchScore: 'not-a-number' })}
+        onClose={noop}
+        onDecided={noop}
+      />
+    );
+    // A number that decides whether two real customers are combined is never
+    // guessed at. `formatMatchScore` returns null and the raw value is shown.
+    expect(container.textContent ?? '').toContain('not-a-number');
+    expect(container.textContent ?? '').not.toContain('NaN');
+  });
+
+  it('survives a candidate with no match evidence at all', () => {
+    const { container } = renderLtr(
+      <DuplicateDecisionPanel
+        locale="en"
+        messages={en}
+        candidate={candidate({ matchBasis: null })}
+        onClose={noop}
+        onDecided={noop}
+      />
+    );
+    // `match_basis` is `jsonb` and nullable. A panel that threw here would take
+    // the whole queue down on one malformed row.
+    expect(screen.getByText('Nadia Khoury')).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('null');
+  });
+
+  it('closes through the caller, not by hiding itself', async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(
+      <DuplicateDecisionPanel
+        locale="en"
+        messages={en}
+        candidate={candidate()}
+        onClose={onClose}
+        onDecided={noop}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: en['action.close'] }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

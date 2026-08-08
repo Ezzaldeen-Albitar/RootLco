@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -81,6 +82,7 @@ const EMPTY_CATALOGUE: CatalogueResult = {
 };
 
 const { VehicleCreateScreen } = await import('@/features/vehicles/components/VehicleCreateScreen');
+const { VinField } = await import('@/features/vehicles/components/VinField');
 
 beforeEach(() => {
   for (const fn of [checkVinAvailability, createVehicleAction, listMakes, listModels, listTrims]) {
@@ -265,6 +267,80 @@ describe('the server keeps the last word', () => {
     await screen.findByText(en['field.required']);
     // Retyping a VIN because the form threw it away is the failure this guards.
     expect(vinInput()).toHaveValue('JH4KA7561PC008269');
+  });
+});
+
+describe('VinField on its own, not through a screen', () => {
+  /*
+   * `VinField` was named in this file's docblock and imported by no test —
+   * mounted only inside `VehicleCreateScreen` and `VehicleProfileScreen`. That
+   * is enough to exercise it, but not enough for the QA-001 inventory to SEE it,
+   * and the inventory's substring sweep then counted the docblock mention as
+   * coverage. Two of its properties are also invisible through a screen: the
+   * `excludeVehicleId` it is given on the PROFILE path (a vehicle's own VIN is
+   * not a conflict), and the fact that editing clears a stale verdict.
+   */
+  function Harness({ exclude }: { readonly exclude: string | null }) {
+    const [value, setValue] = useState('');
+    return (
+      <VinField
+        messages={en}
+        id="vin-under-test"
+        value={value}
+        onChange={setValue}
+        maxLength={64}
+        excludeVehicleId={exclude}
+      />
+    );
+  }
+
+  it('passes the vehicle being edited through as the exclusion', async () => {
+    const user = userEvent.setup();
+    renderLtr(<Harness exclude="veh-1" />);
+    await user.type(vinInput(), 'JH4KA7561PC008269');
+    await user.click(checkButton());
+    await waitFor(() => expect(checkVinAvailability).toHaveBeenCalled());
+    // On the profile path the vehicle's OWN VIN must not read as a duplicate.
+    expect(checkVinAvailability).toHaveBeenCalledWith('JH4KA7561PC008269', 'veh-1');
+  });
+
+  it('clears a stale verdict the moment the VIN changes', async () => {
+    checkVinAvailability.mockResolvedValue({ verdict: 'available', holderId: null });
+    const user = userEvent.setup();
+    renderLtr(<Harness exclude={null} />);
+    await user.type(vinInput(), 'JH4KA7561PC008269');
+    await user.click(checkButton());
+    expect(await screen.findByText(en['vehicles.vin.available'])).toBeInTheDocument();
+
+    // "Available" beside a VIN that is no longer the one that was checked is
+    // worse than showing nothing.
+    await user.type(vinInput(), 'X');
+    expect(screen.queryByText(en['vehicles.vin.available'])).toBeNull();
+  });
+
+  it('renders the server error wired to the input', () => {
+    renderLtr(
+      <VinField
+        messages={en}
+        id="vin-with-error"
+        value="JH4KA7561PC008269"
+        onChange={() => {}}
+        maxLength={64}
+        excludeVehicleId={null}
+        error="vehicles.vin.duplicate"
+      />
+    );
+    const input = screen.getByLabelText(en['vehicles.create.vin']);
+    const message = screen.getByText(en['vehicles.vin.duplicate']);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input.getAttribute('aria-errormessage')).toBe(message.id);
+  });
+
+  it('refuses to check an empty VIN at all', () => {
+    renderLtr(<Harness exclude={null} />);
+    // Disabled rather than answering "available" for the empty string, which is
+    // what an unguarded exact match would have done.
+    expect(checkButton()).toBeDisabled();
   });
 });
 

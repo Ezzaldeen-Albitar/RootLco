@@ -54,8 +54,12 @@ import {
  * operator already uses, and a VIN is `internal`-classified. Each side still
  * links to its own profile, where the full record is.
  *
- * A and B are the order the detector recorded. Neither is "the duplicate", which
- * is why the ordinal remains the accessible name and never the visible value.
+ * A and B are the order the detector recorded. Neither is "the duplicate", so the
+ * ordinal is kept — but ALONGSIDE the reference, not instead of it. An
+ * `aria-label` would have replaced the accessible name outright, which is
+ * WCAG 2.5.3 Label in Name (Level A): a speech-input user saying "click V-0001"
+ * would have matched nothing, and a screen reader would have announced "First
+ * record" on the screen whose entire job is telling two vehicles apart.
  */
 
 interface Props {
@@ -90,10 +94,17 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
          * #194; the frontend TYPE omitted them, so TypeScript could not see the
          * omission and the fixture inherited it.
          *
-         * The ordinal survives as the accessible name, because two links whose
-         * visible text is a reference still need to be distinguishable when the
-         * reference is missing. The uuid is never shown — the same rule as the
-         * customer queue beside it.
+         * The ordinal survives, because two links whose visible text is a
+         * reference still need to be distinguishable when the reference is
+         * missing — but as a visually-hidden SUFFIX inside the link, not as an
+         * `aria-label`. `aria-label` wins the accessible-name computation
+         * outright, so the first fix left the announced name as "First record"
+         * while the screen showed `V-0001`: the visible label was not contained
+         * in the accessible name, which is a WCAG 2.5.3 failure at Level A.
+         *
+         * Visible reference FIRST, so a speech-input user's "click V-0001"
+         * matches from the start of the name. The uuid is never shown — the same
+         * rule as the customer queue beside it.
          */
         cell: (row) => (
           <div className="flex flex-col gap-0.5">
@@ -101,14 +112,17 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
               <Link
                 key={member.id}
                 href={`/${locale}/vehicles/${member.id}`}
-                aria-label={translate(
-                  messages,
-                  index === 0 ? 'vehicles.duplicates.memberA' : 'vehicles.duplicates.memberB'
-                )}
                 className="text-caption text-primary underline"
                 dir="ltr"
               >
                 {member.number ?? translate(messages, 'vehicles.duplicates.numberUnavailable')}
+                <span className="sr-only">
+                  {' '}
+                  {translate(
+                    messages,
+                    index === 0 ? 'vehicles.duplicates.memberA' : 'vehicles.duplicates.memberB'
+                  )}
+                </span>
               </Link>
             ))}
           </div>

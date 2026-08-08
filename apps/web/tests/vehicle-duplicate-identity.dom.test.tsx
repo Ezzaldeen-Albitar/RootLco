@@ -25,9 +25,20 @@ import { vehiclePairMembers } from '@/features/vehicles/duplicates-contract';
  *
  * ## What is asserted
  *
- * The reference is the visible text; the ordinal survives only as the accessible
- * name, because two links still have to be distinguishable when a reference is
- * missing; and the uuid appears in the href but never as a label.
+ * The reference is the visible text; the ordinal survives as a visually-hidden
+ * SUFFIX inside the link, because two links still have to be distinguishable
+ * when a reference is missing; and the uuid appears in the href but never as a
+ * label.
+ *
+ * ## The second defect, found by the adversarial recheck
+ *
+ * The first fix carried the ordinal as an `aria-label`, and this file asserted
+ * that as the design. `aria-label` wins the accessible-name computation
+ * outright, so the announced name of each link stayed "First record" while the
+ * screen showed `V-0001` — WCAG 2.5.3 Label in Name, Level A, on the one screen
+ * whose job is telling two vehicles apart. The case that was supposed to catch
+ * it inspected `container.textContent`, which structurally cannot see an
+ * `aria-label`, so it passed while the defect was live.
  */
 
 const listVehicleDuplicates = vi.fn();
@@ -85,27 +96,74 @@ describe('each side of the pair is named by its own reference', () => {
     expect(screen.getByText('V-0002')).toBeInTheDocument();
   });
 
-  it('no longer uses the ordinal as the visible label', async () => {
+  it('no longer shows the ordinal as the visible label', async () => {
     const { container } = render();
     await screen.findByText('V-0001');
-    // "First record" / "Second record" told a reviewer nothing about which two
-    // vehicles they were comparing.
-    const text = container.textContent ?? '';
-    expect(text).not.toContain(en['vehicles.duplicates.memberA']);
-    expect(text).not.toContain(en['vehicles.duplicates.memberB']);
+    /*
+     * The ordinal is still in the accessibility tree — it is what keeps two
+     * links apart when both references are null — so it IS in `textContent`.
+     * `textContent` cannot see CSS and so cannot answer "is this visible"; the
+     * honest check is that every occurrence sits inside an `sr-only` element.
+     *
+     * The case this replaces asserted `textContent` did not contain the ordinal
+     * and passed while the ordinal was the announced name of both links, which
+     * is the failure it was written to catch. A check that structurally cannot
+     * see the thing it names is worse than no check.
+     */
+    for (const key of ['vehicles.duplicates.memberA', 'vehicles.duplicates.memberB'] as const) {
+      const carriers = [...container.querySelectorAll('span')].filter(
+        (node) => node.textContent?.trim() === en[key]
+      );
+      expect(carriers).toHaveLength(1);
+      expect(carriers[0]?.className).toContain('sr-only');
+    }
   });
 
-  it('keeps the ordinal as the accessible name, so the two links stay distinct', async () => {
+  it('puts the visible reference INSIDE the accessible name (WCAG 2.5.3)', async () => {
     render();
     await screen.findByText('V-0001');
-    expect(screen.getByRole('link', { name: en['vehicles.duplicates.memberA'] })).toHaveAttribute(
+    /*
+     * The first fix used `aria-label={ordinal}`, which wins the accessible-name
+     * computation outright: the announced name was "First record" and the
+     * visible label `V-0001` was not contained in it. That is Label in Name,
+     * Level A — and a speech-input user saying "click V-0001" matched nothing,
+     * on the one screen whose job is telling two vehicles apart.
+     *
+     * `{ name: 'V-0001' }` here is a SUBSTRING match by testing-library's
+     * default, which is exactly the SC's "contains" requirement.
+     */
+    expect(screen.getByRole('link', { name: /V-0001/ })).toHaveAttribute(
       'href',
       `/en/vehicles/${ID_A}`
     );
-    expect(screen.getByRole('link', { name: en['vehicles.duplicates.memberB'] })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /V-0002/ })).toHaveAttribute(
       'href',
       `/en/vehicles/${ID_B}`
     );
+  });
+
+  it('refuses to let the ordinal become the whole accessible name again', async () => {
+    render();
+    await screen.findByText('V-0001');
+    /*
+     * A string `name` in `*ByRole` is matched against the WHOLE accessible name,
+     * so this finds a link only if its entire name is the ordinal — which is
+     * precisely the defect. (`{ exact: true }` is not a `ByRoleOptions` key; the
+     * whole-name comparison is the default and there is no per-call override.)
+     */
+    expect(screen.queryByRole('link', { name: en['vehicles.duplicates.memberA'] })).toBeNull();
+    expect(screen.queryByRole('link', { name: en['vehicles.duplicates.memberB'] })).toBeNull();
+  });
+
+  it('keeps the two links distinguishable by their ordinal as well', async () => {
+    render();
+    await screen.findByText('V-0001');
+    const [first, second] = screen.getAllByRole('link');
+    const nameOf = (node: HTMLElement | undefined) =>
+      (node?.textContent ?? '').replace(/\s+/g, ' ');
+    expect(nameOf(first)).toContain(en['vehicles.duplicates.memberA']);
+    expect(nameOf(second)).toContain(en['vehicles.duplicates.memberB']);
+    expect(nameOf(first)).not.toBe(nameOf(second));
   });
 
   it('says so when a reference is missing rather than falling back to the uuid', async () => {
@@ -140,7 +198,11 @@ describe('the decision panel identifies the pair as well', () => {
 
     // The panel is where the decision is made, so it must say which two records
     // the decision is about. It previously offered only "Open vehicle".
-    expect(await screen.findByText(en['vehicles.duplicates.memberA'])).toBeInTheDocument();
+    //
+    // `findAllByText`, not `findByText`: the queue's own links now carry the
+    // ordinal in a visually-hidden span, so the ordinal legitimately appears
+    // twice — once in the table and once in the panel.
+    expect(await screen.findAllByText(en['vehicles.duplicates.memberA'])).not.toHaveLength(0);
     const panelText = document.body.textContent ?? '';
     expect(panelText).toContain('V-0001');
     expect(panelText).toContain('V-0002');

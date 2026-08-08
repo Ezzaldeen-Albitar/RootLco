@@ -52,6 +52,7 @@ vi.mock('@/features/vehicles/history-api', () => ({
 const { RelationshipsSection } =
   await import('@/features/vehicles/components/VehicleRelationsSections');
 const { OwnershipSection } = await import('@/features/vehicles/components/VehicleHistorySections');
+const { PartyLabel } = await import('@/components/party/PartyLabel');
 
 /** A uuid an operator must never be shown. Distinctive enough to search for. */
 const PARTNER_UUID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
@@ -124,6 +125,66 @@ beforeEach(() => {
   listOwnerships.mockReset();
   listRelationships.mockResolvedValue(page([relationship()]));
   listOwnerships.mockResolvedValue(page([ownership()]));
+});
+
+describe('PartyLabel on its own, because the rule lives in one component', () => {
+  /*
+   * The three sections below exercise `PartyLabel` transitively, which is enough
+   * to make it WORK and not enough for the QA-001 inventory to see it: nothing
+   * imported it, so its name appeared in the test corpus only inside comments,
+   * and a substring sweep counted that as coverage.
+   *
+   * It also has partial states no section fixture produces — a name with no
+   * reference, a name with no type — and those are the ones where a careless
+   * edit would print `null` or fall back to an id.
+   */
+  const NAMED = {
+    partnerName: 'Layla Haddad',
+    partnerNumber: 'C-000482',
+    partnerType: 'individual',
+  };
+
+  it('renders name, reference and type when all three are known', () => {
+    renderLtr(<PartyLabel messages={en} party={NAMED} />);
+    expect(screen.getByText('Layla Haddad')).toBeInTheDocument();
+    expect(screen.getByText('C-000482')).toBeInTheDocument();
+    expect(screen.getByText(en['crm.partyType.individual'])).toBeInTheDocument();
+  });
+
+  it('keeps the reference left-to-right so a code does not reorder in Arabic', () => {
+    renderRtl(<PartyLabel messages={ar} party={NAMED} />);
+    expect(screen.getByText('C-000482')).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('says the sentence when the party cannot be resolved', () => {
+    const { container } = renderLtr(<PartyLabel messages={en} party={UNRESOLVED} />);
+    expect(screen.getByTestId('party-unavailable')).toBeInTheDocument();
+    expect(screen.getByText(en['party.unavailable'])).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('null');
+  });
+
+  it('renders a name with no reference and no type without printing null', () => {
+    const { container } = renderLtr(
+      <PartyLabel
+        messages={en}
+        party={{ partnerName: 'Layla Haddad', partnerNumber: null, partnerType: null }}
+      />
+    );
+    expect(screen.getByText('Layla Haddad')).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('null');
+    expect(container.textContent?.trim()).toBe('Layla Haddad');
+  });
+
+  it('renders a name with a reference but no type', () => {
+    const { container } = renderLtr(
+      <PartyLabel
+        messages={en}
+        party={{ partnerName: 'Layla Haddad', partnerNumber: 'C-000482', partnerType: null }}
+      />
+    );
+    expect(screen.getByText('C-000482')).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('crm.partyType');
+  });
 });
 
 describe('the relationships table names the customer', () => {

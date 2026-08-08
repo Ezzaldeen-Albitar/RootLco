@@ -103,7 +103,7 @@ beforeEach(() => {
 });
 
 /**
- * Every component this phase's two feature trees export.
+ * Every component this phase ships, across all four trees it owns.
  *
  * Walked rather than listed, because a list is exactly what let six components
  * ship untested while this task reported green.
@@ -112,6 +112,13 @@ function componentNames(): readonly string[] {
   const roots = [
     join(process.cwd(), 'src', 'features', 'crm'),
     join(process.cwd(), 'src', 'features', 'vehicles'),
+    // The two shared trees P1-27 introduced. `PartyLabel`, `CustomerSelector`
+    // and `MatchExplanation` are P1-27 deliverables that live outside the two
+    // feature directories only because a feature may not import another feature
+    // — leaving them out of the inventory made "every component this phase
+    // ships" false by construction.
+    join(process.cwd(), 'src', 'components', 'party'),
+    join(process.cwd(), 'src', 'components', 'duplicates'),
   ];
   const names = new Set<string>();
   const walk = (dir: string) => {
@@ -122,8 +129,23 @@ function componentNames(): readonly string[] {
         continue;
       }
       if (!entry.name.endsWith('.tsx')) continue;
-      for (const m of readFileSync(full, 'utf8').matchAll(/^export function ([A-Z]\w+)/gm)) {
+      const source = readFileSync(full, 'utf8');
+      for (const m of source.matchAll(/^export function ([A-Z]\w+)/gm)) {
         if (m[1]) names.add(m[1]);
+      }
+      /*
+       * `export const Foo = (…) => …` as well, which the original pattern could
+       * not see. A value export such as `MODEL_YEAR_BOUNDS` is NOT a component
+       * and is excluded by requiring an arrow within the declaration head —
+       * counting it would demand "coverage" for a constant.
+       */
+      for (const m of source.matchAll(/^export const ([A-Z]\w+)\b/gm)) {
+        const head = source
+          .slice(m.index ?? 0)
+          .split('\n')
+          .slice(0, 8)
+          .join('\n');
+        if (m[1] && head.includes('=>')) names.add(m[1]);
       }
     }
   };
@@ -131,7 +153,31 @@ function componentNames(): readonly string[] {
   return [...names].sort();
 }
 
-/** Every test source in this workspace, concatenated once. */
+/**
+ * Source with comments removed.
+ *
+ * Mirrors `stripComments` in `scripts/ci/check-p1-27-frontend.mjs`, and carries
+ * the same self-test below, because the gate script lives outside this
+ * workspace's resolution root. `//` is a comment start only when it is not
+ * preceded by `:`, so a `https://` inside a string literal is not truncated.
+ */
+export function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/gm, '$1');
+}
+
+/**
+ * Every test source in this workspace, comments stripped, THIS FILE EXCLUDED.
+ *
+ * Both exclusions are load-bearing and each was a live hole:
+ *
+ * - **Comments.** The sweep below asks whether a component name appears in the
+ *   test corpus. Every explanatory docblock in these files names the components
+ *   it is about, so prose satisfied the check. Six components whose names appear
+ *   in this file's own docblock — as the list of things that shipped UNTESTED —
+ *   were counted as tested by those very words.
+ * - **This file.** It is the meter, not a consumer. A name mentioned here can
+ *   never be evidence that the name is exercised somewhere else.
+ */
 function testSources(): string {
   const dir = join(process.cwd(), 'tests');
   const out: string[] = [];
@@ -139,7 +185,9 @@ function testSources(): string {
     for (const entry of readdirSync(d, { withFileTypes: true })) {
       const full = join(d, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (/\.(ts|tsx)$/.test(entry.name)) out.push(readFileSync(full, 'utf8'));
+      else if (/\.(ts|tsx)$/.test(entry.name) && entry.name !== 'p1-27-qa.test.ts') {
+        out.push(stripComments(readFileSync(full, 'utf8')));
+      }
     }
   };
   walk(dir);
@@ -167,13 +215,25 @@ describe('P1-27-QA-001 — every adapter is reached, and this file proves it', (
      * suite in `vehicle-documents.test.ts`, and that exclusion is stated here so
      * it is a decision rather than an oversight.
      */
+    /*
+     * Each exclusion names the FILE that covers it, and that citation is checked
+     * below against the file's own text rather than taken on trust.
+     *
+     * Three of these cited `vehicle-api.test.ts` for adapters it did not import:
+     * `listTrims`, `listBodyTypes` and `listPowertrainTypes` appeared nowhere in
+     * it, and their only other appearances in the suite were `vi.fn()` stubs
+     * that mock the real adapter away. Three adapters `VehicleCreateScreen`
+     * calls had no path, failure-mapping or bound coverage, behind a citation
+     * that named a file rather than a behaviour. The citations are true now, and
+     * `citationIsReal` is what keeps them true.
+     */
     const EXCLUDED = new Map([
-      ['listVehicleDocuments', 'no TableRequest; covered by vehicle-documents.test.ts'],
-      ['listMakes', 'catalogue read; covered by vehicle-api.test.ts'],
-      ['listModels', 'catalogue read; covered by vehicle-api.test.ts'],
-      ['listTrims', 'catalogue read; covered by vehicle-api.test.ts'],
-      ['listBodyTypes', 'catalogue read; covered by vehicle-api.test.ts'],
-      ['listPowertrainTypes', 'catalogue read; covered by vehicle-api.test.ts'],
+      ['listVehicleDocuments', 'vehicle-documents.test.ts'],
+      ['listMakes', 'vehicle-api.test.ts'],
+      ['listModels', 'vehicle-api.test.ts'],
+      ['listTrims', 'vehicle-api.test.ts'],
+      ['listBodyTypes', 'vehicle-api.test.ts'],
+      ['listPowertrainTypes', 'vehicle-api.test.ts'],
     ]);
 
     const exported = new Set<string>();
@@ -209,6 +269,36 @@ describe('P1-27-QA-001 — every adapter is reached, and this file proves it', (
     // becomes a place to hide things.
     for (const name of EXCLUDED.keys()) {
       expect(exported.has(name), `${name} is excluded but no longer exported`).toBe(true);
+    }
+
+    /*
+     * The citation itself is checked. "Still exported" was the ONLY guard, so an
+     * exclusion could name any file at all — and three did name a file that
+     * never mentioned the adapter.
+     *
+     * The cited file must IMPORT the name (a `vi.fn()` stub of the same name is
+     * not coverage — it replaces the adapter under test), which is why the
+     * assertion looks for it inside an import list rather than anywhere in the
+     * text, and reads the file with comments stripped so a citation cannot be
+     * satisfied by a sentence about it.
+     */
+    for (const [name, file] of EXCLUDED) {
+      const source = stripComments(readFileSync(join(process.cwd(), 'tests', file), 'utf8'));
+      const imports = [
+        // `const { a, b } = await import('…')` — how these suites load a module
+        // they also mock — and the static `import { a } from '…'` form.
+        ...source.matchAll(/(?:const|let)\s*\{([^}]*)\}\s*=\s*await\s+import\s*\(/g),
+        ...source.matchAll(/import\s*\{([^}]*)\}\s*from/g),
+      ]
+        .flatMap((m) => (m[1] ?? '').split(','))
+        .map(
+          (entry) =>
+            entry
+              .trim()
+              .split(/\s+as\s+/)[0]
+              ?.trim() ?? ''
+        );
+      expect(imports, `${file} is cited for ${name} but does not import it`).toContain(name);
     }
   });
 
@@ -247,12 +337,42 @@ describe('P1-27-QA-001 — every adapter is reached, and this file proves it', (
       15
     );
 
+    /*
+     * Whole-word, against comment-stripped test sources with this file removed.
+     *
+     * `suite.includes(name)` was a substring match over raw text, so a mention in
+     * a docblock — including the docblock in THIS file listing the six untested
+     * components — satisfied it. Three components (`VehicleProfileScreen`,
+     * `VinField`, `DuplicateDecisionPanel`) appeared in the entire corpus only
+     * inside `*` comment lines while this case reported green. They each have a
+     * direct suite now, and the mechanism can no longer be satisfied by prose.
+     */
     const suite = testSources();
-    const unreferenced = components.filter((name) => !suite.includes(name));
+    const unreferenced = components.filter((name) => !new RegExp(`\\b${name}\\b`).test(suite));
     expect(
       unreferenced,
       `these components are rendered by no test:\n  ${unreferenced.join('\n  ')}`
     ).toEqual([]);
+  });
+
+  it('cannot be satisfied by a component named only in prose', () => {
+    // The positive control for the case above. If the stripper ever stopped
+    // removing comments, this fails rather than the sweep silently widening.
+    const sample = [
+      '/** RenderedNowhereScreen is deliberately named in this docblock. */',
+      "// AlsoNowhereScreen in a line comment, and a URL that must survive: 'https://example.test/keep'",
+      "const path = '/merge';",
+    ].join('\n');
+    const stripped = stripComments(sample);
+    expect(stripped).not.toContain('RenderedNowhereScreen');
+    expect(stripped).not.toContain('AlsoNowhereScreen');
+    expect(stripped).toContain("'/merge'");
+  });
+
+  it('excludes itself from the corpus it measures', () => {
+    // A meter that counts its own prose measures nothing. `componentNames()` is
+    // defined in this file and named nowhere else, so it must not appear.
+    expect(testSources()).not.toContain('componentNames');
   });
 
   it('covers BOTH domains at the component level, not just CRM', () => {
