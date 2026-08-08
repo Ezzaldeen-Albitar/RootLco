@@ -7,11 +7,21 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { listOdometerReadings, listOwnerships, listPlates } from '../history-api';
+import { RecordForm } from '@/components/forms/RecordForm';
+import {
+  assignPlateAction,
+  listOdometerReadings,
+  listOwnerships,
+  listPlates,
+  recordOdometerAction,
+} from '../history-api';
 import {
   intervalState,
   isCorrection,
   localToday,
+  MAX_PLATE_RAW,
+  ODOMETER_CAPTURE_METHODS,
+  ODOMETER_UNITS,
   odometerDisplay,
   type IntervalState,
   type OdometerReadingEntry,
@@ -188,6 +198,40 @@ export function PlateSection({ locale, messages, vehicleId, today }: SectionProp
       table={table}
       columns={columns}
       rowId={(row) => row.id}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="vehicles.plate.assign"
+          submitKey="vehicles.plate.assign"
+          onRecorded={onRecorded}
+          action={assignPlateAction.bind(null, vehicleId)}
+          fields={[
+            {
+              name: 'countryCode',
+              kind: 'text',
+              labelKey: 'vehicles.plate.country',
+              required: true,
+              maxLength: 3,
+              hintKey: 'vehicles.plate.countryHint',
+            },
+            {
+              name: 'plateRaw',
+              kind: 'text',
+              labelKey: 'vehicles.plate.number',
+              required: true,
+              maxLength: MAX_PLATE_RAW,
+            },
+            {
+              // A `date` control, so the value is `YYYY-MM-DD` with no time and
+              // no zone — the calendar day the operator picked cannot shift.
+              name: 'effectiveDate',
+              kind: 'date',
+              labelKey: 'vehicles.plate.effectiveFrom',
+              hintKey: 'vehicles.plate.effectiveFromHint',
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -290,6 +334,51 @@ export function OdometerSection({ locale, messages, vehicleId }: OdometerProps) 
       table={table}
       columns={columns}
       rowId={(row) => row.id}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="vehicles.odometer.record"
+          submitKey="vehicles.odometer.record"
+          onRecorded={onRecorded}
+          action={recordOdometerAction.bind(null, vehicleId)}
+          fields={[
+            {
+              name: 'value',
+              kind: 'number',
+              labelKey: 'vehicles.odometer.reading',
+              required: true,
+              min: 0,
+              // Whole units. The reading is a `numeric` the database keeps
+              // exactly; a fractional step here would invite a value the
+              // operator cannot actually read off a dial.
+              step: 1,
+            },
+            {
+              name: 'unit',
+              kind: 'select',
+              labelKey: 'vehicles.odometer.unit',
+              required: true,
+              options: ODOMETER_UNITS,
+              optionKeyPrefix: 'vehicles.odometerUnit.',
+            },
+            {
+              name: 'observedAt',
+              kind: 'text',
+              labelKey: 'vehicles.odometer.observedAt',
+              required: true,
+              maxLength: 40,
+              hintKey: 'vehicles.odometer.observedAtHint',
+            },
+            {
+              name: 'captureMethod',
+              kind: 'select',
+              labelKey: 'vehicles.odometer.captureMethod',
+              options: ODOMETER_CAPTURE_METHODS,
+              optionKeyPrefix: 'vehicles.captureMethod.',
+            },
+          ]}
+        />
+      )}
     />
   );
 }
@@ -305,6 +394,7 @@ function HistorySection<Row>({
   table,
   columns,
   rowId,
+  form,
 }: {
   readonly id: string;
   readonly locale: Locale;
@@ -315,6 +405,8 @@ function HistorySection<Row>({
   readonly table: ReturnType<typeof useServerTable<Row>>;
   readonly columns: readonly Column<Row>[];
   readonly rowId: (row: Row) => string;
+  /** The write form, handed a callback that re-reads the list after a success. */
+  readonly form?: (onRecorded: () => void) => React.ReactNode;
 }) {
   return (
     <section aria-labelledby={`${id}-heading`} className="flex min-h-0 flex-col gap-3">
@@ -336,6 +428,17 @@ function HistorySection<Row>({
       <p className="px-2 text-caption text-text-muted" lang={locale}>
         {translateDynamic(messages, footnoteKey)}
       </p>
+      {/* Gated on `response`, not on a status string — `TableStatus` has no
+          `'ok'` member, so `status === 'ok'` is ALWAYS FALSE and reads exactly
+          like a working fail-closed guard while rendering the form precisely
+          never. `response` is non-null iff the page came back ok. The same rule,
+          and the same reason, as the customer profile's component sections.
+
+          The form appearing only after a successful read is a security property
+          rather than a tidiness one: every one of these lists needs
+          `veh.vehicle.read`, and each write needs a stronger capability, so a
+          caller denied the list certainly cannot write. */}
+      {table.response ? form?.(table.refresh) : null}
     </section>
   );
 }

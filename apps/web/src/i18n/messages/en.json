@@ -1033,5 +1033,20 @@
   "crm.customers.addresses.postalCode": "Postal code",
   "crm.customers.addresses.country": "Country",
   "crm.customers.addresses.countryHint": "Two-letter country code, for example JO or AE. Leave it empty if you do not know it.",
-  "crm.customers.addresses.error.country": "Use the two-letter country code."
+  "crm.customers.addresses.error.country": "Use the two-letter country code.",
+  "vehicles.plate.assign": "Add registration plate",
+  "vehicles.plate.assigned": "Registration plate added.",
+  "vehicles.plate.number": "Plate number",
+  "vehicles.plate.countryHint": "Two or three letters, for example JO or UAE.",
+  "vehicles.plate.effectiveFrom": "In force from",
+  "vehicles.plate.effectiveFromHint": "Leave empty to start today. A future date schedules the change.",
+  "vehicles.plate.error.country": "Use the two or three letter country code.",
+  "vehicles.plate.error.date": "Use a full date.",
+  "vehicles.odometer.record": "Record odometer reading",
+  "vehicles.odometer.recorded": "Odometer reading recorded.",
+  "vehicles.odometer.unit": "Unit",
+  "vehicles.odometer.observedAtHint": "When the reading was taken, for example 2026-03-01T09:30:00Z.",
+  "vehicles.odometer.error.observedAt": "Give the date and time the reading was taken.",
+  "vehicles.odometerUnit.km": "Kilometres",
+  "vehicles.odometerUnit.mi": "Miles"
 }

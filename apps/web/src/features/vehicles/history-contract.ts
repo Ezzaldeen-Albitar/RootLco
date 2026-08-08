@@ -57,6 +57,17 @@ export const ODOMETER_ANOMALY_REASONS = [
 /** `ck_plate_history_country`: an ISO-style 2–3 letter code, upper-case. */
 export const COUNTRY_CODE_PATTERN = /^[A-Z]{2,3}$/;
 
+/**
+ * Length ceilings, mirroring the route schemas so a form can bound its input.
+ *
+ * These are the values the server enforces, restated — not a second authority. A
+ * client bound that disagreed with the server would refuse a value the server
+ * would have accepted, with no error the operator could act on, so the ceiling is
+ * copied exactly and never tightened.
+ */
+export const MAX_PLATE_RAW = 32;
+export const MAX_ODOMETER_VALUE = 9_999_999_999;
+
 export interface PlateHistoryEntry {
   readonly id: string;
   readonly countryCode: string;

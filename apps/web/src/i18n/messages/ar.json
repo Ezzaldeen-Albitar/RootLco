@@ -1033,5 +1033,20 @@
   "crm.customers.addresses.postalCode": "الرمز البريدي",
   "crm.customers.addresses.country": "الدولة",
   "crm.customers.addresses.countryHint": "رمز الدولة من حرفين، مثل JO أو AE. اتركه فارغًا إذا لم تكن تعرفه.",
-  "crm.customers.addresses.error.country": "استخدم رمز الدولة المكوّن من حرفين."
+  "crm.customers.addresses.error.country": "استخدم رمز الدولة المكوّن من حرفين.",
+  "vehicles.plate.assign": "إضافة لوحة تسجيل",
+  "vehicles.plate.assigned": "تمت إضافة لوحة التسجيل.",
+  "vehicles.plate.number": "رقم اللوحة",
+  "vehicles.plate.countryHint": "حرفان أو ثلاثة، مثل JO أو UAE.",
+  "vehicles.plate.effectiveFrom": "سارية اعتبارًا من",
+  "vehicles.plate.effectiveFromHint": "اتركه فارغًا لتبدأ اليوم. التاريخ المستقبلي يجدول التغيير.",
+  "vehicles.plate.error.country": "استخدم رمز الدولة المكوّن من حرفين أو ثلاثة.",
+  "vehicles.plate.error.date": "أدخل تاريخًا كاملًا.",
+  "vehicles.odometer.record": "تسجيل قراءة عدّاد المسافة",
+  "vehicles.odometer.recorded": "تم تسجيل قراءة عدّاد المسافة.",
+  "vehicles.odometer.unit": "الوحدة",
+  "vehicles.odometer.observedAtHint": "وقت أخذ القراءة، مثل 2026-03-01T09:30:00Z.",
+  "vehicles.odometer.error.observedAt": "أدخل تاريخ ووقت أخذ القراءة.",
+  "vehicles.odometerUnit.km": "كيلومترات",
+  "vehicles.odometerUnit.mi": "أميال"
 }
