@@ -5,6 +5,8 @@
  * Database change riding inside a Frontend phase: reviewed as Frontend, gated
  * by no Backend job, and invisible until it breaks something in production.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classify, evaluate, PROFILES } from '../../scripts/ci/check-phase-ownership.mjs';
 
@@ -142,6 +144,106 @@ describe('backend-login-contract profile', () => {
   ])('still forbids %s', (_label, path, bucket) => {
     const { failures } = evaluate([...BACKEND_CHANGES, path], 'backend-login-contract');
     expect(failures.some((f) => f.startsWith(`${bucket}:`) && f.includes(path))).toBe(true);
+  });
+});
+
+describe('p1-27-backend-partner-identity profile', () => {
+  /*
+   * This profile exists because seven API source files were riding inside the
+   * P1-27 FRONTEND branch — reviewed by nobody as Backend and triggered by no
+   * Backend gate, which is the exact failure `p1-26-frontend` was written to
+   * stop and which it caught here.
+   */
+  const BACKEND_CHANGES = [
+    'apps/api/src/modules/vehicle/application/partner-identity.ts',
+    'apps/api/src/modules/crm/application/customer-read-service.ts',
+    'apps/api/src/modules/crm/data/customer-read-repository.ts',
+    'tests/backend/vehicle-partner-identity.test.ts',
+    'docs/phase-1/phase-1-27/final-canonical-remediation.md',
+    'scripts/ci/check-phase-ownership.mjs',
+  ];
+
+  it('permits the partner-identity remediation to change API source, tests and docs', () => {
+    const { failures, counts } = evaluate(BACKEND_CHANGES, 'p1-27-backend-partner-identity');
+    expect(failures).toEqual([]);
+    expect(counts.apiSource).toBeGreaterThan(0);
+  });
+
+  it('forbids the Frontend half from riding along', () => {
+    const { failures } = evaluate(
+      [...BACKEND_CHANGES, 'apps/web/src/components/party/PartyLabel.tsx'],
+      'p1-27-backend-partner-identity'
+    );
+    expect(failures.some((f) => f.startsWith('web:'))).toBe(true);
+  });
+
+  it.each([
+    ['a migration', 'supabase/migrations/0121_identity.sql', 'migrations'],
+    ['the database', 'supabase/config.toml', 'supabase'],
+  ])('still forbids %s', (_label, path, bucket) => {
+    const { failures } = evaluate([...BACKEND_CHANGES, path], 'p1-27-backend-partner-identity');
+    expect(failures.some((f) => f.startsWith(`${bucket}:`) && f.includes(path))).toBe(true);
+  });
+});
+
+describe('p1-27-frontend profile', () => {
+  it('forbids API source under P1-27’s own name, not under P1-26’s', () => {
+    /*
+     * The gate defaults to `p1-26-frontend` when no profile argument is given,
+     * so P1-27 was measured against ANOTHER phase's declaration for its entire
+     * life. The rules are identical; the declaration is the point. A phase that
+     * borrows a profile has not declared what it may change.
+     */
+    const { failures } = evaluate(
+      ['apps/web/src/features/crm/customers/api.ts', 'apps/api/src/modules/crm/index.ts'],
+      'p1-27-frontend'
+    );
+    expect(failures.some((f) => f.startsWith('apiSource:'))).toBe(true);
+    for (const bucket of ['apiSource', 'apiConfig', 'migrations', 'supabase']) {
+      expect(Object.keys(PROFILES['p1-27-frontend'].forbidden)).toContain(bucket);
+    }
+  });
+
+  it('permits exactly what the P1-26 Frontend profile permits', () => {
+    // Divergence between two Frontend profiles would be a governance difference
+    // nobody decided on. If one is ever loosened, this says so.
+    expect([...PROFILES['p1-27-frontend'].allowed].sort()).toEqual(
+      [...PROFILES['p1-26-frontend'].allowed].sort()
+    );
+    expect(Object.keys(PROFILES['p1-27-frontend'].forbidden).sort()).toEqual(
+      Object.keys(PROFILES['p1-26-frontend'].forbidden).sort()
+    );
+  });
+});
+
+describe('every profile is SELECTABLE, not merely declared', () => {
+  it('is reachable by name from the command line or the environment', () => {
+    /*
+     * The gate's npm script passes no argument, so every invocation used the
+     * `p1-26-frontend` default — which forbids `apiSource` and therefore cannot
+     * pass on a Backend branch at all. The two P1-27 profiles were reachable
+     * from no script and no workflow: a profile nothing can select is a
+     * declaration, not a gate, and that is this phase's own recurring defect
+     * appearing in its own tooling.
+     *
+     * Asserted by reading the script, because the selection happens in `main()`
+     * which this file does not call.
+     */
+    const source = readFileSync(
+      join(process.cwd(), 'scripts', 'ci', 'check-phase-ownership.mjs'),
+      'utf8'
+    );
+    expect(source).toContain('process.env.PHASE_OWNERSHIP_PROFILE');
+    expect(source).toContain('process.env.PHASE_OWNERSHIP_BASE');
+    // And every declared profile must be a name `evaluate` accepts, or the
+    // selection mechanism points at nothing.
+    for (const name of Object.keys(PROFILES)) {
+      const { failures } = evaluate(['apps/web/src/x.ts'], name);
+      expect(
+        failures.some((f) => f.includes('unknown ownership profile')),
+        name
+      ).toBe(false);
+    }
   });
 });
 
