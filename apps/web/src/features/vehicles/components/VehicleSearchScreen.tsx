@@ -2,6 +2,7 @@
 
 import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -217,6 +218,7 @@ function VehicleSearchResults({
     [criteria]
   );
   const table = useServerTable<VehicleSearchHit>(load, { initial: INITIAL_REQUEST });
+  const router = useRouter();
 
   const makeById = useMemo(() => new Map(makes.map((make) => [make.id, make.name])), [makes]);
 
@@ -344,6 +346,30 @@ function VehicleSearchResults({
         onRetry={table.refresh}
         correlationId={table.correlationId}
         caption={translate(messages, 'vehicles.search.caption')}
+        /*
+         * Opening a found vehicle (`P1-27-FE-019`).
+         *
+         * This table listed vehicles and offered no way to open one. The vehicle
+         * profile route existed, and the ONLY links to it in the whole
+         * application were on the duplicate-review queue — so the profile, and
+         * with it plate assignment, odometer capture, ownership transfer, the
+         * electric-drive profile, customer relationships, documents and history,
+         * could be reached only by an operator who happened to be reviewing a
+         * suspected duplicate.
+         *
+         * The same defect shape as the unreachable writes: the screen was built,
+         * and nothing navigated to it. The CRM search has carried this row action
+         * since Wave 2; the vehicle search never gained one.
+         */
+        rowActions={(row) => (
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/vehicles/${row.id}`)}
+            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+          >
+            {translate(messages, 'vehicles.search.open')}
+          </button>
+        )}
       />
       <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.search.exactMatchNote')}

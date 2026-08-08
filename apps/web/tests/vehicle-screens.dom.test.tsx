@@ -153,6 +153,38 @@ describe('vehicle search asks nothing until it is asked', () => {
     expect(screen.queryByText(en['vehicles.create.title'])).not.toBeInTheDocument();
   });
 
+  /*
+   * `P1-27-FE-019`. This table listed vehicles and offered no way to open one.
+   * The profile route existed and the ONLY links to it in the application were
+   * on the duplicate-review queue, so plate assignment, odometer capture,
+   * ownership transfer, the electric-drive profile, customer relationships,
+   * documents and history were reachable only by an operator who happened to be
+   * reviewing a suspected duplicate.
+   *
+   * The same shape as the unreachable writes, one level up: the screen was
+   * built and nothing navigated to it.
+   */
+  it('opens a found vehicle', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+    await screen.findByText('V-0001');
+
+    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    expect(push).toHaveBeenCalledWith(`/en/vehicles/${HIT.id}`);
+  });
+
+  it('navigates by id, never by the reference an operator can read', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+    await screen.findByText('V-0001');
+    await user.click(screen.getByRole('button', { name: en['vehicles.search.open'] }));
+    // `V-0001` is a display number, not a route key. Routing on it would 404 on
+    // every vehicle whose reference has not been assigned yet.
+    expect(push).not.toHaveBeenCalledWith(expect.stringContaining('V-0001'));
+  });
+
   it('renders a denial as a denial, not as an empty result set', async () => {
     const user = userEvent.setup();
     searchVehicles.mockResolvedValue(page([], { status: 'denied' }));
