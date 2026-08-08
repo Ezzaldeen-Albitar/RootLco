@@ -5,6 +5,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { createVehicleAction, type VehicleCreationState } from '../api';
+import { VinField } from './VinField';
 import {
   listModels,
   listTrims,
@@ -169,17 +170,27 @@ export function VehicleCreateScreen({
           {translate(messages, 'vehicles.create.identity')}
         </legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
+          {/* The canonical VIN control, not a plain text box (`P1-27-FE-020`).
+
+              The create path used a bare `TextField` while `VinField` — which
+              already implements the four verdicts the canonical plan calls for —
+              was mounted only on the UPDATE panel. So an operator creating a
+              vehicle got no format feedback and no uniqueness preview, and the
+              server's `409 ERR-RES-002` on a VIN that already exists arrived as
+              the generic "Someone else changed this", which is not what
+              happened and not something they could act on.
+
+              `excludeVehicleId` is null because there is no vehicle yet: every
+              existing match is a real conflict, and there is no own-VIN to
+              exclude. */}
+          <VinField
             messages={messages}
             id={`${formId}-vin`}
-            name="vin"
-            labelKey="vehicles.create.vin"
-            hintKey="vehicles.create.vinHint"
             value={values.vin ?? ''}
-            onChange={set}
+            onChange={(next) => set('vin', next)}
             maxLength={MAX_VIN_INPUT}
+            excludeVehicleId={null}
             error={errorFor('vin')}
-            dir="ltr"
           />
           <TextField
             messages={messages}

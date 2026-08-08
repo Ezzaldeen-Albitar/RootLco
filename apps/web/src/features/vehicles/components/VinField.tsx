@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import { normalizeVinForDisplay } from '../contract';
 import { checkVinAvailability } from '../profile-api';
 import { isNonStandardLength, validateVinFormat, type VinVerdict } from '../profile-contract';
@@ -49,11 +49,33 @@ interface Props {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly maxLength: number;
-  /** The vehicle being edited holds its own VIN; that is not a conflict. */
+  /**
+   * The vehicle being edited holds its own VIN; that is not a conflict.
+   *
+   * `null` on the CREATE path, where there is no vehicle yet and every existing
+   * match is a real conflict.
+   */
   readonly excludeVehicleId: string | null;
+  /**
+   * The SERVER's verdict on this field, from a rejected submit.
+   *
+   * Separate from the four local verdicts and rendered alongside them, because
+   * they answer different questions: the verdicts are a preview of the
+   * uniqueness rule, and this is what the write actually said. Collapsing them
+   * would let a stale "available" sit where a 409 belongs.
+   */
+  readonly error?: string | undefined;
 }
 
-export function VinField({ messages, id, value, onChange, maxLength, excludeVehicleId }: Props) {
+export function VinField({
+  messages,
+  id,
+  value,
+  onChange,
+  maxLength,
+  excludeVehicleId,
+  error,
+}: Props) {
   const [verdict, setVerdict] = useState<VinVerdict | null>(null);
   const [checking, startCheck] = useTransition();
 
@@ -92,8 +114,15 @@ export function VinField({ messages, id, value, onChange, maxLength, excludeVehi
             setVerdict(null);
           }}
           maxLength={maxLength}
-          aria-describedby={`${id}-note`}
-          className="w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+          // Both the note and, when there is one, the server's verdict. A field
+          // whose error is rendered but not wired is announced by a screen
+          // reader as an unlabelled edit box with nothing wrong with it.
+          aria-describedby={[`${id}-note`, error ? `${id}-error` : null].filter(Boolean).join(' ')}
+          aria-invalid={error ? true : undefined}
+          aria-errormessage={error ? `${id}-error` : undefined}
+          className={`w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+            error ? 'border-error' : 'border-border'
+          }`}
         />
         <button
           type="button"
@@ -141,6 +170,19 @@ export function VinField({ messages, id, value, onChange, maxLength, excludeVehi
       {verdict === 'unavailable' ? (
         // NOT "available". A check that could not run is its own answer.
         <Note messages={messages} tone="muted" messageKey="vehicles.vin.checkUnavailable" />
+      ) : null}
+
+      {error ? (
+        // The write's own verdict. `role="alert"` because it arrives after a
+        // submit the operator has already turned away from.
+        //
+        // Translated here, because `fieldErrors` carries catalogue KEYS rather
+        // than sentences — the same convention every other field on this form
+        // follows. Rendering the key would put `field.required` on screen, which
+        // is the defect `P1-27-FE-004` closed one layer up.
+        <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-error">
+          {translateDynamic(messages, error)}
+        </p>
       ) : null}
     </div>
   );
