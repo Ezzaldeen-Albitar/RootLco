@@ -17,6 +17,7 @@ import {
   VEHICLE_HISTORY_ORDERING,
   type VehicleHistoryHit,
 } from '../domain/vehicle-history';
+import { nameActors, type WithActor } from './actor-identity';
 
 export interface VehicleDocuments {
   readonly vehicleId: string;
@@ -33,8 +34,26 @@ export class VehicleHistoryService extends ApplicationService {
     super();
   }
 
-  listHistory(db: DbHandle, vehicleId: string, page: PageInput): Promise<Page<VehicleHistoryHit>> {
-    return this.history.listHistory(db, vehicleId, pageRequest(VEHICLE_HISTORY_ORDERING, page));
+  /**
+   * The attribute-change ledger, each row attributed to a **named** person
+   * (`P1-27-INT-026`).
+   *
+   * The repository publishes `actor_id` and nothing else, so the history screen
+   * printed a uuid under a column headed "who". `nameActors` resolves the whole
+   * page through the IAM module's provider-free public surface in one statement;
+   * see that file for why the join is not written here, why `iamDirectory()` is
+   * used rather than `iamModule()`, and why an unresolvable actor is a sentence
+   * rather than a failure.
+   */
+  async listHistory(
+    db: DbHandle,
+    vehicleId: string,
+    page: PageInput
+  ): Promise<Page<WithActor<VehicleHistoryHit>>> {
+    return nameActors(
+      db,
+      await this.history.listHistory(db, vehicleId, pageRequest(VEHICLE_HISTORY_ORDERING, page))
+    );
   }
 
   async listDocuments(db: DbHandle, vehicleId: string): Promise<VehicleDocuments> {
