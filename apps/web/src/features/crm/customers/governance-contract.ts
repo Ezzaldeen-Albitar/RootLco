@@ -8,21 +8,14 @@
  * authority for the one thing the client derives from it — which operations are
  * `idempotent: true` — and that stays generated and drift-checked.
  *
- * ## Six writes, six DIFFERENT permissions
+ * ## Nine writes, five DIFFERENT permissions
  *
  * There is no blanket "customer write" capability. A role that may add a note
  * very often may not impose a restriction, and the interface has to reflect
- * that per section rather than showing six controls and failing five of them
- * after the operator has typed.
- *
- * | operation                | permission                        |
- * | ------------------------ | --------------------------------- |
- * | `crm.preference-set`     | `crm.customer.profile.write`      |
- * | `crm.consent-record`     | `crm.customer.consent.write`      |
- * | `crm.note-add`           | `crm.customer.note.write`         |
- * | `crm.alert-raise`        | `crm.customer.governance.manage`  |
- * | `crm.tag-assign`         | `crm.customer.governance.manage`  |
- * | `crm.restriction-impose` | `crm.customer.restriction.manage` |
+ * that per section rather than showing nine controls and failing eight of them
+ * after the operator has typed. The authoritative mapping is
+ * `WRITE_PERMISSIONS` at the foot of this file; see its own note for why it
+ * covers nine surfaces rather than the six it shipped with.
  *
  * Hiding a control the caller cannot use is a courtesy, never the enforcement.
  * The Backend authorizes every call regardless of what this file says.
@@ -34,6 +27,7 @@
  * `P1-27-INT-003`. The key comes from the shared contract-derived authority, so
  * these writes are the first real exercise of that fix.
  */
+import { CRM_PERMISSIONS, holds } from '../permissions';
 
 /** `crm.customer_alerts.alert_type`. */
 export const ALERT_TYPES = ['operational', 'financial', 'safety', 'other'] as const;
@@ -138,16 +132,67 @@ export const MAX_APPROVAL_REF = 120;
 export const MIN_PREFERRED_LOCALE = 2;
 export const MAX_PREFERRED_LOCALE = 10;
 
-/** The permission each write requires, exactly as the route registers it. */
+/**
+ * The permission each customer write requires, exactly as the route registers
+ * it — verified against `docs/phase-1/phase-1-24/evidence/operation-register.json`
+ * rather than against the prose above it, and asserted against the catalogue by
+ * `apps/web/tests/crm-governance-writes.test.ts`.
+ *
+ * ## This table described the truth and changed nothing
+ *
+ * It shipped covering six writes and had **no consumer outside its own test**.
+ * The profile screen rendered eight of its nine write forms unconditionally, so
+ * an operator holding only `crm.customer.read` was shown a full set of controls
+ * — add a contact, record a consent decision, impose a restriction — every one
+ * of which answered 403 after they had finished typing. The table said which
+ * permission each needed and nothing consulted it.
+ *
+ * A table of truth nobody reads is worse than no table: it makes the gate look
+ * present in review. `permittedWrites` is now the only way to produce the gate,
+ * and `WriteKind` is exhaustive, so a write surface added without a permission
+ * does not compile.
+ *
+ * `contact` and `address` are here because `crm.contact-add` and
+ * `crm.address-add` need `crm.customer.profile.write` — the same code as
+ * preferences, which is exactly why they were easy to forget. `status` is here
+ * because folding the one write that WAS gated into the same authority removes
+ * the special case rather than adding one.
+ *
+ * **Visibility only.** The Backend authorizes every call regardless of what this
+ * file says, and its denial is the one that means anything.
+ */
 export const WRITE_PERMISSIONS = {
-  preference: 'crm.customer.profile.write',
-  consent: 'crm.customer.consent.write',
-  note: 'crm.customer.note.write',
-  alert: 'crm.customer.governance.manage',
-  tag: 'crm.customer.governance.manage',
-  restriction: 'crm.customer.restriction.manage',
+  contact: CRM_PERMISSIONS.profileWrite,
+  address: CRM_PERMISSIONS.profileWrite,
+  preference: CRM_PERMISSIONS.profileWrite,
+  consent: CRM_PERMISSIONS.consentWrite,
+  note: CRM_PERMISSIONS.noteWrite,
+  alert: CRM_PERMISSIONS.governanceManage,
+  tag: CRM_PERMISSIONS.governanceManage,
+  restriction: CRM_PERMISSIONS.restrictionManage,
+  status: CRM_PERMISSIONS.governanceManage,
 } as const;
 export type WriteKind = keyof typeof WRITE_PERMISSIONS;
+
+/** Which customer writes this session may attempt, by kind. */
+export type WritePermits = Readonly<Record<WriteKind, boolean>>;
+
+/**
+ * Resolves the session's permissions into one verdict per write surface.
+ *
+ * Built by walking `WRITE_PERMISSIONS`, never by listing the kinds again — a
+ * second list would be the thing that drifts, and the drift would be silent in
+ * the direction of showing a control that cannot work.
+ */
+export function permittedWrites(permissions: readonly string[]): WritePermits {
+  const entries = Object.entries(WRITE_PERMISSIONS) as readonly (readonly [WriteKind, string])[];
+  return Object.freeze(
+    Object.fromEntries(entries.map(([kind, code]) => [kind, holds(permissions, code)]))
+  ) as WritePermits;
+}
+
+/** Nothing permitted — the shape a caller starts from, and the safe default. */
+export const NO_WRITES: WritePermits = permittedWrites([]);
 
 /** One field-level complaint, keyed by the field it belongs beside. */
 export type FieldErrors = Readonly<Record<string, string>>;

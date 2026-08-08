@@ -7,7 +7,9 @@ import { renderLtr, renderRtl } from './render';
 import {
   allowedTransitions,
   isConsequentialTransition,
+  permittedWrites,
   SETTABLE_LIFECYCLE_STATES,
+  WRITE_PERMISSIONS,
 } from '@/features/crm/customers/governance-contract';
 
 /**
@@ -80,13 +82,19 @@ function customer(lifecycleStatus = 'active') {
   };
 }
 
+/**
+ * Status is one of nine writes now, and takes its verdict from the same map as
+ * the other eight (`P1-27-SEC-001`). Built from real permission CODES rather
+ * than by hand, so this test exercises the resolution the page performs instead
+ * of a shape invented to satisfy it.
+ */
 const render = (status = 'active', canManageStatus = true) =>
   renderLtr(
     <CustomerProfileScreen
       locale="en"
       messages={en}
       customer={customer(status)}
-      canManageStatus={canManageStatus}
+      writes={permittedWrites(canManageStatus ? [WRITE_PERMISSIONS.status] : [])}
     />
   );
 
@@ -268,7 +276,12 @@ describe('the reason is mandatory and substantial', () => {
 describe('the same control in Arabic', () => {
   it('renders right-to-left with Arabic copy', () => {
     renderRtl(
-      <CustomerProfileScreen locale="ar" messages={ar} customer={customer()} canManageStatus />
+      <CustomerProfileScreen
+        locale="ar"
+        messages={ar}
+        customer={customer()}
+        writes={permittedWrites([WRITE_PERMISSIONS.status])}
+      />
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(

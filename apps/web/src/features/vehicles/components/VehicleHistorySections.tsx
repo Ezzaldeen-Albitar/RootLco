@@ -232,6 +232,7 @@ export function OwnershipSection({
       table={table}
       columns={columns}
       rowId={(row) => row.id}
+      canWrite={canManageRelationships}
       {...(canManageRelationships
         ? {
             form: (onRecorded: () => void) => (
@@ -248,7 +249,14 @@ export function OwnershipSection({
   );
 }
 
-export function PlateSection({ locale, messages, vehicleId, today }: SectionProps) {
+/** `veh.vehicle-plate-assign` needs `veh.vehicle.manage` — the same code as editing the vehicle. */
+export function PlateSection({
+  locale,
+  messages,
+  vehicleId,
+  today,
+  canEdit = false,
+}: SectionProps & { readonly canEdit?: boolean }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listPlates(vehicleId, request, cursor),
     [vehicleId]
@@ -295,6 +303,7 @@ export function PlateSection({ locale, messages, vehicleId, today }: SectionProp
   return (
     <HistorySection
       id="vehicle-plates"
+      canWrite={canEdit}
       locale={locale}
       messages={messages}
       titleKey="vehicles.plate.heading"
@@ -351,7 +360,22 @@ export function PlateSection({ locale, messages, vehicleId, today }: SectionProp
  */
 type OdometerProps = Omit<SectionProps, 'today'>;
 
-export function OdometerSection({ locale, messages, vehicleId }: OdometerProps) {
+/**
+ * `veh.vehicle-odometer-record` needs `veh.vehicle.odometer.record` — its OWN
+ * code, held by neither `veh.vehicle.manage` nor `veh.vehicle.status.manage`.
+ *
+ * That separation is the point: a technician who reads a dashboard at check-in
+ * records mileage without being able to edit the vehicle. `odometerRecord` was
+ * declared in `VEHICLE_PERMISSIONS` and, like the customer write table, consumed
+ * by nothing — so the one capability the platform deliberately kept separate was
+ * the one the interface never asked about.
+ */
+export function OdometerSection({
+  locale,
+  messages,
+  vehicleId,
+  canRecord = false,
+}: OdometerProps & { readonly canRecord?: boolean }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) =>
       listOdometerReadings(vehicleId, request, cursor),
@@ -431,6 +455,7 @@ export function OdometerSection({ locale, messages, vehicleId }: OdometerProps) 
   return (
     <HistorySection
       id="vehicle-odometer"
+      canWrite={canRecord}
       locale={locale}
       messages={messages}
       titleKey="vehicles.odometer.heading"
@@ -499,6 +524,7 @@ function HistorySection<Row>({
   table,
   columns,
   rowId,
+  canWrite,
   form,
 }: {
   readonly id: string;
@@ -510,6 +536,12 @@ function HistorySection<Row>({
   readonly table: ReturnType<typeof useServerTable<Row>>;
   readonly columns: readonly Column<Row>[];
   readonly rowId: (row: Row) => string;
+  /**
+   * Whether this session holds the capability THIS section's write needs.
+   * Required rather than optional, so a section cannot be added without
+   * deciding — plates and odometer readings were added without it.
+   */
+  readonly canWrite: boolean;
   /** The write form, handed a callback that re-reads the list after a success. */
   readonly form?: (onRecorded: () => void) => React.ReactNode;
 }) {
@@ -542,8 +574,16 @@ function HistorySection<Row>({
           The form appearing only after a successful read is a security property
           rather than a tidiness one: every one of these lists needs
           `veh.vehicle.read`, and each write needs a stronger capability, so a
-          caller denied the list certainly cannot write. */}
-      {table.response ? form?.(table.refresh) : null}
+          caller denied the list certainly cannot write.
+
+          The converse does NOT hold, and for a while this line assumed it did.
+          A caller who passed the read may hold none of the write capabilities:
+          `veh.vehicle.read` is exactly what the profile page requires, so every
+          operator who could open a vehicle was offered the plate-assignment and
+          odometer forms. Ownership had a real gate; those two never did
+          (`P1-27-SEC-001`). `canWrite` is the second condition, and it is
+          required so the next section cannot repeat the omission. */}
+      {table.response && canWrite ? form?.(table.refresh) : null}
     </section>
   );
 }

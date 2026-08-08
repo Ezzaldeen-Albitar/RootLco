@@ -58,6 +58,15 @@ interface Props {
   readonly canManageRelationships: boolean;
   /** `crm.customer.vehicle.manage` — a CRM capability, held independently. */
   readonly canLinkCustomer: boolean;
+  /**
+   * `veh.vehicle.odometer.record` — its own code, implied by none of the others.
+   *
+   * A technician reading a dashboard at check-in records mileage without being
+   * able to edit the vehicle, which is why the platform kept it separate. The
+   * odometer form asked for none of this and rendered for every reader
+   * (`P1-27-SEC-001`).
+   */
+  readonly canRecordOdometer: boolean;
   /** Read on the server, because a 404 here is an ordinary state, not an error. */
   readonly evProfile: EvProfileState;
   /** `shared.document.manage` — a manage capability from a DIFFERENT module. */
@@ -98,6 +107,7 @@ export function VehicleProfileScreen({
   canChangeStatus,
   canManageRelationships,
   canLinkCustomer,
+  canRecordOdometer,
   evProfile,
   canListDocuments,
   documents,
@@ -167,12 +177,25 @@ export function VehicleProfileScreen({
         />
       ) : null}
       {section === 'plates' ? (
-        <PlateSection locale={locale} messages={messages} vehicleId={vehicle.id} today={today} />
+        <PlateSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          today={today}
+          // `veh.vehicle.manage`, and `frozen` for the same reason ownership
+          // carries it: a merged or scrapped vehicle answers 409.
+          canEdit={canEdit && !frozen}
+        />
       ) : null}
       {section === 'odometer' ? (
         // No `today`: odometer readings are timestamped observations, not dated
         // intervals, so there is nothing here to be "in force".
-        <OdometerSection locale={locale} messages={messages} vehicleId={vehicle.id} />
+        <OdometerSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          canRecord={canRecordOdometer && !frozen}
+        />
       ) : null}
       {section === 'ev' ? (
         <EvProfileSection

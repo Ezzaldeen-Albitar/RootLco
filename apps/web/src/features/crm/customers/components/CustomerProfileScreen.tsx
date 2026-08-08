@@ -46,6 +46,8 @@ import {
   NOTE_VISIBILITIES,
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
+  NO_WRITES,
+  type WritePermits,
 } from '../governance-contract';
 import { addAddressAction, addContactAction } from '../profile-actions';
 import { listTimeline } from '../identity-api';
@@ -135,16 +137,20 @@ interface Props {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
-  /** `crm.customer.governance.manage` — the code `crm.customer-status-set` needs. */
-  readonly canManageStatus?: boolean;
+  /**
+   * Which of the nine customer writes this session may attempt, from
+   * `permittedWrites(session.permissions)` on the server.
+   *
+   * One map rather than nine booleans, and it replaced a lone `canManageStatus`
+   * — the single write that had a gate, while the other eight rendered for
+   * anyone who could open the page (`P1-27-SEC-001`). Defaulting to `NO_WRITES`
+   * means a caller that forgets it shows a read-only profile rather than a full
+   * set of controls that 403.
+   */
+  readonly writes?: WritePermits;
 }
 
-export function CustomerProfileScreen({
-  locale,
-  messages,
-  customer,
-  canManageStatus = false,
-}: Props) {
+export function CustomerProfileScreen({ locale, messages, customer, writes = NO_WRITES }: Props) {
   const [section, setSection] = useState<Section>('overview');
 
   return (
@@ -153,7 +159,7 @@ export function CustomerProfileScreen({
         locale={locale}
         messages={messages}
         customer={customer}
-        canManageStatus={canManageStatus}
+        canManageStatus={writes.status}
       />
 
       <nav aria-label={translate(messages, 'crm.customers.profile.sections')}>
@@ -190,29 +196,72 @@ export function CustomerProfileScreen({
       </nav>
 
       {section === 'overview' ? <Overview messages={messages} customer={customer} /> : null}
+      {/* Each section is handed its OWN capability, never a summary. A role that
+          may add a note very often may not impose a restriction, and `writes`
+          keeps those two answers apart all the way down. */}
       {section === 'contacts' ? (
-        <ContactsSection locale={locale} messages={messages} customerId={customer.id} />
+        <ContactsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.contact}
+        />
       ) : null}
       {section === 'addresses' ? (
-        <AddressesSection locale={locale} messages={messages} customerId={customer.id} />
+        <AddressesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.address}
+        />
       ) : null}
       {section === 'preferences' ? (
-        <PreferencesSection locale={locale} messages={messages} customerId={customer.id} />
+        <PreferencesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.preference}
+        />
       ) : null}
       {section === 'consents' ? (
-        <ConsentsSection locale={locale} messages={messages} customerId={customer.id} />
+        <ConsentsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.consent}
+        />
       ) : null}
       {section === 'notes' ? (
-        <NotesSection locale={locale} messages={messages} customerId={customer.id} />
+        <NotesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.note}
+        />
       ) : null}
       {section === 'alerts' ? (
-        <AlertsSection locale={locale} messages={messages} customerId={customer.id} />
+        <AlertsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.alert}
+        />
       ) : null}
       {section === 'tags' ? (
-        <TagsSection locale={locale} messages={messages} customerId={customer.id} />
+        <TagsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.tag}
+        />
       ) : null}
       {section === 'restrictions' ? (
-        <RestrictionsSection locale={locale} messages={messages} customerId={customer.id} />
+        <RestrictionsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.restriction}
+        />
       ) : null}
       {section === 'timeline' ? (
         <TimelineSection locale={locale} messages={messages} customerId={customer.id} />
@@ -470,10 +519,12 @@ function ContactsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listContacts(customerId, request, cursor),
@@ -520,6 +571,7 @@ function ContactsSection({
   return (
     <ComponentSection<ContactPoint>
       id="crm-contacts"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.contacts"
@@ -572,10 +624,12 @@ function AddressesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listAddresses(customerId, request, cursor),
@@ -616,6 +670,7 @@ function AddressesSection({
   return (
     <ComponentSection<Address>
       id="crm-addresses"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.addresses"
@@ -710,6 +765,7 @@ function ComponentSection<Row>({
   footnote,
   load,
   columns,
+  canWrite,
   form,
 }: {
   readonly id: string;
@@ -720,6 +776,13 @@ function ComponentSection<Row>({
   readonly footnote: React.ReactNode;
   readonly load: (request: TableRequest, cursor: string | null) => Promise<unknown>;
   readonly columns: readonly Column<Row>[];
+  /**
+   * Whether this session holds the capability THIS section's write needs, from
+   * `permittedWrites`. Required rather than optional on purpose: a defaulted
+   * `canWrite` would let a new section be added without deciding, which is
+   * precisely how eight of these forms came to be ungated.
+   */
+  readonly canWrite: boolean;
   /** The write form, handed a callback that re-reads the list after a success. */
   readonly form?: (onRecorded: () => void) => React.ReactNode;
 }) {
@@ -747,8 +810,9 @@ function ComponentSection<Row>({
       <p className="px-2 text-caption text-text-muted" lang={locale}>
         {footnote}
       </p>
-      {/* The form appears only when the READ succeeded, and that is a security
-          property rather than a tidiness one.
+      {/* The form appears only when the READ succeeded AND this session holds
+          the write capability. Both are security properties rather than tidiness
+          ones, and for a while only the first was here.
 
           Every one of these sections needs `crm.customer.read` to list and a
           STRONGER capability to write. So a caller who was denied the list
@@ -758,6 +822,20 @@ function ComponentSection<Row>({
           `contact_restriction` in its options whether or not a row was ever
           returned. This was caught by the fail-closed test, which started
           failing the moment the form was wired in.
+
+          The read gate alone was NOT enough, and the reasoning above says why
+          without following it through: "a stronger capability to write" means
+          a caller who passed the read gate may still hold none of the eight
+          write capabilities. `crm.customer.read` is exactly the permission the
+          profile page already requires, so before `canWrite` every operator who
+          could open a customer was offered every write form on it — including
+          the restrictions form and its vocabulary. The one section that had a
+          real gate was lifecycle status, and it sat in the header rather than
+          here (`P1-27-SEC-001`).
+
+          Both conditions live at this single point deliberately. Eight sections
+          each deciding for themselves is eight chances to decide wrong, and the
+          evidence is that eight of nine did.
 
           The list is RE-READ after a write rather than patched locally: the row
           the backend stored is the one to show, and a locally appended row would
@@ -771,7 +849,7 @@ function ComponentSection<Row>({
           the first version of this line, and only the inverse test ("does offer
           the form when the read succeeded") could tell the difference.
           `response` is non-null iff the page came back `ok`. */}
-      {table.response ? form?.(table.refresh) : null}
+      {table.response && canWrite ? form?.(table.refresh) : null}
     </section>
   );
 }
@@ -781,10 +859,12 @@ function PreferencesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listPreferences(customerId, request, cursor),
@@ -832,6 +912,7 @@ function PreferencesSection({
   return (
     <ComponentSection<Preference>
       id="crm-preferences"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.preferences"
@@ -890,10 +971,12 @@ function ConsentsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listConsents(customerId, request, cursor),
@@ -943,6 +1026,7 @@ function ConsentsSection({
   return (
     <ComponentSection<Consent>
       id="crm-consents"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.consents"
@@ -1015,10 +1099,12 @@ function NotesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   // The one component read whose response carries more than a page. The flag
   // is held here rather than inside `useServerTable` because it is about the
@@ -1069,6 +1155,7 @@ function NotesSection({
   return (
     <ComponentSection<Note>
       id="crm-notes"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.notes"
@@ -1136,10 +1223,12 @@ function AlertsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listAlerts(customerId, request, cursor),
@@ -1205,6 +1294,7 @@ function AlertsSection({
   return (
     <ComponentSection<Alert>
       id="crm-alerts"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.alerts"
@@ -1261,10 +1351,12 @@ function TagsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listTags(customerId, request, cursor),
@@ -1314,6 +1406,7 @@ function TagsSection({
   return (
     <ComponentSection<Tag>
       id="crm-tags"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.tags"
@@ -1365,10 +1458,12 @@ function RestrictionsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listRestrictions(customerId, request, cursor),
@@ -1423,6 +1518,7 @@ function RestrictionsSection({
   return (
     <ComponentSection<Restriction>
       id="crm-restrictions"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.restrictions"
@@ -1530,6 +1626,10 @@ function TimelineSection({
   return (
     <ComponentSection<TimelineEntry>
       id="crm-timeline"
+      // The timeline is a read. It passes no `form`, so this only makes the
+      // absence deliberate rather than accidental — `canWrite` is required
+      // precisely so a section cannot skip the question.
+      canWrite={false}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.timeline"

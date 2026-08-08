@@ -8,6 +8,7 @@ import {
 } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { CustomerProfileScreen } from '@/features/crm/customers/components/CustomerProfileScreen';
+import { permittedWrites } from '@/features/crm/customers/governance-contract';
 import { readCustomer } from '@/features/crm/customers/profile-api';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
@@ -98,10 +99,16 @@ export default async function CustomerProfilePage({
           locale={locale}
           messages={messages}
           customer={result.data}
-          // `crm.customer-status-set` needs `crm.customer.governance.manage` —
-          // the same code as alerts and tags, and NOT the read that gates this
-          // page. Visibility only; the server decides.
-          canManageStatus={holds(session.permissions, CRM_PERMISSIONS.governanceManage)}
+          // Resolved once here, on the server, from the session the Backend
+          // itself issued — never from anything the browser can state.
+          //
+          // Nine writes across this profile need five different capabilities,
+          // and NONE of them is the `crm.customer.read` that gates this page.
+          // Only `crm.customer-status-set` was ever checked; the other eight
+          // forms rendered for every operator who could open a customer
+          // (`P1-27-SEC-001`). Visibility only — the server decides, and
+          // `permittedWrites` cannot make a forged call succeed.
+          writes={permittedWrites(session.permissions)}
         />
       </PageBody>
     </>

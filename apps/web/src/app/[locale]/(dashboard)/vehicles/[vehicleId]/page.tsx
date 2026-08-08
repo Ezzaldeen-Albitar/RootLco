@@ -120,6 +120,11 @@ export default async function VehicleProfilePage({
           // operator may hold one of these two and not the other, so the
           // relationships panel takes both rather than conflating them.
           canLinkCustomer={holds(session.permissions, CRM_PERMISSIONS.vehicleManage)}
+          // `veh.vehicle.odometer.record` is implied by neither `manage` nor
+          // `status.manage`: a technician records mileage without editing the
+          // vehicle. The code was declared and consulted nowhere, so the
+          // odometer form rendered for every reader (`P1-27-SEC-001`).
+          canRecordOdometer={holds(session.permissions, VEHICLE_PERMISSIONS.odometerRecord)}
           evProfile={evProfile}
           canListDocuments={canListDocuments}
           documents={documents}
