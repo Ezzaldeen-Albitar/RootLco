@@ -35,13 +35,13 @@ All 33 are adjudicated below.
 
 ## Verdict classes
 
-| class | meaning |
-| ----- | ------- |
-| `REAL_P1_27_DEFECT` | A genuine gap in P1-27's own scope. Must be fixed before the phase can close. |
-| `DUPLICATE_FINDING` | A true observation, but the same defect as another entry. Fixing the root closes both. |
-| `TEST_OR_GATE_DEFECT` | The product is correct; the test, gate or evidence record is wrong or stale. |
-| `AUDIT_FALSE_NEGATIVE` | The claim does not hold against the repository. |
-| `OUT_OF_SCOPE_P1_28_PLUS` | Real, but owned by a later phase. |
+| class                     | meaning                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `REAL_P1_27_DEFECT`       | A genuine gap in P1-27's own scope. Must be fixed before the phase can close.          |
+| `DUPLICATE_FINDING`       | A true observation, but the same defect as another entry. Fixing the root closes both. |
+| `TEST_OR_GATE_DEFECT`     | The product is correct; the test, gate or evidence record is wrong or stale.           |
+| `AUDIT_FALSE_NEGATIVE`    | The claim does not hold against the repository.                                        |
+| `OUT_OF_SCOPE_P1_28_PLUS` | Real, but owned by a later phase.                                                      |
 
 ## Status vocabulary
 
@@ -53,41 +53,41 @@ All 33 are adjudicated below.
 
 ## Summary
 
-| task | verdict | status | root |
-| ---- | ------- | ------ | ---- |
-| `FE-002` | `REAL_P1_27_DEFECT` | FIXED `600f70e` | itself |
-| `FE-003` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-004` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-007` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-008` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-009` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-010` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-013` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-015` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-016` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-017` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-018` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-019` | `REAL_P1_27_DEFECT` | FIXED `8daf8e9` | itself |
-| `FE-020` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-021` | `DUPLICATE_FINDING` | FIXED `8daf8e9` | `FE-019` |
-| `FE-022` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-023` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `FE-024` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-026` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-028` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-029` | `REAL_P1_27_DEFECT` | BLOCKED | P1-14 backend PR |
-| `SEC-001` | `REAL_P1_27_DEFECT` | FIXED `915b861` | itself |
-| `SEC-002` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `SEC-003` | `DUPLICATE_FINDING` | FIXED `915b861` | `SEC-001` |
-| `SEC-004` | `TEST_OR_GATE_DEFECT` | FIXED `600f70e` | itself |
-| `QA-001` | `REAL_P1_27_DEFECT` | OPEN (partial) | itself |
-| `QA-002` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `QA-003` | `TEST_OR_GATE_DEFECT` | OPEN | itself |
-| `QA-005` | `TEST_OR_GATE_DEFECT` | OPEN | itself |
-| `DO-002` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `DOC-001` | `TEST_OR_GATE_DEFECT` | OPEN (partial) | itself |
-| `DOC-002` | `REAL_P1_27_DEFECT` | OPEN | itself |
-| `FE-001` | `DUPLICATE_FINDING` | FIXED `600f70e` | `FE-002` |
+| task      | verdict               | status          | root             |
+| --------- | --------------------- | --------------- | ---------------- |
+| `FE-002`  | `REAL_P1_27_DEFECT`   | FIXED `600f70e` | itself           |
+| `FE-003`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-004`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-007`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-008`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-009`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-010`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-013`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-015`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-016`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-017`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-018`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-019`  | `REAL_P1_27_DEFECT`   | FIXED `8daf8e9` | itself           |
+| `FE-020`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-021`  | `DUPLICATE_FINDING`   | FIXED `8daf8e9` | `FE-019`         |
+| `FE-022`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-023`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `FE-024`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-026`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-028`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-029`  | `REAL_P1_27_DEFECT`   | BLOCKED         | P1-14 backend PR |
+| `SEC-001` | `REAL_P1_27_DEFECT`   | FIXED `915b861` | itself           |
+| `SEC-002` | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `SEC-003` | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
+| `SEC-004` | `TEST_OR_GATE_DEFECT` | FIXED `600f70e` | itself           |
+| `QA-001`  | `REAL_P1_27_DEFECT`   | OPEN (partial)  | itself           |
+| `QA-002`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `QA-003`  | `TEST_OR_GATE_DEFECT` | OPEN            | itself           |
+| `QA-005`  | `TEST_OR_GATE_DEFECT` | OPEN            | itself           |
+| `DO-002`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `DOC-001` | `TEST_OR_GATE_DEFECT` | OPEN (partial)  | itself           |
+| `DOC-002` | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
+| `FE-001`  | `DUPLICATE_FINDING`   | FIXED `600f70e` | `FE-002`         |
 
 ```
 ADJUDICATED = 33
@@ -164,7 +164,7 @@ stubs in two unrelated files.
 
 **Verdict.** `DUPLICATE_FINDING` on the gate. Item (2) is now partly answered —
 `write-permission-gating.dom.test.tsx` renders both sections and asserts the form
-appears for a holder and not otherwise — but neither write's *submission* is
+appears for a holder and not otherwise — but neither write's _submission_ is
 exercised. That residue is tracked under `QA-001` rather than being counted as
 closed here.
 
@@ -288,7 +288,7 @@ no production code calls, and would pass with the tag write deleted.
 
 ### `FE-020` — `REAL_P1_27_DEFECT`
 
-`<VinField` is mounted once, at `VehicleProfileScreen.tsx:507` — the *update*
+`<VinField` is mounted once, at `VehicleProfileScreen.tsx:507` — the _update_
 panel. The creation form renders the VIN as a plain text field with no
 availability check and no format validation; `validateVehicleCreate` tests only a
 length ceiling. The canonical row names `veh.vehicle-create` first, and the
@@ -347,19 +347,19 @@ client error it captures is redacted, formatted, and delivered to a null adapter
 
 The auditor named eight uncovered components. Re-checked at `915b861`:
 
-| component | tests |
-| --------- | ----- |
-| `PlateSection` | now covered (`write-permission-gating.dom.test.tsx`) |
-| `OdometerSection` | now covered (same) |
-| `VehicleCreateScreen` | 0 |
-| `VehicleProfileScreen` | 0 |
-| `VinField` | 0 |
-| `VehicleDocumentsSection` | 0 |
-| `DuplicateDecisionPanel` | 0 |
-| `EvProfileSection` | 0 |
+| component                 | tests                                                |
+| ------------------------- | ---------------------------------------------------- |
+| `PlateSection`            | now covered (`write-permission-gating.dom.test.tsx`) |
+| `OdometerSection`         | now covered (same)                                   |
+| `VehicleCreateScreen`     | 0                                                    |
+| `VehicleProfileScreen`    | 0                                                    |
+| `VinField`                | 0                                                    |
+| `VehicleDocumentsSection` | 0                                                    |
+| `DuplicateDecisionPanel`  | 0                                                    |
+| `EvProfileSection`        | 0                                                    |
 
 Two of eight closed as a side effect of the `SEC-001` fix. Six remain, and the
-two now covered are covered for *visibility only* — neither write submission is
+two now covered are covered for _visibility only_ — neither write submission is
 exercised.
 
 ### `QA-002` — `REAL_P1_27_DEFECT`
