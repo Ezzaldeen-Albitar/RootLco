@@ -133,6 +133,28 @@ task's deliverable holds and what is wrong is a sentence.
 | `QA-001`                     | `suite.includes(name)` over RAW test text, including this repository's own docblocks. The six components the fix's commit message names as previously untested appear in `p1-27-qa.test.ts`'s own prose, and those words satisfied the sweep. Three components — `VehicleProfileScreen`, `VinField`, `DuplicateDecisionPanel` — appeared in the entire corpus only inside `*` comment lines. Each has a direct suite now, including the first test anywhere that renders `VehicleProfileScreen`.                                                                                                                                   |
 | `QA-002`                     | Three exclusions cited `vehicle-api.test.ts` for `listTrims`, `listBodyTypes` and `listPowertrainTypes`; it imported none of them. The only guard was "still exported". The citation is now checked against the cited file's own imports — and that check found a fourth stale citation on its first run.                                                                                                                                                                                                                                                                                                                          |
 
+### Round two — the same treatment applied to round one's fixes
+
+`PASS_REFUTED = 6`. Fixed in `5041b26` (Frontend) and `9da20fb` (Backend). The
+class is unchanged and worth naming a third time: **a docblock that states a rule
+the code does not implement, and a test that asserts the code.**
+
+| what was refuted                         | why it mattered                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The `FE-020` 409 → duplicate-VIN mapping | Premised on "the active-VIN collision is the only 409". `veh.vehicles` has TWO tenant-scoped unique indexes and `mapWriteConflict` never reads the constraint name — a duplicate REFERENCE NUMBER would have been rendered as "This VIN is already used", beside the VIN field. Reverted to a message that names no field; `P1-27-INT-027` raised for the Backend half. |
+| The `FE-024` retire gate                 | The writer-by-writer table said add AND retire refuse merged and scrapped. `retireAuthorizedParty` calls `requireWritableVehicle` nowhere and the table has no lifecycle trigger — retire on a scrapped vehicle returns 200. The fix REMOVED a working control, one method away from the harm it existed to prevent. Split into `canManage` and `canRetire`.            |
+| The `FE-028` e2e attribution             | `label-content-name-mismatch` carries axe's `experimental` tag and is dropped from every tag-scoped run, so the gate could never report SC 2.5.3 — listing the routes was necessary and not sufficient. Rule enabled by name, with a planted violation proving it fires.                                                                                                |
+| `isFrozen`'s headline claim              | "Refuses EVERY write with 409" was contradicted by its own table and by the database: `tg_vehicles_merge_guard` is `BEFORE UPDATE ON veh.vehicles` and cannot fire for an INSERT elsewhere. Three surfaces are withheld as Owner POLICY, now stated as policy.                                                                                                          |
+| The terminal explanation's gate          | Rendered only to an operator holding `veh.vehicle.status.manage` — a permission governing none of the four withdrawn surfaces. Ungated.                                                                                                                                                                                                                                 |
+| The Backend test's reach                 | It mocked `@/modules/crm` at the module boundary, so the entitlement check the change's whole security argument rests on was executed by nothing. Four cases now drive the real service with a fake repository; removing the guard fails one.                                                                                                                           |
+
+Two further gaps were recorded rather than closed, because closing them belongs to
+another owner: `P1-27-INT-028` (the API emits `code`/`violations`, the web client
+declares `errorCode`/`errors`, and `violations` appears zero times in
+`apps/web/src` — so no server field error reaches any form on any status) and
+`P1-27-DO-003` (`validate:phase-ownership` is invoked by no CI job at all; it
+found the seven riding API files because a human ran it).
+
 ### Residual corrections, not reopened tasks
 
 - **`FE-020`.** The deliverable holds and was mutation-proved: `VinField` on the

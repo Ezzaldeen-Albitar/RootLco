@@ -162,6 +162,29 @@ exist because the server has two rules, not one: a scrapped vehicle's DETAILS ca
 still be corrected and its final odometer reading can still be recorded, so
 widening the freeze would have removed two working controls.
 
+### Round two — the same agents, set on round one's fixes
+
+`PASS_REFUTED = 6`, fixed in `5041b26` and `9da20fb`. Two are worth reading even
+in a summary, because they are the two directions a fix can be wrong:
+
+- **A fix that would have shipped a false statement.** The 409 on vehicle create
+  was mapped to "This VIN is already used", against the VIN field, on the premise
+  that the active-VIN collision is the only 409 that route raises. `veh.vehicles`
+  has TWO tenant-scoped unique indexes and the server maps both to one code
+  without reading the constraint name — so a duplicate REFERENCE NUMBER would
+  have accused the VIN. The copy now says a value is already used and does not
+  say which.
+- **A fix that removed a working control.** The lifecycle table said the
+  authorised-party add AND retire both refuse a scrapped vehicle. Only add does;
+  retire returns 200. Gating both on one prop took away the ability to remove an
+  authorised driver from a written-off car — the same harm the two-predicate
+  design was built to avoid, one method over.
+
+And one about measurement: the accessibility rule for WCAG 2.5.3 carries axe's
+`experimental` tag, so a tag-scoped run drops it. Adding the missing routes was
+necessary and not sufficient; the rule is now enabled by name, with a planted
+violation proving it fires.
+
 ---
 
 ## The through-line
