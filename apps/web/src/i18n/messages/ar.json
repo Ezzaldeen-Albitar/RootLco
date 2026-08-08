@@ -911,6 +911,7 @@
   "vehicles.field.vin_normalized": "رقم الهيكل",
   "vehicles.field.workshop_status": "حالة الورشة",
   "vehicles.history.actor": "نفَّذ التغيير",
+  "vehicles.history.actorUnavailable": "المستخدم غير متاح",
   "vehicles.history.becomes": "تغيّر إلى",
   "vehicles.history.change": "التغيير",
   "vehicles.history.cleared": "أُزيل، وكان",

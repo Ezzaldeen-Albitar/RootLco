@@ -378,6 +378,46 @@ describe('the attribute-change ledger', () => {
     render();
     expect(screen.getByText(en['vehicles.history.scopeNote'])).toBeInTheDocument();
   });
+
+  /*
+   * `P1-27-INT-026` (D3). The ledger stores an `actor_id` and the column headed
+   * "Changed by" printed that uuid. The read now resolves it through the IAM
+   * module's provider-free directory and publishes `actorName`.
+   *
+   * The three cases below are the whole contract: a name is shown when there is
+   * one, and the SAME safe sentence when there is not — whether that is because
+   * this caller may not be told (`null`) or because the API predates the
+   * identity surface (absent). Neither is a licence to print the identifier.
+   */
+  const ACTOR_UUID = 'c1780000-0000-4000-8000-0000000000a2';
+
+  it('names the person who made the change', async () => {
+    listAttributeHistory.mockResolvedValue(
+      page([entry({ actorId: ACTOR_UUID, actorName: 'Layla Haddad' })])
+    );
+    const { container } = render();
+    expect(await screen.findByText('Layla Haddad')).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain(ACTOR_UUID);
+  });
+
+  it('says "User unavailable" when this caller may not be told', async () => {
+    listAttributeHistory.mockResolvedValue(page([entry({ actorId: ACTOR_UUID, actorName: null })]));
+    const { container } = render();
+    // `null` means the caller lacks `iam.user.read`. The row still renders —
+    // one unnameable actor must not hide what happened to the vehicle.
+    expect(await screen.findByText(en['vehicles.history.actorUnavailable'])).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain(ACTOR_UUID);
+  });
+
+  it('says the same when the field is absent entirely', async () => {
+    // An API that predates the identity surface publishes no `actorName` at
+    // all. `undefined` must read exactly like `null`, or the fix would print a
+    // uuid for the whole window between the two deployments.
+    listAttributeHistory.mockResolvedValue(page([entry({ actorId: ACTOR_UUID })]));
+    const { container } = render();
+    expect(await screen.findByText(en['vehicles.history.actorUnavailable'])).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain(ACTOR_UUID);
+  });
 });
 
 describe('the same screens in Arabic and RTL', () => {

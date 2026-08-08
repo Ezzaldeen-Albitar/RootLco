@@ -118,15 +118,24 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         },
       },
       {
-        id: 'actorId',
+        id: 'actor',
         headerKey: 'vehicles.history.actor',
-        // The operation publishes an actor id and no display name. Shown as an
-        // identifier rather than dressed up as a person.
-        cell: (row) => (
-          <code className="font-mono text-caption text-text-secondary" dir="ltr">
-            {row.actorId}
-          </code>
-        ),
+        // The operation resolves the actor through the IAM module's
+        // provider-free directory and publishes a name (`P1-27-INT-026`). It
+        // used to publish only an id, and this column printed that uuid under a
+        // heading that said "who".
+        //
+        // `undefined` and `null` render identically and deliberately: absent
+        // means the API predates the identity surface, null means this caller
+        // may not be told. Neither is a licence to print the identifier.
+        cell: (row) =>
+          row.actorName == null ? (
+            <span className="text-caption text-text-muted">
+              {translate(messages, 'vehicles.history.actorUnavailable')}
+            </span>
+          ) : (
+            <span className="text-body text-text-primary">{row.actorName}</span>
+          ),
       },
     ],
     [locale, messages]

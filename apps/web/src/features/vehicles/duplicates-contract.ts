@@ -81,7 +81,28 @@ export interface VehicleHistoryEntry {
   /** Null when the field was cleared. */
   readonly newValue: string | null;
   readonly occurredAt: string;
+  /**
+   * Carried, never rendered. Kept because the operation publishes it and
+   * dropping a published field from the type would hide it from a future
+   * consumer that legitimately needs one — a correlation, not a label.
+   */
   readonly actorId: string;
+  /**
+   * Who made the change, or `null` when this caller may not be told
+   * (`P1-27-INT-026`).
+   *
+   * Optional on the WIRE and required in intent. The operation gained this field
+   * in the P1-14 identity-directory remediation; until that reaches the
+   * environment a screen is talking to, the key is simply absent — which reads
+   * here as `undefined` and renders exactly the same safe sentence as `null`.
+   * That is the whole reason the fallback is a phrase rather than the id: it is
+   * correct before the Backend lands and after it.
+   *
+   * `null` means "not resolvable by you", not "nobody". The read withholds the
+   * name from a caller without `iam.user.read` rather than publishing a
+   * tenant-wide staff directory to anyone who can open a vehicle.
+   */
+  readonly actorName?: string | null;
 }
 
 /** Only an open candidate can still be decided. Fails closed on anything else. */

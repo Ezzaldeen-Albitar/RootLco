@@ -911,6 +911,7 @@
   "vehicles.field.vin_normalized": "VIN",
   "vehicles.field.workshop_status": "Workshop status",
   "vehicles.history.actor": "Changed by",
+  "vehicles.history.actorUnavailable": "User unavailable",
   "vehicles.history.becomes": "changed to",
   "vehicles.history.change": "Change",
   "vehicles.history.cleared": "Cleared, was",
