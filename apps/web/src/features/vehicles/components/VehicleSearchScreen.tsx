@@ -307,9 +307,17 @@ function VehicleSearchResults({
               // write against it answers 409. Saying so here is what stops an
               // operator selecting it and meeting an unexplained conflict.
               //
-              // Stated, not linked: the vehicle profile route arrives in Wave 8
-              // (`FE-019`), and a link to a route that does not exist yet is a
-              // 404 dressed up as a feature.
+              // Stated, not linked — but NOT because the route is missing. That
+              // was the original reason and it stopped being true when `FE-019`
+              // added row navigation to that very route, fifty lines below, in
+              // this file. The sentence outlived the fact for a whole phase,
+              // because nothing in the repository reads comments.
+              //
+              // The real reason: search publishes only `mergedIntoId`, an opaque
+              // identifier with no readable label, so a link here would be a bare
+              // uuid — which this product does not show. The operator reaches the
+              // surviving record by searching for it, or from the duplicate queue
+              // where both sides are named.
               <span className="text-caption text-text-muted">
                 {translate(messages, 'vehicles.column.mergedInto')}
               </span>
@@ -328,9 +336,13 @@ function VehicleSearchResults({
         cell: (row) => translateDynamic(messages, `vehicles.workshop.${row.workshopStatus}`),
       },
     ],
-    // `locale` is not a dependency: the merged-into cell became a plain
-    // statement rather than a link when the profile route turned out to be a
-    // Wave 8 deliverable, and nothing in these columns builds a URL any more.
+    // `locale` is not a dependency because these columns render TEXT only. The
+    // row action does build a URL and is defined outside this memo, which is why
+    // it needs no entry here.
+    //
+    // The earlier note said "nothing in these columns builds a URL any more" and
+    // attributed it to the profile route being a later deliverable. Both halves
+    // were stale: the route exists and this file routes to it.
     [makeById, messages]
   );
 

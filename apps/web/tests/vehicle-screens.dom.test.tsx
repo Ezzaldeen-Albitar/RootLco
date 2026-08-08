@@ -65,7 +65,11 @@ const HIT = {
 const CANDIDATE = {
   id: 'cand-1',
   vehicleIdA: 'a1b2c3d4-0000-4000-8000-000000000001',
+  // The references the operation publishes. The queue names each side by these
+  // rather than by its position in the pair (`P1-27-FE-028`).
+  displayNumberA: 'V-0001',
   vehicleIdB: 'a1b2c3d4-0000-4000-8000-000000000002',
+  displayNumberB: 'V-0002',
   matchScore: '0.930',
   /*
    * The REAL shape, from `scoreComparison` in

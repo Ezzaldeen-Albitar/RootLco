@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   RULES,
@@ -6,6 +9,9 @@ import {
   selfTest,
   stripComments,
 } from '../../scripts/ci/check-p1-27-frontend.mjs';
+
+/** The repository root, resolved from this file rather than from the cwd. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
  * The P1-27 frontend gate (`P1-27-DO-001`).
@@ -136,18 +142,33 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
   });
 
   it('fails a rule whose allow-list has swallowed every file', () => {
-    const rule = RULES.find((r) => r.id === 'no-duplicate-scan-on-a-queue');
-    expect(rule?.allow.length).toBeGreaterThan(0);
-    const onlyAllowed = [
-      {
-        path: 'apps/web/src/features/crm/customers/creation-actions.ts',
+    /*
+     * This case used to drive `no-duplicate-scan-on-a-queue`, whose allowance is
+     * now empty because it exempted a file that never matched the rule
+     * (`P1-27-FE-003`, and see the invariant below).
+     *
+     * NO rule carries an allowance today, so the swallow scenario cannot be
+     * constructed from the real rule set — and that is stated here rather than
+     * hidden behind a `find` that silently returns nothing. The loop is
+     * deliberately empty NOW and becomes live the moment any allowance is added,
+     * which is exactly when this guard starts mattering again.
+     */
+    const withAllowances = RULES.filter((r) => r.allow.length > 0);
+    for (const rule of withAllowances) {
+      const onlyAllowed = rule.allow.map((path: string) => ({
+        path,
         source: 'export const a = 1;',
-      },
-    ];
-    const { failures } = evaluate(onlyAllowed);
-    expect(
-      failures.some((f) => f.includes('no-duplicate-scan-on-a-queue: inspected 0 files'))
-    ).toBe(true);
+      }));
+      const { failures } = evaluate(onlyAllowed);
+      expect(
+        failures.some((f) => f.includes(`${rule.id}: inspected 0 files`)),
+        rule.id
+      ).toBe(true);
+    }
+    // The invariant that makes the emptiness above a FACT rather than an
+    // accident. Without it, a future allowance could reintroduce the hole and
+    // this case would keep passing by iterating over nothing.
+    expect(withAllowances.map((r) => r.id)).toEqual([]);
   });
 });
 
@@ -160,11 +181,36 @@ describe('the scan roots are both of this phase’s trees', () => {
     expect(roots).toContain('apps/web/src/features/vehicles');
   });
 
-  it('allows the ONE legitimate duplicate-scan call site by name', () => {
-    // The CRM scan operation is called once, on explicit intent, by the creation
-    // form — the operation's legitimate use. Named rather than pattern-matched,
-    // so widening it requires editing the gate.
+  it('exempts NO file from the duplicate-scan rule', () => {
+    /*
+     * This case used to assert the opposite, and its comment explained why: "the
+     * CRM scan operation is called once, on explicit intent, by the creation
+     * form". That was never true.
+     *
+     * `creation-actions.ts` contains no scan call — `crm-customer-create.dom
+     * .test.tsx` asserts its absence deliberately — because the creation-time
+     * duplicate warning arrives on the create RESPONSE as `possibleDuplicates`.
+     * Both scans are `DELIBERATELY_ABSENT` in the reachability manifest.
+     *
+     * So the exemption matched nothing, and `evaluate()` skips allow-listed files
+     * without ever reporting an unused entry. It was a live hole: a privileged
+     * audited write added to that one file would have passed the gate that exists
+     * to stop it. This assertion is what keeps the list empty (`P1-27-FE-003`).
+     */
     const rule = RULES.find((r) => r.id === 'no-duplicate-scan-on-a-queue');
-    expect(rule?.allow).toEqual(['apps/web/src/features/crm/customers/creation-actions.ts']);
+    expect(rule?.allow).toEqual([]);
+  });
+
+  it('has no allowance anywhere that matches no file in the tree', () => {
+    // The general form of the defect above. An exemption for a path that does
+    // not exist is either a typo or a hole, and neither should survive silently.
+    for (const rule of RULES) {
+      for (const allowed of rule.allow) {
+        expect(
+          existsSync(join(REPO_ROOT, allowed)),
+          `${rule.id} exempts a missing path: ${allowed}`
+        ).toBe(true);
+      }
+    }
   });
 });

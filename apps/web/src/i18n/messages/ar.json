@@ -881,6 +881,7 @@
   "vehicles.duplicates.memberA": "السجل الأول",
   "vehicles.duplicates.memberB": "السجل الثاني",
   "vehicles.duplicates.mergePendingDecision": "دمج سجلّي مركبة غير متاح بعد. قواعده بانتظار قرار من المالك.",
+  "vehicles.duplicates.numberUnavailable": "المرجع غير متاح",
   "vehicles.duplicates.openProfile": "فتح المركبة",
   "vehicles.duplicates.pair": "السجلّان",
   "vehicles.duplicates.reason.makeModelYear": "الصانع والطراز وسنة الصنع متطابقة أيضاً.",

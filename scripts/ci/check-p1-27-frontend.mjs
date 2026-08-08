@@ -72,9 +72,24 @@ export const RULES = [
     id: 'no-duplicate-scan-on-a-queue',
     pattern: /duplicate-scan|scanDuplicates/,
     what: 'fires a privileged audited duplicate scan from a review surface',
-    // The CRM creation form calls `crm.duplicate-scan` ONCE on explicit intent,
-    // which is the operation's legitimate use. Named, not pattern-matched.
-    allow: ['apps/web/src/features/crm/customers/creation-actions.ts'],
+    /*
+     * NO exemption, and the one that stood here was a live hole.
+     *
+     * It named `creation-actions.ts` and said "the CRM creation form calls
+     * `crm.duplicate-scan` ONCE on explicit intent". That was never true: the
+     * file contains no such call, and `crm-customer-create.dom.test.tsx` asserts
+     * its absence deliberately. The creation-time duplicate warning arrives on
+     * the create RESPONSE as `possibleDuplicates` — no scan is involved.
+     *
+     * `evaluate()` skips allow-listed files entirely and only fails a rule that
+     * inspected zero files overall, so an unused entry is never reported. It cost
+     * nothing today and would have cost everything tomorrow: a privileged audited
+     * write added to that file would have passed the gate that exists to stop it.
+     *
+     * Both scans are `DELIBERATELY_ABSENT` in `canonical-write-reachability.json`
+     * and neither has a legitimate call site in this phase, so the list is empty.
+     */
+    allow: [],
   },
   {
     id: 'no-client-asserted-scope',

@@ -61,7 +61,18 @@ export const MAX_REVIEW_REASON = 500;
 export interface VehicleDuplicateCandidate {
   readonly id: string;
   readonly vehicleIdA: string;
+  /**
+   * The A-side vehicle's reference, as the operation publishes it.
+   *
+   * Nullable because the repository reaches it through a `LEFT JOIN`, so a
+   * merged-away or deleted side yields nothing. This field was MISSING from this
+   * type while `veh.vehicle-duplicate-list` had been publishing it since #194,
+   * so TypeScript could not flag the screen for labelling each side "First
+   * record" / "Second record" instead of naming it (`P1-27-FE-028`).
+   */
+  readonly displayNumberA: string | null;
   readonly vehicleIdB: string;
+  readonly displayNumberB: string | null;
   /** `numeric` as a STRING. Never `parseFloat`, never compared as a number. */
   readonly matchScore: string;
   /** `jsonb`, guaranteed free of raw identifier values by `veh.valid_match_basis`. */
@@ -173,3 +184,24 @@ export const VEHICLE_CONFIDENCE_BANDS: ConfidenceBands = Object.freeze({
   strong: 90,
   possible: 80,
 });
+
+/**
+ * The two vehicles in a candidate pair, as a stable ordered pair.
+ *
+ * The mirror of `pairMembers` in the customer contract, and it exists for the
+ * same reason: both call sites — the queue row and the decision panel — must
+ * read the pair the same way, or one of them will drift into showing an ordinal
+ * where the other shows a reference.
+ *
+ * A/B is the order the detector recorded and carries no meaning. Neither is "the
+ * duplicate", and presenting one as the original and the other as the copy would
+ * invent a fact and nudge a reviewer toward retiring the wrong record.
+ */
+export function vehiclePairMembers(
+  candidate: VehicleDuplicateCandidate
+): readonly [{ id: string; number: string | null }, { id: string; number: string | null }] {
+  return [
+    { id: candidate.vehicleIdA, number: candidate.displayNumberA },
+    { id: candidate.vehicleIdB, number: candidate.displayNumberB },
+  ];
+}

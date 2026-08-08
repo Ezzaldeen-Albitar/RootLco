@@ -26,7 +26,11 @@ import { flattenNavigation } from '@/config/navigation';
 const CANDIDATE: VehicleDuplicateCandidate = {
   id: 'c1',
   vehicleIdA: 'v1',
+  // Published by the operation since #194 and omitted from the contract type
+  // until `P1-27-FE-028`, which is why this fixture inherited the omission.
+  displayNumberA: 'V-0001',
   vehicleIdB: 'v2',
+  displayNumberB: 'V-0002',
   matchScore: '0.930',
   matchBasis: { signals: [{ signal: 'vin_collision', weight: 1 }] },
   status: 'open',

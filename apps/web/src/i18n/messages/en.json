@@ -881,6 +881,7 @@
   "vehicles.duplicates.memberA": "First record",
   "vehicles.duplicates.memberB": "Second record",
   "vehicles.duplicates.mergePendingDecision": "Merging two vehicle records is not available yet. The rules for it are pending an Owner decision.",
+  "vehicles.duplicates.numberUnavailable": "Reference unavailable",
   "vehicles.duplicates.openProfile": "Open vehicle",
   "vehicles.duplicates.pair": "The two records",
   "vehicles.duplicates.reason.makeModelYear": "The make, model and year of manufacture are also the same.",
