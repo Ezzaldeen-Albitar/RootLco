@@ -244,33 +244,54 @@ against `tests/ci/tailwind-theme-gate.test.ts`.
 
 ---
 
-## 9. Operations attributed to a task that no web file calls
+## 9. Canonical mutations with no call site
 
-`canonical-plan.md` §5 and `task-register.md` bind these operations to Frontend
-tasks. Grepping `apps/web/src` finds them only in docblocks and in the generated
-`lib/api/idempotent-operations.ts` — **no call site exists**. They are listed
-here so a reader does not credit a task with a capability it did not ship.
+**This section is no longer the authority on this question, and must not be read
+as one.** The authority is the gate:
 
-| operation                        | attributed to                       | reality                                                                                |
-| -------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `crm.duplicate-scan`             | `FE-003` (`canonical-plan.md` §5.1) | Never called. A privileged audited write; the warning arrives on the creation response |
-| `crm.contact-add`                | `FE-007`                            | Not called                                                                             |
-| `crm.address-add`                | `FE-008`                            | Not called                                                                             |
-| `crm.customer-status-set`        | CRM profile surface                 | Not called                                                                             |
-| `crm.customer-merge`             | `FE-016`                            | Deliberately absent — `P1-OD-017`                                                      |
-| `crm.vehicle-link`               | `FE-025` (`canonical-plan.md:171`)  | Not called                                                                             |
-| `veh.vehicle-ownership-transfer` | `FE-021` (`task-register.md:127`)   | Not called                                                                             |
-| `veh.vehicle-plate-assign`       | `FE-022` (`task-register.md:127`)   | Not called                                                                             |
-| `veh.vehicle-odometer-record`    | `FE-023` (`task-register.md:127`)   | Not called                                                                             |
-| `veh.vehicle-duplicate-scan`     | `FE-028`                            | Deliberately absent — a privileged audited write                                       |
-| `veh.vehicle-merge`              | `FE-028`                            | Deliberately absent — `P1-OD-017`                                                      |
+```
+node scripts/ci/check-p1-27-write-reachability.mjs
+  → 27 canonical mutation(s), REACHABLE = 23, DELIBERATELY_ABSENT = 4
+```
 
-**Four** of these are deliberate refusals with tests that assert the absence:
-`crm.customer-merge`, `veh.vehicle-merge`, `veh.vehicle-duplicate-scan` and
-`crm.duplicate-scan`. The other **seven** are simply not built, and the registers
-overstate `FE-007`, `FE-008`, `FE-021`, `FE-022`, `FE-023` and `FE-025` by naming
-their writes — `task-register.md:122` does it through the globs `crm.contact-*`
-and `crm.address-*`, which name the two `-add` operations alongside the reads.
+It derives the operation list from the P1-24 register at check time — a
+hand-written list would silently omit a new operation, which is precisely the
+defect it exists to catch — and refuses any classification without a decision
+reference. `docs/phase-1/phase-1-27/canonical-write-reachability.json` holds the
+classifications, and `apps/web/tests/p1-27-doc-reconciliation.test.ts` fails if
+the four named below stop matching it.
+
+### The four that are deliberately absent
+
+| operation                    | decision                | why                                                                                   |
+| ---------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `crm.customer-merge`         | `P1-OD-017`             | Irreversible in practice, and the decision is open. ABSENT rather than disabled.      |
+| `veh.vehicle-merge`          | `P1-OD-017`             | Same decision, same rule.                                                             |
+| `crm.duplicate-scan`         | `canonical-plan.md:268` | A privileged audited write. The creation-time warning arrives on the create RESPONSE. |
+| `veh.vehicle-duplicate-scan` | `canonical-plan.md:268` | The vehicle counterpart, absent for the same reason.                                  |
+
+### Attributed and unbuilt at the audit — closed by the D1 remediation
+
+Preserved rather than deleted, because the phase's record of what it got wrong is
+part of what makes the rest of this document trustworthy. Each of these was
+correctly reported as having no call site; each now has one.
+
+| operation                        | attributed to | live call site              |
+| -------------------------------- | ------------- | --------------------------- |
+| `crm.contact-add`                | `FE-007`      | `profile-actions.ts:73`     |
+| `crm.address-add`                | `FE-008`      | `profile-actions.ts:130`    |
+| `crm.customer-status-set`        | CRM profile   | `governance-actions.ts:210` |
+| `crm.vehicle-link`               | `FE-025`      | `relations-api.ts:202`      |
+| `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:155`        |
+| `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:212`        |
+| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:257`        |
+
+The earlier version of this section said "the other **seven** are simply not
+built". That was true when it was written and false by the time it was read,
+which is why the question now belongs to a gate rather than to a table: the
+repository answered "which P1-27 mutations are unreachable" twice — a passing
+gate saying four and a document saying eleven — and the document is the one a
+human reads.
 
 ---
 

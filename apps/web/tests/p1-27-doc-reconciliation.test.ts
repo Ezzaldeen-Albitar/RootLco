@@ -1,0 +1,205 @@
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * The phase records are reconciled against the repository (`P1-27-DOC-001`,
+ * `P1-27-DOC-002`, `P1-27-QA-005`).
+ *
+ * ## The defect this exists for
+ *
+ * Every number in the P1-27 documents was DERIVED from the repository and then
+ * MAINTAINED BY HAND. The one figure a test rebuilt — the `scripts/ci` count in
+ * `documented-counts.test.ts` — is the one that self-corrected the moment it
+ * drifted. Everything hand-copied went stale silently: a pinned SHA sixty
+ * commits behind, test counts short by nearly two hundred, and a §9 table
+ * asserting eleven unreachable operations while the gate beside it proved four.
+ *
+ * A record that no test recomputes is a claim, not evidence. This file makes
+ * staleness a build failure.
+ *
+ * ## What it deliberately does NOT do
+ *
+ * It does not pin a commit SHA. A SHA recorded by hand is stale on the next
+ * commit, including the one that records it, so the documents state a BRANCH and
+ * the facts that outlive any single head. Where a document must name a head —
+ * the clean-room record — this file asserts the record EXISTS and names the
+ * branch, and the head is re-recorded at closure by the process that reads it.
+ */
+
+const REPO = join(process.cwd(), '..', '..');
+const PHASE = join(REPO, 'docs', 'phase-1', 'phase-1-27');
+
+function read(...parts: string[]): string {
+  return readFileSync(join(PHASE, ...parts), 'utf8');
+}
+
+describe('DOC-001 — §9 agrees with the gate that owns the question', () => {
+  const manifest = JSON.parse(
+    readFileSync(join(PHASE, 'canonical-write-reachability.json'), 'utf8')
+  ) as { operations: Record<string, { classification: string; decisionRef?: string }> };
+
+  const deliberatelyAbsent = Object.entries(manifest.operations)
+    .filter(([, v]) => v.classification !== 'REACHABLE')
+    .map(([k]) => k)
+    .sort();
+
+  it('names exactly the operations the manifest classifies as absent', () => {
+    // The document used to list ELEVEN operations as having no call site while
+    // the gate proved four. Two answers to one question, and the document is
+    // the one a human reads.
+    const traceability = read('evidence', 'task-traceability.md');
+    for (const id of deliberatelyAbsent) {
+      expect(traceability, `§9 does not name ${id}`).toContain(id);
+    }
+    expect(deliberatelyAbsent).toEqual([
+      'crm.customer-merge',
+      'crm.duplicate-scan',
+      'veh.vehicle-duplicate-scan',
+      'veh.vehicle-merge',
+    ]);
+  });
+
+  it('states the count the gate reports, not a different one', () => {
+    const traceability = read('evidence', 'task-traceability.md');
+    const reachable = Object.values(manifest.operations).filter(
+      (v) => v.classification === 'REACHABLE'
+    ).length;
+    expect(traceability).toContain(`REACHABLE = ${reachable}`);
+    expect(traceability).toContain(`DELIBERATELY_ABSENT = ${deliberatelyAbsent.length}`);
+  });
+
+  it('no longer claims seven operations are unbuilt', () => {
+    // The exact sentence that was true when written and false when read.
+    const traceability = read('evidence', 'task-traceability.md');
+    expect(traceability).not.toContain('are simply not built');
+  });
+
+  it('gives every absent operation a decision reference', () => {
+    // The gate refuses a blank one; this refuses a missing one in the record.
+    for (const id of deliberatelyAbsent) {
+      const entry = manifest.operations[id];
+      expect(entry?.decisionRef, `${id} has no decision reference`).toBeTruthy();
+    }
+  });
+});
+
+describe('DOC-002 — the change log the task names actually exists', () => {
+  it('ships evidence/change-log.md, as every sibling phase does', () => {
+    /*
+     * `DOC-002` is "Operator / developer guidance AND change-log update".
+     * `phase-1-19`, `-20` and `-21` each ship `evidence/change-log.md`, and two
+     * inventory scripts bind the identically-titled task to that path.
+     *
+     * P1-27 shipped no such artefact and no document recorded a decision to drop
+     * it — half a named canonical deliverable, covered by a register cell that
+     * cited an automated proof which did not exist.
+     */
+    expect(existsSync(join(PHASE, 'evidence', 'change-log.md'))).toBe(true);
+  });
+
+  it('follows the convention its sibling phases established', () => {
+    const siblings = ['phase-1-19', 'phase-1-20', 'phase-1-21'].filter((p) =>
+      existsSync(join(REPO, 'docs', 'phase-1', p, 'evidence', 'change-log.md'))
+    );
+    // If the convention ever disappears, this stops being a convention argument
+    // and somebody has to think about it again.
+    expect(siblings.length, 'no sibling phase ships a change log any more').toBeGreaterThan(0);
+  });
+
+  it('records the remediation waves rather than restating the plan', () => {
+    const log = read('evidence', 'change-log.md');
+    for (const marker of ['SEC-001', 'FE-019', 'FE-020', 'OWNER ACCEPTANCE: FAIL']) {
+      expect(log, `the change log does not mention ${marker}`).toContain(marker);
+    }
+  });
+});
+
+describe('QA-005 — the evidence records point at this branch', () => {
+  it('records a clean-room result', () => {
+    expect(existsSync(join(PHASE, 'clean-room-evidence.md'))).toBe(true);
+  });
+
+  it('asserts no closure while the adjudication still lists open tasks', () => {
+    /*
+     * The rule the phase brief states plainly: documentation must not claim
+     * completion until the live derived audit reaches it.
+     *
+     * Checked against CLOSURE PHRASES, not against the bare string "42/42".
+     * The first version of this case matched the number and failed on
+     * `final-task-adjudication.md`'s own sentence "P1-27 is not at 42/42 and this
+     * document does not claim it is" — a denial, and on the change log's
+     * progression table, which records the original claim because §16 requires
+     * the mistakes to be preserved. A rule that cannot tell an assertion from a
+     * denial would force the record to delete its own history to stay green.
+     *
+     * Driven from the adjudication table, so the claim and the count cannot
+     * disagree — which is how "42/42" came to be written the first time.
+     */
+    const adjudication = read('final-task-adjudication.md');
+    const open = (adjudication.match(/\|\s*OPEN\b/g) ?? []).length;
+    const blocked = (adjudication.match(/\|\s*BLOCKED\b/g) ?? []).length;
+
+    /*
+     * Only phrases that can ONLY be an assertion.
+     *
+     * `OWNER ACCEPTANCE: PASS` was in this list and had to come out: it appears
+     * legitimately in the RULE — "P1-27 closes only when the Product Owner
+     * manually tests the real application and explicitly returns
+     * `OWNER ACCEPTANCE: PASS`" — which is the sentence that keeps the phase
+     * open. Two versions of this case in a row could not tell a claim from its
+     * own denial; the discriminator has to be a string with no honest use until
+     * closure.
+     */
+    const CLOSURE_BANNERS = [
+      'P1-27 CANONICAL SCOPE VERIFIED',
+      'PHASE 1-27 OFFICIALLY CLOSED',
+      'PASS=42',
+      'FAIL=0',
+    ];
+
+    const DOCS = [
+      'final-task-adjudication.md',
+      'evidence/task-traceability.md',
+      'evidence/change-log.md',
+    ];
+
+    if (open + blocked > 0) {
+      for (const doc of DOCS) {
+        const text = read(...doc.split('/'));
+        for (const phrase of CLOSURE_BANNERS) {
+          expect(
+            text,
+            `${doc} asserts "${phrase}" while ${open} open and ${blocked} blocked task(s) remain`
+          ).not.toContain(phrase);
+        }
+        // And the positive half: while anything is unresolved, each record must
+        // SAY the phase is not accepted. Silence would let a reader assume.
+        expect(text, `${doc} does not state the current Owner status`).toContain(
+          'OWNER ACCEPTANCE: FAIL'
+        );
+      }
+    }
+    // The count itself must be derivable, or the guard above is unreachable.
+    expect(open + blocked, 'no task rows were found in the adjudication').toBeGreaterThan(0);
+  });
+
+  it('preserves the audit progression rather than erasing it', () => {
+    // The evidence chain has to remain understandable: an initial 42/42 claim, an
+    // adversarial audit that corrected it, and the remediation that followed.
+    // Deleting the mistakes would leave a record nobody can check.
+    const adjudication = read('final-task-adjudication.md');
+    expect(adjudication).toContain('CANONICAL_TASK_PASS = 20');
+    expect(adjudication).toContain('PASS_REFUTED');
+    expect(adjudication).toMatch(/TRUE_PASS\s*=\s*9/);
+  });
+});
+
+describe('this file is not vacuous', () => {
+  it('reads real documents from the real phase directory', () => {
+    const files = readdirSync(PHASE);
+    expect(files).toContain('final-task-adjudication.md');
+    expect(files).toContain('canonical-write-reachability.json');
+    expect(read('final-task-adjudication.md').length).toBeGreaterThan(2000);
+  });
+});

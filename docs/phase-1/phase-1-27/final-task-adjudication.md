@@ -53,49 +53,66 @@ All 33 are adjudicated below.
 
 ## Summary
 
-| task      | verdict                | status           | root             |
-| --------- | ---------------------- | ---------------- | ---------------- |
-| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`  | itself           |
-| `FE-003`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`  | itself           |
-| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`  | itself           |
-| `FE-015`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-016`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-017`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-018`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`  | itself           |
-| `FE-020`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `8daf8e9`  | `FE-019`         |
-| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `FE-024`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-026`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-028`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-029`  | `REAL_P1_27_DEFECT`    | BLOCKED          | P1-14 backend PR |
-| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`  | itself           |
-| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence` | itself           |
-| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
-| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`  | itself           |
-| `QA-001`  | `REAL_P1_27_DEFECT`    | OPEN (partial)   | itself           |
-| `QA-002`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `QA-003`  | `TEST_OR_GATE_DEFECT`  | OPEN             | itself           |
-| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN             | itself           |
-| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed | itself           |
-| `DOC-001` | `TEST_OR_GATE_DEFECT`  | OPEN (partial)   | itself           |
-| `DOC-002` | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
-| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`  | `FE-002`         |
+| task      | verdict                | status            | root             |
+| --------- | ---------------------- | ----------------- | ---------------- |
+| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`   | itself           |
+| `FE-003`  | `AUDIT_FALSE_NEGATIVE` | FIXED `52a230a`   | itself           |
+| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`   | itself           |
+| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`   | itself           |
+| `FE-015`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself           |
+| `FE-016`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself           |
+| `FE-017`  | `TEST_OR_GATE_DEFECT`  | FIXED `52a230a`   | itself           |
+| `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself           |
+| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`   | itself           |
+| `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`   | itself           |
+| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `8daf8e9`   | `FE-019`         |
+| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `ef4b3a9`   | itself           |
+| `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself           |
+| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `52a230a`   | itself           |
+| `FE-029`  | `REAL_P1_27_DEFECT`    | BLOCKED           | P1-14 backend PR |
+| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`   | itself           |
+| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`  | itself           |
+| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
+| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`   | itself           |
+| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `02b707f`   | itself           |
+| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `02b707f`   | itself           |
+| `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`   | itself           |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head) | itself           |
+| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed  | itself           |
+| `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)   | itself           |
+| `DOC-002` | `REAL_P1_27_DEFECT`    | FIXED (records)   | itself           |
+| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`   | `FE-002`         |
 
 ```
 ADJUDICATED       = 33
-FIXED             = 14
-NO_CHANGE_NEEDED  =  1
-BLOCKED           =  1
-OPEN              = 17
+FIXED             = 30
+NO_CHANGE_NEEDED  =  1     DO-002
+BLOCKED           =  1     FE-029
+OPEN              =  1     QA-005
+
+RESOLVED   / 42   = 40
+UNRESOLVED / 42   =  2
 ```
+
+**Both unresolved items are blocked on the same external thing: pull-request
+creation.**
+
+`FE-029` needs `remediation/p1-14-actor-display-identity` merged; the Backend
+half is written, green and pushed, and this environment has no authenticated way
+to open a PR. `QA-005` needs clean-room and hosted-CI evidence recorded at the
+FINAL head, and there is no final head until the remediation PR merges — and
+re-recording before then produces a document that is stale on arrival, which is
+the defect `QA-005` reports in the first place.
+
+The durable half of `QA-005` is done: `apps/web/tests/p1-27-doc-reconciliation.test.ts`
+reconciles the records against the repository, so the next drift is a build
+failure rather than a silent lie. What remains is the measurement itself.
 
 ---
 
