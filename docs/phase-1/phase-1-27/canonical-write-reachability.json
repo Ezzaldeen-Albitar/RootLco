@@ -1,0 +1,66 @@
+{
+  "$comment": [
+    "Canonical P1-27 mutation reachability classification (D1 closure evidence).",
+    "",
+    "The OPERATION LIST is not held here. It is derived at check time from the",
+    "P1-24 operation register: every crm.* / veh.* operation whose method is not",
+    "GET. That is deliberate — a hand-written list would silently omit a new",
+    "operation, which is precisely the defect this gate exists to catch. An",
+    "operation present in the register and absent here fails as UNCLASSIFIED.",
+    "",
+    "REACHABLE requires a real production mutation call site in apps/web/src.",
+    "Tests, documentation, comments, docblocks, translation copy and the",
+    "generated manifest lib/api/idempotent-operations.ts do not count and are",
+    "excluded by the checker.",
+    "",
+    "DELIBERATELY_ABSENT and DECISION_NEUTRAL_UNAVAILABLE both require a",
+    "decisionRef naming an approved decision. The checker refuses a blank one."
+  ],
+  "operations": {
+    "crm.individual-create": { "classification": "REACHABLE" },
+    "crm.company-create": { "classification": "REACHABLE" },
+    "crm.contact-add": { "classification": "REACHABLE" },
+    "crm.address-add": { "classification": "REACHABLE" },
+    "crm.preference-set": { "classification": "REACHABLE" },
+    "crm.consent-record": { "classification": "REACHABLE" },
+    "crm.note-add": { "classification": "REACHABLE" },
+    "crm.alert-raise": { "classification": "REACHABLE" },
+    "crm.tag-assign": { "classification": "REACHABLE" },
+    "crm.restriction-impose": { "classification": "REACHABLE" },
+    "crm.customer-status-set": { "classification": "REACHABLE" },
+    "crm.duplicate-review": { "classification": "REACHABLE" },
+    "crm.vehicle-link": { "classification": "REACHABLE" },
+
+    "veh.vehicle-create": { "classification": "REACHABLE" },
+    "veh.vehicle-update": { "classification": "REACHABLE" },
+    "veh.vehicle-status-change": { "classification": "REACHABLE" },
+    "veh.vehicle-plate-assign": { "classification": "REACHABLE" },
+    "veh.vehicle-odometer-record": { "classification": "REACHABLE" },
+    "veh.vehicle-ownership-transfer": { "classification": "REACHABLE" },
+    "veh.vehicle-ev-profile-set": { "classification": "REACHABLE" },
+    "veh.vehicle-authorized-party-add": { "classification": "REACHABLE" },
+    "veh.vehicle-authorized-party-retire": { "classification": "REACHABLE" },
+    "veh.vehicle-duplicate-review": { "classification": "REACHABLE" },
+
+    "crm.customer-merge": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-017",
+      "reason": "Merging two customers is irreversible in practice and the Owner decision governing it is open. The affordance must be ABSENT rather than disabled, and the permission is withheld from the acceptance account."
+    },
+    "veh.vehicle-merge": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-017",
+      "reason": "Same open Owner decision as the customer merge, and the same rule: absent, not disabled."
+    },
+    "crm.duplicate-scan": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "canonical-plan.md:268",
+      "reason": "A privileged audited write that emits an audit record per invocation. The canonical plan states the creation-time duplicate warning uses crm.duplicate-list and does NOT run a scan; a control on a review queue would write audit history on every click."
+    },
+    "veh.vehicle-duplicate-scan": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "canonical-plan.md:268",
+      "reason": "The vehicle counterpart of crm.duplicate-scan, absent for the same reason. vehicle-screens.dom.test.tsx asserts no rescan control exists on the queue."
+    }
+  }
+}

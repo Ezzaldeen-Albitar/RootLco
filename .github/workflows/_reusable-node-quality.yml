@@ -510,6 +510,10 @@ jobs:
           # No merge caller while P1-OD-017 is open, no duplicate scan from a
           # review surface, no client-asserted scope, no invented total.
           npm run validate:p1-27-frontend
+          # A registered operation is not a delivered feature. Every canonical
+          # P1-27 mutation must be reachable from a real production call site,
+          # or carry an approved decision saying why it is not.
+          npm run validate:p1-27-reachability
 
       - name: Web component tier
         if: inputs.task == 'web-quality'

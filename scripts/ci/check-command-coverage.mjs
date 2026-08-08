@@ -120,6 +120,20 @@ export const REGISTER = Object.freeze([
     why: 'P1-27 CRM and Vehicle frontend decision rules',
   },
   {
+    name: 'validate:p1-27-reachability',
+    owner: ROOT,
+    tier: 'required',
+    // The gate above asks what the frontend must not DO. This asks whether a
+    // person can reach what the backend already offers. Ten canonical P1-27
+    // writes shipped with a route, a permission, an audit class, an idempotency
+    // entry, an OpenAPI path and a register row — and no screen from which
+    // anybody could invoke them, while every automated tier stayed green. The
+    // operation list is derived from the P1-24 register rather than written
+    // down, so a new operation is UNCLASSIFIED rather than unnoticed, and every
+    // rule is mutation-proved by tests/foundation/p1-27-write-reachability.test.ts.
+    why: 'every canonical P1-27 mutation is reachable, deliberately absent, or decision-neutral',
+  },
+  {
     name: 'validate:web-theme',
     owner: ROOT,
     tier: 'required',

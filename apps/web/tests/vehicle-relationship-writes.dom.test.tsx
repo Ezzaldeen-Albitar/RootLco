@@ -1,4 +1,4 @@
-﻿import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -12,16 +12,16 @@ import { renderLtr, renderRtl } from './render';
  * Three operations shipped registered, permission-covered, audit-classed and
  * reachable from no screen for the whole of P1-27:
  *
- *   - `veh.vehicle-ownership-transfer` â€” a vehicle could not change owner.
- *   - `veh.vehicle-authorized-party-add` â€” nobody could be authorised.
- *   - `veh.vehicle-authorized-party-retire` â€” nor un-authorised.
+ *   - `veh.vehicle-ownership-transfer` — a vehicle could not change owner.
+ *   - `veh.vehicle-authorized-party-add` — nobody could be authorised.
+ *   - `veh.vehicle-authorized-party-retire` — nor un-authorised.
  *
  * All three want a `partnerId`, which is why they stayed unwired: the only
  * control derivable from the contract alone is a uuid text box, and no workshop
  * employee knows a uuid. These tests assert the write is REACHABLE and that the
  * chooser is a name.
  *
- * The actions are mocked at the module boundary â€” a component test cannot call
+ * The actions are mocked at the module boundary — a component test cannot call
  * a `'use server'` module, and what is under test is the screen's decision about
  * when to offer the write and what to send, not the request itself.
  */
@@ -68,7 +68,7 @@ const EMPTY = {
 };
 
 /**
- * The customer the selector finds â€” deliberately NOT the one already on the
+ * The customer the selector finds — deliberately NOT the one already on the
  * vehicle.
  *
  * They were the same person on the first draft, and six tests failed with
@@ -195,7 +195,7 @@ beforeEach(() => {
   });
 });
 
-describe('FE-021 â€” ownership transfer is reachable', () => {
+describe('FE-021 — ownership transfer is reachable', () => {
   it('offers the transfer form to an operator who may manage relationships', async () => {
     ownerships(true);
     expect(
@@ -221,7 +221,7 @@ describe('FE-021 â€” ownership transfer is reachable', () => {
     await user.click(screen.getByRole('button', { name: en['vehicles.ownership.transfer'] }));
 
     await waitFor(() => expect(transferOwnershipAction).toHaveBeenCalledTimes(1));
-    // The uuid the SELECTOR produced â€” submitted, never typed.
+    // The uuid the SELECTOR produced — submitted, never typed.
     // Index 2, not 1: the screen binds the vehicle id, so the mock sees
     // `(vehicleId, previousState, formData)`.
     const form = transferOwnershipAction.mock.calls[0]?.[2] as FormData;
@@ -290,7 +290,7 @@ describe('FE-021 â€” ownership transfer is reachable', () => {
   });
 });
 
-describe('FE-025 â€” authorising a party is reachable', () => {
+describe('FE-025 — authorising a party is reachable', () => {
   it('offers the form to an operator who may manage relationships', async () => {
     relationships(true);
     expect(
@@ -353,9 +353,9 @@ describe('FE-025 â€” authorising a party is reachable', () => {
   });
 });
 
-describe('FE-025 â€” linking a customer is reachable', () => {
+describe('FE-025 — linking a customer is reachable', () => {
   it('offers the link form on its OWN capability, not the vehicle one', async () => {
-    // `crm.vehicle-link` needs `crm.customer.vehicle.manage` â€” a different
+    // `crm.vehicle-link` needs `crm.customer.vehicle.manage` — a different
     // module and a different code from `veh.vehicle.relationship.manage`. An
     // operator may hold either without the other.
     renderLtr(
@@ -371,7 +371,7 @@ describe('FE-025 â€” linking a customer is reachable', () => {
     expect(
       await screen.findByRole('button', { name: en['vehicles.relationships.link'] })
     ).toBeInTheDocument();
-    // â€¦and the OTHER write stays hidden, proving the two gates are independent.
+    // …and the OTHER write stays hidden, proving the two gates are independent.
     expect(
       screen.queryByRole('button', { name: en['vehicles.relationships.authorize'] })
     ).not.toBeInTheDocument();
@@ -427,7 +427,7 @@ describe('FE-025 â€” linking a customer is reachable', () => {
 
     expect(values).toHaveLength(6);
     // `ck_vehicle_relationships_scope_role` makes `authorized_person` the only
-    // role that may carry a scope, and this operation sets none â€” so linking in
+    // role that may carry a scope, and this operation sets none — so linking in
     // that role would create a row the screen itself calls unexpected data.
     expect(values).not.toContain('authorized_person');
   });
@@ -453,7 +453,7 @@ describe('FE-025 â€” linking a customer is reachable', () => {
   });
 });
 
-describe('FE-025 â€” retiring a party is reachable, and only where it can work', () => {
+describe('FE-025 — retiring a party is reachable, and only where it can work', () => {
   it('offers the control on an open authorised party', async () => {
     relationships(true);
     expect(
@@ -463,7 +463,7 @@ describe('FE-025 â€” retiring a party is reachable, and only where it can w
 
   it('offers it on no other role', async () => {
     // The operation closes an open `authorized_person` interval. On an owner row
-    // the control could only fail â€” and would suggest ownership can be ended
+    // the control could only fail — and would suggest ownership can be ended
     // from here, which it cannot.
     listRelationships.mockResolvedValue(page([relationship({ relationshipRole: 'owner' })]));
     relationships(true);
@@ -523,7 +523,7 @@ describe('FE-025 â€” retiring a party is reachable, and only where it can w
   });
 });
 
-describe('a denial is the backendâ€™s to make', () => {
+describe('a denial is the backend’s to make', () => {
   it('shows a denial from the write rather than pretending it succeeded', async () => {
     const user = userEvent.setup();
     authorizePartyAction.mockResolvedValue({
