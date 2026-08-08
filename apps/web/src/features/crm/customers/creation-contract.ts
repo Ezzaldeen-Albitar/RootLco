@@ -78,46 +78,19 @@ export interface CreatedCustomer {
   readonly possibleDuplicates: readonly DuplicateNameMatch[];
 }
 
-export interface IndividualDraft {
-  readonly givenName: string;
-  readonly familyName: string;
-  readonly preferredLocale: string | null;
-  readonly lifecycleStatus: CreatableLifecycleStatus;
-}
-
-export interface CompanyDraft {
-  readonly legalName: string;
-  readonly tradeName: string | null;
-  readonly lifecycleStatus: CreatableLifecycleStatus;
-}
-
-/** A field-level complaint, keyed by the field it belongs to. */
-export type FieldErrors = Readonly<Record<string, string>>;
-
-/**
- * Validates an individual draft at the edge.
+/*
+ * `validateIndividual`, `validateCompany` and their draft types are gone, for
+ * the reason given at the foot of `governance-contract.ts` (`P1-27-FE-013`).
  *
- * The server validates too, and its answer is the one that matters. This exists
- * so an operator learns which field is wrong from the field, rather than from a
- * banner that names none — which is what a 422 renders as when nothing maps it.
+ * Their docstring claimed they exist "so an operator learns which field is wrong
+ * from the field, rather than from a banner that names none". Nothing called
+ * them, so no operator ever got that — and the create form already gets exactly
+ * what the docstring wanted, from the server: `createIndividualAction` returns
+ * per-field catalogue keys through `fieldErrorsFrom`, and `CustomerCreateScreen`
+ * renders each one beside its own field.
+ *
+ * They also disagreed with the server they mirrored. They emitted
+ * `crm.customers.create.tooLong` where the action emits `field.tooLong`, so had
+ * anything ever wired them up, the same overlong name would have produced two
+ * different messages depending on which layer noticed first.
  */
-export function validateIndividual(draft: IndividualDraft): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!draft.givenName.trim()) errors['givenName'] = 'field.required';
-  else if (draft.givenName.trim().length > MAX_PERSON_NAME)
-    errors['givenName'] = 'crm.customers.create.tooLong';
-  if (!draft.familyName.trim()) errors['familyName'] = 'field.required';
-  else if (draft.familyName.trim().length > MAX_PERSON_NAME)
-    errors['familyName'] = 'crm.customers.create.tooLong';
-  return errors;
-}
-
-export function validateCompany(draft: CompanyDraft): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!draft.legalName.trim()) errors['legalName'] = 'field.required';
-  else if (draft.legalName.trim().length > MAX_COMPANY_NAME)
-    errors['legalName'] = 'crm.customers.create.tooLong';
-  if (draft.tradeName && draft.tradeName.trim().length > MAX_COMPANY_NAME)
-    errors['tradeName'] = 'crm.customers.create.tooLong';
-  return errors;
-}

@@ -194,165 +194,35 @@ export function permittedWrites(permissions: readonly string[]): WritePermits {
 /** Nothing permitted — the shape a caller starts from, and the safe default. */
 export const NO_WRITES: WritePermits = permittedWrites([]);
 
-/** One field-level complaint, keyed by the field it belongs beside. */
-export type FieldErrors = Readonly<Record<string, string>>;
-
-/**
- * Validates a bounded free-text field the same way the route's Zod schema does.
+/*
+ * The six client-side validators that used to live here are gone, and the
+ * `*Input` interfaces with them (`P1-27-FE-013`).
  *
- * Length is counted on the TRIMMED value, because the Backend's
- * `btrim(...) <> ''` CHECK constraints mean a field of spaces is empty there
- * however long it looks here. A client that counted the untrimmed length would
- * accept `"   "` for a required reason and be rejected by the database.
- */
-export function validateText(
-  value: string,
-  { min, max, required }: { min: number; max: number; required: boolean }
-): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return required ? 'required' : null;
-  if (trimmed.length < min) return 'tooShort';
-  if (trimmed.length > max) return 'tooLong';
-  return null;
-}
-
-/**
- * Normalises an optional free-text field to what the route accepts.
+ * `validateNote`, `validateAlert`, `validateRestriction`, `validateTag`,
+ * `validatePreference` and `validateConsent` — plus the `validateText` and
+ * `optionalText` helpers underneath them — mirrored the route schemas and were
+ * called by NOTHING. A search of `apps/web/src` returned, for each of them,
+ * exactly one reference: its own definition. Their tests were the only
+ * consumers, which is why the coverage they were credited with would have
+ * passed with the write features deleted.
  *
- * The Zod schemas type these as `.nullable().optional()`, so an empty box means
- * "not provided" and must become `undefined` rather than `''` — a `.strict()`
- * schema with `.min(1)` rejects the empty string outright, turning a blank
- * optional field into a 422 the operator cannot act on.
+ * They were not merely unused, they contradicted a decision already recorded a
+ * few files away. `components/forms/RecordForm.tsx` says of the numeric bounds
+ * it does NOT enforce: "the server is the authority and a client bound that
+ * disagreed with it would refuse a value the server would have accepted, with
+ * no error the operator could act on." That reasoning applies with equal force
+ * to a second copy of every length bound, and this file was that copy.
+ *
+ * Validation happens once, in the Zod schema each Server Action owns, and comes
+ * back as per-field catalogue keys that `RecordForm` renders beside the field.
+ * Since `P1-27-FE-004` those keys are guaranteed translatable, so the round trip
+ * costs an operator a correct message rather than an English one.
+ *
+ * Deleting rather than wiring is deliberate. Wiring would have been a behaviour
+ * change — instant client-side feedback where there has never been any — chosen
+ * at remediation time and reviewed by nobody. Deleting is behaviour-preserving:
+ * no operator sees any difference, because no operator ever reached this code.
+ *
+ * The bound CONSTANTS above stay. They are imported by `governance-actions.ts`
+ * for the real schemas, which is the one authority.
  */
-export function optionalText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
-}
-
-export interface NoteInput {
-  readonly body: string;
-  readonly classification?: NoteClassification;
-  readonly visibility?: NoteVisibility;
-}
-
-export function validateNote(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const body = validateText(values.body ?? '', { min: 1, max: MAX_NOTE_BODY, required: true });
-  if (body) errors.body = body;
-  return errors;
-}
-
-export interface AlertInput {
-  readonly alertType: AlertType;
-  readonly severity: AlertSeverity;
-  readonly message: string;
-}
-
-export function validateAlert(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const message = validateText(values.message ?? '', {
-    min: 1,
-    max: MAX_ALERT_MESSAGE,
-    required: true,
-  });
-  if (message) errors.message = message;
-  if (!ALERT_TYPES.includes(values.alertType as AlertType)) errors.alertType = 'required';
-  if (!ALERT_SEVERITIES.includes(values.severity as AlertSeverity)) errors.severity = 'required';
-  return errors;
-}
-
-export interface RestrictionInput {
-  readonly restrictionType: RestrictionType;
-  readonly reason: string;
-  readonly approvalRef?: string;
-}
-
-export function validateRestriction(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  // `MIN_REASON` is 10, not 1. A restriction stops work being done for a real
-  // customer, and "no" is not a reason anybody can act on later.
-  const reason = validateText(values.reason ?? '', {
-    min: MIN_REASON,
-    max: MAX_REASON,
-    required: true,
-  });
-  if (reason) errors.reason = reason;
-  if (!RESTRICTION_TYPES.includes(values.restrictionType as RestrictionType)) {
-    errors.restrictionType = 'required';
-  }
-  const ref = validateText(values.approvalRef ?? '', {
-    min: 1,
-    max: MAX_APPROVAL_REF,
-    required: false,
-  });
-  if (ref) errors.approvalRef = ref;
-  return errors;
-}
-
-export interface TagInput {
-  readonly segmentCode: string;
-  readonly name?: string;
-}
-
-export function validateTag(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const code = validateText(values.segmentCode ?? '', {
-    min: MIN_SEGMENT_CODE,
-    max: MAX_SEGMENT_CODE,
-    required: true,
-  });
-  if (code) errors.segmentCode = code;
-  const name = validateText(values.name ?? '', { min: 1, max: MAX_SEGMENT_NAME, required: false });
-  if (name) errors.name = name;
-  return errors;
-}
-
-export interface PreferenceInput {
-  readonly channel: string;
-  readonly purpose: CommunicationPurpose;
-  readonly preferred: boolean;
-  readonly preferredLocale?: string | null;
-}
-
-export function validatePreference(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!COMMUNICATION_PURPOSES.includes(values.purpose as CommunicationPurpose)) {
-    errors.purpose = 'required';
-  }
-  if (!values.channel) errors.channel = 'required';
-  const locale = validateText(values.preferredLocale ?? '', {
-    min: MIN_PREFERRED_LOCALE,
-    max: MAX_PREFERRED_LOCALE,
-    required: false,
-  });
-  if (locale) errors.preferredLocale = locale;
-  return errors;
-}
-
-export interface ConsentInput {
-  readonly consentKind: ConsentKind;
-  readonly channel: string;
-  readonly purpose: CommunicationPurpose;
-  readonly status: RecordableConsentStatus;
-  readonly source?: string;
-  readonly contactPointId?: string;
-}
-
-export function validateConsent(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!CONSENT_KINDS.includes(values.consentKind as ConsentKind)) errors.consentKind = 'required';
-  if (!COMMUNICATION_PURPOSES.includes(values.purpose as CommunicationPurpose)) {
-    errors.purpose = 'required';
-  }
-  if (!RECORDABLE_CONSENT_STATUSES.includes(values.status as RecordableConsentStatus)) {
-    errors.status = 'required';
-  }
-  if (!values.channel) errors.channel = 'required';
-  const source = validateText(values.source ?? '', {
-    min: 1,
-    max: MAX_CONSENT_SOURCE,
-    required: false,
-  });
-  if (source) errors.source = source;
-  return errors;
-}

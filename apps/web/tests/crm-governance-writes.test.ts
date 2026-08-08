@@ -7,17 +7,10 @@ import {
   RESTRICTION_TYPES,
   ALERT_SEVERITIES,
   ALERT_TYPES,
-  MIN_REASON,
   NO_WRITES,
   permittedWrites,
   WRITE_PERMISSIONS,
   type WriteKind,
-  optionalText,
-  validateAlert,
-  validateConsent,
-  validateRestriction,
-  validateTag,
-  validateText,
 } from '@/features/crm/customers/governance-contract';
 
 /**
@@ -199,42 +192,10 @@ describe('consent offers only the statuses a client may record', () => {
     expect(RECORDABLE_CONSENT_STATUSES as readonly string[]).not.toContain('expired');
   });
 
-  it('rejects expired if a form supplies it anyway', () => {
-    const errors = validateConsent({
-      consentKind: 'marketing',
-      channel: 'email',
-      purpose: 'marketing',
-      status: 'expired',
-    });
-    expect(errors.status).toBe('required');
-  });
-});
-
-describe('length is measured on the trimmed value', () => {
-  it('rejects a field of spaces as empty, not as long', () => {
-    // The backend carries `btrim(...) <> ''` CHECK constraints, so whitespace is
-    // empty there however long it looks here. Measuring untrimmed would let ten
-    // spaces through as a ten-character restriction reason.
-    expect(validateText('          ', { min: 10, max: 500, required: true })).toBe('required');
-  });
-
-  it('rejects a reason shorter than the route allows', () => {
-    expect(validateRestriction({ restrictionType: 'no_credit', reason: 'no' }).reason).toBe(
-      'tooShort'
-    );
-  });
-
-  it('accepts a reason at exactly the minimum', () => {
-    const reason = 'x'.repeat(MIN_REASON);
-    expect(validateRestriction({ restrictionType: 'no_credit', reason }).reason).toBeUndefined();
-  });
-
-  it('turns an empty optional field into undefined, never an empty string', () => {
-    // `.strict()` schemas type these `.min(1).optional()`. Sending `''` is a 422
-    // the operator cannot act on; omitting the key is the supported request.
-    expect(optionalText('   ')).toBeUndefined();
-    expect(optionalText(' FLEET ')).toBe('FLEET');
-  });
+  // "and rejects it if a form supplies it anyway" now lives in
+  // `governance-write-validation.test.ts`, driving the action's own schema. It
+  // used to call `validateConsent`, a mirror no production code invoked, so it
+  // proved the vocabulary was enforced somewhere nobody passed through.
 });
 
 describe('vocabularies match the CHECK constraints, not a guess', () => {
@@ -253,25 +214,9 @@ describe('vocabularies match the CHECK constraints, not a guess', () => {
     ]);
   });
 
-  it('rejects a value outside the vocabulary', () => {
-    // The first draft of these screens invented `credit_hold` and `payment`.
-    expect(validateAlert({ alertType: 'payment', severity: 'info', message: 'x' }).alertType).toBe(
-      'required'
-    );
-    expect(
-      validateRestriction({ restrictionType: 'credit_hold', reason: 'x'.repeat(20) })
-        .restrictionType
-    ).toBe('required');
-  });
-});
-
-describe('tags', () => {
-  it('requires a segment code of at least two characters', () => {
-    expect(validateTag({ segmentCode: 'F' }).segmentCode).toBe('tooShort');
-    expect(validateTag({ segmentCode: 'FLEET' }).segmentCode).toBeUndefined();
-  });
-
-  it('treats the display name as optional', () => {
-    expect(validateTag({ segmentCode: 'FLEET', name: '' }).name).toBeUndefined();
-  });
+  // "rejects a value outside the vocabulary" and the tag cases moved to
+  // `governance-write-validation.test.ts`. They asserted against mirrors that
+  // production never called; the constants above are still worth pinning here,
+  // because a vocabulary that drifts from its CHECK constraint offers an
+  // operator a value the database will refuse.
 });

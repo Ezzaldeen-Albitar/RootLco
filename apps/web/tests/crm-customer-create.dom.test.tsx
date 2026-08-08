@@ -10,8 +10,6 @@ import {
   CREATABLE_LIFECYCLE_STATUSES,
   MAX_COMPANY_NAME,
   MAX_PERSON_NAME,
-  validateCompany,
-  validateIndividual,
 } from '@/features/crm/customers/creation-contract';
 
 /**
@@ -76,42 +74,19 @@ describe('the contract vocabulary', () => {
   });
 });
 
-describe('edge validation', () => {
-  it('names the empty required field rather than failing anonymously', () => {
-    expect(
-      validateIndividual({
-        givenName: '  ',
-        familyName: '',
-        preferredLocale: null,
-        lifecycleStatus: 'prospect',
-      })
-    ).toEqual({ givenName: 'field.required', familyName: 'field.required' });
-  });
-
-  it('accepts a complete individual', () => {
-    expect(
-      validateIndividual({
-        givenName: 'Nadia',
-        familyName: 'Khoury',
-        preferredLocale: 'ar',
-        lifecycleStatus: 'active',
-      })
-    ).toEqual({});
-  });
-
-  it('requires a legal name and tolerates an absent trading name', () => {
-    expect(
-      validateCompany({ legalName: '', tradeName: null, lifecycleStatus: 'prospect' })
-    ).toEqual({ legalName: 'field.required' });
-    expect(
-      validateCompany({
-        legalName: 'Cedar Motors LLC',
-        tradeName: null,
-        lifecycleStatus: 'prospect',
-      })
-    ).toEqual({});
-  });
-});
+/*
+ * The "edge validation" block that stood here is gone with the functions it
+ * called (`P1-27-FE-013`).
+ *
+ * `validateIndividual` and `validateCompany` mirrored the create schemas and
+ * were invoked by nothing, so the three cases here asserted that an unreachable
+ * mirror named the right field — while the form an operator actually uses gets
+ * its field errors from the server. They also disagreed with that server, using
+ * `crm.customers.create.tooLong` where the action returns `field.tooLong`.
+ *
+ * The cases below already cover the real path: the form renders a server-issued
+ * field error against its own field, in both locales.
+ */
 
 describe('the individual form', () => {
   it('renders the individual fields and not the company ones', () => {
