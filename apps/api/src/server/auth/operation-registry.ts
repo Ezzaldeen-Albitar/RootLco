@@ -29,6 +29,8 @@
  * cannot be repaired afterwards.
  */
 import { auditActionViolation } from './audit-actions';
+// Type-only: the registry must not take a runtime dependency on the HTTP layer.
+import type { RateLimitPolicyName } from '../http/rate-limit';
 
 /** Which scope the operation must resolve before the handler body runs. */
 export type ScopeRequirement = 'tenant' | 'company' | 'branch';
@@ -69,8 +71,14 @@ export interface OperationDeclaration {
   readonly idempotent?: boolean;
   /** Requires an `If-Match` record version (optimistic concurrency). */
   readonly versionGuarded?: boolean;
-  /** Rate-limit policy name from `rate-limit-policies.ts`. */
-  readonly rateLimitPolicy?: string;
+  /**
+   * Rate-limit policy, named from the registered catalogue.
+   *
+   * Typed as the catalogue's key union, not `string`: while it was `string`, six
+   * operations declared `'standard-read'` — a name that was never registered —
+   * and `policyFor()` threw on every request to them (`P1-27-INT-113`).
+   */
+  readonly rateLimitPolicy?: RateLimitPolicyName;
   /** Whether responses may be cached, and under which eligibility category. */
   readonly cacheCategory?: string;
 }

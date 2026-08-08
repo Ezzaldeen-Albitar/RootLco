@@ -5039,7 +5039,8 @@
       "tests": [
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-reporting.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/route.ts"
@@ -5081,7 +5082,8 @@
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-reporting.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/route.ts"
@@ -6253,7 +6255,8 @@
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-document-retention.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/attachments/documents/[documentId]/route.ts"
@@ -6450,7 +6453,8 @@
       "tests": [
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-notification-reads.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/notifications/[notificationId]/deliveries/route.ts"
@@ -6532,7 +6536,8 @@
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-notification-reads.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/notifications/route.ts"
@@ -6573,7 +6578,8 @@
       "tests": [
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-notification-reads.test.ts",
-        "tests/foundation/p1-15-catalogs.test.ts"
+        "tests/foundation/p1-15-catalogs.test.ts",
+        "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/notifications/[notificationId]/route.ts"

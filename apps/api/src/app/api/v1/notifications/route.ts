@@ -120,7 +120,13 @@ export const NOTIFICATION_LIST_OPERATION = defineOperation({
   permissions: ['shared.notification.read'],
   scope: 'tenant',
   auditClass: 'none',
-  rateLimitPolicy: 'standard-read',
+  // Was the unregistered `'standard-read'`, which made every request to this
+  // operation an unhandled 500 (`P1-27-INT-113`). `expensive-read` rather than
+  // `low-risk-metadata`: an inbox is per-recipient, and `low-risk-metadata` keys
+  // on operation+tenant only, so one operator polling could exhaust the whole
+  // tenant's budget. 30/min is a starting point for measurement, as every value
+  // in that catalogue is declared to be.
+  rateLimitPolicy: 'expensive-read',
   cacheCategory: 'never',
 });
 

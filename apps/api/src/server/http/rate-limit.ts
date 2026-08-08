@@ -112,8 +112,21 @@ export interface RateLimitPolicy {
 /**
  * Proposed baselines. Every value is a starting point for measurement, not an
  * approved capacity statement.
+ *
+ * Declared as a literal first so its KEYS survive into the type system as
+ * `RateLimitPolicyName` below. Annotating the constant
+ * `Readonly<Record<string, RateLimitPolicy>>` erased them, and a route was then
+ * free to name a policy that does not exist: six shipped operations declared
+ * `'standard-read'`, which was never registered, and every request to them
+ * failed (`P1-27-INT-113`).
+ *
+ * The exported constant then widens the VALUES back to `RateLimitPolicy`. Only
+ * the keys were ever the problem; leaving the values narrowed would infer
+ * `keyBy` as each policy's own literal tuple, so `policy.keyBy.includes('tenant')`
+ * — the test every caller performs — would stop compiling for the policies that
+ * happen not to contain it. Keys pinned, values wide.
  */
-export const RATE_LIMIT_POLICIES: Readonly<Record<string, RateLimitPolicy>> = Object.freeze({
+const POLICIES = Object.freeze({
   'auth-adjacent': {
     name: 'auth-adjacent',
     limit: 10,
@@ -173,7 +186,18 @@ export const RATE_LIMIT_POLICIES: Readonly<Record<string, RateLimitPolicy>> = Ob
       'Cheap metadata reads. A limit exists only to bound accidental client loops; it is not a ' +
       'security control.',
   },
-});
+} satisfies Readonly<Record<string, RateLimitPolicy>>);
+
+/**
+ * The names a route may actually declare.
+ *
+ * `defineOperation({ rateLimitPolicy })` is typed by this, so an unregistered
+ * name is a compile error at the route that writes it rather than a 500 at the
+ * request that reaches it.
+ */
+export type RateLimitPolicyName = keyof typeof POLICIES;
+
+export const RATE_LIMIT_POLICIES: Readonly<Record<RateLimitPolicyName, RateLimitPolicy>> = POLICIES;
 
 /**
  * Builds a collision-proof key. Segments are length-prefixed, so no combination

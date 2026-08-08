@@ -199,24 +199,33 @@ export async function handleOperation<T>(
   const causationId = normalizeInboundCausationId(request.headers.get(CAUSATION_HEADER));
   const startedAt = performance.now();
   const config = backendConfig();
-  const policy = policyFor(operation);
-  // A `public: true` operation never reaches the post-authentication throttle,
-  // because it never authenticates. Until this was fixed (P1-15-SR-004) a policy
-  // keyed by tenant or user — which is most of them — meant a public route was
-  // throttled by nothing at all, and the two health probes are the most exposed
-  // endpoints in the deployment. For a public operation the policy is therefore
-  // enforced BEFORE the handler, keyed by operation and client address, which
-  // are the only dimensions that exist without a session.
-  const preAuthPolicy =
-    policy &&
-    (operation.public || (!policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')))
-      ? policy
-      : undefined;
-  const postAuthPolicy = policy && preAuthPolicy === undefined ? policy : undefined;
 
   let context: RequestContext | undefined;
 
   try {
+    // Resolved INSIDE the try. `policyFor()` throws on an unregistered policy
+    // name, and while this call sat above the try that throw escaped
+    // `handleOperation` entirely — so six operations declaring the unregistered
+    // `'standard-read'` answered an unhandled 500 to every request, before
+    // authentication, instead of a problem document (`P1-27-INT-113`). The name
+    // is now a compile-time union, which should make the throw unreachable; it
+    // is kept, and moved, because "should" is not a guarantee and a defect in
+    // the throttle must not be the one failure the error contract cannot see.
+    const policy = policyFor(operation);
+    // A `public: true` operation never reaches the post-authentication throttle,
+    // because it never authenticates. Until this was fixed (P1-15-SR-004) a policy
+    // keyed by tenant or user — which is most of them — meant a public route was
+    // throttled by nothing at all, and the two health probes are the most exposed
+    // endpoints in the deployment. For a public operation the policy is therefore
+    // enforced BEFORE the handler, keyed by operation and client address, which
+    // are the only dimensions that exist without a session.
+    const preAuthPolicy =
+      policy &&
+      (operation.public || (!policy.keyBy.includes('tenant') && !policy.keyBy.includes('user')))
+        ? policy
+        : undefined;
+    const postAuthPolicy = policy && preAuthPolicy === undefined ? policy : undefined;
+
     if (!inboundAccepted && request.headers.get(CORRELATION_HEADER)) {
       // Observable, not silent: an invalid inbound correlation ID is a client
       // defect or an injection attempt, and either is worth a record.
