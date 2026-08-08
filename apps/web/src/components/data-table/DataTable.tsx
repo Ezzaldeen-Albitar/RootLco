@@ -82,6 +82,28 @@ export interface DataTableProps<Row> {
   readonly hiddenColumnIds?: readonly string[];
   readonly rowActions?: ((row: Row) => ReactNode) | undefined;
   readonly caption?: string | undefined;
+  /**
+   * The caller renders its own zero-row state; this table renders none
+   * (`P1-27-FE-002`).
+   *
+   * The table decides between "nothing exists yet" and "your filters excluded
+   * everything" with `isNarrowed(request)`, which reads `request.filters` and
+   * `request.search`. That is right for a table owning its filters and WRONG for
+   * a search screen that keeps criteria OUTSIDE the request — deliberately, so a
+   * customer's name never reaches the address bar — and mounts with
+   * `INITIAL_REQUEST`. `isNarrowed` was therefore permanently false on both
+   * search screens, and a search matching nothing announced "Nothing here yet ·
+   * Once records exist they will be listed here": a claim about the tenant's
+   * entire customer list, on the evidence of one query that excluded everything,
+   * printed directly above the screen's own correct sentence.
+   *
+   * Suppressing rather than parameterising, because the screen already knows
+   * three things this component cannot: the domain wording ("No matching
+   * customer was found" beats "no records match the current filters"), whether
+   * the operator may create the record they failed to find, and that Clear
+   * filters would do nothing here since `request.filters` is empty.
+   */
+  readonly suppressEmptyState?: boolean | undefined;
 }
 
 export function DataTable<Row>({
@@ -99,6 +121,7 @@ export function DataTable<Row>({
   hiddenColumnIds = [],
   rowActions,
   caption,
+  suppressEmptyState = false,
 }: DataTableProps<Row>) {
   const visibleColumns = useMemo(
     () => columns.filter((column) => !hiddenColumnIds.includes(column.id)),
@@ -276,7 +299,7 @@ export function DataTable<Row>({
         </table>
       </div>
 
-      {status === 'idle' && rows.length === 0 ? (
+      {status === 'idle' && rows.length === 0 && !suppressEmptyState ? (
         // "No records exist" and "your filters excluded everything" are
         // different problems with different next steps, so they are different
         // states rather than one message that has to cover both.

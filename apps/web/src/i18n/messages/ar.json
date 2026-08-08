@@ -1028,6 +1028,7 @@
   "vehicles.search.idleTitle": "ابحث عن مركبة",
   "vehicles.search.lifecycleStatus": "الحالة",
   "vehicles.search.needCriteria": "أدخل قيمة بحث واحدة على الأقل.",
+  "vehicles.search.noMatch": "لم يُعثر على مركبة مطابقة.",
   "vehicles.search.open": "فتح",
   "vehicles.search.plate": "لوحة التسجيل",
   "vehicles.search.plateHint": "تطابق تام مع اللوحة الحالية فقط. اللوحة السابقة لا تُطابِق.",

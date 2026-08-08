@@ -194,6 +194,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
           key={JSON.stringify(submitted)}
           locale={locale}
           messages={messages}
+          canCreate={canCreate}
           criteria={submitted}
           makes={makes}
         />
@@ -205,11 +206,14 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
 function VehicleSearchResults({
   locale,
   messages,
+  canCreate,
   criteria,
   makes,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `veh.vehicle.create` — gates the offer to create the vehicle not found. */
+  readonly canCreate: boolean;
   readonly criteria: VehicleSearchCriteria;
   readonly makes: readonly CatalogueOption[];
 }) {
@@ -347,6 +351,16 @@ function VehicleSearchResults({
         correlationId={table.correlationId}
         caption={translate(messages, 'vehicles.search.caption')}
         /*
+         * `P1-27-FE-002`, the vehicle half. Same defect and same cause as the
+         * customer search: the criteria live outside `TableRequest`, so
+         * `isNarrowed` is permanently false and a search matching nothing said
+         * "Nothing here yet" about the tenant's entire fleet.
+         *
+         * Unlike the customer search this screen had no zero-result block of its
+         * own, so one is added below rather than only suppressing the wrong one.
+         */
+        suppressEmptyState
+        /*
          * Opening a found vehicle (`P1-27-FE-019`).
          *
          * This table listed vehicles and offered no way to open one. The vehicle
@@ -371,6 +385,29 @@ function VehicleSearchResults({
           </button>
         )}
       />
+      {/*
+        A search that matched nothing is a statement about the SEARCH, not about
+        the fleet. Creating the vehicle that was not found is the actual next
+        step, and it is offered only to an operator who may create one — a
+        control whose only possible outcome is a 403 is worse than no control.
+      */}
+      {table.response && table.response.rows.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <p className="text-body text-text-secondary" lang={locale}>
+            {translate(messages, 'vehicles.search.noMatch')}
+          </p>
+          {canCreate ? (
+            <Link
+              href={`/${locale}/vehicles/new`}
+              data-testid="create-vehicle-from-no-results"
+              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-body font-medium text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
+            >
+              {translate(messages, 'vehicles.create.title')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.search.exactMatchNote')}
       </p>

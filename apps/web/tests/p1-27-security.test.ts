@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
@@ -20,12 +20,24 @@ import { FORBIDDEN_URL_KEYS, toSearchParams } from '@/components/data-table/tabl
 const FEATURES = join(process.cwd(), 'src', 'features');
 const ROUTES = join(process.cwd(), 'src', 'app');
 
+/**
+ * Every file under `dir`, with POSIX separators.
+ *
+ * The separator is normalised because these sweeps select files by PATTERN, and
+ * a pattern anchored on `/` silently matches nothing on Windows. `\/api\.ts$`
+ * below is exactly that: on a developer's Windows machine it never examined
+ * `features/crm/customers/api.ts` at all, so the sweep passed by not looking —
+ * while on `ubuntu-latest`, where hosted CI runs, it looked and failed.
+ *
+ * A path-shaped assertion must therefore be written against one canonical
+ * spelling, not against whatever the host filesystem happens to use.
+ */
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walk(full));
-    else if (/\.tsx?$/.test(entry)) out.push(full);
+    else if (/\.tsx?$/.test(entry)) out.push(full.split(sep).join('/'));
   }
   return out;
 }
@@ -311,11 +323,33 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
     expect(support, 'the shared failure mapping must exist to be delegated to').toBeDefined();
     expect(support?.source, SUPPORT).toContain('correlationId');
 
+    /*
+     * The two modules an adapter may delegate its failure mapping to, each
+     * asserted to carry the reference itself so delegation is never a loophole.
+     *
+     * `lib/customers/directory` joined the list when the customer-search adapter
+     * moved there: `features/vehicles` needs the same search to choose a
+     * customer and no feature may import another, so the implementation went to
+     * `lib/` and `features/crm/customers/api.ts` became a thin wrapper. That
+     * wrapper carries no `correlationId` of its own — correctly, because it adds
+     * no behaviour — and the rule had no way to say so.
+     */
+    const DELEGATES = [`./${SUPPORT.replace('.ts', '')}`, '@/lib/customers/directory'] as const;
+
+    const directory = readFileSync(
+      join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'),
+      'utf8'
+    );
+    expect(
+      directory,
+      'the customer directory must carry the reference it is trusted for'
+    ).toContain('correlationId');
+
     for (const { path, source } of adapters) {
       if (source.includes('correlationId')) continue;
       expect(
-        source.includes(`./${SUPPORT.replace('.ts', '')}`),
-        `${path} neither carries a correlation reference nor delegates to ${SUPPORT}`
+        DELEGATES.some((delegate) => source.includes(delegate)),
+        `${path} neither carries a correlation reference nor delegates to one that does`
       ).toBe(true);
     }
   });
