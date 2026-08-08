@@ -24,6 +24,7 @@ import {
   EV_KINDS,
   LINKABLE_ROLES,
   MAX_CHARGE_PORT,
+  MAX_USABLE_CAPACITY_KWH,
   SCOPED_ROLE,
   canHaveEvProfile,
   scopeState,
@@ -96,6 +97,9 @@ function EvProfileForm({
           kind: 'number',
           labelKey: 'vehicles.ev.capacity',
           min: 0,
+          // The domain's ceiling, stated on the control as well as in the schema
+          // so the operator meets it before the round trip (`P1-27-FE-024`).
+          max: MAX_USABLE_CAPACITY_KWH,
           step: 'any',
           hintKey: 'vehicles.ev.capacityHint',
         },

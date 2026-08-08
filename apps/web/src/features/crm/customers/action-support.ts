@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
 
@@ -40,62 +39,16 @@ export function optional(form: FormData, key: string): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
-/**
- * A catalogue key for an issue whose schema supplied no message (`P1-27-FE-004`).
+/*
+ * `fieldErrorsFrom` now lives in `lib/forms/field-errors.ts` and is re-exported
+ * here so the eight customer write actions keep importing one module.
  *
- * Zod's default message is an English sentence. `translateDynamic` returns a
- * non-key unchanged, so any such message is rendered verbatim — English library
- * prose under an Arabic label, for an Arabic operator.
- *
- * This was reported as one field (`preferredLocale`, `.min(2)`, reachable by
- * typing a single character), and the defect is the class rather than the field:
- * across the customer and vehicle write schemas most bounds carry no key, and
- * whether any given one is reachable depends on whether some form three files
- * away happens to set a matching `maxLength`. Keys are being added at the
- * schemas as well, but a fallback here is what makes "untranslated text cannot
- * reach an operator" true of schemas nobody has revisited yet.
- *
- * Mapped by issue CODE rather than to one generic apology, because "shorter than
- * the minimum" and "longer than the maximum" tell an operator different things
- * and the catalogue already distinguishes them.
+ * It moved because the same three lines were copied into SEVEN adapters across
+ * authentication, CRM identity and five vehicle modules, every one of them
+ * storing Zod's own English sentence. A feature may not import another feature,
+ * so fixing them where they sat would have produced seven copies of the fix.
  */
-function keyForIssue(issue: z.core.$ZodIssue): string {
-  switch (issue.code) {
-    case 'too_small':
-      return 'field.tooShort';
-    case 'too_big':
-      return 'field.tooLong';
-    case 'invalid_type':
-      return 'field.required';
-    default:
-      return 'field.invalid';
-  }
-}
-
-/**
- * True when the schema supplied a translation key rather than leaving Zod's
- * default sentence in place.
- *
- * Structural, not a catalogue lookup: this module cannot import a locale without
- * choosing one, and the choice belongs to the request. Every key in this
- * codebase is dotted lower-camel segments with no whitespace, and every Zod
- * default is a sentence containing spaces — so the two are separable without
- * knowing the catalogue. `crm-customer-create.dom.test.tsx` closes the gap by
- * asserting that what survives resolves in BOTH catalogues.
- */
-function isTranslationKey(message: string): boolean {
-  return /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)+$/.test(message);
-}
-
-export function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const path = issue.path[0];
-    if (typeof path !== 'string' || errors[path]) continue;
-    errors[path] = isTranslationKey(issue.message) ? issue.message : keyForIssue(issue);
-  }
-  return errors;
-}
+export { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /** The customer id, encoded, so it can never walk to another operation. */
 export function base(customerId: string): string {

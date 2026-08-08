@@ -203,7 +203,11 @@ export function VehicleProfileScreen({
           messages={messages}
           state={evProfile}
           powertrainCategory={vehicle.powertrainCategory}
-          canEdit={canEdit}
+          // `frozen` as well as the capability, like plates and ownership beside
+          // it. Verified against the server rather than assumed by analogy:
+          // `vehicle-lifecycle-service.ts:68-74` throws `ERR-RES-002` for a
+          // merged or scrapped vehicle, so the form could only ever fail there.
+          canEdit={canEdit && !frozen}
           vehicleId={vehicle.id}
           // The profile is read on the SERVER, so a save cannot be reflected by
           // re-running a client fetch. A router refresh re-runs the page's own

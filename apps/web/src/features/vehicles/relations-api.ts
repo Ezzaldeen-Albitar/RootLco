@@ -9,10 +9,13 @@ import { STATUS_BY_KIND, query, type CursorPage } from '@/lib/api/read-operation
 import {
   AUTHORIZED_ACTIONS,
   EV_KINDS,
+  MAX_CHARGE_PORT,
+  MAX_USABLE_CAPACITY_KWH,
   LINKABLE_ROLES,
   type EvProfile,
   type VehicleRelationship,
 } from './relations-contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * EV profile (`FE-024`) and vehicle-customer relationships (`FE-025`).
@@ -90,20 +93,41 @@ const evProfileSchema = z
     evKind: z.enum(EV_KINDS),
     // `numeric` on the column, a NUMBER in the request — the route's Zod schema
     // types it `z.number()`, so a form's string would be a 422.
-    usableCapacityKwh: z.number().positive().nullable().optional(),
-    chargePortType: z.string().trim().min(1).max(60).nullable().optional(),
+    /*
+     * The ROUTE's bounds, not a stricter guess (`P1-27-FE-024`).
+     *
+     * This was `.positive()` while
+     * `apps/api/src/app/api/v1/vehicles/{vehicleId}/ev-profile/route.ts:30`
+     * declares `z.number().min(0).max(MAX_USABLE_CAPACITY_KWH)`. A client bound
+     * tighter than the server's refuses a value the server would have accepted,
+     * with an error the operator cannot act on — exactly what
+     * `components/forms/RecordForm.tsx` says a client bound must never do. Zero
+     * is a real reading: a battery that has been removed, or one recorded as
+     * unknown-and-zero, and the platform stores it.
+     *
+     * The ceiling was also absent here and `60` was a literal where the domain
+     * says 40 (`vehicle-lifecycle.ts:48-49`). Both now come from named constants
+     * so the two sides cannot drift apart silently again.
+     */
+    usableCapacityKwh: z
+      .number()
+      .min(0, 'field.tooShort')
+      .max(MAX_USABLE_CAPACITY_KWH, 'field.tooLong')
+      .nullable()
+      .optional(),
+    chargePortType: z
+      .string()
+      .trim()
+      .min(1, 'field.required')
+      .max(MAX_CHARGE_PORT, 'field.tooLong')
+      .nullable()
+      .optional(),
     highVoltageWarning: z.boolean().optional(),
   })
   .strict();
 
-function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-  }
-  return errors;
-}
+// The private copy stored Zod's own English sentence (`P1-27-FE-004`).
+// `lib/forms/field-errors` is the one authority.
 
 /**
  * `FE-024` — set the EV profile. `veh.vehicle.manage`, idempotent.

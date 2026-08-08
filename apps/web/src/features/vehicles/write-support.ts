@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
 
@@ -37,14 +36,16 @@ export function optionalField(form: FormData, key: string): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
-export function fieldErrorsOf(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const path = issue.path[0];
-    if (typeof path === 'string' && !errors[path]) errors[path] = issue.message;
-  }
-  return errors;
-}
+/*
+ * The shared mapper, re-exported under this module's own name so the vehicle
+ * writes keep one import.
+ *
+ * It used to store `issue.message` — Zod's own English sentence — which
+ * `translateDynamic` renders verbatim because it is not a catalogue key. That
+ * is `P1-27-FE-004`, which was fixed for the customer writes and left standing
+ * in seven other adapters including this one.
+ */
+export { fieldErrorsFrom as fieldErrorsOf } from '@/lib/forms/field-errors';
 
 /** The vehicle id, encoded, so it can never walk to another operation. */
 export function vehicleBase(vehicleId: string): string {

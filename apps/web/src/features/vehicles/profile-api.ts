@@ -15,6 +15,7 @@ import {
   WORKSHOP_STATUSES,
 } from './contract';
 import type { VehicleDetail } from './profile-contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * Vehicle profile reads and writes (`FE-019`).
@@ -63,14 +64,8 @@ const updateSchema = z
   })
   .strict();
 
-function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-  }
-  return errors;
-}
+// The private copy stored Zod's own English sentence (`P1-27-FE-004`).
+// `lib/forms/field-errors` is the one authority.
 
 /**
  * `FE-019` — edit the descriptive master fields. `veh.vehicle.manage`.

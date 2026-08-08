@@ -19,6 +19,7 @@ import {
   type VehicleSearchCriteria,
   type VehicleSearchHit,
 } from './contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * Vehicle search (`FE-017`) and creation (`FE-018`) adapters.
@@ -142,12 +143,7 @@ export async function createVehicleAction(
   });
 
   if (!parsed.success) {
-    const errors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const key = issue.path[0];
-      if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-    }
-    return invalid(errors, attempt);
+    return invalid(fieldErrorsFrom(parsed.error), attempt);
   }
 
   const client = await authorizedClient();

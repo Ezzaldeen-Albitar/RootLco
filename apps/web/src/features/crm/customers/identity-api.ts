@@ -14,6 +14,7 @@ import {
   type HistoryEntry,
   type TimelineEntry,
 } from './identity-contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * Timeline (`FE-015`) and duplicate review (`FE-016`) adapters.
@@ -134,12 +135,7 @@ export async function reviewDuplicateAction(
     reason: String(form.get('reason') ?? ''),
   });
   if (!parsed.success) {
-    const errors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const key = issue.path[0];
-      if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-    }
-    return invalid(errors, attempt);
+    return invalid(fieldErrorsFrom(parsed.error), attempt);
   }
 
   const client = await authorizedClient();

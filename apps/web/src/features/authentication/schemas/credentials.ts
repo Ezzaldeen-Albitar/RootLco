@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isTranslationKey, keyForIssue } from '@/lib/forms/field-errors';
 
 /**
  * Client-side validation of the authentication forms.
@@ -127,7 +128,11 @@ export function issueKeysByField(error: z.ZodError): Record<string, string> {
   const out: Record<string, string> = {};
   for (const issue of error.issues) {
     const field = issue.path[0];
-    if (typeof field === 'string' && !(field in out)) out[field] = issue.message;
+    // Keyed, never Zod's own sentence: every consumer renders this through
+    // `translateDynamic`, which returns a non-key unchanged (`P1-27-FE-004`).
+    if (typeof field === 'string' && !(field in out)) {
+      out[field] = isTranslationKey(issue.message) ? issue.message : keyForIssue(issue);
+    }
   }
   return out;
 }

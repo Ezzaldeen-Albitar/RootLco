@@ -60,6 +60,16 @@ export type EvKind = (typeof EV_KINDS)[number];
  */
 export const MAX_CHARGE_PORT = 40;
 
+/**
+ * `veh.ev_profiles.usable_capacity_kwh` upper bound, mirroring
+ * `MAX_USABLE_CAPACITY_KWH` in `apps/api/src/modules/vehicle/domain/vehicle-lifecycle.ts`.
+ *
+ * Stated once here so the client bound cannot drift tighter than the server's —
+ * which it had (`P1-27-FE-024`): the client demanded a POSITIVE capacity while
+ * the route accepts zero, so it refused a value the platform stores.
+ */
+export const MAX_USABLE_CAPACITY_KWH = 99_999.99;
+
 /** `ck_vehicle_relationships_role`. */
 export const VEHICLE_RELATIONSHIP_ROLES = [
   'owner',
