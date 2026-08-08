@@ -427,6 +427,7 @@
   "field.amount": "Amount",
   "field.attachment": "Attachment",
   "field.date": "Date",
+  "field.invalid": "This value is not accepted here.",
   "field.name": "Name",
   "field.nameHint": "A short label for this fixture.",
   "field.notAnInteger": "Enter a whole number.",

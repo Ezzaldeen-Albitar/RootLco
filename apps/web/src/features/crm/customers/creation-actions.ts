@@ -3,12 +3,14 @@
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
+import { fieldErrorsFrom } from './action-support';
 import {
   CREATABLE_LIFECYCLE_STATUSES,
   MAX_COMPANY_NAME,
   MAX_PERSON_NAME,
   type CreatedCustomer,
 } from './creation-contract';
+import { MAX_PREFERRED_LOCALE, MIN_PREFERRED_LOCALE } from './governance-contract';
 
 /**
  * Customer creation (`P1-27-FE-004`, `P1-27-FE-005`) and the duplicate warning
@@ -43,16 +45,41 @@ export interface CreationState extends ActionState {
 
 const lifecycle = z.enum(CREATABLE_LIFECYCLE_STATUSES);
 
+/*
+ * Every bound carries a translation key (`P1-27-FE-004`).
+ *
+ * `preferredLocale` was `.min(2)` with no key, and `.min(2)` is the one bound an
+ * operator can actually reach: the input's `maxLength` stops them exceeding the
+ * ceiling, and nothing at all stops them typing a single character. So a locale
+ * of one character produced Zod's own English sentence, which
+ * `fieldErrorsFrom` stores verbatim and `translateDynamic` returns unchanged
+ * because it is not a catalogue key — printing English library prose under an
+ * Arabic label.
+ *
+ * The keys are supplied unconditionally rather than only where a bound looks
+ * reachable. "This one cannot be hit" is a claim about a form that can change,
+ * made in a file that would not change with it, and it was already wrong once.
+ */
 const individualSchema = z.object({
-  givenName: z.string().trim().min(1, 'field.required').max(MAX_PERSON_NAME),
-  familyName: z.string().trim().min(1, 'field.required').max(MAX_PERSON_NAME),
-  preferredLocale: z.string().trim().min(2).max(10).nullable(),
+  givenName: z.string().trim().min(1, 'field.required').max(MAX_PERSON_NAME, 'field.tooLong'),
+  familyName: z.string().trim().min(1, 'field.required').max(MAX_PERSON_NAME, 'field.tooLong'),
+  preferredLocale: z
+    .string()
+    .trim()
+    .min(MIN_PREFERRED_LOCALE, 'field.tooShort')
+    .max(MAX_PREFERRED_LOCALE, 'field.tooLong')
+    .nullable(),
   lifecycleStatus: lifecycle,
 });
 
 const companySchema = z.object({
-  legalName: z.string().trim().min(1, 'field.required').max(MAX_COMPANY_NAME),
-  tradeName: z.string().trim().min(1).max(MAX_COMPANY_NAME).nullable(),
+  legalName: z.string().trim().min(1, 'field.required').max(MAX_COMPANY_NAME, 'field.tooLong'),
+  tradeName: z
+    .string()
+    .trim()
+    .min(1, 'field.required')
+    .max(MAX_COMPANY_NAME, 'field.tooLong')
+    .nullable(),
   lifecycleStatus: lifecycle,
 });
 
@@ -62,19 +89,17 @@ function optional(form: FormData, key: string): string | null {
   return value.length > 0 ? value : null;
 }
 
-function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const path = issue.path[0];
-    if (typeof path === 'string' && !errors[path]) {
-      // The message is a translation KEY where the schema supplied one, and Zod's
-      // own text otherwise — which only happens for the bounds, where the form's
-      // `maxLength` has already stopped the operator anyway.
-      errors[path] = issue.message;
-    }
-  }
-  return errors;
-}
+/*
+ * `fieldErrorsFrom` comes from `action-support.ts`; this file used to carry its
+ * own copy.
+ *
+ * The two copies were identical and then were not. The shared one gained the
+ * fallback that turns an unkeyed Zod message into a catalogue key, and this one
+ * did not — so the customer CREATE form was the one place that still rendered
+ * English library prose to an Arabic operator (`P1-27-FE-004`), which is
+ * precisely the drift the note in `governance-actions.ts` warned a second copy
+ * would produce.
+ */
 
 export async function createIndividualAction(
   previous: CreationState,
