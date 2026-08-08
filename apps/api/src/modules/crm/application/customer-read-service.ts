@@ -48,6 +48,7 @@ import {
   type ConsentEntry,
   type ContactPointEntry,
   type CustomerDetailRow,
+  type CustomerDisplayIdentity,
   type CustomerReadRepository,
   type NoteEntry,
   type PreferenceEntry,
@@ -92,6 +93,42 @@ export class CustomerReadService extends ApplicationService {
       throw new AppFailure('ERR-RES-001', { message: 'Customer was not found' });
     }
     return customer;
+  }
+
+  /**
+   * Display identity for a set of partner ids — the CRM module's answer to
+   * "who is this?" for a module that legitimately holds partner ids and must not
+   * show them (`P1-27-INT-025`).
+   *
+   * Exposed on the module's PUBLIC surface so the vehicle module can compose it
+   * rather than reaching into `crm.business_partners` with its own SQL. No `veh`
+   * repository touches a CRM table today, and adding the first cross-schema join
+   * inside a bug fix would set a precedent that outlives the fix.
+   *
+   * Unlike `readCustomer` this does NOT throw for an id it cannot resolve. A
+   * relationship may reference a partner the caller cannot see, and that is a
+   * sentence for the screen to say, not a request to fail. Unresolved ids are
+   * absent from the map.
+   *
+   * ## It narrows, and never widens
+   *
+   * The calling operations are guarded by `veh.vehicle.read`, not by
+   * `crm.customer.read`. Resolving unconditionally would therefore hand a CRM
+   * name to a caller `veh-ownership-visibility-matrix.md:49` grants only an
+   * opaque uuid — a widening, and the matrix reserves widening to the Owner
+   * (`:36-37`). So the CRM capability is checked first and an unentitled caller
+   * gets an EMPTY map: exactly the information they have today, rendered as a
+   * sentence instead of an identifier.
+   *
+   * One extra statement per page, and only when there is something to resolve.
+   */
+  async resolveDisplayIdentities(
+    db: DbHandle,
+    partnerIds: readonly string[]
+  ): Promise<ReadonlyMap<string, CustomerDisplayIdentity>> {
+    if (partnerIds.length === 0) return new Map();
+    if (!(await this.reads.mayReadCustomers(db))) return new Map();
+    return this.reads.findDisplayIdentities(db, partnerIds);
   }
 
   async listContacts(

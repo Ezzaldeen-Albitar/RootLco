@@ -65,6 +65,34 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-27-frontend': {
+    why: 'P1-27 is a Frontend phase',
+    // Identical rules to `p1-26-frontend`, declared under its own name because a
+    // phase that borrows another phase's profile is not declaring anything. The
+    // gate defaults to `p1-26-frontend` when no profile is given, which is how
+    // P1-27 came to be measured against P1-26's declaration for its whole life.
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through a Backend remediation',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      migrations: 'a Frontend phase must not change a migration',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-27-backend-partner-identity': {
+    why: 'the P1-27-INT-025 partner-identity Backend remediation, split out of the Frontend branch',
+    allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      // `web` forbidden on purpose, for the same reason `backend-login-contract`
+      // forbids it: this change exists BECAUSE seven API source files were
+      // riding inside a Frontend branch where no Backend gate saw them. A
+      // profile that permitted both halves would reopen the hole it closes.
+      web: 'the partner-identity remediation is Backend-only — the Frontend half is a separate change',
+      migrations: 'the partner-identity remediation must not change a migration',
+      supabase: 'the partner-identity remediation must not change the database',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig', 'web'],
@@ -147,8 +175,26 @@ export function evaluate(changed, profileName) {
 }
 
 function main() {
-  const profileName = process.argv[2] ?? 'p1-26-frontend';
-  const base = process.argv[3] ?? 'origin/develop';
+  /*
+   * Profile selection: argument, then environment, then the default.
+   *
+   * `PHASE_OWNERSHIP_PROFILE` exists because the npm script that invokes this
+   * gate — `validate:phase-ownership` — passes no argument, so every caller got
+   * `p1-26-frontend` whatever branch they were on. That is not a nuisance: on a
+   * BACKEND branch the default forbids `apiSource`, so the gate cannot pass at
+   * all, and the two P1-27 profiles below were reachable from no script and no
+   * workflow. A profile nothing can select is a declaration, not a gate — which
+   * is this phase's own recurring defect, in its own tooling.
+   *
+   * The env var lets one CI job select the profile per branch without a script
+   * per profile. What is still MISSING is that job: grep of `.github/` for
+   * `phase-ownership` returns nothing, so this gate runs only when a human runs
+   * it. Recorded as `P1-27-DO-003` rather than fixed here, because adding a
+   * repository-wide CI job at the end of a Frontend remediation would gate every
+   * other phase's pull requests on a rule nobody has agreed to yet.
+   */
+  const profileName = process.argv[2] ?? process.env.PHASE_OWNERSHIP_PROFILE ?? 'p1-26-frontend';
+  const base = process.argv[3] ?? process.env.PHASE_OWNERSHIP_BASE ?? 'origin/develop';
 
   let changed = [];
   try {

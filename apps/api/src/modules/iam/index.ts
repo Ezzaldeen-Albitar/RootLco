@@ -39,6 +39,7 @@ import { DelegationPolicy } from './domain/delegation-policy';
 import { CredentialPolicy } from './domain/credential-policy';
 
 import { AuthenticationService } from './application/authentication-service';
+import { IdentityDirectoryService } from './application/identity-directory-service';
 import { InvitationService } from './application/invitation-service';
 import { UserAdministrationService } from './application/user-administration-service';
 import { AccessAdministrationService } from './application/access-administration-service';
@@ -71,6 +72,15 @@ export { ROLE_ORDERING } from './data/authorization-repository';
 export { AUDIT_ORDERING } from './data/audit-repository';
 export type { LoginResult, SessionSummary } from './application/authentication-service';
 export type { UserView, UserDetailView } from './application/user-administration-service';
+/**
+ * The identity projection a ledger needs to name an actor (`P1-27-INT-026`).
+ *
+ * Two fields, `id` and `displayName`. Published so a module holding an actor id
+ * can compose `iamDirectory().directory.resolveDisplayIdentities` rather than
+ * joining `iam.user_accounts` itself — the same shape as the CRM module's
+ * partner-identity surface.
+ */
+export type { UserDisplayIdentity } from './data/identity-repository';
 export type { SettingView, TenantSettingsView } from './application/organization-settings-service';
 
 /**
@@ -127,6 +137,55 @@ export function installIamRuntime(): IdentityProvider {
   setSessionAuthenticator(new BearerSessionAuthenticator(provider));
   return provider;
 }
+
+/**
+ * The provider-free composition root (`P1-27-INT-026`).
+ *
+ * ## Why there are two roots for one module
+ *
+ * `iamModule()` below calls `installIamRuntime()`, which builds the Supabase
+ * adapter from configuration and reads `clientEnv()`. That is right for the
+ * authentication and administration surfaces, which cannot work without a
+ * provider — and wrong for a caller that only wants to turn an actor id into a
+ * name. Composing `iamModule()` for that makes an unrelated domain read depend
+ * on `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and answer
+ * `ERR-SYS-001` wherever they are unset.
+ *
+ * Measured, not feared: wiring the vehicle history read to `iamModule()` turned
+ * two green backend tests into 500s. And the repository already knew — the P1-20
+ * discount-approval work refused to route a permission check through
+ * `@/modules/iam` for exactly this reason, twice, in
+ * `server/auth/authorization.ts:171-174` and `:232-233`. It routed around the
+ * wall; this removes it.
+ *
+ * `composeModule` memoises per closure rather than per module name, so the two
+ * roots are independent and neither can boot the other. `iamModule()` is
+ * unchanged: every existing consumer, and the authenticator installation that
+ * depends on it, behaves exactly as before.
+ *
+ * Nothing that needs an `IdentityProvider` may be added here, and that rule is
+ * held by a TEST, not by the compiler.
+ *
+ * An earlier version of this paragraph claimed otherwise — "a service that
+ * needed a provider could not be constructed in this factory without the type
+ * system objecting". It can. `IdentityDirectoryService`'s constructor takes only
+ * the repository, but nothing stops a SECOND, provider-taking service being
+ * added to the object below; a reviewer compiled exactly that mutation. What
+ * catches it is `tests/foundation/iam-directory-composition.test.ts`, which
+ * composes this root with every provider variable unset and asserts it does not
+ * throw — and asserts, in the same file, that `iamModule()` under the identical
+ * environment still does. Adding `installIamRuntime()` here fails four of its
+ * five cases.
+ *
+ * Recording that distinction matters: a comment claiming a compiler guarantee
+ * that does not exist is how this phase's defects have repeatedly survived.
+ */
+export const iamDirectory = composeModule({
+  module: 'iam',
+  create: () => ({
+    directory: new IdentityDirectoryService(new IdentityRepository()),
+  }),
+});
 
 /**
  * Composition root. Services are constructed once per process; the provider is
