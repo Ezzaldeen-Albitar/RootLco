@@ -53,47 +53,48 @@ All 33 are adjudicated below.
 
 ## Summary
 
-| task      | verdict               | status          | root             |
-| --------- | --------------------- | --------------- | ---------------- |
-| `FE-002`  | `REAL_P1_27_DEFECT`   | FIXED `600f70e` | itself           |
-| `FE-003`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-004`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-007`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-008`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-009`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-010`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-013`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-015`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-016`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-017`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-018`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-019`  | `REAL_P1_27_DEFECT`   | FIXED `8daf8e9` | itself           |
-| `FE-020`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-021`  | `DUPLICATE_FINDING`   | FIXED `8daf8e9` | `FE-019`         |
-| `FE-022`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-023`  | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `FE-024`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-026`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-028`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-029`  | `REAL_P1_27_DEFECT`   | BLOCKED         | P1-14 backend PR |
-| `SEC-001` | `REAL_P1_27_DEFECT`   | FIXED `915b861` | itself           |
-| `SEC-002` | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `SEC-003` | `DUPLICATE_FINDING`   | FIXED `915b861` | `SEC-001`        |
-| `SEC-004` | `TEST_OR_GATE_DEFECT` | FIXED `600f70e` | itself           |
-| `QA-001`  | `REAL_P1_27_DEFECT`   | OPEN (partial)  | itself           |
-| `QA-002`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `QA-003`  | `TEST_OR_GATE_DEFECT` | OPEN            | itself           |
-| `QA-005`  | `TEST_OR_GATE_DEFECT` | OPEN            | itself           |
-| `DO-002`  | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `DOC-001` | `TEST_OR_GATE_DEFECT` | OPEN (partial)  | itself           |
-| `DOC-002` | `REAL_P1_27_DEFECT`   | OPEN            | itself           |
-| `FE-001`  | `DUPLICATE_FINDING`   | FIXED `600f70e` | `FE-002`         |
+| task      | verdict                | status           | root             |
+| --------- | ---------------------- | ---------------- | ---------------- |
+| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`  | itself           |
+| `FE-003`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`  | itself           |
+| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`  | itself           |
+| `FE-015`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-016`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-017`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-018`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`  | itself           |
+| `FE-020`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `8daf8e9`  | `FE-019`         |
+| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `FE-024`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-026`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-028`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-029`  | `REAL_P1_27_DEFECT`    | BLOCKED          | P1-14 backend PR |
+| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`  | itself           |
+| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence` | itself           |
+| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`  | `SEC-001`        |
+| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`  | itself           |
+| `QA-001`  | `REAL_P1_27_DEFECT`    | OPEN (partial)   | itself           |
+| `QA-002`  | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `QA-003`  | `TEST_OR_GATE_DEFECT`  | OPEN             | itself           |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN             | itself           |
+| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed | itself           |
+| `DOC-001` | `TEST_OR_GATE_DEFECT`  | OPEN (partial)   | itself           |
+| `DOC-002` | `REAL_P1_27_DEFECT`    | OPEN             | itself           |
+| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`  | `FE-002`         |
 
 ```
-ADJUDICATED = 33
-FIXED       = 11
-BLOCKED     =  1
-OPEN        = 21
+ADJUDICATED       = 33
+FIXED             = 14
+NO_CHANGE_NEEDED  =  1
+BLOCKED           =  1
+OPEN              = 17
 ```
 
 ---
@@ -234,6 +235,97 @@ The auditor's second half — that the sweep roots exclude
 `components/forms/RecordForm.tsx`, `lib/customers/directory.ts` and
 `features/vehicles/write-support.ts` — is **still open** and is carried into
 `QA-002` below rather than being reported as fixed.
+
+### `FE-004` — `REAL_P1_27_DEFECT` — FIXED `b6ce9ae`
+
+**Auditor claim.** A reachable input renders untranslated English library prose as
+a field error, in Arabic as well as English: `preferredLocale` is
+`.min(2)` with no translation key, and Zod's default sentence is stored and
+rendered unchanged.
+
+**Reproduction.** Confirmed against the file. The comment beside the mapper
+argued it could not happen — untranslated text appears "only ... for the bounds,
+where the form's `maxLength` has already stopped the operator anyway" — which is
+true of the ceilings and false of the one floor an operator can reach by typing
+FEWER characters.
+
+The defect is wider than the reported field. A sweep of the customer and vehicle
+write schemas found unkeyed bounds in `profile-actions.ts` (5),
+`governance-actions.ts` (4) and a dozen vehicle adapters, each reachable or not
+depending on whether a form three files away sets a matching `maxLength`.
+
+**Verdict.** `REAL_P1_27_DEFECT`. Keys added at the schemas, and
+`fieldErrorsFrom` now maps any unkeyed message to a catalogue key by issue code —
+so the class is closed, not the instance. The private second copy of
+`fieldErrorsFrom` in `creation-actions.ts` is gone; it was the reason the create
+form would have kept the defect after the shared mapper was fixed.
+
+### `FE-013` — `REAL_P1_27_DEFECT` — FIXED `c415432`
+
+**Auditor claim.** The test cited as `FE-013`'s coverage calls `validateTag`,
+which no production code imports, and would pass with the tag write deleted.
+
+**Reproduction.** Confirmed, and it is ten functions rather than one.
+`validateNote`, `validateAlert`, `validateRestriction`, `validateTag`,
+`validatePreference`, `validateConsent`, `validateText`, `optionalText`,
+`validateIndividual` and `validateCompany` each had exactly one reference in
+`apps/web/src`: their own definition.
+
+**Verdict.** `REAL_P1_27_DEFECT`, and the same defect underneath the coverage
+complaint against `FE-009`…`FE-014`. Deleted rather than wired: they contradicted
+a decision recorded in `components/forms/RecordForm.tsx`, and had already drifted
+from the server they mirrored — `validateIndividual` emitted
+`crm.customers.create.tooLong` where the action emits `field.tooLong`.
+`governance-write-validation.test.ts` (18) replaces them by driving the eight
+write actions with real `FormData`.
+
+### `SEC-002` — `AUDIT_FALSE_NEGATIVE` — evidence corrected
+
+**Auditor claim.** The browser half of the two-policy scope split is dead code:
+`FORBIDDEN_URL_KEYS`, `isForbiddenUrlKey`, `toSearchParams` and
+`fromSearchParams` have zero production call sites, and the test that proves the
+split would pass with the whole phase deleted.
+
+**Reproduction.** Half right, and the half that is wrong matters.
+`isForbiddenUrlKey` IS live: `carriableSearchParams` calls it, and the locale
+switcher calls that on every page to preserve page and sort across a language
+change — so the deny-list guards the one place table state does cross a
+navigation. Two of the four identifiers are reachable; the audit reported all
+four as dead.
+
+`toSearchParams` and `fromSearchParams` genuinely have no caller, and the reason
+is the strongest possible one: **no screen publishes table state to the URL at
+all.** Both search screens hold their criteria in React state and mount the table
+with `INITIAL_REQUEST`, so a customer's name or a VIN is never a candidate for
+the query string. That is a stronger guarantee than a deny-list, not a weaker
+one.
+
+**Verdict.** `AUDIT_FALSE_NEGATIVE` on the product. The auditor's point about the
+EVIDENCE stands, though: the assertion credited a filter that never runs, and
+would indeed have passed with both search screens deleted. So a second assertion
+now proves the structural guarantee — no P1-27 file references a URL publisher —
+and exercises the live deny-list through `carriableSearchParams`. Mutation-proved:
+importing `toSearchParams` into one search screen fails it.
+
+### `DO-002` — `AUDIT_FALSE_NEGATIVE` — no change needed
+
+**Auditor claim.** The verdict should be FAIL because `currentAdapter()` returns
+a module-level `adapter` which nothing sets in production, so the single
+`report()` call site delivers nowhere.
+
+**Reproduction.** The fact is true and it is the documented design.
+`client-log.ts` opens by saying "No external monitoring service is configured, and
+none is claimed to be operational. What exists is the **adapter boundary**", and
+`observability.test.ts` asserts it by name: "is null until a deployment attaches
+one". The task register lists that assertion as `DO-002`'s own evidence.
+
+`DO-002`'s P1-27 obligation, per the register, is that nothing in either feature
+tree writes to the console — enforced by the `no-console-output` rule in
+`validate:p1-27-frontend`, currently green over 43 files.
+
+**Verdict.** `AUDIT_FALSE_NEGATIVE`. The refutation restates an intended,
+asserted, documented property as a defect. Attaching a monitoring provider is a
+deployment decision and inventing one here would be the actual error.
 
 ---
 

@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import { companyFilterQuery, query } from '@/lib/api/read-operation';
-import { FORBIDDEN_URL_KEYS, toSearchParams } from '@/components/data-table/table-state';
+import {
+  carriableSearchParams,
+  FORBIDDEN_URL_KEYS,
+  isForbiddenUrlKey,
+  toSearchParams,
+} from '@/components/data-table/table-state';
 
 /**
  * `P1-27-SEC-001` … `P1-27-SEC-004` — the security obligations of this phase's
@@ -201,8 +206,7 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
     // a mistake in one direction or the other.
     //
     // The BROWSER url is history, proxy logs and the `Referer` header, so a VIN,
-    // a plate or a customer's phone number must never reach it — `FORBIDDEN_URL_KEYS`
-    // refuses them and `toSearchParams` drops them.
+    // a plate or a customer's phone number must never reach it.
     //
     // The API url is one TLS hop to the backend, and a VIN search criterion has
     // to travel on it or vehicle search cannot work at all. Blocking `vin` there
@@ -218,6 +222,43 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
     ).toBe('');
     // And the API path does carry it, which is the point of the distinction.
     expect(query({ vin: 'JH4KA7561PC008269' })).toBe('?vin=JH4KA7561PC008269');
+  });
+
+  it('publishes NO table state to the address bar at all, which is why the above holds', () => {
+    /*
+     * The assertion before this one describes a filter, and a filter is not what
+     * protects the address bar today.
+     *
+     * `toSearchParams` has no production caller: no screen publishes its table
+     * request to the URL. Both search screens keep their criteria in React state
+     * (`draft` / `committed`) and mount the table with `INITIAL_REQUEST`, so a
+     * customer's name or a VIN is never a candidate for the query string in the
+     * first place. That is a stronger guarantee than a deny-list — a deny-list is
+     * a promise to have thought of every dangerous name in advance — and it is
+     * the guarantee `SEC-002` actually rests on.
+     *
+     * Asserting it structurally matters because the previous case, alone, would
+     * pass with both search screens deleted. This one would not.
+     *
+     * `isForbiddenUrlKey` is NOT dead, and an audit of this task reported that it
+     * was. It is called by `carriableSearchParams`, which the locale switcher
+     * calls on every page to preserve page and sort across a language change —
+     * so the deny-list guards the one place table state DOES cross a navigation.
+     */
+    const writers = PHASE_FILES.filter(({ source }) =>
+      /toSearchParams|history\.(push|replace)State|window\.location\.search\s*=/.test(source)
+    );
+    expect(
+      writers.map((f) => f.path),
+      'a P1-27 screen started publishing table state to the URL'
+    ).toEqual([]);
+
+    // And the live deny-list is genuinely applied where table state DOES travel.
+    expect(isForbiddenUrlKey('search')).toBe(true);
+    expect(isForbiddenUrlKey('customer_name')).toBe(true);
+    expect(carriableSearchParams('page=3&sort=name&search=Nadia&vin=JH4').toString()).toBe(
+      'page=3&sort=name'
+    );
   });
 
   it('calls no export operation anywhere in this phase', () => {
