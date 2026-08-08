@@ -54,12 +54,27 @@ cannot classify: **27 canonical / 23 REACHABLE / 4 DELIBERATELY_ABSENT / 0
 BLOCKED / 0 UNCLASSIFIED**. A hand-written list would have omitted the next new
 operation, which is the defect the gate exists to catch.
 
-### D2 — partner identity
+### D2 — partner identity (Frontend here, Backend on a SEPARATE branch)
 
 Relationship and ownership rows printed a uuid under a heading that said "owner".
 `PartyLabel` names the party or says it cannot; `Named<T>` makes the three
 identity fields required-and-nullable, so a read that forgets to resolve them
 does not compile.
+
+**The Backend half was riding inside this Frontend branch and has been split
+out.** `npm run validate:phase-ownership` failed with seven `apiSource`
+violations — a Backend change reviewed as Frontend is reviewed by nobody and
+gated by nothing, which is the entire reason that gate exists. The seven files
+are now `remediation/p1-27-backend-partner-identity`, pushed, with the Backend
+test they shipped without: every web test mocks the adapter, so the whole
+resolution path could have returned an empty map and the Frontend suite would
+have stayed green.
+
+**That branch merges FIRST.** Between the two merges the operation publishes no
+name and `PartyLabel` says "Customer unavailable" — the honest state, and the
+component was hardened to treat an ABSENT field the same as a null one, because
+the row arrives as a typed cast rather than a parse and `=== null` would have
+rendered an empty cell instead.
 
 ### D3 — actor identity (Backend, NOT MERGED)
 

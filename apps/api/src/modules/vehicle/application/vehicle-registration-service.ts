@@ -30,7 +30,6 @@ import {
   type OwnershipTransferInput,
   type PlateAssignInput,
 } from '../domain/vehicle-registration';
-import { namePartners, type Named } from './partner-identity';
 
 export interface PlateAssigned {
   readonly vehicleId: string;
@@ -162,26 +161,15 @@ export class VehicleRegistrationService extends ApplicationService {
     return { vehicleId, ownershipId, ownershipKind: plan.ownershipKind };
   }
 
-  /**
-   * A vehicle's ownership history, each owner **named** (`P1-27-INT-025`).
-   *
-   * The same defect as the relationships list, on the screen where it reads
-   * worst: a column headed "owner" containing a uuid. `veh.ownership_history`
-   * stores a `partner_id` and no name, so the party is resolved through the CRM
-   * module's public surface rather than by a cross-schema join.
-   */
-  async listOwnerships(
+  listOwnerships(
     db: DbHandle,
     vehicleId: string,
     page: PageInput
-  ): Promise<Page<Named<OwnershipHistoryHit>>> {
-    return namePartners(
+  ): Promise<Page<OwnershipHistoryHit>> {
+    return this.registration.listOwnerships(
       db,
-      await this.registration.listOwnerships(
-        db,
-        vehicleId,
-        pageRequest(OWNERSHIP_HISTORY_ORDERING, page)
-      )
+      vehicleId,
+      pageRequest(OWNERSHIP_HISTORY_ORDERING, page)
     );
   }
 

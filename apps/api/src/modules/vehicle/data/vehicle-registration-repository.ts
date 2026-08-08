@@ -40,11 +40,6 @@ export interface PlateHistoryHit {
   readonly active: boolean;
   readonly createdAt: string;
 }
-/**
- * One ownership row as this repository reads it — a partner *id* and no partner
- * *name*, because `veh` owns no CRM table. The service names the party through
- * the CRM module's public surface (`namePartners`, `P1-27-INT-025`).
- */
 export interface OwnershipHistoryHit {
   readonly id: string;
   readonly partnerId: string;

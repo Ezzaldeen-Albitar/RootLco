@@ -163,6 +163,23 @@ describe('PartyLabel on its own, because the rule lives in one component', () =>
     expect(container.textContent ?? '').not.toContain('null');
   });
 
+  it('says the same sentence when the field is ABSENT, not merely null', () => {
+    /*
+     * The type requires all three fields, but the row arrives from the network
+     * as a typed CAST rather than a parse — so a backend that does not publish
+     * them yet sends `undefined`. A `=== null` check would fall through to the
+     * named branch and render an EMPTY cell, which says nothing at all.
+     *
+     * This is a real window, not a hypothetical: the Backend half of
+     * `P1-27-INT-025` is a separate pull request that merges FIRST, and between
+     * the two merges this is exactly the shape that arrives.
+     */
+    const absent = {} as unknown as Parameters<typeof PartyLabel>[0]['party'];
+    renderLtr(<PartyLabel messages={en} party={absent} />);
+    expect(screen.getByTestId('party-unavailable')).toBeInTheDocument();
+    expect(screen.getByText(en['party.unavailable'])).toBeInTheDocument();
+  });
+
   it('renders a name with no reference and no type without printing null', () => {
     const { container } = renderLtr(
       <PartyLabel

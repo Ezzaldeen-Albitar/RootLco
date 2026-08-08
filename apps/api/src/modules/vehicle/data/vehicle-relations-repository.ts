@@ -24,16 +24,6 @@ import {
 export interface RelationsVehicleState {
   readonly lifecycleStatus: string;
 }
-/**
- * One relationship row as this repository reads it — with a partner *id* and no
- * partner *name*, because `veh` owns no CRM table.
- *
- * The name is added by the service through the CRM module's public surface
- * (`namePartners`, `P1-27-INT-025`), which returns `Named<RelationshipHit>`.
- * Declaring the name fields here as optional was the earlier shape and it was
- * unsound: an un-named row satisfied the published type, so a read that forgot
- * to resolve would compile and ship the uuid.
- */
 export interface RelationshipHit {
   readonly id: string;
   readonly partnerId: string;

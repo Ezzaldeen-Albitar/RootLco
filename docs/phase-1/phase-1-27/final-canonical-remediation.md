@@ -291,6 +291,33 @@ These are recorded rather than fixed. Fixing twenty-one findings inside this
 remediation would repeat the mistake that produced them: a large change reported
 green because the checks that would contradict it were not the ones run.
 
+### The D2 Backend half was riding inside this Frontend branch
+
+Found by running the full gate set, not by review. `npm run validate:phase-ownership`
+failed with **seven `apiSource` violations** — 290 insertions across
+`customer-read-service.ts`, `customer-read-repository.ts`, `partner-identity.ts`,
+`vehicle-registration-service.ts`, `vehicle-relations-service.ts` and the two
+repositories beneath them — introduced by three commits made before this
+remediation began.
+
+The gate's own message is the instruction: "a Frontend phase must not change API
+source — route it through a Backend remediation." That is now
+`remediation/p1-27-backend-partner-identity`, pushed, carrying the seven files,
+the Backend test they shipped without, and two ownership profiles: one so that
+branch can gate itself, and `p1-27-frontend` because the gate DEFAULTS to
+`p1-26-frontend`, so P1-27 was measured against another phase's declaration for
+its entire life.
+
+**Merge order is Backend first.** Between the two merges the two vehicle lists
+publish no partner name and read "Customer unavailable" — the honest state, and
+`PartyLabel` was hardened to treat an absent field the same as a null one so the
+window shows a sentence rather than an empty cell.
+
+The finding worth keeping is not the split. It is that a Backend change reached
+three merges to `develop` with **no Backend test of any kind**, and nothing
+noticed, because every web test mocks the adapter: the resolution path could
+have returned an empty map and 1144 web tests would still have passed.
+
 ---
 
 ## 8. What remains before the Owner can accept

@@ -49,7 +49,20 @@ export function PartyLabel({
   readonly party: PartyIdentity;
   readonly className?: string;
 }) {
-  if (party.partnerName === null) {
+  // `== null`, so `undefined` lands here too.
+  //
+  // The TYPE requires the three fields, and that guarantee is worth keeping —
+  // it is what stops a future read shipping the uuid again. But the row arrives
+  // from the network as a typed CAST, not a parse, so a backend that does not
+  // yet publish the field sends `undefined` and `=== null` would fall through to
+  // the named branch and render an EMPTY cell. An empty cell says nothing at
+  // all, which is worse than the sentence and worse than the identifier.
+  //
+  // This is not hypothetical: the Backend half of `P1-27-INT-025` is a separate
+  // pull request, so between its merge and the Frontend's there is a window in
+  // which exactly that happens. The vehicle attribute-ledger actor cell already
+  // uses `== null` for the same reason.
+  if (party.partnerName == null) {
     return (
       <span
         data-testid="party-unavailable"
