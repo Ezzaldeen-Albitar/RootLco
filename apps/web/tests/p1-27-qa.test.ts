@@ -37,6 +37,15 @@ const vehRelations = await import('@/features/vehicles/relations-api');
 const vehDuplicates = await import('@/features/vehicles/duplicates-api');
 const vehApi = await import('@/features/vehicles/api');
 const crmApi = await import('@/features/crm/customers/api');
+const crmGovernance = await import('@/features/crm/customers/governance-actions');
+const crmProfileActions = await import('@/features/crm/customers/profile-actions');
+
+/** A FormData from a plain object, so a write can be driven from a table. */
+function formOf(values: Record<string, string>): FormData {
+  const data = new FormData();
+  for (const [k, v] of Object.entries(values)) data.append(k, v);
+  return data;
+}
 
 const REQUEST = { pageSize: 25 } as never;
 
@@ -344,8 +353,64 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
         correlationId: 'c',
       });
       await adapter.call();
-      const path = String(get.mock.calls[0]?.[0] ?? '');
-      expect(path, adapter.name).not.toMatch(/tenant|company|branch/i);
+      // The positive control. `?? ''` made "no request at all" pass as "no
+      // scope" — an adapter that silently stopped calling the client would have
+      // satisfied this loop perfectly. Assert the call happened FIRST, then
+      // assert what it contained.
+      expect(get, `${adapter.name} issued no request`).toHaveBeenCalledTimes(1);
+      // The whole call, not argument zero: a scope smuggled into the options
+      // object would never appear in the path.
+      const call = JSON.stringify(get.mock.calls[0]);
+      expect(call, adapter.name).not.toMatch(/tenant|company|branch/i);
+    }
+  });
+
+  it('sends no scope in any write BODY either', async () => {
+    /*
+     * The reads were swept; the writes were not, and a scope asserted in a JSON
+     * body is exactly as wrong as one in a query string. `send` was already
+     * mocked in this file and never asserted on.
+     *
+     * Driven through the real write adapters, so a body assembled by a future
+     * edit is covered without anyone remembering to add it here.
+     */
+    const WRITES: readonly { name: string; call: () => Promise<unknown> }[] = [
+      {
+        name: 'addNoteAction',
+        call: () =>
+          crmGovernance.addNoteAction(
+            'c1',
+            { status: 'idle' } as never,
+            formOf({ body: 'A note about the visit.' })
+          ),
+      },
+      {
+        name: 'addContactAction',
+        call: () =>
+          crmProfileActions.addContactAction(
+            'c1',
+            { status: 'idle' } as never,
+            formOf({ channel: 'email', value: 'a@b.test' })
+          ),
+      },
+      {
+        name: 'assignPlateAction',
+        call: () =>
+          vehHistory.assignPlateAction(
+            'v1',
+            { status: 'idle' } as never,
+            formOf({ countryCode: 'JO', plateRaw: '12-3456', validFrom: '2026-01-01' })
+          ),
+      },
+    ];
+
+    for (const write of WRITES) {
+      send.mockReset();
+      send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+      await write.call();
+      expect(send, `${write.name} issued no request`).toHaveBeenCalledTimes(1);
+      const call = JSON.stringify(send.mock.calls[0]);
+      expect(call, write.name).not.toMatch(/tenant|company|branch/i);
     }
   });
 
