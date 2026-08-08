@@ -14,7 +14,13 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import {
   CUSTOMER_SEARCH_ORDERING,
   type CustomerLifecycleStatus,
@@ -30,6 +36,18 @@ interface CustomerRow {
   readonly party_type: CustomerPartyType;
   readonly lifecycle_status: CustomerLifecycleStatus;
   readonly created_at: Date;
+  /**
+   * `created_at` to microsecond precision, as text, for the cursor only.
+   *
+   * Separate from the published `createdAt` on purpose. `node-postgres` parses
+   * `timestamptz` into a JS `Date`, which holds milliseconds — so
+   * `created_at.toISOString()` silently truncates the three microsecond digits
+   * PostgreSQL stores. A cursor built from the truncated value compares
+   * `'…:00.123Z' < '…:00.123456Z'` and the keyset predicate then skips every row
+   * that shares the millisecond with the last row of the page. That is
+   * `P1-27-INT-006`, and this column is what stops it.
+   */
+  readonly created_at_cursor: string;
 }
 
 function toHit(row: CustomerRow): CustomerSearchHit {
@@ -39,6 +57,8 @@ function toHit(row: CustomerRow): CustomerSearchHit {
     displayName: row.display_name,
     partyType: row.party_type,
     lifecycleStatus: row.lifecycle_status,
+    // Millisecond ISO is the right shape for the PUBLISHED field; it is only the
+    // cursor that must not be built from it.
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -91,16 +111,24 @@ export class CustomerSearchRepository extends Repository {
     values.push(...keyset.values);
 
     const sql = `
-      SELECT id, display_number, display_name, party_type, lifecycle_status, created_at
+      SELECT id, display_number, display_name, party_type, lifecycle_status, created_at,
+             ${cursorTimestamp('created_at')} AS created_at_cursor
         FROM crm.business_partners
        WHERE ${where.join(' AND ')} ${keyset.predicate}
        ${keyset.order}
        ${keyset.limitClause}`;
 
     const result = await this.run<CustomerRow>(db, sql, values);
-    return buildPage(result.rows.map(toHit), page, CUSTOMER_SEARCH_ORDERING, (hit) => ({
-      sortValue: hit.createdAt,
-      id: hit.id,
+    // `buildPageWithCursors`, not `buildPage`: the cursor key is deliberately NOT
+    // a field of the published item, so no reader can assume the two strings are
+    // the same. Every sibling CRM list was converted by the `P1-27-INT-006` fix;
+    // this one was missed because the sweep checked the Wave 7-21 operation list
+    // and `crm.customer-search` is Wave 2.
+    const rows = result.rows.map((row) => ({
+      item: toHit(row),
+      sortValue: row.created_at_cursor,
+      id: row.id,
     }));
+    return buildPageWithCursors(rows, page, CUSTOMER_SEARCH_ORDERING);
   }
 }
