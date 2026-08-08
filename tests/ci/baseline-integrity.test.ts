@@ -141,7 +141,12 @@ describe('committed baselines', () => {
     // The two function counts disagree for a known reason. If someone
     // "reconciles" them by editing this file, the explanation must go with it.
     expect(baseline.functionCountDiscrepancyNote).toBeTruthy();
-    expect(baseline.functionCountDiscrepancyNote).toContain('212');
+    // The RootLco-schema figure, which `npm run validate:schema-inventory`
+    // reports and which a developer can reproduce locally. It moves in lockstep
+    // with structuralTotals.functions — the gap between them is extension-owned
+    // code and is constant — so pinning both is what makes the larger figure
+    // derivable instead of guessed.
+    expect(baseline.functionCountDiscrepancyNote).toContain('214');
     expect(baseline.functionCountDiscrepancyNote).toContain(
       String(baseline.structuralTotals.functions)
     );
