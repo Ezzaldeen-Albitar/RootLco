@@ -70,12 +70,39 @@ interface Props {
   readonly titleKey: string;
   /** Called after a successful write so the section can re-read its list. */
   readonly onRecorded?: () => void;
+  /**
+   * Starting values, for a form that EDITS rather than appends.
+   *
+   * Required by any operation whose semantics are "set (create or replace)":
+   * every field is sent every time and an omitted one is cleared, so a blank
+   * form would silently erase the fields the operator did not touch. The EV
+   * profile write is exactly that shape.
+   */
+  readonly initialValues?: Record<string, string>;
+  /**
+   * Whether a success empties the form. Default `true`.
+   *
+   * Appending a note, a plate or a reading should clear — the record is stored
+   * and the next entry is a different one. REPLACING a profile should not: what
+   * was just saved is now the current state, and blanking it would show the
+   * operator an empty form for a profile that exists.
+   */
+  readonly clearOnSuccess?: boolean;
 }
 
 const EMPTY: ActionState = { status: 'idle' };
 
-export function RecordForm({ messages, fields, action, submitKey, titleKey, onRecorded }: Props) {
-  const [values, setValues] = useState<Record<string, string>>({});
+export function RecordForm({
+  messages,
+  fields,
+  action,
+  submitKey,
+  titleKey,
+  onRecorded,
+  initialValues,
+  clearOnSuccess = true,
+}: Props) {
+  const [values, setValues] = useState<Record<string, string>>(initialValues ?? {});
   // Per-instance, because the vehicle profile renders more than one of these on
   // one screen. The id used to be `record-${field.name}`, which is stable and
   // therefore duplicated across instances — two `id="record-effectiveDate"`
@@ -85,8 +112,9 @@ export function RecordForm({ messages, fields, action, submitKey, titleKey, onRe
   const [state, submit, pending] = useActionState(async (previous: ActionState, form: FormData) => {
     const result = await action(previous, form);
     if (result.status === 'success') {
-      // Cleared only here. On any failure the operator's text stays put.
-      setValues({});
+      // Cleared only here, and only for an append. On any failure the
+      // operator's text stays put either way.
+      if (clearOnSuccess) setValues({});
       onRecorded?.();
     }
     return result;

@@ -1048,5 +1048,8 @@
   "vehicles.odometer.observedAtHint": "When the reading was taken, for example 2026-03-01T09:30:00Z.",
   "vehicles.odometer.error.observedAt": "Give the date and time the reading was taken.",
   "vehicles.odometerUnit.km": "Kilometres",
-  "vehicles.odometerUnit.mi": "Miles"
+  "vehicles.odometerUnit.mi": "Miles",
+  "vehicles.ev.record": "Save electric-drive details",
+  "vehicles.ev.port": "Charging socket",
+  "vehicles.ev.capacityHint": "Usable battery capacity in kWh. Leave empty if it is not known."
 }

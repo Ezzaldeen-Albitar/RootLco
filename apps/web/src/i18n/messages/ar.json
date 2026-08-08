@@ -1048,5 +1048,8 @@
   "vehicles.odometer.observedAtHint": "وقت أخذ القراءة، مثل 2026-03-01T09:30:00Z.",
   "vehicles.odometer.error.observedAt": "أدخل تاريخ ووقت أخذ القراءة.",
   "vehicles.odometerUnit.km": "كيلومترات",
-  "vehicles.odometerUnit.mi": "أميال"
+  "vehicles.odometerUnit.mi": "أميال",
+  "vehicles.ev.record": "حفظ تفاصيل الدفع الكهربائي",
+  "vehicles.ev.port": "مقبس الشحن",
+  "vehicles.ev.capacityHint": "سعة البطارية القابلة للاستخدام بالكيلوواط/ساعة. اتركه فارغًا إذا كانت غير معروفة."
 }

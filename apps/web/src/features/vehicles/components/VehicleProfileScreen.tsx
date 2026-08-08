@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
+import { useActionState, useCallback, useId, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -101,6 +102,13 @@ export function VehicleProfileScreen({
   const frozen = isFrozen(vehicle);
   const [section, setSection] = useState<Section>('overview');
 
+  // The EV profile and the documents list are read on the SERVER and handed to
+  // this component as props, so a save cannot be reflected by re-running a
+  // client fetch — there is none. `router.refresh()` re-runs the page's own read,
+  // which is the only thing that can show what was just stored.
+  const router = useRouter();
+  const refresh = useCallback(() => router.refresh(), [router]);
+
   // Resolved ONCE, from the operator's own clock, and threaded into every
   // section. Each section computing its own would let a page open before
   // midnight disagree with itself after it.
@@ -166,6 +174,11 @@ export function VehicleProfileScreen({
           state={evProfile}
           powertrainCategory={vehicle.powertrainCategory}
           canEdit={canEdit}
+          vehicleId={vehicle.id}
+          // The profile is read on the SERVER, so a save cannot be reflected by
+          // re-running a client fetch. A router refresh re-runs the page's own
+          // read, which is the only thing that can show the saved value.
+          onSaved={refresh}
         />
       ) : null}
       {section === 'relationships' ? (

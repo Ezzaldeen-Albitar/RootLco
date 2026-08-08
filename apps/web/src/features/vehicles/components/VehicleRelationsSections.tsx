@@ -7,12 +7,16 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { listRelationships, type EvProfileState } from '../relations-api';
+import { RecordForm } from '@/components/forms/RecordForm';
+import { listRelationships, setEvProfileAction, type EvProfileState } from '../relations-api';
 import { intervalState } from '../history-contract';
 import {
+  EV_KINDS,
+  MAX_CHARGE_PORT,
   SCOPED_ROLE,
   canHaveEvProfile,
   scopeState,
+  type EvProfile,
   type VehicleRelationship,
 } from '../relations-contract';
 
@@ -26,6 +30,79 @@ import {
  *   "this person has no permissions" — and it is null for six roles out of seven.
  */
 
+/**
+ * The electric-drive write (`FE-024`), written once and rendered in two states.
+ *
+ * `veh.vehicle-ev-profile-set` is a REPLACE — "set (create or replace)" — so
+ * every field is sent every time and an omitted one is cleared. The form is
+ * therefore seeded from the current profile when one exists, and does NOT clear
+ * on success: what was just saved is the current state, and blanking it would
+ * show an empty form for a profile that exists.
+ */
+function EvProfileForm({
+  messages,
+  vehicleId,
+  current,
+  onSaved,
+}: {
+  readonly messages: Messages;
+  readonly vehicleId: string;
+  readonly current?: EvProfile;
+  readonly onSaved?: () => void;
+}) {
+  return (
+    <RecordForm
+      messages={messages}
+      titleKey="vehicles.ev.record"
+      submitKey="vehicles.ev.record"
+      action={setEvProfileAction.bind(null, vehicleId)}
+      clearOnSuccess={false}
+      {...(onSaved ? { onRecorded: onSaved } : {})}
+      {...(current
+        ? {
+            initialValues: {
+              evKind: current.evKind,
+              // Strings throughout. The capacity is `numeric` read as text and
+              // any arithmetic here would reintroduce the loss that cast avoids.
+              usableCapacityKwh: current.usableCapacityKwh ?? '',
+              chargePortType: current.chargePortType ?? '',
+              ...(current.highVoltageWarning ? { highVoltageWarning: 'on' } : {}),
+            },
+          }
+        : {})}
+      fields={[
+        {
+          name: 'evKind',
+          kind: 'select',
+          labelKey: 'vehicles.ev.kind',
+          required: true,
+          options: EV_KINDS,
+          optionKeyPrefix: 'vehicles.evKind.',
+        },
+        {
+          name: 'usableCapacityKwh',
+          kind: 'number',
+          labelKey: 'vehicles.ev.capacity',
+          min: 0,
+          step: 'any',
+          hintKey: 'vehicles.ev.capacityHint',
+        },
+        {
+          name: 'chargePortType',
+          kind: 'text',
+          labelKey: 'vehicles.ev.port',
+          maxLength: MAX_CHARGE_PORT,
+        },
+        {
+          name: 'highVoltageWarning',
+          kind: 'checkbox',
+          labelKey: 'vehicles.ev.highVoltage',
+        },
+      ]}
+    />
+  );
+}
+
 /** `FE-024`. Read on the server; this renders whichever of four states came back. */
 export function EvProfileSection({
   locale,
@@ -33,12 +110,16 @@ export function EvProfileSection({
   state,
   powertrainCategory,
   canEdit,
+  vehicleId,
+  onSaved,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly state: EvProfileState;
   readonly powertrainCategory: string;
   readonly canEdit: boolean;
+  readonly vehicleId: string;
+  readonly onSaved?: () => void;
 }) {
   if (state.status === 'none') {
     // The common case, and it is not an error. Which sentence to show depends on
@@ -54,9 +135,20 @@ export function EvProfileSection({
           )}
         </p>
         {canEdit && canHaveEvProfile(powertrainCategory) ? (
-          <p className="mt-2 text-caption text-text-muted">
-            {translate(messages, 'vehicles.ev.canRecord')}
-          </p>
+          <>
+            <p className="mt-2 text-caption text-text-muted">
+              {translate(messages, 'vehicles.ev.canRecord')}
+            </p>
+            {/* The copy above promised this for the whole of P1-27 while the
+                save path had no call site. Wired here so the sentence is true. */}
+            <div className="mt-3">
+              <EvProfileForm
+                messages={messages}
+                vehicleId={vehicleId}
+                {...(onSaved ? { onSaved } : {})}
+              />
+            </div>
+          </>
         ) : null}
       </section>
     );
@@ -141,6 +233,20 @@ export function EvProfileSection({
       <p className="mt-3 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.ev.scopeNote')}
       </p>
+
+      {canEdit ? (
+        // Seeded from the profile above, because the operation REPLACES: a blank
+        // form would clear the capacity and the port the moment somebody changed
+        // only the drive kind.
+        <div className="mt-4">
+          <EvProfileForm
+            messages={messages}
+            vehicleId={vehicleId}
+            current={profile}
+            {...(onSaved ? { onSaved } : {})}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

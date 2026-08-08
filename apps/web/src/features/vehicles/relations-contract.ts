@@ -37,6 +37,15 @@
 export const EV_KINDS = ['bev', 'hybrid', 'phev'] as const;
 export type EvKind = (typeof EV_KINDS)[number];
 
+/**
+ * The charge-port length ceiling, mirroring the route schema.
+ *
+ * Restated so a form can bound its input — not a second authority. The server
+ * enforces it, and a client bound that disagreed would refuse a value the server
+ * would have accepted, with no error the operator could act on.
+ */
+export const MAX_CHARGE_PORT = 40;
+
 /** `ck_vehicle_relationships_role`. */
 export const VEHICLE_RELATIONSHIP_ROLES = [
   'owner',
