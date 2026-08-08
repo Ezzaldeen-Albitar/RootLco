@@ -26,6 +26,7 @@ import {
   NOTE_VISIBILITIES,
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
+  SETTABLE_LIFECYCLE_STATES,
 } from './governance-contract';
 import { CONTACT_CHANNELS } from './profile-contract';
 
@@ -163,6 +164,51 @@ export async function imposeRestrictionAction(
     'POST',
     `${base(customerId)}/restrictions`,
     'crm.customers.restrictions.imposed'
+  );
+}
+
+const statusSchema = z
+  .object({
+    lifecycleStatus: z.enum(SETTABLE_LIFECYCLE_STATES),
+    // The same ten-character floor as a restriction, and for the same reason:
+    // `crm.partner_status_history.reason` is NOT NULL with a not-blank check
+    // because a blocked customer standing at the counter is a person somebody
+    // has to be able to explain the decision to.
+    reason: z.string().trim().min(MIN_REASON, 'field.tooShort').max(MAX_REASON),
+  })
+  .strict();
+
+/**
+ * Change the customer's lifecycle status. `crm.customer.governance.manage`.
+ *
+ * A **PUT**, like `crm.preference-set` and unlike the five POSTs around it. The
+ * key comes from the contract-derived authority, so the method does not decide
+ * whether one is sent (`P1-27-INT-003`).
+ *
+ * `merged` is not offered anywhere: `SETTABLE_LIFECYCLE_STATES` excludes it
+ * because a merge is not a status somebody assigns — it is the outcome of the
+ * merge operation, which writes `merged_into_id` and the status together under
+ * its own permission (and that permission is withheld, `P1-OD-017`).
+ */
+export async function setCustomerStatusAction(
+  customerId: string,
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  return write(
+    previous,
+    () => {
+      const parsed = statusSchema.safeParse({
+        lifecycleStatus: String(form.get('lifecycleStatus') ?? ''),
+        reason: String(form.get('reason') ?? ''),
+      });
+      return parsed.success
+        ? { ok: true as const, body: parsed.data }
+        : { ok: false as const, errors: fieldErrorsFrom(parsed.error) };
+    },
+    'PUT',
+    `${base(customerId)}/status`,
+    'crm.customers.status.changed'
   );
 }
 

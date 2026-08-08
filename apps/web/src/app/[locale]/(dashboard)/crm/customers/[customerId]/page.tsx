@@ -94,7 +94,15 @@ export default async function CustomerProfilePage({
         ]}
       />
       <PageBody fill>
-        <CustomerProfileScreen locale={locale} messages={messages} customer={result.data} />
+        <CustomerProfileScreen
+          locale={locale}
+          messages={messages}
+          customer={result.data}
+          // `crm.customer-status-set` needs `crm.customer.governance.manage` —
+          // the same code as alerts and tags, and NOT the read that gates this
+          // page. Visibility only; the server decides.
+          canManageStatus={holds(session.permissions, CRM_PERMISSIONS.governanceManage)}
+        />
       </PageBody>
     </>
   );

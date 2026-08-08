@@ -53,6 +53,53 @@ export const RESTRICTION_TYPES = [
 ] as const;
 export type RestrictionType = (typeof RESTRICTION_TYPES)[number];
 
+/**
+ * `ck_business_partners_lifecycle_status`, minus the merge-only terminal.
+ *
+ * `merged` is absent because a merge is not a status somebody assigns: it is the
+ * outcome of the merge operation, which writes `merged_into_id` and the status
+ * together under its own permission. Offering it here would send a value the
+ * route's `.strict()` enum rejects.
+ */
+export const SETTABLE_LIFECYCLE_STATES = ['prospect', 'active', 'inactive', 'blocked'] as const;
+export type SettableLifecycleState = (typeof SETTABLE_LIFECYCLE_STATES)[number];
+
+/**
+ * Which lifecycle moves an operator may make from each state.
+ *
+ * A mirror of `LIFECYCLE_TRANSITIONS` in
+ * `apps/api/src/modules/crm/domain/customer-governance.ts` — the server is the
+ * authority and refuses an illegal move; this exists so the form offers only the
+ * moves that can succeed, rather than a full list of four and a 422 for two of
+ * them. Nothing leaves `merged`: a merged-away customer is history, and
+ * re-activating one would resurrect a duplicate the tenant deliberately retired.
+ */
+export const LIFECYCLE_TRANSITIONS: Readonly<Record<string, readonly SettableLifecycleState[]>> =
+  Object.freeze({
+    prospect: ['active', 'inactive'],
+    active: ['inactive', 'blocked'],
+    inactive: ['active', 'blocked'],
+    blocked: ['active', 'inactive'],
+    merged: [],
+  });
+
+/** The legal targets from a current state; empty for an unknown or merged one. */
+export function allowedTransitions(from: string): readonly SettableLifecycleState[] {
+  return LIFECYCLE_TRANSITIONS[from] ?? [];
+}
+
+/**
+ * Whether a move needs a confirmation step.
+ *
+ * Blocking is the one transition that stops the workshop serving a real
+ * customer, so it is the one that gets a second look. The others are ordinary
+ * bookkeeping and a confirmation on each would train an operator to click
+ * through the one that matters.
+ */
+export function isConsequentialTransition(to: string): boolean {
+  return to === 'blocked';
+}
+
 /** `shared.notes.classification`. Defaults to `internal` when unsent. */
 export const NOTE_CLASSIFICATIONS = ['public', 'internal', 'restricted', 'secret'] as const;
 export type NoteClassification = (typeof NOTE_CLASSIFICATIONS)[number];

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -23,9 +24,12 @@ import {
   imposeRestrictionAction,
   raiseAlertAction,
   recordConsentAction,
+  setCustomerStatusAction,
   setPreferenceAction,
 } from '../governance-actions';
 import {
+  allowedTransitions,
+  isConsequentialTransition,
   ALERT_SEVERITIES,
   ALERT_TYPES,
   COMMUNICATION_PURPOSES,
@@ -131,14 +135,26 @@ interface Props {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
+  /** `crm.customer.governance.manage` — the code `crm.customer-status-set` needs. */
+  readonly canManageStatus?: boolean;
 }
 
-export function CustomerProfileScreen({ locale, messages, customer }: Props) {
+export function CustomerProfileScreen({
+  locale,
+  messages,
+  customer,
+  canManageStatus = false,
+}: Props) {
   const [section, setSection] = useState<Section>('overview');
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <ProfileHeader messages={messages} customer={customer} />
+      <ProfileHeader
+        locale={locale}
+        messages={messages}
+        customer={customer}
+        canManageStatus={canManageStatus}
+      />
 
       <nav aria-label={translate(messages, 'crm.customers.profile.sections')}>
         <ul className="flex flex-wrap gap-1 border-b border-border">
@@ -210,12 +226,146 @@ export function CustomerProfileScreen({ locale, messages, customer }: Props) {
   );
 }
 
-function ProfileHeader({
+/**
+ * Change the customer's lifecycle status.
+ *
+ * The header has shown `lifecycleStatus` since the profile shipped and offered
+ * no way to change it, while `crm.customer-status-set` sat registered,
+ * permission-covered and called from nowhere. The phase's own traceability
+ * recorded it as attributed to "CRM profile surface — Not called", and no
+ * approved decision anywhere says direct status editing should not exist: the
+ * two operations that ARE deliberately absent carry a decision reference
+ * (`P1-OD-017` for both merges). This was an omission.
+ *
+ * ## Only the moves that can succeed
+ *
+ * The target list comes from `allowedTransitions(current)`, mirroring the
+ * server's `LIFECYCLE_TRANSITIONS`. Offering all four and letting two of them
+ * 422 would show an operator a control that fails for reasons the error cannot
+ * explain. `merged` appears in no list at all — a merge is not a status somebody
+ * assigns.
+ *
+ * ## Blocking asks twice
+ *
+ * `isConsequentialTransition` singles out `blocked`, because it is the one move
+ * that stops the workshop serving a real customer. Confirming every transition
+ * would train an operator to click through the one that matters.
+ */
+function StatusChangeForm({
+  locale,
   messages,
   customer,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
+}) {
+  const router = useRouter();
+  const [target, setTarget] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const targets = allowedTransitions(customer.lifecycleStatus);
+
+  if (targets.length === 0) {
+    // A merged customer, or a state the server does not let anyone leave.
+    // Saying so beats an empty select nobody can use.
+    return (
+      <p className="mt-3 text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'crm.customers.status.terminal')}
+      </p>
+    );
+  }
+
+  const needsConfirmation = isConsequentialTransition(target);
+
+  return (
+    <div className="mt-4">
+      <RecordForm
+        messages={messages}
+        titleKey="crm.customers.status.change"
+        submitKey="crm.customers.status.change"
+        action={setCustomerStatusAction.bind(null, customer.id)}
+        onRecorded={() => {
+          setTarget('');
+          setConfirmed(false);
+          // The status lives in the page's own server-side read, so there is no
+          // client fetch to re-run. A router refresh is the only thing that can
+          // show the new value in the header above.
+          router.refresh();
+        }}
+        guard={() =>
+          needsConfirmation && !confirmed
+            ? { lifecycleStatus: 'crm.customers.status.confirmRequired' }
+            : null
+        }
+        prelude={(state) => (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-caption text-text-secondary">
+              {translate(messages, 'crm.customers.status.newStatus')}
+              <select
+                name="lifecycleStatus"
+                required
+                value={target}
+                onChange={(event) => {
+                  setTarget(event.target.value);
+                  // A changed target un-confirms: agreeing to block somebody and
+                  // then switching to "inactive" must not carry the tick over.
+                  setConfirmed(false);
+                }}
+                className="rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+              >
+                <option value="">{translate(messages, 'form.select.placeholder')}</option>
+                {targets.map((value) => (
+                  <option key={value} value={value}>
+                    {translateDynamic(messages, `crm.lifecycle.${value}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {needsConfirmation ? (
+              <label className="flex items-start gap-2 text-body text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                  className="mt-1 size-4 accent-primary"
+                />
+                <span>{translate(messages, 'crm.customers.status.confirmBlock')}</span>
+              </label>
+            ) : null}
+
+            {state.fieldErrors?.lifecycleStatus ? (
+              <p role="alert" className="text-caption text-error">
+                {translateDynamic(messages, state.fieldErrors.lifecycleStatus)}
+              </p>
+            ) : null}
+          </div>
+        )}
+        fields={[
+          {
+            name: 'reason',
+            kind: 'textarea',
+            labelKey: 'crm.customers.restrictions.reason',
+            required: true,
+            maxLength: MAX_REASON,
+            hintKey: 'crm.customers.status.reasonHint',
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+function ProfileHeader({
+  locale,
+  messages,
+  customer,
+  canManageStatus,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly customer: CustomerDetail;
+  readonly canManageStatus: boolean;
 }) {
   return (
     <header className="rounded-lg border border-border bg-surface p-4">
@@ -250,6 +400,10 @@ function ProfileHeader({
           value={translateDynamic(messages, `crm.commercial.${customer.commercialStatus}`)}
         />
       </dl>
+
+      {canManageStatus ? (
+        <StatusChangeForm locale={locale} messages={messages} customer={customer} />
+      ) : null}
     </header>
   );
 }
