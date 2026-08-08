@@ -156,13 +156,108 @@ carefully it was written.** The read does not exist.
 
 Continuing from `P1-27-INT-009`, the highest previously allocated.
 
-| id              | finding                                                                                                                                                                                                                                                                                                                                             | owning Backend phase | severity | blocks           |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------- | ---------------- |
-| `P1-27-INT-010` | No reception **detail** read. `rec.reception-approve` and `rec.reception-convert-to-work-order` are both `versionGuarded` with mandatory `If-Match`, and no operation publishes a visit's `recordVersion` except the two writes that also consume it. A reception cannot be resumed, handed over, or recovered.                                     | P1-18                | **High** | Waves C, D, E    |
-| `P1-27-INT-011` | No reception **list** read. An operator cannot see open receptions, and a vehicle or customer cannot show its visits.                                                                                                                                                                                                                               | P1-18                | **High** | Waves D, E, P, Q |
-| `P1-27-INT-012` | **No read lists a customer's vehicles.** `crm.vehicle-link` writes the relationship at `POST /customers/{customerId}/vehicles`; that path publishes no GET, and the only relationship read runs from the vehicle side. The Owner's §4 Vehicles section and §5 vehicle selector cannot be built without an N+1 sweep of every vehicle in the tenant. | P1-16                | **High** | Waves A, D, E    |
+| id              | finding                                                                                                                                                                                                                                                                                                                                                   | owning Backend phase | severity     | blocks                                |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------ | ------------------------------------- |
+| `P1-27-INT-010` | No reception **detail** read. `rec.reception-approve` and `rec.reception-convert-to-work-order` are both `versionGuarded` with mandatory `If-Match`, and no operation publishes a visit's `recordVersion` except the two writes that also consume it. A reception cannot be resumed, handed over, or recovered.                                           | P1-18                | **High**     | Waves C, D, E                         |
+| `P1-27-INT-011` | No reception **list** read. An operator cannot see open receptions, and a vehicle or customer cannot show its visits.                                                                                                                                                                                                                                     | P1-18                | **High**     | Waves D, E, P, Q                      |
+| `P1-27-INT-012` | **No read lists a customer's vehicles.** `crm.vehicle-link` writes the relationship at `POST /customers/{customerId}/vehicles`; that path publishes no GET, and the only relationship read runs from the vehicle side. The Owner's §4 Vehicles section and §5 vehicle selector cannot be built without an N+1 sweep of every vehicle in the tenant.       | P1-16                | **High**     | Waves A, D, E                         |
+| `P1-27-INT-013` | **A vehicle can be received exactly once, ever.** `converted` is a terminal reception state and is also inside the predicate of `uq_reception_visits_open_vehicle`, so the normal successful path permanently blocks every later visit for that vehicle. Reproduced against the live database — `23505`, with a passing control and no escape transition. | P1-08 (schema)       | **Critical** | Waves D, E, and every wave after them |
 
-Further findings will be added by the archaeology now running across the
+### `P1-27-INT-013` — verified by hand, because the claim is extraordinary
+
+The archaeology reported that a vehicle can be received exactly once in its
+lifetime. A claim that severe is exactly the kind this phase has been wrong
+about before, so it was proved from the source rather than repeated.
+
+**The index** (`supabase/migrations/20260721097000_rec_reception_visits.sql`):
+
+```sql
+CREATE UNIQUE INDEX uq_reception_visits_open_vehicle
+  ON rec.reception_visits (tenant_id, vehicle_id)
+  WHERE reception_status IN ('opened', 'inspecting', 'authorized', 'converted')
+    AND deleted_at IS NULL;
+```
+
+**Its own comment**, two lines above it:
+
+> One OPEN visit per Vehicle+tenant (custody cannot be in two places). Terminal
+> visits (closed_without_work/refused) do not block a later visit.
+
+**The transition graph** (`apps/api/src/modules/reception/domain/reception.ts`):
+
+```ts
+opened:              ['inspecting', 'closed_without_work', 'refused'],
+inspecting:          ['authorized', 'closed_without_work', 'refused'],
+authorized:          ['converted', 'closed_without_work', 'refused'],
+converted:           [],
+closed_without_work: [],
+refused:             [],
+
+TERMINAL_RECEPTION_STATUSES = ['converted', 'closed_without_work', 'refused'];
+```
+
+`converted` is **terminal** — no outgoing transitions — and `converted` is
+**inside the index predicate**. The comment names two of the three terminal
+states and omits the third, which is precisely the defect: the author's intent
+was that a terminal visit should not block a later one, and the one terminal
+state the successful path actually reaches is the one left in.
+
+So the moment a reception is converted into a work order — the normal, correct,
+successful path — that visit is frozen in `converted` for ever and the index
+permanently forbids a second reception visit for that vehicle in that tenant.
+
+**Every returning customer is a permanent `23505`.** A workshop cannot serve the
+same vehicle twice. This is not a missing read; it is a live database defect,
+and it is the most consequential finding of the phase.
+
+#### Reproduced against the running database
+
+Source reading was not treated as sufficient. The failure was reproduced inside
+a single transaction that was rolled back, so no business row survived and the
+no-fake-data invariant was untouched. The visit was created by
+`rec.accept_check_in` — the production primitive the reception route itself
+calls — rather than by a hand-written `INSERT`, because a probe that takes a
+shortcut around the real path cannot testify about the real path.
+
+```
+visit 1 reached `converted` — the normal, successful path
+visit 2 REFUSED — SQLSTATE 23505  uq_reception_visits_open_vehicle
+   duplicate key value violates unique constraint "uq_reception_visits_open_vehicle"
+control: after `closed_without_work`, a second check-in IS allowed
+escape: `converted` cannot be left — invalid reception transition converted -> closed_without_work
+
+verdict: INT-013 CONFIRMED · rolled back · probe rows remaining: 0
+```
+
+Four facts, and the last two are what make this unambiguous:
+
+1. The normal path reaches `converted`, driven by the production primitive.
+2. The second check-in of the same vehicle is refused by **that exact index**.
+3. **The control passes.** A vehicle taken to `closed_without_work` accepts a
+   second check-in. The table, the trigger and the primitive are all working as
+   designed — the only thing wrong is the presence of `converted` in the index
+   predicate.
+4. **There is no workaround.** `converted` has no outgoing transition, and the
+   status trigger in `20260721106000_rec_status_history_checkin.sql` enforces the
+   graph in SQL as well as in TypeScript. The visit cannot be moved to a state
+   that would release the index. Nothing an operator, a support engineer or a
+   Frontend screen can do recovers that vehicle.
+
+The trigger reading also confirms the transition graph independently of the
+domain constants: the database refuses `converted -> closed_without_work` on its
+own authority, not because `reception.ts` says so.
+
+**The fix is not simply to drop `converted` from the predicate.** While a work
+order is open the vehicle is physically in the workshop and a second reception
+must still be refused. Custody release is recorded separately, in
+`rec.custody_history` with `uq_custody_history_released ... WHERE to_state =
+'released'`, and a partial index cannot reference another table. The correct
+remediation therefore carries a schema change — a custody-release marker on the
+visit, maintained by the release trigger, in the index predicate — and it is
+owned by the reception schema phase, not by this Frontend branch. **It requires
+migration 120.**
+
+Further findings were added by the archaeology across the
 remaining eleven domains. Each will be closed the way §2 requires — its own
 focused Backend remediation branch with authorization, OpenAPI, Zod validation,
 audit, correlation and tests, merged through protected `develop` — and never
