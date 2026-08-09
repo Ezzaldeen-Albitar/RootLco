@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -392,5 +392,93 @@ describe('the guard against this file measuring nothing', () => {
   it('renders the scrapped note in Arabic too', () => {
     render({ lifecycleStatus: 'scrapped' }, 'ar');
     expect(screen.getByText(ar['vehicles.profile.terminalNote'])).toBeTruthy();
+  });
+});
+
+describe('the status selects offer only moves the server will accept', () => {
+  /*
+   * `P1-27-FE-019`. Both selects listed the whole vocabulary — every lifecycle
+   * status except `merged`, and all four workshop statuses — regardless of where
+   * the vehicle actually was. So `draft → inactive` and `inactive → draft` were
+   * both offered and both refused with `invalid_transition`
+   * (`vehicle-lifecycle.ts:227-233`).
+   *
+   * The refusal was unreadable, which is what made it matter: the platform
+   * publishes field detail as `violations`, the client reads `errors`
+   * (`P1-27-INT-028`), so `Outcome` showed only "The form could not be saved."
+   * The operator picked something that looked legitimate and was told nothing.
+   *
+   * These assert the OPTION SETS, because that is where the defect lived. The
+   * panel-level gating is covered above and is a different question.
+   */
+  /*
+   * Scoped to the container this render produced, not to `screen`.
+   *
+   * Two of these cases render more than once to compare states, and
+   * testing-library only cleans up BETWEEN tests — so a global `screen` query
+   * finds every screen mounted so far and fails with "Found multiple elements".
+   * Scoping keeps each comparison honest.
+   */
+  function optionsOf(label: string, overrides: Partial<VehicleDetail>): string[] {
+    const view = render(overrides);
+    const select = within(view.container).getByLabelText(label);
+    return [...select.querySelectorAll('option')]
+      .map((option) => option.getAttribute('value') ?? '')
+      .filter((value) => value !== '');
+  }
+
+  const lifecycleOptions = (overrides: Partial<VehicleDetail> = {}) =>
+    optionsOf(en['crm.customers.column.status'], overrides);
+
+  const workshopOptions = (overrides: Partial<VehicleDetail> = {}) =>
+    optionsOf(en['vehicles.column.workshop'], overrides);
+
+  it('offers exactly the graph row for a draft vehicle', () => {
+    // NOT `inactive`. `draft` reaches only `active` or `scrapped`.
+    expect(lifecycleOptions({ lifecycleStatus: 'draft' }).sort()).toEqual(['active', 'scrapped']);
+  });
+
+  it('offers exactly the graph row for an active vehicle', () => {
+    expect(lifecycleOptions({ lifecycleStatus: 'active' }).sort()).toEqual([
+      'inactive',
+      'scrapped',
+    ]);
+  });
+
+  it('offers exactly the graph row for an inactive vehicle', () => {
+    // `draft` is absent: nothing returns to draft.
+    expect(lifecycleOptions({ lifecycleStatus: 'inactive' }).sort()).toEqual([
+      'active',
+      'scrapped',
+    ]);
+  });
+
+  it('withholds scrapping while the vehicle is in a workshop', () => {
+    /*
+     * The cross-axis rule at `vehicle-lifecycle.ts:275-281`: a terminal vehicle
+     * cannot be in a workshop, so `active → scrapped` is refused outright while
+     * `workshopStatus` is anything but `none`. Offering it there is an option
+     * whose only possible outcome is a 422 the operator cannot read.
+     */
+    expect(lifecycleOptions({ lifecycleStatus: 'active', workshopStatus: 'in_workshop' })).toEqual([
+      'inactive',
+    ]);
+  });
+
+  it('offers exactly the graph row on the workshop axis', () => {
+    expect(workshopOptions({ workshopStatus: 'none' })).toEqual(['in_workshop']);
+    expect(workshopOptions({ workshopStatus: 'ready_for_delivery' }).sort()).toEqual([
+      'in_workshop',
+      'none',
+    ]);
+  });
+
+  it('never offers merged on any row', () => {
+    // Reached through `veh.vehicle-merge`, never through the status operation.
+    // Previously excluded by a filter beside the select; now absent from the
+    // graph itself, so there is one statement of the rule rather than two.
+    for (const status of ['draft', 'active', 'inactive'] as const) {
+      expect(lifecycleOptions({ lifecycleStatus: status })).not.toContain('merged');
+    }
   });
 });

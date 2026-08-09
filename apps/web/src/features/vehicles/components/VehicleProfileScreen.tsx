@@ -7,14 +7,15 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import type { ActionState } from '@/lib/forms/action-result';
 import { changeVehicleStatusAction, updateVehicleAction } from '../profile-api';
+import { MAX_COLOR, MAX_DISPLAY_NUMBER, MAX_VIN_INPUT } from '../contract';
 import {
-  MAX_COLOR,
-  MAX_DISPLAY_NUMBER,
-  MAX_VIN_INPUT,
-  VEHICLE_LIFECYCLE_STATUSES,
-  WORKSHOP_STATUSES,
-} from '../contract';
-import { isFrozen, isTerminal, labelFor, type VehicleDetail } from '../profile-contract';
+  allowedLifecycleTargets,
+  allowedWorkshopTargets,
+  isFrozen,
+  isTerminal,
+  labelFor,
+  type VehicleDetail,
+} from '../profile-contract';
 import { localToday } from '../history-contract';
 import type { EvProfileState } from '../relations-api';
 import { EvProfileSection, RelationshipsSection } from './VehicleRelationsSections';
@@ -661,12 +662,23 @@ function StatusPanel({
             className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
-            {VEHICLE_LIFECYCLE_STATUSES.filter(
-              // `merged` is a state a vehicle REACHES through `veh.vehicle-merge`.
-              // Offering it here would let an operator declare a merge that never
-              // happened, with no survivor for `mergedIntoId` to point at.
-              (status) => status !== 'merged'
-            ).map((status) => (
+            {/*
+              Driven by the transition GRAPH, not by the whole vocabulary.
+
+              This listed every status except `merged`, from wherever the vehicle
+              was, so `draft → inactive` and `inactive → draft` were both on the
+              menu and both refused with `invalid_transition`
+              (`vehicle-lifecycle.ts:227-233`). The `merged` filter that used to
+              live here is gone because the graph already omits `merged` from
+              every row — one statement of the rule, not two.
+
+              The refusal was also invisible, which is what made it worth fixing
+              rather than tolerating: the platform publishes field detail as
+              `violations` and the client reads `errors` (`P1-27-INT-028`), so
+              `Outcome` showed only "The form could not be saved." An operator
+              choosing a plausible-looking option learned nothing.
+            */}
+            {allowedLifecycleTargets(vehicle).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.lifecycle.${status}`)}
               </option>
@@ -685,7 +697,8 @@ function StatusPanel({
             className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
-            {WORKSHOP_STATUSES.map((status) => (
+            {/* Same rule on the workshop axis (`vehicle-lifecycle.ts:68-74`). */}
+            {allowedWorkshopTargets(vehicle).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.workshop.${status}`)}
               </option>

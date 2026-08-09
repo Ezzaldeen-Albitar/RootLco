@@ -370,7 +370,13 @@ function VehicleSearchResults({
     // The earlier note said "nothing in these columns builds a URL any more" and
     // attributed it to the profile route being a later deliverable. Both halves
     // were stale: the route exists and this file routes to it.
-    [makeById, messages]
+    // `makes.status` and `makes.truncated` are read by the Make column to tell a
+    // failed catalogue apart from an unrecognised id. They are NOT implied by
+    // `makeById`: a catalogue that fails and one that is merely missing this id
+    // both yield the same empty map, which is precisely the confusion the column
+    // exists to resolve. Omitting them would have made the column render the
+    // wrong sentence from a stale outcome.
+    [makeById, makes.status, makes.truncated, messages]
   );
 
   return (

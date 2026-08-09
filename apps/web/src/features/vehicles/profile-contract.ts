@@ -149,6 +149,66 @@ export function isTerminal(vehicle: VehicleDetail): boolean {
 }
 
 /**
+ * Which lifecycle moves the server will accept from each state.
+ *
+ * A mirror of `LIFECYCLE_TRANSITIONS` in
+ * `apps/api/src/modules/vehicle/domain/vehicle-lifecycle.ts:57-65`. The server
+ * is the authority and refuses an illegal move with `invalid_transition`; this
+ * exists so the form offers only moves that can succeed, exactly as
+ * `crm/customers/governance-contract.ts:71-83` already does for customers.
+ *
+ * Before this, the select offered every status except `merged` regardless of
+ * where the vehicle was, so `draft → inactive` and `scrapped → active` were
+ * both on the menu and both 422. The refusal was invisible: the platform
+ * publishes field detail as `violations` and the client reads `errors`
+ * (`P1-27-INT-028`), so `Outcome` rendered only "The form could not be saved."
+ * An operator picking a legitimate-looking option was told nothing about why.
+ *
+ * `merged` is absent from every row rather than filtered afterwards — it is
+ * reached through `veh.vehicle-merge`, never through the status operation, so
+ * the graph says so directly instead of a `!== 'merged'` filter saying it
+ * again somewhere else.
+ */
+export const VEHICLE_LIFECYCLE_TRANSITIONS: Readonly<
+  Record<string, readonly VehicleLifecycleStatus[]>
+> = Object.freeze({
+  draft: ['active', 'scrapped'],
+  active: ['inactive', 'scrapped'],
+  inactive: ['active', 'scrapped'],
+  merged: [],
+  scrapped: [],
+});
+
+/** A mirror of `WORKSHOP_TRANSITIONS` (`vehicle-lifecycle.ts:68-74`). */
+export const VEHICLE_WORKSHOP_TRANSITIONS: Readonly<Record<string, readonly WorkshopStatus[]>> =
+  Object.freeze({
+    none: ['in_workshop'],
+    in_workshop: ['awaiting_parts', 'ready_for_delivery', 'none'],
+    awaiting_parts: ['in_workshop', 'ready_for_delivery', 'none'],
+    ready_for_delivery: ['in_workshop', 'none'],
+  });
+
+/**
+ * The lifecycle moves offered for this vehicle.
+ *
+ * `scrapped` is withheld while the vehicle is operationally in a workshop,
+ * because `vehicle-lifecycle.ts:275-281` refuses that pair outright —
+ * "a scrapped vehicle cannot be in a workshop; set workshop to none first".
+ * Offering it there would be an option whose only outcome is a 422 the operator
+ * cannot read.
+ */
+export function allowedLifecycleTargets(vehicle: VehicleDetail): readonly VehicleLifecycleStatus[] {
+  const targets = VEHICLE_LIFECYCLE_TRANSITIONS[vehicle.lifecycleStatus] ?? [];
+  if (vehicle.workshopStatus === 'none') return targets;
+  return targets.filter((target) => target !== 'scrapped');
+}
+
+/** The workshop moves offered for this vehicle. */
+export function allowedWorkshopTargets(vehicle: VehicleDetail): readonly WorkshopStatus[] {
+  return VEHICLE_WORKSHOP_TRANSITIONS[vehicle.workshopStatus] ?? [];
+}
+
+/**
  * A catalogue label, or the honest reason there isn't one.
  *
  * Three outcomes rather than two, because "no make recorded" and "a make you
