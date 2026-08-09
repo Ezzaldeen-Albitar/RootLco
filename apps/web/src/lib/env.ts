@@ -27,9 +27,10 @@ const schema = z.object({
    * The canonical local API origin — `localhost`, never the loopback literal.
    *
    * This value is inlined into the client bundle, so it is the address the
-   * BROWSER calls, and `src/proxy.ts` also derives the CSP `connect-src` from
-   * it. With the literal here a page served from `http://localhost:3100` was
-   * told to call `http://127.0.0.1:3000`: a different origin by the same
+   * BROWSER calls, and `src/proxy.ts` passes it to the CSP builder, so the
+   * `connect-src` directive is derived from it as well. With the literal here a
+   * page served from `http://localhost:3100` was told to call
+   * `http://127.0.0.1:3000`: a different origin by the same
    * host-string comparison that `P1-26-F-048` is about, and a `connect-src`
    * naming an origin the app is not served from (`P1-26-F-062`).
    *
@@ -47,8 +48,24 @@ const schema = z.object({
    * `currentAdapter()` stays `null` — the documented, tested default. No vendor
    * is named and no external service is claimed to exist.
    *
-   * Setting it is not sufficient on its own: the origin must also appear in
-   * `connect-src` in `src/proxy.ts`, or the browser blocks the delivery.
+   * **A BUILD-time switch, not a deploy-time one.** Every `NEXT_PUBLIC_*` value
+   * is inlined by Next during `next build`, and the beacon URL in
+   * `lib/observability/client-log.ts` is inlined into the client bundle like the
+   * rest. Set on an already-built deployment this variable does nothing at all:
+   * it has to be present for the build, and a change to it needs a rebuild.
+   *
+   * Delivery is by `navigator.sendBeacon`, which the browser governs by the CSP
+   * `connect-src` directive, and setting this variable admits the origin
+   * automatically: `src/proxy.ts` reads the same variable and hands it to
+   * `contentSecurityPolicy` in `src/lib/security/csp.ts`, which is the one place
+   * `connect-src` is assembled and which adds the ORIGIN (path discarded).
+   * Unset, the header is byte identical to what it was without a sink.
+   *
+   * This corrects a false instruction that shipped here and in
+   * `client-log.ts`: it named the proxy file as the place to widen the policy by
+   * hand. No directive is written there, and the builder took no parameter for a
+   * second origin, so the documented way to switch the feature on could not work
+   * at all (`P1-27-DO-002`).
    */
   NEXT_PUBLIC_CLIENT_MONITORING_URL: z.string().url().optional(),
 });
