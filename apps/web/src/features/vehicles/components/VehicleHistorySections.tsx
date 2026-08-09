@@ -136,6 +136,9 @@ function TransferOwnershipForm({
             value={customer}
             onChange={setCustomer}
             required
+            // Inside `RecordForm`'s form, so its party-type filter is subject to
+            // the post-action `form.reset()` like every other control here.
+            attempt={state.attempt ?? 0}
           />
           {state.fieldErrors?.partnerId ? (
             <p role="alert" className="text-caption text-error">

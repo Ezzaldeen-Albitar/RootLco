@@ -93,7 +93,34 @@ export function VehicleCreateScreen({
       const errors = validateVehicleCreate(values);
       if (Object.keys(errors).length > 0) {
         setClientErrors(errors);
-        return { ...previous, status: 'invalid' as const, fieldErrors: errors };
+        /*
+         * `attempt` MUST advance here, and this was the one failure branch in
+         * the phase that did not advance it.
+         *
+         * Every catalogue `<select>` on this screen is keyed on
+         * `state.attempt ?? 0` so that a failed submit remounts it — React never
+         * re-syncs an uncontrolled select's DOM default after mount, and
+         * `form.reset()` runs after the action, so without a remount the
+         * operator's choice is restored to the placeholder.
+         *
+         * `{ ...previous }` carried `attempt` through unchanged. On the FIRST
+         * client-validation failure `previous` is `EMPTY`, so `attempt` stayed
+         * undefined, the key stayed `0`, and no select remounted. The five
+         * catalogue selects and the powertrain category reverted to their
+         * placeholders while `values` still held the chosen ids — so
+         * `validateVehicleCreate(values)` passed on the retry while
+         * `createVehicleAction` read an empty FormData for each of them. Every
+         * one of those fields is optional server-side, so the retry SUCCEEDED
+         * and created a vehicle with no make, no model and no body type.
+         *
+         * A silent wrong write, reachable by mistyping a year and correcting it.
+         */
+        return {
+          ...previous,
+          status: 'invalid' as const,
+          fieldErrors: errors,
+          attempt: (previous.attempt ?? 0) + 1,
+        };
       }
       setClientErrors({});
       const result = await createVehicleAction(previous, form);

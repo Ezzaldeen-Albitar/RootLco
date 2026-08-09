@@ -92,22 +92,72 @@ All 33 are adjudicated below.
 ```
 ADJUDICATED       = 33
 FIXED             = 32
-NO_CHANGE_NEEDED  =  1     DO-002
+NO_CHANGE_NEEDED  =  1     DO-002  -- see the retraction below; this is wrong
 BLOCKED           =  0     (was 1: FE-029, unblocked by PR #212)
 OPEN              =  0     (was 1: QA-005, closed at ed7b942)
-
-RESOLVED   / 42   = 42
-UNRESOLVED / 42   =  0
 ```
 
-**`RESOLVED = 42` is a statement about TASKS and about nothing else.** It is not
-closure, it is not acceptance, and it does not license a gate record. P1-27
-closes only when the Product Owner tests the running application by hand and
-returns an explicit verdict; silence, absence and a green pipeline are none of
-them. `apps/web/tests/p1-27-doc-reconciliation.test.ts` requires every evidence
-record to carry the current Owner status **unconditionally** — that requirement
-used to be nested inside "while tasks remain open", which would have switched the
-guard off at the exact moment the last task closed.
+## RETRACTED — this block said `RESOLVED / 42 = 42` and that does not follow
+
+It read `RESOLVED / 42 = 42`, `UNRESOLVED / 42 = 0`. **Thirty-three adjudicated
+items are not forty-two canonical tasks**, and the missing nine were never
+enumerated anywhere in this phase. A fifth adversarial pass derived them:
+
+```
+FE-005  FE-006  FE-011  FE-012  FE-014  FE-025  FE-027  QA-004  DO-001
+```
+
+None has a row in the Summary table above. Their entire basis is that the
+independent audit returned them PASS and no later round disputed them. That is a
+real basis and a weaker one, and the difference had to be stated rather than
+absorbed into a total — **on this same audit's passes the refutation rate was
+eleven of twenty.** The audit also ran 71 commits and 121 changed files ago,
+including both Backend merges.
+
+Two of the nine are worse than unenumerated:
+
+**`DO-002` — "Structured logging, monitoring **and** alert routing".** A
+three-part conjunction. This document's own re-derivation concedes the third
+part: _"Alert routing — deliberately unattached."_ `setMonitoringAdapter` has
+**zero production callers**, verified repository-wide. `evidence/task-traceability.md`
+states it plainly: _"no alert route is provisioned or claimed for P1-27"_.
+
+That is exactly the reasoning on which `DOC-002` was REOPENED — "one half proven
+is not a task delivered" — applied to `DOC-002` and not to `DO-002`, in the same
+table, on the same page. `DO-002` is therefore **partially delivered**: logging
+and monitoring yes, alert routing no. Its `no change needed` verdict stands for
+the audit's narrow claim and does not make the task whole.
+
+**`QA-004` — "Concurrency **and** idempotency".** The idempotency half is proved
+in four assertions. The concurrency half is contradicted by this phase's own open
+finding `P1-27-INT-009`: `recordVersion` is published and an ETag emitted, and no
+vehicle write consumes either, so concurrent edits are last-writer-wins from a
+client's position. "Blocks no P1-27 screen" is a scope argument, not evidence the
+conjunct was delivered.
+
+### What the number actually is
+
+```
+ADJUDICATED AND CLOSED          = 32     each named, reproduced, mutation-proved
+ADJUDICATED, PARTIAL            =  1     DO-002 -- alert routing not delivered
+UNDISPUTED AUDIT PASS           =  8     no adjudication; basis is "nobody raised it"
+UNDISPUTED PASS, CONJUNCTION    =  1     QA-004 -- concurrency half contradicted
+
+DELIVERED AND PROVEN     / 42   = 40
+PARTIALLY DELIVERED      / 42   =  2     DO-002, QA-004
+```
+
+**P1-27 is not at 42 of 42 and must not be reported as such.** The claim was
+written into four documents before anything derived it, and the derivation is
+what removed it. That is the second time in this phase a total was recorded ahead
+of its own evidence — `RESOLVED = 41` was the first — so the pattern is now
+named rather than merely corrected: _a count assembled from a table plus a
+remainder nobody listed is not a count._
+
+**Whatever the number, it is a statement about TASKS and about nothing else.** It
+is not closure, not acceptance, and does not license a gate record. P1-27 closes
+only when the Product Owner tests the running application by hand and returns an
+explicit verdict; silence, absence and a green pipeline are none of them.
 
 The previous revision of this block read `FIXED = 31`, `OPEN = 1`,
 `RESOLVED = 41`. `QA-005` was deliberately last: it records the clean-room and

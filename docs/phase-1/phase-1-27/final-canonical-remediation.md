@@ -374,29 +374,35 @@ green because the checks that would contradict it were not the ones run.
 ### 7A.1 Superseded — the same audit, re-derived after remediation
 
 The block above is the state of the tree when the audit ran and is kept exactly
-as written. It has since been worked through. Every one of the thirty-three
-adjudicated items is closed, and the 42-task derivation now returns:
+as written. It has since been worked through: every one of the thirty-three
+adjudicated items is closed.
+
+**This section briefly claimed `PASS = 42 / FAIL = 0`. That was withdrawn within
+the same wave, by the adversarial pass that was supposed to confirm it.**
+
+Thirty-three adjudicated items are not forty-two canonical tasks. Nine tasks —
+`FE-005`, `FE-006`, `FE-011`, `FE-012`, `FE-014`, `FE-025`, `FE-027`, `QA-004`,
+`DO-001` — have no row in the adjudication and were never enumerated anywhere.
+Their basis is an undisputed PASS from the audit above, whose own pass verdicts
+were refuted eleven times in twenty. Two of the nine are conjunctions with a
+conceded half: `DO-002`'s alert routing is explicitly unattached, and `QA-004`'s
+concurrency half is contradicted by `P1-27-INT-009`.
 
 ```
-TASKS_AUDITED = 42
-PASS          = 42
-FAIL          =  0
+DELIVERED AND PROVEN     / 42   = 40
+PARTIALLY DELIVERED      / 42   =  2     DO-002, QA-004
 ```
 
-Two things must be read with it, or the number means less than it looks.
+The itemised derivation is in `final-task-adjudication.md`, which is canonical for
+status. The correction is left visible rather than overwritten because it is the
+second time in this phase a total was written before anything derived it, and a
+record that shows only the final number cannot be checked.
 
-**A refuted pass is a fail.** `PASS_REFUTED = 11` above meant the audit's own
-`PASS = 20` was really nine — the correction is preserved in
-`evidence/change-log.md` under "Audit progression". The count is only worth
-anything because each of the thirty-three was named, reproduced, individually
-adjudicated and mutation-proved; the itemised list is `final-task-adjudication.md`,
-which is canonical for status.
-
-**Forty-two tasks is not a delivered phase.** `P1-27` remains
-`OWNER ACCEPTANCE: FAIL` and closes only on an explicit Owner verdict against the
-running application. This phase has already recorded three occasions where every
-automated tier was green over a defect a person found by hand, so the pipeline's
-agreement is necessary and has never been sufficient.
+**A number is not a delivered phase.** `P1-27` remains `OWNER ACCEPTANCE: FAIL`
+and closes only on an explicit Owner verdict against the running application.
+This phase has recorded three occasions where every automated tier was green over
+a defect a person found by hand, so the pipeline's agreement is necessary and has
+never been sufficient.
 
 ### The D2 Backend half was riding inside this Frontend branch
 

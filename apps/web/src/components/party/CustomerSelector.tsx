@@ -193,6 +193,7 @@ export function CustomerSelector({
   value,
   onChange,
   required = false,
+  attempt = 0,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -202,6 +203,22 @@ export function CustomerSelector({
   readonly value: SelectedCustomer | null;
   readonly onChange: (customer: SelectedCustomer | null) => void;
   readonly required?: boolean;
+  /**
+   * The enclosing action's submit counter. **Required in practice whenever this
+   * is rendered inside a `<form action={…}>`**, which is every P1-27 use of it.
+   *
+   * React calls `form.reset()` after a form action, and a `<select>` is never
+   * re-synced by the reconciler after mount. Without a value that changes per
+   * attempt, the party-type filter reverted to "Any type" after a failed write
+   * while `draft.partyType` kept the old value — so the next search was still
+   * restricted to companies while the control said it was not. A filter that
+   * misreports what it is filtering by is worse than one that resets.
+   *
+   * Defaulted to 0 rather than made required so a non-form caller need not
+   * invent one; `apps/web/tests/form-reset-class.test.ts` requires every use
+   * inside a form to pass it.
+   */
+  readonly attempt?: number;
 }) {
   const base = useId();
   const [draft, setDraft] = useState<CustomerSearchCriteria>({});
@@ -336,9 +353,15 @@ export function CustomerSelector({
             }
           }}
         />
+        {/*
+         * Uncontrolled + remounted per attempt + onChange — the same three-part
+         * shape `RecordForm` uses, for the same reason. A controlled `value=`
+         * here loses to the post-action `form.reset()`.
+         */}
         <SelectField
+          key={`party-type-${attempt}`}
           label={translate(messages, 'crm.customers.column.type')}
-          value={draft.partyType ?? ''}
+          defaultValue={draft.partyType ?? ''}
           options={partyOptions}
           placeholder={translate(messages, 'customerSelector.anyType')}
           onChange={(event) =>

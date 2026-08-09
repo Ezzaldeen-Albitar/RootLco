@@ -175,6 +175,71 @@ describe('a failed creation keeps what the operator chose', () => {
     expect(make(), 'the chosen Make was discarded by the failure').toHaveValue(MAKE_UUID);
     expect(category(), 'the chosen powertrain category was discarded').toHaveValue('ev');
   });
+
+  it('keeps them when the CLIENT rejects the form, and the retry still carries them', async () => {
+    /*
+     * `F-01`. The case above proved the SERVER-failure branch. The
+     * client-validation branch was the one failure return in the whole phase
+     * that did not advance `attempt`:
+     *
+     *     return { ...previous, status: 'invalid', fieldErrors: errors };
+     *
+     * On the first client rejection `previous` is `EMPTY`, so `attempt` stayed
+     * undefined, every `key={…-${state.attempt ?? 0}}` stayed `0`, and no select
+     * remounted. React's `form.reset()` then restored all five catalogue selects
+     * to their placeholders.
+     *
+     * The harm is not the visual revert. `validateVehicleCreate` reads STATE,
+     * which survives; `createVehicleAction` reads FORM DATA, which does not. So
+     * the retry passed validation and submitted with every catalogue id empty —
+     * and each of those fields is optional server-side, so it SUCCEEDED. A
+     * vehicle with no make, no model and no body type, created by mistyping a
+     * year and correcting it.
+     *
+     * The second half of this test is the part that matters: it submits again
+     * and reads what the action actually received.
+     */
+    const user = userEvent.setup();
+    render();
+
+    const field = (name: string) => {
+      const el = document.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
+      expect(el, `${name} is not on the form`).not.toBeNull();
+      return el as HTMLSelectElement;
+    };
+    const year = () =>
+      document.querySelector<HTMLInputElement>('input[name="modelYear"]') as HTMLInputElement;
+
+    await user.selectOptions(field('makeId'), MAKE_UUID);
+    await user.selectOptions(field('powertrainCategory'), 'ev');
+    expect(year(), 'the model year field is not on the form').not.toBeNull();
+    await user.clear(year());
+    await user.type(year(), '12');
+    await submit();
+
+    // The client refused it, so the server was never asked.
+    expect(
+      createVehicleAction,
+      'the client did not reject an out-of-range year'
+    ).not.toHaveBeenCalled();
+
+    expect(field('makeId'), 'the chosen Make was discarded by CLIENT validation').toHaveValue(
+      MAKE_UUID
+    );
+    expect(field('powertrainCategory')).toHaveValue('ev');
+
+    // Correct the year and submit for real. What the action RECEIVES is the
+    // assertion — a form that displays the right values and submits empty ones
+    // is the defect, not the fix.
+    await user.clear(year());
+    await user.type(year(), '2012');
+    await submit();
+
+    await waitFor(() => expect(createVehicleAction).toHaveBeenCalledTimes(1));
+    const form = createVehicleAction.mock.calls[0]?.[1] as FormData;
+    expect(form.get('makeId'), 'the retry submitted an empty Make').toBe(MAKE_UUID);
+    expect(form.get('powertrainCategory'), 'the retry submitted an empty category').toBe('ev');
+  });
 });
 
 describe('the created vehicle is reachable from the screen that created it', () => {

@@ -241,8 +241,21 @@ open". The commit closing the last task would have taken that count to zero and
 silently disabled it — a guard that disarms on success, in a file written to
 catch exactly that. It is now unconditional.
 
-The task count is **42 of 42**. That is a statement about tasks. It is not
-closure, not acceptance, and not a gate record.
+This entry claimed the task count was **42 of 42**. **It is not, and the
+adversarial pass run immediately afterwards is what withdrew it.**
+
+Thirty-three items were adjudicated; forty-two are canonical. The nine that were
+never enumerated — `FE-005`, `FE-006`, `FE-011`, `FE-012`, `FE-014`, `FE-025`,
+`FE-027`, `QA-004`, `DO-001` — rested on an undisputed audit PASS, from an audit
+whose passes had been refuted eleven times in twenty. And two are conjunctions
+with a conceded half: `DO-002`'s alert routing is unattached by design and
+`QA-004`'s concurrency half is contradicted by `P1-27-INT-009`. The honest count
+is **40 delivered and proven, 2 partially delivered**; the derivation is in
+`final-task-adjudication.md`.
+
+The claim is left standing above with this retraction beneath it, because the
+useful part of this record is not the final number but the sequence of numbers
+that turned out to be wrong.
 
 **And the commit that did all this went red in hosted CI**, which is worth
 recording rather than quietly fixing. Adding one file took `scripts/ci` from 41
@@ -262,12 +275,12 @@ ran is indistinguishable from local green.
 
 ## Audit progression, preserved
 
-| stage                                | result                                          |
-| ------------------------------------ | ----------------------------------------------- |
-| Initial claim                        | 42 / 42                                         |
-| Adversarial audit                    | 20 PASS / 22 FAIL, `PASS_REFUTED = 11`          |
-| Corrected reading of that same audit | **9 PASS / 33 FAIL** — a refuted pass is a fail |
-| After this branch's remediation      | 42 / 42, derived — `final-task-adjudication.md` |
+| stage                                | result                                                   |
+| ------------------------------------ | -------------------------------------------------------- |
+| Initial claim                        | 42 / 42                                                  |
+| Adversarial audit                    | 20 PASS / 22 FAIL, `PASS_REFUTED = 11`                   |
+| Corrected reading of that same audit | **9 PASS / 33 FAIL** — a refuted pass is a fail          |
+| After this branch's remediation      | **40 / 42 proven, 2 partial** — see the retraction above |
 
 The first row and the last read the same. They are not the same claim: the first
 was asserted, the last is derived from thirty-three individually adjudicated

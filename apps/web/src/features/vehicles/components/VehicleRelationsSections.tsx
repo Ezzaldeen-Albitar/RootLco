@@ -331,6 +331,7 @@ function AuthorizePartyForm({
               value={customer}
               onChange={setCustomer}
               required
+              attempt={state.attempt ?? 0}
             />
             {state.fieldErrors?.partnerId ? (
               <p role="alert" className="text-caption text-error">
@@ -350,12 +351,32 @@ function AuthorizePartyForm({
               {AUTHORIZED_ACTIONS.map((action) => (
                 <label key={action} className="flex items-start gap-2 text-body text-text-primary">
                   <input
+                    /*
+                     * UNCONTROLLED, remounted per attempt — not `checked=`.
+                     *
+                     * These render inside `RecordForm`'s `<form action={…}>` via
+                     * `prelude`, so they inherit React's post-action
+                     * `form.reset()` and none of `RecordForm`'s own protection.
+                     * React assigns `defaultChecked` only when `checked` is
+                     * nullish, so a controlled checkbox's default is frozen at
+                     * its MOUNT value — `false` here — and the reset un-ticks it
+                     * whatever the operator chose.
+                     *
+                     * The consequence was worse than a visual revert. `guard`
+                     * validates `actions` from state, which survives; the action
+                     * reads `form.getAll('allowedActions')`, which does not. So
+                     * a retry after a failed write passed the client scope check
+                     * and was rejected by the server for an empty scope — a
+                     * scope error on a form whose own guard had just approved
+                     * the scope.
+                     */
+                    key={`${action}-${state.attempt ?? 0}`}
                     type="checkbox"
                     // Repeated `name`, read with `getAll` — the shape the action
                     // expects, and the shape an array field must take in a form.
                     name="allowedActions"
                     value={action}
-                    checked={actions.includes(action)}
+                    defaultChecked={actions.includes(action)}
                     onChange={() => toggle(action)}
                     className="mt-1 size-4 accent-primary"
                   />
@@ -432,6 +453,7 @@ function LinkCustomerForm({
             value={customer}
             onChange={setCustomer}
             required
+            attempt={state.attempt ?? 0}
           />
           {state.fieldErrors?.partnerId ? (
             <p role="alert" className="text-caption text-error">

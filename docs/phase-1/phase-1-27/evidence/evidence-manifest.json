@@ -5,8 +5,12 @@
   "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
-  "fileCount": 29,
+  "fileCount": 30,
   "files": {
+    "docs/phase-1/phase-1-27/adversarial-round-five.md": {
+      "sha256": "2047b35bca7ca250b455ff7d472cd20e2d8efc3112129f4c77d45aa31900bc31",
+      "bytes": 19718
+    },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
       "bytes": 12457
@@ -36,16 +40,16 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "2f96fef453c447f38a6ef1415dfc906b997cef19e05db4a95c3e0c36e6ea4549",
-      "bytes": 117222
+      "sha256": "8ccb7953ba53b1dfc8b6ac3991e4559f07bd05ef8729d19db7ad86ba5b7dbf76",
+      "bytes": 117994
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "0480b4042b48e3ae9d0df7b44966097e1a808b5642c59940851a96ee7a22b7e2",
       "bytes": 7093
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "2ed50bba25efeb0b9704822f264d126329bacf17df27618ad6014910d49db5d6",
-      "bytes": 21405
+      "sha256": "fd51ae8d206a7b365ee0e35057e69f3cc681159c3908aa48a78872e03aa312cc",
+      "bytes": 22250
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
       "sha256": "ef6466cca4766d9dcaade486bc919c3e465eb27b4b1db2015c1e0edd1b8a33c2",
@@ -56,12 +60,12 @@
       "bytes": 18005
     },
     "docs/phase-1/phase-1-27/final-canonical-remediation.md": {
-      "sha256": "cb003b0d1786cd27becd3a18a28893320e1ef42ce291a06426d6d43a4bece223",
-      "bytes": 26945
+      "sha256": "08d91caa76b4f2f2018d1091b146336c46821056dd244ed7e28fba5b172d2a44",
+      "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "97f6ec9dd7f960ed8a7a6950c236fe8b9328b6cc28f34885b5022af5af095755",
-      "bytes": 58565
+      "sha256": "a0f865af0fe078c844a9bd0d0c613a85d0f1cd54956346c8357bd05f234d0e70",
+      "bytes": 61239
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
