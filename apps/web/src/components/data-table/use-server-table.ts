@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { TableStatus } from './DataTable';
-import { INITIAL_REQUEST, type TableRequest, type TableResponse } from './table-state';
+import { INITIAL_REQUEST, withPage, type TableRequest, type TableResponse } from './table-state';
 import { orderingKeyOf, useCursorPages } from './use-cursor-pages';
 
 /**
@@ -91,8 +91,41 @@ export function useServerTable<Row>(
   } | null>(null);
 
   const ordering = orderingKeyOf(request);
-  const cursors = useCursorPages(`${ordering}#${options.loadKey ?? ''}`);
-  const wanted = `${ordering}#${options.loadKey ?? ''}#${request.page}#${generation}`;
+  const loadKey = options.loadKey ?? '';
+
+  /*
+   * A `loadKey` change resets the page as well as the cursor stack.
+   *
+   * `table-state.ts` states the invariant for this whole module — "Sorting or
+   * filtering resets to page one, because staying on page seven of a result set
+   * that just changed shape shows the operator an arbitrary window of different
+   * data" — and every IN-REQUEST transition honours it. `loadKey` is filter
+   * state that lives OUTSIDE `TableRequest`, and it took only half the
+   * guarantee: `useCursorPages` reset the stack to `[null]` while `request.page`
+   * stayed where it was.
+   *
+   * The result was a pager permanently out by one for that filter.
+   * `cursorFor(2)` on a one-element stack returns null, so the stale page number
+   * was sent with the START cursor; `remember(2, …)` then wrote index 2 over a
+   * length-1 array, leaving a hole at index 1 that pinned page 2 to the start.
+   * "Page 2" showed page 1, "page 3" showed page 2, and Previous to page 1
+   * showed the same rows again.
+   *
+   * The two search screens escape this because remounting resets the request as
+   * well as the stack. The queues had the half that does not include the page.
+   *
+   * Adjusted during render rather than in an effect — React's documented shape
+   * for "reset state when a prop changes". An effect would render one frame with
+   * the stale page and issue the wrong read before correcting itself.
+   */
+  const [lastLoadKey, setLastLoadKey] = useState(loadKey);
+  if (loadKey !== lastLoadKey) {
+    setLastLoadKey(loadKey);
+    if (request.page !== 1) setRequest((current) => withPage(current, 1));
+  }
+
+  const cursors = useCursorPages(`${ordering}#${loadKey}`);
+  const wanted = `${ordering}#${loadKey}#${request.page}#${generation}`;
 
   useEffect(() => {
     let cancelled = false;

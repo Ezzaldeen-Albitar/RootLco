@@ -250,7 +250,24 @@ const odometerSchema = z
       .regex(
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/,
         'vehicles.odometer.error.observedAt'
-      ),
+      )
+      /*
+       * The SECOND half of the domain rule, which the first version omitted.
+       *
+       * `normalizeObservedAt` (`vehicle-odometer.ts:93`) is
+       * `ISO_DATETIME.test(trimmed) && !Number.isNaN(Date.parse(trimmed))`. Only
+       * the regex was copied, so a well-SHAPED but impossible instant —
+       * `2026-13-05T…` from a day/month swap, or `2026-02-30T…` — passed the
+       * edge, spent one of the thirty requests a minute, and came back refused
+       * with no field marked. Which is the exact failure `FE-023` exists to
+       * prevent, surviving inside its own fix.
+       *
+       * The earlier comment here named `vehicle-odometer.ts:46` as "the rule
+       * that actually decides". Line 46 is the constant; the rule is line 93.
+       */
+      .refine((value) => !Number.isNaN(Date.parse(value)), {
+        message: 'vehicles.odometer.error.observedAt',
+      }),
     captureMethod: z.enum(ODOMETER_CAPTURE_METHODS).optional(),
   })
   .strict();

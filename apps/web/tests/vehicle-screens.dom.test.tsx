@@ -481,6 +481,55 @@ describe('the vehicle duplicate queue', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('returns to page one when the filter changes, so the pager is not left offset', async () => {
+    /*
+     * `FE-028-01` — introduced by the `loadKey` fix itself.
+     *
+     * `table-state.ts` states the invariant for the whole module: "Sorting or
+     * filtering resets to page one, because staying on page seven of a result
+     * set that just changed shape shows the operator an arbitrary window of
+     * different data." Every in-request transition honours it.
+     *
+     * `loadKey` is filter state living OUTSIDE `TableRequest`, and it took only
+     * half of that guarantee — `useCursorPages` reset the stack while
+     * `request.page` stayed put. `cursorFor(2)` on a one-element stack returns
+     * null, so the STALE page number went out with the START cursor and the
+     * pager stayed permanently out by one for that filter: "page 2" showing
+     * page 1, and Previous to page 1 showing the same rows again.
+     *
+     * The assertion is the `page` the adapter is CALLED with, because that is
+     * the only thing that distinguishes a real reset from a re-render.
+     */
+    const user = userEvent.setup();
+    listVehicleDuplicates.mockResolvedValue(page([CANDIDATE], { hasMore: true }));
+    render();
+    await screen.findByText('93%');
+
+    await user.click(screen.getByRole('button', { name: en['table.nextPage'] }));
+    await waitFor(() =>
+      expect(
+        listVehicleDuplicates.mock.calls.some(
+          (call) => (call[1] as { page?: number } | undefined)?.page === 2
+        ),
+        'the pager never reached page two, so the case below would prove nothing'
+      ).toBe(true)
+    );
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['vehicles.duplicateStatus.dismissed']
+    );
+
+    await waitFor(() => {
+      const dismissed = listVehicleDuplicates.mock.calls.filter((call) => call[0] === 'dismissed');
+      expect(dismissed.length, 'the filter issued no read').toBeGreaterThan(0);
+      expect(
+        dismissed.every((call) => (call[1] as { page?: number } | undefined)?.page === 1),
+        'the new filter was read at a stale page number, so the pager is offset'
+      ).toBe(true);
+    });
+  });
+
   /**
    * Owner acceptance reversed this test's premise.
    *

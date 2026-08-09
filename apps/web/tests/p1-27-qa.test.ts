@@ -618,6 +618,70 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
     expect(send, 'a valid timestamp was refused too').toHaveBeenCalledTimes(1);
   });
 
+  it('refuses a well-shaped timestamp that is not a real instant', async () => {
+    /*
+     * `F3` — `FE-023` copied half of the rule that decides.
+     *
+     * The domain's `normalizeObservedAt` (`vehicle-odometer.ts:93`) is
+     * `ISO_DATETIME.test(trimmed) && !Number.isNaN(Date.parse(trimmed))`. Only
+     * the regex reached the edge, so a value that MATCHES the shape but names no
+     * instant passed the client, spent one of the thirty requests a minute, and
+     * came back refused with no field marked — the exact failure `FE-023` exists
+     * to prevent, surviving inside its own fix.
+     *
+     * A day/month swap is the way an operator meets this: `2026-13-05` is what
+     * "5 December" becomes when the two fields are entered the other way round.
+     * It matches the regex exactly and names no instant.
+     */
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    const rejected = await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ value: '123456', unit: 'km', observedAt: '2026-13-05T09:30:00Z' })
+    );
+
+    expect(
+      send,
+      'a month of 13 reached the platform; the edge only checked the shape'
+    ).toHaveBeenCalledTimes(0);
+    expect(JSON.stringify(rejected)).toContain('observedAt');
+  });
+
+  it('does NOT refuse a rolled-over date the platform accepts', async () => {
+    /*
+     * The bound in the other direction, and it corrected this file's own first
+     * draft. `2026-02-30` was asserted as refused on the assumption that a
+     * thirty-day February is impossible. It is not, to JavaScript: `Date.parse`
+     * ROLLS IT OVER to 2 March and returns a number.
+     *
+     * The domain rule is `!Number.isNaN(Date.parse(trimmed))`, so the platform
+     * accepts it and stores 2 March. Refusing it here would make the client
+     * stricter than the server — a client bound that rejects a value the server
+     * would have stored, which `RecordForm`'s `FieldSpec` docblock names as the
+     * thing these edges must never do.
+     *
+     * Recorded rather than fixed: mirroring the platform means mirroring this
+     * too. An operator who types 30 February gets a reading dated 2 March, and
+     * that is a foundation-owned question about `normalizeObservedAt`, not one
+     * this screen may answer differently from the write it calls.
+     */
+    expect(Number.isNaN(Date.parse('2026-02-30T09:30:00Z'))).toBe(false);
+
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+    await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ value: '123456', unit: 'km', observedAt: '2026-02-30T09:30:00Z' })
+    );
+    expect(
+      send,
+      'the edge refused a value the platform stores — it is now stricter than the server'
+    ).toHaveBeenCalledTimes(1);
+  });
+
   it('the write sweep is a stated sample, and the static gate covers the rest', () => {
     /*
      * The number of write adapters the sweep above DRIVES, against the number

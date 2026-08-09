@@ -314,7 +314,7 @@ record.
 | `crm.vehicle-link`               | `FE-025`      | `relations-api.ts:226`      |
 | `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:212`        |
 | `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:155`        |
-| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:286`        |
+| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:303`        |
 
 The earlier version of this section said "the other **seven** are simply not
 built". That was true when it was written and false by the time it was read,
