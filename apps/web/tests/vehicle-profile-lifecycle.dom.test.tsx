@@ -57,9 +57,13 @@ const listAttributeHistory = vi.fn();
 // anonymous `vi.fn` returning `idle` for the whole of the phase, which is why no
 // case here had ever seen this panel after a failed submit.
 const changeVehicleStatusAction = vi.fn();
+// Captured for the same reason: `FE-019` is about whether the EDIT panel re-reads
+// the vehicle after a successful save, and an anonymous `vi.fn` returning `idle`
+// can never reach the success branch — so the omission was invisible.
+const updateVehicleAction = vi.fn();
 
 vi.mock('@/features/vehicles/profile-api', () => ({
-  updateVehicleAction: vi.fn(async () => ({ status: 'idle' })),
+  updateVehicleAction: (...a: unknown[]) => updateVehicleAction(...a),
   changeVehicleStatusAction: (...a: unknown[]) => changeVehicleStatusAction(...a),
   checkVinAvailability: vi.fn(async () => ({ status: 'unavailable' })),
 }));
@@ -173,6 +177,8 @@ beforeEach(() => {
   }
   changeVehicleStatusAction.mockReset();
   changeVehicleStatusAction.mockResolvedValue({ status: 'idle' });
+  updateVehicleAction.mockReset();
+  updateVehicleAction.mockResolvedValue({ status: 'idle' });
   refresh.mockReset();
 });
 
@@ -417,6 +423,81 @@ describe('a merged vehicle withdraws everything', () => {
     await waitFor(() => expect(listOdometerReadings).toHaveBeenCalled());
     await waitFor(() => expect(view.container.querySelector('table')).toBeTruthy());
     expect(screen.queryByRole('button', { name: ODOMETER_FORM })).toBeNull();
+  });
+});
+
+describe('the edit panel re-reads the vehicle it just changed — FE-019', () => {
+  /**
+   * `EditPanel` was the ONE writer on this screen that never re-read.
+   *
+   * `vehicle` is a prop, read on the SERVER by the page: a successful PATCH
+   * changes the stored row and nothing on screen. `ProfileHeader` kept printing
+   * the pre-edit title, model year and reference; `Overview` kept printing the
+   * pre-edit colour and VIN. The operator saw "Vehicle updated." beside values
+   * that had not moved, which reads as a save that did not happen — and the next
+   * submission is computed against `original` values that are now stale, so a
+   * field they had just corrected is offered back as unchanged.
+   *
+   * `EvProfileSection` and `StatusPanel` both already called `router.refresh()`
+   * for exactly this reason. The refresh IS the assertion, because there is no
+   * client fetch to re-run and nothing else can bring the new row back.
+   */
+  async function editColour(to: string) {
+    const user = userEvent.setup();
+    render();
+    // `exact`, because `Overview` renders the same catalogue string as a `dt`
+    // beside this field — a substring match would find the wrong node, or two.
+    await user.clear(screen.getByLabelText(en['vehicles.create.color'], { exact: true }));
+    await user.type(screen.getByLabelText(en['vehicles.create.color'], { exact: true }), to);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+  }
+
+  it('refreshes the page read after a successful save', async () => {
+    updateVehicleAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'vehicles.profile.saved',
+    });
+    await editColour('Blue');
+
+    await waitFor(() => expect(updateVehicleAction).toHaveBeenCalledTimes(1));
+    // The changed field, and only it: an absent field leaves the column
+    // untouched and an explicit null CLEARS it, so a full-object PATCH would
+    // wipe what the operator did not touch.
+    expect(updateVehicleAction.mock.calls[0]?.[1]).toEqual({ color: 'Blue' });
+    await waitFor(() =>
+      expect(
+        refresh,
+        'the header and overview keep the pre-edit values after a successful save'
+      ).toHaveBeenCalledTimes(1)
+    );
+  });
+
+  it('does not refresh when the save was refused', async () => {
+    // The other direction, so the case above cannot be satisfied by a panel that
+    // refreshes unconditionally — which would spend a server round trip on an
+    // edit that did not land, and would look identical on a green suite.
+    updateVehicleAction.mockResolvedValue({
+      status: 'invalid',
+      fieldErrors: { color: 'field.tooLong' },
+    });
+    await editColour('Blue');
+
+    await waitFor(() => expect(updateVehicleAction).toHaveBeenCalledTimes(1));
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh when nothing changed, because nothing was sent', async () => {
+    // `updateVehicleAction` returns `idle` for an empty change set without
+    // calling the client at all. A refresh here would be a page read triggered
+    // by a button press that did nothing.
+    updateVehicleAction.mockResolvedValue({ status: 'idle' });
+    const user = userEvent.setup();
+    render();
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(updateVehicleAction).toHaveBeenCalledTimes(1));
+    expect(updateVehicleAction.mock.calls[0]?.[1]).toEqual({});
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

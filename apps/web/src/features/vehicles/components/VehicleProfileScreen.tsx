@@ -522,6 +522,22 @@ function EditPanel({
   readonly vehicle: VehicleDetail;
 }) {
   const formId = useId();
+  /*
+   * `FE-019`. The one writer on this screen that never re-read what it wrote.
+   *
+   * `vehicle` is a prop, read on the SERVER by the page. A successful PATCH
+   * changes the stored row and nothing else: `ProfileHeader` keeps printing the
+   * pre-edit title, model year and reference, and `Overview` keeps printing the
+   * pre-edit colour and VIN. The operator saw "Saved" beside values that had not
+   * moved, which reads as a save that did not happen — and the next edit is then
+   * computed against `original` values that are stale, so a field they had just
+   * corrected is offered back as unchanged.
+   *
+   * There is no client fetch to re-run, so `router.refresh()` is the only thing
+   * that can bring the new row back. `EvProfileSection` and `StatusPanel` both
+   * already do exactly this; this panel was the omission.
+   */
+  const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({
     vin: vehicle.vin ?? '',
     color: vehicle.color ?? '',
@@ -558,7 +574,12 @@ function EditPanel({
         }
       }
 
-      return updateVehicleAction(vehicle.id, changed, previous);
+      const result = await updateVehicleAction(vehicle.id, changed, previous);
+      // Only on success. Refreshing after a rejection would re-render the same
+      // stale values and discard nothing, but it would also spend a server
+      // round trip on an edit that did not land.
+      if (result.status === 'success') router.refresh();
+      return result;
     },
     { status: 'idle' } as ActionState
   );

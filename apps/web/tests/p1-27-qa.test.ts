@@ -37,8 +37,15 @@ const vehRelations = await import('@/features/vehicles/relations-api');
 const vehDuplicates = await import('@/features/vehicles/duplicates-api');
 const vehApi = await import('@/features/vehicles/api');
 const crmApi = await import('@/features/crm/customers/api');
-const crmGovernance = await import('@/features/crm/customers/governance-actions');
-const crmProfileActions = await import('@/features/crm/customers/profile-actions');
+/*
+ * The write table, shared with `write-adapters-driven.test.ts`.
+ *
+ * Imported after `vi.mock` above like every other feature module here — the mock
+ * is hoisted, so the adapters this module pulls in resolve the mocked client.
+ * Sharing it is the point: two suites that each kept their own list could
+ * disagree about which adapters exist, and the one that mattered was the shorter.
+ */
+const { WRITE_DRIVES, exportedWriteAdapters } = await import('./support/write-drives');
 
 /** A FormData from a plain object, so a write can be driven from a table. */
 function formOf(values: Record<string, string>): FormData {
@@ -520,53 +527,28 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
      * body is exactly as wrong as one in a query string. `send` was already
      * mocked in this file and never asserted on.
      *
-     * Three adapters are DRIVEN here, out of the ~23 the two trees export. That
-     * is a sample, and this comment used to claim it was not — "driven through
-     * the real write adapters, so a body assembled by a future edit is covered".
-     * The case below (`the write sweep is a stated sample, not a claim of
-     * completeness`) makes the sample explicit and fails if the set grows
-     * without somebody deciding what to do about it.
+     * ## This used to drive three of twenty-three, and said so
      *
-     * The completeness guarantee that IS real is static: `check-p1-27-frontend.mjs`
-     * scans both trees for `tenantId` / `companyId` / `branchId` with `allow: []`,
-     * so a scope smuggled into any future write body fails CI whether or not it
-     * is driven here. This runtime sweep proves the three bodies that are hardest
-     * to reason about statically — the ones assembled from a `FormData`.
+     * A stated sample is honest, and it was still a hole: nine of the twenty
+     * adapters outside the sample were driven by NOTHING anywhere in the suite,
+     * so the only runtime evidence about their bodies was this loop, and it did
+     * not look at them. The table now comes from `tests/support/write-drives.ts`
+     * and covers every adapter both trees export — the same table
+     * `write-adapters-driven.test.ts` executes, so the two suites cannot come to
+     * disagree about what the set is.
+     *
+     * The static rule remains the guarantee for code no test drives:
+     * `check-p1-27-frontend.mjs` scans both trees for `tenantId` / `companyId` /
+     * `branchId` with `allow: []`. This runtime sweep proves the assembled
+     * bodies, which is what a text scan cannot see.
      */
-    const WRITES: readonly { name: string; call: () => Promise<unknown> }[] = [
-      {
-        name: 'addNoteAction',
-        call: () =>
-          crmGovernance.addNoteAction(
-            'c1',
-            { status: 'idle' } as never,
-            formOf({ body: 'A note about the visit.' })
-          ),
-      },
-      {
-        name: 'addContactAction',
-        call: () =>
-          crmProfileActions.addContactAction(
-            'c1',
-            { status: 'idle' } as never,
-            formOf({ channel: 'email', value: 'a@b.test' })
-          ),
-      },
-      {
-        name: 'assignPlateAction',
-        call: () =>
-          vehHistory.assignPlateAction(
-            'v1',
-            { status: 'idle' } as never,
-            formOf({ countryCode: 'JO', plateRaw: '12-3456', validFrom: '2026-01-01' })
-          ),
-      },
-    ];
-
-    for (const write of WRITES) {
+    for (const write of WRITE_DRIVES) {
       send.mockReset();
       send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
       await write.call();
+      // The positive control. A `?? ''` here would let "no request at all" pass
+      // as "no scope", and an adapter that stopped calling the client would
+      // satisfy the sweep perfectly.
       expect(send, `${write.name} issued no request`).toHaveBeenCalledTimes(1);
       const call = JSON.stringify(send.mock.calls[0]);
       expect(call, write.name).not.toMatch(/tenant|company|branch/i);
@@ -682,51 +664,34 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it('the write sweep is a stated sample, and the static gate covers the rest', () => {
+  it('the write sweep is exhaustive, and fails closed when an adapter is added', () => {
     /*
      * The number of write adapters the sweep above DRIVES, against the number
-     * the two trees export. A sample is a legitimate choice; a sample described
-     * as exhaustive is not, and that is what the docblock above used to do.
+     * the two trees export. This was `DRIVEN = 3` asserted `toBeLessThan` the
+     * exported count — a statement that the sample is a sample, which can never
+     * fail however far the two numbers drift apart.
      *
-     * Pinning both numbers means the ratio cannot quietly worsen: adding a
-     * fourteenth write adapter without touching this file fails here, and
-     * whoever adds it decides whether to drive it or to rely on the static rule.
+     * It is an EQUALITY now, per name and not per count. A twenty-fourth adapter
+     * added without a drive fails here, and a drive naming an adapter that no
+     * longer exists fails too, so the table cannot become a place to park a name.
+     * A count alone could not do this: adding one adapter while driving another
+     * would balance.
      */
-    const DRIVEN = 3;
-    const exported = new Set<string>();
-    const roots = [
-      join(process.cwd(), 'src', 'features', 'crm'),
-      join(process.cwd(), 'src', 'features', 'vehicles'),
-    ];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full);
-          continue;
-        }
-        if (!entry.name.endsWith('.ts')) continue;
-        for (const m of stripComments(readFileSync(full, 'utf8')).matchAll(
-          /^export async function (\w+Action)/gm
-        )) {
-          if (m[1]) exported.add(m[1]);
-        }
-      }
-    };
-    for (const root of roots) walk(root);
+    const DRIVEN = WRITE_DRIVES.map((drive) => drive.name).sort();
+    const exported = exportedWriteAdapters();
 
-    expect(exported.size, 'no write adapters were discovered — the walk is broken').toBe(23);
+    expect(exported.length, 'no write adapters were discovered — the walk is broken').toBe(23);
+    expect(DRIVEN).toEqual([...exported]);
 
-    // And the static rule that DOES cover all of them, read from the gate rather
-    // than asserted: `no-client-asserted-scope` must scan both trees with no
-    // allowance, or the sentence above about CI is false.
+    // And the static rule that covers code no test drives at all, read from the
+    // gate rather than asserted: `no-client-asserted-scope` must scan both trees
+    // with no allowance, or the sentence above about CI is false.
     const gate = readFileSync(
       join(process.cwd(), '..', '..', 'scripts', 'ci', 'check-p1-27-frontend.mjs'),
       'utf8'
     );
     const rule = /id:\s*'no-client-asserted-scope'[\s\S]*?allow:\s*(\[[^\]]*\])/.exec(gate);
     expect(rule?.[1], 'the scope rule carries an allowance').toBe('[]');
-    expect(DRIVEN).toBeLessThan(exported.size);
   });
 
   it('encodes every path parameter, so an id cannot escape its segment', async () => {
