@@ -280,6 +280,26 @@ export class ApiClient {
    * lost-update waiting to happen, so the guard is not optional and is not
    * defaulted here either.
    *
+   * ## Which operations those are, said plainly (`P1-27-OD-005`)
+   *
+   * **Forty** route modules register `versionGuarded: true` — administration,
+   * work orders, appointments, invoices, deliveries. The P1-26 administration
+   * adapters pass `ifMatch` because they call those.
+   *
+   * **No CRM or Vehicle route is among them**, and none reads `expectedVersion`
+   * either, so an `If-Match` sent to one is parsed and then discarded. That is
+   * why no P1-27 adapter passes this argument: a header the server ignores would
+   * read as protection that is not there. Those writes are **last-writer-wins**
+   * from a client's position — `ERR-CON-001` is still raised for a genuine
+   * in-flight race, but on a version the SERVICE re-read inside its own
+   * transaction, which cannot see a change that landed between an operator's
+   * read and their save.
+   *
+   * Recorded as `P1-27-OD-005` in `docs/phase-1/phase-1-27/open-decisions.md`,
+   * with the Backend specification that would close it, and gated by the
+   * "concurrency semantics are stated, not overstated" cases in
+   * `tests/api-client.test.ts` so this paragraph cannot quietly go stale.
+   *
    * ## Why an idempotency key IS defaulted, when `If-Match` is not
    *
    * Every operation the backend marks `idempotent: true` **requires** an
