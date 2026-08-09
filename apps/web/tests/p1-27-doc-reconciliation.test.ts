@@ -395,6 +395,80 @@ describe('the adjudication summary is DERIVED from its own rows', () => {
   });
 });
 
+describe('the round-four register reconciles against its own rows', () => {
+  /*
+   * The register became closure evidence, so it is held to the rule it exists to
+   * enforce: a summary must derive from the rows beneath it.
+   *
+   * It did not. The disposition table carried `MAN-01`…`MAN-04` as a RANGE, so
+   * `MAN-02` and `MAN-03` appeared in the findings table and could be resolved in
+   * the disposition only by a reader who already knew the range was inclusive —
+   * while a hand-typed `CLOSED = 27` sat underneath asserting they were closed.
+   * They were, in fact, closed. Nothing in the document could show it.
+   *
+   * That is the rule `task-register.md` states about itself: "a range is not
+   * searchable: a reader looking for `FE-004` in a register that says
+   * `FE-003`–`FE-005` finds nothing and concludes the task was never delivered."
+   * The same fault, in the record written to track the round that found it.
+   */
+  const REGISTER = 'adversarial-round-four.md';
+
+  function rows() {
+    const doc = read(REGISTER);
+    const lines = doc.split('\n');
+
+    // `| \`ID\` | severity | \`CLASS\` | \`target\` |`
+    const findings = lines
+      .map((line) => /^\|\s*`([^`]+)`\s*\|\s*(?:blocking|material|cosmetic)\s*\|/.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => m[1] ?? '');
+
+    // The disposition table, read from its heading to the derived-counts block.
+    const start = lines.findIndex((line) => /^## Disposition/.test(line));
+    const end = lines.findIndex((line, i) => i > start && /^```/.test(line));
+    const disposition: { id: string; status: string }[] = [];
+    for (const line of lines.slice(start, end === -1 ? undefined : end)) {
+      if (!line.startsWith('|')) continue;
+      const cells = line.split('|');
+      const status = (cells[2] ?? '').trim();
+      for (const m of (cells[1] ?? '').matchAll(/`([^`]+)`/g)) {
+        disposition.push({ id: m[1] ?? '', status });
+      }
+    }
+    return { doc, findings, disposition };
+  }
+
+  it('dispositions every finding, individually and exactly once', () => {
+    const { findings, disposition } = rows();
+    expect(findings.length, 'the findings table must be findable').toBeGreaterThanOrEqual(20);
+
+    const duplicated = findings.filter((id, i) => findings.indexOf(id) !== i);
+    expect(duplicated, 'a finding id appears twice').toEqual([]);
+
+    const dispositioned = disposition.map((r) => r.id);
+    const missing = findings.filter((id) => !dispositioned.includes(id));
+    expect(
+      missing,
+      'a finding has no disposition row of its own — a range is not searchable'
+    ).toEqual([]);
+
+    const stray = dispositioned.filter((id) => !findings.includes(id));
+    expect(stray, 'the disposition names something that is not a finding').toEqual([]);
+  });
+
+  it('states counts its rows support', () => {
+    const { doc, findings, disposition } = rows();
+    const closed = disposition.filter((r) => /FIXED/.test(r.status)).length;
+    const open = findings.length - closed;
+
+    expect(doc, `there are ${findings.length} findings`).toContain(
+      `FINDINGS   = ${findings.length}`
+    );
+    expect(doc, `${closed} are closed`).toContain(`CLOSED     = ${closed}`);
+    expect(doc, `${open} remain open`).toContain(`OPEN       = ${String(open).padStart(2)}`);
+  });
+});
+
 describe('the manifest states counts the repository can confirm', () => {
   /*
    * `MAN-01`…`MAN-04`. Four figures in `deliverable-manifest.md` were wrong at

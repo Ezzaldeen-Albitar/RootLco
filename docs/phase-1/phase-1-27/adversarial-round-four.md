@@ -80,33 +80,56 @@ guide contains them. Two of the four are in no message catalogue at all.
 
 ## Disposition
 
-| id                                    | status                                                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `R-01`                                | **FIXED** `04885f5` — checkbox `key` + `defaultChecked`; both directions at the real consumer                                         |
-| `G-01`                                | **FIXED** `9fedf02` — the circular case now derives from the message catalogue                                                        |
-| `G-02`                                | **FIXED** `9fedf02` — five failure rows, quoting the copy the product actually shows                                                  |
-| `G-03`                                | **FIXED** `9fedf02` — the walker made recursive, so the guide's sentence is true                                                      |
-| `R-02`                                | **FIXED** `8e6767a` — six creation selects, `attempt` threaded into `CatalogueSelect`                                                 |
-| `R-03`                                | **FIXED** `8e6767a` — status select AND block confirmation; the screen and the guard no longer disagree                               |
-| `R-04`                                | **FIXED** `8e6767a` — both status axes given state and a remount key                                                                  |
-| `FE-028-01`                           | **FIXED** `c12ef8a` — a `loadKey` change now resets the page as well as the cursor stack                                              |
-| `F3`                                  | **FIXED** `c12ef8a` — the parse half of the domain rule; and the opposite bound recorded (`2026-02-30` rolls over, so it is accepted) |
-| `ADJ-01`                              | **FIXED** `cf39f80` — the ten anonymous unresolved ids named, each with its commit                                                    |
-| `ADJ-02`                              | **FIXED** `cf39f80` — `setLogAdapter` never existed; it is `setMonitoringAdapter`                                                     |
-| `ADJ-03`                              | **FIXED** `cf39f80` — the preamble no longer closes the phase's one open item                                                         |
-| `F1`, `F2`                            | **FIXED** `6b634db` — the cross-axis rule now judges the RESULTING pair, in both directions                                           |
-| `F4`                                  | **FIXED** `6b634db` — the panel re-reads the vehicle after a successful change                                                        |
-| `R1`                                  | **FIXED** `7ed5150` — `components/forms` joined the security surface                                                                  |
-| `R2`                                  | **FIXED** `7ed5150` — `canListDocuments` asserted in both directions                                                                  |
-| `R3`                                  | **FIXED** `7ed5150` — the two inspected tags named, not counted                                                                       |
-| `R4`                                  | **FIXED** `7ed5150` — the docblock no longer misdescribes the sweeps it dismissed                                                     |
-| `G-04`                                | **FIXED** `7ed5150` — the gate widened to "any `console.*`" as the guide always claimed                                               |
-| `G-05`                                | **FIXED** `7ed5150` — row count pinned, so a row cannot vanish under the floor                                                        |
-| `MAN-01`…`MAN-04`, `TRC-01`, `TRC-02` | **FIXED** `b537399` — six figures corrected AND derived by three reconciliation cases                                                 |
+| id          | status                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `R-01`      | **FIXED** `04885f5` — checkbox `key` + `defaultChecked`; both directions at the real consumer                                         |
+| `G-01`      | **FIXED** `9fedf02` — the circular case now derives from the message catalogue                                                        |
+| `G-02`      | **FIXED** `9fedf02` — five failure rows, quoting the copy the product actually shows                                                  |
+| `G-03`      | **FIXED** `9fedf02` — the walker made recursive, so the guide's sentence is true                                                      |
+| `R-02`      | **FIXED** `8e6767a` — six creation selects, `attempt` threaded into `CatalogueSelect`                                                 |
+| `R-03`      | **FIXED** `8e6767a` — status select AND block confirmation; the screen and the guard no longer disagree                               |
+| `R-04`      | **FIXED** `8e6767a` — both status axes given state and a remount key                                                                  |
+| `FE-028-01` | **FIXED** `c12ef8a` — a `loadKey` change now resets the page as well as the cursor stack                                              |
+| `F3`        | **FIXED** `c12ef8a` — the parse half of the domain rule; and the opposite bound recorded (`2026-02-30` rolls over, so it is accepted) |
+| `ADJ-01`    | **FIXED** `cf39f80` — the ten anonymous unresolved ids named, each with its commit                                                    |
+| `ADJ-02`    | **FIXED** `cf39f80` — `setLogAdapter` never existed; it is `setMonitoringAdapter`                                                     |
+| `ADJ-03`    | **FIXED** `cf39f80` — the preamble no longer closes the phase's one open item                                                         |
+| `F1`        | **FIXED** `6b634db` — the lifecycle menu judges the RESULTING workshop status, restoring a working control                            |
+| `F2`        | **FIXED** `6b634db` — the workshop menu gained the cross-axis rule it never had                                                       |
+| `F4`        | **FIXED** `6b634db` — the panel re-reads the vehicle after a successful change                                                        |
+| `R1`        | **FIXED** `7ed5150` — `components/forms` joined the security surface                                                                  |
+| `R2`        | **FIXED** `7ed5150` — `canListDocuments` asserted in both directions                                                                  |
+| `R3`        | **FIXED** `7ed5150` — the two inspected tags named, not counted                                                                       |
+| `R4`        | **FIXED** `7ed5150` — the docblock no longer misdescribes the sweeps it dismissed                                                     |
+| `G-04`      | **FIXED** `7ed5150` — the gate widened to "any `console.*`" as the guide always claimed                                               |
+| `G-05`      | **FIXED** `7ed5150` — row count pinned, so a row cannot vanish under the floor                                                        |
+| `MAN-01`    | **FIXED** `b537399` — the ownership gate's file count, 40 → the 43 the gate reports                                                   |
+| `MAN-02`    | **FIXED** `b537399` — the CRM and vehicle source trees, 18/22 → 20/23                                                                 |
+| `MAN-03`    | **FIXED** `b537399` — `scripts/ci`, 40 → the 41 the directory holds                                                                   |
+| `MAN-04`    | **FIXED** `b537399` — the web tier heading, 39/803 → 64/1211; the per-file table marked superseded                                    |
+| `TRC-01`    | **FIXED** `b537399` — four cited test titles that matched no test                                                                     |
+| `TRC-02`    | **FIXED** `b537399` — three of four case-count rows in the table that exists to pin them                                              |
+
+**Every id is written out individually, and that is not decoration.** This table
+carried `MAN-01`…`MAN-04` as a RANGE, so `MAN-02` and `MAN-03` appeared in the
+findings table above and were resolvable in the disposition only by a reader who
+already knew the range was inclusive. Both were genuinely fixed; neither was
+findable, and a hand-typed `CLOSED = 27` sat underneath asserting otherwise.
+
+`task-register.md` states the rule this broke — "a range is not searchable: a
+reader looking for `FE-004` in a register that says `FE-003`–`FE-005` finds
+nothing and concludes the task was never delivered" — and that register was
+itself corrected for the same fault earlier in this phase. Third occurrence.
+
+The counts below are DERIVED by `p1-27-doc-reconciliation.test.ts`, which reads
+both tables and fails if a finding has no disposition row of its own, if an id is
+duplicated, or if these numbers disagree with the rows. A hand-maintained total
+beside a table it does not read is how this record went wrong.
 
 ```
-CLOSED = 27
-OPEN   =  0
+FINDINGS   = 27
+CLOSED     = 27
+OPEN       =  0
 ```
 
 **One thing is recorded and NOT closed**, deliberately: an intermittent failure
