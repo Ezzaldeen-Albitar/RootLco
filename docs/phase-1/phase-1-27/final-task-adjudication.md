@@ -450,6 +450,41 @@ tree writes to the console — enforced by the `no-console-output` rule in
 asserted, documented property as a defect. Attaching a monitoring provider is a
 deployment decision and inventing one here would be the actual error.
 
+**Re-derived from the canonical requirement, not from the previous wording.**
+The canonical title is "structured logging, monitoring and alert routing"
+(`canonical-plan.md:191`). Read against the tree rather than against the earlier
+verdict, the three parts resolve as:
+
+- **Structured** — `report()` emits one `JSON.stringify` of a fixed shape
+  (`level`, `event`, `correlationId`, `route`, `context`), never a formatted
+  sentence. `client-log.ts:169-175`.
+- **Monitoring** — the adapter boundary exists and receives the REDACTED event,
+  never the raw one (`observability.test.ts`, "receives the REDACTED event").
+  Redaction runs before both the adapter and the console, so an attached
+  provider cannot be handed something the console would not have printed.
+- **Alert routing** — deliberately unattached. `setLogAdapter` has no caller and
+  that is the documented design, not an oversight.
+
+What was NOT previously cited, and is the part worth stating: **the phase logs
+nothing of its own.** `report()` has exactly one production call site in the
+whole application — the dashboard error boundary — and it sends the opaque
+`error.digest` and the route with its query string removed. Not the message and
+not the stack, because a Next.js error message routinely carries a file path and
+a serialised prop.
+
+So the prohibited list is satisfied structurally rather than by redaction luck.
+No password, token, customer identifier, request body or query string can be
+logged by a P1-27 surface, because no P1-27 surface logs — and the
+`no-console-output` rule in `validate:p1-27-frontend` is what keeps it that way
+across both feature trees. **A VIN in particular is never written to a log**: it
+is `internal`-classified, it appears in no `report()` call, and there is no
+`report()` call in either feature tree to add one to.
+
+That is the second branch of the canonical requirement — instrumentation
+authority with intentionally no scattered frontend logging — and adding
+per-screen logging to satisfy a scanner would have created the exposure this
+task exists to prevent.
+
 ---
 
 ## Blocked
