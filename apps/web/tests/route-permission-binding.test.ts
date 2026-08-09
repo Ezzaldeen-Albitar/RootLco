@@ -17,8 +17,16 @@ import type { ReactElement } from 'react';
  * What actually decides the security property is the handful of
  * `canEdit={holds(session.permissions, …)}` lines that connect them, and those
  * live in `src/app/**` — the one tree the phase's own gate does not scan
- * (`check-p1-27-frontend.mjs`) and the one tree its tests read only as TEXT, for
- * an import-ordering rule.
+ * (`check-p1-27-frontend.mjs`), and a tree its tests read only as TEXT.
+ *
+ * `R4`: this sentence used to end "…for an import-ordering rule", which is
+ * false and unflattering to the wrong people. `p1-27-security.test.ts` reads
+ * every phase route as text for two SECURITY rules — that `holds(` appears
+ * before the first `await read|list|search`, and that each route failure state
+ * carries a correlation reference. Both are real and neither is import
+ * ordering. What no source sweep can do is see the VALUE a prop is bound to,
+ * which is the gap this file fills; the original sentence overstated that gap
+ * by understating the sweeps.
  *
  * That is this phase's recurring shape one level up. It is not "a docblock
  * stating a rule the code does not implement"; it is two proven halves and an
@@ -80,6 +88,7 @@ vi.mock('@/features/vehicles/documents-api', () => ({
 }));
 
 const { VEHICLE_PERMISSIONS, CRM_PERMISSIONS } = await import('@/features/crm/permissions');
+const { DOCUMENT_LIST_PERMISSION } = await import('@/features/vehicles/documents-contract');
 const VehiclePage = (await import('@/app/[locale]/(dashboard)/vehicles/[vehicleId]/page')).default;
 
 /** Every permission the vehicle profile route consults. */
@@ -160,5 +169,24 @@ describe('the vehicle profile route grants each capability from its OWN permissi
     const denied = await propsFor([VEHICLE_PERMISSIONS.vehicleRead]);
     expect(denied['canListDocuments']).toBe(false);
     expect(denied['documents']).toMatchObject({ status: 'denied' });
+
+    /*
+     * `R2` — the POSITIVE half, which this file's docblock promised for every
+     * capability and this one capability never had.
+     *
+     * It had exactly one assertion, the negative one, against a session holding
+     * only `veh.vehicle.read`. `holds` is exact membership, so that session
+     * yields false for every code; nothing anywhere in the file ever made
+     * `canListDocuments` true. The negative direction alone is satisfied by
+     * `canListDocuments={false}` hard-coded, which is the defect the pairing
+     * rule exists to catch — asserted for five capabilities and skipped for the
+     * sixth, in a file whose entire subject is that a single direction proves
+     * nothing.
+     */
+    const allowed = await propsFor([VEHICLE_PERMISSIONS.vehicleRead, DOCUMENT_LIST_PERMISSION]);
+    expect(
+      allowed['canListDocuments'],
+      'no session in this file ever made canListDocuments true'
+    ).toBe(true);
   });
 });

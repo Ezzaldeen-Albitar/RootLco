@@ -115,7 +115,21 @@ export const RULES = [
   },
   {
     id: 'no-console-output',
-    pattern: /console\.(?:log|info|debug|warn|error)\s*\(/,
+    /*
+     * ANY console method, not the five obvious ones.
+     *
+     * This was a `log|info|debug|warn|error` allow-list while the developer
+     * guide described it as "any `console.*`" — so `console.table(customer)`,
+     * `console.trace()` and `console.dir(vehicle)` all passed a rule whose whole
+     * point is that server state must not reach stdout or a browser. `table` and
+     * `dir` are the two that print an object most legibly, which makes them the
+     * ones a developer reaches for when debugging exactly the data this rule
+     * exists to keep out of logs.
+     *
+     * Widened rather than narrowing the sentence, because the sentence was right
+     * about the intent (`G-04`).
+     */
+    pattern: /console\.[A-Za-z]\w*\s*\(/,
     what: 'writes to the console; server state belongs in the structured logger, not stdout',
     allow: [],
   },

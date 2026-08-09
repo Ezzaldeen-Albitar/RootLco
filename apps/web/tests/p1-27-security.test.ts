@@ -97,7 +97,27 @@ const PHASE_ROUTES = walk(ROUTES).filter((p) => /[\\/](crm|vehicles)[\\/]/.test(
  * the wider set. Narrowing a passing rule while widening another in one commit
  * is how a regression hides.
  */
-const MOVED_OUT = ['components/party', 'components/duplicates', 'lib/customers', 'lib/duplicates'];
+/*
+ * `components/forms` joined this list as `R1`.
+ *
+ * The commit that created `PHASE_SURFACE` also added `RecordForm` to the QA-001
+ * inventory, calling it a P1-27 deliverable that "eleven P1-27 write surfaces
+ * render through" — and left it out of the security surface in the same breath.
+ * What `PHASE_SURFACE` held was the one-line re-export shim under
+ * `features/crm/customers/components/`, never the implementation.
+ *
+ * So the 331-line component every customer and vehicle write submits through was
+ * outside every sweep that claims to cover "the phase's WHOLE surface" — the
+ * upload-path rule most of all, since a file-input would be added to a form
+ * component and nowhere else.
+ */
+const MOVED_OUT = [
+  'components/party',
+  'components/duplicates',
+  'components/forms',
+  'lib/customers',
+  'lib/duplicates',
+];
 
 const PHASE_SURFACE = [
   ...PHASE_FILES,
@@ -475,12 +495,12 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
      */
     const FAILURE_STATES = /<(BackendUnavailableState|ErrorState)\b([^>]*)>/g;
 
-    let inspected = 0;
+    const inspected: string[] = [];
     for (const path of PHASE_ROUTES) {
       const source = readFileSync(path, 'utf8');
       for (const match of source.matchAll(FAILURE_STATES)) {
-        inspected += 1;
         const [, component = '', attributes = ''] = match;
+        inspected.push(`${path.replace(/\\/g, '/').split('/src/app/')[1]} <${component}>`);
         expect(
           attributes,
           `${path} renders <${component}> without a correlation reference — ` +
@@ -489,10 +509,24 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
       }
     }
 
-    // The sweep must have looked at something. Without this it passes on a
-    // renamed component or a changed route layout by matching nothing, which is
-    // exactly how the adapter sweep above missed these routes for so long.
-    expect(inspected, 'no route failure state was inspected').toBeGreaterThan(0);
+    /*
+     * WHICH tags were inspected, not how many.
+     *
+     * `R4`: this guard was `expect(inspected).toBeGreaterThan(0)`, a suite-wide
+     * counter over a sweep that matches exactly two tags across eight routes.
+     * Renaming either failure-state component, or moving or deleting either
+     * route, would have dropped one of the two and left the counter at 1 — still
+     * greater than zero, still green, and the comment beside it claiming that
+     * "a rename or a route move cannot make it pass by matching nothing".
+     *
+     * A count above zero is not coverage; it is the weakest possible statement
+     * that something happened. Naming the pair means a route joining or leaving
+     * the recoverable surface has to be acknowledged here.
+     */
+    expect(inspected.sort(), 'the set of inspected route failure states changed').toEqual([
+      '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx <BackendUnavailableState>',
+      '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx <ErrorState>',
+    ]);
   });
 
   it('never logs a server value to the browser console', () => {

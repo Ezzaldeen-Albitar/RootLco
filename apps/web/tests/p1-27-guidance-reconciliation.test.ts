@@ -250,6 +250,32 @@ describe('the developer guide describes the repository that exists', () => {
     for (const [id, wording] of Object.entries(WORDING)) {
       expect(DEVELOPER, `${id} is not described`).toContain(wording);
     }
+
+    /*
+     * `G-04` — the direction that was missing.
+     *
+     * The case was bidirectional between the GATE and the map above, and only
+     * one-directional against the GUIDE: substring presence. So the guide could
+     * grow a seventh bullet claiming an enforced rule the gate does not have,
+     * and this would still pass.
+     *
+     * It already carried one such overstatement. The bullet said the gate fails
+     * on "any `console.*`" while the rule matched a five-method allow-list, so
+     * `console.table(customer)` and `console.dir(vehicle)` — the two that print
+     * an object most legibly, and therefore the two a developer reaches for on
+     * exactly the data this rule protects — passed it. The gate was widened to
+     * match what the guide had always claimed.
+     *
+     * The bullet COUNT is now pinned to the rule count, so a seventh bullet
+     * fails here until a seventh rule exists.
+     */
+    const bullets =
+      /`npm run validate:p1-27-frontend` fails the build on:\n\n((?:- .*\n|  .*\n)+)/.exec(
+        DEVELOPER
+      );
+    expect(bullets, 'the enforced-rules list must be findable').not.toBeNull();
+    const listed = (bullets?.[1] ?? '').split('\n').filter((line) => line.startsWith('- ')).length;
+    expect(listed, 'the guide lists a number of rules the gate does not have').toBe(ids.length);
   });
 
   it('is right that TableStatus has no ok', () => {
@@ -285,10 +311,26 @@ describe('the developer guide describes the repository that exists', () => {
     const table = /\| what\s+\| where\s+\|\n\|[-\s|]+\|\n((?:\|.*\|\n)+)/.exec(DEVELOPER);
     expect(table, 'the table must be findable').not.toBeNull();
 
+    /*
+     * `G-05` — the floor let a row vanish.
+     *
+     * The table has seven rows and the floor was `>= 6`, so exactly one row
+     * could drop out unnoticed: deleted, or merely losing the backticks around
+     * its path, which makes the cell regex skip it while the row stays visibly
+     * present in the document. A reader sees seven rows; the check sees six and
+     * is satisfied.
+     *
+     * Pinned to the row count instead. Every row must yield a path, and a row
+     * added or removed has to be acknowledged here.
+     */
+    const rows = (table?.[1] ?? '')
+      .split('\n')
+      .filter((line) => line.trim().startsWith('|')).length;
     const cells = [...(table?.[1] ?? '').matchAll(/\|\s*[^|]+\|\s*`([^`]+)`\s*\|/g)].map(
       (m) => m[1] ?? ''
     );
-    expect(cells.length, 'every row must carry a backticked path').toBeGreaterThanOrEqual(6);
+    expect(rows, 'the table lost its rows entirely').toBeGreaterThanOrEqual(6);
+    expect(cells.length, 'a row in the table carries no backticked path').toBe(rows);
 
     // `a/{b,c}/d` → `a/b/d`, `a/c/d`. One level is all the table uses.
     const expand = (pattern: string): readonly string[] => {
